@@ -83,6 +83,25 @@ def cmd_plan_materialize(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_run_pipeline(args: argparse.Namespace) -> int:
+    from app.runtime_orchestrator import run_batch_pipeline
+
+    project = Project.from_dict(_read_json(Path(args.project_json)))
+    batch = Batch.from_dict(_read_json(Path(args.batch_json)))
+    summary = run_batch_pipeline(
+        project=project,
+        batch=batch,
+        projects_root=args.projects_root or "projects",
+        template_cfg_path=args.template_cfg,
+        ath_executable=args.ath_exe,
+        akabak_executable=args.akabak_exe,
+        vacs_executable=args.vacs_exe,
+        continue_on_error=args.continue_on_error,
+    )
+    print(json.dumps(summary, indent=2, ensure_ascii=False, default=_json_default))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="batch-software")
     parser.add_argument("--config", default="app_config.json", help="Path to app_config.json (optional).")
@@ -130,6 +149,27 @@ def build_parser() -> argparse.ArgumentParser:
         help="Root folder that contains project folders in format projects/<project_id>/...",
     )
     p_materialize.set_defaults(func=cmd_plan_materialize)
+
+    p_run = sub.add_parser("run", help="Runtime execution utilities.")
+    sub_run = p_run.add_subparsers(dest="run_cmd", required=True)
+
+    p_pipeline = sub_run.add_parser(
+        "pipeline",
+        help="Run staged ATH->AKABAK->VACS pipeline for all resolved versions.",
+    )
+    p_pipeline.add_argument("--project-json", required=True, help="Path to project.json payload")
+    p_pipeline.add_argument("--batch-json", required=True, help="Path to batch.json payload")
+    p_pipeline.add_argument("--projects-root", help="Root folder for projects/<project_id>/...")
+    p_pipeline.add_argument("--template-cfg", help="Path to ATH template CFG file")
+    p_pipeline.add_argument("--ath-exe", help="ATH executable path")
+    p_pipeline.add_argument("--akabak-exe", help="AKABAK executable path")
+    p_pipeline.add_argument("--vacs-exe", help="VACS executable path")
+    p_pipeline.add_argument(
+        "--continue-on-error",
+        action="store_true",
+        help="Continue with next stages/versions when a stage fails.",
+    )
+    p_pipeline.set_defaults(func=cmd_run_pipeline)
 
     return parser
 
