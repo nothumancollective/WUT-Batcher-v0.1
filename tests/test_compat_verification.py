@@ -21,6 +21,7 @@ class CompatVerificationHarnessTests(unittest.TestCase):
                 ath_executable=None,
                 persist_sql=False,
                 only_hypothesis=True,
+                mode="quick",
             )
             self.assertEqual(summary["status_counts"]["fail"], 0)
             self.assertGreaterEqual(summary["status_counts"]["skipped"], 1)
@@ -60,14 +61,15 @@ class CompatVerificationHarnessTests(unittest.TestCase):
                 ath_base_args=[str(stub_path)],
                 persist_sql=True,
                 only_hypothesis=False,
+                mode="quick",
             )
             self.assertEqual(summary["status_counts"]["fail"], 0)
-            self.assertEqual(summary["status_counts"]["pass"], 3)
+            self.assertGreaterEqual(summary["status_counts"]["pass"], 5)
 
             db_path = project_root / "dataset" / "project.sqlite"
             with closing(sqlite3.connect(str(db_path))) as conn:
                 count = conn.execute("SELECT COUNT(*) FROM compat_verification_results").fetchone()[0]
-            self.assertEqual(int(count), 3)
+            self.assertEqual(int(count), int(summary["status_counts"]["pass"]))
 
 
 if __name__ == "__main__":

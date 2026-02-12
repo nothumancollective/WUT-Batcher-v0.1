@@ -334,6 +334,7 @@ def cmd_compat_verify(args: argparse.Namespace) -> int:
     project_id = args.project_id or "P_COMPAT"
     project_root = service.repo.project_paths(project_id, ensure=True).project_dir
     ath_exe = args.ath_exe or service.settings.ath_exe
+    mode = "full" if args.all_cases else str(args.mode)
     summary = run_compat_verification(
         project_root=project_root,
         project_id=project_id,
@@ -342,7 +343,8 @@ def cmd_compat_verify(args: argparse.Namespace) -> int:
         timeout_s=args.timeout_s,
         gmsh_path=args.gmsh_path,
         persist_sql=not args.no_sql,
-        only_hypothesis=not args.all_cases,
+        only_hypothesis=bool(args.hypothesis_only),
+        mode=mode,
     )
     print(json.dumps(summary, indent=2, ensure_ascii=False, default=_json_default))
     return 0 if int(summary["status_counts"].get("fail", 0)) == 0 else 3
@@ -464,7 +466,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_compat_verify.add_argument("--gmsh-path", help="Optional gmsh directory prepended to PATH for ATH runs")
     p_compat_verify.add_argument("--timeout-s", type=int, default=120, help="Per-case timeout in seconds")
-    p_compat_verify.add_argument("--all-cases", action="store_true", help="Run verification for all semantic facts")
+    p_compat_verify.add_argument(
+        "--mode",
+        choices=["quick", "full"],
+        default="quick",
+        help="Verification profile: quick (5-10 deterministic cases) or full (all cases).",
+    )
+    p_compat_verify.add_argument("--all-cases", action="store_true", help="Legacy alias for --mode full")
+    p_compat_verify.add_argument(
+        "--hypothesis-only",
+        action="store_true",
+        help="Skip cases that already have ath_doc evidence and run only hypothesis-backed facts.",
+    )
     p_compat_verify.add_argument("--no-sql", action="store_true", help="Disable SQL persistence for results")
     p_compat_verify.set_defaults(func=cmd_compat_verify)
 

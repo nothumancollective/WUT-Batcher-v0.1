@@ -42,14 +42,28 @@ def build_default_cases() -> List[CompatVerificationCase]:
     return [
         CompatVerificationCase(
             fact_id="output_flags_stl_abecproject",
-            case_id="output_flags",
+            case_id="output_flags_both",
             description="Verify that Output.STL and Output.ABECProject request artifacts.",
             cfg_lines=[*_base_cfg_lines(), "Output.STL = 1", "Output.ABECProject = 1"],
             expected={"require_success": True, "require_stl": True, "require_abec": True},
         ),
         CompatVerificationCase(
+            fact_id="output_flags_stl_abecproject",
+            case_id="output_flags_stl_only",
+            description="Verify that Output.STL can be requested independently.",
+            cfg_lines=[*_base_cfg_lines(), "Output.STL = 1", "Output.ABECProject = 0"],
+            expected={"require_success": True, "require_stl": True, "require_no_abec": True},
+        ),
+        CompatVerificationCase(
+            fact_id="output_flags_stl_abecproject",
+            case_id="output_flags_abec_only",
+            description="Verify that Output.ABECProject can be requested independently.",
+            cfg_lines=[*_base_cfg_lines(), "Output.STL = 0", "Output.ABECProject = 1"],
+            expected={"require_success": True, "require_abec": True, "require_no_stl": True},
+        ),
+        CompatVerificationCase(
             fact_id="ath_creates_subdirectory_per_script",
-            case_id="project_subdir",
+            case_id="project_subdir_default",
             description="Verify automatic per-script output subdirectory creation.",
             cfg_lines=[*_base_cfg_lines(), "Output.STL = 0", "Output.ABECProject = 0"],
             expected={"require_success": True, "require_project_subdir": True},
@@ -61,7 +75,63 @@ def build_default_cases() -> List[CompatVerificationCase]:
             cfg_lines=[*_base_cfg_lines(), "Output.STL = 0", "Output.ABECProject = 0"],
             expected={"require_success": True, "require_source_keys_absent": True},
         ),
+        CompatVerificationCase(
+            fact_id="source_contours_override",
+            case_id="source_contours_present",
+            description="Verify Source.Contours is accepted when explicit source keys are present.",
+            cfg_lines=[
+                *_base_cfg_lines(),
+                "Source.Contours = ::esp section1",
+                "Source.Shape = 3",
+                "Source.Radius = 18",
+                "Output.STL = 0",
+                "Output.ABECProject = 0",
+            ],
+            expected={"require_success": True, "require_source_keys_present": True},
+        ),
+        CompatVerificationCase(
+            fact_id="output_flags_stl_abecproject",
+            case_id="output_flags_disabled",
+            description="Verify no STL/ABEC artifact appears when both flags are disabled.",
+            cfg_lines=[*_base_cfg_lines(), "Output.STL = 0", "Output.ABECProject = 0"],
+            expected={"require_success": True, "require_no_stl": True, "require_no_abec": True},
+        ),
+        CompatVerificationCase(
+            fact_id="source_items_can_be_omitted",
+            case_id="source_defaults_explicit",
+            description="Verify ATH still succeeds with explicit Source defaults.",
+            cfg_lines=[
+                *_base_cfg_lines(),
+                "Source.Shape = 1",
+                "Source.Radius = -1",
+                "Source.Curv = 0",
+                "Source.Velocity = 1",
+                "Output.STL = 0",
+                "Output.ABECProject = 0",
+            ],
+            expected={"require_success": True, "require_source_keys_present": True},
+        ),
     ]
+
+
+def build_cases(mode: str = "quick") -> List[CompatVerificationCase]:
+    all_cases = build_default_cases()
+    normalized_mode = str(mode).strip().lower()
+    if normalized_mode == "full":
+        return all_cases
+    # Quick mode keeps the run deterministic and fast (6 cases).
+    quick_ids = {
+        "output_flags_both",
+        "output_flags_stl_only",
+        "output_flags_abec_only",
+        "project_subdir_default",
+        "source_defaults_omitted",
+        "source_contours_present",
+    }
+    quick_cases = [case for case in all_cases if case.case_id in quick_ids]
+    if quick_cases:
+        return quick_cases
+    return all_cases[:6]
 
 
 def _write_runtime_ath_cfg(path: Path, *, output_root: Path, mesh_cmd: str) -> None:
@@ -156,7 +226,10 @@ def _run_case(
         "require_project_subdir": bool(observed["project_subdir_exists"]),
         "require_stl": int(observed["stl_count"]) > 0,
         "require_abec": int(observed["abec_count"]) > 0,
+        "require_no_stl": int(observed["stl_count"]) == 0,
+        "require_no_abec": int(observed["abec_count"]) == 0,
         "require_source_keys_absent": not bool(observed["source_keys_present_in_cfg"]),
+        "require_source_keys_present": bool(observed["source_keys_present_in_cfg"]),
     }
     passed = all(checks[key] for key, enabled in expected.items() if enabled)
 
@@ -190,6 +263,7 @@ def run_compat_verification(
     gmsh_path: Optional[str] = None,
     persist_sql: bool = True,
     only_hypothesis: bool = True,
+    mode: str = "quick",
 ) -> Dict[str, Any]:
     project_root_path = Path(project_root)
     project_root_path.mkdir(parents=True, exist_ok=True)
@@ -204,7 +278,7 @@ def run_compat_verification(
         if isinstance(item, dict) and isinstance(item.get("fact_id"), str)
     }
 
-    cases = build_default_cases()
+    cases = build_cases(mode=mode)
     results: List[Dict[str, Any]] = []
     case_root = project_root_path / "_compat_tmp"
     case_root.mkdir(parents=True, exist_ok=True)
@@ -279,8 +353,10 @@ def run_compat_verification(
 
     return {
         "project_id": project_id,
+        "mode": mode,
         "project_root": str(project_root_path),
         "report_path": str(report_path),
+        "case_count": len(cases),
         "status_counts": status_counts,
         "results": results,
         "sql_result": sql_result,
