@@ -184,6 +184,12 @@ class _DslEvaluator:
     def __init__(self, functions: Dict[str, Callable[..., Any]]) -> None:
         self.functions = functions
 
+    @staticmethod
+    def _to_bool(value: Any) -> bool:
+        if value is UNSET:
+            return False
+        return bool(value)
+
     def eval(self, node: ast.AST) -> Any:
         if isinstance(node, ast.Expression):
             return self.eval(node.body)
@@ -196,19 +202,19 @@ class _DslEvaluator:
         if isinstance(node, ast.BoolOp):
             if isinstance(node.op, ast.And):
                 for value in node.values:
-                    if not bool(self.eval(value)):
+                    if not self._to_bool(self.eval(value)):
                         return False
                 return True
             if isinstance(node.op, ast.Or):
                 for value in node.values:
-                    if bool(self.eval(value)):
+                    if self._to_bool(self.eval(value)):
                         return True
                 return False
             raise ValueError("Unsupported bool op")
         if isinstance(node, ast.UnaryOp):
             operand = self.eval(node.operand)
             if isinstance(node.op, ast.Not):
-                return not bool(operand)
+                return not self._to_bool(operand)
             if isinstance(node.op, ast.USub):
                 return -operand
             if isinstance(node.op, ast.UAdd):
@@ -322,7 +328,7 @@ def _safe_eval_when(expr: str, values: Dict[str, Any]) -> bool:
         }
     )
     try:
-        return bool(evaluator.eval(tree))
+        return evaluator._to_bool(evaluator.eval(tree))
     except Exception:
         return False
 
@@ -595,4 +601,3 @@ def validity_report(
         "warn": [issue.to_dict() for issue in issues_sorted if issue.severity == "warn"],
         "info": [issue.to_dict() for issue in issues_sorted if issue.severity == "info"],
     }
-

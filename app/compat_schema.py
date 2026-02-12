@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import re
 from typing import Any, Dict, List, Sequence
 
 
@@ -34,8 +35,9 @@ def _catalog_sources(catalog: Dict[str, Any], key: str) -> List[Dict[str, str]]:
                 continue
             refs.append(
                 {
-                    "source": str(source.get("source", "")),
+                    "doc": str(source.get("source", "")),
                     "section": str(source.get("section", "")),
+                    "page": _extract_page_hint(str(source.get("section", ""))),
                     "quote_hint": str(source.get("quote-hint", "")),
                 }
             )
@@ -43,11 +45,18 @@ def _catalog_sources(catalog: Dict[str, Any], key: str) -> List[Dict[str, str]]:
     return []
 
 
-def _source_evidence(refs: Sequence[Dict[str, str]], notes: str) -> Dict[str, Any]:
+def _extract_page_hint(section: str) -> str:
+    match = re.search(r"p\.\s*(\d+)", section)
+    if not match:
+        return ""
+    return match.group(1)
+
+
+def _ath_doc_evidence(refs: Sequence[Dict[str, str]], notes: str, confidence: float = 0.95) -> Dict[str, Any]:
     return {
-        "type": "source",
+        "type": "ath_doc",
         "refs": list(refs),
-        "confidence": 0.95,
+        "confidence": float(confidence),
         "notes": notes,
     }
 
@@ -68,11 +77,16 @@ def _default_verification_plan(rule_id: str) -> str:
     )
 
 
-def _normalize_evidence(raw: Any, *, rule_id: str, fallback_note: str) -> Dict[str, Any]:
+def _normalize_evidence(raw: Any, *, rule_id: str, fallback: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(raw, dict):
-        return _hypothesis_evidence(fallback_note)
+        return deepcopy(fallback)
 
-    evidence_type = str(raw.get("type", "hypothesis"))
+    evidence_type = str(raw.get("type", fallback.get("type", "hypothesis"))).strip().lower()
+    if evidence_type in {"source", "doc", "ath_doc"}:
+        evidence_type = "ath_doc"
+    elif evidence_type != "hypothesis":
+        evidence_type = "hypothesis"
+
     refs_raw = raw.get("refs", [])
     refs: List[Dict[str, str]] = []
     if isinstance(refs_raw, list):
@@ -81,17 +95,20 @@ def _normalize_evidence(raw: Any, *, rule_id: str, fallback_note: str) -> Dict[s
                 continue
             refs.append(
                 {
-                    "source": str(entry.get("source", "")),
+                    "doc": str(entry.get("doc", entry.get("source", ""))),
                     "section": str(entry.get("section", "")),
+                    "page": str(entry.get("page", "")),
                     "quote_hint": str(entry.get("quote_hint", entry.get("quote-hint", ""))),
                 }
             )
-    confidence = raw.get("confidence", 0.4 if evidence_type == "hypothesis" else 0.95)
+    if not refs and isinstance(fallback.get("refs"), list):
+        refs = deepcopy(fallback.get("refs", []))
+    confidence = raw.get("confidence", fallback.get("confidence", 0.4 if evidence_type == "hypothesis" else 0.95))
     try:
         confidence_value = float(confidence)
     except (TypeError, ValueError):
-        confidence_value = 0.4 if evidence_type == "hypothesis" else 0.95
-    notes = str(raw.get("notes", fallback_note))
+        confidence_value = float(fallback.get("confidence", 0.4 if evidence_type == "hypothesis" else 0.95))
+    notes = str(raw.get("notes", fallback.get("notes", "")))
     normalized = {
         "type": evidence_type,
         "refs": refs,
@@ -107,11 +124,11 @@ def _rule_evidence(rule_id: str, catalog: Dict[str, Any]) -> Dict[str, Any]:
     if rule_id == "validity_length_required":
         refs = _catalog_sources(catalog, "Length")
         if refs:
-            return _source_evidence(refs, "Length mandatory requirement in explicit parametrization.")
+            return _ath_doc_evidence(refs, "Length mandatory requirement in explicit parametrization.")
     if rule_id == "visibility_source_contours_override":
         refs = _catalog_sources(catalog, "Source.Contours")
         if refs:
-            return _source_evidence(refs, "Source.Contours overrides Source.* except Source.Velocity.")
+            return _ath_doc_evidence(refs, "Source.Contours overrides Source.* except Source.Velocity.")
     return _hypothesis_evidence(
         "Rule behavior is currently derived from legacy implementation and requires explicit document verification."
     )
@@ -127,7 +144,7 @@ def _fact_records(catalog: Dict[str, Any]) -> List[Dict[str, Any]]:
             "fact_id": "length_is_mandatory",
             "statement": "Length is a mandatory item in explicit horn parametrization.",
             "evidence": (
-                _source_evidence(length_refs, "Directly documented for Length.")
+                _ath_doc_evidence(length_refs, "Directly documented for Length.")
                 if length_refs
                 else _hypothesis_evidence("Length mandatory reference missing in knowledge bundle.")
             ),
@@ -137,12 +154,23 @@ def _fact_records(catalog: Dict[str, Any]) -> List[Dict[str, Any]]:
         {
             "fact_id": "source_items_can_be_omitted",
             "statement": "Source.* items can be omitted and ATH will use defaults.",
-            "evidence": _hypothesis_evidence(
-                "Knowledge bundle currently lacks explicit omission/default statement for all Source.* items."
-            ),
-            "verification_plan": (
-                "Add doc citation for default omission behavior or run ATH fixtures with omitted Source.* fields and "
-                "record resulting defaults."
+            "evidence": _ath_doc_evidence(
+                [
+                    {
+                        "doc": "Ath-4.8.2-UserGuide-2.pdf",
+                        "section": "4.1.5 ABEC/BEM project settings",
+                        "page": "22",
+                        "quote_hint": "ItemKey (=default value): Source.Shape=1, Source.Radius=-1, Source.Curv=0, Source.Velocity=1",
+                    },
+                    {
+                        "doc": "Ath-4.8.2-UserGuide-2.pdf",
+                        "section": "6.1 The basics",
+                        "page": "28",
+                        "quote_hint": "we omitted all the Source.* items ... satisfied with the default values",
+                    },
+                ],
+                "Source defaults are explicitly documented and tutorial confirms omitted Source.* uses defaults.",
+                confidence=0.9,
             ),
         }
     )
@@ -151,7 +179,7 @@ def _fact_records(catalog: Dict[str, Any]) -> List[Dict[str, Any]]:
             "fact_id": "source_contours_override",
             "statement": "If Source.Contours is present, Source.Shape/Radius/Curv are ignored; Source.Velocity remains relevant.",
             "evidence": (
-                _source_evidence(contours_refs, "Documented Source.Contours override semantics.")
+                _ath_doc_evidence(contours_refs, "Documented Source.Contours override semantics.")
                 if contours_refs
                 else _hypothesis_evidence("Source.Contours override reference missing in knowledge bundle.")
             ),
@@ -161,20 +189,54 @@ def _fact_records(catalog: Dict[str, Any]) -> List[Dict[str, Any]]:
         {
             "fact_id": "ath_creates_subdirectory_per_script",
             "statement": "ATH auto-creates a subdirectory per script under output root.",
-            "evidence": _hypothesis_evidence(
-                "No explicit source entry for output-root subdirectory behavior exists in current knowledge bundle."
+            "evidence": _ath_doc_evidence(
+                [
+                    {
+                        "doc": "Ath-4.8.2-UserGuide-2.pdf",
+                        "section": "4.1.6 Program output",
+                        "page": "24",
+                        "quote_hint": "If Output.SubDir not defined, output directory is created directly under OutputRootDir.",
+                    },
+                    {
+                        "doc": "Ath-4.8.2-UserGuide-2.pdf",
+                        "section": "6.2 Running the program",
+                        "page": "29",
+                        "quote_hint": "a subdirectory demo1 was automatically created ... each project gets its own subdirectory",
+                    },
+                ],
+                "User Guide states automatic per-project subdirectory creation under output target.",
+                confidence=0.9,
             ),
-            "verification_plan": "Capture exact User Guide section and validate via controlled ATH run in temp output root.",
         }
     )
     facts.append(
         {
             "fact_id": "output_flags_stl_abecproject",
             "statement": "ATH supports output flags Output.STL and Output.ABECProject.",
-            "evidence": _hypothesis_evidence(
-                "No explicit Output.STL/Output.ABECProject entries currently exist in the local knowledge bundle."
+            "evidence": _ath_doc_evidence(
+                [
+                    {
+                        "doc": "Ath-4.8.2-UserGuide-2.pdf",
+                        "section": "4.1.6 Program output",
+                        "page": "24",
+                        "quote_hint": "Output.STL = 1 generates STL; Output.ABECProject = 0/1 generates ABEC project.",
+                    },
+                    {
+                        "doc": "Ath-4.8.2-UserGuide-2.pdf",
+                        "section": "6.1 The basics",
+                        "page": "28",
+                        "quote_hint": "Output.STL = 1 / Output.ABECProject = 0",
+                    },
+                    {
+                        "doc": "Ath-4.8.2-UserGuide-2.pdf",
+                        "section": "6.3 Running BEM analysis",
+                        "page": "31",
+                        "quote_hint": "Output.ABECProject = 1",
+                    },
+                ],
+                "Output flag keys and semantics are explicitly shown in guide reference and tutorial examples.",
+                confidence=0.95,
             ),
-            "verification_plan": "Add direct User Guide references for Output flags and validate with ATH export fixtures.",
         }
     )
     return facts
@@ -204,10 +266,8 @@ def migrate_ruleset_v1_to_v1_1(ruleset: Dict[str, Any], catalog: Dict[str, Any])
         rule["evidence"] = _normalize_evidence(
             rule.get("evidence"),
             rule_id=rule_id,
-            fallback_note=str(fallback.get("notes", "")),
+            fallback=fallback,
         )
-        if not isinstance(rule.get("evidence"), dict):
-            rule["evidence"] = fallback
         if (
             isinstance(rule.get("evidence"), dict)
             and rule["evidence"].get("type") == "hypothesis"
@@ -232,10 +292,8 @@ def migrate_ruleset_v1_to_v1_1(ruleset: Dict[str, Any], catalog: Dict[str, Any])
         evidence = _normalize_evidence(
             restrictions.get("evidence"),
             rule_id="runner_fixed_source_block",
-            fallback_note=str(fallback.get("notes", "")),
+            fallback=fallback,
         )
-        if not isinstance(evidence, dict):
-            evidence = fallback
         normalized_restrictions["evidence"] = evidence
         if evidence.get("type") == "hypothesis" and not restrictions.get("verification_plan"):
             normalized_restrictions["verification_plan"] = _default_verification_plan("runner_fixed_source_block")
@@ -247,4 +305,3 @@ def migrate_ruleset_v1_to_v1_1(ruleset: Dict[str, Any], catalog: Dict[str, Any])
 
 def normalize_ruleset(ruleset: Dict[str, Any], catalog: Dict[str, Any]) -> Dict[str, Any]:
     return migrate_ruleset_v1_to_v1_1(ruleset, catalog)
-
