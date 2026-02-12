@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import closing
 import dataclasses
 import json
 import os
@@ -39,7 +40,7 @@ def _status_rows_for_versions(db_path: Path, version_ids: list[str]) -> list[tup
     if not version_ids:
         return []
     placeholders = ", ".join("?" for _ in version_ids)
-    with sqlite3.connect(str(db_path)) as conn:
+    with closing(sqlite3.connect(str(db_path))) as conn:
         rows = conn.execute(
             f"SELECT version_id, status FROM versions WHERE version_id IN ({placeholders}) ORDER BY version_id",
             tuple(version_ids),
@@ -51,7 +52,7 @@ def _table_count_for_versions(db_path: Path, table: str, version_ids: list[str])
     if not version_ids:
         return 0
     placeholders = ", ".join("?" for _ in version_ids)
-    with sqlite3.connect(str(db_path)) as conn:
+    with closing(sqlite3.connect(str(db_path))) as conn:
         if table in {"graphs", "ath_dimensions"}:
             row = conn.execute(
                 f"SELECT COUNT(*) FROM {table} WHERE version_id IN ({placeholders})",

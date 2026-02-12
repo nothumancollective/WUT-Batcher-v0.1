@@ -19,6 +19,7 @@ try:
     from PySide6.QtGui import QPixmap
     from PySide6.QtWidgets import (
         QApplication,
+        QComboBox,
         QCheckBox,
         QDialog,
         QFormLayout,
@@ -152,11 +153,70 @@ class SettingsDialog(QDialog):
         apply_windows_dark_titlebar(self)
 
 
+class ExportDialog(QDialog):
+    def __init__(self, versions_by_batch: Dict[str, List[str]], parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.versions_by_batch = versions_by_batch
+        self.setWindowTitle("Export Version")
+        self.setModal(True)
+        self.resize(420, 220)
+
+        self.batch_combo = QComboBox()
+        self.version_combo = QComboBox()
+        self.export_stl = QCheckBox("STL")
+        self.export_abec = QCheckBox("ABEC")
+        self.export_abec.setChecked(True)
+
+        for batch_id in sorted(self.versions_by_batch.keys()):
+            self.batch_combo.addItem(batch_id)
+
+        form = QFormLayout()
+        form.addRow("Batch", self.batch_combo)
+        form.addRow("Version", self.version_combo)
+        form.addRow("Export STL", self.export_stl)
+        form.addRow("Export ABEC", self.export_abec)
+
+        self.batch_combo.currentTextChanged.connect(self._reload_versions)
+        self._reload_versions(self.batch_combo.currentText())
+
+        export_btn = QPushButton("Export")
+        export_btn.setObjectName("PrimaryButton")
+        export_btn.clicked.connect(self.accept)
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(self.reject)
+
+        buttons = QHBoxLayout()
+        buttons.addStretch(1)
+        buttons.addWidget(cancel_btn)
+        buttons.addWidget(export_btn)
+
+        root = QVBoxLayout(self)
+        root.addLayout(form)
+        root.addLayout(buttons)
+
+    def _reload_versions(self, batch_id: str) -> None:
+        self.version_combo.clear()
+        for version_id in self.versions_by_batch.get(batch_id, []):
+            self.version_combo.addItem(version_id)
+
+    def payload(self) -> Dict[str, object]:
+        return {
+            "batch_id": self.batch_combo.currentText().strip(),
+            "version_id": self.version_combo.currentText().strip(),
+            "export_stl": self.export_stl.isChecked(),
+            "export_abec": self.export_abec.isChecked(),
+        }
+
+    def showEvent(self, event) -> None:  # type: ignore[override]
+        super().showEvent(event)
+        apply_windows_dark_titlebar(self)
+
+
 class DashboardPage(QWidget):
     request_new_batch = Signal()
     request_edit_batch = Signal(str)
     request_clone_batch = Signal(str)
-    request_export = Signal(str, str, bool, bool)
+    request_open_export_dialog = Signal()
     request_settings = Signal()
 
     def __init__(self) -> None:
@@ -187,20 +247,8 @@ class DashboardPage(QWidget):
 
         export_box = QGroupBox("Export")
         export_grid = QGridLayout(export_box)
-        self.export_batch_id = QLineEdit()
-        self.export_batch_id.setPlaceholderText("Batch ID")
-        self.export_version_id = QLineEdit()
-        self.export_version_id.setPlaceholderText("Version ID")
-        self.export_stl = QCheckBox("STL")
-        self.export_abec = QCheckBox("ABEC")
-        self.export_btn = QPushButton("Export")
-        export_grid.addWidget(QLabel("Batch"), 0, 0)
-        export_grid.addWidget(self.export_batch_id, 0, 1)
-        export_grid.addWidget(QLabel("Version"), 1, 0)
-        export_grid.addWidget(self.export_version_id, 1, 1)
-        export_grid.addWidget(self.export_stl, 2, 0)
-        export_grid.addWidget(self.export_abec, 2, 1)
-        export_grid.addWidget(self.export_btn, 3, 0, 1, 2)
+        self.export_btn = QPushButton("Open Export Dialog")
+        export_grid.addWidget(self.export_btn, 0, 0)
         root.addWidget(export_box)
 
         footer = QHBoxLayout()
@@ -212,7 +260,7 @@ class DashboardPage(QWidget):
         self.new_batch_btn.clicked.connect(self.request_new_batch.emit)
         self.edit_batch_btn.clicked.connect(self._emit_edit)
         self.clone_batch_btn.clicked.connect(self._emit_clone)
-        self.export_btn.clicked.connect(self._emit_export)
+        self.export_btn.clicked.connect(self.request_open_export_dialog.emit)
         self.settings_btn.clicked.connect(self.request_settings.emit)
 
     def _selected_batch_id(self) -> Optional[str]:
@@ -231,14 +279,6 @@ class DashboardPage(QWidget):
         batch_id = self._selected_batch_id()
         if batch_id:
             self.request_clone_batch.emit(batch_id)
-
-    def _emit_export(self) -> None:
-        batch_id = self.export_batch_id.text().strip()
-        version_id = self.export_version_id.text().strip()
-        if not batch_id or not version_id:
-            return
-        self.request_export.emit(batch_id, version_id, self.export_stl.isChecked(), self.export_abec.isChecked())
-
 
 class ProjectPage(QWidget):
     submit_project = Signal(str, dict)
@@ -402,8 +442,10 @@ class RunPage(QWidget):
         root.addWidget(self.progress)
 
         self.version_label = QLabel("Version 0/0")
+        self.mode_label = QLabel("Mode: --")
         self.eta_label = QLabel("ETA: --")
         root.addWidget(self.version_label)
+        root.addWidget(self.mode_label)
         root.addWidget(self.eta_label)
         root.addStretch(1)
 
@@ -503,7 +545,7 @@ class MainWindow(QMainWindow):
         self.dashboard_page.request_new_batch.connect(self.show_batch)
         self.dashboard_page.request_edit_batch.connect(self._edit_batch)
         self.dashboard_page.request_clone_batch.connect(self._clone_batch)
-        self.dashboard_page.request_export.connect(self._export_version)
+        self.dashboard_page.request_open_export_dialog.connect(self._open_export_dialog)
         self.dashboard_page.request_settings.connect(self._open_settings)
 
         self.project_page.submit_project.connect(self._create_project)
@@ -591,15 +633,40 @@ class MainWindow(QMainWindow):
             return
         self.show_run()
         self.run_page.version_label.setText("Version 0/0")
+        self.run_page.mode_label.setText("Mode: running...")
         summary = self.service.run_batch(self.current_project.project_id, batch_id, continue_on_error=True)
         self.run_page.progress.setValue(100)
         self.run_page.version_label.setText(f"Version {len(summary.versions)}/{len(summary.versions)}")
+        self.run_page.mode_label.setText("Mode: dry-run" if summary.dry_run else "Mode: real")
         self.run_page.eta_label.setText("ETA: done")
         self.set_status(
             f"Run finished for {batch_id}",
             detail=json.dumps(asdict(summary), indent=2, ensure_ascii=False),
         )
         self.refresh_dashboard()
+
+    def _open_export_dialog(self) -> None:
+        if self.current_project is None:
+            self.set_status("No project loaded.")
+            return
+        rows = self.service.list_versions(self.current_project.project_id)
+        versions_by_batch: Dict[str, List[str]] = {}
+        for row in rows:
+            batch_id = str(row["batch_id"])
+            versions_by_batch.setdefault(batch_id, []).append(str(row["version_id"]))
+        if not versions_by_batch:
+            self.set_status("No versions available for export.")
+            return
+        dialog = ExportDialog(versions_by_batch, self)
+        if dialog.exec() != QDialog.Accepted:
+            return
+        payload = dialog.payload()
+        self._export_version(
+            str(payload["batch_id"]),
+            str(payload["version_id"]),
+            bool(payload["export_stl"]),
+            bool(payload["export_abec"]),
+        )
 
     def _edit_batch(self, batch_id: str) -> None:
         self.set_status(f"Edit Batch requested: {batch_id} (placeholder).")
@@ -613,17 +680,18 @@ class MainWindow(QMainWindow):
         if self.current_project is None:
             self.set_status("No project loaded.")
             return
-        result = self.service.export_version(
-            project_id=self.current_project.project_id,
-            batch_id=batch_id,
-            version_id=version_id,
-            export_stl=export_stl,
-            export_abec=export_abec,
-        )
-        self.set_status(
-            f"Export finished for {version_id}",
-            detail=json.dumps(result, indent=2, ensure_ascii=False),
-        )
+        try:
+            result = self.service.export_version(
+                project_id=self.current_project.project_id,
+                batch_id=batch_id,
+                version_id=version_id,
+                export_stl=export_stl,
+                export_abec=export_abec,
+            )
+        except Exception as exc:
+            self.set_status(f"Export failed for {version_id}", detail=str(exc))
+            return
+        self.set_status(f"Export finished for {version_id}", detail=json.dumps(result, indent=2, ensure_ascii=False))
 
 
 class GuiController:
@@ -726,10 +794,17 @@ def launch_gui() -> int:
     app.processEvents()
 
     controller = GuiController(service)
-    controller.main_window.set_status(
-        f"Doctor: {doctor_payload['overall_status']}",
-        detail=json.dumps(doctor_payload, indent=2, ensure_ascii=False),
-    )
+    doctor_status = str(doctor_payload["overall_status"]).lower()
+    if doctor_status in {"fail", "warn"}:
+        controller.main_window.set_status(
+            f"Doctor {doctor_status}: click for details",
+            detail=json.dumps(doctor_payload, indent=2, ensure_ascii=False),
+        )
+    else:
+        controller.main_window.set_status(
+            "Doctor ok.",
+            detail=json.dumps(doctor_payload, indent=2, ensure_ascii=False),
+        )
     apply_windows_dark_titlebar(controller.main_window)
     apply_windows_dark_titlebar(controller.project_manager)
     splash.finish(controller.project_manager)

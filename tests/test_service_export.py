@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 import tempfile
 import unittest
 
-from app.services import OrchestratorService
+from app.services import OrchestratorService, _apply_stl_export_hook
 from app.settings_store import SettingsStore, UserSettings
 
 
@@ -51,6 +52,78 @@ class ServiceExportTests(unittest.TestCase):
             self.assertIn("Throat.Diameter", cfg_text)
             self.assertNotIn("Coverage.Angle", cfg_text)
             self.assertIn("Coverage.Angle", manifest["unset_params"])
+            self.assertIn(str(Path(project.root_path) / "exports" / summary.batch_id / summary.version_ids[0]), manifest["export_dir"])
+
+    def test_export_distinguishes_unset_from_zero(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            library_root = Path(tmp_dir) / "projects"
+            template_cfg = Path(tmp_dir) / "template.cfg"
+            template_cfg.write_text(
+                "Length = 80\nThroat.Diameter = 10\nCoverage.Angle = 90\n",
+                encoding="utf-8",
+            )
+            settings_path = Path(tmp_dir) / "settings.json"
+            store = SettingsStore(settings_path)
+            store.save(
+                UserSettings(
+                    library_root=str(library_root),
+                    template_cfg=str(template_cfg),
+                )
+            )
+            service = OrchestratorService(settings_store=store)
+            project = service.create_project("Unset vs Zero", {"fixed_params": {"Length": 120}, "limits": {}})
+            summary = service.create_batch(
+                project_id=project.project_id,
+                batch_name="B1",
+                selected_params={"Throat.Diameter": 0.0, "Coverage.Angle": None},
+                sweeps={},
+                sweep_mode="single",
+                sim_export_params={},
+            )
+            manifest = service.export_version(
+                project_id=project.project_id,
+                batch_id=summary.batch_id,
+                version_id=summary.version_ids[0],
+                export_stl=False,
+                export_abec=False,
+            )
+            cfg_text = Path(manifest["cfg_path"]).read_text(encoding="utf-8")
+            self.assertRegex(cfg_text, re.compile(r"Throat\.Diameter\s*=\s*0\b"))
+            self.assertNotIn("Coverage.Angle", cfg_text)
+
+    def test_export_requires_ath_for_abec(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            library_root = Path(tmp_dir) / "projects"
+            settings_path = Path(tmp_dir) / "settings.json"
+            store = SettingsStore(settings_path)
+            store.save(UserSettings(library_root=str(library_root)))
+            service = OrchestratorService(settings_store=store)
+            project = service.create_project("ABEC Export", {"fixed_params": {"Length": 120}, "limits": {}})
+            summary = service.create_batch(
+                project_id=project.project_id,
+                batch_name="B1",
+                selected_params={"Throat.Diameter": 30.0},
+                sweeps={},
+                sweep_mode="single",
+                sim_export_params={},
+            )
+            with self.assertRaises(ValueError):
+                service.export_version(
+                    project_id=project.project_id,
+                    batch_id=summary.batch_id,
+                    version_id=summary.version_ids[0],
+                    export_stl=False,
+                    export_abec=True,
+                )
+
+    def test_stl_hook_is_idempotent(self) -> None:
+        cfg = "Length = 100\n"
+        first, first_todo = _apply_stl_export_hook(cfg)
+        second, second_todo = _apply_stl_export_hook(first)
+        self.assertTrue(first_todo)
+        self.assertTrue(second_todo)
+        self.assertEqual(first, second)
+        self.assertEqual(first.count("STL export hook (TODO)"), 1)
 
     def test_sync_global_db_returns_summary(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -64,6 +137,27 @@ class ServiceExportTests(unittest.TestCase):
             self.assertIn("processed", summary)
             self.assertIn("synced", summary)
             self.assertIn("failed", summary)
+
+    def test_list_versions_reads_sql_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            library_root = Path(tmp_dir) / "projects"
+            settings_path = Path(tmp_dir) / "settings.json"
+            store = SettingsStore(settings_path)
+            store.save(UserSettings(library_root=str(library_root)))
+            service = OrchestratorService(settings_store=store)
+            project = service.create_project("List Versions", {"fixed_params": {"Length": 100}, "limits": {}})
+            batch = service.create_batch(
+                project_id=project.project_id,
+                batch_name="B1",
+                selected_params={"Throat.Diameter": 30.0},
+                sweeps={},
+                sweep_mode="single",
+                sim_export_params={},
+            )
+            rows = service.list_versions(project.project_id)
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["batch_id"], batch.batch_id)
+            self.assertEqual(rows[0]["version_id"], batch.version_ids[0])
 
     def test_run_batch_auto_uses_dry_run_when_tools_missing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

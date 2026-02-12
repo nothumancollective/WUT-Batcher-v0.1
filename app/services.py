@@ -5,7 +5,9 @@ from __future__ import annotations
 from dataclasses import asdict
 from datetime import datetime, timezone
 import json
+from contextlib import closing
 from pathlib import Path
+import sqlite3
 import shutil
 from typing import Any, Dict, List, Optional
 
@@ -36,17 +38,32 @@ def _next_prefixed_id(existing_ids: List[str], prefix: str) -> str:
     return f"{prefix}{max_num + 1:03d}"
 
 
-def _inject_stl_export_todo(cfg_text: str) -> str:
-    # Exact ATH STL directive is currently unknown in this repo snapshot.
-    # Keep deterministic placeholder so regeneration remains explicit.
+ATH_STL_EXPORT_DIRECTIVE: Optional[str] = None
+
+
+def _apply_stl_export_hook(cfg_text: str) -> tuple[str, bool]:
+    if ATH_STL_EXPORT_DIRECTIVE:
+        directive_line = ATH_STL_EXPORT_DIRECTIVE.strip()
+        if directive_line and directive_line not in cfg_text:
+            return (cfg_text.rstrip() + f"\n{directive_line}\n", False)
+        return (cfg_text, False)
+
     block = (
         "\n; --- STL export hook (TODO) ---\n"
-        "; TODO: Set exact ATH STL export directive once verified.\n"
+        "; TODO: Set ATH_STL_EXPORT_DIRECTIVE in app/services.py once verified.\n"
         "; Example placeholder (inactive): ; Export.STL = 1\n"
     )
     if "STL export hook (TODO)" in cfg_text:
-        return cfg_text
-    return cfg_text + block
+        return (cfg_text, True)
+    return (cfg_text + block, True)
+
+
+def _select_generated_abec(export_dir: Path) -> Optional[Path]:
+    candidates = [path for path in export_dir.rglob("*.abec") if path.is_file()]
+    if not candidates:
+        return None
+    candidates.sort(key=lambda path: path.stat().st_mtime_ns, reverse=True)
+    return candidates[0]
 
 
 def _is_executable_path(path: Optional[str]) -> bool:
@@ -82,6 +99,43 @@ class OrchestratorService:
 
     def list_projects(self) -> List[Project]:
         return self.repo.list_projects()
+
+    def list_versions(self, project_id: str, batch_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        project_paths = self.repo.project_paths(project_id, ensure=True)
+        project_db = project_paths.dataset_dir / "project.sqlite"
+        if not project_db.exists():
+            return []
+        with closing(sqlite3.connect(str(project_db))) as conn:
+            if batch_id:
+                rows = conn.execute(
+                    """
+                    SELECT version_id, batch_id, status, created_at, finished_at
+                    FROM versions
+                    WHERE project_id = ? AND batch_id = ?
+                    ORDER BY version_id
+                    """,
+                    (project_id, batch_id),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT version_id, batch_id, status, created_at, finished_at
+                    FROM versions
+                    WHERE project_id = ?
+                    ORDER BY batch_id, version_id
+                    """,
+                    (project_id,),
+                ).fetchall()
+        return [
+            {
+                "version_id": str(row[0]),
+                "batch_id": str(row[1]),
+                "status": str(row[2]),
+                "created_at": row[3],
+                "finished_at": row[4],
+            }
+            for row in rows
+        ]
 
     def sync_global_db(self, max_items_per_project: int = 100) -> Dict[str, Any]:
         results: List[Dict[str, Any]] = []
@@ -234,11 +288,13 @@ class OrchestratorService:
         )
         stl_todo_added = False
         if export_stl:
-            cfg_text = _inject_stl_export_todo(cfg_text)
-            stl_todo_added = True
+            cfg_text, stl_todo_added = _apply_stl_export_hook(cfg_text)
 
         cfg_path = export_dir / f"{version_id}_export.cfg"
         cfg_path.write_text(cfg_text, encoding="utf-8")
+
+        if (export_stl or export_abec) and not self.settings.ath_exe:
+            raise ValueError("ATH executable is required for STL/ABEC export regeneration but is not configured.")
 
         ath_result: Optional[Dict[str, Any]] = None
         if (export_stl or export_abec) and self.settings.ath_exe:
@@ -256,15 +312,21 @@ class OrchestratorService:
                 "stderr_log": result.stderr_log,
                 "summary_log": result.summary_log,
             }
+            if not result.ok:
+                raise RuntimeError(f"ATH export run failed for {version_id} (exit_code={result.exit_code})")
 
         exported_abec: Optional[str] = None
+        abec_source: Optional[str] = None
         if export_abec:
-            source_abec = project_paths.versions_dir / version_id / "abec" / "Project.abec"
             target_abec = export_dir / "Project.abec"
-            if source_abec.exists():
-                shutil.copy2(source_abec, target_abec)
-            else:
-                target_abec.write_text("", encoding="utf-8")
+            generated = _select_generated_abec(export_dir)
+            if generated is None:
+                raise RuntimeError(
+                    f"ABEC export requested for {version_id}, but no .abec artifact was generated in {export_dir}."
+                )
+            if generated.resolve() != target_abec.resolve():
+                shutil.copy2(generated, target_abec)
+            abec_source = str(generated)
             exported_abec = str(target_abec)
 
         exported_stl: List[str] = []
@@ -283,8 +345,10 @@ class OrchestratorService:
             "param_count": len(set_params),
             "ath_result": ath_result,
             "exported_abec": exported_abec,
+            "exported_abec_source": abec_source,
             "exported_stl": exported_stl,
             "stl_export_todo": stl_todo_added,
+            "stl_directive": ATH_STL_EXPORT_DIRECTIVE,
             "stl_todo_note": (
                 "Exact ATH STL export directive is not yet known; TODO placeholder appended to CFG."
                 if stl_todo_added
