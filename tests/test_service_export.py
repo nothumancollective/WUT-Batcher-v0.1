@@ -178,6 +178,40 @@ class ServiceExportTests(unittest.TestCase):
             summary = service.run_batch(project.project_id, batch_summary.batch_id, continue_on_error=True)
             self.assertTrue(summary.dry_run)
 
+    def test_create_batch_ignores_runner_locked_user_inputs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            library_root = Path(tmp_dir) / "projects"
+            settings_path = Path(tmp_dir) / "settings.json"
+            store = SettingsStore(settings_path)
+            store.save(UserSettings(library_root=str(library_root)))
+            service = OrchestratorService(settings_store=store)
+            project = service.create_project("Locked fields", {"fixed_params": {"Length": 100}, "limits": {}})
+            summary = service.create_batch(
+                project_id=project.project_id,
+                batch_name="B locked",
+                selected_params={"Throat.Diameter": 30.0, "Source.Shape": 4, "LE.Voltage": 9.0},
+                sweeps={
+                    "Source.Radius": {"start": 1, "end": 2, "steps": 2},
+                    "Coverage.Angle": {"start": 60, "end": 70, "steps": 2},
+                },
+                sweep_mode="single",
+                sim_export_params={},
+            )
+            self.assertGreaterEqual(summary.version_count, 1)
+            manifest = service.export_version(
+                project_id=project.project_id,
+                batch_id=summary.batch_id,
+                version_id=summary.version_ids[0],
+                export_stl=False,
+                export_abec=False,
+            )
+            cfg = Path(manifest["cfg_path"]).read_text(encoding="utf-8")
+            self.assertIn("ABEC.AkabakMode    = 1", cfg)
+            self.assertIn("LE.Voltage  = 1.0", cfg)
+            self.assertNotIn("Source.Shape", cfg)
+            self.assertNotIn("Source.Radius", cfg)
+            self.assertNotIn("LE.Voltage         = 9", cfg)
+
 
 if __name__ == "__main__":
     unittest.main()

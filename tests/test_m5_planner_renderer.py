@@ -120,6 +120,40 @@ class PlannerRendererTests(unittest.TestCase):
 
         self.assertNotIn("Source.Shape", cfg)
 
+    def test_cfg_renderer_ignores_runner_locked_overrides(self) -> None:
+
+        template = (
+            "ABEC.AkabakMode = 0\n"
+            "LE = customdriver\n"
+            "LE.Voltage = 7.5\n"
+            "Source.Shape = 2\n"
+            "Source.Radius = 15\n"
+            "Source.Curv = 2\n"
+            "Length = 80\n"
+        )
+        cfg = render_cfg_text(
+            template_text=template,
+            parameters={
+                "Length": 95,
+                "ABEC.AkabakMode": 7,
+                "LE": "something_else",
+                "LE.Voltage": 12,
+                "Source.Shape": 9,
+                "Source.Radius": 90,
+                "Source.Curv": 4,
+            },
+            version_id="V001",
+        )
+        self.assertIn("ABEC.AkabakMode    = 1", cfg)
+        self.assertIn("LE          = generic25", cfg)
+        self.assertIn("LE.Voltage  = 1.0", cfg)
+        self.assertNotIn("Source.Shape = 2", cfg)
+        self.assertNotIn("Source.Radius = 15", cfg)
+        self.assertNotIn("Source.Curv = 2", cfg)
+        self.assertNotIn("Source.Shape         = 9", cfg)
+        self.assertNotIn("Source.Radius        = 90", cfg)
+        self.assertNotIn("Source.Curv          = 4", cfg)
+
 
 
 

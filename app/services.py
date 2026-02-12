@@ -12,6 +12,7 @@ import shutil
 from typing import Any, Dict, List, Optional
 
 from app.batch_orchestrator import PlanningSummary, materialize_batch_plan
+from app.compatibility_service import CompatibilityService
 from app.cfg_renderer import render_cfg_text
 from app.models import Batch, ParamSelection, Project, ProjectConstraints, SweepSpec
 from app.project_storage import ProjectRepository
@@ -78,6 +79,7 @@ class OrchestratorService:
         self.settings_store = settings_store or SettingsStore()
         self.settings = self.settings_store.load()
         self.repo = ProjectRepository(self.settings.library_root)
+        self.compatibility = CompatibilityService()
 
     def reload_settings(self) -> UserSettings:
         self.settings = self.settings_store.load()
@@ -99,6 +101,28 @@ class OrchestratorService:
 
     def list_projects(self) -> List[Project]:
         return self.repo.list_projects()
+
+    def compatibility_catalog_keys(self) -> List[str]:
+        return list(self.compatibility.catalog_keys)
+
+    def evaluate_project_constraints(self, constraints: Dict[str, Any]) -> Dict[str, Any]:
+        return self.compatibility.evaluate_project_constraints(constraints)
+
+    def evaluate_batch_definition(
+        self,
+        *,
+        project_id: str,
+        selected_params: Dict[str, Any],
+        sweeps: Dict[str, Dict[str, Any]],
+        sweep_mode: str,
+    ) -> Dict[str, Any]:
+        project = self.repo.load_project(project_id)
+        return self.compatibility.evaluate_batch_definition(
+            project.constraints,
+            selected_params=selected_params,
+            sweeps=sweeps,
+            sweep_mode=sweep_mode,
+        )
 
     def list_versions(self, project_id: str, batch_id: Optional[str] = None) -> List[Dict[str, Any]]:
         project_paths = self.repo.project_paths(project_id, ensure=True)
@@ -194,13 +218,18 @@ class OrchestratorService:
         project = self.repo.load_project(project_id)
         batches = self.repo.list_batches(project_id)
         batch_id = _next_prefixed_id([batch.batch_id for batch in batches], "B")
+        locked_keys = set(self.compatibility.runner_locked_keys(project.constraints.runner_mode))
 
         selected: Dict[str, ParamSelection] = {}
         for key, value in selected_params.items():
+            if str(key) in locked_keys:
+                continue
             selected[str(key)] = ParamSelection(value=value)
 
         normalized_sweeps: Dict[str, SweepSpec] = {}
         for key, payload in sweeps.items():
+            if str(key) in locked_keys:
+                continue
             normalized_sweeps[str(key)] = SweepSpec.from_dict(dict(payload), key=str(key))
 
         batch = Batch(
