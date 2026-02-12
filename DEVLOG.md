@@ -287,3 +287,36 @@
   - runner must prepare ATH runtime control file expectations (`ath.cfg`) per workdir
   - runner/config must normalize mesh command invocation (gmsh path with spaces) to non-interactive reliable execution
 - Until this is implemented, deterministic dry-run remains the reliable validation path in this VM snapshot.
+
+### Update 10 (Compatibility Rules Hardening v1.1)
+#### Done
+- Fixed semantic inconsistency in guiding-curve rule:
+  - `validity_guidingcurve_requires_dist_and_width` now uses fatal requirements (`require(GCurve.Dist)`, `require(GCurve.Width)`) instead of warn action.
+- Added in-memory schema migration and normalization:
+  - new module `app/compat_schema.py`
+  - migrates `ath-geometry-constraints.v1` -> `ath-geometry-constraints.v1.1`
+  - adds per-rule fields: `kind`, `applies_to`, `evidence`, optional `verification_plan`
+  - enriches runner restrictions with `kind/applies_to/evidence`
+  - seeds `semantic_facts` evidence records.
+- Added evidence policy wiring:
+  - doc-backed evidence for `Length` mandatory and `Source.Contours` override where references exist in knowledge bundle
+  - hypotheses with confidence <= 0.5 + verification plans for unbacked facts/rules.
+- Added ignored semantics support:
+  - new action `note_ignored(key, because)`
+  - Source override rule now emits ignored notes for `Source.Shape/Radius/Curv`.
+- Reworked DSL evaluation for determinism/security:
+  - replaced runtime `eval(...)` execution with restricted AST interpreter
+  - explicit unset (`param_states` with `is_set=0`) treated as not defined.
+- Updated compatibility export:
+  - `app/compat_rules.py` now exports schema 1.1 fields and semantic facts.
+
+#### Tests
+- Added:
+  - `tests/test_compat_schema.py`
+  - extended `tests/test_m2_compat_engine.py`
+  - extended `tests/test_compat_rules.py`
+- Full suite remains green: `50/50`.
+
+#### Docs
+- Added `docs/COMPATIBILITY_SCHEMA.md`.
+- Replaced corrupted `docs/Rules.md` with updated rule/evidence/DSL guidance.
