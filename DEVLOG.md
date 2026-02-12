@@ -342,3 +342,40 @@
 
 #### Open Points
 - Most behavior rules are still hypothesis-backed and require either direct ATH doc citation per rule or dedicated executable verification cases to promote confidence.
+
+### Update 12 (Compatibility in Product Reality)
+#### Done
+- Added central `CompatibilityService` (`app/compatibility_service.py`) to keep UI orchestrator-only:
+  - rules-driven `visible_keys`, `locked_keys`, `sweepable_keys`
+  - enriched issues with `rule_id`, `severity`, `evidence_type`, inferred `field_key`
+  - batch draft evaluation via resolver preview (strict=False)
+- UI integration in `app/gui.py`:
+  - PROJECT and BATCH pages now render a rules-driven Compatibility panel (visible/locked/sweepable + top issues)
+  - locked fields shown as disabled list with tooltip `Locked by runner mode`
+  - Save/Run now show a Validation Summary (Top 5 + details) using engine/service issues only
+  - fatal issues block save/create; no duplicate validation logic in UI
+- CFG emitter/runtime contract hardened:
+  - `OrchestratorService.create_batch()` now strips runner-locked keys from user-selected params/sweeps before planning
+  - renderer contract unchanged but covered with stronger tests
+  - fixed missing `json` import in `cfg_renderer` for list/dict formatting
+- Compat regression workflow expanded:
+  - `compat verify` now supports modes:
+    - `--mode quick` (6 deterministic fast cases)
+    - `--mode full` (all defined cases)
+  - `--hypothesis-only` to skip doc-backed facts
+  - results continue to persist in SQL table `compat_verification_results`
+
+#### Validation
+- Full suite green: `63/63`.
+- GUI module import smoke passed (`gui_import_ok`).
+
+#### Verify Usage
+- Quick run:
+  - `python -m app compat verify --mode quick`
+- Full run:
+  - `python -m app compat verify --mode full`
+- Hypothesis-only quick run:
+  - `python -m app compat verify --mode quick --hypothesis-only`
+- SQL result location:
+  - project DB: `<library>/<project_id>/dataset/project.sqlite` table `compat_verification_results`
+  - mirrored global DB: `<library>/global.sqlite` table `compat_verification_results`
