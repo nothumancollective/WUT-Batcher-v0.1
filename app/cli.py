@@ -315,6 +315,39 @@ def cmd_theme_preview(args: argparse.Namespace) -> int:
     return int(launch_preview())
 
 
+def cmd_compat_verify(args: argparse.Namespace) -> int:
+    from app.compat_verification import run_compat_verification
+
+    settings_store = SettingsStore()
+    settings = settings_store.load()
+    if args.library_root:
+        settings = UserSettings(
+            library_root=args.library_root,
+            ath_exe=settings.ath_exe,
+            akabak_exe=settings.akabak_exe,
+            vacs_exe=settings.vacs_exe,
+            template_cfg=settings.template_cfg,
+        )
+        settings_store.save(settings)
+    service = OrchestratorService(settings_store=settings_store)
+
+    project_id = args.project_id or "P_COMPAT"
+    project_root = service.repo.project_paths(project_id, ensure=True).project_dir
+    ath_exe = args.ath_exe or service.settings.ath_exe
+    summary = run_compat_verification(
+        project_root=project_root,
+        project_id=project_id,
+        ath_executable=ath_exe,
+        ath_base_args=args.ath_base_args or [],
+        timeout_s=args.timeout_s,
+        gmsh_path=args.gmsh_path,
+        persist_sql=not args.no_sql,
+        only_hypothesis=not args.all_cases,
+    )
+    print(json.dumps(summary, indent=2, ensure_ascii=False, default=_json_default))
+    return 0 if int(summary["status_counts"].get("fail", 0)) == 0 else 3
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="batch-software")
     parser.add_argument("--config", default="app_config.json", help="Path to app_config.json (optional).")
@@ -413,6 +446,27 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_theme_preview = sub_theme.add_parser("preview", help="Open visual preview window for current theme.")
     p_theme_preview.set_defaults(func=cmd_theme_preview)
+
+    p_compat = sub.add_parser("compat", help="Compatibility verification tooling.")
+    sub_compat = p_compat.add_subparsers(dest="compat_cmd", required=True)
+
+    p_compat_verify = sub_compat.add_parser(
+        "verify",
+        help="Run semantic fact verification harness and persist results.",
+    )
+    p_compat_verify.add_argument("--project-id", help="Project id for storing verification results")
+    p_compat_verify.add_argument("--library-root", help="Override library root in settings")
+    p_compat_verify.add_argument("--ath-exe", help="Override ATH executable path")
+    p_compat_verify.add_argument(
+        "--ath-base-args",
+        nargs="*",
+        help="Optional ATH command prefix args (useful for harness stubs).",
+    )
+    p_compat_verify.add_argument("--gmsh-path", help="Optional gmsh directory prepended to PATH for ATH runs")
+    p_compat_verify.add_argument("--timeout-s", type=int, default=120, help="Per-case timeout in seconds")
+    p_compat_verify.add_argument("--all-cases", action="store_true", help="Run verification for all semantic facts")
+    p_compat_verify.add_argument("--no-sql", action="store_true", help="Disable SQL persistence for results")
+    p_compat_verify.set_defaults(func=cmd_compat_verify)
 
     return parser
 

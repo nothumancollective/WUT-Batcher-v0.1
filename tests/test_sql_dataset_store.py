@@ -108,6 +108,29 @@ class SqlDatasetStoreTests(unittest.TestCase):
             self.assertEqual(batch_count, 1)
             self.assertEqual(version_count, 1)
 
+    def test_write_compat_verification_results_persists_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_root = Path(tmp_dir) / "projects" / "P001"
+            project_root.mkdir(parents=True, exist_ok=True)
+            writer = TidyDatasetWriter(project_root, library_root=project_root.parent)
+            result = writer.write_compat_verification_results(
+                [
+                    {
+                        "project_id": "P001",
+                        "fact_id": "output_flags_stl_abecproject",
+                        "case_id": "output_flags",
+                        "status": "pass",
+                        "expected": {"require_stl": True},
+                        "observed": {"stl_count": 1},
+                        "details": {"runner": "stub"},
+                    }
+                ]
+            )
+            self.assertEqual(result["rows_written"], 1)
+            with closing(sqlite3.connect(str(project_root / "dataset" / "project.sqlite"))) as conn:
+                count = conn.execute("SELECT COUNT(*) FROM compat_verification_results").fetchone()[0]
+            self.assertEqual(int(count), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

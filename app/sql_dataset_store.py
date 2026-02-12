@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 from app.models import Batch, Project, VersionSpec
 
 
-SCHEMA_VERSION = "2.0"
+SCHEMA_VERSION = "2.1"
 
 
 def _now_iso() -> str:
@@ -199,12 +199,25 @@ class SqlDatasetStore:
                     updated_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS compat_verification_results (
+                    result_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    project_id TEXT NOT NULL,
+                    fact_id TEXT NOT NULL,
+                    case_id TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    expected_json TEXT,
+                    observed_json TEXT,
+                    details_json TEXT,
+                    created_at TEXT NOT NULL
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_batches_project ON batches(project_id);
                 CREATE INDEX IF NOT EXISTS idx_versions_project_batch ON versions(project_id, batch_id);
                 CREATE INDEX IF NOT EXISTS idx_version_params_project_batch ON version_params(project_id, batch_id);
                 CREATE INDEX IF NOT EXISTS idx_graphs_version ON graphs(version_id);
                 CREATE INDEX IF NOT EXISTS idx_graph_points_graph ON graph_points(graph_id);
                 CREATE INDEX IF NOT EXISTS idx_replication_queue_status ON replication_queue(status, queue_id);
+                CREATE INDEX IF NOT EXISTS idx_compat_results_project_fact ON compat_verification_results(project_id, fact_id);
                 """
             )
 
@@ -222,6 +235,7 @@ class SqlDatasetStore:
                 "ath_dimensions",
                 "graphs",
                 "graph_points",
+                "compat_verification_results",
             ],
         }
         self.schema_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -251,6 +265,8 @@ class SqlDatasetStore:
             self._op_upsert_ath_dimensions(conn, payload)
         elif operation == "upsert_graphs":
             self._op_upsert_graphs(conn, payload)
+        elif operation == "insert_compat_verification":
+            self._op_insert_compat_verification(conn, payload)
         elif operation == "update_version_status":
             self._op_update_version_status(conn, payload)
         else:
@@ -503,6 +519,26 @@ class SqlDatasetStore:
             values.append(payload["tool_versions"])
         values.append(str(payload["version_id"]))
         conn.execute(f"UPDATE versions SET {', '.join(fields)} WHERE version_id = ?", tuple(values))
+
+    def _op_insert_compat_verification(self, conn: sqlite3.Connection, payload: Dict[str, Any]) -> None:
+        for row in payload.get("rows", []):
+            conn.execute(
+                """
+                INSERT INTO compat_verification_results (
+                    project_id, fact_id, case_id, status, expected_json, observed_json, details_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(row.get("project_id", self.project_root.name)),
+                    str(row["fact_id"]),
+                    str(row["case_id"]),
+                    str(row["status"]),
+                    row.get("expected_json"),
+                    row.get("observed_json"),
+                    row.get("details_json"),
+                    str(row.get("created_at") or _now_iso()),
+                ),
+            )
 
     def retry_pending_global_writes(self, max_items: int = 100) -> Dict[str, Any]:
         with self._open_conn(self.project_db_path) as conn:
@@ -763,6 +799,24 @@ class SqlDatasetStore:
         result = self._dual_write("upsert_graphs", payload)
         point_count = sum(len(graphs[graph_id]["points"]) for graph_id in ordered_ids)
         return {**result, "rows_written": point_count, "graphs_written": len(ordered_ids)}
+
+    def write_compat_verification_results(self, rows: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+        payload_rows: List[Dict[str, Any]] = []
+        for row in rows:
+            payload_rows.append(
+                {
+                    "project_id": str(row.get("project_id", self.project_root.name)),
+                    "fact_id": str(row["fact_id"]),
+                    "case_id": str(row["case_id"]),
+                    "status": str(row["status"]),
+                    "expected_json": _to_json(row.get("expected", {})),
+                    "observed_json": _to_json(row.get("observed", {})),
+                    "details_json": _to_json(row.get("details", {})),
+                    "created_at": str(row.get("created_at") or _now_iso()),
+                }
+            )
+        result = self._dual_write("insert_compat_verification", {"rows": payload_rows})
+        return {**result, "rows_written": len(payload_rows)}
 
     def write_project_table(self, project_id: Optional[str] = None) -> Dict[str, Any]:
         query_project_id = project_id or self.project_root.name
