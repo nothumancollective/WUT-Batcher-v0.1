@@ -1,96 +1,170 @@
-﻿# WUT Batcher Architecture
+# WUT Batcher Architecture
 
 Date: 2026-02-12
 Branch: `wut-batcher/rebuild`
 
 ## Scope and Truth Sources
-- Primary truth: user specification in this rebuild task.
+- Primary truth: user specification in this rebuild track.
 - Secondary truth: current repository code.
 - Tertiary truth: backup/recovery docs.
 
-## Target Domain Model (Soll)
-- `Project`: immutable constraints after project start, metadata, storage root.
-- `Batch`: base values for variable params, optional sweeps, `sweep_mode` (`single|combined`), simulation/export settings.
-- `Version`: fully resolved ATH parameter set + deterministic project-wide unique `version_id`, status, timestamps, artifact paths.
+## Core Domain Model
+- `Project`
+  - immutable constraints snapshot after project creation
+  - metadata: `project_id`, `project_name`, timestamps
+- `Batch`
+  - base variable params, sweep definitions, `sweep_mode` (`single|combined`)
+  - sim/export settings (batch-constant)
+- `Version`
+  - deterministic resolved parameter snapshot
+  - project-wide unique `version_id`
+  - status, durations, artifact/log paths, ATH dimensions
 
-## Required Pipeline (Soll)
-1. Build CFG from constraints + resolved variable params.
-2. Execute ATH and generate ABEC.
-3. Parse ATH terminal dimensions (length/width/height) into tidy dataset + project table.
-4. Import ABEC in AKABAK and simulate.
-5. Open results in VACS and export configured graphs to TXT.
-6. Normalize TXT exports into tidy dataset + project table.
-7. Close VACS and AKABAK.
-8. Continue with next version.
+## Storage Layout
+```
+<library>/
+  global.sqlite
+  <project_id>/
+    project.json
+    batches/<batch_id>/batch.json
+    versions/<version_id>/
+      cfg/input.cfg
+      abec/Project.abec
+      ath_work/
+      exports/
+      logs/
+      version.json
+    dataset/
+      project.sqlite
+      schema.json
+    tables/
+      project_versions.csv
+    _logs/
+```
 
-## Current State (Ist)
+## SQL-First Dataset Design
+Primary tidy dataset storage is SQLite (not CSV/Parquet).
 
-### Implemented and Working
-- `app/models.py`
-  - Core data models plus new execution entities: `VersionSpec`, `ResolutionIssue`, `ResolveVersionsResult`.
-- `app/version_resolver.py`
-  - Central resolver for `Project.constraints + Batch -> VersionSpec[]`.
-  - Exact `single` and `combined` sweep expansion.
-  - Explicit `unset_parameters` handling for omitted ATH fields.
-  - Blocking compatibility validation against `compat_engine` (project/batch/version).
-  - Deterministic version ID allocation with carry-over from existing project versions.
-- `app/compat_engine.py` + `app/knowledge/ath/*.json`
-  - Rule-based visibility/sweepability/validity.
-- `app/compat_rules.py`
-  - Machine-readable compatibility export shape:
-  - fields: `rule_id`, `description`, `scope`, `condition`, `action`, `severity`, `evidence`.
-- `app/project_storage.py`
-  - Target layout persistence:
-  - `projects/<project_id>/project.json`
-  - `projects/<project_id>/batches/<batch_id>/batch.json`
-  - `projects/<project_id>/versions/<version_id>/...`
-  - `projects/<project_id>/dataset/`, `tables/`, `_logs/`
-  - immutable project constraint guard.
-- `app/tidy_dataset.py`
-  - Tidy CSV writer for:
-  - version parameter resolution
-  - measurement rows
-  - ATH dimension rows
-  - schema output + optional parquet output.
-  - project-wide table export (`tables/project_versions.csv`).
-- `app/batch_orchestrator.py`
-  - High-level planning/materialization flow for milestone-ready placeholder pipeline.
-- `app/runners.py`
-  - `AthRunner`, `AkabakRunner`, `VacsRunner` subprocess wrappers.
-  - stdout/stderr/summary logs, exit status, timeout, retry.
-  - ATH dimension parser helper (`parse_ath_dimensions`).
-- `app/runtime_orchestrator.py`
-  - Staged runtime pipeline (`plan -> ATH -> AKABAK -> VACS`).
-  - Per-version status updates and ATH dimension write-through into tidy dataset.
-- `app/cli.py`
-  - New command: `plan materialize` for project+batch resolution and folder materialization.
-  - New command: `run pipeline` for staged runtime execution.
-- Tests
-  - Existing: `tests/test_m2_compat_engine.py`, `tests/test_m5_planner_renderer.py`
-  - New: `tests/test_version_resolver.py`, `tests/test_project_storage_and_tidy.py`, `tests/test_compat_rules.py`, `tests/test_runners.py`
+- Project DB: `<library>/<project_id>/dataset/project.sqlite`
+- Global DB: `<library>/global.sqlite`
+- Write strategy: project-first + global mirror write; global failures are queued in project DB (`replication_queue`) for retry.
 
-### Partially Implemented vs Target
-- Runtime orchestration exists as staged subprocess pipeline, but external tool contracts are still generic:
-  - ATH stage supports execution + dimension parsing when executable contract is provided.
-  - AKABAK and VACS stages are wired as subprocess stages, but UI-specific automation contracts are not yet bound in this snapshot.
-- Legacy modules (`app/path_resolver.py`, `app/dataset_pipeline.py`) still use prior storage/import conventions and coexist with new rebuild modules.
+### Required Tables (MVP)
+- `projects`
+  - `project_id`, `project_name`, `constraints_snapshot`, `created_at`, `updated_at`
+- `batches`
+  - `project_id`, `batch_id`, `batch_name`, `sweep_definitions`, `sweep_mode`, `sim_export_params`, `created_at`
+- `versions`
+  - `version_id`, `project_id`, `project_name`, `batch_id`, `batch_name`
+  - `resolved_parameters_snapshot`, `status`, `duration_seconds`
+  - `ath_length_mm`, `ath_width_mm`, `ath_height_mm`
+  - `tool_versions`, `created_at`, `finished_at`
+- `version_params`
+  - `version_id`, `project_id`, `batch_id`, `param_name`, `value`, `unit`, `is_set`, `created_at`
+  - `is_set=0` means parameter explicitly unset (must be omitted in CFG regeneration)
+- `ath_dimensions`
+  - `version_id`, `project_id`, `batch_id`, `length_mm`, `width_mm`, `height_mm`, `raw_line`, `source_file`, `created_at`
+- `graphs`
+  - `graph_id`, `project_id`, `batch_id`, `version_id`
+  - `graph_type`, `x_name`, `y_name`, `x_unit`, `y_unit`, `source_file`, `export_meta`, `created_at`
+- `graph_points`
+  - `graph_id`, `point_index`, `x_value`, `y_value`
 
-### Missing in Current Repo Snapshot
-- No `Runner/` directory in this snapshot despite references in older docs; wrappers therefore target generic subprocess contracts only.
-- No live UI automation adapter in app layer yet (only isolated runner wrappers).
+Additional operational table:
+- `replication_queue` for pending global-sync retries.
 
-## Gap List / Backlog (Updated)
-1. Bind concrete ATH/AKABAK/VACS CLI/UI invocation contracts from real environment into runtime orchestrator.
-2. Add robust per-version state transitions across stage boundaries including recovery/resume semantics.
-3. Implement VACS TXT export parsing ingestion in the new tidy writer path (currently legacy importer handles this separately).
-4. Add project-table update hooks for imported measurements (currently focus is version metadata + ATH dimensions).
-5. Optionally unify or migrate legacy dataset/path modules to the new layout.
+## Data Flow
+1. UI (PySide6) collects input and calls service methods only (`OrchestratorService`).
+2. Services call resolver + orchestrators:
+   - `create_project()`
+   - `create_batch()`
+   - `resolve_versions()`
+   - `run_batch()`
+   - `export_version()`
+3. Orchestrators call:
+   - storage (`ProjectRepository`)
+   - compatibility/resolve (`version_resolver`, `compat_engine`)
+   - runners (`AthRunner`, `AkabakRunner`, `VacsRunner`)
+   - SQL dataset sink (`SqlDatasetStore` via `TidyDatasetWriter`)
+4. SQL writes happen to project DB and mirrored to global DB.
+5. UI receives summaries/status only (no core logic in widgets).
 
-## Milestone Definition (next)
-- Create project with immutable constraints persisted.
-- Create batch with base values, sweeps, sweep mode, sim/export settings.
-- Resolve deterministic `VersionSpec` list with project-wide IDs.
-- Materialize per-version folders with placeholders and logs.
-- Write tidy dataset with at least version metadata + resolved parameters (without real simulation).
+## Resolver and Validation
+- Central resolver: `app/version_resolver.py`
+  - deterministic expansion for `single` and `combined`
+  - compatibility blocking (project/batch/version)
+  - explicit `unset_parameters` list
+- CFG rendering supports explicit omission:
+  - `render_cfg_text(..., omit_keys=...)` removes unset keys from generated CFG.
 
-Status against milestone: achieved in current rebuild implementation.
+## Runtime Pipeline
+- Stage orchestration: `app/runtime_orchestrator.py`
+  - plan/materialize versions
+  - render CFG per version
+  - ATH stage
+  - AKABAK stage
+  - VACS stage
+  - status/duration updates in SQL
+  - ATH dimension ingestion in SQL
+
+## Cleanup Policy (Guarded ATH Workdir Delete)
+Implemented in `app/safe_cleanup.py`, invoked from runtime pipeline after successful integration.
+
+Rules:
+- delete target must be an absolute resolved directory
+- delete target must be inside allowlisted root (`<project>/versions`)
+- target cannot equal allowlist root
+- target cannot be root-like/protected path
+- target cannot match deny-list entries (project root/library root/versions root)
+- if any guard fails: deletion is refused and reason is recorded
+
+Scope of deletion:
+- only version-local `ath_work` directory
+- never global ATH folders, library root, or broad parent directories
+
+## Export Regeneration Logic (Dashboard Export)
+Implemented in `OrchestratorService.export_version()`.
+
+Inputs:
+- `project_id`, `batch_id`, `version_id`, `export_stl`, `export_abec`
+
+Reconstruction:
+- load parameter states from SQL (`version_params`)
+- build `set_params` (`is_set=1`) and `unset_params` (`is_set=0`)
+- regenerate CFG from template:
+  - write only `is_set=1` values
+  - force omission for `is_set=0` via `omit_keys`
+
+Output path:
+- `<project>/exports/<batch_id>/<version_id>/...`
+
+STL note (open point):
+- exact ATH STL directive is not yet verified in this repo snapshot
+- current implementation appends explicit TODO hook block to CFG when STL export is requested
+- TODO tracked in DEVLOG; once directive is verified, replace placeholder with real ATH option
+
+## GUI Architecture (PySide6)
+- Entry: `app/gui.py` (`python -m app gui`)
+- Dark modern style via `app/gui_theme.py`
+- Startup flow:
+  1. splash screen
+  2. doctor checks in background phase
+  3. open Project Manager window
+- Windows/areas:
+  - Project Manager (separate window)
+  - Main Window with hidden stacked pages:
+    - `DASHBOARD`
+    - `PROJECT`
+    - `BATCH`
+    - `RUN`
+  - Settings dialog (small)
+  - About dialog (small)
+- Status bar:
+  - clickable status text -> detail popup
+  - right clickable `WUT BATCHER` -> About dialog
+
+## Open Points
+1. Bind real ATH/AKABAK/VACS invocation contracts from VM (flags, startup semantics).
+2. Wire real VACS TXT ingestion into `graphs` + `graph_points` in runtime loop.
+3. Replace STL TODO directive with verified ATH export option.
+4. Expand dashboard batch editing policy (lock/clone behavior for successful batches).

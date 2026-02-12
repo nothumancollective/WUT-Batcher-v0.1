@@ -69,3 +69,45 @@
 #### Risks / Open Points
 - AKABAK/VACS stages are currently subprocess wrappers and still need concrete UI-automation or CLI bridge contracts.
 - Without real tool paths and flags, runtime behavior beyond ATH simulation remains environment-dependent.
+
+### Update 3 (SQL + GUI Addendum)
+#### Done
+- Data storage switched to SQL-first architecture:
+  - Added `app/sql_dataset_store.py` and made `app/tidy_dataset.py` a SQL-backed alias.
+  - Implemented project DB + global DB dual-write with retry queue (`replication_queue`).
+  - Implemented required MVP tables:
+    - `projects`, `batches`, `versions`, `version_params`, `ath_dimensions`, `graphs`, `graph_points`.
+  - Added explicit unset persistence (`version_params.is_set = 0`) and CFG reconstruction helpers.
+- Orchestrator integration:
+  - `app/batch_orchestrator.py` now registers project/batch/version data into SQL and writes table export from SQL.
+  - `app/runtime_orchestrator.py` now updates version status/duration in SQL and writes ATH dimensions directly per version.
+- Safe cleanup implementation:
+  - Added `app/safe_cleanup.py` with guarded delete rules.
+  - Runtime now attempts cleanup only for per-version `ath_work` folders under strict allowlist/deny-path checks.
+- Export regeneration from SQL:
+  - Added `app/services.py` with core methods:
+    - `create_project`, `create_batch`, `resolve_versions`, `run_batch`, `export_version`.
+  - Dashboard export path uses SQL parameter states and omits unset params from CFG via `omit_keys`.
+- GUI skeleton (PySide6 orchestrator-only):
+  - Added `app/gui.py` with splash -> doctor checks -> Project Manager flow.
+  - Added main window with hidden stacked work areas (`DASHBOARD`, `PROJECT`, `BATCH`, `RUN`).
+  - Added statusbar detail click behavior and About dialog trigger (`WUT BATCHER`).
+  - Added Settings dialog backed by persistent config (`app/settings_store.py`).
+  - Added CLI command `python -m app gui`.
+- CFG renderer extension:
+  - Added `omit_keys` support in `app/cfg_renderer.py` for exact unset omission.
+- Tests added/updated:
+  - `tests/test_sql_dataset_store.py`
+  - `tests/test_safe_cleanup.py`
+  - `tests/test_service_export.py`
+  - Updated SQL expectations in existing storage/runtime tests.
+- Full suite status: `28/28` passing.
+
+#### Next
+- Bind real VM ATH/AKABAK/VACS invocation details in runtime and GUI settings defaults.
+- Integrate real VACS TXT parsing into `graphs` + `graph_points` write path during run.
+- Replace STL CFG TODO hook with verified ATH STL export directive.
+
+#### Risks / Open Points
+- Exact ATH STL export directive is still unknown; export currently inserts explicit TODO block in CFG.
+- AKABAK/VACS runtime stages are subprocess-capable but still depend on concrete environment contracts for production runs.
