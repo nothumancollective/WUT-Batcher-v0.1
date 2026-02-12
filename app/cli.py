@@ -3,7 +3,9 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import json
+import os
 from pathlib import Path
+import sqlite3
 from typing import Any, Dict, Optional
 
 from app.models import AppConfig, Batch, Project
@@ -24,6 +26,50 @@ def _json_default(obj: Any):
 
 def _default_project_root(config: AppConfig, project_id: str) -> Path:
     return config.projects_root_path / f"Project_{project_id}"
+
+
+def _is_executable_path(path: Optional[str]) -> bool:
+    if not path:
+        return False
+    candidate = Path(path).expanduser()
+    return candidate.exists() and candidate.is_file() and os.access(candidate, os.X_OK)
+
+
+def _status_rows_for_versions(db_path: Path, version_ids: list[str]) -> list[tuple[str, str]]:
+    if not version_ids:
+        return []
+    placeholders = ", ".join("?" for _ in version_ids)
+    with sqlite3.connect(str(db_path)) as conn:
+        rows = conn.execute(
+            f"SELECT version_id, status FROM versions WHERE version_id IN ({placeholders}) ORDER BY version_id",
+            tuple(version_ids),
+        ).fetchall()
+    return [(str(row[0]), str(row[1])) for row in rows]
+
+
+def _table_count_for_versions(db_path: Path, table: str, version_ids: list[str]) -> int:
+    if not version_ids:
+        return 0
+    placeholders = ", ".join("?" for _ in version_ids)
+    with sqlite3.connect(str(db_path)) as conn:
+        if table in {"graphs", "ath_dimensions"}:
+            row = conn.execute(
+                f"SELECT COUNT(*) FROM {table} WHERE version_id IN ({placeholders})",
+                tuple(version_ids),
+            ).fetchone()
+            return int(row[0]) if row else 0
+        if table == "graph_points":
+            row = conn.execute(
+                f"""
+                SELECT COUNT(*)
+                FROM graph_points gp
+                JOIN graphs g ON g.graph_id = gp.graph_id
+                WHERE g.version_id IN ({placeholders})
+                """,
+                tuple(version_ids),
+            ).fetchone()
+            return int(row[0]) if row else 0
+    return 0
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:
@@ -123,6 +169,139 @@ def cmd_run_pipeline(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_run_sample(args: argparse.Namespace) -> int:
+    settings_store = SettingsStore()
+    settings = settings_store.load()
+    if args.library_root:
+        settings = UserSettings(
+            library_root=args.library_root,
+            ath_exe=settings.ath_exe,
+            akabak_exe=settings.akabak_exe,
+            vacs_exe=settings.vacs_exe,
+            template_cfg=settings.template_cfg,
+        )
+        settings_store.save(settings)
+    service = OrchestratorService(settings_store=settings_store)
+
+    tool_paths = {
+        "ath": service.settings.ath_exe,
+        "akabak": service.settings.akabak_exe,
+        "vacs": service.settings.vacs_exe,
+    }
+    tool_ready = {key: _is_executable_path(value) for key, value in tool_paths.items()}
+    all_tools_ready = all(tool_ready.values())
+    if args.real and not all_tools_ready:
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "error": "real_run_requested_but_tools_unavailable",
+                    "tool_paths": tool_paths,
+                    "tool_ready": tool_ready,
+                },
+                indent=2,
+                ensure_ascii=False,
+            )
+        )
+        return 2
+
+    dry_run = bool(args.dry_run or (not args.real and not all_tools_ready))
+
+    if args.project_id:
+        project = service.repo.load_project(args.project_id)
+    else:
+        project = service.create_project(
+            args.project_name,
+            {
+                "fixed_params": {"Length": 120},
+                "limits": {},
+                "runner_mode": "AkabakImportFixedSource",
+            },
+        )
+
+    if args.batch_id:
+        batch_id = args.batch_id
+        service.repo.load_batch(project.project_id, batch_id)
+    else:
+        batch_summary = service.create_batch(
+            project_id=project.project_id,
+            batch_name=args.batch_name,
+            selected_params={"Throat.Diameter": 30.0, "Coverage.Angle": None},
+            sweeps={},
+            sweep_mode="single",
+            sim_export_params={},
+        )
+        batch_id = batch_summary.batch_id
+
+    summary = service.run_batch(
+        project.project_id,
+        batch_id,
+        continue_on_error=False,
+        dry_run=dry_run,
+    )
+
+    project_paths = service.repo.project_paths(project.project_id, ensure=True)
+    db_path = project_paths.dataset_dir / "project.sqlite"
+    version_ids = list(summary.versions)
+    expected_status = "dry_run_completed" if dry_run else "success"
+    status_rows = _status_rows_for_versions(db_path, version_ids)
+    statuses_ok = bool(status_rows) and all(status == expected_status for _, status in status_rows)
+
+    ath_dims_count = _table_count_for_versions(db_path, "ath_dimensions", version_ids)
+    graph_count = _table_count_for_versions(db_path, "graphs", version_ids)
+    graph_points_count = _table_count_for_versions(db_path, "graph_points", version_ids)
+
+    cleanup_ok = False
+    if dry_run:
+        cleanup_ok = bool(summary.cleanup_results) and all(
+            result.get("reason") == "dry_run_no_delete" for result in summary.cleanup_results
+        )
+    else:
+        cleanup_ok = bool(summary.cleanup_results) and all(
+            bool(result.get("deleted")) and result.get("reason") == "deleted" for result in summary.cleanup_results
+        )
+
+    artifacts_ok = True
+    artifact_issues: list[str] = []
+    for version_id in version_ids:
+        version_dir = project_paths.versions_dir / version_id
+        cfg_path = version_dir / "cfg" / "input.cfg"
+        logs_dir = version_dir / "logs"
+        if not cfg_path.exists():
+            artifacts_ok = False
+            artifact_issues.append(f"{version_id}: missing cfg file")
+        if not logs_dir.exists():
+            artifacts_ok = False
+            artifact_issues.append(f"{version_id}: missing logs directory")
+
+    checks = [
+        {"name": "version_status", "ok": statuses_ok, "detail": f"expected={expected_status}, rows={status_rows}"},
+        {"name": "ath_dimensions", "ok": dry_run or ath_dims_count > 0, "detail": f"count={ath_dims_count}"},
+        {"name": "graphs", "ok": dry_run or graph_count > 0, "detail": f"count={graph_count}"},
+        {"name": "graph_points", "ok": dry_run or graph_points_count > 0, "detail": f"count={graph_points_count}"},
+        {"name": "cleanup_guarded", "ok": cleanup_ok, "detail": json.dumps(summary.cleanup_results, ensure_ascii=False)},
+        {
+            "name": "artifacts_present",
+            "ok": artifacts_ok,
+            "detail": "; ".join(artifact_issues) if artifact_issues else "cfg/log paths present",
+        },
+    ]
+    ok = all(bool(check["ok"]) for check in checks)
+    payload = {
+        "ok": ok,
+        "mode": "dry-run" if dry_run else "real",
+        "project_id": project.project_id,
+        "batch_id": batch_id,
+        "version_ids": version_ids,
+        "tool_paths": tool_paths,
+        "tool_ready": tool_ready,
+        "checks": checks,
+        "runtime_summary": dataclasses.asdict(summary),
+    }
+    print(json.dumps(payload, indent=2, ensure_ascii=False, default=_json_default))
+    return 0 if ok else 3
+
+
 def cmd_gui(args: argparse.Namespace) -> int:
     from app.gui import launch_gui
 
@@ -216,6 +395,17 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_gui = sub.add_parser("gui", help="Launch PySide6 orchestrator GUI.")
     p_gui.set_defaults(func=cmd_gui)
+
+    p_sample = sub.add_parser("run-sample", help="Run and verify a minimal one-version sample batch.")
+    p_sample.add_argument("--project-id", help="Use existing project id. If omitted, create a sample project.")
+    p_sample.add_argument("--batch-id", help="Use existing batch id. If omitted, create a sample batch.")
+    p_sample.add_argument("--project-name", default="Sample Project", help="Name for auto-created sample project")
+    p_sample.add_argument("--batch-name", default="Sample Batch", help="Name for auto-created sample batch")
+    p_sample.add_argument("--library-root", help="Override library root in settings before run")
+    mode_group = p_sample.add_mutually_exclusive_group()
+    mode_group.add_argument("--real", action="store_true", help="Require real ATH/AKABAK/VACS execution")
+    mode_group.add_argument("--dry-run", action="store_true", help="Force deterministic dry-run")
+    p_sample.set_defaults(func=cmd_run_sample)
 
     p_theme = sub.add_parser("theme", help="Theme tooling.")
     sub_theme = p_theme.add_subparsers(dest="theme_cmd", required=True)

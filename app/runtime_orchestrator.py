@@ -379,9 +379,19 @@ def run_batch_pipeline(
 
         elapsed = time.perf_counter() - version_started
         final_ok = ath_stage_ok and akabak_stage_ok and vacs_stage_ok
+        final_status = "success" if final_ok else "failed"
+        _update_version_state(
+            project_root,
+            version_id,
+            {
+                "status": final_status,
+                "finished_at": _now_iso(),
+                "duration_seconds": elapsed,
+            },
+        )
         writer.update_version_status(
             version_id,
-            status="completed" if final_ok else "failed",
+            status=final_status,
             duration_seconds=elapsed,
             finished_at=_now_iso(),
         )
