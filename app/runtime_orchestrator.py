@@ -3,15 +3,22 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import json
 from pathlib import Path
+import time
 from typing import Any, Dict, List, Optional, Sequence
 
 from app.batch_orchestrator import materialize_batch_plan
 from app.cfg_renderer import render_cfg_text
 from app.models import Batch, Project
+from app.safe_cleanup import guarded_delete_tree
 from app.runners import AkabakRunner, AthRunner, RunnerResult, VacsRunner, parse_ath_dimensions
 from app.tidy_dataset import TidyDatasetWriter
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
 def _write_json(path: Path, payload: Dict[str, Any]) -> None:
@@ -44,6 +51,7 @@ class RuntimeSummary:
     versions: List[str]
     stage_results: List[StageExecution]
     ath_dimension_rows: int
+    cleanup_results: List[Dict[str, Any]]
 
 
 def _version_json_path(project_root: Path, version_id: str) -> Path:
@@ -56,6 +64,10 @@ def _version_cfg_path(project_root: Path, version_id: str) -> Path:
 
 def _version_abec_path(project_root: Path, version_id: str) -> Path:
     return project_root / "versions" / version_id / "abec" / "Project.abec"
+
+
+def _version_ath_work_path(project_root: Path, version_id: str) -> Path:
+    return project_root / "versions" / version_id / "ath_work"
 
 
 def _version_logs_dir(project_root: Path, version_id: str) -> Path:
@@ -114,12 +126,18 @@ def run_batch_pipeline(
     vacs_runner = VacsRunner(vacs_executable, base_args=vacs_base_args) if vacs_executable else None
 
     stage_results: List[StageExecution] = []
-    ath_dimension_rows: List[Dict[str, Any]] = []
+    ath_dimension_rows = 0
+    cleanup_results: List[Dict[str, Any]] = []
+    versions_root = project_root / "versions"
 
     for version_id in planning_summary.version_ids:
+        version_started = time.perf_counter()
         version_payload = _read_json(_version_json_path(project_root, version_id))
         version_params = dict(version_payload.get("parameters", {}) or {})
         runner_mode = str(batch.runner_mode or project.constraints.runner_mode)
+        ath_stage_ok = ath_runner is None
+        akabak_stage_ok = akabak_runner is None
+        vacs_stage_ok = vacs_runner is None
 
         cfg_path = _version_cfg_path(project_root, version_id)
         cfg_text = render_cfg_text(
@@ -132,7 +150,13 @@ def run_batch_pipeline(
         cfg_path.write_text(cfg_text, encoding="utf-8")
 
         if ath_runner:
-            ath_result = ath_runner.run_cfg(cfg_path, version_logs_dir=_version_logs_dir(project_root, version_id))
+            ath_work_dir = _version_ath_work_path(project_root, version_id)
+            ath_work_dir.mkdir(parents=True, exist_ok=True)
+            ath_result = ath_runner.run_cfg(
+                cfg_path,
+                version_logs_dir=_version_logs_dir(project_root, version_id),
+                workdir=ath_work_dir,
+            )
             stage_results.append(_stage_from_result(version_id, "ath", ath_result))
             _update_version_state(
                 project_root,
@@ -148,23 +172,35 @@ def run_batch_pipeline(
                     },
                 },
             )
+            writer.update_version_status(version_id, status="ath_ok" if ath_result.ok else "ath_failed")
+            ath_stage_ok = ath_result.ok
 
             ath_stdout = Path(ath_result.stdout_log).read_text(encoding="utf-8")
             dims = parse_ath_dimensions(ath_stdout)
             if dims.raw_line:
-                ath_dimension_rows.append(
-                    {
-                        "project_id": project.project_id,
-                        "batch_id": batch.batch_id,
-                        "version_id": version_id,
-                        "horn_length_mm": dims.horn_length_mm,
-                        "horn_width_mm": dims.horn_width_mm,
-                        "horn_height_mm": dims.horn_height_mm,
-                        "raw_line": dims.raw_line,
-                        "source_file": ath_result.stdout_log,
-                    }
+                writer.write_ath_dimensions(
+                    [
+                        {
+                            "project_id": project.project_id,
+                            "batch_id": batch.batch_id,
+                            "version_id": version_id,
+                            "horn_length_mm": dims.horn_length_mm,
+                            "horn_width_mm": dims.horn_width_mm,
+                            "horn_height_mm": dims.horn_height_mm,
+                            "raw_line": dims.raw_line,
+                            "source_file": ath_result.stdout_log,
+                        }
+                    ]
                 )
+                ath_dimension_rows += 1
             if not ath_result.ok and not continue_on_error:
+                elapsed = time.perf_counter() - version_started
+                writer.update_version_status(
+                    version_id,
+                    status="failed",
+                    duration_seconds=elapsed,
+                    finished_at=_now_iso(),
+                )
                 continue
 
         if akabak_runner:
@@ -185,7 +221,16 @@ def run_batch_pipeline(
                     },
                 },
             )
+            writer.update_version_status(version_id, status="akabak_ok" if akabak_result.ok else "akabak_failed")
+            akabak_stage_ok = akabak_result.ok
             if not akabak_result.ok and not continue_on_error:
+                elapsed = time.perf_counter() - version_started
+                writer.update_version_status(
+                    version_id,
+                    status="failed",
+                    duration_seconds=elapsed,
+                    finished_at=_now_iso(),
+                )
                 continue
 
         if vacs_runner:
@@ -206,11 +251,41 @@ def run_batch_pipeline(
                     },
                 },
             )
+            writer.update_version_status(version_id, status="vacs_ok" if vacs_result.ok else "vacs_failed")
+            vacs_stage_ok = vacs_result.ok
 
-    ath_row_count = 0
-    if ath_dimension_rows:
-        result = writer.write_ath_dimensions(ath_dimension_rows)
-        ath_row_count = int(result["rows_written"])
+        elapsed = time.perf_counter() - version_started
+        final_ok = ath_stage_ok and akabak_stage_ok and vacs_stage_ok
+        writer.update_version_status(
+            version_id,
+            status="completed" if final_ok else "failed",
+            duration_seconds=elapsed,
+            finished_at=_now_iso(),
+        )
+
+        if final_ok and vacs_runner is not None:
+            cleanup_result = guarded_delete_tree(
+                _version_ath_work_path(project_root, version_id),
+                allowed_root=versions_root,
+                deny_paths=(project_root, project_root.parent, versions_root),
+            )
+            cleanup_results.append(
+                {
+                    "version_id": version_id,
+                    "target": cleanup_result.target,
+                    "deleted": cleanup_result.deleted,
+                    "reason": cleanup_result.reason,
+                }
+            )
+        elif vacs_runner is None:
+            cleanup_results.append(
+                {
+                    "version_id": version_id,
+                    "target": str(_version_ath_work_path(project_root, version_id)),
+                    "deleted": False,
+                    "reason": "skipped_without_vacs_stage",
+                }
+            )
 
     return RuntimeSummary(
         project_id=project.project_id,
@@ -218,5 +293,6 @@ def run_batch_pipeline(
         project_root=str(project_root),
         versions=list(planning_summary.version_ids),
         stage_results=stage_results,
-        ath_dimension_rows=ath_row_count,
+        ath_dimension_rows=ath_dimension_rows,
+        cleanup_results=cleanup_results,
     )
