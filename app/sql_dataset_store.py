@@ -245,6 +245,8 @@ class SqlDatasetStore:
             self._op_upsert_batch(conn, payload)
         elif operation == "upsert_versions":
             self._op_upsert_versions(conn, payload)
+        elif operation == "upsert_plan_bundle":
+            self._op_upsert_plan_bundle(conn, payload)
         elif operation == "upsert_ath_dimensions":
             self._op_upsert_ath_dimensions(conn, payload)
         elif operation == "upsert_graphs":
@@ -374,6 +376,21 @@ class SqlDatasetStore:
                         created_at,
                     ),
                 )
+
+    def _op_upsert_plan_bundle(self, conn: sqlite3.Connection, payload: Dict[str, Any]) -> None:
+        project_payload = payload.get("project")
+        batch_payload = payload.get("batch")
+        versions_payload = payload.get("versions")
+        if not isinstance(project_payload, dict):
+            raise ValueError("upsert_plan_bundle requires object payload['project']")
+        if not isinstance(batch_payload, dict):
+            raise ValueError("upsert_plan_bundle requires object payload['batch']")
+        if not isinstance(versions_payload, dict):
+            raise ValueError("upsert_plan_bundle requires object payload['versions']")
+
+        self._op_upsert_project(conn, project_payload)
+        self._op_upsert_batch(conn, batch_payload)
+        self._op_upsert_versions(conn, versions_payload)
 
     def _op_upsert_ath_dimensions(self, conn: sqlite3.Connection, payload: Dict[str, Any]) -> None:
         for row in payload.get("rows", []):
@@ -596,6 +613,71 @@ class SqlDatasetStore:
         }
         result = self._dual_write("upsert_versions", payload)
         return {**result, "version_count": len(rows)}
+
+    def write_plan_bundle(
+        self,
+        *,
+        project: Project,
+        batch: Batch,
+        versions: Sequence[VersionSpec],
+        batch_name: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        now = _now_iso()
+        project_payload = {
+            "project_id": project.project_id,
+            "project_name": project.name,
+            "constraints_snapshot": _to_json(project.constraints.to_dict()),
+            "created_at": now,
+        }
+        batch_payload = {
+            "project_id": project.project_id,
+            "batch_id": batch.batch_id,
+            "batch_name": batch_name or str(batch.extra.get("batch_name") or batch.batch_id),
+            "sweep_definitions": _to_json({key: spec.to_dict() for key, spec in batch.sweeps.items()}),
+            "sweep_mode": batch.sweep_mode,
+            "sim_export_params": _to_json(batch.sim_export_settings.to_dict()),
+            "created_at": now,
+        }
+
+        version_rows: List[Dict[str, Any]] = []
+        for version in versions:
+            params: List[Dict[str, Any]] = []
+            all_keys = sorted(set(version.parameters.keys()).union(version.unset_parameters))
+            for key in all_keys:
+                is_set = 1 if key in version.parameters else 0
+                params.append(
+                    {
+                        "param_name": key,
+                        "value": _serialize_value(version.parameters.get(key)) if is_set else None,
+                        "unit": None,
+                        "is_set": is_set,
+                    }
+                )
+            version_rows.append(
+                {
+                    "version_id": version.version_id,
+                    "status": version.status,
+                    "created_at": version.created_at or now,
+                    "resolved_parameters_snapshot": _to_json(version.to_dict()),
+                    "params": params,
+                }
+            )
+        versions_payload = {
+            "project_id": project.project_id,
+            "project_name": project.name,
+            "batch_id": batch.batch_id,
+            "batch_name": batch_name or str(batch.extra.get("batch_name") or batch.batch_id),
+            "versions": version_rows,
+        }
+
+        payload = {
+            "project": project_payload,
+            "batch": batch_payload,
+            "versions": versions_payload,
+        }
+        result = self._dual_write("upsert_plan_bundle", payload)
+        self.persist_schema_descriptor()
+        return {**result, "version_count": len(version_rows)}
 
     def update_version_status(
         self,

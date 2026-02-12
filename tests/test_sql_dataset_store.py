@@ -75,6 +75,39 @@ class SqlDatasetStoreTests(unittest.TestCase):
                 pending = conn.execute("SELECT COUNT(*) FROM replication_queue WHERE status = 'pending'").fetchone()[0]
             self.assertEqual(pending, 1)
 
+    def test_plan_bundle_is_written_atomically(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_root = Path(tmp_dir) / "projects" / "P001"
+            project_root.mkdir(parents=True, exist_ok=True)
+            writer = TidyDatasetWriter(project_root, library_root=project_root.parent)
+
+            project = Project(
+                project_id="P001",
+                name="Bundle Test",
+                root_path=str(project_root),
+                constraints=ProjectConstraints(project_id="P001", fixed_params={"Length": 100}, limits={}),
+            )
+            batch = Batch(batch_id="B001", project_id="P001")
+            version = VersionSpec(
+                project_id="P001",
+                batch_id="B001",
+                version_id="V001",
+                sweep_mode="single",
+                sequence_index=1,
+                parameters={"Length": 100},
+                unset_parameters=["Coverage.Angle"],
+            )
+
+            result = writer.write_plan_bundle(project=project, batch=batch, versions=[version])
+            self.assertEqual(result["version_count"], 1)
+            with closing(sqlite3.connect(str(project_root / "dataset" / "project.sqlite"))) as conn:
+                project_count = conn.execute("SELECT COUNT(*) FROM projects").fetchone()[0]
+                batch_count = conn.execute("SELECT COUNT(*) FROM batches").fetchone()[0]
+                version_count = conn.execute("SELECT COUNT(*) FROM versions").fetchone()[0]
+            self.assertEqual(project_count, 1)
+            self.assertEqual(batch_count, 1)
+            self.assertEqual(version_count, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

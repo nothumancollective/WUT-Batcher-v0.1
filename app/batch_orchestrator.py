@@ -56,9 +56,7 @@ def materialize_batch_plan(
     )
 
     writer = TidyDatasetWriter(paths.project_dir)
-    writer.register_project(project)
-    writer.register_batch(project, batch)
-    version_dataset = writer.write_versions(project, batch, materialized)
+    version_dataset = writer.write_plan_bundle(project=project, batch=batch, versions=materialized)
     table_result = writer.write_project_table(project_id=project.project_id)
 
     return PlanningSummary(

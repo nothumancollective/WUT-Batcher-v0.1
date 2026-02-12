@@ -76,6 +76,28 @@ class OrchestratorService:
     def list_projects(self) -> List[Project]:
         return self.repo.list_projects()
 
+    def sync_global_db(self, max_items_per_project: int = 100) -> Dict[str, Any]:
+        results: List[Dict[str, Any]] = []
+        total_processed = 0
+        total_synced = 0
+        total_failed = 0
+        for project in self.repo.list_projects():
+            writer = TidyDatasetWriter(
+                self.repo.project_paths(project.project_id, ensure=True).project_dir,
+                library_root=self.settings.library_root,
+            )
+            summary = writer.retry_pending_global_writes(max_items=max_items_per_project)
+            results.append({"project_id": project.project_id, **summary})
+            total_processed += int(summary.get("processed", 0))
+            total_synced += int(summary.get("synced", 0))
+            total_failed += int(summary.get("failed", 0))
+        return {
+            "projects": results,
+            "processed": total_processed,
+            "synced": total_synced,
+            "failed": total_failed,
+        }
+
     def create_project(self, project_name: str, constraints: Dict[str, Any]) -> Project:
         existing = self.repo.list_projects()
         project_id = _next_prefixed_id([project.project_id for project in existing], "P")

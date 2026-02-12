@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from app.models import AppConfig, Batch, Project
+from app.services import OrchestratorService
+from app.settings_store import SettingsStore, UserSettings
 
 
 def _read_json(path: Path) -> Dict[str, Any]:
@@ -65,6 +67,24 @@ def cmd_dataset_build_or_update(args: argparse.Namespace, *, rebuild: bool) -> i
         manifest_path=manifest_path,
         rebuild=rebuild,
     )
+    print(json.dumps(summary, indent=2, ensure_ascii=False, default=_json_default))
+    return 0
+
+
+def cmd_dataset_sync_global(args: argparse.Namespace) -> int:
+    settings_store = SettingsStore()
+    settings = settings_store.load()
+    if args.library_root:
+        settings = UserSettings(
+            library_root=args.library_root,
+            ath_exe=settings.ath_exe,
+            akabak_exe=settings.akabak_exe,
+            vacs_exe=settings.vacs_exe,
+            template_cfg=settings.template_cfg,
+        )
+        settings_store.save(settings)
+    service = OrchestratorService(settings_store=settings_store)
+    summary = service.sync_global_db(max_items_per_project=args.max_items_per_project)
     print(json.dumps(summary, indent=2, ensure_ascii=False, default=_json_default))
     return 0
 
@@ -146,6 +166,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_update.add_argument("--project-id", required=True, help="Project id like P001")
     p_update.add_argument("--manifest-path", help="Override dataset_manifest.json path")
     p_update.set_defaults(func=lambda a: cmd_dataset_build_or_update(a, rebuild=False))
+
+    p_sync = sub_dataset.add_parser("sync-global", help="Replay pending project DB writes into global.sqlite.")
+    p_sync.add_argument("--library-root", help="Override library root containing project folders")
+    p_sync.add_argument("--max-items-per-project", type=int, default=100, help="Retry limit per project")
+    p_sync.set_defaults(func=cmd_dataset_sync_global)
 
     p_plan = sub.add_parser("plan", help="Project/batch planning utilities.")
     sub_plan = p_plan.add_subparsers(dest="plan_cmd", required=True)

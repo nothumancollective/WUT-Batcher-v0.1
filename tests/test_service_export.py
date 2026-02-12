@@ -52,6 +52,19 @@ class ServiceExportTests(unittest.TestCase):
             self.assertNotIn("Coverage.Angle", cfg_text)
             self.assertIn("Coverage.Angle", manifest["unset_params"])
 
+    def test_sync_global_db_returns_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            library_root = Path(tmp_dir) / "projects"
+            settings_path = Path(tmp_dir) / "settings.json"
+            store = SettingsStore(settings_path)
+            store.save(UserSettings(library_root=str(library_root)))
+            service = OrchestratorService(settings_store=store)
+            service.create_project("Sync Test", {"fixed_params": {"Length": 100}, "limits": {}})
+            summary = service.sync_global_db(max_items_per_project=10)
+            self.assertIn("processed", summary)
+            self.assertIn("synced", summary)
+            self.assertIn("failed", summary)
+
 
 if __name__ == "__main__":
     unittest.main()
