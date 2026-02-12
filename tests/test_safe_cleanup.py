@@ -38,6 +38,15 @@ class SafeCleanupTests(unittest.TestCase):
             self.assertFalse(result.deleted)
             self.assertEqual(result.reason, "outside_allowed_root")
 
+    def test_rejects_unexpected_dir_name(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir) / "versions"
+            target = root / "V001" / "tmp"
+            target.mkdir(parents=True, exist_ok=True)
+            result = guarded_delete_tree(target, allowed_root=root, expected_dir_name="ath_work")
+            self.assertFalse(result.deleted)
+            self.assertEqual(result.reason, "unexpected_dir_name")
+
 
 if __name__ == "__main__":
     unittest.main()

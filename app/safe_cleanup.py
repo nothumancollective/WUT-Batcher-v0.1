@@ -33,6 +33,7 @@ def guarded_delete_tree(
     target_path: str | Path,
     *,
     allowed_root: str | Path,
+    expected_dir_name: str | None = None,
     deny_paths: Iterable[str | Path] = (),
 ) -> CleanupResult:
     target = _normalize(target_path)
@@ -51,6 +52,8 @@ def guarded_delete_tree(
         return CleanupResult(target=str(target), deleted=False, reason="outside_allowed_root")
     if len(target.parts) <= len(allowed.parts):
         return CleanupResult(target=str(target), deleted=False, reason="target_too_shallow")
+    if expected_dir_name and target.name != expected_dir_name:
+        return CleanupResult(target=str(target), deleted=False, reason="unexpected_dir_name")
     if any(target == denied_path for denied_path in denied):
         return CleanupResult(target=str(target), deleted=False, reason="target_in_deny_paths")
 

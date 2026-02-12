@@ -78,6 +78,10 @@ class AboutDialog(QDialog):
         close_btn.clicked.connect(self.accept)
         layout.addWidget(close_btn)
 
+    def showEvent(self, event) -> None:  # type: ignore[override]
+        super().showEvent(event)
+        apply_windows_dark_titlebar(self)
+
 
 class SettingsDialog(QDialog):
     settings_saved = Signal(dict)
@@ -142,6 +146,10 @@ class SettingsDialog(QDialog):
             detail = "\n".join(f"- {key}: {value}" for key, value in issues.items())
             QMessageBox.warning(self, "Settings saved with warnings", detail)
         self.accept()
+
+    def showEvent(self, event) -> None:  # type: ignore[override]
+        super().showEvent(event)
+        apply_windows_dark_titlebar(self)
 
 
 class DashboardPage(QWidget):
@@ -628,7 +636,7 @@ class GuiController:
 
     def show_project_manager(self) -> None:
         self.project_manager.refresh()
-        self.project_manager.show()
+        self.project_manager.showMaximized()
         apply_windows_dark_titlebar(self.project_manager)
 
     def _open_project(self, project_id: str) -> None:

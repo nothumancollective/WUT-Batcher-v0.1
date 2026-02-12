@@ -267,6 +267,7 @@ def run_batch_pipeline(
             cleanup_result = guarded_delete_tree(
                 _version_ath_work_path(project_root, version_id),
                 allowed_root=versions_root,
+                expected_dir_name="ath_work",
                 deny_paths=(project_root, project_root.parent, versions_root),
             )
             cleanup_results.append(
