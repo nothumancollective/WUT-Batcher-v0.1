@@ -102,11 +102,20 @@ Additional operational table:
 - Stage orchestration: `app/runtime_orchestrator.py`
   - plan/materialize versions
   - render CFG per version
+  - optional deterministic `dry_run` mode (no external tool invocation)
   - ATH stage
   - AKABAK stage
   - VACS stage
+  - VACS TXT parsing into SQL `graphs` + `graph_points`
   - status/duration updates in SQL
   - ATH dimension ingestion in SQL
+
+VACS TXT ingestion details:
+- parser module: `app/vacs_txt_parser.py`
+- supports key/value metadata + explicit `Data`/`Data_End` sections
+- supports delimiter-based exports (`;`, tab, `|`) and locale decimals (`90,5`)
+- writes graph metadata (`graph_type`, axis names/units, `source_file`, `export_meta`) and tidy points (`point_index`, `x_value`, `y_value`)
+- if VACS stage succeeds but no TXT files are found or parse errors occur, version is marked `vacs_failed`
 
 ## Cleanup Policy (Guarded ATH Workdir Delete)
 Implemented in `app/safe_cleanup.py`, invoked from runtime pipeline after successful integration.
@@ -122,6 +131,9 @@ Rules:
 Scope of deletion:
 - only version-local `ath_work` directory
 - never global ATH folders, library root, or broad parent directories
+- dry-run support:
+  - `guarded_delete_tree(..., perform_delete=False)` executes guardrails without deleting
+  - runtime dry-run uses this mode to validate cleanup policy deterministically
 
 ## Export Regeneration Logic (Dashboard Export)
 Implemented in `OrchestratorService.export_version()`.
@@ -180,9 +192,19 @@ STL note (open point):
   - Win32 fallback: `DwmSetWindowAttribute(DWMWA_USE_IMMERSIVE_DARK_MODE)` with robust attribute fallback (20 then 19)
   - no-op on non-Windows platforms
 
+## Doctor and Contract Validation
+- doctor checks are centralized in `app/doctor_service.py`
+- startup splash (`app/gui.py`) passes configured tool paths from user settings
+- executable checks require:
+  - path exists
+  - path is a file
+  - path is executable
+- write access checks include library/projects root write-test
+- contract run behavior:
+  - if ATH/AKABAK/VACS paths are not all executable, service run falls back to deterministic `dry_run`
+  - dry-run still executes resolver, CFG generation, SQL writes, and cleanup guard evaluation
+
 ## Open Points
 1. Bind real ATH/AKABAK/VACS invocation contracts from VM (flags, startup semantics).
-2. Wire real VACS TXT ingestion into `graphs` + `graph_points` in runtime loop.
-3. Replace STL TODO directive with verified ATH export option.
-4. Expand dashboard batch editing policy (lock/clone behavior for successful batches).
-5. Ensure PySide6 runtime dependency is installed on target VM Python for GUI startup (`python -m app gui`).
+2. Replace STL TODO directive with verified ATH export option.
+3. Expand dashboard batch editing policy (lock/clone behavior for successful batches).

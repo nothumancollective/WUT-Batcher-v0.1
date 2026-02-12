@@ -169,3 +169,46 @@
 
 #### Open Point
 - ATH STL export flag still unknown; TODO hook remains intentionally in code until verified.
+
+### Update 6 (Next Pass: GUI Runtime + VACS SQL + Dry-Run Contracts)
+#### Done
+- Environment/runtime baseline completed.
+  - Verified Python runtime source on VM (`Python312-arm64`, no repo venv, no conda).
+  - Added dependency manifest: `requirements.txt` with `PySide6`.
+  - Added setup guide: `SETUP.md` (venv, install, app run, tests).
+  - GUI smoke validated:
+    - `python -c "import PySide6; print(PySide6.__version__)"`
+    - GUI controller/theme/titlebar probe completed without crash.
+- VACS TXT export integration into SQL implemented.
+  - Added parser: `app/vacs_txt_parser.py`.
+  - Runtime now executes VACS in version-local exports dir and ingests TXT exports into:
+    - `graphs`
+    - `graph_points`
+  - Parse failures/no export files after successful VACS process now mark version `vacs_failed` to prevent false-success runs.
+  - Added fixtures and parser tests:
+    - `tests/fixtures/vacs/result_v001spl.txt`
+    - `tests/fixtures/vacs/result_v001imp.txt`
+    - `tests/test_vacs_txt_parser.py`
+  - Added runtime integration test for VACS->SQL write path.
+- End-to-end contract hardening (without tool dependency) implemented.
+  - Added deterministic runtime `dry_run` mode (`run_batch_pipeline(..., dry_run=True)`).
+  - Service `run_batch()` now auto-falls back to dry-run when ATH/AKABAK/VACS executables are not all available.
+  - Dry-run still executes resolver/materialization, CFG generation, SQL status writes, and cleanup guard evaluation.
+  - Cleanup guard extended with `perform_delete=False` for safe dry-run evaluation.
+- Doctor checks upgraded for executable validation.
+  - `run_doctor_checks(..., tool_paths=...)` supports explicit settings-driven executable paths.
+  - Executable check now enforces existence + file + executable.
+  - Splash doctor now runs against configured settings paths.
+  - Added doctor unit tests.
+
+#### Validation
+- Focused tests:
+  - parser/runtime/cleanup/service/doctor: `15/15` passing.
+- Full suite:
+  - `39/39` passing.
+- Deterministic dry-run contract smoke:
+  - resolver -> cfg -> sql -> cleanup-guard path executed
+  - result reported `dry_run=true` and cleanup reason `dry_run_no_delete`.
+
+#### Open Point
+- ATH STL export directive remains unknown; TODO hook intentionally retained in `app/services.py`.
