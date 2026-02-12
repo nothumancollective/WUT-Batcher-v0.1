@@ -74,8 +74,11 @@
       "when": "isDefined(Source.Contours)",
       "then": [
         "hide(Source.Shape)",
+        "note_ignored(Source.Shape, Source.Contours)",
         "hide(Source.Radius)",
+        "note_ignored(Source.Radius, Source.Contours)",
         "hide(Source.Curv)",
+        "note_ignored(Source.Curv, Source.Contours)",
         "show(Source.Velocity)"
       ],
       "severity": "info",
@@ -157,7 +160,8 @@
       "scope": "validity",
       "when": "isDefined(GCurve.Type) && (!isDefined(GCurve.Dist) || !isDefined(GCurve.Width))",
       "then": [
-        "warn(\"Guiding-Curve mode requires GCurve.Dist and GCurve.Width.\")"
+        "require(GCurve.Dist)",
+        "require(GCurve.Width)"
       ],
       "severity": "fatal",
       "rationale": "ATH run fails when guiding-curve dimensions are missing."
