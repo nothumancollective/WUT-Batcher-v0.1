@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from app.models import AppConfig, Batch
+from app.models import AppConfig, Batch, Project
 
 
 def _read_json(path: Path) -> Dict[str, Any]:
@@ -69,6 +69,20 @@ def cmd_dataset_build_or_update(args: argparse.Namespace, *, rebuild: bool) -> i
     return 0
 
 
+def cmd_plan_materialize(args: argparse.Namespace) -> int:
+    from app.batch_orchestrator import materialize_batch_plan
+
+    project = Project.from_dict(_read_json(Path(args.project_json)))
+    batch = Batch.from_dict(_read_json(Path(args.batch_json)))
+    summary = materialize_batch_plan(
+        project=project,
+        batch=batch,
+        projects_root=args.projects_root or "projects",
+    )
+    print(json.dumps(summary, indent=2, ensure_ascii=False, default=_json_default))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="batch-software")
     parser.add_argument("--config", default="app_config.json", help="Path to app_config.json (optional).")
@@ -101,6 +115,21 @@ def build_parser() -> argparse.ArgumentParser:
     p_update.add_argument("--project-id", required=True, help="Project id like P001")
     p_update.add_argument("--manifest-path", help="Override dataset_manifest.json path")
     p_update.set_defaults(func=lambda a: cmd_dataset_build_or_update(a, rebuild=False))
+
+    p_plan = sub.add_parser("plan", help="Project/batch planning utilities.")
+    sub_plan = p_plan.add_subparsers(dest="plan_cmd", required=True)
+
+    p_materialize = sub_plan.add_parser(
+        "materialize",
+        help="Resolve versions from project+batch and materialize project structure and tidy metadata outputs.",
+    )
+    p_materialize.add_argument("--project-json", required=True, help="Path to project.json payload")
+    p_materialize.add_argument("--batch-json", required=True, help="Path to batch.json payload")
+    p_materialize.add_argument(
+        "--projects-root",
+        help="Root folder that contains project folders in format projects/<project_id>/...",
+    )
+    p_materialize.set_defaults(func=cmd_plan_materialize)
 
     return parser
 
