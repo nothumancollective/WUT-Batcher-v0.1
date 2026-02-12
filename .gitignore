@@ -1,0 +1,34 @@
+# OS / editor
+.DS_Store
+._*
+.vs/
+.vscode/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.venv/
+venv/
+
+# Logs and outputs
+logs/
+*.log
+output/
+outputs/
+exports/
+
+# Data / datasets (project-specific)
+**/dataset/
+**/datasets/
+**/batches/
+
+# Local notes
+private_notes.md
+
+# Local tooling artifacts (do not commit binaries / captures)
+tools/sysinternals/
+tools/procmon_*.csv
+tools/procmon_*.CSV
+%TEMP%/

@@ -1,0 +1,2478 @@
+{
+
+  "catalog_version": "ath-geometry-catalog.v1",
+
+  "ath_reference": {
+
+    "primary": "Ath 4 User Guide (Release 4.8.2, 03/2022)",
+
+    "note": "ItemKeys are case sensitive; unknown ItemKeys are ignored; later definitions overwrite prior ones."
+
+  },
+
+  "parameters": [
+
+    {
+
+      "key": "Throat.Diameter",
+
+      "type": "float",
+
+      "unit": "mm",
+
+      "group": "HornGeometry",
+
+      "description": "Throat diameter (equals 2*r0 in OS/OS-SE notation).",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.1 Horn geometry (PDF p.18)",
+
+          "quote-hint": "Throat.Diameter f Throat diameter [mm]"
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "Throat.Profile",
+
+      "type": "enum",
+
+      "default": 1,
+
+      "domain": {
+
+        "enum": [
+
+          1,
+
+          3
+
+        ],
+
+        "meaning": {
+
+          "1": "OS-SE composed profile (uses Term.*)",
+
+          "3": "circular arc (uses CircArc.*)"
+
+        }
+
+      },
+
+      "group": "HornGeometry",
+
+      "description": "Selects profile family used to generate each radial profile curve.",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.1 Horn geometry (PDF p.18)",
+
+          "quote-hint": "Throat.Profile = 1 ... 1 = OS-SE ... 3 = circular arc"
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "Throat.Angle",
+
+      "type": "expr",
+
+      "unit": "deg",
+
+      "default": 0,
+
+      "group": "HornGeometry",
+
+      "description": "Throat opening half-angle where applicable.",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.1 Horn geometry (PDF p.18)",
+
+          "quote-hint": "Throat.Angle = 0 ex ... half the included angle [deg]"
+
+        },
+
+        {
+
+          "source": "OS-SE Waveguide",
+
+          "section": "Generalized OS waveguide, \u03b10 definition (PDF p.3)",
+
+          "quote-hint": "\u03b10 throat opening angle (half the included angle)"
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "Throat.Ext.Angle",
+
+      "type": "float",
+
+      "unit": "deg",
+
+      "default": 0,
+
+      "group": "HornGeometry",
+
+      "description": "Half-angle of an optional conical throat extension.",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.1 Horn geometry (PDF p.18)",
+
+          "quote-hint": "Throat.Ext.Angle = 0 f ... conical throat extension"
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "Throat.Ext.Length",
+
+      "type": "float",
+
+      "unit": "mm",
+
+      "default": 0,
+
+      "group": "HornGeometry",
+
+      "description": "Axial length of an optional conical throat extension.",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.1 Horn geometry (PDF p.18)",
+
+          "quote-hint": "Throat.Ext.Length = 0 f ... [mm]"
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "Slot.Length",
+
+      "type": "expr",
+
+      "unit": "mm",
+
+      "default": 0,
+
+      "group": "HornGeometry",
+
+      "description": "Axial length of an initial straight waveguide segment at the throat.",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.1 Horn geometry (PDF p.18)",
+
+          "quote-hint": "Slot.Length = 0 ex Axial length of an initial straight waveguide segment"
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "Length",
+
+      "type": "expr",
+
+      "unit": "mm",
+
+      "group": "HornGeometry",
+
+      "description": "Nominal axial length of the device; documented as mandatory.",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.1 Horn geometry (PDF p.18)",
+
+          "quote-hint": "Length ex ... mandatory item"
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "Coverage.Angle",
+
+      "type": "expr",
+
+      "unit": "deg",
+
+      "group": "HornGeometry",
+
+      "description": "Explicit expression for coverage half-angle around the horn (may be angularly varying via parameter p).",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "2.1.2 Explicit shape definition (PDF p.10)",
+
+          "quote-hint": "Coverage.Angle = 40 + 10*cos(p)^2"
+
+        },
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.1 Horn geometry (PDF p.18)",
+
+          "quote-hint": "Coverage.Angle ex Explicit expression for the coverage angle [deg]"
+
+        },
+
+        {
+
+          "source": "OS-SE Waveguide",
+
+          "section": "Notation/OS parameters (PDF p.2\u2013p.4)",
+
+          "quote-hint": "\u03b1 nominal coverage angle (half the beamwidth)"
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "OS.k",
+
+      "type": "expr",
+
+      "default": 1,
+
+      "group": "HornGeometry",
+
+      "description": "OS-SE parameter k (throat expansion factor); k=0 collapses to conical profile in the OS-SE formulation.",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.1 Horn geometry (PDF p.18)",
+
+          "quote-hint": "OS.k = 1 ex"
+
+        },
+
+        {
+
+          "source": "OS-SE Waveguide",
+
+          "section": "Generalized OS waveguide (PDF p.4)",
+
+          "quote-hint": "k throat expansion factor; k=0 ... conical waveguide"
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "Term.s",
+
+      "type": "expr",
+
+      "default": 0.7,
+
+      "group": "HornGeometry",
+
+      "description": "OS-SE termination parameter s (termination flare amount / superellipse aspect ratio).",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.1 Horn geometry (PDF p.18)",
+
+          "quote-hint": "Term.s = 0.7 ex"
+
+        },
+
+        {
+
+          "source": "OS-SE Waveguide",
+
+          "section": "Termination (PDF p.5)",
+
+          "quote-hint": "s ... amount of termination flare"
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "Term.n",
+
+      "type": "expr",
+
+      "default": 4.0,
+
+      "domain": {
+
+        "min": 2,
+
+        "note": "Derived from superellipse exponent constraint n >= 2."
+
+      },
+
+      "group": "HornGeometry",
+
+      "description": "OS-SE termination exponent n (superellipse exponent).",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.1 Horn geometry (PDF p.18)",
+
+          "quote-hint": "Term.n = 4.0 ex"
+
+        },
+
+        {
+
+          "source": "OS-SE Waveguide",
+
+          "section": "Superellipse definition (PDF p.5)",
+
+          "quote-hint": "n >= 2"
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "Term.q",
+
+      "type": "expr",
+
+      "default": 0.995,
+
+      "domain": {
+
+        "note": "Typical q reported as ~0.99\u20131.00 in OS-SE text."
+
+      },
+
+      "group": "HornGeometry",
+
+      "description": "OS-SE termination truncation coefficient q.",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.1 Horn geometry (PDF p.18)",
+
+          "quote-hint": "Term.q = 0.995 ex"
+
+        },
+
+        {
+
+          "source": "OS-SE Waveguide",
+
+          "section": "Termination truncation coefficient (PDF p.5)",
+
+          "quote-hint": "q typical value: 0.99 - 1.00"
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "Rot",
+
+      "type": "expr",
+
+      "unit": "deg",
+
+      "default": 0,
+
+      "group": "HornGeometry",
+
+      "description": "Final rotation of computed profile about point [0, r0].",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.1 Horn geometry (PDF p.18)",
+
+          "quote-hint": "Rot = 0 ex Final rotation..."
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "GCurve.Type",
+
+      "type": "enum",
+
+      "domain": {
+
+        "enum": [
+
+          1,
+
+          2
+
+        ],
+
+        "meaning": {
+
+          "1": "superellipse (uses GCurve.SE.* items)",
+
+          "2": "superformula (uses GCurve.SF.* items)"
+
+        }
+
+      },
+
+      "group": "HornGeometry",
+
+      "description": "Enables guiding-curve mode and selects guiding curve family; if omitted, explicit definition is used.",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "2.1.3 Implicit coverage definition (PDF p.11)",
+
+          "quote-hint": "coverage angle ... automatically calculated ... guiding curve"
+
+        },
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.1 Horn geometry (PDF p.18)",
+
+          "quote-hint": "Default: not defined (=using explicit shape definition)"
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "GCurve.Dist",
+
+      "type": "expr",
+
+      "unit": "mm|fraction",
+
+      "group": "HornGeometry",
+
+      "description": "Distance of guiding curve from throat plane; values in (0,1) interpreted as fraction of horn length, values >1 as mm.",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.1 Horn geometry (PDF p.18)",
+
+          "quote-hint": "If set in <0,1>... fractional ... If >1 ... [mm]"
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "GCurve.Width",
+
+      "type": "float",
+
+      "unit": "mm",
+
+      "group": "HornGeometry",
+
+      "description": "Absolute guiding curve width (x-axis size).",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.1 Horn geometry (PDF p.18)",
+
+          "quote-hint": "GCurve.Width f Sets the absolute size..."
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "GCurve.AspectRatio",
+
+      "type": "float",
+
+      "default": 1,
+
+      "group": "HornGeometry",
+
+      "description": "Guiding curve height/width ratio (scales curve in one direction depending on curve type).",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.1 Horn geometry (PDF p.18)",
+
+          "quote-hint": "GCurve.AspectRatio = 1 f"
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "GCurve.SE.n",
+
+      "type": "float",
+
+      "default": 3,
+
+      "domain": {
+
+        "min": 2
+
+      },
+
+      "group": "HornGeometry",
+
+      "description": "Exponent of guiding superellipse (must be >= 2).",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.1 Horn geometry (PDF p.18)",
+
+          "quote-hint": "GCurve.SE.n = 3 f (>= 2)"
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "GCurve.SF",
+
+      "type": "list<float>",
+
+      "domain": {
+
+        "length": 6,
+
+        "order": [
+
+          "a",
+
+          "b",
+
+          "m",
+
+          "n1",
+
+          "n2",
+
+          "n3"
+
+        ],
+
+        "note": "In this definition m=m1=m2."
+
+      },
+
+      "group": "HornGeometry",
+
+      "description": "Superformula definition as 6-number array (a,b,m,n1,n2,n3).",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.1 Horn geometry (PDF p.18)",
+
+          "quote-hint": "GCurve.SF f[] ... array of six numbers"
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "GCurve.SF.a",
+
+      "type": "float",
+
+      "group": "HornGeometry",
+
+      "description": "Superformula parameter a (alternate named-parameter form).",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.1 Horn geometry (PDF p.18)",
+
+          "quote-hint": "GCurve.SF.a ... Alternate definition..."
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "GCurve.SF.b",
+
+      "type": "float",
+
+      "group": "HornGeometry",
+
+      "description": "Superformula parameter b (alternate named-parameter form).",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.1 Horn geometry (PDF p.18)",
+
+          "quote-hint": "GCurve.SF.b ... Alternate definition..."
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "GCurve.SF.m1",
+
+      "type": "float",
+
+      "group": "HornGeometry",
+
+      "description": "Superformula parameter m1 (alternate named-parameter form).",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.1 Horn geometry (PDF p.18)",
+
+          "quote-hint": "GCurve.SF.m1 ... Alternate definition..."
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "GCurve.SF.m2",
+
+      "type": "float",
+
+      "group": "HornGeometry",
+
+      "description": "Superformula parameter m2 (alternate named-parameter form).",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.1 Horn geometry (PDF p.18)",
+
+          "quote-hint": "GCurve.SF.m2 ... Alternate definition..."
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "GCurve.SF.n1",
+
+      "type": "float",
+
+      "group": "HornGeometry",
+
+      "description": "Superformula parameter n1 (alternate named-parameter form).",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.1 Horn geometry (PDF p.18)",
+
+          "quote-hint": "GCurve.SF.n1 ... Alternate definition..."
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "GCurve.SF.n2",
+
+      "type": "float",
+
+      "group": "HornGeometry",
+
+      "description": "Superformula parameter n2 (alternate named-parameter form).",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.1 Horn geometry (PDF p.18)",
+
+          "quote-hint": "GCurve.SF.n2 ... Alternate definition..."
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "GCurve.SF.n3",
+
+      "type": "float",
+
+      "group": "HornGeometry",
+
+      "description": "Superformula parameter n3 (alternate named-parameter form).",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.1 Horn geometry (PDF p.18)",
+
+          "quote-hint": "GCurve.SF.n3 ... Alternate definition..."
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "GCurve.Rot",
+
+      "type": "float",
+
+      "unit": "deg",
+
+      "default": 0,
+
+      "group": "HornGeometry",
+
+      "description": "Rotation of the guiding curve counter-clockwise.",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.1 Horn geometry (PDF p.18)",
+
+          "quote-hint": "GCurve.Rot = 0 f"
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "CircArc.TermAngle",
+
+      "type": "expr",
+
+      "unit": "deg",
+
+      "default": 1,
+
+      "group": "HornGeometry",
+
+      "description": "Mouth terminal angle for circular-arc profile (only for Throat.Profile=3).",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.1 Horn geometry (PDF p.18)",
+
+          "quote-hint": "Only for Throat.Profile=3"
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "CircArc.Radius",
+
+      "type": "expr",
+
+      "unit": "mm",
+
+      "group": "HornGeometry",
+
+      "description": "Explicit circular-arc radius (only for Throat.Profile=3).",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.1 Horn geometry (PDF p.18)",
+
+          "quote-hint": "CircArc.Radius ex Explicit radius..."
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "Morph.TargetShape",
+
+      "type": "enum",
+
+      "default": 0,
+
+      "domain": {
+
+        "enum": [
+
+          0,
+
+          1,
+
+          2
+
+        ],
+
+        "meaning": {
+
+          "0": "no morph",
+
+          "1": "morph to rectangle",
+
+          "2": "morph to circle"
+
+        }
+
+      },
+
+      "group": "Morph",
+
+      "description": "Selects whether the mouth outline is morphed to rectangle/circle.",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.2 Morph feature (PDF p.19)",
+
+          "quote-hint": "Morph.TargetShape = 0 ..."
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "Morph.TargetWidth",
+
+      "type": "float",
+
+      "unit": "mm",
+
+      "default": 0,
+
+      "group": "Morph",
+
+      "description": "Requested final mouth width; 0 keeps raw width.",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.2 Morph feature (PDF p.19)",
+
+          "quote-hint": "Morph.TargetWidth = 0 f ... 0 = keep raw width"
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "Morph.TargetHeight",
+
+      "type": "float",
+
+      "unit": "mm",
+
+      "default": 0,
+
+      "group": "Morph",
+
+      "description": "Requested final mouth height; 0 keeps raw height.",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.2 Morph feature (PDF p.19)",
+
+          "quote-hint": "Morph.TargetHeight = 0 f ... 0 = keep raw height"
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "Morph.CornerRadius",
+
+      "type": "float",
+
+      "unit": "mm",
+
+      "default": 35,
+
+      "group": "Morph",
+
+      "description": "Corner radius used for rectangular morph target.",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.2 Morph feature (PDF p.19)",
+
+          "quote-hint": "Morph.CornerRadius = 35 f Corner radius for a rectangular outline"
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "Morph.FixedPart",
+
+      "type": "expr",
+
+      "default": 0,
+
+      "domain": {
+
+        "min": 0,
+
+        "max": 1
+
+      },
+
+      "group": "Morph",
+
+      "description": "Fraction of horn length from throat kept fixed during morph (0\u20131).",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.2 Morph feature (PDF p.19)",
+
+          "quote-hint": "Set as a number between 0 - 1"
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "Morph.Rate",
+
+      "type": "expr",
+
+      "default": 3,
+
+      "domain": {
+
+        "min": 1
+
+      },
+
+      "group": "Morph",
+
+      "description": "Morph transition rate; minimum documented as 1.",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.2 Morph feature (PDF p.19)",
+
+          "quote-hint": "Minimum is 1"
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "Morph.AllowShrinkage",
+
+      "type": "bool",
+
+      "default": 0,
+
+      "group": "Morph",
+
+      "description": "If false, target size is auto-enlarged to avoid any shrinkage; if true, shrinkage is allowed.",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.2 Morph feature (PDF p.19)",
+
+          "quote-hint": "Morph.AllowShrinkage = 0 b ..."
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "Rollback",
+
+      "type": "bool",
+
+      "default": 0,
+
+      "group": "Rollback",
+
+      "description": "Activates mouth rollback; documented as vital for free standing horns.",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.3 Mouth rollback (PDF p.19)",
+
+          "quote-hint": "Rollback = 0 b ... Vital for free standing horns"
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "Rollback.StartAt",
+
+      "type": "expr",
+
+      "default": 0.5,
+
+      "group": "Rollback",
+
+      "description": "Fraction of profile curve-length at which rollback starts (not axial length).",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.3 Mouth rollback (PDF p.19)",
+
+          "quote-hint": "Fraction ... not the axial length but ... along the profile curve"
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "Rollback.Angle",
+
+      "type": "expr",
+
+      "unit": "deg",
+
+      "default": 180,
+
+      "group": "Rollback",
+
+      "description": "Desired terminating wall angle relative to axis (180 means half circle total).",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.3 Mouth rollback (PDF p.19)",
+
+          "quote-hint": "Desired terminating wall angle... 180 ... half circle"
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "Rollback.Exp",
+
+      "type": "expr",
+
+      "group": "Rollback",
+
+      "description": "Additional rollback shaping exponent (appears in ESP demo CFG).",
+
+      "sources": [
+
+        {
+
+          "source": "Ath Application Note 1 (AP1)",
+
+          "section": "ESP demo script snippet (PDF p.3)",
+
+          "quote-hint": "Rollback.Exp = 1.5"
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "Mesh.Quadrants",
+
+      "type": "enum",
+
+      "default": 1,
+
+      "domain": {
+
+        "enum": [
+
+          1,
+
+          12,
+
+          14,
+
+          1234
+
+        ]
+
+      },
+
+      "group": "MeshGeometry",
+
+      "description": "Selects which quadrants of the 3D mesh are generated/used.",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.4 Mesh generator (PDF p.20)",
+
+          "quote-hint": "Mesh.Quadrants = 1 i ... 1/12/14/1234"
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "Mesh.AngularSegments",
+
+      "type": "int",
+
+      "domain": {
+
+        "multipleOf": 4,
+
+        "note": "Documented as checked and adjusted automatically; typical value 100."
+
+      },
+
+      "group": "MeshGeometry",
+
+      "description": "Geometry grid density: number of profiles around the waveguide (must be multiple of 4).",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.4 Mesh generator (PDF p.20)",
+
+          "quote-hint": "must be multiple of 4 ... adjusted automatically ... Typical value: 100"
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "Mesh.LengthSegments",
+
+      "type": "int",
+
+      "group": "MeshGeometry",
+
+      "description": "Geometry grid density: number of slices along the length; slice spacing is set by Mesh.ZMapPoints.",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.4 Mesh generator (PDF p.20)",
+
+          "quote-hint": "Mesh.LengthSegments i ... Distances ... set by Mesh.ZMapPoints"
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "Mesh.ZMapPoints",
+
+      "type": "list<float>",
+
+      "group": "MeshGeometry",
+
+      "description": "Defines distribution of slice distances along the length (referenced as controlling slice spacing).",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.4 Mesh generator (PDF p.20)",
+
+          "quote-hint": "Distances between individual slices are set by Mesh.ZMapPoints"
+
+        },
+
+        {
+
+          "source": "Ath Application Note 1 (AP1)",
+
+          "section": "ESP demo script snippet (PDF p.3)",
+
+          "quote-hint": "Mesh.ZMapPoints = 0.5,0.4,0.5,0.98"
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "Mesh.CornerSegments",
+
+      "type": "int",
+
+      "group": "MeshGeometry",
+
+      "description": "Number of profiles reserved for rounded-rectangle corners when Morph.TargetShape=1.",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.4 Mesh generator (PDF p.20)",
+
+          "quote-hint": "if Morph.TargetShape=1"
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "Mesh.ThroatSegments",
+
+      "type": "int",
+
+      "group": "MeshGeometry",
+
+      "description": "Number of slices reserved for throat extension (Throat.Ext.*).",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.4 Mesh generator (PDF p.20)",
+
+          "quote-hint": "reserved for the throat extension ... see Throat.Ext.*"
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "Mesh.ThroatResolution",
+
+      "type": "float",
+
+      "unit": "mm",
+
+      "default": 5,
+
+      "group": "MeshGeometry",
+
+      "description": "Nominal mesh resolution at z=0.",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.4 Mesh generator (PDF p.20)",
+
+          "quote-hint": "Mesh.ThroatResolution = 5 f"
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "Mesh.MouthResolution",
+
+      "type": "float",
+
+      "unit": "mm",
+
+      "default": 8,
+
+      "group": "MeshGeometry",
+
+      "description": "Nominal mesh resolution at z=Length; interpolated from throat to mouth.",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.4 Mesh generator (PDF p.20)",
+
+          "quote-hint": "Mesh.MouthResolution = 8 f ... interpolated"
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "Mesh.InterfaceResolution",
+
+      "type": "float",
+
+      "unit": "mm",
+
+      "group": "MeshGeometry",
+
+      "description": "Legacy interface resolution parameter; documented as obsolete and planned for removal.",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.4 Mesh generator (PDF p.20)",
+
+          "quote-hint": "old item Mesh.InterfaceResolution is now obsolete"
+
+        },
+
+        {
+
+          "source": "Tritonia example",
+
+          "section": "Tritonia.txt",
+
+          "quote-hint": "Mesh.InterfaceResolution = 7"
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "Mesh.SubdomainSlices",
+
+      "type": "list<int>",
+
+      "group": "MeshGeometry",
+
+      "description": "Slice indices where subdomain interfaces are placed; if omitted defaults to last slice; empty list disables interfaces.",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.4 Mesh generator (PDF p.20)",
+
+          "quote-hint": "Default: not defined, i.e. Mesh.LengthSegments-1 ... empty list disables"
+
+        },
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "3.1.1 Subdomains and interfaces (PDF p.13)",
+
+          "quote-hint": "use Mesh.SubdomainSlices, Mesh.InterfaceOffset, Mesh.InterfaceDraw"
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "Mesh.InterfaceOffset",
+
+      "type": "list<float>",
+
+      "unit": "mm",
+
+      "group": "MeshGeometry",
+
+      "description": "Forward protrusions of interfaces; array length must correspond to Mesh.SubdomainSlices; default all zero if undefined.",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.4 Mesh generator (PDF p.20)",
+
+          "quote-hint": "same length as Mesh.SubdomainSlices ... Default ... all zero"
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "Mesh.InterfaceDraw",
+
+      "type": "list<float>",
+
+      "unit": "mm",
+
+      "group": "MeshGeometry",
+
+      "description": "Forward-draw depths of interfaces; array length must correspond to Mesh.SubdomainSlices; default all zero if undefined.",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.4 Mesh generator (PDF p.20)",
+
+          "quote-hint": "same length as Mesh.SubdomainSlices ... Default ... all zero"
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "Mesh.RearShape",
+
+      "type": "enum",
+
+      "default": 1,
+
+      "domain": {
+
+        "enum": [
+
+          1,
+
+          2
+
+        ],
+
+        "meaning": {
+
+          "1": "full model",
+
+          "2": "flat disc"
+
+        }
+
+      },
+
+      "group": "MeshGeometry",
+
+      "description": "Rear side shape of the free-standing horn model.",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.4 Mesh generator (PDF p.20)",
+
+          "quote-hint": "Mesh.RearShape = 1 ... 1=full model ... 2=flat disc"
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "Mesh.WallThickness",
+
+      "type": "float",
+
+      "unit": "mm",
+
+      "default": 5,
+
+      "group": "MeshGeometry",
+
+      "description": "Wall thickness for free-standing horn model.",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.4 Mesh generator (PDF p.20)",
+
+          "quote-hint": "Mesh.WallThickness = 5 f"
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "Mesh.RearResolution",
+
+      "type": "float",
+
+      "unit": "mm",
+
+      "default": 10,
+
+      "group": "MeshGeometry",
+
+      "description": "Rear wall mesh resolution for free-standing horn model.",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.4 Mesh generator (PDF p.20)",
+
+          "quote-hint": "Mesh.RearResolution = 10 f"
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "Mesh.Enclosure",
+
+      "type": "object",
+
+      "group": "EnclosureGeometry",
+
+      "description": "Optional enclosure definition (since Ath 4.8.2): either pre-defined box or user-defined ground plan (Plan).",
+
+      "domain": {
+
+        "properties": {
+
+          "Spacing": {
+
+            "type": "list<float>",
+
+            "unit": "mm",
+
+            "length": 4,
+
+            "meaning": [
+
+              "left",
+
+              "top",
+
+              "right",
+
+              "bottom"
+
+            ]
+
+          },
+
+          "Depth": {
+
+            "type": "float",
+
+            "unit": "mm"
+
+          },
+
+          "EdgeRadius": {
+
+            "type": "float",
+
+            "unit": "mm"
+
+          },
+
+          "EdgeType": {
+
+            "type": "enum",
+
+            "enum": [
+
+              1,
+
+              2
+
+            ],
+
+            "default": 1,
+
+            "meaning": {
+
+              "1": "rounded",
+
+              "2": "chamfered"
+
+            }
+
+          },
+
+          "FrontResolution": {
+
+            "type": "list<float>",
+
+            "unit": "mm",
+
+            "length": 4,
+
+            "meaning": [
+
+              "q1",
+
+              "q2",
+
+              "q3",
+
+              "q4"
+
+            ]
+
+          },
+
+          "BackResolution": {
+
+            "type": "list<float>",
+
+            "unit": "mm",
+
+            "length": 4,
+
+            "meaning": [
+
+              "q1",
+
+              "q2",
+
+              "q3",
+
+              "q4"
+
+            ]
+
+          },
+
+          "Plan": {
+
+            "type": "string",
+
+            "note": "Name of a user-defined plan item (ground plan script)."
+
+          }
+
+        },
+
+        "discriminator": {
+
+          "field": "Plan",
+
+          "note": "Presence/absence switches between pre-defined enclosure and user-defined plan."
+
+        }
+
+      },
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "6.12 Adding enclosures (PDF p.55)",
+
+          "quote-hint": "Since Ath 4.8.2 ... item Mesh.Enclosure ... two ways ... Plan"
+
+        },
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "6.12.1 Example (PDF p.55)",
+
+          "quote-hint": "Mesh.Enclosure = { Spacing=... Depth=... EdgeRadius=... EdgeType=... FrontResolution=... BackResolution=... }"
+
+        },
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "6.12.2 Example (PDF p.57)",
+
+          "quote-hint": "Mesh.Enclosure = { Plan = my_plan Spacing=... FrontResolution=... BackResolution=... }"
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "Source.Shape",
+
+      "type": "enum",
+
+      "default": 1,
+
+      "domain": {
+
+        "enum": [
+
+          1,
+
+          2
+
+        ],
+
+        "meaning": {
+
+          "1": "spherical cap",
+
+          "2": "flat disc"
+
+        }
+
+      },
+
+      "group": "OtherGeometry",
+
+      "description": "Driving wavefront shape at throat (geometry of driving elements).",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.5 Acoustic Source definition (PDF p.22)",
+
+          "quote-hint": "Source.Shape = 1 ... 1=spherical cap 2=flat disc"
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "Source.Radius",
+
+      "type": "float",
+
+      "unit": "mm",
+
+      "default": -1,
+
+      "group": "OtherGeometry",
+
+      "description": "Radius of driving spherical cap; -1 means auto (matching throat angle).",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.5 Acoustic Source definition (PDF p.22)",
+
+          "quote-hint": "Source.Radius = -1 ... calculated automatically"
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "Source.Curv",
+
+      "type": "enum",
+
+      "default": 0,
+
+      "domain": {
+
+        "enum": [
+
+          -1,
+
+          0,
+
+          1
+
+        ],
+
+        "meaning": {
+
+          "-1": "concave",
+
+          "0": "automatic",
+
+          "1": "convex"
+
+        }
+
+      },
+
+      "group": "OtherGeometry",
+
+      "description": "Curvature sign of spherical cap when Source.Shape=1.",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.5 Acoustic Source definition (PDF p.22)",
+
+          "quote-hint": "Source.Curv = 0 ... 1 convex -1 concave 0 automatic"
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "Source.Velocity",
+
+      "type": "enum",
+
+      "default": 1,
+
+      "domain": {
+
+        "enum": [
+
+          1,
+
+          2
+
+        ],
+
+        "meaning": {
+
+          "1": "normal to element surface",
+
+          "2": "axial (pistonic z)"
+
+        }
+
+      },
+
+      "group": "OtherGeometry",
+
+      "description": "Velocity direction of driving elements.",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.5 Acoustic Source definition (PDF p.22)",
+
+          "quote-hint": "Source.Velocity = 1 ... 1 normal ... 2 axial"
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "Source.Contours",
+
+      "type": "string",
+
+      "group": "OtherGeometry",
+
+      "description": "Overrides Source.Shape/Radius/Curv when present (except Source.Velocity); supports Source Definition Script and ::esp usage.",
+
+      "sources": [
+
+        {
+
+          "source": "Ath 4.8.2 User Guide",
+
+          "section": "4.1.5 Acoustic Source definition (PDF p.22)",
+
+          "quote-hint": "overrides all the other Source.* parameters except Source.Velocity"
+
+        },
+
+        {
+
+          "source": "Ath Application Note 1 (AP1)",
+
+          "section": "ESP integration (PDF p.3)",
+
+          "quote-hint": "Source.Contours = ::esp <esp_section>"
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "OSSE",
+
+      "type": "object",
+
+      "group": "HornGeometry",
+
+      "description": "Example-style OS-SE parameter block used in supplied/author examples (maps to OS-SE formula parameters).",
+
+      "domain": {
+
+        "properties": {
+
+          "L": {
+
+            "type": "float",
+
+            "unit": "mm",
+
+            "meaning": "waveguide length"
+
+          },
+
+          "r0": {
+
+            "type": "float",
+
+            "unit": "mm",
+
+            "meaning": "throat radius"
+
+          },
+
+          "a0": {
+
+            "type": "float",
+
+            "unit": "deg",
+
+            "meaning": "throat opening half-angle"
+
+          },
+
+          "a": {
+
+            "type": "expr",
+
+            "unit": "deg",
+
+            "meaning": "nominal coverage half-angle (may vary with p in examples)"
+
+          },
+
+          "s": {
+
+            "type": "expr",
+
+            "meaning": "termination flare amount"
+
+          },
+
+          "n": {
+
+            "type": "float",
+
+            "domain": {
+
+              "min": 2
+
+            },
+
+            "meaning": "termination exponent"
+
+          },
+
+          "q": {
+
+            "type": "float",
+
+            "meaning": "termination truncation coefficient"
+
+          },
+
+          "k": {
+
+            "type": "float",
+
+            "meaning": "throat expansion factor"
+
+          }
+
+        }
+
+      },
+
+      "sources": [
+
+        {
+
+          "source": "Tritonia example",
+
+          "section": "Tritonia.txt",
+
+          "quote-hint": "OSSE = { L=... r0=... a0=... a=... s=... n=... q=... k=... }"
+
+        },
+
+        {
+
+          "source": "OS-SE Waveguide",
+
+          "section": "Parameter definitions (PDF p.2\u2013p.5)",
+
+          "quote-hint": "r0, \u03b10, \u03b1, k, L, s, n, q"
+
+        },
+
+        {
+
+          "source": "ATH website",
+
+          "section": "Waveguide Formula page",
+
+          "quote-hint": "Ath allows variation of formula parameters ... OS-SE context"
+
+        }
+
+      ]
+
+    },
+
+    {
+
+      "key": "R-OSSE",
+
+      "type": "object",
+
+      "group": "HornGeometry",
+
+      "description": "Example-style R-OSSE parameter block (free-standing axisymmetric profile parameters).",
+
+      "domain": {
+
+        "properties": {
+
+          "R": {
+
+            "type": "float",
+
+            "unit": "mm",
+
+            "meaning": "waveguide outer radius"
+
+          },
+
+          "r0": {
+
+            "type": "float",
+
+            "unit": "mm",
+
+            "meaning": "throat radius"
+
+          },
+
+          "a0": {
+
+            "type": "float",
+
+            "unit": "deg",
+
+            "meaning": "throat opening half-angle"
+
+          },
+
+          "a": {
+
+            "type": "float",
+
+            "unit": "deg",
+
+            "meaning": "nominal coverage half-angle"
+
+          },
+
+          "k": {
+
+            "type": "float",
+
+            "meaning": "throat expansion factor"
+
+          },
+
+          "r": {
+
+            "type": "float",
+
+            "meaning": "apex radius factor"
+
+          },
+
+          "m": {
+
+            "type": "float",
+
+            "meaning": "apex shift factor"
+
+          },
+
+          "b": {
+
+            "type": "float",
+
+            "meaning": "bending factor"
+
+          },
+
+          "q": {
+
+            "type": "float",
+
+            "meaning": "throat shape factor"
+
+          }
+
+        }
+
+      },
+
+      "sources": [
+
+        {
+
+          "source": "R-OSSE Acoustic Waveguide",
+
+          "section": "R-OSSE design formulae table (PDF p.4)",
+
+          "quote-hint": "R, a, r0, a0, k, r, m, b, q"
+
+        },
+
+        {
+
+          "source": "WUT Koax Insert WG V50",
+
+          "section": "WUT_KoaxInsertWG_V50.md",
+
+          "quote-hint": "R-OSSE = { R=... r0=... a0=... a=... k=... r=... m=... b=... q=... }"
+
+        }
+
+      ]
+
+    }
+
+  ]
+
+}
+

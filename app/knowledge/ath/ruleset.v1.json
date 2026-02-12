@@ -1,0 +1,276 @@
+{
+  "ruleset_version": "ath-geometry-constraints.v1",
+  "helpers": {
+    "isDefined(key)": "true if key exists (not just default).",
+    "get(objKey, fieldName)": "reads a nested field from an object-parameter.",
+    "isEmptyList(key)": "true if explicitly set to an empty list.",
+    "len(key)": "list length.",
+    "isExprConstant(key)": "expression has no variable p."
+  },
+  "rules": [
+    {
+      "id": "validity_length_required",
+      "scope": "validity",
+      "when": "!isDefined(Length) && !isDefined(OSSE) && !isDefined(R-OSSE)",
+      "then": [
+        "require(Length)"
+      ],
+      "severity": "fatal",
+      "rationale": "Length is mandatory in explicit parametrization."
+    },
+    {
+      "id": "visibility_profile_osse",
+      "scope": "visibility",
+      "when": "Throat.Profile == 1",
+      "then": [
+        "show(Term.s)",
+        "show(Term.q)",
+        "show(Term.n)",
+        "show(OS.k)",
+        "hide(CircArc.TermAngle)",
+        "hide(CircArc.Radius)"
+      ],
+      "severity": "info",
+      "rationale": "OS-SE mode shows Term.* and OS.k."
+    },
+    {
+      "id": "visibility_profile_not_osse",
+      "scope": "visibility",
+      "when": "!isDefined(Throat.Profile) || Throat.Profile != 1",
+      "then": [
+        "hide(Term.s)",
+        "hide(Term.q)",
+        "hide(Term.n)",
+        "hide(OS.k)"
+      ],
+      "severity": "info",
+      "rationale": "Term.* is hidden outside OS-SE mode."
+    },
+    {
+      "id": "visibility_profile_circarc",
+      "scope": "visibility",
+      "when": "Throat.Profile == 3",
+      "then": [
+        "show(CircArc.TermAngle)",
+        "show(CircArc.Radius)"
+      ],
+      "severity": "info",
+      "rationale": "Circular-arc mode shows CircArc.*."
+    },
+    {
+      "id": "visibility_profile_not_circarc",
+      "scope": "visibility",
+      "when": "!isDefined(Throat.Profile) || Throat.Profile != 3",
+      "then": [
+        "hide(CircArc.TermAngle)",
+        "hide(CircArc.Radius)"
+      ],
+      "severity": "info",
+      "rationale": "CircArc.* hidden unless profile=3."
+    },
+    {
+      "id": "visibility_source_contours_override",
+      "scope": "visibility",
+      "when": "isDefined(Source.Contours)",
+      "then": [
+        "hide(Source.Shape)",
+        "hide(Source.Radius)",
+        "hide(Source.Curv)",
+        "show(Source.Velocity)"
+      ],
+      "severity": "info",
+      "rationale": "Source.Contours overrides manual source-shape fields."
+    },
+    {
+      "id": "visibility_guidingcurve_enabled",
+      "scope": "visibility",
+      "when": "isDefined(GCurve.Type)",
+      "then": [
+        "show(GCurve.Dist)",
+        "show(GCurve.Width)",
+        "show(GCurve.AspectRatio)",
+        "show(GCurve.Rot)"
+      ],
+      "severity": "info",
+      "rationale": "Guiding curve mode exposes guiding-curve parameters."
+    },
+    {
+      "id": "visibility_guidingcurve_disabled",
+      "scope": "visibility",
+      "when": "!isDefined(GCurve.Type)",
+      "then": [
+        "hide(GCurve.Dist)",
+        "hide(GCurve.Width)",
+        "hide(GCurve.AspectRatio)",
+        "hide(GCurve.SE.n)",
+        "hide(GCurve.SF)",
+        "hide(GCurve.SF.a)",
+        "hide(GCurve.SF.b)",
+        "hide(GCurve.SF.m1)",
+        "hide(GCurve.SF.m2)",
+        "hide(GCurve.SF.n1)",
+        "hide(GCurve.SF.n2)",
+        "hide(GCurve.SF.n3)",
+        "hide(GCurve.Rot)"
+      ],
+      "severity": "info",
+      "rationale": "Without GCurve.Type the explicit coverage mode is active."
+    },
+    {
+      "id": "visibility_guidingcurve_superellipse",
+      "scope": "visibility",
+      "when": "GCurve.Type == 1",
+      "then": [
+        "show(GCurve.SE.n)",
+        "hide(GCurve.SF)",
+        "hide(GCurve.SF.a)",
+        "hide(GCurve.SF.b)",
+        "hide(GCurve.SF.m1)",
+        "hide(GCurve.SF.m2)",
+        "hide(GCurve.SF.n1)",
+        "hide(GCurve.SF.n2)",
+        "hide(GCurve.SF.n3)"
+      ],
+      "severity": "info",
+      "rationale": "Type 1 uses Superellipse parameters."
+    },
+    {
+      "id": "visibility_guidingcurve_superformula",
+      "scope": "visibility",
+      "when": "GCurve.Type == 2",
+      "then": [
+        "hide(GCurve.SE.n)",
+        "show(GCurve.SF)",
+        "show(GCurve.SF.a)",
+        "show(GCurve.SF.b)",
+        "show(GCurve.SF.m1)",
+        "show(GCurve.SF.m2)",
+        "show(GCurve.SF.n1)",
+        "show(GCurve.SF.n2)",
+        "show(GCurve.SF.n3)"
+      ],
+      "severity": "info",
+      "rationale": "Type 2 uses Superformula parameters."
+    },
+    {
+      "id": "validity_guidingcurve_requires_dist_and_width",
+      "scope": "validity",
+      "when": "isDefined(GCurve.Type) && (!isDefined(GCurve.Dist) || !isDefined(GCurve.Width))",
+      "then": [
+        "warn(\"Guiding-Curve mode requires GCurve.Dist and GCurve.Width.\")"
+      ],
+      "severity": "fatal",
+      "rationale": "ATH run fails when guiding-curve dimensions are missing."
+    },
+    {
+      "id": "validity_explicit_requires_coverageangle",
+      "scope": "validity",
+      "when": "!isDefined(GCurve.Type) && !isDefined(Coverage.Angle)",
+      "then": [
+        "warn(\"Without guiding curve, Coverage.Angle should be explicitly set.\")"
+      ],
+      "severity": "warn",
+      "rationale": "Coverage angle is expected in explicit mode."
+    },
+    {
+      "id": "visibility_morph_off",
+      "scope": "visibility",
+      "when": "!isDefined(Morph.TargetShape) || Morph.TargetShape == 0",
+      "then": [
+        "hide(Morph.TargetWidth)",
+        "hide(Morph.TargetHeight)",
+        "hide(Morph.CornerRadius)",
+        "hide(Morph.FixedPart)",
+        "hide(Morph.Rate)",
+        "hide(Morph.AllowShrinkage)"
+      ],
+      "severity": "info",
+      "rationale": "No-morph mode hides target-shape details."
+    },
+    {
+      "id": "visibility_morph_on",
+      "scope": "visibility",
+      "when": "isDefined(Morph.TargetShape) && Morph.TargetShape != 0",
+      "then": [
+        "show(Morph.TargetWidth)",
+        "show(Morph.TargetHeight)",
+        "show(Morph.CornerRadius)",
+        "show(Morph.FixedPart)",
+        "show(Morph.Rate)",
+        "show(Morph.AllowShrinkage)"
+      ],
+      "severity": "info",
+      "rationale": "Morph-enabled modes expose morph detail fields."
+    },
+    {
+      "id": "visibility_rollback_off",
+      "scope": "visibility",
+      "when": "!isDefined(Rollback) || Rollback == 0",
+      "then": [
+        "hide(Rollback.StartAt)"
+      ],
+      "severity": "info",
+      "rationale": "Rollback details are hidden while rollback is disabled."
+    },
+    {
+      "id": "visibility_rollback_on",
+      "scope": "visibility",
+      "when": "isDefined(Rollback) && Rollback != 0",
+      "then": [
+        "show(Rollback.StartAt)"
+      ],
+      "severity": "info",
+      "rationale": "Rollback.StartAt shown when rollback is enabled."
+    },
+    {
+      "id": "visibility_mesh_interfaceoffset_off",
+      "scope": "visibility",
+      "when": "!isDefined(Mesh.Enclosure)",
+      "then": [
+        "hide(Mesh.InterfaceOffset)"
+      ],
+      "severity": "info",
+      "rationale": "Interface offset only applies when enclosure mesh is used."
+    },
+    {
+      "id": "visibility_mesh_interfaceoffset_on",
+      "scope": "visibility",
+      "when": "isDefined(Mesh.Enclosure)",
+      "then": [
+        "show(Mesh.InterfaceOffset)"
+      ],
+      "severity": "info",
+      "rationale": "Enable interface offset with enclosure mesh."
+    },
+    {
+      "id": "sweepability_numeric_baseline",
+      "scope": "sweepability",
+      "when": "isDefined(Length)",
+      "then": [
+        "show(Length)",
+        "show(Coverage.Angle)",
+        "show(Throat.Diameter)",
+        "show(Throat.Angle)",
+        "show(GCurve.Type)",
+        "show(GCurve.Dist)",
+        "show(GCurve.Width)"
+      ],
+      "severity": "info",
+      "rationale": "Expose common sweep candidates in baseline mode."
+    }
+  ],
+  "runner_restrictions": {
+    "runner_mode": "AkabakImportFixedSource",
+    "locked_or_hidden_keys": [
+      "ABEC.AkabakMode",
+      "LE",
+      "LE.Voltage",
+      "Source.Shape",
+      "Source.Radius",
+      "Source.Curv",
+      "Source.Contours",
+      "Source.Velocity"
+    ],
+    "rationale": "Runner compatibility mode enforces fixed source/drive block."
+  }
+}
