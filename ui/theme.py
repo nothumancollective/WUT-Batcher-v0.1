@@ -1,0 +1,225 @@
+"""Theme application helpers for Qt Widgets and Windows titlebar dark mode."""
+
+from __future__ import annotations
+
+import os
+import sys
+from typing import Tuple
+
+from ui.theme_tokens import DEFAULT_THEME, ThemeTokens, font_family_stack
+
+try:
+    from PySide6.QtGui import QColor, QFont, QFontInfo, QPalette
+    from PySide6.QtWidgets import QApplication, QWidget
+except ImportError as exc:  # pragma: no cover
+    raise RuntimeError("PySide6 is required for theme utilities.") from exc
+
+
+def configure_windows_qt_darkmode_env() -> None:
+    """Qt-way hint for dark window decorations on Windows (before QApplication)."""
+    if sys.platform != "win32":
+        return
+    if os.environ.get("QT_QPA_PLATFORM"):
+        return
+    os.environ["QT_QPA_PLATFORM"] = "windows:darkmode=1"
+
+
+def build_palette(tokens: ThemeTokens = DEFAULT_THEME) -> QPalette:
+    colors = tokens.colors
+    palette = QPalette()
+    palette.setColor(QPalette.Window, QColor(colors["bg"]))
+    palette.setColor(QPalette.WindowText, QColor(colors["text"]))
+    palette.setColor(QPalette.Base, QColor(colors["surface"]))
+    palette.setColor(QPalette.AlternateBase, QColor(colors["surface2"]))
+    palette.setColor(QPalette.ToolTipBase, QColor(colors["surface2"]))
+    palette.setColor(QPalette.ToolTipText, QColor(colors["text"]))
+    palette.setColor(QPalette.Text, QColor(colors["text"]))
+    palette.setColor(QPalette.Button, QColor(colors["button_bg"]))
+    palette.setColor(QPalette.ButtonText, QColor(colors["button_text"]))
+    palette.setColor(QPalette.BrightText, QColor(colors["danger"]))
+    palette.setColor(QPalette.Highlight, QColor(colors["selection"]))
+    palette.setColor(QPalette.HighlightedText, QColor(colors["button_text"]))
+    palette.setColor(QPalette.Link, QColor(colors["accent"]))
+
+    disabled_text = QColor(colors["muted"])
+    palette.setColor(QPalette.Disabled, QPalette.Text, disabled_text)
+    palette.setColor(QPalette.Disabled, QPalette.ButtonText, disabled_text)
+    palette.setColor(QPalette.Disabled, QPalette.WindowText, disabled_text)
+    return palette
+
+
+def _font_css_stack(tokens: ThemeTokens) -> str:
+    return ", ".join(f'"{name}"' for name in font_family_stack(tokens))
+
+
+def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
+    c = tokens.colors
+    s = tokens.spacing
+    r = tokens.radii
+    return f"""
+    QWidget {{
+        background-color: {c['bg']};
+        color: {c['text']};
+        font-size: {int(tokens.typography['font_size_base'])}px;
+        font-family: {_font_css_stack(tokens)};
+    }}
+    QMainWindow {{
+        background-color: {c['bg']};
+    }}
+    QLabel#PageTitle {{
+        font-size: 28px;
+        font-weight: 700;
+    }}
+    QLabel#SectionTitle {{
+        font-size: 18px;
+        font-weight: 700;
+    }}
+    QLabel#MutedText {{
+        color: {c['muted']};
+    }}
+    QFrame#Card {{
+        background-color: {c['surface']};
+        border: 1px solid {c['border']};
+        border-radius: {r['lg']}px;
+    }}
+    QGroupBox {{
+        background-color: {c['surface']};
+        border: 1px solid {c['border']};
+        border-radius: {r['lg']}px;
+        margin-top: {s['lg']}px;
+        padding-top: {s['sm']}px;
+    }}
+    QGroupBox::title {{
+        subcontrol-origin: margin;
+        left: {s['md']}px;
+        padding: 0 {s['xs']}px;
+    }}
+    QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox {{
+        background-color: {c['surface2']};
+        color: {c['text']};
+        border: 1px solid {c['border']};
+        border-radius: {r['md']}px;
+        padding: {s['sm']}px;
+        selection-background-color: {c['selection']};
+        selection-color: {c['button_text']};
+    }}
+    QListWidget, QTableView, QTreeView {{
+        background-color: {c['surface']};
+        border: 1px solid {c['border']};
+        border-radius: {r['md']}px;
+        alternate-background-color: {c['surface2']};
+    }}
+    QHeaderView::section {{
+        background-color: {c['surface2']};
+        color: {c['text']};
+        border: 1px solid {c['border']};
+        padding: {s['sm']}px;
+    }}
+    QPushButton {{
+        background-color: {c['button_bg']};
+        color: {c['button_text']};
+        border: 1px solid {c['button_border']};
+        border-radius: {r['md']}px;
+        padding: {s['sm']}px {s['md']}px;
+        font-weight: 600;
+    }}
+    QPushButton:hover {{
+        background-color: {c['button_hover']};
+    }}
+    QPushButton:pressed {{
+        background-color: {c['button_pressed']};
+    }}
+    QPushButton:disabled {{
+        background-color: {c['button_disabled']};
+        color: #666666;
+    }}
+    QProgressBar {{
+        background-color: {c['surface2']};
+        border: 1px solid {c['border']};
+        border-radius: {r['md']}px;
+        text-align: center;
+    }}
+    QProgressBar::chunk {{
+        background-color: {c['button_bg']};
+        border-radius: {r['sm']}px;
+    }}
+    QStatusBar {{
+        background-color: {c['sidebar']};
+        border-top: 1px solid {c['border']};
+    }}
+    QScrollBar:vertical {{
+        background: {c['surface2']};
+        width: {s['md']}px;
+        margin: {s['xs']}px;
+        border-radius: {r['md']}px;
+    }}
+    QScrollBar::handle:vertical {{
+        background: {c['accent']};
+        border-radius: {r['md']}px;
+        min-height: 20px;
+    }}
+    """
+
+
+def _pick_font(tokens: ThemeTokens) -> QFont:
+    families = font_family_stack(tokens)
+    size = int(tokens.typography.get("font_size_base", 13))
+    for name in families:
+        candidate = QFont(name, size)
+        resolved = QFontInfo(candidate).family()
+        if resolved.lower() == str(name).lower():
+            return candidate
+    return QFont("Segoe UI", size)
+
+
+def apply_theme(app: QApplication, tokens: ThemeTokens = DEFAULT_THEME) -> None:
+    app.setStyle("Fusion")
+    app.setPalette(build_palette(tokens))
+    app.setFont(_pick_font(tokens))
+    app.setStyleSheet(build_stylesheet(tokens))
+
+
+def _win_dwm_set_dark(hwnd: int) -> bool:
+    import ctypes
+
+    dwmapi = ctypes.windll.dwmapi
+    enabled = ctypes.c_int(1)
+    set_attr = dwmapi.DwmSetWindowAttribute
+    for attr in (20, 19):
+        result = set_attr(
+            ctypes.c_void_p(hwnd),
+            ctypes.c_uint(attr),
+            ctypes.byref(enabled),
+            ctypes.sizeof(enabled),
+        )
+        if result == 0:
+            return True
+    return False
+
+
+def apply_windows_dark_titlebar(window: QWidget) -> bool:
+    if sys.platform != "win32":
+        return False
+    try:
+        hwnd = int(window.winId())
+    except Exception:
+        return False
+    try:
+        applied = _win_dwm_set_dark(hwnd)
+    except Exception:
+        return False
+    if not applied:
+        return False
+
+    width = window.width()
+    height = window.height()
+    if width > 32 and height > 32:
+        window.resize(width - 1, height)
+        window.resize(width, height)
+    return True
+
+
+def apply_theme_and_titlebar(app: QApplication, window: QWidget, tokens: ThemeTokens = DEFAULT_THEME) -> None:
+    apply_theme(app, tokens=tokens)
+    apply_windows_dark_titlebar(window)
+

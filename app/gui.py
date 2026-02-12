@@ -9,14 +9,14 @@ import subprocess
 from typing import Dict, List, Optional
 
 from app.doctor_service import run_doctor_checks
-from app.gui_theme import build_stylesheet
 from app.models import AppConfig, Batch, Project
 from app.services import OrchestratorService
 from app.settings_store import UserSettings
+from ui.theme import apply_theme, apply_windows_dark_titlebar, configure_windows_qt_darkmode_env
 
 try:
     from PySide6.QtCore import Qt, Signal
-    from PySide6.QtGui import QAction, QFont, QPixmap
+    from PySide6.QtGui import QPixmap
     from PySide6.QtWidgets import (
         QApplication,
         QCheckBox,
@@ -629,16 +629,19 @@ class GuiController:
     def show_project_manager(self) -> None:
         self.project_manager.refresh()
         self.project_manager.show()
+        apply_windows_dark_titlebar(self.project_manager)
 
     def _open_project(self, project_id: str) -> None:
         project = self.service.repo.load_project(project_id)
         self.main_window.load_project(project)
         self.main_window.show()
+        apply_windows_dark_titlebar(self.main_window)
         self.project_manager.hide()
 
     def _new_project(self) -> None:
         self.main_window.current_project = None
         self.main_window.show()
+        apply_windows_dark_titlebar(self.main_window)
         self.main_window.show_project()
         self.project_manager.hide()
 
@@ -687,21 +690,14 @@ def _run_doctor_for_splash(service: OrchestratorService) -> Dict[str, object]:
     }
 
 
-def _apply_font(app: QApplication) -> None:
-    preferred = QFont("Condor", 10)
-    if preferred.family().lower() == "condor":
-        app.setFont(preferred)
-    else:
-        app.setFont(QFont("Segoe UI", 10))
-
-
 def launch_gui() -> int:
+    configure_windows_qt_darkmode_env()
     app = QApplication.instance() or QApplication([])
-    _apply_font(app)
-    app.setStyleSheet(build_stylesheet())
+    apply_theme(app)
 
     service = OrchestratorService()
     splash = _make_splash(app)
+    apply_windows_dark_titlebar(splash)
     doctor_payload = _run_doctor_for_splash(service)
     splash.showMessage(
         f"Doctor status: {doctor_payload['overall_status']}\nOpening Project Manager...",
@@ -715,6 +711,8 @@ def launch_gui() -> int:
         f"Doctor: {doctor_payload['overall_status']}",
         detail=json.dumps(doctor_payload, indent=2, ensure_ascii=False),
     )
+    apply_windows_dark_titlebar(controller.main_window)
+    apply_windows_dark_titlebar(controller.project_manager)
     splash.finish(controller.project_manager)
     controller.show_project_manager()
     return app.exec()

@@ -108,6 +108,12 @@ def cmd_gui(args: argparse.Namespace) -> int:
     return int(launch_gui())
 
 
+def cmd_theme_preview(args: argparse.Namespace) -> int:
+    from ui.theme_preview import launch_preview
+
+    return int(launch_preview())
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="batch-software")
     parser.add_argument("--config", default="app_config.json", help="Path to app_config.json (optional).")
@@ -179,6 +185,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_gui = sub.add_parser("gui", help="Launch PySide6 orchestrator GUI.")
     p_gui.set_defaults(func=cmd_gui)
+
+    p_theme = sub.add_parser("theme", help="Theme tooling.")
+    sub_theme = p_theme.add_subparsers(dest="theme_cmd", required=True)
+
+    p_theme_preview = sub_theme.add_parser("preview", help="Open visual preview window for current theme.")
+    p_theme_preview.set_defaults(func=cmd_theme_preview)
 
     return parser
 
