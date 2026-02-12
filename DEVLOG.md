@@ -264,3 +264,26 @@
 #### Real-Tools Check
 - Executed `python -m app run-sample --real`.
 - Result: tools unavailable in current settings (`ath_exe`, `akabak_exe`, `vacs_exe` not configured), real run skipped with deterministic error payload.
+
+### Update 9 (Real-Tools Attempt with Provided Paths)
+#### Done
+- Validated tool executables from provided folders:
+  - `C:\Tools\ATH\ath.exe`
+  - `C:\Program Files (x86)\RDTeam\AKABAK\AKABAK.exe`
+  - `C:\Program Files (x86)\RDTeam\VACSVIEWER_32\VACSVIEWER_32.exe`
+- Stored those paths in user settings and executed:
+  - `python -m app run-sample --real --library-root <repo>\\real_tools_library`
+
+#### Result
+- Real run reached ATH stage and failed before AKABAK/VACS:
+  - stage result: `ath failed`
+  - ATH stderr: `ath.cfg: No such file or directory`
+- Manual verification in ATH workdir showed ATH then starts but hits mesh invocation issue:
+  - `error: gmsh call status = 1`
+  - shell parse indicates space-path handling issue for mesh command (`C:\Program ...`)
+
+#### Open Blocker
+- Current ATH integration contract is incomplete for this environment:
+  - runner must prepare ATH runtime control file expectations (`ath.cfg`) per workdir
+  - runner/config must normalize mesh command invocation (gmsh path with spaces) to non-interactive reliable execution
+- Until this is implemented, deterministic dry-run remains the reliable validation path in this VM snapshot.
