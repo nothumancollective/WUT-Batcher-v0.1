@@ -212,3 +212,28 @@
 
 #### Open Point
 - ATH STL export directive remains unknown; TODO hook intentionally retained in `app/services.py`.
+
+### Milestone
+- Milestone: GUI runnable + VACS ingest + dry-run contracts
+
+### Update 7 (Sub-Milestone: Sample E2E Command + Success Status)
+#### Done
+- Added CLI command: `python -m app run-sample`
+  - creates or reuses project/batch and runs a minimal one-version pipeline
+  - mode control: `--real` or `--dry-run` (auto-fallback to dry-run if tools are not fully executable)
+  - uses settings tool paths (`ath_exe`, `akabak_exe`, `vacs_exe`) as source of truth
+  - validates post-run contracts directly against project SQL + runtime summary:
+    - `versions.status`
+    - `ath_dimensions`
+    - `graphs` + `graph_points`
+    - guarded cleanup result
+    - core artifact paths
+  - returns deterministic JSON report and non-zero exit code when checks fail.
+- Runtime final success state normalized:
+  - final version status is now `success` (instead of `completed`) when all stages pass.
+- Added tests:
+  - `tests/test_cli_run_sample.py` (dry-run success + real-mode-missing-tools failure path).
+
+#### Validation
+- `python -m unittest tests.test_cli_run_sample tests.test_runtime_orchestrator -v` -> passing.
+- `python -m app run-sample --library-root .tmp_sample_lib` -> dry-run contract report returned `ok: true`.
