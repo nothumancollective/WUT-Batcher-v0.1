@@ -49,6 +49,7 @@ class VersionPaths:
     cfg_file: Path
     abec_dir: Path
     abec_file: Path
+    ath_work_dir: Path
     exports_dir: Path
     logs_dir: Path
     log_file: Path
@@ -61,6 +62,7 @@ class VersionPaths:
             "cfg_file": str(self.cfg_file),
             "abec_dir": str(self.abec_dir),
             "abec_file": str(self.abec_file),
+            "ath_work_dir": str(self.ath_work_dir),
             "exports_dir": str(self.exports_dir),
             "logs_dir": str(self.logs_dir),
             "log_file": str(self.log_file),
@@ -113,6 +115,7 @@ def resolve_version_paths(project_paths: ProjectPaths, version_id: str, *, ensur
         cfg_file=version_dir / "cfg" / "input.cfg",
         abec_dir=version_dir / "abec",
         abec_file=version_dir / "abec" / "Project.abec",
+        ath_work_dir=version_dir / "ath_work",
         exports_dir=version_dir / "exports",
         logs_dir=version_dir / "logs",
         log_file=version_dir / "logs" / "version.log",
@@ -122,6 +125,7 @@ def resolve_version_paths(project_paths: ProjectPaths, version_id: str, *, ensur
             paths.version_dir,
             paths.cfg_dir,
             paths.abec_dir,
+            paths.ath_work_dir,
             paths.exports_dir,
             paths.logs_dir,
         ):
@@ -135,6 +139,28 @@ class ProjectRepository:
 
     def project_paths(self, project_id: str, *, ensure: bool = False) -> ProjectPaths:
         return resolve_project_paths(self.projects_root, project_id, ensure=ensure)
+
+    def list_projects(self) -> List[Project]:
+        if not self.projects_root.exists():
+            return []
+        projects: List[Project] = []
+        for entry in sorted(self.projects_root.iterdir(), key=lambda item: item.name):
+            if not entry.is_dir():
+                continue
+            project_json = entry / "project.json"
+            if not project_json.exists():
+                continue
+            try:
+                projects.append(Project.from_dict(_read_json(project_json)))
+            except Exception:
+                continue
+        return projects
+
+    def load_project(self, project_id: str) -> Project:
+        paths = self.project_paths(project_id, ensure=False)
+        if not paths.project_json.exists():
+            raise FileNotFoundError(f"Project not found: {paths.project_json}")
+        return Project.from_dict(_read_json(paths.project_json))
 
     def init_project(self, project: Project | Dict[str, Any]) -> ProjectPaths:
         project_model = project if isinstance(project, Project) else Project.from_dict(project)
@@ -155,6 +181,30 @@ class ProjectRepository:
         batch_paths = resolve_batch_paths(paths, batch_model.batch_id, ensure=True)
         _write_json(batch_paths.batch_json, batch_model.to_dict())
         return batch_paths
+
+    def list_batches(self, project_id: str) -> List[Batch]:
+        paths = self.project_paths(project_id, ensure=False)
+        if not paths.batches_dir.exists():
+            return []
+        batches: List[Batch] = []
+        for entry in sorted(paths.batches_dir.iterdir(), key=lambda item: item.name):
+            if not entry.is_dir():
+                continue
+            batch_json = entry / "batch.json"
+            if not batch_json.exists():
+                continue
+            try:
+                batches.append(Batch.from_dict(_read_json(batch_json)))
+            except Exception:
+                continue
+        return batches
+
+    def load_batch(self, project_id: str, batch_id: str) -> Batch:
+        paths = self.project_paths(project_id, ensure=False)
+        batch_json = paths.batches_dir / batch_id / "batch.json"
+        if not batch_json.exists():
+            raise FileNotFoundError(f"Batch not found: {batch_json}")
+        return Batch.from_dict(_read_json(batch_json))
 
     def existing_version_ids(self, project_id: str) -> List[str]:
         paths = self.project_paths(project_id, ensure=False)
@@ -199,4 +249,3 @@ class ProjectRepository:
             materialized.append(version)
 
         return materialized
-

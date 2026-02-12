@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Tuple
@@ -86,13 +85,14 @@ def render_cfg_text(
     parameters: Dict[str, Any],
     version_id: str,
     runner_mode: str = DEFAULT_RUNNER_MODE,
+    omit_keys: Iterable[str] = (),
     bundle: AthKnowledgeBundle | None = None,
 ) -> str:
     bundle = bundle or load_ath_knowledge()
     updates = build_cfg_updates(parameters=parameters, runner_mode=runner_mode, bundle=bundle)
     locked = _runner_locked_keys(bundle, runner_mode)
     mandatory_keys = {key for key, _ in MANDATORY_SOURCE_BLOCK}
-    suppressed = locked | mandatory_keys
+    suppressed = locked | mandatory_keys | {str(key) for key in omit_keys}
 
     lines = template_text.splitlines()
     rendered: List[str] = []
@@ -139,6 +139,7 @@ def render_cfg_file(
     parameters: Dict[str, Any],
     version_id: str,
     runner_mode: str = DEFAULT_RUNNER_MODE,
+    omit_keys: Iterable[str] = (),
     bundle: AthKnowledgeBundle | None = None,
 ) -> str:
     template_text = template_path.read_text(encoding="utf-8")
@@ -147,6 +148,7 @@ def render_cfg_file(
         parameters=parameters,
         version_id=version_id,
         runner_mode=runner_mode,
+        omit_keys=omit_keys,
         bundle=bundle,
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)

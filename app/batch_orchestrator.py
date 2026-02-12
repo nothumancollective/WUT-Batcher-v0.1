@@ -56,8 +56,10 @@ def materialize_batch_plan(
     )
 
     writer = TidyDatasetWriter(paths.project_dir)
-    version_dataset = writer.write_version_parameters(materialized)
-    table_result = writer.write_project_table(materialized)
+    writer.register_project(project)
+    writer.register_batch(project, batch)
+    version_dataset = writer.write_versions(project, batch, materialized)
+    table_result = writer.write_project_table(project_id=project.project_id)
 
     return PlanningSummary(
         project_id=project.project_id,
@@ -66,8 +68,10 @@ def materialize_batch_plan(
         version_ids=[version.version_id for version in materialized],
         project_root=str(paths.project_dir),
         dataset_files={
-            "version_parameters": version_dataset,
+            "versions": version_dataset,
             "schema": str(writer.schema_path),
+            "project_db": str(writer.project_db_path),
+            "global_db": str(writer.global_db_path),
         },
         table_file=str(table_result["csv_path"]),
     )
