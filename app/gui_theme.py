@@ -29,6 +29,7 @@ def build_stylesheet() -> str:
         background-color: {TOKENS['bg']};
         color: {TOKENS['text']};
         font-size: 13px;
+        font-family: "Condor", "Segoe UI", "Arial";
     }}
     QMainWindow {{
         background-color: {TOKENS['bg']};

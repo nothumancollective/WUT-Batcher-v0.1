@@ -102,6 +102,12 @@ def cmd_run_pipeline(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_gui(args: argparse.Namespace) -> int:
+    from app.gui import launch_gui
+
+    return int(launch_gui())
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="batch-software")
     parser.add_argument("--config", default="app_config.json", help="Path to app_config.json (optional).")
@@ -170,6 +176,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Continue with next stages/versions when a stage fails.",
     )
     p_pipeline.set_defaults(func=cmd_run_pipeline)
+
+    p_gui = sub.add_parser("gui", help="Launch PySide6 orchestrator GUI.")
+    p_gui.set_defaults(func=cmd_gui)
 
     return parser
 
