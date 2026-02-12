@@ -401,3 +401,69 @@ class DatasetManifest:
 
     def dump(self, path: str | Path) -> None:
         _write_json(_as_path(path), self.to_dict())
+
+
+@dataclass
+class ResolutionIssue:
+    rule_id: str
+    severity: str
+    message: str
+    scope: str = "version"
+    source: str = "resolver"
+    version_index: Optional[int] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {
+            "rule_id": self.rule_id,
+            "severity": self.severity,
+            "message": self.message,
+            "scope": self.scope,
+            "source": self.source,
+        }
+        if self.version_index is not None:
+            payload["version_index"] = self.version_index
+        return payload
+
+
+@dataclass
+class VersionSpec:
+    project_id: str
+    batch_id: str
+    version_id: str
+    sweep_mode: str
+    sequence_index: int
+    parameters: Dict[str, Any] = field(default_factory=dict)
+    variable_parameters: Dict[str, Any] = field(default_factory=dict)
+    unset_parameters: List[str] = field(default_factory=list)
+    sweep_parameters: Dict[str, Any] = field(default_factory=dict)
+    sim_export_settings: Dict[str, Any] = field(default_factory=dict)
+    paths: Dict[str, str] = field(default_factory=dict)
+    status: str = "planned"
+    created_at: str = field(default_factory=_now_iso)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "project_id": self.project_id,
+            "batch_id": self.batch_id,
+            "version_id": self.version_id,
+            "sweep_mode": self.sweep_mode,
+            "sequence_index": self.sequence_index,
+            "parameters": dict(self.parameters),
+            "variable_parameters": dict(self.variable_parameters),
+            "unset_parameters": list(self.unset_parameters),
+            "sweep_parameters": dict(self.sweep_parameters),
+            "sim_export_settings": dict(self.sim_export_settings),
+            "paths": dict(self.paths),
+            "status": self.status,
+            "created_at": self.created_at,
+        }
+
+
+@dataclass
+class ResolveVersionsResult:
+    versions: List[VersionSpec] = field(default_factory=list)
+    issues: List[ResolutionIssue] = field(default_factory=list)
+
+    @property
+    def blocking_issues(self) -> List[ResolutionIssue]:
+        return [issue for issue in self.issues if issue.severity == "fatal"]
