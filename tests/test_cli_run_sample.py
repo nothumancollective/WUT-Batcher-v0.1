@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -9,6 +10,13 @@ import unittest
 
 
 class CliRunSampleTests(unittest.TestCase):
+    @staticmethod
+    def _isolated_env(tmp_dir: str) -> dict[str, str]:
+        env = dict(os.environ)
+        env["USERPROFILE"] = tmp_dir
+        env["HOME"] = tmp_dir
+        return env
+
     def test_run_sample_dry_run_succeeds(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             library_root = Path(tmp_dir) / "library"
@@ -22,6 +30,7 @@ class CliRunSampleTests(unittest.TestCase):
                     "--library-root",
                     str(library_root),
                 ],
+                env=self._isolated_env(tmp_dir),
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -45,6 +54,7 @@ class CliRunSampleTests(unittest.TestCase):
                     "--library-root",
                     str(library_root),
                 ],
+                env=self._isolated_env(tmp_dir),
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -58,4 +68,3 @@ class CliRunSampleTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
