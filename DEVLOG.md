@@ -237,3 +237,30 @@
 #### Validation
 - `python -m unittest tests.test_cli_run_sample tests.test_runtime_orchestrator -v` -> passing.
 - `python -m app run-sample --library-root .tmp_sample_lib` -> dry-run contract report returned `ok: true`.
+
+### Update 8 (Sub-Milestone: Export Regeneration + UI Wiring)
+#### Done
+- Export path hardened in `OrchestratorService.export_version()`:
+  - CFG regeneration still uses SQL parameter states with explicit unset omission.
+  - ABEC export now requires ATH regeneration run and expects generated `.abec` artifact from export workspace.
+  - Missing ATH executable for STL/ABEC now fails fast with clear error.
+- STL export hook isolated for future patching:
+  - single constant `ATH_STL_EXPORT_DIRECTIVE` controls final STL directive injection.
+  - until known, deterministic TODO hook remains idempotent.
+- Added service API for export UI:
+  - `list_versions(project_id, batch_id=None)` reads version rows from project SQL.
+- Dashboard UI integration:
+  - replaced inline export fields with modal `ExportDialog` (batch/version + STL/ABEC).
+  - export errors are surfaced in status bar detail instead of crashing flow.
+- Run view and status UX:
+  - run page now displays active mode (`real` or `dry-run`).
+  - startup doctor status now shows concise failure/warn message with click-through details in status bar.
+
+#### Validation
+- `python -m unittest tests.test_service_export tests.test_cli_run_sample -v` -> passing.
+- GUI smoke including new export dialog/theme/titlebar path passed.
+- Full test suite remains green (`45/45`).
+
+#### Real-Tools Check
+- Executed `python -m app run-sample --real`.
+- Result: tools unavailable in current settings (`ath_exe`, `akabak_exe`, `vacs_exe` not configured), real run skipped with deterministic error payload.

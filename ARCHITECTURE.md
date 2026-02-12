@@ -147,13 +147,18 @@ Reconstruction:
 - regenerate CFG from template:
   - write only `is_set=1` values
   - force omission for `is_set=0` via `omit_keys`
+- ABEC export contract:
+  - requires ATH executable and regeneration run
+  - expects generated `.abec` artifact in export workspace
+  - canonical export target remains `<project>/exports/<batch_id>/<version_id>/Project.abec`
 
 Output path:
 - `<project>/exports/<batch_id>/<version_id>/...`
 
 STL note (open point):
 - exact ATH STL directive is not yet verified in this repo snapshot
-- current implementation appends explicit TODO hook block to CFG when STL export is requested
+- hook is isolated behind `ATH_STL_EXPORT_DIRECTIVE` in `app/services.py`
+- when constant is unset, implementation appends explicit TODO hook block to CFG for deterministic behavior
 - TODO tracked in DEVLOG; once directive is verified, replace placeholder with real ATH option
 
 ## GUI Architecture (PySide6)
@@ -203,6 +208,7 @@ STL note (open point):
 - contract run behavior:
   - if ATH/AKABAK/VACS paths are not all executable, service run falls back to deterministic `dry_run`
   - dry-run still executes resolver, CFG generation, SQL writes, and cleanup guard evaluation
+  - CLI smoke command `run-sample` performs post-run contract checks against SQL/runtime artifacts
 
 ## Open Points
 1. Bind real ATH/AKABAK/VACS invocation contracts from VM (flags, startup semantics).
