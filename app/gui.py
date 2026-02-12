@@ -6,9 +6,10 @@ from dataclasses import asdict
 import json
 from pathlib import Path
 import subprocess
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from app.doctor_service import run_doctor_checks
+from app.constants import DEFAULT_RUNNER_MODE
 from app.models import AppConfig, Batch, Project
 from app.services import OrchestratorService
 from app.settings_store import UserSettings
@@ -18,6 +19,7 @@ try:
     from PySide6.QtCore import Qt, Signal
     from PySide6.QtGui import QPixmap
     from PySide6.QtWidgets import (
+        QAbstractItemView,
         QApplication,
         QComboBox,
         QCheckBox,
@@ -52,6 +54,119 @@ class ClickableLabel(QLabel):
         super().mousePressEvent(event)
         if event.button() == Qt.LeftButton:
             self.clicked.emit()
+
+
+def _parse_json_object(text: str) -> Dict[str, Any]:
+    raw = text.strip()
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    return dict(parsed) if isinstance(parsed, dict) else {}
+
+
+def _severity_rank(value: str) -> int:
+    order = {"fatal": 0, "warn": 1, "info": 2}
+    return order.get(str(value).lower(), 99)
+
+
+def _highest_issue_severity(issues: List[Dict[str, Any]]) -> str:
+    if not issues:
+        return ""
+    ranked = sorted((str(item.get("severity", "info")).lower() for item in issues), key=_severity_rank)
+    return ranked[0] if ranked else ""
+
+
+class CompatibilityPanel(QGroupBox):
+    request_show_details = Signal()
+
+    def __init__(self, title: str = "Compatibility") -> None:
+        super().__init__(title)
+        root = QVBoxLayout(self)
+
+        counts = QHBoxLayout()
+        self.visible_count = QLabel("Visible fields: 0")
+        self.locked_count = QLabel("Locked fields: 0")
+        self.sweepable_count = QLabel("Sweepable fields: 0")
+        counts.addWidget(self.visible_count)
+        counts.addWidget(self.locked_count)
+        counts.addWidget(self.sweepable_count)
+        counts.addStretch(1)
+        root.addLayout(counts)
+
+        lists = QHBoxLayout()
+        self.visible_list = QListWidget()
+        self.visible_list.setSelectionMode(QAbstractItemView.NoSelection)
+        self.locked_list = QListWidget()
+        self.locked_list.setSelectionMode(QAbstractItemView.NoSelection)
+        self.locked_list.setEnabled(False)
+        self.locked_list.setToolTip("Locked by runner mode")
+        lists.addWidget(self._wrap_list("Visible", self.visible_list), 2)
+        lists.addWidget(self._wrap_list("Locked by runner mode", self.locked_list), 1)
+        root.addLayout(lists)
+
+        self.summary = QLabel("No issues.")
+        self.summary.setWordWrap(True)
+        self.summary.setObjectName("IssueHint")
+        root.addWidget(self.summary)
+
+        self.show_details_btn = QPushButton("Show details")
+        self.show_details_btn.clicked.connect(self.request_show_details.emit)
+        root.addWidget(self.show_details_btn, alignment=Qt.AlignLeft)
+
+        self._issues: List[Dict[str, Any]] = []
+        self._update_lists([], [], [])
+
+    def _wrap_list(self, label: str, widget: QListWidget) -> QWidget:
+        box = QGroupBox(label)
+        layout = QVBoxLayout(box)
+        layout.addWidget(widget)
+        return box
+
+    def _update_lists(self, visible: List[str], locked: List[str], sweepable: List[str]) -> None:
+        self.visible_list.clear()
+        self.locked_list.clear()
+        for key in visible:
+            self.visible_list.addItem(QListWidgetItem(key))
+        for key in locked:
+            item = QListWidgetItem(key)
+            item.setToolTip("Locked by runner mode")
+            self.locked_list.addItem(item)
+        self.visible_count.setText(f"Visible fields: {len(visible)}")
+        self.locked_count.setText(f"Locked fields: {len(locked)}")
+        self.sweepable_count.setText(f"Sweepable fields: {len(sweepable)}")
+
+    def update_state(self, state: Dict[str, Any]) -> None:
+        visible = sorted(str(item) for item in list(state.get("visible_keys", []) or []))
+        locked = sorted(str(item) for item in list(state.get("locked_keys", []) or []))
+        sweepable = sorted(str(item) for item in list(state.get("sweepable_keys", []) or []))
+        issues = [item for item in list(state.get("issues", []) or []) if isinstance(item, dict)]
+        self._issues = issues
+        self._update_lists(visible, locked, sweepable)
+
+        top = issues[:5]
+        if not top:
+            self.summary.setText("No validation issues.")
+            self.summary.setProperty("severity", "")
+            self.show_details_btn.setEnabled(False)
+        else:
+            lines = []
+            for issue in top:
+                severity = str(issue.get("severity", "info")).upper()
+                rule_id = str(issue.get("rule_id", "unknown_rule"))
+                evidence_type = str(issue.get("evidence_type", "hypothesis"))
+                message = str(issue.get("message", ""))
+                lines.append(f"[{severity}] {rule_id} ({evidence_type}) - {message}")
+            self.summary.setText("\n".join(lines))
+            self.summary.setProperty("severity", _highest_issue_severity(issues))
+            self.show_details_btn.setEnabled(True)
+        self.style().unpolish(self.summary)
+        self.style().polish(self.summary)
+
+    def issues(self) -> List[Dict[str, Any]]:
+        return list(self._issues)
 
 
 class AboutDialog(QDialog):
@@ -283,6 +398,7 @@ class DashboardPage(QWidget):
 class ProjectPage(QWidget):
     submit_project = Signal(str, dict)
     back_to_dashboard = Signal()
+    draft_changed = Signal(dict)
 
     def __init__(self) -> None:
         super().__init__()
@@ -312,6 +428,8 @@ class ProjectPage(QWidget):
         groups.addWidget(geo_box, 1)
         groups.addWidget(mesh_box, 1)
         root.addLayout(groups, 1)
+        self.compat_panel = CompatibilityPanel("Project Compatibility")
+        root.addWidget(self.compat_panel)
 
         buttons = QHBoxLayout()
         create_btn = QPushButton("Projekt erstellen")
@@ -324,26 +442,39 @@ class ProjectPage(QWidget):
 
         create_btn.clicked.connect(self._submit)
         back_btn.clicked.connect(self.back_to_dashboard.emit)
+        self.geometry_constraints.textChanged.connect(self._emit_draft_changed)
+        self.mesh_constraints.textChanged.connect(self._emit_draft_changed)
+
+        self._compat_state: Dict[str, Any] = {"visible_keys": [], "locked_keys": [], "sweepable_keys": [], "issues": []}
+
+    def _emit_draft_changed(self) -> None:
+        self.draft_changed.emit(self._raw_constraints_payload())
+
+    def _raw_constraints_payload(self) -> Dict[str, Any]:
+        return {
+            "fixed_params": _parse_json_object(self.geometry_constraints.toPlainText()),
+            "limits": _parse_json_object(self.mesh_constraints.toPlainText()),
+        }
+
+    def apply_compatibility(self, state: Dict[str, Any]) -> None:
+        self._compat_state = dict(state)
+        self.compat_panel.update_state(state)
+        severity = _highest_issue_severity(self.compat_panel.issues())
+        self.geometry_constraints.setProperty("severity", severity)
+        self.geometry_constraints.style().unpolish(self.geometry_constraints)
+        self.geometry_constraints.style().polish(self.geometry_constraints)
 
     def _submit(self) -> None:
-        geometry_payload: Dict[str, object] = {}
-        mesh_payload: Dict[str, object] = {}
-        try:
-            raw = self.geometry_constraints.toPlainText().strip()
-            if raw:
-                parsed = json.loads(raw)
-                if isinstance(parsed, dict):
-                    geometry_payload = parsed
-        except json.JSONDecodeError:
-            pass
-        try:
-            raw = self.mesh_constraints.toPlainText().strip()
-            if raw:
-                parsed = json.loads(raw)
-                if isinstance(parsed, dict):
-                    mesh_payload = parsed
-        except json.JSONDecodeError:
-            pass
+        geometry_payload: Dict[str, object] = _parse_json_object(self.geometry_constraints.toPlainText())
+        mesh_payload: Dict[str, object] = _parse_json_object(self.mesh_constraints.toPlainText())
+        visible = set(str(item) for item in list(self._compat_state.get("visible_keys", []) or []))
+        locked = set(str(item) for item in list(self._compat_state.get("locked_keys", []) or []))
+        if visible:
+            geometry_payload = {
+                key: value
+                for key, value in geometry_payload.items()
+                if str(key) in visible and str(key) not in locked
+            }
         payload = {
             "fixed_params": geometry_payload,
             "limits": mesh_payload,
@@ -355,6 +486,7 @@ class BatchPage(QWidget):
     save_batch = Signal(dict)
     run_batch = Signal(dict)
     back_to_dashboard = Signal()
+    draft_changed = Signal(dict)
 
     def __init__(self) -> None:
         super().__init__()
@@ -366,8 +498,8 @@ class BatchPage(QWidget):
         grid = QGridLayout()
         self.batch_name = QLineEdit()
         self.batch_name.setPlaceholderText("Batch Name")
-        self.sweep_mode = QLineEdit()
-        self.sweep_mode.setPlaceholderText("single | combined")
+        self.sweep_mode = QComboBox()
+        self.sweep_mode.addItems(["single", "combined"])
         self.selected_json = QTextEdit()
         self.selected_json.setPlaceholderText('Variable params JSON, e.g. {"Throat.Diameter": 25}')
         self.sweeps_json = QTextEdit()
@@ -386,6 +518,8 @@ class BatchPage(QWidget):
         grid.addWidget(QLabel("Sim/Export Params"), 4, 0)
         grid.addWidget(self.sim_export_json, 4, 1)
         root.addLayout(grid, 1)
+        self.compat_panel = CompatibilityPanel("Batch Compatibility")
+        root.addWidget(self.compat_panel)
 
         buttons = QHBoxLayout()
         save_btn = QPushButton("Save Batch")
@@ -402,24 +536,54 @@ class BatchPage(QWidget):
         run_btn.clicked.connect(lambda: self.run_batch.emit(self._payload()))
         back_btn.clicked.connect(self.back_to_dashboard.emit)
 
-    def _payload(self) -> Dict[str, object]:
-        def parse_dict(text: str) -> Dict[str, object]:
-            raw = text.strip()
-            if not raw:
-                return {}
-            try:
-                parsed = json.loads(raw)
-            except json.JSONDecodeError:
-                return {}
-            return parsed if isinstance(parsed, dict) else {}
+        self.selected_json.textChanged.connect(self._emit_draft_changed)
+        self.sweeps_json.textChanged.connect(self._emit_draft_changed)
+        self.sim_export_json.textChanged.connect(self._emit_draft_changed)
+        self.sweep_mode.currentTextChanged.connect(lambda _: self._emit_draft_changed())
 
-        return {
-            "batch_name": self.batch_name.text().strip(),
-            "sweep_mode": self.sweep_mode.text().strip() or "single",
-            "selected_params": parse_dict(self.selected_json.toPlainText()),
-            "sweeps": parse_dict(self.sweeps_json.toPlainText()),
-            "sim_export_params": parse_dict(self.sim_export_json.toPlainText()),
+        self._compat_state: Dict[str, Any] = {"visible_keys": [], "locked_keys": [], "sweepable_keys": [], "issues": []}
+
+    def _emit_draft_changed(self) -> None:
+        self.draft_changed.emit(self._payload(include_name=False))
+
+    def apply_compatibility(self, state: Dict[str, Any]) -> None:
+        self._compat_state = dict(state)
+        self.compat_panel.update_state(state)
+        severity = _highest_issue_severity(self.compat_panel.issues())
+        for widget in (self.selected_json, self.sweeps_json):
+            widget.setProperty("severity", severity)
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
+
+    def _payload(self, *, include_name: bool = True) -> Dict[str, object]:
+        selected = _parse_json_object(self.selected_json.toPlainText())
+        sweeps = _parse_json_object(self.sweeps_json.toPlainText())
+
+        visible = set(str(item) for item in list(self._compat_state.get("visible_keys", []) or []))
+        locked = set(str(item) for item in list(self._compat_state.get("locked_keys", []) or []))
+        sweepable = set(str(item) for item in list(self._compat_state.get("sweepable_keys", []) or []))
+        if visible:
+            selected = {
+                key: value
+                for key, value in selected.items()
+                if str(key) in visible and str(key) not in locked
+            }
+        if sweepable:
+            sweeps = {
+                key: value
+                for key, value in sweeps.items()
+                if str(key) in sweepable and str(key) not in locked
+            }
+
+        payload: Dict[str, object] = {
+            "sweep_mode": self.sweep_mode.currentText().strip() or "single",
+            "selected_params": selected,
+            "sweeps": sweeps,
+            "sim_export_params": _parse_json_object(self.sim_export_json.toPlainText()),
         }
+        if include_name:
+            payload["batch_name"] = self.batch_name.text().strip()
+        return payload
 
 
 class RunPage(QWidget):
@@ -550,10 +714,18 @@ class MainWindow(QMainWindow):
 
         self.project_page.submit_project.connect(self._create_project)
         self.project_page.back_to_dashboard.connect(self.show_dashboard)
+        self.project_page.draft_changed.connect(self._on_project_draft_changed)
+        self.project_page.compat_panel.request_show_details.connect(
+            lambda: self._show_validation_details(self.project_page.compat_panel.issues(), "Project Validation Details")
+        )
 
         self.batch_page.save_batch.connect(self._save_batch)
         self.batch_page.run_batch.connect(self._run_batch)
         self.batch_page.back_to_dashboard.connect(self.show_dashboard)
+        self.batch_page.draft_changed.connect(self._on_batch_draft_changed)
+        self.batch_page.compat_panel.request_show_details.connect(
+            lambda: self._show_validation_details(self.batch_page.compat_panel.issues(), "Batch Validation Details")
+        )
 
     def set_status(self, text: str, detail: Optional[str] = None) -> None:
         self.status_message.setText(text)
@@ -565,6 +737,60 @@ class MainWindow(QMainWindow):
     def _show_about(self) -> None:
         AboutDialog(self).exec()
 
+    def _show_validation_details(self, issues: List[Dict[str, Any]], title: str) -> None:
+        if not issues:
+            QMessageBox.information(self, title, "No validation issues.")
+            return
+        lines = []
+        for issue in issues:
+            severity = str(issue.get("severity", "info")).upper()
+            rule_id = str(issue.get("rule_id", "unknown_rule"))
+            evidence_type = str(issue.get("evidence_type", "hypothesis"))
+            message = str(issue.get("message", ""))
+            lines.append(f"[{severity}] {rule_id} ({evidence_type})\n{message}")
+        QMessageBox.information(self, title, "\n\n".join(lines))
+
+    def _present_validation_summary(
+        self,
+        *,
+        title: str,
+        issues: List[Dict[str, Any]],
+        block_on_fatal: bool,
+    ) -> bool:
+        if not issues:
+            return True
+        fatal_count = sum(1 for issue in issues if str(issue.get("severity", "")).lower() == "fatal")
+        top = issues[:5]
+        lines = []
+        for issue in top:
+            severity = str(issue.get("severity", "info")).upper()
+            rule_id = str(issue.get("rule_id", "unknown_rule"))
+            evidence_type = str(issue.get("evidence_type", "hypothesis"))
+            message = str(issue.get("message", ""))
+            lines.append(f"[{severity}] {rule_id} ({evidence_type}) - {message}")
+        detail_lines = [
+            {
+                "severity": issue.get("severity"),
+                "rule_id": issue.get("rule_id"),
+                "evidence_type": issue.get("evidence_type"),
+                "message": issue.get("message"),
+                "scope": issue.get("scope"),
+            }
+            for issue in issues
+        ]
+        dialog = QMessageBox(self)
+        dialog.setWindowTitle(title)
+        dialog.setIcon(QMessageBox.Warning if fatal_count == 0 else QMessageBox.Critical)
+        dialog.setText(f"Validation Summary ({len(issues)} issues)")
+        dialog.setInformativeText("\n".join(lines) + "\n\nShow details for full list.")
+        dialog.setDetailedText(json.dumps(detail_lines, indent=2, ensure_ascii=False))
+        if fatal_count > 0 and block_on_fatal:
+            dialog.setStandardButtons(QMessageBox.Ok)
+            dialog.exec()
+            return False
+        dialog.setStandardButtons(QMessageBox.Ok | QMessageBox.Cancel)
+        return dialog.exec() == QMessageBox.Ok
+
     def _open_settings(self) -> None:
         dialog = SettingsDialog(self.service, self)
         dialog.settings_saved.connect(lambda _: self.set_status("Settings saved."))
@@ -573,6 +799,8 @@ class MainWindow(QMainWindow):
     def load_project(self, project: Project) -> None:
         self.current_project = project
         self.refresh_dashboard()
+        self._on_project_draft_changed(self.project_page._raw_constraints_payload())
+        self._on_batch_draft_changed(self.batch_page._payload(include_name=False))
         self.show_dashboard()
 
     def refresh_dashboard(self) -> None:
@@ -594,15 +822,26 @@ class MainWindow(QMainWindow):
         self.stack.setCurrentWidget(self.dashboard_page)
 
     def show_project(self) -> None:
+        self._on_project_draft_changed(self.project_page._raw_constraints_payload())
         self.stack.setCurrentWidget(self.project_page)
 
     def show_batch(self) -> None:
+        self._on_batch_draft_changed(self.batch_page._payload(include_name=False))
         self.stack.setCurrentWidget(self.batch_page)
 
     def show_run(self) -> None:
         self.stack.setCurrentWidget(self.run_page)
 
     def _create_project(self, project_name: str, constraints: Dict[str, object]) -> None:
+        validation = self.service.evaluate_project_constraints(dict(constraints))
+        issues = [item for item in list(validation.get("issues", []) or []) if isinstance(item, dict)]
+        if not self._present_validation_summary(
+            title="Project Validation Summary",
+            issues=issues,
+            block_on_fatal=True,
+        ):
+            self.set_status("Project creation blocked by validation.")
+            return
         project = self.service.create_project(project_name, constraints)
         self.load_project(project)
         self.set_status(f"Project created: {project.project_id}")
@@ -610,6 +849,20 @@ class MainWindow(QMainWindow):
     def _save_batch(self, payload: Dict[str, object]) -> Optional[str]:
         if self.current_project is None:
             self.set_status("No project loaded.")
+            return None
+        validation = self.service.evaluate_batch_definition(
+            project_id=self.current_project.project_id,
+            selected_params=dict(payload.get("selected_params", {}) or {}),
+            sweeps=dict(payload.get("sweeps", {}) or {}),
+            sweep_mode=str(payload.get("sweep_mode", "single")),
+        )
+        issues = [item for item in list(validation.get("issues", []) or []) if isinstance(item, dict)]
+        if not self._present_validation_summary(
+            title="Batch Validation Summary",
+            issues=issues,
+            block_on_fatal=True,
+        ):
+            self.set_status("Batch save blocked by validation.")
             return None
         summary = self.service.create_batch(
             project_id=self.current_project.project_id,
@@ -692,6 +945,37 @@ class MainWindow(QMainWindow):
             self.set_status(f"Export failed for {version_id}", detail=str(exc))
             return
         self.set_status(f"Export finished for {version_id}", detail=json.dumps(result, indent=2, ensure_ascii=False))
+
+    def _on_project_draft_changed(self, payload: Dict[str, object]) -> None:
+        runner_mode = DEFAULT_RUNNER_MODE
+        if self.current_project is not None:
+            runner_mode = self.current_project.constraints.runner_mode
+        constraints_payload = {
+            "fixed_params": dict(payload.get("fixed_params", {}) or {}),
+            "limits": dict(payload.get("limits", {}) or {}),
+            "runner_mode": runner_mode,
+        }
+        state = self.service.evaluate_project_constraints(constraints_payload)
+        self.project_page.apply_compatibility(state)
+
+    def _on_batch_draft_changed(self, payload: Dict[str, object]) -> None:
+        if self.current_project is None:
+            self.batch_page.apply_compatibility(
+                {
+                    "visible_keys": [],
+                    "locked_keys": [],
+                    "sweepable_keys": [],
+                    "issues": [],
+                }
+            )
+            return
+        state = self.service.evaluate_batch_definition(
+            project_id=self.current_project.project_id,
+            selected_params=dict(payload.get("selected_params", {}) or {}),
+            sweeps=dict(payload.get("sweeps", {}) or {}),
+            sweep_mode=str(payload.get("sweep_mode", "single")),
+        )
+        self.batch_page.apply_compatibility(state)
 
 
 class GuiController:

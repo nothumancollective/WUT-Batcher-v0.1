@@ -103,6 +103,18 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         selection-background-color: {c['selection']};
         selection-color: {c['button_text']};
     }}
+    QLineEdit[severity="warn"], QTextEdit[severity="warn"], QPlainTextEdit[severity="warn"] {{
+        border: 1px solid {c['warning']};
+    }}
+    QLineEdit[severity="fatal"], QTextEdit[severity="fatal"], QPlainTextEdit[severity="fatal"] {{
+        border: 1px solid {c['danger']};
+    }}
+    QLabel#IssueHint[severity="warn"] {{
+        color: {c['warning']};
+    }}
+    QLabel#IssueHint[severity="fatal"] {{
+        color: {c['danger']};
+    }}
     QListWidget, QTableView, QTreeView {{
         background-color: {c['surface']};
         border: 1px solid {c['border']};
