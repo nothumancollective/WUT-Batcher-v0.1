@@ -667,7 +667,18 @@ def _make_splash(app: QApplication) -> QSplashScreen:
 def _run_doctor_for_splash(service: OrchestratorService) -> Dict[str, object]:
     settings = service.settings
     config = AppConfig(projects_root=settings.library_root)
-    report = run_doctor_checks(config, config_path=None, fix=False, kill_zombies=False, report_path=None)
+    report = run_doctor_checks(
+        config,
+        config_path=None,
+        fix=False,
+        kill_zombies=False,
+        report_path=None,
+        tool_paths={
+            "ath_exe": settings.ath_exe,
+            "akabak_exe": settings.akabak_exe,
+            "vacs_exe": settings.vacs_exe,
+        },
+    )
     tool_versions: Dict[str, str] = {}
     for key, exe_path in {
         "ath": settings.ath_exe,

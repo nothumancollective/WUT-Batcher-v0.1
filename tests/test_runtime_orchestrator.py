@@ -59,6 +59,102 @@ class RuntimeOrchestratorTests(unittest.TestCase):
                 dims_count = conn.execute("SELECT COUNT(*) FROM ath_dimensions").fetchone()[0]
             self.assertEqual(dims_count, 1)
 
+    def test_pipeline_ingests_vacs_txt_into_sql(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            projects_root = Path(tmp_dir) / "projects"
+            project = Project(
+                project_id="P001",
+                name="Runtime VACS Test",
+                root_path=str(projects_root / "P001"),
+                constraints=ProjectConstraints(
+                    project_id="P001",
+                    fixed_params={"Length": 120},
+                    limits={},
+                    runner_mode="AthGuidePreview",
+                ),
+            )
+            batch = Batch(
+                batch_id="B001",
+                project_id="P001",
+                selected_params={"Throat.Diameter": ParamSelection(value=30.0)},
+                sweep_mode="single",
+                runner_mode="AthGuidePreview",
+            )
+            vacs_script = (
+                "from pathlib import Path; "
+                "Path('Result_V001SPL.txt').write_text("
+                "'Frequency [Hz];SPL [dB]\\n100;90,5\\n200;91,0\\n', encoding='utf-8'); "
+                "print('exported')"
+            )
+
+            summary = run_batch_pipeline(
+                project=project,
+                batch=batch,
+                projects_root=projects_root,
+                vacs_executable=sys.executable,
+                vacs_base_args=["-c", vacs_script],
+                continue_on_error=True,
+            )
+
+            self.assertEqual(summary.project_id, "P001")
+            self.assertEqual(summary.batch_id, "B001")
+            self.assertEqual(len(summary.stage_results), 1)
+            self.assertEqual(summary.stage_results[0].stage, "vacs")
+            self.assertEqual(summary.stage_results[0].status, "ok")
+
+            project_root = Path(summary.project_root)
+            project_db = project_root / "dataset" / "project.sqlite"
+            self.assertTrue(project_db.exists())
+            with closing(sqlite3.connect(str(project_db))) as conn:
+                graph_count = conn.execute("SELECT COUNT(*) FROM graphs").fetchone()[0]
+                point_count = conn.execute("SELECT COUNT(*) FROM graph_points").fetchone()[0]
+            self.assertEqual(graph_count, 1)
+            self.assertEqual(point_count, 2)
+
+    def test_pipeline_dry_run_keeps_ath_work_and_marks_status(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            projects_root = Path(tmp_dir) / "projects"
+            project = Project(
+                project_id="P001",
+                name="Runtime DryRun Test",
+                root_path=str(projects_root / "P001"),
+                constraints=ProjectConstraints(
+                    project_id="P001",
+                    fixed_params={"Length": 120},
+                    limits={},
+                    runner_mode="AthGuidePreview",
+                ),
+            )
+            batch = Batch(
+                batch_id="B001",
+                project_id="P001",
+                selected_params={"Throat.Diameter": ParamSelection(value=30.0)},
+                sweep_mode="single",
+                runner_mode="AthGuidePreview",
+            )
+
+            summary = run_batch_pipeline(
+                project=project,
+                batch=batch,
+                projects_root=projects_root,
+                dry_run=True,
+            )
+
+            self.assertTrue(summary.dry_run)
+            self.assertEqual(len(summary.stage_results), 1)
+            self.assertEqual(summary.stage_results[0].stage, "dry_run")
+            self.assertEqual(summary.cleanup_results[0]["reason"], "dry_run_no_delete")
+
+            project_root = Path(summary.project_root)
+            ath_work_dir = project_root / "versions" / summary.versions[0] / "ath_work"
+            self.assertTrue(ath_work_dir.exists())
+            with closing(sqlite3.connect(str(project_root / "dataset" / "project.sqlite"))) as conn:
+                row = conn.execute(
+                    "SELECT status FROM versions WHERE version_id = ?",
+                    (summary.versions[0],),
+                ).fetchone()
+            self.assertEqual(str(row[0]), "dry_run_completed")
+
 
 if __name__ == "__main__":
     unittest.main()

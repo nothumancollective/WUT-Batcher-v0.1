@@ -34,6 +34,7 @@ def guarded_delete_tree(
     *,
     allowed_root: str | Path,
     expected_dir_name: str | None = None,
+    perform_delete: bool = True,
     deny_paths: Iterable[str | Path] = (),
 ) -> CleanupResult:
     target = _normalize(target_path)
@@ -56,6 +57,9 @@ def guarded_delete_tree(
         return CleanupResult(target=str(target), deleted=False, reason="unexpected_dir_name")
     if any(target == denied_path for denied_path in denied):
         return CleanupResult(target=str(target), deleted=False, reason="target_in_deny_paths")
+
+    if not perform_delete:
+        return CleanupResult(target=str(target), deleted=False, reason="dry_run_no_delete")
 
     shutil.rmtree(target)
     return CleanupResult(target=str(target), deleted=True, reason="deleted")

@@ -65,6 +65,25 @@ class ServiceExportTests(unittest.TestCase):
             self.assertIn("synced", summary)
             self.assertIn("failed", summary)
 
+    def test_run_batch_auto_uses_dry_run_when_tools_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            library_root = Path(tmp_dir) / "projects"
+            settings_path = Path(tmp_dir) / "settings.json"
+            store = SettingsStore(settings_path)
+            store.save(UserSettings(library_root=str(library_root)))
+            service = OrchestratorService(settings_store=store)
+            project = service.create_project("Dry run project", {"fixed_params": {"Length": 100}, "limits": {}})
+            batch_summary = service.create_batch(
+                project_id=project.project_id,
+                batch_name="Dry run batch",
+                selected_params={"Throat.Diameter": 30.0},
+                sweeps={},
+                sweep_mode="single",
+                sim_export_params={},
+            )
+            summary = service.run_batch(project.project_id, batch_summary.batch_id, continue_on_error=True)
+            self.assertTrue(summary.dry_run)
+
 
 if __name__ == "__main__":
     unittest.main()

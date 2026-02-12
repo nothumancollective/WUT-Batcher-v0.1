@@ -47,6 +47,16 @@ class SafeCleanupTests(unittest.TestCase):
             self.assertFalse(result.deleted)
             self.assertEqual(result.reason, "unexpected_dir_name")
 
+    def test_dry_run_does_not_delete(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir) / "versions"
+            target = root / "V001" / "ath_work"
+            target.mkdir(parents=True, exist_ok=True)
+            result = guarded_delete_tree(target, allowed_root=root, expected_dir_name="ath_work", perform_delete=False)
+            self.assertFalse(result.deleted)
+            self.assertEqual(result.reason, "dry_run_no_delete")
+            self.assertTrue(target.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -117,6 +117,7 @@ def cmd_run_pipeline(args: argparse.Namespace) -> int:
         akabak_executable=args.akabak_exe,
         vacs_executable=args.vacs_exe,
         continue_on_error=args.continue_on_error,
+        dry_run=args.dry_run,
     )
     print(json.dumps(summary, indent=2, ensure_ascii=False, default=_json_default))
     return 0
@@ -205,6 +206,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--continue-on-error",
         action="store_true",
         help="Continue with next stages/versions when a stage fails.",
+    )
+    p_pipeline.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Skip external tool invocations and run deterministic CFG/SQL/cleanup-guard flow only.",
     )
     p_pipeline.set_defaults(func=cmd_run_pipeline)
 

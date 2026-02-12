@@ -1,0 +1,5 @@
+# VACS export sample
+Frequency [Hz];Impedance [Ohm]
+100;6,50
+200;7,10
+300;8.25

@@ -49,6 +49,13 @@ def _inject_stl_export_todo(cfg_text: str) -> str:
     return cfg_text + block
 
 
+def _is_executable_path(path: Optional[str]) -> bool:
+    if not path:
+        return False
+    candidate = Path(path).expanduser()
+    return candidate.exists() and candidate.is_file()
+
+
 class OrchestratorService:
     def __init__(self, settings_store: SettingsStore | None = None) -> None:
         self.settings_store = settings_store or SettingsStore()
@@ -169,18 +176,29 @@ class OrchestratorService:
             "issues": [issue.to_dict() for issue in resolved.issues],
         }
 
-    def run_batch(self, project_id: str, batch_id: str, *, continue_on_error: bool = True) -> RuntimeSummary:
+    def run_batch(
+        self,
+        project_id: str,
+        batch_id: str,
+        *,
+        continue_on_error: bool = True,
+        dry_run: Optional[bool] = None,
+    ) -> RuntimeSummary:
         project = self.repo.load_project(project_id)
         batch = self.repo.load_batch(project_id, batch_id)
+        if dry_run is None:
+            tools = [self.settings.ath_exe, self.settings.akabak_exe, self.settings.vacs_exe]
+            dry_run = not all(_is_executable_path(path) for path in tools)
         return run_batch_pipeline(
             project=project,
             batch=batch,
             projects_root=self.settings.library_root,
             template_cfg_path=self.settings.template_cfg,
-            ath_executable=self.settings.ath_exe,
-            akabak_executable=self.settings.akabak_exe,
-            vacs_executable=self.settings.vacs_exe,
+            ath_executable=self.settings.ath_exe if not dry_run else None,
+            akabak_executable=self.settings.akabak_exe if not dry_run else None,
+            vacs_executable=self.settings.vacs_exe if not dry_run else None,
             continue_on_error=continue_on_error,
+            dry_run=bool(dry_run),
         )
 
     def export_version(

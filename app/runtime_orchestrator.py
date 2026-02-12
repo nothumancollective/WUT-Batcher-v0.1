@@ -15,6 +15,7 @@ from app.models import Batch, Project
 from app.safe_cleanup import guarded_delete_tree
 from app.runners import AkabakRunner, AthRunner, RunnerResult, VacsRunner, parse_ath_dimensions
 from app.tidy_dataset import TidyDatasetWriter
+from app.vacs_txt_parser import parse_vacs_txt_file
 
 
 def _now_iso() -> str:
@@ -52,6 +53,7 @@ class RuntimeSummary:
     stage_results: List[StageExecution]
     ath_dimension_rows: int
     cleanup_results: List[Dict[str, Any]]
+    dry_run: bool = False
 
 
 def _version_json_path(project_root: Path, version_id: str) -> Path:
@@ -72,6 +74,10 @@ def _version_ath_work_path(project_root: Path, version_id: str) -> Path:
 
 def _version_logs_dir(project_root: Path, version_id: str) -> Path:
     return project_root / "versions" / version_id / "logs"
+
+
+def _version_exports_dir(project_root: Path, version_id: str) -> Path:
+    return project_root / "versions" / version_id / "exports"
 
 
 def _load_template_text(template_cfg_path: Optional[str | Path]) -> str:
@@ -98,6 +104,57 @@ def _stage_from_result(version_id: str, stage: str, result: RunnerResult) -> Sta
     )
 
 
+def _ingest_vacs_exports(
+    *,
+    writer: TidyDatasetWriter,
+    project: Project,
+    batch: Batch,
+    version_id: str,
+    exports_dir: Path,
+) -> Dict[str, Any]:
+    export_files = sorted(path for path in exports_dir.rglob("*.txt") if path.is_file())
+    parse_errors: List[str] = []
+    rows: List[Dict[str, Any]] = []
+
+    for path in export_files:
+        try:
+            parsed = parse_vacs_txt_file(path)
+        except ValueError as exc:
+            parse_errors.append(f"{path.name}: {exc}")
+            continue
+
+        for point_index, (x_value, y_value) in enumerate(parsed.points):
+            rows.append(
+                {
+                    "project_id": project.project_id,
+                    "batch_id": batch.batch_id,
+                    "version_id": version_id,
+                    "graph_type": parsed.graph_type,
+                    "x_name": parsed.x_name,
+                    "y_name": parsed.y_name,
+                    "x_unit": parsed.x_unit,
+                    "y_unit": parsed.y_unit,
+                    "x_value": x_value,
+                    "y_value": y_value,
+                    "point_index": point_index,
+                    "source_file": str(path),
+                    "export_meta": parsed.export_meta,
+                }
+            )
+
+    write_result: Dict[str, Any] = {}
+    if rows:
+        write_result = writer.write_measurements(rows)
+
+    return {
+        "export_dir": str(exports_dir),
+        "files_found": len(export_files),
+        "rows_prepared": len(rows),
+        "parse_errors": parse_errors,
+        "write_result": write_result,
+    }
+
+
 def run_batch_pipeline(
     project: Project,
     batch: Batch,
@@ -111,6 +168,7 @@ def run_batch_pipeline(
     akabak_base_args: Sequence[str] | None = None,
     vacs_base_args: Sequence[str] | None = None,
     continue_on_error: bool = True,
+    dry_run: bool = False,
 ) -> RuntimeSummary:
     planning_summary = materialize_batch_plan(
         project=project,
@@ -121,9 +179,9 @@ def run_batch_pipeline(
     template_text = _load_template_text(template_cfg_path)
     writer = TidyDatasetWriter(project_root)
 
-    ath_runner = AthRunner(ath_executable, base_args=ath_base_args) if ath_executable else None
-    akabak_runner = AkabakRunner(akabak_executable, base_args=akabak_base_args) if akabak_executable else None
-    vacs_runner = VacsRunner(vacs_executable, base_args=vacs_base_args) if vacs_executable else None
+    ath_runner = None if dry_run or not ath_executable else AthRunner(ath_executable, base_args=ath_base_args)
+    akabak_runner = None if dry_run or not akabak_executable else AkabakRunner(akabak_executable, base_args=akabak_base_args)
+    vacs_runner = None if dry_run or not vacs_executable else VacsRunner(vacs_executable, base_args=vacs_base_args)
 
     stage_results: List[StageExecution] = []
     ath_dimension_rows = 0
@@ -148,6 +206,51 @@ def run_batch_pipeline(
         )
         cfg_path.parent.mkdir(parents=True, exist_ok=True)
         cfg_path.write_text(cfg_text, encoding="utf-8")
+
+        if dry_run:
+            elapsed = time.perf_counter() - version_started
+            stage_results.append(
+                StageExecution(
+                    version_id=version_id,
+                    stage="dry_run",
+                    status="ok",
+                    exit_code=0,
+                    timed_out=False,
+                    summary_log="dry_run",
+                )
+            )
+            _update_version_state(
+                project_root,
+                version_id,
+                {
+                    "status": "dry_run_completed",
+                    "dry_run": True,
+                    "finished_at": _now_iso(),
+                    "duration_seconds": elapsed,
+                },
+            )
+            writer.update_version_status(
+                version_id,
+                status="dry_run_completed",
+                duration_seconds=elapsed,
+                finished_at=_now_iso(),
+            )
+            cleanup_result = guarded_delete_tree(
+                _version_ath_work_path(project_root, version_id),
+                allowed_root=versions_root,
+                expected_dir_name="ath_work",
+                perform_delete=False,
+                deny_paths=(project_root, project_root.parent, versions_root),
+            )
+            cleanup_results.append(
+                {
+                    "version_id": version_id,
+                    "target": cleanup_result.target,
+                    "deleted": cleanup_result.deleted,
+                    "reason": cleanup_result.reason,
+                }
+            )
+            continue
 
         if ath_runner:
             ath_work_dir = _version_ath_work_path(project_root, version_id)
@@ -234,25 +337,45 @@ def run_batch_pipeline(
                 continue
 
         if vacs_runner:
+            exports_dir = _version_exports_dir(project_root, version_id)
+            exports_dir.mkdir(parents=True, exist_ok=True)
             vacs_result = vacs_runner.run_export(
                 _version_abec_path(project_root, version_id),
                 version_logs_dir=_version_logs_dir(project_root, version_id),
+                workdir=exports_dir,
             )
             stage_results.append(_stage_from_result(version_id, "vacs", vacs_result))
+
+            vacs_ingest: Dict[str, Any] = {}
+            vacs_stage_ok = vacs_result.ok
+            if vacs_result.ok:
+                vacs_ingest = _ingest_vacs_exports(
+                    writer=writer,
+                    project=project,
+                    batch=batch,
+                    version_id=version_id,
+                    exports_dir=exports_dir,
+                )
+                if int(vacs_ingest.get("files_found", 0)) <= 0:
+                    vacs_stage_ok = False
+                if vacs_ingest.get("parse_errors"):
+                    vacs_stage_ok = False
+
+            vacs_status = "vacs_ok" if vacs_stage_ok else "vacs_failed"
             _update_version_state(
                 project_root,
                 version_id,
                 {
-                    "status": "vacs_ok" if vacs_result.ok else "vacs_failed",
+                    "status": vacs_status,
                     "vacs_result": {
                         "exit_code": vacs_result.exit_code,
                         "timed_out": vacs_result.timed_out,
                         "summary_log": vacs_result.summary_log,
                     },
+                    "vacs_export_ingest": vacs_ingest,
                 },
             )
-            writer.update_version_status(version_id, status="vacs_ok" if vacs_result.ok else "vacs_failed")
-            vacs_stage_ok = vacs_result.ok
+            writer.update_version_status(version_id, status=vacs_status)
 
         elapsed = time.perf_counter() - version_started
         final_ok = ath_stage_ok and akabak_stage_ok and vacs_stage_ok
@@ -296,4 +419,5 @@ def run_batch_pipeline(
         stage_results=stage_results,
         ath_dimension_rows=ath_dimension_rows,
         cleanup_results=cleanup_results,
+        dry_run=dry_run,
     )
