@@ -1,0 +1,31 @@
+name: mirror-backup
+
+on:
+  schedule:
+    # alle 30 Minuten (nicht zur vollen Stunde -> weniger Verzögerungen)
+    - cron: "7,37 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mirror-backup
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mirror clone source repo (all branches/tags/history)
+        run: |
+          git clone --mirror "https://github.com/${{ github.repository }}.git" repo.mirror
+
+      - name: Push mirror to backup repo
+        env:
+          BACKUP_REPO: ${{ secrets.BACKUP_REPO }}
+          BACKUP_TOKEN: ${{ secrets.BACKUP_TOKEN }}
+        run: |
+          cd repo.mirror
+          git remote add backup "https://x-access-token:${BACKUP_TOKEN}@github.com/${BACKUP_REPO}.git"
+          git push --mirror backup
