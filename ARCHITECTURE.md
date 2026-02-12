@@ -27,66 +27,64 @@ Branch: `wut-batcher/rebuild`
 
 ### Implemented and Working
 - `app/models.py`
-  - Core JSON-backed data models: `AppConfig`, `ProjectConstraints`, `Project`, `Batch`, `DatasetManifest`.
-  - Sweep definitions represented by `SweepSpec` + `ParamSelection`.
-- `app/batch_planner.py`
-  - Deterministic sweep expansion with `single` and `combined` modes.
-  - Job count calculation.
+  - Core data models plus new execution entities: `VersionSpec`, `ResolutionIssue`, `ResolveVersionsResult`.
+- `app/version_resolver.py`
+  - Central resolver for `Project.constraints + Batch -> VersionSpec[]`.
+  - Exact `single` and `combined` sweep expansion.
+  - Explicit `unset_parameters` handling for omitted ATH fields.
+  - Blocking compatibility validation against `compat_engine` (project/batch/version).
+  - Deterministic version ID allocation with carry-over from existing project versions.
 - `app/compat_engine.py` + `app/knowledge/ath/*.json`
-  - Rule-based parameter visibility, sweepability, validity report.
-  - Runner-mode restrictions for fixed source block.
-- `app/cfg_renderer.py`
-  - CFG rendering with mandatory AKABAK-compatible source block enforcement.
-- `app/dataset_pipeline.py`
-  - Imports `Result_*.txt` into SQLite (`versions`, `measurements`, `measurement_meta`) with manifest-based incremental updates.
-- Tests
-  - `tests/test_m2_compat_engine.py`
-  - `tests/test_m5_planner_renderer.py`
-
-### Present but Incomplete vs Target
-- `app/path_resolver.py`
-  - Uses legacy path style (`Project_<id>/batches/Batch_<id>/...`), not target unified `projects/<project_id>/.../versions/<version_id>/...` layout.
+  - Rule-based visibility/sweepability/validity.
+- `app/compat_rules.py`
+  - Machine-readable compatibility export shape:
+  - fields: `rule_id`, `description`, `scope`, `condition`, `action`, `severity`, `evidence`.
+- `app/project_storage.py`
+  - Target layout persistence:
+  - `projects/<project_id>/project.json`
+  - `projects/<project_id>/batches/<batch_id>/batch.json`
+  - `projects/<project_id>/versions/<version_id>/...`
+  - `projects/<project_id>/dataset/`, `tables/`, `_logs/`
+  - immutable project constraint guard.
+- `app/tidy_dataset.py`
+  - Tidy CSV writer for:
+  - version parameter resolution
+  - measurement rows
+  - ATH dimension rows
+  - schema output + optional parquet output.
+  - project-wide table export (`tables/project_versions.csv`).
+- `app/batch_orchestrator.py`
+  - High-level planning/materialization flow for milestone-ready placeholder pipeline.
+- `app/runners.py`
+  - `AthRunner`, `AkabakRunner`, `VacsRunner` subprocess wrappers.
+  - stdout/stderr/summary logs, exit status, timeout, retry.
+  - ATH dimension parser helper (`parse_ath_dimensions`).
+- `app/runtime_orchestrator.py`
+  - Staged runtime pipeline (`plan -> ATH -> AKABAK -> VACS`).
+  - Per-version status updates and ATH dimension write-through into tidy dataset.
 - `app/cli.py`
-  - Only `doctor`, `batch job-count`, `dataset build/update` are active.
-  - No complete project/batch/version lifecycle orchestration in current repo snapshot.
+  - New command: `plan materialize` for project+batch resolution and folder materialization.
+  - New command: `run pipeline` for staged runtime execution.
+- Tests
+  - Existing: `tests/test_m2_compat_engine.py`, `tests/test_m5_planner_renderer.py`
+  - New: `tests/test_version_resolver.py`, `tests/test_project_storage_and_tidy.py`, `tests/test_compat_rules.py`, `tests/test_runners.py`
+
+### Partially Implemented vs Target
+- Runtime orchestration exists as staged subprocess pipeline, but external tool contracts are still generic:
+  - ATH stage supports execution + dimension parsing when executable contract is provided.
+  - AKABAK and VACS stages are wired as subprocess stages, but UI-specific automation contracts are not yet bound in this snapshot.
+- Legacy modules (`app/path_resolver.py`, `app/dataset_pipeline.py`) still use prior storage/import conventions and coexist with new rebuild modules.
 
 ### Missing in Current Repo Snapshot
-- No integrated orchestrator that executes full ATH -> AKABAK -> VACS per `Version`.
-- No current `Runner/` directory in this snapshot, despite references in docs.
-- No first-class `VersionSpec` resolver output with explicit `unset` semantics.
-- No project-wide version ID allocator/registry in storage layer.
-- No tidy file-based dataset writer (CSV/Parquet) for normalized rows as primary output format.
-- No project table writer in target format.
-- No machine-readable compatibility registry with explicit fields
-  (`rule_id`, `description`, `scope`, `condition`, `action`, `severity`, `evidence`).
+- No `Runner/` directory in this snapshot despite references in older docs; wrappers therefore target generic subprocess contracts only.
+- No live UI automation adapter in app layer yet (only isolated runner wrappers).
 
-## Gap List / Backlog
-1. Add explicit domain entities for resolved versions and batch definitions in execution context.
-2. Implement central resolver:
-   - Input: `Project.constraints` + `Batch`.
-   - Output: deterministic `VersionSpec[]`.
-   - Exact `single` and `combined` behavior.
-   - Preserve "empty field => omitted parameter" as explicit `unset` markers.
-3. Add blocking validation layer:
-   - Project constraints validity.
-   - Batch parameter visibility/sweepability compatibility against constraints.
-   - Version-level fatal validity blocking.
-4. Implement target project storage layout:
-   - `projects/<project_id>/project.json`
-   - `projects/<project_id>/batches/<batch_id>/batch.json`
-   - `projects/<project_id>/versions/<version_id>/...`
-   - `projects/<project_id>/dataset/...`
-   - `projects/<project_id>/tables/...`
-   - `projects/<project_id>/_logs/...`
-5. Implement deterministic project-wide version ID allocation.
-6. Implement tidy dataset writer:
-   - normalized curve rows
-   - ATH dimension features
-   - schema file
-   - CSV + optional Parquet.
-7. Implement minimal project table export.
-8. Add runner wrappers (`AthRunner`, `AkabakRunner`, `VacsRunner`) with logging, status, timeout, retries.
-9. Add smoke tests from resolver to file outputs.
+## Gap List / Backlog (Updated)
+1. Bind concrete ATH/AKABAK/VACS CLI/UI invocation contracts from real environment into runtime orchestrator.
+2. Add robust per-version state transitions across stage boundaries including recovery/resume semantics.
+3. Implement VACS TXT export parsing ingestion in the new tidy writer path (currently legacy importer handles this separately).
+4. Add project-table update hooks for imported measurements (currently focus is version metadata + ATH dimensions).
+5. Optionally unify or migrate legacy dataset/path modules to the new layout.
 
 ## Milestone Definition (next)
 - Create project with immutable constraints persisted.
@@ -94,3 +92,5 @@ Branch: `wut-batcher/rebuild`
 - Resolve deterministic `VersionSpec` list with project-wide IDs.
 - Materialize per-version folders with placeholders and logs.
 - Write tidy dataset with at least version metadata + resolved parameters (without real simulation).
+
+Status against milestone: achieved in current rebuild implementation.
