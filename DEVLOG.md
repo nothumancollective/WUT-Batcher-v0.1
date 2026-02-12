@@ -111,3 +111,33 @@
 #### Risks / Open Points
 - Exact ATH STL export directive is still unknown; export currently inserts explicit TODO block in CFG.
 - AKABAK/VACS runtime stages are subprocess-capable but still depend on concrete environment contracts for production runs.
+
+### Update 4 (UI Theme Addendum)
+#### Done
+- Added centralized theme token system:
+  - `ui/theme_tokens.py` as source of truth for near-black palette, spacing, radii, typography.
+- Added robust Qt theming layer:
+  - `ui/theme.py` with `build_palette()`, `build_stylesheet()`, `apply_theme()`.
+  - Global style uses `Fusion` + dark `QPalette` + targeted QSS.
+- Implemented Windows dark titlebar handling:
+  - Qt-way env setup before app start (`QT_QPA_PLATFORM=windows:darkmode=1`).
+  - Win32 fallback via `DwmSetWindowAttribute` (attribute 20 then 19).
+  - Function: `apply_windows_dark_titlebar(window)`; non-Windows no-op.
+- Added theme preview window:
+  - `ui/theme_preview.py`
+  - launch via CLI: `python -m app theme preview`.
+- Integrated new theme stack into GUI:
+  - `app/gui.py` now uses `apply_theme()` and titlebar dark-mode application for splash, project manager, and main window.
+  - Removed direct styling dependency on legacy-only theme implementation.
+- Added backward-compat wrapper:
+  - `app/gui_theme.py` now proxies new theme API.
+
+#### Validation
+- CLI routes:
+  - `python -m app --help` includes `theme`
+  - `python -m app theme --help` includes `preview`
+- Test suite remains green: `28/28`.
+
+#### Risks / Open Points
+- Final visual polish (exact spacing/rhythm, panel density) still requires iterative tuning against real screen captures.
+- Win32 titlebar behavior can vary by OS build; fallback path is implemented, but should be visually verified on target VM build.

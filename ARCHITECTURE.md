@@ -145,7 +145,10 @@ STL note (open point):
 
 ## GUI Architecture (PySide6)
 - Entry: `app/gui.py` (`python -m app gui`)
-- Dark modern style via `app/gui_theme.py`
+- Dark modern style via:
+  - `ui/theme_tokens.py` (design-token source of truth: colors/spacing/radii/typography)
+  - `ui/theme.py` (Fusion style + dark palette + targeted QSS + Windows titlebar dark mode)
+  - `ui/theme_preview.py` (`python -m app theme preview`)
 - Startup flow:
   1. splash screen
   2. doctor checks in background phase
@@ -162,6 +165,19 @@ STL note (open point):
 - Status bar:
   - clickable status text -> detail popup
   - right clickable `WUT BATCHER` -> About dialog
+
+## Theme and Windows Titlebar Strategy
+- Global Qt style is set to `Fusion`.
+- Theming layers:
+  1. QPalette built from tokens (`build_palette`)
+  2. focused QSS for controls where palette is not enough (`build_stylesheet`)
+- Typography:
+  - preferred app font: `Condor`
+  - fallback chain: `Segoe UI`, `Arial`
+- Windows dark titlebar:
+  - Qt-way: set `QT_QPA_PLATFORM=windows:darkmode=1` before `QApplication`
+  - Win32 fallback: `DwmSetWindowAttribute(DWMWA_USE_IMMERSIVE_DARK_MODE)` with robust attribute fallback (20 then 19)
+  - no-op on non-Windows platforms
 
 ## Open Points
 1. Bind real ATH/AKABAK/VACS invocation contracts from VM (flags, startup semantics).
