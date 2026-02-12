@@ -141,3 +141,31 @@
 #### Risks / Open Points
 - Final visual polish (exact spacing/rhythm, panel density) still requires iterative tuning against real screen captures.
 - Win32 titlebar behavior can vary by OS build; fallback path is implemented, but should be visually verified on target VM build.
+
+### Update 5 (Continue Pass)
+#### Done
+- Priority A: SQL dual-write hardened with atomic plan-bundle operation.
+  - Added `upsert_plan_bundle` operation in `app/sql_dataset_store.py`.
+  - Added `write_plan_bundle(project,batch,versions)` to commit project+batch+versions in one transaction per DB target.
+  - `app/batch_orchestrator.py` now uses bundle-write instead of three separate writes.
+  - Added global retry sync service API `OrchestratorService.sync_global_db()`.
+  - Added CLI command `dataset sync-global` for replaying pending mirror writes.
+- Priority B: UI skeleton polish.
+  - Applied dark titlebar handling to Settings/About dialogs on show.
+  - Project Manager now opens maximized for fullscreen-like workflow.
+- Priority C: run-loop cleanup guard hardening.
+  - Added `expected_dir_name` guard to `guarded_delete_tree()`.
+  - Runtime cleanup now enforces target dir name `ath_work`.
+
+#### Tests / Validation
+- Unit tests expanded and green: `31/31`.
+  - Added/extended tests for bundle-write, sync summary, and cleanup dir-name guard.
+- Smoke test (service/DB without GUI):
+  - created sample project + batch
+  - verified `project.sqlite`, `global.sqlite`, batch/version artifacts
+  - global sync replay ran clean (`processed=0`, `failed=0`).
+- GUI smoke note:
+  - not executable in current env because `PySide6` is missing (`ModuleNotFoundError`).
+
+#### Open Point
+- ATH STL export flag still unknown; TODO hook remains intentionally in code until verified.

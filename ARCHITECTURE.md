@@ -88,6 +88,7 @@ Additional operational table:
    - SQL dataset sink (`SqlDatasetStore` via `TidyDatasetWriter`)
 4. SQL writes happen to project DB and mirrored to global DB.
 5. UI receives summaries/status only (no core logic in widgets).
+6. Pending global mirror failures can be replayed via service/CLI sync (`sync_global_db` / `dataset sync-global`).
 
 ## Resolver and Validation
 - Central resolver: `app/version_resolver.py`
@@ -184,3 +185,4 @@ STL note (open point):
 2. Wire real VACS TXT ingestion into `graphs` + `graph_points` in runtime loop.
 3. Replace STL TODO directive with verified ATH export option.
 4. Expand dashboard batch editing policy (lock/clone behavior for successful batches).
+5. Ensure PySide6 runtime dependency is installed on target VM Python for GUI startup (`python -m app gui`).
