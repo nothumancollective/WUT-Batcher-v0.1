@@ -20,8 +20,8 @@
 - `severity`: `fatal|warn|info`
 - `rationale`: human-readable explanation
 - `evidence`: object
-  - `type`: `source|hypothesis`
-  - `refs`: `{source, section, quote_hint}` list
+  - `type`: `ath_doc|hypothesis`
+  - `refs`: `{doc, section, page, quote_hint}` list
   - `confidence`: float
   - `notes`: explanation
 - `verification_plan`: required for hypotheses
@@ -29,13 +29,13 @@
 ## Evidence Facts
 `semantic_facts` includes:
 - `length_is_mandatory` (doc-backed if available in bundle)
-- `source_items_can_be_omitted` (hypothesis until explicit citation exists)
+- `source_items_can_be_omitted` (doc-backed from User Guide defaults/tutorial)
 - `source_contours_override` (doc-backed)
-- `ath_creates_subdirectory_per_script` (hypothesis)
-- `output_flags_stl_abecproject` (hypothesis)
+- `ath_creates_subdirectory_per_script` (doc-backed from Program Output + Running sections)
+- `output_flags_stl_abecproject` (doc-backed from Program Output/Tutorial sections)
 
 ## Determinism Guarantees
 - Rule normalization is idempotent.
 - Rule evaluation has no arbitrary Python execution.
 - Explicit `unset` parameter states map to `not defined`.
-
+- Verification harness persists run outcomes into `compat_verification_results`.

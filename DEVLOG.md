@@ -320,3 +320,25 @@
 #### Docs
 - Added `docs/COMPATIBILITY_SCHEMA.md`.
 - Replaced corrupted `docs/Rules.md` with updated rule/evidence/DSL guidance.
+
+### Update 11 (Compatibility Verification + Evidence Completion)
+#### Done
+- Evidence hardening completed from ATH official docs:
+  - semantic facts for `Output.STL`/`Output.ABECProject`, auto subdirectory behavior, and omitted `Source.*` defaults now carry `ath_doc` evidence with `{doc, section, page, quote_hint}` refs.
+  - normalization now preserves doc-backed fallback evidence instead of downgrading missing rule evidence to hypothesis.
+- Added deterministic compatibility verification harness:
+  - new module `app/compat_verification.py` builds minimal CFG cases, executes ATH, checks artifacts/exit behavior, writes JSON report.
+  - SQL persistence added via new table `compat_verification_results` in both project/global DB dual-write flow.
+  - CLI command added: `python -m app compat verify`.
+- DSL engine adversarial hardening:
+  - fixed bool semantics so explicit `UNSET` is false in evaluator truthiness.
+  - added dedicated adversarial tests in `tests/test_compat_engine_dsl.py` for precedence, negation, dotted/missing keys, escaped warn strings, numeric edge cases, and eval denylist checks.
+- Added evidence report:
+  - `docs/COMPATIBILITY_EVIDENCE_REPORT.md` generated from normalized schema with rule/fact evidence status and hypothesis coverage.
+
+#### Validation
+- Full suite green: `59/59` tests passing.
+- Harness tests green with ATH stub and SQL persistence.
+
+#### Open Points
+- Most behavior rules are still hypothesis-backed and require either direct ATH doc citation per rule or dedicated executable verification cases to promote confidence.

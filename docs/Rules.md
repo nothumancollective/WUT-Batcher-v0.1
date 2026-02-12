@@ -16,7 +16,7 @@ Each rule supports:
 - `severity` (`fatal|warn|info`)
 - `rationale`
 - `evidence` object:
-  - `type` (`source|hypothesis`)
+  - `type` (`ath_doc|hypothesis`)
   - `refs` list
   - `confidence` (0.0-1.0)
   - `notes`
@@ -45,6 +45,7 @@ Conditions are evaluated by a restricted AST evaluator.
 - Explicit `unset` values (SQL `is_set=0`) are treated as not defined.
 
 ## Evidence Policy
-- Prefer `source` evidence with exact references from the ATH knowledge bundle.
+- Prefer `ath_doc` evidence with exact references (`doc`, `section`, `page`, `quote_hint`).
 - Use `hypothesis` only when no explicit reference is available.
 - Hypothesis entries must include a concrete `verification_plan`.
+- Hypothesis semantics can be regression-checked with `python -m app compat verify`.
