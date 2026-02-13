@@ -407,3 +407,24 @@
 - Added optional integration tests (env gated):
   - `tests/test_ui_automation_integration_optional.py` (`WUT_UIA_INTEGRATION=1`)
 - Full suite status after changes: `69/69` passing, `2` optional integration tests skipped by default.
+
+### Update 14 (SQL Graph Schema Upgrade for Polar/Series Data)
+#### Done
+- Upgraded SQL dataset schema to `2.2` with series-aware model:
+  - added `graph_series(series_id, graph_id, series_kind, angle_deg, label, meta_json, created_at)`
+  - upgraded `graph_points` to `series_id` foreign key + optional `y_imag`
+  - extended `graphs` with semantic columns (`graph_kind`, `x_axis`, `y_axis`, `meta_json`) while keeping legacy fields for compatibility
+- Added in-place migration logic for legacy DBs:
+  - detects old `graph_points(graph_id, ...)`
+  - creates default per-graph series rows
+  - migrates points losslessly to new schema
+- Added performance indices:
+  - `idx_graph_points_series_x (series_id, x_value)`
+  - `idx_graph_series_graph_angle (graph_id, angle_deg)`
+  - `idx_graphs_version_kind (version_id, graph_kind)`
+- Updated CLI row counting to join `graph_points -> graph_series -> graphs` for version-scoped checks.
+
+#### Tests
+- Added migration regression test:
+  - `tests/test_sql_dataset_store.py::test_migrates_legacy_graph_points_schema_to_series_model`
+- Extended storage smoke assertions with `graph_series` row counts.

@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 from app.models import Batch, Project, VersionSpec
 
 
-SCHEMA_VERSION = "2.1"
+SCHEMA_VERSION = "2.2"
 
 
 def _now_iso() -> str:
@@ -51,6 +51,18 @@ def _stable_graph_id(
 ) -> str:
     raw = "|".join([project_id, batch_id, version_id, graph_type, x_name, y_name, source_file])
     return "G" + hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
+
+
+def _stable_series_id(
+    graph_id: str,
+    *,
+    series_kind: str,
+    angle_deg: Optional[float],
+    label: str,
+) -> str:
+    angle_token = "" if angle_deg is None else f"{float(angle_deg):.6f}"
+    raw = "|".join([graph_id, series_kind, angle_token, label])
+    return "S" + hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
 
 
 class SqlDatasetStore:
@@ -169,23 +181,39 @@ class SqlDatasetStore:
                     batch_id TEXT NOT NULL,
                     version_id TEXT NOT NULL,
                     graph_type TEXT,
+                    graph_kind TEXT,
                     x_name TEXT,
                     y_name TEXT,
+                    x_axis TEXT,
+                    y_axis TEXT,
                     x_unit TEXT,
                     y_unit TEXT,
                     source_file TEXT,
                     export_meta TEXT,
+                    meta_json TEXT,
                     created_at TEXT NOT NULL,
                     FOREIGN KEY (version_id) REFERENCES versions(version_id) ON DELETE CASCADE
                 );
 
-                CREATE TABLE IF NOT EXISTS graph_points (
+                CREATE TABLE IF NOT EXISTS graph_series (
+                    series_id TEXT PRIMARY KEY,
                     graph_id TEXT NOT NULL,
+                    series_kind TEXT,
+                    angle_deg REAL,
+                    label TEXT,
+                    meta_json TEXT,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (graph_id) REFERENCES graphs(graph_id) ON DELETE CASCADE
+                );
+
+                CREATE TABLE IF NOT EXISTS graph_points (
+                    series_id TEXT NOT NULL,
                     point_index INTEGER NOT NULL,
                     x_value REAL,
                     y_value REAL,
-                    PRIMARY KEY (graph_id, point_index),
-                    FOREIGN KEY (graph_id) REFERENCES graphs(graph_id) ON DELETE CASCADE
+                    y_imag REAL,
+                    PRIMARY KEY (series_id, point_index),
+                    FOREIGN KEY (series_id) REFERENCES graph_series(series_id) ON DELETE CASCADE
                 );
 
                 CREATE TABLE IF NOT EXISTS replication_queue (
@@ -215,11 +243,139 @@ class SqlDatasetStore:
                 CREATE INDEX IF NOT EXISTS idx_versions_project_batch ON versions(project_id, batch_id);
                 CREATE INDEX IF NOT EXISTS idx_version_params_project_batch ON version_params(project_id, batch_id);
                 CREATE INDEX IF NOT EXISTS idx_graphs_version ON graphs(version_id);
-                CREATE INDEX IF NOT EXISTS idx_graph_points_graph ON graph_points(graph_id);
                 CREATE INDEX IF NOT EXISTS idx_replication_queue_status ON replication_queue(status, queue_id);
                 CREATE INDEX IF NOT EXISTS idx_compat_results_project_fact ON compat_verification_results(project_id, fact_id);
                 """
             )
+            self._migrate_schema(conn)
+
+    def _table_columns(self, conn: sqlite3.Connection, table_name: str) -> List[str]:
+        rows = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+        return [str(row["name"]) for row in rows]
+
+    def _ensure_graphs_columns(self, conn: sqlite3.Connection) -> None:
+        columns = set(self._table_columns(conn, "graphs"))
+        missing = []
+        for name, sql_type in (
+            ("graph_kind", "TEXT"),
+            ("x_axis", "TEXT"),
+            ("y_axis", "TEXT"),
+            ("meta_json", "TEXT"),
+        ):
+            if name not in columns:
+                missing.append((name, sql_type))
+        for name, sql_type in missing:
+            conn.execute(f"ALTER TABLE graphs ADD COLUMN {name} {sql_type}")
+
+    def _migrate_graph_points_schema(self, conn: sqlite3.Connection) -> None:
+        columns = set(self._table_columns(conn, "graph_points"))
+        if not columns:
+            return
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS graph_series (
+                series_id TEXT PRIMARY KEY,
+                graph_id TEXT NOT NULL,
+                series_kind TEXT,
+                angle_deg REAL,
+                label TEXT,
+                meta_json TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (graph_id) REFERENCES graphs(graph_id) ON DELETE CASCADE
+            )
+            """
+        )
+
+        if "series_id" in columns:
+            if "y_imag" not in columns:
+                conn.execute("ALTER TABLE graph_points ADD COLUMN y_imag REAL")
+            return
+
+        if "graph_id" not in columns:
+            return
+
+        old_rows = conn.execute(
+            "SELECT graph_id, point_index, x_value, y_value FROM graph_points ORDER BY graph_id, point_index"
+        ).fetchall()
+        graph_created_at = {
+            str(row["graph_id"]): str(row["created_at"])
+            for row in conn.execute("SELECT graph_id, created_at FROM graphs").fetchall()
+        }
+
+        conn.execute("PRAGMA foreign_keys = OFF")
+        conn.execute(
+            """
+            CREATE TABLE graph_points_new (
+                series_id TEXT NOT NULL,
+                point_index INTEGER NOT NULL,
+                x_value REAL,
+                y_value REAL,
+                y_imag REAL,
+                PRIMARY KEY (series_id, point_index),
+                FOREIGN KEY (series_id) REFERENCES graph_series(series_id) ON DELETE CASCADE
+            )
+            """
+        )
+
+        series_cache: Dict[str, str] = {}
+        for row in old_rows:
+            graph_id = str(row["graph_id"])
+            series_id = series_cache.get(graph_id)
+            if series_id is None:
+                series_id = _stable_series_id(
+                    graph_id,
+                    series_kind="curve",
+                    angle_deg=None,
+                    label="default",
+                )
+                series_cache[graph_id] = series_id
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO graph_series (
+                        series_id, graph_id, series_kind, angle_deg, label, meta_json, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        series_id,
+                        graph_id,
+                        "curve",
+                        None,
+                        "default",
+                        _to_json({}),
+                        graph_created_at.get(graph_id, _now_iso()),
+                    ),
+                )
+            conn.execute(
+                """
+                INSERT INTO graph_points_new (series_id, point_index, x_value, y_value, y_imag)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    series_id,
+                    int(row["point_index"]),
+                    float(row["x_value"]) if row["x_value"] is not None else None,
+                    float(row["y_value"]) if row["y_value"] is not None else None,
+                    None,
+                ),
+            )
+
+        conn.execute("DROP TABLE graph_points")
+        conn.execute("ALTER TABLE graph_points_new RENAME TO graph_points")
+        conn.execute("PRAGMA foreign_keys = ON")
+
+    def _migrate_schema(self, conn: sqlite3.Connection) -> None:
+        self._ensure_graphs_columns(conn)
+        self._migrate_graph_points_schema(conn)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_graphs_version_kind ON graphs(version_id, graph_kind)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_graph_series_graph_angle ON graph_series(graph_id, angle_deg)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_graph_points_series_x ON graph_points(series_id, x_value)"
+        )
 
     def persist_schema_descriptor(self) -> None:
         payload = {
@@ -234,6 +390,7 @@ class SqlDatasetStore:
                 "version_params",
                 "ath_dimensions",
                 "graphs",
+                "graph_series",
                 "graph_points",
                 "compat_verification_results",
             ],
@@ -459,20 +616,24 @@ class SqlDatasetStore:
             conn.execute(
                 """
                 INSERT INTO graphs (
-                    graph_id, project_id, batch_id, version_id, graph_type,
-                    x_name, y_name, x_unit, y_unit, source_file, export_meta, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    graph_id, project_id, batch_id, version_id, graph_type, graph_kind,
+                    x_name, y_name, x_axis, y_axis, x_unit, y_unit, source_file, export_meta, meta_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(graph_id) DO UPDATE SET
                     project_id=excluded.project_id,
                     batch_id=excluded.batch_id,
                     version_id=excluded.version_id,
                     graph_type=excluded.graph_type,
+                    graph_kind=excluded.graph_kind,
                     x_name=excluded.x_name,
                     y_name=excluded.y_name,
+                    x_axis=excluded.x_axis,
+                    y_axis=excluded.y_axis,
                     x_unit=excluded.x_unit,
                     y_unit=excluded.y_unit,
                     source_file=excluded.source_file,
                     export_meta=excluded.export_meta,
+                    meta_json=excluded.meta_json,
                     created_at=excluded.created_at
                 """,
                 (
@@ -481,29 +642,87 @@ class SqlDatasetStore:
                     str(graph["batch_id"]),
                     str(graph["version_id"]),
                     str(graph.get("graph_type", "")),
+                    str(graph.get("graph_kind", graph.get("graph_type", ""))),
                     str(graph.get("x_name", "")),
                     str(graph.get("y_name", "")),
+                    str(graph.get("x_axis", graph.get("x_name", ""))),
+                    str(graph.get("y_axis", graph.get("y_name", ""))),
                     str(graph.get("x_unit", "")),
                     str(graph.get("y_unit", "")),
                     str(graph.get("source_file", "")),
                     graph.get("export_meta"),
+                    graph.get("meta_json"),
                     str(graph.get("created_at") or _now_iso()),
                 ),
             )
-            conn.execute("DELETE FROM graph_points WHERE graph_id = ?", (graph_id,))
-            for point in graph.get("points", []):
+            conn.execute("DELETE FROM graph_series WHERE graph_id = ?", (graph_id,))
+
+            series_rows = list(graph.get("series", []))
+            if not series_rows and graph.get("points"):
+                series_rows = [
+                    {
+                        "series_id": _stable_series_id(
+                            graph_id,
+                            series_kind="curve",
+                            angle_deg=None,
+                            label="default",
+                        ),
+                        "series_kind": "curve",
+                        "angle_deg": None,
+                        "label": "default",
+                        "meta_json": _to_json({}),
+                        "created_at": str(graph.get("created_at") or _now_iso()),
+                        "points": list(graph.get("points", [])),
+                    }
+                ]
+
+            for series in series_rows:
+                series_id = str(
+                    series.get("series_id")
+                    or _stable_series_id(
+                        graph_id,
+                        series_kind=str(series.get("series_kind", "curve")),
+                        angle_deg=float(series["angle_deg"]) if series.get("angle_deg") is not None else None,
+                        label=str(series.get("label", "default")),
+                    )
+                )
                 conn.execute(
                     """
-                    INSERT INTO graph_points (graph_id, point_index, x_value, y_value)
-                    VALUES (?, ?, ?, ?)
+                    INSERT INTO graph_series (
+                        series_id, graph_id, series_kind, angle_deg, label, meta_json, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(series_id) DO UPDATE SET
+                        graph_id=excluded.graph_id,
+                        series_kind=excluded.series_kind,
+                        angle_deg=excluded.angle_deg,
+                        label=excluded.label,
+                        meta_json=excluded.meta_json,
+                        created_at=excluded.created_at
                     """,
                     (
+                        series_id,
                         graph_id,
-                        int(point["point_index"]),
-                        float(point["x_value"]) if point.get("x_value") is not None else None,
-                        float(point["y_value"]) if point.get("y_value") is not None else None,
+                        str(series.get("series_kind", "curve")),
+                        float(series["angle_deg"]) if series.get("angle_deg") is not None else None,
+                        str(series.get("label", "default")),
+                        series.get("meta_json", _to_json({})),
+                        str(series.get("created_at") or graph.get("created_at") or _now_iso()),
                     ),
                 )
+                for point in series.get("points", []):
+                    conn.execute(
+                        """
+                        INSERT INTO graph_points (series_id, point_index, x_value, y_value, y_imag)
+                        VALUES (?, ?, ?, ?, ?)
+                        """,
+                        (
+                            series_id,
+                            int(point["point_index"]),
+                            float(point["x_value"]) if point.get("x_value") is not None else None,
+                            float(point["y_value"]) if point.get("y_value") is not None else None,
+                            float(point["y_imag"]) if point.get("y_imag") is not None else None,
+                        ),
+                    )
 
     def _op_update_version_status(self, conn: sqlite3.Connection, payload: Dict[str, Any]) -> None:
         fields = ["status = ?"]
@@ -754,12 +973,13 @@ class SqlDatasetStore:
 
     def write_measurements(self, rows: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
         graphs: Dict[str, Dict[str, Any]] = {}
-        ordered_ids: List[str] = []
+        ordered_graph_ids: List[str] = []
+        ordered_series_ids: List[str] = []
         for row in rows:
             project_id = str(row["project_id"])
             batch_id = str(row["batch_id"])
             version_id = str(row["version_id"])
-            graph_type = str(row.get("graph_type", ""))
+            graph_type = str(row.get("graph_type", row.get("graph_kind", "")))
             x_name = str(row.get("x_name", "x"))
             y_name = str(row.get("y_name", "y"))
             source_file = str(row.get("source_file", ""))
@@ -774,31 +994,80 @@ class SqlDatasetStore:
                     "batch_id": batch_id,
                     "version_id": version_id,
                     "graph_type": graph_type,
+                    "graph_kind": str(row.get("graph_kind", graph_type)),
                     "x_name": x_name,
                     "y_name": y_name,
+                    "x_axis": str(row.get("x_axis", x_name)),
+                    "y_axis": str(row.get("y_axis", y_name)),
                     "x_unit": str(row.get("x_unit", "")),
                     "y_unit": str(row.get("y_unit", "")),
                     "source_file": source_file,
                     "export_meta": _to_json(row.get("export_meta", {})),
+                    "meta_json": _to_json(row.get("meta_json", row.get("export_meta", {}))),
+                    "created_at": str(row.get("created_at") or _now_iso()),
+                    "series": {},
+                }
+                ordered_graph_ids.append(graph_id)
+
+            series_kind = str(row.get("series_kind", "curve"))
+            angle_deg = row.get("angle_deg")
+            angle_value = float(angle_deg) if angle_deg is not None else None
+            label = str(row.get("series_label", row.get("label", "default")))
+            series_id = str(
+                row.get("series_id")
+                or _stable_series_id(
+                    graph_id,
+                    series_kind=series_kind,
+                    angle_deg=angle_value,
+                    label=label,
+                )
+            )
+            graph_series = graphs[graph_id]["series"]
+            if series_id not in graph_series:
+                graph_series[series_id] = {
+                    "series_id": series_id,
+                    "series_kind": series_kind,
+                    "angle_deg": angle_value,
+                    "label": label,
+                    "meta_json": _to_json(row.get("series_meta", {})),
                     "created_at": str(row.get("created_at") or _now_iso()),
                     "points": [],
                 }
-                ordered_ids.append(graph_id)
+                ordered_series_ids.append(series_id)
+
             point_index = row.get("point_index")
             if point_index is None:
-                point_index = len(graphs[graph_id]["points"])
-            graphs[graph_id]["points"].append(
+                point_index = len(graph_series[series_id]["points"])
+            graph_series[series_id]["points"].append(
                 {
                     "point_index": int(point_index),
                     "x_value": row.get("x_value"),
                     "y_value": row.get("y_value"),
+                    "y_imag": row.get("y_imag"),
                 }
             )
 
-        payload = {"graphs": [graphs[graph_id] for graph_id in ordered_ids]}
+        graph_payload: List[Dict[str, Any]] = []
+        for graph_id in ordered_graph_ids:
+            graph = graphs[graph_id]
+            series_map = graph.pop("series")
+            graph["series"] = [series_map[series_id] for series_id in ordered_series_ids if series_id in series_map]
+            graph_payload.append(graph)
+
+        payload = {"graphs": graph_payload}
         result = self._dual_write("upsert_graphs", payload)
-        point_count = sum(len(graphs[graph_id]["points"]) for graph_id in ordered_ids)
-        return {**result, "rows_written": point_count, "graphs_written": len(ordered_ids)}
+        point_count = sum(
+            len(series["points"])
+            for graph in graph_payload
+            for series in graph.get("series", [])
+        )
+        series_count = sum(len(graph.get("series", [])) for graph in graph_payload)
+        return {
+            **result,
+            "rows_written": point_count,
+            "graphs_written": len(graph_payload),
+            "series_written": series_count,
+        }
 
     def write_compat_verification_results(self, rows: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
         payload_rows: List[Dict[str, Any]] = []

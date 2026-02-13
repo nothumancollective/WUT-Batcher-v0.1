@@ -64,7 +64,8 @@ def _table_count_for_versions(db_path: Path, table: str, version_ids: list[str])
                 f"""
                 SELECT COUNT(*)
                 FROM graph_points gp
-                JOIN graphs g ON g.graph_id = gp.graph_id
+                JOIN graph_series gs ON gs.series_id = gp.series_id
+                JOIN graphs g ON g.graph_id = gs.graph_id
                 WHERE g.version_id IN ({placeholders})
                 """,
                 tuple(version_ids),

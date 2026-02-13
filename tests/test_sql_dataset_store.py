@@ -131,6 +131,81 @@ class SqlDatasetStoreTests(unittest.TestCase):
                 count = conn.execute("SELECT COUNT(*) FROM compat_verification_results").fetchone()[0]
             self.assertEqual(int(count), 1)
 
+    def test_migrates_legacy_graph_points_schema_to_series_model(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            library_root = Path(tmp_dir) / "projects"
+            project_root = library_root / "P001"
+            dataset_dir = project_root / "dataset"
+            dataset_dir.mkdir(parents=True, exist_ok=True)
+            legacy_db = dataset_dir / "project.sqlite"
+            with closing(sqlite3.connect(str(legacy_db))) as conn:
+                conn.executescript(
+                    """
+                    CREATE TABLE graphs (
+                        graph_id TEXT PRIMARY KEY,
+                        project_id TEXT NOT NULL,
+                        batch_id TEXT NOT NULL,
+                        version_id TEXT NOT NULL,
+                        graph_type TEXT,
+                        x_name TEXT,
+                        y_name TEXT,
+                        x_unit TEXT,
+                        y_unit TEXT,
+                        source_file TEXT,
+                        export_meta TEXT,
+                        created_at TEXT NOT NULL
+                    );
+                    CREATE TABLE graph_points (
+                        graph_id TEXT NOT NULL,
+                        point_index INTEGER NOT NULL,
+                        x_value REAL,
+                        y_value REAL,
+                        PRIMARY KEY (graph_id, point_index)
+                    );
+                    """
+                )
+                conn.execute(
+                    """
+                    INSERT INTO graphs (
+                        graph_id, project_id, batch_id, version_id, graph_type,
+                        x_name, y_name, x_unit, y_unit, source_file, export_meta, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        "GLEGACY",
+                        "P001",
+                        "B001",
+                        "V001",
+                        "SPL",
+                        "Frequency",
+                        "SPL",
+                        "Hz",
+                        "dB",
+                        "legacy.txt",
+                        "{}",
+                        "2026-01-01T00:00:00+00:00",
+                    ),
+                )
+                conn.execute(
+                    "INSERT INTO graph_points (graph_id, point_index, x_value, y_value) VALUES (?, ?, ?, ?)",
+                    ("GLEGACY", 0, 100.0, 90.0),
+                )
+                conn.execute(
+                    "INSERT INTO graph_points (graph_id, point_index, x_value, y_value) VALUES (?, ?, ?, ?)",
+                    ("GLEGACY", 1, 200.0, 91.0),
+                )
+                conn.commit()
+
+            TidyDatasetWriter(project_root, library_root=library_root)
+            with closing(sqlite3.connect(str(legacy_db))) as conn:
+                columns = [row[1] for row in conn.execute("PRAGMA table_info(graph_points)").fetchall()]
+                series_count = conn.execute("SELECT COUNT(*) FROM graph_series").fetchone()[0]
+                points_count = conn.execute("SELECT COUNT(*) FROM graph_points").fetchone()[0]
+            self.assertIn("series_id", columns)
+            self.assertIn("y_imag", columns)
+            self.assertEqual(int(series_count), 1)
+            self.assertEqual(int(points_count), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

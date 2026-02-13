@@ -93,6 +93,7 @@ class ProjectStorageAndTidyTests(unittest.TestCase):
                     "version_params": conn.execute("SELECT COUNT(*) FROM version_params").fetchone()[0],
                     "ath_dimensions": conn.execute("SELECT COUNT(*) FROM ath_dimensions").fetchone()[0],
                     "graphs": conn.execute("SELECT COUNT(*) FROM graphs").fetchone()[0],
+                    "graph_series": conn.execute("SELECT COUNT(*) FROM graph_series").fetchone()[0],
                     "graph_points": conn.execute("SELECT COUNT(*) FROM graph_points").fetchone()[0],
                 }
             self.assertEqual(counts["projects"], 1)
@@ -101,6 +102,7 @@ class ProjectStorageAndTidyTests(unittest.TestCase):
             self.assertGreaterEqual(counts["version_params"], 1)
             self.assertEqual(counts["ath_dimensions"], 1)
             self.assertEqual(counts["graphs"], 1)
+            self.assertEqual(counts["graph_series"], 1)
             self.assertEqual(counts["graph_points"], 1)
 
 
