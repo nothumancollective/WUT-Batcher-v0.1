@@ -450,3 +450,44 @@
   - `tests/test_vacs_txt_parser.py` polar + complex parsing assertions
 - Added run-loop integration coverage:
   - `tests/test_runtime_orchestrator.py::test_pipeline_ingests_polar_series_into_sql`
+
+### Update 16 (Run Governance + Cleanup Test Data)
+#### Done
+- Added run-tracking foundation in SQL schema (`2.3`):
+  - `runs` lifecycle table with pin/tag and metadata (`git_commit`, `app_version`, `settings_hash`, `error_summary`)
+  - `run_versions` table for per-version status per run
+  - `versions.version_config_hash` (SHA-256 over canonical effective params with unset semantics)
+  - `graphs.run_id` + uniqueness constraints for anti-duplicate behavior inside a run
+  - `graph_series` uniqueness constraints (graph/angle/label)
+- Runtime now creates a `run_id` per execution and writes lifecycle updates (`running` -> `succeeded|failed`).
+- Output rows are tied to runs:
+  - `graphs` include `run_id`
+  - `ath_dimensions` migrated to `(run_id, version_id)` identity
+- Added helper queries/services:
+  - latest succeeded run per version (`latest_successful_run_per_version`)
+  - run listing (`list_runs`)
+  - default service version listing now prefers latest succeeded run data.
+
+#### Cleanup / Pinning
+- CLI added:
+  - `runs pin <run_id> [--project-id] [--tag]`
+  - `runs unpin <run_id> [--project-id]`
+  - `runs cleanup-testdata [--project-id] [--delete-exports] [--dry-run]`
+- Cleanup deletes only unpinned runs and dependent rows, optionally deletes run-linked export files (inside project root only), and writes audit logs:
+  - `<project>/logs/cleanup_<timestamp>.json`
+
+#### GUI
+- Dashboard additions:
+  - `Runs verwalten...` dialog (pin/unpin)
+  - `Testdaten aufraeumen...` dialog (preview, delete-exports toggle, `DELETE` confirmation)
+- Pin button tooltip:
+  - `Markiert einen Run als Ergebnis, das behalten werden soll.`
+
+#### Tests
+- Added:
+  - `tests/test_runs_governance.py`
+  - `tests/test_cli_runs_tools.py`
+- Extended:
+  - `tests/test_runtime_orchestrator.py`
+  - `tests/test_sql_dataset_store.py`
+- Full suite green: `83/83` passing, `2` optional integration tests skipped.

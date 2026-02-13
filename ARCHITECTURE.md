@@ -56,17 +56,22 @@ Primary tidy dataset storage is SQLite (not CSV/Parquet).
   - `project_id`, `batch_id`, `batch_name`, `sweep_definitions`, `sweep_mode`, `sim_export_params`, `created_at`
 - `versions`
   - `version_id`, `project_id`, `project_name`, `batch_id`, `batch_name`
-  - `resolved_parameters_snapshot`, `status`, `duration_seconds`
+  - `resolved_parameters_snapshot`, `version_config_hash`, `status`, `duration_seconds`
   - `ath_length_mm`, `ath_width_mm`, `ath_height_mm`
   - `tool_versions`, `created_at`, `finished_at`
+- `runs`
+  - `run_id`, `project_id`, `batch_id`, `started_at`, `finished_at`, `status`
+  - `git_commit`, `app_version`, `settings_hash`, `error_summary`, `pinned`, `tag`
+- `run_versions`
+  - `run_id`, `version_id`, `project_id`, `batch_id`, `status`, `duration_seconds`, `created_at`, `finished_at`, `error_summary`
 - `version_params`
   - `version_id`, `project_id`, `batch_id`, `param_name`, `value`, `unit`, `is_set`, `created_at`
   - `is_set=0` means parameter explicitly unset (must be omitted in CFG regeneration)
 - `ath_dimensions`
-  - `version_id`, `project_id`, `batch_id`, `length_mm`, `width_mm`, `height_mm`, `raw_line`, `source_file`, `created_at`
+  - `run_id`, `version_id`, `project_id`, `batch_id`, `length_mm`, `width_mm`, `height_mm`, `raw_line`, `source_file`, `created_at`
 - `graphs`
-  - `graph_id`, `project_id`, `batch_id`, `version_id`
-  - `graph_type`, `graph_kind`, `x_name`, `y_name`, `x_axis`, `y_axis`, `x_unit`, `y_unit`
+  - `graph_id`, `project_id`, `batch_id`, `version_id`, `run_id`
+  - `graph_type`, `graph_kind`, `variant`, `x_name`, `y_name`, `x_axis`, `y_axis`, `x_unit`, `y_unit`
   - `source_file`, `export_meta`, `meta_json`, `created_at`
 - `graph_series`
   - `series_id`, `graph_id`, `series_kind`, `angle_deg`, `label`, `meta_json`, `created_at`
@@ -104,14 +109,15 @@ Additional operational table:
 ## Runtime Pipeline
 - Stage orchestration: `app/runtime_orchestrator.py`
   - plan/materialize versions
+  - create run record (`runs`) and per-version run status (`run_versions`)
   - render CFG per version
   - optional deterministic `dry_run` mode (no external tool invocation)
   - ATH stage
   - AKABAK stage
   - VACS stage
-  - VACS TXT parsing into SQL `graphs` + `graph_points`
+  - VACS TXT parsing into SQL `graphs` + `graph_series` + `graph_points` (all tied to `run_id`)
   - status/duration updates in SQL
-  - ATH dimension ingestion in SQL
+  - ATH dimension ingestion in SQL (`ath_dimensions` tied to `run_id`)
 
 VACS TXT ingestion details:
 - parser module: `app/vacs_txt_parser.py`
