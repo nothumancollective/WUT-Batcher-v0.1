@@ -333,9 +333,16 @@ class ProjectFormUiTests(unittest.TestCase):
         assert layout is not None
         buttons_layout = layout.itemAt(layout.count() - 1).layout()
         self.assertIsNotNone(buttons_layout)
-        assert buttons_layout is not None
-        self.assertIsNotNone(buttons_layout.itemAt(0).spacerItem())
-        self.assertEqual(buttons_layout.itemAt(1).widget().text(), "Projekt erstellen")
+        assert isinstance(buttons_layout, QGridLayout)
+        right_box_item = buttons_layout.itemAtPosition(0, 1)
+        self.assertIsNotNone(right_box_item)
+        right_box = right_box_item.widget()
+        self.assertIsNotNone(right_box)
+        assert right_box is not None
+        button = right_box.findChild(QPushButton)
+        self.assertIsNotNone(button)
+        assert button is not None
+        self.assertEqual(button.text(), "Projekt erstellen")
 
     def test_main_columns_are_not_collapsible(self) -> None:
         toggle_buttons = [
@@ -344,6 +351,27 @@ class ProjectFormUiTests(unittest.TestCase):
             if button.text().strip() in {"Geometry", "Mesh"}
         ]
         self.assertEqual(toggle_buttons, [])
+
+    def test_coverage_angle_is_in_basics_and_hidden_when_gcurve_enabled(self) -> None:
+        coverage_editor = self.form.editor_for_key("Coverage.Angle")
+        self.assertIsNotNone(coverage_editor)
+        assert coverage_editor is not None
+        self.assertFalse(coverage_editor.isHidden())
+
+        gcurve_editor = self.form.editor_for_key("GCurve.Type")
+        self.assertIsNotNone(gcurve_editor)
+        assert gcurve_editor is not None
+        gcurve_editor.set_value(1)  # type: ignore[attr-defined]
+        self.form._on_any_field_changed()  # type: ignore[attr-defined]
+        self.assertTrue(coverage_editor.isHidden())
+
+    def test_no_gcurve_subblock_is_not_rendered(self) -> None:
+        headings = [
+            label.text().strip().lower()
+            for label in self.form.findChildren(QLabel)
+            if label.objectName() == "ContextTitle"
+        ]
+        self.assertNotIn("no gcurve", headings)
 
     def test_throat_page_headers_are_named_and_rosse_has_no_extra_header_frame(self) -> None:
         headings = [

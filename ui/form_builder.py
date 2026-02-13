@@ -78,6 +78,10 @@ class SectionColumn(QWidget):
         self.content_layout.setContentsMargins(0, 0, 0, 0)
         self.content_layout.setSpacing(10)
         root.addWidget(self.content)
+        self._root_layout = root
+
+    def set_horizontal_inset(self, inset: int) -> None:
+        self._root_layout.setContentsMargins(max(inset, 0), 0, max(inset, 0), 0)
 
 
 class AutoSizingStackedWidget(QStackedWidget):
@@ -727,6 +731,7 @@ class ParameterForm(QWidget):
         self._rollback_detail_frame: Optional[ContextFrame] = None
         self._morph_detail_keys: Tuple[str, ...] = ()
         self._rollback_detail_keys: Tuple[str, ...] = ("Rollback.Angle", "Rollback.Exp", "Rollback.StartAt")
+        self._coverage_angle_key = "Coverage.Angle"
         self._suspend_emit = False
         self._base_width: Optional[int] = None
 
@@ -785,10 +790,12 @@ class ParameterForm(QWidget):
         self._root_layout.setSpacing(12 + min(extra // 60, 36))
 
         hint = _group_width_hint()
+        block_spacing = 10 + min(extra // 180, 14)
         for section in (self.geometry_section, self.mesh_section):
             available = max(section.width(), hint)
             margin = max((available - hint) // 2, 0)
-            section.content_layout.setContentsMargins(margin, 0, margin, 0)
+            section.set_horizontal_inset(margin)
+            section.content_layout.setSpacing(block_spacing)
 
     def _build_sections(self) -> None:
         mode_controller_keys = {stack.controller_key for stack in self.schema.mode_stacks}
@@ -1281,6 +1288,13 @@ class ParameterForm(QWidget):
 
     def _apply_local_disclosure(self) -> bool:
         changed = False
+        gcurve_value = self._controller_value("GCurve.Type")
+        coverage_enabled = gcurve_value is None
+        changed = self._apply_conditional_visibility(
+            (self._coverage_angle_key,),
+            enabled=coverage_enabled,
+            context_frame=None,
+        ) or changed
         changed = self._apply_conditional_visibility(
             self._morph_detail_keys,
             enabled=self._morph_enabled(),

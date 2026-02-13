@@ -14,6 +14,7 @@ from app.models import AppConfig, Batch, Project
 from app.services import OrchestratorService
 from app.settings_store import UserSettings
 from ui.form_builder import ParameterForm
+from ui.form_metrics import FORM_METRICS
 from ui.form_schema import build_project_form_schema
 from ui.theme import apply_theme, apply_windows_dark_titlebar, configure_windows_qt_darkmode_env
 
@@ -594,22 +595,43 @@ class ProjectPage(QWidget):
     def __init__(self) -> None:
         super().__init__()
         root = QVBoxLayout(self)
+        root.setContentsMargins(24, 12, 24, 16)
+        root.setSpacing(10)
         title = QLabel("PROJECT")
         title.setObjectName("PageTitle")
         root.addWidget(title)
 
+        form_column_width = (2 * FORM_METRICS.label_width) + (2 * FORM_METRICS.input_width) + FORM_METRICS.column_gap + 32
+
+        name_row = QGridLayout()
+        name_row.setContentsMargins(0, 0, 0, 0)
+        name_row.setHorizontalSpacing(12)
+        name_row.setColumnStretch(0, 1)
+        name_row.setColumnStretch(1, 1)
         self.project_name = QLineEdit()
         self.project_name.setPlaceholderText("Project Name")
-        root.addWidget(self.project_name)
+        self.project_name.setFixedWidth(form_column_width)
+        name_row.addWidget(self.project_name, 0, 0, alignment=Qt.AlignHCenter)
+        root.addLayout(name_row)
 
         self.constraints_form = ParameterForm(build_project_form_schema())
         root.addWidget(self.constraints_form, 1)
 
-        buttons = QHBoxLayout()
+        buttons = QGridLayout()
+        buttons.setContentsMargins(0, 0, 0, 0)
+        buttons.setHorizontalSpacing(12)
+        buttons.setColumnStretch(0, 1)
+        buttons.setColumnStretch(1, 1)
+        right_box = QWidget()
+        right_layout = QHBoxLayout(right_box)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(0)
+        right_box.setFixedWidth(form_column_width)
         self.create_btn = QPushButton("Projekt erstellen")
         self.create_btn.setObjectName("PrimaryButton")
-        buttons.addStretch(1)
-        buttons.addWidget(self.create_btn)
+        right_layout.addStretch(1)
+        right_layout.addWidget(self.create_btn)
+        buttons.addWidget(right_box, 0, 1, alignment=Qt.AlignHCenter)
         root.addLayout(buttons)
 
         self.create_btn.clicked.connect(self._submit)
@@ -1167,13 +1189,13 @@ class GuiController:
     def _open_project(self, project_id: str) -> None:
         project = self.service.repo.load_project(project_id)
         self.main_window.load_project(project)
-        self.main_window.show()
+        self.main_window.showFullScreen()
         apply_windows_dark_titlebar(self.main_window)
         self.project_manager.hide()
 
     def _new_project(self) -> None:
         self.main_window.current_project = None
-        self.main_window.show()
+        self.main_window.showFullScreen()
         apply_windows_dark_titlebar(self.main_window)
         self.main_window.show_project()
         self.project_manager.hide()

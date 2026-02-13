@@ -703,3 +703,28 @@
 #### Tests
 - `tests.test_project_form_ui`: passing
 - compatibility/storage/runtime targeted suites: passing
+
+### Update 25 (PROJECT Alignment + Coverage Move + Fullscreen Open)
+#### Done
+- Main workflow window now opens in fullscreen when creating/opening a project from Project Manager.
+- PROJECT header alignment pass:
+  - increased left margin for page title area
+  - project-name input moved into a two-column top grid and fixed to geometry block width
+  - create button placed in mirrored right-column container so it aligns to mesh block right edge while keeping bottom row position
+- Geometry/Mesh section headers now inherit the same horizontal inset as their block stacks, keeping headings left-aligned with block edges.
+- `Coverage.Angle` moved out of `no GCurve` mode page into `Basics`:
+  - `no GCurve` subblock removed (empty page)
+  - `Coverage.Angle` shown only when `GCurve.Type` is unset
+  - `Coverage.Angle` hidden/unset when a guiding-curve mode is selected
+- Mode layout behavior refined:
+  - fixed-width group boxes to keep horizontal width constant across mode changes
+  - vertical size still follows active subblock/page height
+
+#### Tests
+- Extended `tests/test_project_form_ui.py` with:
+  - coverage-angle visibility behavior in basics vs gcurve mode
+  - absence of `no GCurve` context heading block
+  - updated project-button alignment assertion for new grid layout
+- Regression status:
+  - `tests.test_project_form_ui`: passing
+  - compatibility/storage/runtime targeted suites: passing

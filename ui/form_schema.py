@@ -152,8 +152,10 @@ def _group_path_for_key(key: str, catalog_group: str) -> Tuple[str, ...]:
         return ("Geometry", "Morph")
     if key.startswith("Rollback"):
         return ("Geometry", "Rollback")
-    if key.startswith("GCurve.") or key == "Coverage.Angle":
+    if key.startswith("GCurve."):
         return ("Geometry", "GCurve")
+    if key == "Coverage.Angle":
+        return ("Geometry", "Basics")
     if key.startswith("CircArc.") or key.startswith("Term.") or key.startswith("OS.k") or key.startswith("R-OSSE"):
         return ("Geometry", "Throat Profile")
     return ("Geometry", "Basics")
@@ -246,7 +248,7 @@ def _mode_stacks(
         pages: List[ModePageSpec] = []
 
         if controller_key == "GCurve.Type":
-            pages.append(ModePageSpec(value=None, label="no GCurve", field_keys=("Coverage.Angle",)))
+            pages.append(ModePageSpec(value=None, label="", field_keys=()))
 
         for value in sorted(controller_modes):
             label = enum_labels.get(value, str(value))
