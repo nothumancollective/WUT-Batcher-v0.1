@@ -41,10 +41,22 @@ class ProjectPageAthExperimentTests(unittest.TestCase):
         self.assertEqual(int(result["ath_warning_count"]), 0)
 
     def test_generator_avoids_rollback_keys(self) -> None:
-        cases = generate_experiment_cases(cases=40, seed=1337, max_dim_mm=2000.0, hard_cap_mm=5000.0)
+        cases = generate_experiment_cases(
+            cases=40,
+            seed=1337,
+            max_dim_mm=2000.0,
+            hard_cap_mm=5000.0,
+            prior_ranges={},
+        )
         self.assertEqual(len(cases), 40)
         first = cases[0].case.field_values
-        second = generate_experiment_cases(cases=40, seed=1337, max_dim_mm=2000.0, hard_cap_mm=5000.0)[0].case.field_values
+        second = generate_experiment_cases(
+            cases=40,
+            seed=1337,
+            max_dim_mm=2000.0,
+            hard_cap_mm=5000.0,
+            prior_ranges={},
+        )[0].case.field_values
         self.assertEqual(first, second)
         for item in cases:
             keys = {str(key) for key, _ in item.case.field_values}

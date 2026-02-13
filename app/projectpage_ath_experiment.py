@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
+import math
 from pathlib import Path
 import random
 import re
@@ -60,8 +61,15 @@ class ExperimentCase:
     case: ProjectPageAthCase
 
 
+PriorRanges = Dict[str, Tuple[float, float]]
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[1]
 
 
 def _sample_float(rng: random.Random, low: float, high: float, *, exploratory: bool) -> float:
@@ -78,12 +86,121 @@ def _sample_int(rng: random.Random, low: int, high: int, *, exploratory: bool) -
     return int(rng.randint(low, high))
 
 
+def _load_prior_ranges(priors_path: Path) -> PriorRanges:
+    if not priors_path.exists():
+        return {}
+    try:
+        payload = json.loads(priors_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    raw_ranges = payload.get("range_suggestions")
+    if not isinstance(raw_ranges, Mapping):
+        return {}
+    parsed: PriorRanges = {}
+    for key, value in raw_ranges.items():
+        if not isinstance(key, str) or not isinstance(value, Mapping):
+            continue
+        safe = value.get("suggested_safe_range")
+        if not isinstance(safe, Mapping):
+            continue
+        try:
+            low = float(safe.get("min"))
+            high = float(safe.get("max"))
+        except Exception:
+            continue
+        if not math.isfinite(low) or not math.isfinite(high):
+            continue
+        if low > high:
+            low, high = high, low
+        parsed[key] = (low, high)
+    return parsed
+
+
+def _sample_with_priors(
+    rng: random.Random,
+    *,
+    key: str,
+    low: float,
+    high: float,
+    exploratory: bool,
+    prior_ranges: PriorRanges,
+    use_safe_prob: float = 0.8,
+) -> float:
+    if low > high:
+        low, high = high, low
+    if low == high:
+        return low
+
+    prior = prior_ranges.get(str(key))
+    if prior is None:
+        return _sample_float(rng, low, high, exploratory=exploratory)
+
+    safe_low = max(low, float(prior[0]))
+    safe_high = min(high, float(prior[1]))
+    safe_valid = safe_high > safe_low
+    if safe_valid and rng.random() < float(use_safe_prob):
+        return _sample_float(rng, safe_low, safe_high, exploratory=False)
+
+    outside_ranges: List[Tuple[float, float]] = []
+    if low < safe_low:
+        outside_ranges.append((low, safe_low))
+    if safe_high < high:
+        outside_ranges.append((safe_high, high))
+    if outside_ranges:
+        seg_low, seg_high = rng.choice(outside_ranges)
+        if seg_high > seg_low:
+            return _sample_float(rng, seg_low, seg_high, exploratory=True)
+    return _sample_float(rng, low, high, exploratory=exploratory)
+
+
+def _apply_extreme_downweight(
+    *,
+    rng: random.Random,
+    fields: List[Tuple[str, Any]],
+    max_dim_mm: float,
+) -> List[Tuple[str, Any]]:
+    by_key: Dict[str, Any] = {str(key): value for key, value in fields}
+    soft_cap = min(float(max_dim_mm), 1000.0)
+    hard_targets = ("Length", "Morph.TargetWidth", "Morph.TargetHeight")
+    for key in hard_targets:
+        if key not in by_key:
+            continue
+        value = _parse_value_num(by_key[key])
+        if value is None or value <= soft_cap:
+            continue
+        if rng.random() < 0.80:
+            damped = soft_cap * (0.75 + 0.25 * rng.random())
+            by_key[key] = round(float(damped), 4)
+    gcurve_dist = _parse_value_num(by_key.get("GCurve.Dist"))
+    if gcurve_dist is not None and gcurve_dist > soft_cap * 0.9 and rng.random() < 0.75:
+        by_key["GCurve.Dist"] = round(soft_cap * (0.55 + 0.25 * rng.random()), 4)
+    gcurve_width = _parse_value_num(by_key.get("GCurve.Width"))
+    if gcurve_width is not None and gcurve_width > soft_cap * 0.9 and rng.random() < 0.75:
+        by_key["GCurve.Width"] = round(soft_cap * (0.55 + 0.25 * rng.random()), 4)
+    if "GCurve.Type" in by_key and int(by_key.get("GCurve.Type")) == 2:
+        # Superformula branch is more sensitive to giant shapes; keep it tighter.
+        sf_n2 = _parse_value_num(by_key.get("GCurve.SF.n2"))
+        sf_n3 = _parse_value_num(by_key.get("GCurve.SF.n3"))
+        if sf_n2 is not None and sf_n2 > 2.1:
+            by_key["GCurve.SF.n2"] = round(2.1 - 0.2 * rng.random(), 4)
+        if sf_n3 is not None and sf_n3 > 2.1:
+            by_key["GCurve.SF.n3"] = round(2.1 - 0.2 * rng.random(), 4)
+
+    normalized: List[Tuple[str, Any]] = []
+    for key, _ in fields:
+        norm_key = str(key)
+        if norm_key in by_key:
+            normalized.append((norm_key, by_key[norm_key]))
+    return normalized
+
+
 def _case_fields(
     rng: random.Random,
     *,
     exploratory: bool,
     max_dim_mm: float,
     hard_cap_mm: float,
+    prior_ranges: PriorRanges,
 ) -> List[Tuple[str, Any]]:
     fields: List[Tuple[str, Any]] = []
 
@@ -97,10 +214,40 @@ def _case_fields(
         length_high = min(hard_cap_mm * 1.05, hard_cap_mm + 250.0)
     else:
         length_low = 90.0
-    length = round(_sample_float(rng, length_low, max(length_low + 1.0, length_high), exploratory=exploratory), 3)
+    length = round(
+        _sample_with_priors(
+            rng,
+            key="Length",
+            low=length_low,
+            high=max(length_low + 1.0, length_high),
+            exploratory=exploratory,
+            prior_ranges=prior_ranges,
+        ),
+        3,
+    )
 
-    throat_diameter = round(_sample_float(rng, 10.0 if exploratory else 20.0, 140.0 if exploratory else 65.0, exploratory=exploratory), 3)
-    throat_angle = round(_sample_float(rng, 0.0 if exploratory else 2.0, 28.0 if exploratory else 9.5, exploratory=exploratory), 3)
+    throat_diameter = round(
+        _sample_with_priors(
+            rng,
+            key="Throat.Diameter",
+            low=10.0 if exploratory else 20.0,
+            high=140.0 if exploratory else 65.0,
+            exploratory=exploratory,
+            prior_ranges=prior_ranges,
+        ),
+        3,
+    )
+    throat_angle = round(
+        _sample_with_priors(
+            rng,
+            key="Throat.Angle",
+            low=0.0 if exploratory else 2.0,
+            high=28.0 if exploratory else 9.5,
+            exploratory=exploratory,
+            prior_ranges=prior_ranges,
+        ),
+        3,
+    )
 
     fields.extend(
         [
@@ -128,7 +275,20 @@ def _case_fields(
         fields.extend(
             [
                 ("R-OSSE.R", round(_sample_float(rng, 35.0, hard_cap_mm * (0.25 if exploratory else 0.12), exploratory=exploratory), 4)),
-                ("R-OSSE.r0", round(_sample_float(rng, 3.0, 48.0 if exploratory else 28.0, exploratory=exploratory), 4)),
+                (
+                    "R-OSSE.r0",
+                    round(
+                        _sample_with_priors(
+                            rng,
+                            key="R-OSSE.r0",
+                            low=3.0,
+                            high=48.0 if exploratory else 28.0,
+                            exploratory=exploratory,
+                            prior_ranges=prior_ranges,
+                        ),
+                        4,
+                    ),
+                ),
                 ("R-OSSE.a0", round(_sample_float(rng, 0.0, 18.0 if exploratory else 10.0, exploratory=exploratory), 4)),
                 ("R-OSSE.a", round(_sample_float(rng, 8.0, 85.0 if exploratory else 60.0, exploratory=exploratory), 4)),
                 ("R-OSSE.k", round(_sample_float(rng, 0.15, 1.9 if exploratory else 1.25, exploratory=exploratory), 5)),
@@ -142,7 +302,20 @@ def _case_fields(
         fields.extend(
             [
                 ("CircArc.TermAngle", round(_sample_float(rng, 3.0, 72.0 if exploratory else 44.0, exploratory=exploratory), 4)),
-                ("CircArc.Radius", round(_sample_float(rng, 35.0, hard_cap_mm * (0.3 if exploratory else 0.18), exploratory=exploratory), 4)),
+                (
+                    "CircArc.Radius",
+                    round(
+                        _sample_with_priors(
+                            rng,
+                            key="CircArc.Radius",
+                            low=35.0,
+                            high=hard_cap_mm * (0.3 if exploratory else 0.18),
+                            exploratory=exploratory,
+                            prior_ranges=prior_ranges,
+                        ),
+                        4,
+                    ),
+                ),
             ]
         )
 
@@ -152,8 +325,34 @@ def _case_fields(
         fields.extend(
             [
                 ("GCurve.Type", int(gcurve_type)),
-                ("GCurve.Dist", round(_sample_float(rng, 8.0, max_dim_mm * (0.9 if exploratory else 0.35), exploratory=exploratory), 4)),
-                ("GCurve.Width", round(_sample_float(rng, 18.0, max_dim_mm * (0.85 if exploratory else 0.32), exploratory=exploratory), 4)),
+                (
+                    "GCurve.Dist",
+                    round(
+                        _sample_with_priors(
+                            rng,
+                            key="GCurve.Dist",
+                            low=8.0,
+                            high=max_dim_mm * (0.9 if exploratory else 0.35),
+                            exploratory=exploratory,
+                            prior_ranges=prior_ranges,
+                        ),
+                        4,
+                    ),
+                ),
+                (
+                    "GCurve.Width",
+                    round(
+                        _sample_with_priors(
+                            rng,
+                            key="GCurve.Width",
+                            low=18.0,
+                            high=max_dim_mm * (0.85 if exploratory else 0.32),
+                            exploratory=exploratory,
+                            prior_ranges=prior_ranges,
+                        ),
+                        4,
+                    ),
+                ),
                 ("GCurve.Rot", round(_sample_float(rng, -20.0 if exploratory else -8.0, 20.0 if exploratory else 8.0, exploratory=exploratory), 4)),
                 ("GCurve.AspectRatio", round(_sample_float(rng, 0.3 if exploratory else 0.7, 2.6 if exploratory else 1.6, exploratory=exploratory), 4)),
             ]
@@ -163,13 +362,13 @@ def _case_fields(
         elif int(gcurve_type) == 2:
             fields.extend(
                 [
-                    ("GCurve.SF.a", round(_sample_float(rng, 0.3 if exploratory else 0.8, 1.8 if exploratory else 1.25, exploratory=exploratory), 4)),
-                    ("GCurve.SF.b", round(_sample_float(rng, 0.3 if exploratory else 0.8, 1.8 if exploratory else 1.25, exploratory=exploratory), 4)),
-                    ("GCurve.SF.m1", round(_sample_float(rng, 1.0, 14.0 if exploratory else 8.0, exploratory=exploratory), 4)),
-                    ("GCurve.SF.m2", round(_sample_float(rng, 1.0, 14.0 if exploratory else 8.0, exploratory=exploratory), 4)),
-                    ("GCurve.SF.n1", round(_sample_float(rng, 0.08, 2.0 if exploratory else 0.75, exploratory=exploratory), 4)),
-                    ("GCurve.SF.n2", round(_sample_float(rng, 0.3, 3.0 if exploratory else 1.9, exploratory=exploratory), 4)),
-                    ("GCurve.SF.n3", round(_sample_float(rng, 0.3, 3.0 if exploratory else 1.9, exploratory=exploratory), 4)),
+                    ("GCurve.SF.a", round(_sample_float(rng, 0.5 if exploratory else 0.7, 1.6 if exploratory else 1.25, exploratory=exploratory), 4)),
+                    ("GCurve.SF.b", round(_sample_float(rng, 0.5 if exploratory else 0.7, 1.6 if exploratory else 1.25, exploratory=exploratory), 4)),
+                    ("GCurve.SF.m1", round(_sample_float(rng, 1.5 if exploratory else 2.0, 10.0 if exploratory else 7.5, exploratory=exploratory), 4)),
+                    ("GCurve.SF.m2", round(_sample_float(rng, 1.5 if exploratory else 2.0, 10.0 if exploratory else 7.5, exploratory=exploratory), 4)),
+                    ("GCurve.SF.n1", round(_sample_float(rng, 0.1 if exploratory else 0.2, 1.4 if exploratory else 0.95, exploratory=exploratory), 4)),
+                    ("GCurve.SF.n2", round(_sample_float(rng, 0.3 if exploratory else 0.5, 2.4 if exploratory else 1.8, exploratory=exploratory), 4)),
+                    ("GCurve.SF.n3", round(_sample_float(rng, 0.3 if exploratory else 0.5, 2.4 if exploratory else 1.8, exploratory=exploratory), 4)),
                 ]
             )
 
@@ -177,8 +376,34 @@ def _case_fields(
         tgt_max = max_dim_mm * (0.95 if exploratory else 0.45)
         fields.extend(
             [
-                ("Morph.TargetWidth", round(_sample_float(rng, 45.0, max(60.0, tgt_max), exploratory=exploratory), 4)),
-                ("Morph.TargetHeight", round(_sample_float(rng, 45.0, max(60.0, tgt_max), exploratory=exploratory), 4)),
+                (
+                    "Morph.TargetWidth",
+                    round(
+                        _sample_with_priors(
+                            rng,
+                            key="Morph.TargetWidth",
+                            low=45.0,
+                            high=max(60.0, tgt_max),
+                            exploratory=exploratory,
+                            prior_ranges=prior_ranges,
+                        ),
+                        4,
+                    ),
+                ),
+                (
+                    "Morph.TargetHeight",
+                    round(
+                        _sample_with_priors(
+                            rng,
+                            key="Morph.TargetHeight",
+                            low=45.0,
+                            high=max(60.0, tgt_max),
+                            exploratory=exploratory,
+                            prior_ranges=prior_ranges,
+                        ),
+                        4,
+                    ),
+                ),
             ]
         )
         if morph_target_shape == 1:
@@ -196,7 +421,7 @@ def _case_fields(
     if rng.random() < (0.45 if exploratory else 0.28):
         fields.append(("Mesh.CornerSegments", _sample_int(rng, 1, 14 if exploratory else 8, exploratory=exploratory)))
 
-    return fields
+    return _apply_extreme_downweight(rng=rng, fields=fields, max_dim_mm=max_dim_mm)
 
 
 def generate_experiment_cases(
@@ -205,15 +430,24 @@ def generate_experiment_cases(
     seed: int,
     max_dim_mm: float,
     hard_cap_mm: float,
+    prior_ranges: PriorRanges,
 ) -> List[ExperimentCase]:
     rng = random.Random(int(seed))
     generated: List[ExperimentCase] = []
     for case_index in range(1, int(cases) + 1):
-        exploratory = rng.random() < 0.30
+        case_seed = int(rng.getrandbits(63)) ^ int(case_index * 7919)
+        case_rng = random.Random(case_seed)
+        exploratory = case_rng.random() < 0.30
         case = ProjectPageAthCase(
             test_id=f"PP_ATH_EXP_{case_index:04d}",
             project_name=f"PP_ATH_EXP_{case_index:04d}",
-            field_values=_case_fields(rng, exploratory=exploratory, max_dim_mm=max_dim_mm, hard_cap_mm=hard_cap_mm),
+            field_values=_case_fields(
+                case_rng,
+                exploratory=exploratory,
+                max_dim_mm=max_dim_mm,
+                hard_cap_mm=hard_cap_mm,
+                prior_ranges=prior_ranges,
+            ),
         )
         generated.append(
             ExperimentCase(
@@ -261,6 +495,141 @@ def _safe_delete_cfg_file(cfg_path: Path, *, cfg_root: Path) -> Dict[str, Any]:
     result["deleted"] = True
     result["reason"] = "deleted"
     return result
+
+
+def _cleanup_expected_base(*, kind: str) -> Path:
+    if kind not in {"cases", "log"}:
+        raise ValueError(f"Unsupported cleanup kind: {kind}")
+    return (_repo_root() / "reports" / "ath_experiments" / kind).resolve()
+
+
+def _validate_cleanup_base(base: Path, *, kind: str) -> bool:
+    repo = _repo_root().resolve()
+    reports_root = (repo / "reports").resolve()
+    exp_root = (reports_root / "ath_experiments").resolve()
+    expected = _cleanup_expected_base(kind=kind)
+    if base != expected:
+        return False
+    if base in {repo, reports_root, exp_root}:
+        return False
+    expected_suffix = ("reports", "ath_experiments", kind)
+    if tuple(base.parts[-3:]) != expected_suffix:
+        return False
+    return True
+
+
+def _append_cleanup_log(
+    *,
+    reports_root: Path,
+    phase: str,
+    payload: Mapping[str, Any],
+) -> None:
+    log_name = "cleanup_pre_run.log" if phase == "pre" else "cleanup_end.log"
+    log_path = reports_root / log_name
+    record = {"timestamp": _now_iso(), **dict(payload)}
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
+def _cleanup_report_files_base(
+    *,
+    kind: str,
+    phase: str,
+    reports_root: Path,
+) -> Dict[str, Any]:
+    base = _cleanup_expected_base(kind=kind)
+    base_path_verified = _validate_cleanup_base(base, kind=kind)
+    deleted_count = 0
+    bytes_freed = 0
+    file_count_before = 0
+    created_missing_base = False
+
+    if not base.exists():
+        base.mkdir(parents=True, exist_ok=True)
+        created_missing_base = True
+    if not base.is_dir():
+        result = {
+            "phase": phase,
+            "kind": kind,
+            "base": str(base),
+            "base_path_verified": False,
+            "file_count_before": 0,
+            "deleted_count": 0,
+            "bytes_freed": 0,
+            "error": "base_not_directory",
+        }
+        _append_cleanup_log(reports_root=reports_root, phase=phase, payload=result)
+        return result
+
+    if base_path_verified:
+        files = [path for path in base.rglob("*") if path.is_file()]
+        file_count_before = len(files)
+        for file_path in files:
+            resolved = file_path.resolve()
+            if not resolved.is_relative_to(base):
+                continue
+            try:
+                bytes_freed += int(resolved.stat().st_size)
+            except Exception:
+                pass
+            resolved.unlink(missing_ok=True)
+            deleted_count += 1
+        directories = sorted(
+            [path for path in base.rglob("*") if path.is_dir()],
+            key=lambda item: len(item.parts),
+            reverse=True,
+        )
+        for dir_path in directories:
+            resolved_dir = dir_path.resolve()
+            if not resolved_dir.is_relative_to(base):
+                continue
+            try:
+                if not any(resolved_dir.iterdir()):
+                    resolved_dir.rmdir()
+            except Exception:
+                continue
+
+    result = {
+        "phase": phase,
+        "kind": kind,
+        "base": str(base),
+        "base_path_verified": bool(base_path_verified),
+        "created_missing_base": bool(created_missing_base),
+        "file_count_before": int(file_count_before),
+        "deleted_count": int(deleted_count),
+        "bytes_freed": int(bytes_freed),
+    }
+    _append_cleanup_log(reports_root=reports_root, phase=phase, payload=result)
+    return result
+
+
+def _cleanup_report_files(
+    *,
+    reports_root: Path,
+    phase: str,
+    cleanup_cases: bool,
+    cleanup_log: bool,
+) -> Dict[str, Any]:
+    results: Dict[str, Any] = {"phase": phase, "actions": {}}
+    if cleanup_cases:
+        results["actions"]["cases"] = _cleanup_report_files_base(kind="cases", phase=phase, reports_root=reports_root)
+    if cleanup_log:
+        results["actions"]["log"] = _cleanup_report_files_base(kind="log", phase=phase, reports_root=reports_root)
+
+    sqlite_path = (reports_root / "ath_experiments.sqlite").resolve()
+    summary_path = (reports_root / "summary.json").resolve()
+    summary_md = (reports_root / "summary.md").resolve()
+    range_v1 = (reports_root / "range_suggestions.v1.json").resolve()
+    range_v11 = (reports_root / "range_suggestions.v1.1.json").resolve()
+    results["verify"] = {
+        "ath_experiments_sqlite_exists": sqlite_path.exists(),
+        "summary_json_exists": summary_path.exists(),
+        "summary_md_exists": summary_md.exists(),
+        "range_suggestions_v1_exists": range_v1.exists(),
+        "range_suggestions_v11_exists": range_v11.exists(),
+    }
+    return results
 
 
 def _parse_value_num(value: Any) -> Optional[float]:
@@ -361,6 +730,7 @@ def _ensure_db_schema(conn: sqlite3.Connection) -> None:
         """
         CREATE TABLE IF NOT EXISTS experiment_runs(
             run_id TEXT PRIMARY KEY,
+            run_group_id TEXT,
             created_at TEXT NOT NULL,
             seed INTEGER NOT NULL,
             case_index INTEGER NOT NULL,
@@ -417,9 +787,23 @@ def _ensure_db_schema(conn: sqlite3.Connection) -> None:
         """
     )
 
+    columns = {
+        str(row[1])
+        for row in conn.execute("PRAGMA table_info(experiment_runs)").fetchall()
+    }
+    if "run_group_id" not in columns:
+        conn.execute("ALTER TABLE experiment_runs ADD COLUMN run_group_id TEXT")
+
     conn.execute("CREATE INDEX IF NOT EXISTS ix_experiment_runs_status ON experiment_runs(status)")
     conn.execute("CREATE INDEX IF NOT EXISTS ix_experiment_runs_case_index ON experiment_runs(case_index)")
     conn.execute("CREATE INDEX IF NOT EXISTS ix_experiment_runs_error_kind ON experiment_runs(ath_error_kind)")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_experiment_runs_group ON experiment_runs(run_group_id)")
+    conn.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_experiment_runs_group_seed_case
+        ON experiment_runs(run_group_id, seed, case_index)
+        """
+    )
     conn.execute("CREATE INDEX IF NOT EXISTS ix_experiment_params_key ON experiment_params(key)")
     conn.execute("CREATE INDEX IF NOT EXISTS ix_experiment_params_value_num ON experiment_params(value_num)")
     conn.execute("CREATE INDEX IF NOT EXISTS ix_experiment_metrics_length_mm ON experiment_metrics(final_length_mm)")
@@ -431,6 +815,7 @@ def _persist_experiment_row(
     conn: sqlite3.Connection,
     *,
     run_id: str,
+    run_group_id: Optional[str],
     created_at: str,
     seed: int,
     case_index: int,
@@ -457,12 +842,13 @@ def _persist_experiment_row(
     conn.execute(
         """
         INSERT OR REPLACE INTO experiment_runs(
-            run_id, created_at, seed, case_index, status, ath_exit_code, ath_error_kind,
+            run_id, run_group_id, created_at, seed, case_index, status, ath_exit_code, ath_error_kind,
             ath_error_message, ath_warning_count, cfg_path, horns_export_dir, stdout_path, stderr_path, notes
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             run_id,
+            run_group_id,
             created_at,
             int(seed),
             int(case_index),
@@ -578,7 +964,7 @@ def _float_or_none(value: Any) -> Optional[float]:
 
 def _compute_range_suggestions(conn: sqlite3.Connection, run_ids: Sequence[str]) -> Dict[str, Any]:
     base_sql = """
-        SELECT p.key, p.value_num, r.status
+        SELECT p.key, p.value_num, r.status, r.seed, COALESCE(r.run_group_id, '')
         FROM experiment_params p
         JOIN experiment_runs r ON r.run_id = p.run_id
         WHERE p.run_id IN ({placeholders})
@@ -586,16 +972,32 @@ def _compute_range_suggestions(conn: sqlite3.Connection, run_ids: Sequence[str])
           AND p.value_num IS NOT NULL
     """
     rows = _query_with_run_ids(conn, base_sql, run_ids)
-    grouped: Dict[str, Dict[str, List[float]]] = {}
+    grouped: Dict[str, Dict[str, Any]] = {}
     for row in rows:
         key = str(row[0])
         value = _float_or_none(row[1])
         status = str(row[2] or "")
+        seed = int(row[3]) if row[3] is not None else -1
+        run_group = str(row[4] or "")
         if value is None:
             continue
-        bucket = grouped.setdefault(key, {"success": [], "fail": []})
+        bucket = grouped.setdefault(
+            key,
+            {
+                "success": [],
+                "fail": [],
+                "by_seed_success": {},
+                "by_run_group_success": {},
+            },
+        )
         if status == "ok":
             bucket["success"].append(value)
+            by_seed = dict(bucket["by_seed_success"])
+            by_seed.setdefault(seed, []).append(value)
+            bucket["by_seed_success"] = by_seed
+            by_group = dict(bucket["by_run_group_success"])
+            by_group.setdefault(run_group, []).append(value)
+            bucket["by_run_group_success"] = by_group
         elif status in {"ath_error", "pipeline_error"}:
             bucket["fail"].append(value)
 
@@ -610,12 +1012,43 @@ def _compute_range_suggestions(conn: sqlite3.Connection, run_ids: Sequence[str])
         suggestion = None
         if success_min is not None and success_max is not None:
             suggestion = {"min": success_min, "max": success_max}
+        recommended = None
+        if success_values:
+            recommended = {
+                "min": _percentile(success_values, 0.05),
+                "max": _percentile(success_values, 0.95),
+            }
+        by_seed_ranges: Dict[str, Any] = {}
+        for seed, values in sorted(dict(grouped[key].get("by_seed_success", {})).items()):
+            if not values:
+                continue
+            by_seed_ranges[str(seed)] = {
+                "success_min": min(values),
+                "success_max": max(values),
+                "recommended_min": _percentile(values, 0.05),
+                "recommended_max": _percentile(values, 0.95),
+                "samples": len(values),
+            }
+        by_group_ranges: Dict[str, Any] = {}
+        for group, values in sorted(dict(grouped[key].get("by_run_group_success", {})).items()):
+            if not values or not str(group).strip():
+                continue
+            by_group_ranges[str(group)] = {
+                "success_min": min(values),
+                "success_max": max(values),
+                "recommended_min": _percentile(values, 0.05),
+                "recommended_max": _percentile(values, 0.95),
+                "samples": len(values),
+            }
         suggestions[key] = {
             "success_min": success_min,
             "success_max": success_max,
             "fail_min": fail_min,
             "fail_max": fail_max,
             "suggested_safe_range": suggestion,
+            "recommended_range_p05_p95": recommended,
+            "by_seed": by_seed_ranges,
+            "by_run_group": by_group_ranges,
         }
     return suggestions
 
@@ -653,12 +1086,397 @@ def _dimension_threshold_hits(reports: Sequence[Mapping[str, Any]]) -> Dict[str,
     }
 
 
+def _mode_from_report(report: Mapping[str, Any]) -> Dict[str, str]:
+    input_summary = dict(report.get("input_summary", {}) or {})
+    field_values_raw = list(input_summary.get("field_values", []) or [])
+    values: Dict[str, Any] = {}
+    for item in field_values_raw:
+        if not isinstance(item, (list, tuple)) or len(item) != 2:
+            continue
+        values[str(item[0])] = item[1]
+
+    throat_profile_map = {1: "OS-SE", 2: "R-OSSE", 3: "Circular Arc"}
+    throat_value = values.get("Throat.Profile")
+    try:
+        throat_mode = throat_profile_map.get(int(throat_value), "Unknown")
+    except Exception:
+        throat_mode = "Unknown"
+
+    gcurve_value = values.get("GCurve.Type")
+    if gcurve_value is None:
+        gcurve_mode = "no_gcurve"
+    else:
+        try:
+            gcurve_mode = {1: "superellipse", 2: "superformula"}.get(int(gcurve_value), "other")
+        except Exception:
+            gcurve_mode = "other"
+
+    morph_value = values.get("Morph.TargetShape")
+    morph_mode = "morph_off"
+    try:
+        if morph_value is not None and int(morph_value) != 0:
+            morph_mode = "morph_on"
+    except Exception:
+        morph_mode = "morph_on" if morph_value is not None else "morph_off"
+
+    enclosure_mode = "enclosure_on" if any(str(key).startswith("Mesh.Enclosure") for key in values.keys()) else "enclosure_off"
+    return {
+        "gcurve": gcurve_mode,
+        "throat_profile": throat_mode,
+        "morph": morph_mode,
+        "enclosure": enclosure_mode,
+    }
+
+
+def _mode_error_rates(reports: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
+    dimensions = ("gcurve", "throat_profile", "morph", "enclosure")
+    buckets: Dict[str, Dict[str, Dict[str, int]]] = {name: {} for name in dimensions}
+    for report in reports:
+        status = str(report.get("status", ""))
+        modes = _mode_from_report(report)
+        for dimension in dimensions:
+            mode_name = str(modes.get(dimension, "unknown"))
+            entry = buckets[dimension].setdefault(mode_name, {"total": 0, "ath_error": 0, "non_ok": 0})
+            entry["total"] += 1
+            if status == "ath_error":
+                entry["ath_error"] += 1
+            if status != "ok":
+                entry["non_ok"] += 1
+    result: Dict[str, Any] = {}
+    for dimension in dimensions:
+        result[dimension] = {}
+        for mode_name, counts in sorted(buckets[dimension].items()):
+            total = max(1, int(counts["total"]))
+            result[dimension][mode_name] = {
+                "total": int(counts["total"]),
+                "ath_error": int(counts["ath_error"]),
+                "non_ok": int(counts["non_ok"]),
+                "ath_error_rate": float(counts["ath_error"]) / float(total),
+                "non_ok_rate": float(counts["non_ok"]) / float(total),
+            }
+    return result
+
+
+def _error_class_mode_breakdown(reports: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
+    classes: Dict[str, Dict[str, Any]] = {}
+    for report in reports:
+        status = str(report.get("status", ""))
+        if status != "ath_error":
+            continue
+        errors = dict(report.get("errors", {}) or {})
+        error_class = str(errors.get("ath_error_kind") or "unknown")
+        item = classes.setdefault(
+            error_class,
+            {
+                "count": 0,
+                "example_run_ids": [],
+                "mode_counts": {
+                    "gcurve": {},
+                    "throat_profile": {},
+                    "morph": {},
+                    "enclosure": {},
+                },
+            },
+        )
+        item["count"] = int(item["count"]) + 1
+        run_id = str(report.get("run_id") or "")
+        if run_id and len(item["example_run_ids"]) < 5:
+            item["example_run_ids"].append(run_id)
+        modes = _mode_from_report(report)
+        for key in ("gcurve", "throat_profile", "morph", "enclosure"):
+            mode_name = str(modes.get(key, "unknown"))
+            counts = dict(item["mode_counts"].get(key, {}))
+            counts[mode_name] = int(counts.get(mode_name, 0)) + 1
+            item["mode_counts"][key] = counts
+
+    ranked = sorted(classes.items(), key=lambda kv: int(kv[1]["count"]), reverse=True)
+    return {key: value for key, value in ranked}
+
+
+def _build_mode_error_matrix(reports: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
+    matrix: Dict[str, Dict[str, Dict[str, int]]] = {
+        "gcurve": {},
+        "throat_profile": {},
+        "morph": {},
+        "enclosure": {},
+    }
+    for report in reports:
+        status = str(report.get("status", "ok"))
+        errors = dict(report.get("errors", {}) or {})
+        error_class = "ok" if status == "ok" else str(errors.get("ath_error_kind") or status)
+        modes = _mode_from_report(report)
+        for axis in ("gcurve", "throat_profile", "morph", "enclosure"):
+            mode_name = str(modes.get(axis, "unknown"))
+            axis_map = matrix[axis].setdefault(mode_name, {})
+            axis_map[error_class] = int(axis_map.get(error_class, 0)) + 1
+    return matrix
+
+
+def _percentile(values: Sequence[float], q: float) -> Optional[float]:
+    if not values:
+        return None
+    sorted_values = sorted(float(value) for value in values)
+    if len(sorted_values) == 1:
+        return float(sorted_values[0])
+    q_clamped = min(1.0, max(0.0, float(q)))
+    position = q_clamped * (len(sorted_values) - 1)
+    lower = int(math.floor(position))
+    upper = int(math.ceil(position))
+    if lower == upper:
+        return float(sorted_values[lower])
+    ratio = position - lower
+    return float(sorted_values[lower] * (1.0 - ratio) + sorted_values[upper] * ratio)
+
+
+def _dimension_distribution_stats(reports: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
+    metrics_keys = ("final_length_mm", "final_width_mm", "final_height_mm")
+    values_by_key: Dict[str, List[float]] = {key: [] for key in metrics_keys}
+    for report in reports:
+        metrics = dict(report.get("metrics", {}) or {})
+        for key in metrics_keys:
+            value = _parse_value_num(metrics.get(key))
+            if value is None:
+                continue
+            values_by_key[key].append(float(value))
+    result: Dict[str, Any] = {}
+    for key in metrics_keys:
+        values = values_by_key[key]
+        result[key] = {
+            "count": len(values),
+            "p50": _percentile(values, 0.50),
+            "p90": _percentile(values, 0.90),
+            "p99": _percentile(values, 0.99),
+            "min": min(values) if values else None,
+            "max": max(values) if values else None,
+        }
+    return result
+
+
+def _hard_cap_correlated_keys(
+    conn: sqlite3.Connection,
+    *,
+    run_ids: Sequence[str],
+    top_n: int = 10,
+) -> List[Dict[str, Any]]:
+    metric_sql = """
+        SELECT m.run_id, m.flags_json
+        FROM experiment_metrics m
+        WHERE m.run_id IN ({placeholders})
+    """
+    metric_rows = _query_with_run_ids(conn, metric_sql, run_ids)
+    hard_cap_ids: set[str] = set()
+    for row in metric_rows:
+        run_id = str(row[0])
+        flags_raw = str(row[1] or "{}")
+        try:
+            flags = json.loads(flags_raw)
+        except Exception:
+            flags = {}
+        if isinstance(flags, Mapping) and bool(flags.get("hard_cap_exceeded")):
+            hard_cap_ids.add(run_id)
+
+    ok_sql = """
+        SELECT run_id
+        FROM experiment_runs
+        WHERE run_id IN ({placeholders}) AND status = 'ok'
+    """
+    ok_rows = _query_with_run_ids(conn, ok_sql, run_ids)
+    ok_ids = {str(row[0]) for row in ok_rows}
+    if not hard_cap_ids or not ok_ids:
+        return []
+
+    param_sql = """
+        SELECT run_id, key, value_num
+        FROM experiment_params
+        WHERE run_id IN ({placeholders}) AND is_set = 1 AND value_num IS NOT NULL
+    """
+    param_rows = _query_with_run_ids(conn, param_sql, run_ids)
+    grouped: Dict[str, Dict[str, List[float]]] = {}
+    for row in param_rows:
+        run_id = str(row[0])
+        key = str(row[1])
+        value = _float_or_none(row[2])
+        if value is None:
+            continue
+        bucket = grouped.setdefault(key, {"hard_cap": [], "ok": []})
+        if run_id in hard_cap_ids:
+            bucket["hard_cap"].append(float(value))
+        elif run_id in ok_ids:
+            bucket["ok"].append(float(value))
+
+    ranked: List[Dict[str, Any]] = []
+    for key, bucket in grouped.items():
+        hard_values = bucket["hard_cap"]
+        ok_values = bucket["ok"]
+        if len(hard_values) < 8 or len(ok_values) < 8:
+            continue
+        hard_mean = sum(hard_values) / len(hard_values)
+        ok_mean = sum(ok_values) / len(ok_values)
+        delta = hard_mean - ok_mean
+        ratio = delta / (abs(ok_mean) + 1e-9)
+        ranked.append(
+            {
+                "key": key,
+                "hard_cap_samples": len(hard_values),
+                "ok_samples": len(ok_values),
+                "hard_cap_mean": hard_mean,
+                "ok_mean": ok_mean,
+                "delta": delta,
+                "delta_ratio": ratio,
+                "score": abs(ratio),
+            }
+        )
+    ranked.sort(key=lambda item: float(item.get("score", 0.0)), reverse=True)
+    return [{k: v for k, v in item.items() if k != "score"} for item in ranked[: max(1, int(top_n))]]
+
+
+def _run_ids_for_groups(conn: sqlite3.Connection, *, run_groups: Sequence[str]) -> List[str]:
+    groups = [str(group).strip() for group in run_groups if str(group).strip()]
+    if not groups:
+        return []
+    placeholders = ", ".join("?" for _ in groups)
+    rows = conn.execute(
+        f"""
+        SELECT run_id
+        FROM experiment_runs
+        WHERE run_group_id IN ({placeholders})
+        ORDER BY created_at, run_id
+        """,
+        tuple(groups),
+    ).fetchall()
+    return [str(row[0]) for row in rows]
+
+
+def _reports_from_db(conn: sqlite3.Connection, *, run_ids: Sequence[str]) -> List[Dict[str, Any]]:
+    if not run_ids:
+        return []
+    runs_sql = """
+        SELECT run_id, status, ath_error_kind
+        FROM experiment_runs
+        WHERE run_id IN ({placeholders})
+    """
+    metrics_sql = """
+        SELECT run_id, final_width_mm, final_height_mm, final_length_mm, avg_throat_angle_deg, flags_json
+        FROM experiment_metrics
+        WHERE run_id IN ({placeholders})
+    """
+    params_sql = """
+        SELECT run_id, key, value_text, value_num
+        FROM experiment_params
+        WHERE run_id IN ({placeholders})
+          AND is_set = 1
+          AND (
+            key IN ('Throat.Profile', 'GCurve.Type', 'Morph.TargetShape')
+            OR key LIKE 'Mesh.Enclosure%'
+          )
+    """
+
+    run_rows = _query_with_run_ids(conn, runs_sql, run_ids)
+    metric_rows = _query_with_run_ids(conn, metrics_sql, run_ids)
+    param_rows = _query_with_run_ids(conn, params_sql, run_ids)
+
+    runs_map: Dict[str, Dict[str, Any]] = {}
+    for row in run_rows:
+        runs_map[str(row[0])] = {
+            "status": str(row[1] or "pipeline_error"),
+            "ath_error_kind": str(row[2] or "") or None,
+        }
+
+    metrics_map: Dict[str, Dict[str, Any]] = {}
+    for row in metric_rows:
+        raw_flags = str(row[5] or "{}")
+        try:
+            flags = json.loads(raw_flags)
+        except Exception:
+            flags = {}
+        metrics_map[str(row[0])] = {
+            "final_width_mm": _float_or_none(row[1]),
+            "final_height_mm": _float_or_none(row[2]),
+            "final_length_mm": _float_or_none(row[3]),
+            "avg_throat_angle_deg": _float_or_none(row[4]),
+            "flags": flags if isinstance(flags, Mapping) else {},
+        }
+
+    fields_map: Dict[str, Dict[str, Any]] = {}
+    for row in param_rows:
+        run_id = str(row[0])
+        key = str(row[1])
+        value = _float_or_none(row[3])
+        if value is None:
+            value = row[2]
+        bucket = fields_map.setdefault(run_id, {})
+        bucket[key] = value
+
+    ordered: List[Dict[str, Any]] = []
+    for run_id in run_ids:
+        run_payload = runs_map.get(run_id, {"status": "pipeline_error", "ath_error_kind": None})
+        metrics = metrics_map.get(run_id, {})
+        values = fields_map.get(run_id, {})
+        ordered.append(
+            {
+                "run_id": run_id,
+                "status": str(run_payload.get("status", "pipeline_error")),
+                "errors": {
+                    "ath_error_kind": run_payload.get("ath_error_kind"),
+                },
+                "metrics": metrics,
+                "input_summary": {
+                    "field_values": [[key, value] for key, value in sorted(values.items())],
+                },
+            }
+        )
+    return ordered
+
+
+def _largest_safe_range_tightenings(
+    *,
+    prior_ranges: PriorRanges,
+    current_ranges: Mapping[str, Any],
+    top_n: int = 10,
+) -> List[Dict[str, Any]]:
+    tightenings: List[Dict[str, Any]] = []
+    for key, prior in prior_ranges.items():
+        current = current_ranges.get(key)
+        if not isinstance(current, Mapping):
+            continue
+        suggested = current.get("suggested_safe_range")
+        if not isinstance(suggested, Mapping):
+            continue
+        try:
+            new_low = float(suggested.get("min"))
+            new_high = float(suggested.get("max"))
+        except Exception:
+            continue
+        old_low, old_high = float(prior[0]), float(prior[1])
+        old_width = max(0.0, old_high - old_low)
+        new_width = max(0.0, new_high - new_low)
+        if old_width <= 0:
+            continue
+        shrink = old_width - new_width
+        if shrink <= 0:
+            continue
+        tightenings.append(
+            {
+                "key": key,
+                "old_range": {"min": old_low, "max": old_high},
+                "new_range": {"min": new_low, "max": new_high},
+                "shrink_abs": shrink,
+                "shrink_ratio": shrink / old_width,
+            }
+        )
+    tightenings.sort(key=lambda item: float(item.get("shrink_ratio", 0.0)), reverse=True)
+    return tightenings[: max(1, int(top_n))]
+
+
 def _write_summary_markdown(
     *,
     summary_path: Path,
     status_counts: Mapping[str, Any],
     top_errors: Sequence[Mapping[str, Any]],
     threshold_hits: Mapping[str, Any],
+    mode_error_rates: Mapping[str, Any],
+    dimension_stats: Mapping[str, Any],
+    error_class_modes: Mapping[str, Any],
     cases: int,
     seed: int,
 ) -> Path:
@@ -689,8 +1507,53 @@ def _write_summary_markdown(
             f"- max_dim_warn_hits: {int(threshold_hits.get('max_dim_warn_hits', 0))}",
             f"- hard_cap_hits: {int(threshold_hits.get('hard_cap_hits', 0))}",
             "",
+            "## Mode Error Rates",
         ]
     )
+    for group_name, group_values in dict(mode_error_rates).items():
+        lines.append(f"- {group_name}:")
+        for mode_name, payload in dict(group_values or {}).items():
+            lines.append(
+                f"  - {mode_name}: total={int(payload.get('total', 0))}, "
+                f"ath_error_rate={float(payload.get('ath_error_rate', 0.0)):.3f}, "
+                f"non_ok_rate={float(payload.get('non_ok_rate', 0.0)):.3f}"
+            )
+    lines.extend(
+        [
+            "",
+            "## Dimension Distribution",
+        ]
+    )
+    for key, payload in dict(dimension_stats or {}).items():
+        lines.append(
+            f"- {key}: p50={payload.get('p50')}, p90={payload.get('p90')}, p99={payload.get('p99')}, "
+            f"min={payload.get('min')}, max={payload.get('max')}"
+        )
+    lines.extend(
+        [
+            "",
+            "## Error Classes (Mode View)",
+        ]
+    )
+    for error_class, payload in dict(error_class_modes or {}).items():
+        lines.append(f"- {error_class}: count={int(payload.get('count', 0))}")
+        mode_counts = dict(payload.get("mode_counts", {}) or {})
+        for axis in ("gcurve", "throat_profile", "morph", "enclosure"):
+            axis_counts = dict(mode_counts.get(axis, {}) or {})
+            if not axis_counts:
+                continue
+            compact = ", ".join(f"{key}={int(value)}" for key, value in sorted(axis_counts.items()))
+            lines.append(f"  - {axis}: {compact}")
+    lines.extend(
+        [
+            "",
+            "## Anti-Spurious Guidance",
+            "- Interpret correlations as risk indicators, not direct causality.",
+            "- Prioritize stable effects across modes/seeds and threshold behaviors.",
+            "- Validate top candidates with controlled counterfactual mini-runs.",
+        ]
+    )
+    lines.append("")
     summary_path.write_text("\n".join(lines), encoding="utf-8")
     return summary_path
 
@@ -736,6 +1599,7 @@ def run_projectpage_ath_experiment(
     settings: UserSettings,
     cases: int = 500,
     seed: int = 1337,
+    run_group: Optional[str] = None,
     ath_exe: Optional[str] = None,
     template_cfg: Optional[str] = None,
     cfg_dir: str | Path = r"C:\Tools\ATH",
@@ -744,6 +1608,12 @@ def run_projectpage_ath_experiment(
     cleanup_files: bool = True,
     max_dim_mm: float = 2000.0,
     hard_cap_mm: float = 5000.0,
+    priors_path: Optional[str] = None,
+    commit_every: int = 25,
+    preclean_files: bool = False,
+    cleanup_cases: str = "never",
+    cleanup_log: str = "never",
+    aggregate_run_groups: Optional[Sequence[str]] = None,
 ) -> Dict[str, Any]:
     resolved_ath_exe = ath_exe or settings.ath_exe
     if not resolved_ath_exe:
@@ -755,33 +1625,76 @@ def run_projectpage_ath_experiment(
     cfg_root = Path(cfg_dir)
     export_root_path = Path(export_root)
     reports_root_path = Path(reports_root)
-    logs_root = reports_root_path / "logs"
+    logs_root = reports_root_path / "log"
     cases_root = reports_root_path / "cases"
     db_path = reports_root_path / "ath_experiments.sqlite"
+    resolved_priors_path = Path(priors_path) if priors_path else (reports_root_path / "range_suggestions.v1.json")
     cfg_root.mkdir(parents=True, exist_ok=True)
     export_root_path.mkdir(parents=True, exist_ok=True)
     logs_root.mkdir(parents=True, exist_ok=True)
     cases_root.mkdir(parents=True, exist_ok=True)
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
+    cleanup_cases_mode = str(cleanup_cases or "never").strip().lower()
+    cleanup_log_mode = str(cleanup_log or "never").strip().lower()
+    if cleanup_cases_mode not in {"end", "always", "never"}:
+        raise ValueError(f"Unsupported cleanup-cases mode: {cleanup_cases}")
+    if cleanup_log_mode not in {"end", "always", "never"}:
+        raise ValueError(f"Unsupported cleanup-log mode: {cleanup_log}")
+
+    preclean_result: Optional[Dict[str, Any]] = None
+    if bool(preclean_files):
+        preclean_result = _cleanup_report_files(
+            reports_root=reports_root_path,
+            phase="pre",
+            cleanup_cases=True,
+            cleanup_log=True,
+        )
+
     template_text = _load_template_text(template_cfg or settings.template_cfg)
     runner = AthRunner(str(ath_executable))
     allowed_global_keys = {str(key) for key, _ in MANDATORY_SOURCE_BLOCK}
     start_cfg_index = _next_cfg_index(cfg_root)
+    prior_ranges = _load_prior_ranges(resolved_priors_path)
 
     all_cases = generate_experiment_cases(
         cases=cases,
         seed=seed,
         max_dim_mm=max_dim_mm,
         hard_cap_mm=hard_cap_mm,
+        prior_ranges=prior_ranges,
     )
 
     reports: List[Dict[str, Any]] = []
     status_counts = {"ok": 0, "ath_error": 0, "pipeline_error": 0, "skipped": 0}
+    run_group_id = str(run_group).strip() if run_group else f"pp_ath_exp_seed_{int(seed)}"
     with sqlite3.connect(str(db_path)) as conn:
         conn.row_factory = sqlite3.Row
         _ensure_db_schema(conn)
         for offset, experiment_case in enumerate(all_cases):
+            existing = conn.execute(
+                """
+                SELECT run_id, status
+                FROM experiment_runs
+                WHERE run_group_id = ? AND seed = ? AND case_index = ?
+                LIMIT 1
+                """,
+                (run_group_id, int(seed), int(experiment_case.case_index)),
+            ).fetchone()
+            if existing is not None:
+                reports.append(
+                    {
+                        "run_id": str(existing["run_id"]),
+                        "run_name": f"run_{experiment_case.case_index:04d}",
+                        "case_index": int(experiment_case.case_index),
+                        "status": "skipped",
+                        "notes": "resume_existing",
+                        "run_group_id": run_group_id,
+                    }
+                )
+                status_counts["skipped"] = int(status_counts.get("skipped", 0)) + 1
+                continue
+
             cfg_index = start_cfg_index + offset
             cfg_path = cfg_root / f"ProjectPageATHTest{cfg_index}.cfg"
             run_name = f"run_{experiment_case.case_index:04d}"
@@ -961,6 +1874,7 @@ def run_projectpage_ath_experiment(
 
             report = {
                 "run_id": run_id,
+                "run_group_id": run_group_id,
                 "run_name": run_name,
                 "case_index": experiment_case.case_index,
                 "case_type": "exploratory" if experiment_case.exploratory else "safe",
@@ -1022,6 +1936,7 @@ def run_projectpage_ath_experiment(
             _persist_experiment_row(
                 conn,
                 run_id=run_id,
+                run_group_id=run_group_id,
                 created_at=report["started_at"],
                 seed=int(seed),
                 case_index=experiment_case.case_index,
@@ -1045,24 +1960,74 @@ def run_projectpage_ath_experiment(
                 mismatches=list(config_compare.get("value_mismatches", []) or []),
                 metrics=metrics_payload,
             )
-            conn.commit()
+            if cleanup_cases_mode == "always":
+                _cleanup_report_files(
+                    reports_root=reports_root_path,
+                    phase="end",
+                    cleanup_cases=True,
+                    cleanup_log=False,
+                )
+            if cleanup_log_mode == "always":
+                _cleanup_report_files(
+                    reports_root=reports_root_path,
+                    phase="end",
+                    cleanup_cases=False,
+                    cleanup_log=True,
+                )
+            if (offset + 1) % max(1, int(commit_every)) == 0:
+                conn.commit()
 
             reports.append(report)
             status_counts[status] = int(status_counts.get(status, 0)) + 1
 
+        conn.commit()
+
         run_ids = [str(item.get("run_id")) for item in reports if str(item.get("run_id", "")).strip()]
-        range_suggestions = _compute_range_suggestions(conn, run_ids)
-        top_errors = _top_error_patterns(reports, limit=10)
-        threshold_hits = _dimension_threshold_hits(reports)
+        analysis_groups = [str(group).strip() for group in list(aggregate_run_groups or []) if str(group).strip()]
+        analysis_run_ids = run_ids
+        analysis_reports = reports
+        if analysis_groups:
+            candidate_ids = _run_ids_for_groups(conn, run_groups=analysis_groups)
+            if candidate_ids:
+                analysis_run_ids = candidate_ids
+                analysis_reports = _reports_from_db(conn, run_ids=analysis_run_ids)
+        analysis_status_counts = {"ok": 0, "ath_error": 0, "pipeline_error": 0, "skipped": 0}
+        for item in analysis_reports:
+            key = str(item.get("status", "pipeline_error"))
+            if key not in analysis_status_counts:
+                analysis_status_counts[key] = 0
+            analysis_status_counts[key] = int(analysis_status_counts.get(key, 0)) + 1
+
+        range_suggestions = _compute_range_suggestions(conn, analysis_run_ids)
+        top_errors = _top_error_patterns(analysis_reports, limit=10)
+        threshold_hits = _dimension_threshold_hits(analysis_reports)
+        mode_error_rates = _mode_error_rates(analysis_reports)
+        dimension_stats = _dimension_distribution_stats(analysis_reports)
+        hard_cap_correlations = _hard_cap_correlated_keys(conn, run_ids=analysis_run_ids, top_n=10)
+        error_class_modes = _error_class_mode_breakdown(analysis_reports)
+        mode_error_matrix = _build_mode_error_matrix(analysis_reports)
+        range_tightenings = _largest_safe_range_tightenings(
+            prior_ranges=prior_ranges,
+            current_ranges=range_suggestions,
+            top_n=10,
+        )
 
         range_suggestions_path = reports_root_path / "range_suggestions.v1.json"
+        range_suggestions_v11_path = reports_root_path / "range_suggestions.v1.1.json"
         range_suggestions_payload = {
             "generated_at": _now_iso(),
             "cases_requested": int(cases),
             "seed": int(seed),
+            "source_priors_path": str(resolved_priors_path),
+            "analysis_run_groups": analysis_groups,
+            "analysis_run_count": len(analysis_run_ids),
             "range_suggestions": range_suggestions,
         }
         range_suggestions_path.write_text(
+            json.dumps(range_suggestions_payload, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        range_suggestions_v11_path.write_text(
             json.dumps(range_suggestions_payload, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8",
         )
@@ -1071,8 +2036,25 @@ def run_projectpage_ath_experiment(
             status_counts=status_counts,
             top_errors=top_errors,
             threshold_hits=threshold_hits,
+            mode_error_rates=mode_error_rates,
+            dimension_stats=dimension_stats,
+            error_class_modes=error_class_modes,
             cases=cases,
             seed=seed,
+        )
+        mode_error_matrix_path = reports_root_path / "mode_error_matrix.json"
+        mode_error_matrix_path.write_text(
+            json.dumps(mode_error_matrix, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+
+    end_cleanup_result: Optional[Dict[str, Any]] = None
+    if cleanup_cases_mode == "end" or cleanup_log_mode == "end":
+        end_cleanup_result = _cleanup_report_files(
+            reports_root=reports_root_path,
+            phase="end",
+            cleanup_cases=(cleanup_cases_mode == "end"),
+            cleanup_log=(cleanup_log_mode == "end"),
         )
 
     summary = {
@@ -1084,18 +2066,36 @@ def run_projectpage_ath_experiment(
         "reports_root": str(reports_root_path),
         "cases_requested": int(cases),
         "seed": int(seed),
+        "run_group_id": run_group_id,
+        "analysis_run_groups": analysis_groups,
+        "analysis_run_count": len(analysis_reports),
         "cleanup_files": bool(cleanup_files),
+        "preclean_files": bool(preclean_files),
+        "cleanup_cases_mode": cleanup_cases_mode,
+        "cleanup_log_mode": cleanup_log_mode,
         "max_dim_mm": float(max_dim_mm),
         "hard_cap_mm": float(hard_cap_mm),
+        "priors_path": str(resolved_priors_path),
         "database_path": str(db_path),
-        "status_counts": status_counts,
+        "status_counts": analysis_status_counts,
+        "run_status_counts": status_counts,
         "reports_preview": reports[:5],
         "total_runs_persisted": len(reports),
         "top_error_patterns": top_errors,
+        "error_class_mode_breakdown": error_class_modes,
         "dimension_threshold_hits": threshold_hits,
+        "mode_error_rates": mode_error_rates,
+        "mode_error_matrix_path": str(mode_error_matrix_path),
+        "dimension_distribution": dimension_stats,
+        "hard_cap_key_correlations_top10": hard_cap_correlations,
+        "largest_safe_range_tightenings": range_tightenings,
         "range_suggestions_path": str(range_suggestions_path),
+        "range_suggestions_v11_path": str(range_suggestions_v11_path),
         "summary_markdown_path": str(summary_md_path),
-        "report_files": [str(cases_root / f"run_{item['case_index']:04d}" / "report.json") for item in reports],
+        "preclean_result": preclean_result,
+        "end_cleanup_result": end_cleanup_result,
+        "report_files_count": len(reports),
+        "report_files_preview": [str(cases_root / f"run_{item['case_index']:04d}" / "report.json") for item in reports[:25]],
     }
     summary_path = reports_root_path / "summary.json"
     summary_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")

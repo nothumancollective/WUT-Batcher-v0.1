@@ -375,10 +375,14 @@ def cmd_projectpage_ath_experiment(args: argparse.Namespace) -> int:
 
     settings_store = SettingsStore()
     settings = settings_store.load()
+    aggregate_groups = None
+    if args.aggregate_run_groups:
+        aggregate_groups = [item.strip() for item in str(args.aggregate_run_groups).split(",") if item.strip()]
     summary = run_projectpage_ath_experiment(
         settings=settings,
         cases=args.cases,
         seed=args.seed,
+        run_group=args.run_group,
         ath_exe=args.ath_exe,
         template_cfg=args.template_cfg,
         cfg_dir=args.cfg_dir,
@@ -387,6 +391,12 @@ def cmd_projectpage_ath_experiment(args: argparse.Namespace) -> int:
         cleanup_files=bool(args.cleanup_files),
         max_dim_mm=args.max_dim_mm,
         hard_cap_mm=args.hard_cap_mm,
+        priors_path=args.priors_path,
+        commit_every=args.commit_every,
+        preclean_files=bool(args.preclean_files),
+        cleanup_cases=args.cleanup_cases,
+        cleanup_log=args.cleanup_log,
+        aggregate_run_groups=aggregate_groups,
     )
     print(json.dumps(summary, indent=2, ensure_ascii=False, default=_json_default))
     return 0
@@ -717,6 +727,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_projectpage_ath_exp.add_argument("--template-cfg", help="Override template CFG path")
     p_projectpage_ath_exp.add_argument("--cases", type=int, default=500, help="Number of experiment cases to execute")
     p_projectpage_ath_exp.add_argument("--seed", type=int, default=1337, help="Seed for deterministic case generation")
+    p_projectpage_ath_exp.add_argument("--run-group", help="Optional run_group identifier for resume and grouped analysis")
+    p_projectpage_ath_exp.add_argument(
+        "--aggregate-run-groups",
+        help="Comma-separated run_group ids for aggregate summary/range analysis from SQLite.",
+    )
     p_projectpage_ath_exp.add_argument(
         "--cfg-dir",
         default=r"C:\Tools\ATH",
@@ -750,12 +765,41 @@ def build_parser() -> argparse.ArgumentParser:
         default=5000.0,
         help="Hard input cap in mm; extreme cases are skipped pre-run.",
     )
+    p_projectpage_ath_exp.add_argument(
+        "--priors-path",
+        help="Optional range_suggestions JSON path used as sampling priors.",
+    )
+    p_projectpage_ath_exp.add_argument(
+        "--commit-every",
+        type=int,
+        default=25,
+        help="SQLite commit interval (number of runs per transaction).",
+    )
+    p_projectpage_ath_exp.add_argument(
+        "--preclean-files",
+        default="false",
+        choices=["true", "false"],
+        help="Before run, safely clear only reports/ath_experiments/{cases,log}.",
+    )
+    p_projectpage_ath_exp.add_argument(
+        "--cleanup-cases",
+        default="never",
+        choices=["end", "always", "never"],
+        help="Cleanup policy for reports/ath_experiments/cases files.",
+    )
+    p_projectpage_ath_exp.add_argument(
+        "--cleanup-log",
+        default="never",
+        choices=["end", "always", "never"],
+        help="Cleanup policy for reports/ath_experiments/log files.",
+    )
     p_projectpage_ath_exp.set_defaults(
         func=lambda a: cmd_projectpage_ath_experiment(
             argparse.Namespace(
                 **{
                     **vars(a),
                     "cleanup_files": str(getattr(a, "cleanup_files", "true")).strip().lower() == "true",
+                    "preclean_files": str(getattr(a, "preclean_files", "false")).strip().lower() == "true",
                 }
             )
         )
