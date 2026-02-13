@@ -554,6 +554,147 @@ def _param_rows_from_payload(
     return rows
 
 
+def _query_with_run_ids(conn: sqlite3.Connection, base_sql: str, run_ids: Sequence[str]) -> List[sqlite3.Row]:
+    if not run_ids:
+        return []
+    rows: List[sqlite3.Row] = []
+    chunk_size = 300
+    for start in range(0, len(run_ids), chunk_size):
+        chunk = list(run_ids[start : start + chunk_size])
+        placeholders = ", ".join("?" for _ in chunk)
+        sql = base_sql.format(placeholders=placeholders)
+        rows.extend(conn.execute(sql, tuple(chunk)).fetchall())
+    return rows
+
+
+def _float_or_none(value: Any) -> Optional[float]:
+    try:
+        if value is None:
+            return None
+        return float(value)
+    except Exception:
+        return None
+
+
+def _compute_range_suggestions(conn: sqlite3.Connection, run_ids: Sequence[str]) -> Dict[str, Any]:
+    base_sql = """
+        SELECT p.key, p.value_num, r.status
+        FROM experiment_params p
+        JOIN experiment_runs r ON r.run_id = p.run_id
+        WHERE p.run_id IN ({placeholders})
+          AND p.is_set = 1
+          AND p.value_num IS NOT NULL
+    """
+    rows = _query_with_run_ids(conn, base_sql, run_ids)
+    grouped: Dict[str, Dict[str, List[float]]] = {}
+    for row in rows:
+        key = str(row[0])
+        value = _float_or_none(row[1])
+        status = str(row[2] or "")
+        if value is None:
+            continue
+        bucket = grouped.setdefault(key, {"success": [], "fail": []})
+        if status == "ok":
+            bucket["success"].append(value)
+        elif status in {"ath_error", "pipeline_error"}:
+            bucket["fail"].append(value)
+
+    suggestions: Dict[str, Any] = {}
+    for key in sorted(grouped.keys()):
+        success_values = grouped[key]["success"]
+        fail_values = grouped[key]["fail"]
+        success_min = min(success_values) if success_values else None
+        success_max = max(success_values) if success_values else None
+        fail_min = min(fail_values) if fail_values else None
+        fail_max = max(fail_values) if fail_values else None
+        suggestion = None
+        if success_min is not None and success_max is not None:
+            suggestion = {"min": success_min, "max": success_max}
+        suggestions[key] = {
+            "success_min": success_min,
+            "success_max": success_max,
+            "fail_min": fail_min,
+            "fail_max": fail_max,
+            "suggested_safe_range": suggestion,
+        }
+    return suggestions
+
+
+def _top_error_patterns(reports: Sequence[Mapping[str, Any]], *, limit: int = 10) -> List[Dict[str, Any]]:
+    counts: Dict[str, Dict[str, Any]] = {}
+    for report in reports:
+        status = str(report.get("status", ""))
+        if status != "ath_error":
+            continue
+        error_payload = dict(report.get("errors", {}) or {})
+        kind = str(error_payload.get("ath_error_kind") or "unknown")
+        item = counts.setdefault(kind, {"kind": kind, "count": 0, "example_run_ids": []})
+        item["count"] = int(item["count"]) + 1
+        run_id = str(report.get("run_id") or "")
+        if run_id and len(item["example_run_ids"]) < 5:
+            item["example_run_ids"].append(run_id)
+    ranked = sorted(counts.values(), key=lambda item: int(item["count"]), reverse=True)
+    return ranked[: max(1, int(limit))]
+
+
+def _dimension_threshold_hits(reports: Sequence[Mapping[str, Any]]) -> Dict[str, int]:
+    warn_hits = 0
+    hard_cap_hits = 0
+    for report in reports:
+        metrics = dict(report.get("metrics", {}) or {})
+        flags = dict(metrics.get("flags", {}) or {})
+        if bool(flags.get("max_dim_warn")):
+            warn_hits += 1
+        if bool(flags.get("hard_cap_exceeded")):
+            hard_cap_hits += 1
+    return {
+        "max_dim_warn_hits": warn_hits,
+        "hard_cap_hits": hard_cap_hits,
+    }
+
+
+def _write_summary_markdown(
+    *,
+    summary_path: Path,
+    status_counts: Mapping[str, Any],
+    top_errors: Sequence[Mapping[str, Any]],
+    threshold_hits: Mapping[str, Any],
+    cases: int,
+    seed: int,
+) -> Path:
+    lines = [
+        "# ATH Project Page Experiment Summary",
+        "",
+        f"- Cases requested: {int(cases)}",
+        f"- Seed: {int(seed)}",
+        f"- OK: {int(status_counts.get('ok', 0))}",
+        f"- ATH errors: {int(status_counts.get('ath_error', 0))}",
+        f"- Pipeline errors: {int(status_counts.get('pipeline_error', 0))}",
+        f"- Skipped: {int(status_counts.get('skipped', 0))}",
+        "",
+        "## Top ATH Error Patterns",
+    ]
+    if top_errors:
+        for item in top_errors:
+            lines.append(
+                f"- {item.get('kind')}: {int(item.get('count', 0))} "
+                f"(examples: {', '.join(list(item.get('example_run_ids', []) or []))})"
+            )
+    else:
+        lines.append("- none")
+    lines.extend(
+        [
+            "",
+            "## Dimension Threshold Hits",
+            f"- max_dim_warn_hits: {int(threshold_hits.get('max_dim_warn_hits', 0))}",
+            f"- hard_cap_hits: {int(threshold_hits.get('hard_cap_hits', 0))}",
+            "",
+        ]
+    )
+    summary_path.write_text("\n".join(lines), encoding="utf-8")
+    return summary_path
+
+
 def _preflight_skip_reason(
     *,
     compat_state: Mapping[str, Any],
@@ -638,6 +779,7 @@ def run_projectpage_ath_experiment(
     reports: List[Dict[str, Any]] = []
     status_counts = {"ok": 0, "ath_error": 0, "pipeline_error": 0, "skipped": 0}
     with sqlite3.connect(str(db_path)) as conn:
+        conn.row_factory = sqlite3.Row
         _ensure_db_schema(conn)
         for offset, experiment_case in enumerate(all_cases):
             cfg_index = start_cfg_index + offset
@@ -908,6 +1050,31 @@ def run_projectpage_ath_experiment(
             reports.append(report)
             status_counts[status] = int(status_counts.get(status, 0)) + 1
 
+        run_ids = [str(item.get("run_id")) for item in reports if str(item.get("run_id", "")).strip()]
+        range_suggestions = _compute_range_suggestions(conn, run_ids)
+        top_errors = _top_error_patterns(reports, limit=10)
+        threshold_hits = _dimension_threshold_hits(reports)
+
+        range_suggestions_path = reports_root_path / "range_suggestions.v1.json"
+        range_suggestions_payload = {
+            "generated_at": _now_iso(),
+            "cases_requested": int(cases),
+            "seed": int(seed),
+            "range_suggestions": range_suggestions,
+        }
+        range_suggestions_path.write_text(
+            json.dumps(range_suggestions_payload, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        summary_md_path = _write_summary_markdown(
+            summary_path=reports_root_path / "summary.md",
+            status_counts=status_counts,
+            top_errors=top_errors,
+            threshold_hits=threshold_hits,
+            cases=cases,
+            seed=seed,
+        )
+
     summary = {
         "generated_at": _now_iso(),
         "ath_executable": str(ath_executable),
@@ -922,7 +1089,12 @@ def run_projectpage_ath_experiment(
         "hard_cap_mm": float(hard_cap_mm),
         "database_path": str(db_path),
         "status_counts": status_counts,
-        "reports": reports,
+        "reports_preview": reports[:5],
+        "total_runs_persisted": len(reports),
+        "top_error_patterns": top_errors,
+        "dimension_threshold_hits": threshold_hits,
+        "range_suggestions_path": str(range_suggestions_path),
+        "summary_markdown_path": str(summary_md_path),
         "report_files": [str(cases_root / f"run_{item['case_index']:04d}" / "report.json") for item in reports],
     }
     summary_path = reports_root_path / "summary.json"

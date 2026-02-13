@@ -1,0 +1,32 @@
+{
+  "version": "experimental-rules.v1",
+  "status": "draft",
+  "source": "projectpage-ath-experiment",
+  "notes": "Warning-only rule suggestions derived from experiment outputs. Not auto-enforced.",
+  "rules": [
+    {
+      "id": "warn_large_dimensions",
+      "scope": "validity",
+      "severity": "warn",
+      "when": "observed.final_dim_mm > threshold.max_dim_mm",
+      "message": "Observed ATH geometry dimensions exceed the experiment soft threshold.",
+      "evidence": {
+        "type": "experiment",
+        "stats": {},
+        "sample_run_ids": []
+      }
+    },
+    {
+      "id": "warn_throat_angle_outlier",
+      "scope": "validity",
+      "severity": "warn",
+      "when": "observed.avg_throat_angle_deg outside suggested_success_interval",
+      "message": "Observed average mesh throat angle is outside the common successful interval.",
+      "evidence": {
+        "type": "experiment",
+        "stats": {},
+        "sample_run_ids": []
+      }
+    }
+  ]
+}

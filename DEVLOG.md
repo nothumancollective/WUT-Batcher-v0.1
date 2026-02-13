@@ -799,3 +799,35 @@
 - `python -m unittest tests.test_project_form_ui tests.test_m2_compat_engine -v`
 - `python -m unittest tests.test_version_resolver -v`
 - `python -m unittest tests.test_m5_planner_renderer tests.test_projectpage_ath_test -v`
+
+### Update 30 (PROJECT ATH Experiment Harness v1)
+#### Done
+- Added large-scale experiment harness:
+  - `app/projectpage_ath_experiment.py`
+  - CLI command: `python -m app projectpage-ath-experiment`
+  - deterministic seeded generation with safe/exploratory mix (`70/30` target).
+- Harness uses the existing PROJECT UI data path only:
+  - `ParameterForm -> CompatibilityService -> resolve_versions -> render_cfg_text -> ATH`.
+- Added persistent experiment dataset:
+  - SQLite at `reports/ath_experiments/ath_experiments.sqlite`
+  - tables: `experiment_runs`, `experiment_params`, `experiment_metrics`, `experiment_compare`
+  - indexes on status/error/keys/numeric dimensions.
+- Added ATH stdout/stderr parsing and classification:
+  - parses final width/height/length and average mesh throat angle
+  - normalizes units (`m` -> `mm`)
+  - classifies known error patterns and warning counts
+  - applies dimension thresholds (`max-dim` warn, `hard-cap` fail).
+- Added report outputs:
+  - per-run JSON: `reports/ath_experiments/cases/run_XXXX/report.json`
+  - copied raw logs: `reports/ath_experiments/logs/run_XXXX_stdout.txt|stderr.txt`
+  - aggregate outputs:
+    - `reports/ath_experiments/summary.json`
+    - `reports/ath_experiments/summary.md`
+    - `reports/ath_experiments/range_suggestions.v1.json`
+- Added compatibility experiment documentation and machine-readable draft rule skeleton:
+  - `docs/COMPATIBILITY_EXPERIMENT_NOTES.md`
+  - `app/knowledge/ath/experimental_rules.v1.json`
+
+#### Tests
+- `python -m py_compile app/projectpage_ath_experiment.py app/cli.py`
+- `python -m unittest tests.test_projectpage_ath_experiment tests.test_projectpage_ath_test -v`
