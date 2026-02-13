@@ -370,6 +370,28 @@ def cmd_projectpage_ath_test(args: argparse.Namespace) -> int:
     return 0 if failed == 0 else 3
 
 
+def cmd_projectpage_ath_experiment(args: argparse.Namespace) -> int:
+    from app.projectpage_ath_experiment import run_projectpage_ath_experiment
+
+    settings_store = SettingsStore()
+    settings = settings_store.load()
+    summary = run_projectpage_ath_experiment(
+        settings=settings,
+        cases=args.cases,
+        seed=args.seed,
+        ath_exe=args.ath_exe,
+        template_cfg=args.template_cfg,
+        cfg_dir=args.cfg_dir,
+        export_root=args.export_root,
+        reports_root=args.reports_root,
+        cleanup_files=bool(args.cleanup_files),
+        max_dim_mm=args.max_dim_mm,
+        hard_cap_mm=args.hard_cap_mm,
+    )
+    print(json.dumps(summary, indent=2, ensure_ascii=False, default=_json_default))
+    return 0
+
+
 def _inspect_ui_tool(
     *,
     tool_name: str,
@@ -686,6 +708,58 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional max number of autonomous cases to execute",
     )
     p_projectpage_ath.set_defaults(func=cmd_projectpage_ath_test)
+
+    p_projectpage_ath_exp = sub.add_parser(
+        "projectpage-ath-experiment",
+        help="Run large PROJECT-page ATH experiment suite and persist reports.",
+    )
+    p_projectpage_ath_exp.add_argument("--ath-exe", help="Override ATH executable path")
+    p_projectpage_ath_exp.add_argument("--template-cfg", help="Override template CFG path")
+    p_projectpage_ath_exp.add_argument("--cases", type=int, default=500, help="Number of experiment cases to execute")
+    p_projectpage_ath_exp.add_argument("--seed", type=int, default=1337, help="Seed for deterministic case generation")
+    p_projectpage_ath_exp.add_argument(
+        "--cfg-dir",
+        default=r"C:\Tools\ATH",
+        help="Directory for generated ProjectPageATHTestN.cfg files",
+    )
+    p_projectpage_ath_exp.add_argument(
+        "--export-root",
+        default=r"C:\Horns",
+        help="ATH export root directory to monitor",
+    )
+    p_projectpage_ath_exp.add_argument(
+        "--reports-root",
+        default="reports/ath_experiments",
+        help="Directory for experiment reports, logs, and summaries",
+    )
+    p_projectpage_ath_exp.add_argument(
+        "--cleanup-files",
+        default="true",
+        choices=["true", "false"],
+        help="Delete generated CFG + ATH export folders after each run (true|false).",
+    )
+    p_projectpage_ath_exp.add_argument(
+        "--max-dim-mm",
+        type=float,
+        default=2000.0,
+        help="Soft dimension threshold in mm for exploratory generation.",
+    )
+    p_projectpage_ath_exp.add_argument(
+        "--hard-cap-mm",
+        type=float,
+        default=5000.0,
+        help="Hard input cap in mm; extreme cases are skipped pre-run.",
+    )
+    p_projectpage_ath_exp.set_defaults(
+        func=lambda a: cmd_projectpage_ath_experiment(
+            argparse.Namespace(
+                **{
+                    **vars(a),
+                    "cleanup_files": str(getattr(a, "cleanup_files", "true")).strip().lower() == "true",
+                }
+            )
+        )
+    )
 
     p_ui = sub.add_parser("ui", help="UI automation inspection utilities.")
     sub_ui = p_ui.add_subparsers(dest="ui_cmd", required=True)
