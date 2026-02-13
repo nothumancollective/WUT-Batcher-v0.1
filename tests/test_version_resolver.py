@@ -68,6 +68,48 @@ class VersionResolverTests(unittest.TestCase):
         allocated = allocate_version_ids(3, ["V001", "V009"])
         self.assertEqual(allocated, ["V010", "V011", "V012"])
 
+    def test_mesh_limits_are_included_in_resolved_parameters(self) -> None:
+        constraints = {
+            "fixed_params": {"Length": 90},
+            "limits": {"Mesh.Quadrants": 1, "Mesh.AngularSegments": 64},
+        }
+        batch = Batch(
+            batch_id="B001",
+            project_id="P001",
+            selected_params={},
+            sweeps={},
+            sweep_mode="single",
+            runner_mode="AthGuidePreview",
+        )
+        result = resolve_versions(constraints, batch, strict=True)
+        self.assertEqual(len(result.versions), 1)
+        version = result.versions[0]
+        self.assertEqual(version.parameters["Mesh.Quadrants"], 1)
+        self.assertEqual(version.parameters["Mesh.AngularSegments"], 64)
+
+    def test_unset_mesh_key_is_omitted_from_limits_payload(self) -> None:
+        constraints = {
+            "fixed_params": {"Length": 90},
+            "limits": {"Mesh.Quadrants": 1},
+            "param_states": [
+                {"param_name": "Mesh.Quadrants", "is_set": 1, "value": 1},
+                {"param_name": "Mesh.LengthSegments", "is_set": 0, "value": 20},
+            ],
+        }
+        batch = Batch(
+            batch_id="B001",
+            project_id="P001",
+            selected_params={},
+            sweeps={},
+            sweep_mode="single",
+            runner_mode="AthGuidePreview",
+        )
+        result = resolve_versions(constraints, batch, strict=True)
+        self.assertEqual(len(result.versions), 1)
+        version = result.versions[0]
+        self.assertIn("Mesh.Quadrants", version.parameters)
+        self.assertNotIn("Mesh.LengthSegments", version.parameters)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -84,11 +84,16 @@ def _effective_sweep_mode(batch: Batch) -> str:
     return "single"
 
 
-def _extract_fixed_params(constraints_payload: Dict[str, Any]) -> Dict[str, Any]:
+def _extract_constrained_params(constraints_payload: Dict[str, Any]) -> Dict[str, Any]:
+    constrained: Dict[str, Any] = {}
     fixed = constraints_payload.get("fixed_params")
     if isinstance(fixed, dict):
-        return {str(key): value for key, value in fixed.items()}
-    return {}
+        constrained.update({str(key): value for key, value in fixed.items()})
+    # PROJECT form currently stores Mesh.* concrete values under "limits".
+    limits = constraints_payload.get("limits")
+    if isinstance(limits, dict):
+        constrained.update({str(key): value for key, value in limits.items()})
+    return constrained
 
 
 def _selection_value(selection: Any) -> Any:
@@ -191,7 +196,7 @@ def _compatibility_precheck(
                 )
             )
 
-    fixed_keys = set(_extract_fixed_params(constraints_payload).keys())
+    fixed_keys = set(_extract_constrained_params(constraints_payload).keys())
     for key, _ in _iter_sweeps(batch):
         if key in fixed_keys:
             issues.append(
@@ -273,7 +278,7 @@ def resolve_versions(
     constraints_payload = _as_constraints_payload(project_or_constraints)
     mode = _effective_sweep_mode(batch)
     runner_mode = _effective_runner_mode(batch, constraints_payload)
-    fixed_params = _extract_fixed_params(constraints_payload)
+    fixed_params = _extract_constrained_params(constraints_payload)
 
     issues = _compatibility_precheck(batch, constraints_payload, runner_mode)
     if strict and any(issue.severity == "fatal" for issue in issues):
