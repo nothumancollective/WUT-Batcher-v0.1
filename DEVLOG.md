@@ -627,3 +627,33 @@
 - Regression status:
   - `tests.test_project_form_ui`: passing
   - compatibility/storage/runtime targeted suites: passing
+
+### Update 22 (PROJECT Layout Corrections Follow-up)
+#### Done
+- Geometry/Mesh top sections switched from collapsible toggles to static section headers.
+- `Projekt erstellen` action moved to the lower-right side of PROJECT page.
+- Input width/spacing pass:
+  - reduced input width further and unified widths across fields with and without unit suffix
+  - reserved a fixed suffix slot in text/numeric inputs so visual input width is consistent
+  - tightened global label->input gap to match Mesh/Core horizontal rhythm
+- Mesh/Core adjusted:
+  - kept selection rows on top
+  - balanced two-column form body by splitting remaining fields across left/right columns
+- GCurve mode UX:
+  - hidden empty `Common` frame when `GCurve.Type` is unset (`no GCurve`)
+  - mode page stack switched to auto-sizing widget to avoid oversized blank vertical space for smaller pages
+- Unit display parity:
+  - `deg/2` now visibly renders in input suffix for half-angle fields
+  - Slot expression units remain shown via suffix slot (`Slot.Length -> mm`)
+
+#### Tests
+- Expanded `tests/test_project_form_ui.py` for:
+  - non-collapsible Geometry/Mesh headers
+  - right-aligned create button in PROJECT page
+  - uniform input widths (with/without unit)
+  - hidden GCurve `Common` frame in `no GCurve` mode
+  - balanced Mesh/Core two-column labels
+  - explicit `deg/2` suffix visibility checks
+- Regression status:
+  - `tests.test_project_form_ui`: passing
+  - compatibility/storage/runtime targeted suites: passing
