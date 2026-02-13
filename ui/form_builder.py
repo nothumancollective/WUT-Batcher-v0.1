@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
+from ui.form_metrics import FORM_METRICS, configure_single_column_grid, configure_two_column_grid
 from ui.form_schema import FieldSpec, FormSchema, ModeStackSpec, build_project_form_schema
 
 try:
@@ -31,10 +32,9 @@ except ImportError as exc:  # pragma: no cover
     raise RuntimeError("PySide6 is required for form builder.") from exc
 
 
-INPUT_TOTAL_WIDTH = 150
-UNIT_LABEL_WIDTH = 30
-INPUT_COLUMN_WIDTH = 170
-LABEL_COLUMN_WIDTH = 148
+INPUT_TOTAL_WIDTH = FORM_METRICS.input_width
+UNIT_LABEL_WIDTH = FORM_METRICS.unit_label_width
+LABEL_COLUMN_WIDTH = FORM_METRICS.label_width
 
 
 @dataclass(frozen=True)
@@ -118,7 +118,7 @@ class NullableNumericInput(QWidget):
 
         self.edit = QLineEdit()
         self.edit.setObjectName("NullableInput")
-        self.edit.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.edit.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.edit.setFixedWidth(INPUT_TOTAL_WIDTH)
         self.edit.setPlaceholderText(placeholder)
         self.edit.setClearButtonEnabled(True)
@@ -204,6 +204,7 @@ class NullableTextInput(QWidget):
         *,
         placeholder: str = "",
         width: Optional[int] = None,
+        unit: Optional[str] = None,
         value_parser: Optional[Callable[[str], Any]] = None,
         parent: QWidget | None = None,
     ) -> None:
@@ -215,12 +216,21 @@ class NullableTextInput(QWidget):
         root.setSpacing(6)
 
         self.edit = QLineEdit()
+        self.edit.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.edit.setClearButtonEnabled(True)
         self.setFixedWidth(int(width or INPUT_TOTAL_WIDTH))
         self.edit.setFixedWidth(int(width or INPUT_TOTAL_WIDTH))
         if placeholder:
             self.edit.setPlaceholderText(placeholder)
         root.addWidget(self.edit, 0, Qt.AlignLeft)
+
+        self.unit_label: Optional[QLabel] = None
+        if unit:
+            self.unit_label = QLabel(str(unit))
+            self.unit_label.setObjectName("InputUnit")
+            self.unit_label.setFixedWidth(UNIT_LABEL_WIDTH)
+            self.edit.setFixedWidth(int(width or INPUT_TOTAL_WIDTH) - UNIT_LABEL_WIDTH - 6)
+            root.addWidget(self.unit_label, 0, Qt.AlignLeft)
 
         self.edit.textChanged.connect(lambda *_: self.changed.emit())
 
@@ -249,6 +259,8 @@ class NullableTextInput(QWidget):
 
     def set_locked(self, locked: bool) -> None:
         self.edit.setEnabled(not locked)
+        if self.unit_label is not None:
+            self.unit_label.setEnabled(not locked)
 
 class NullableBoolInput(QWidget):
     changed = Signal()
@@ -470,14 +482,16 @@ class ScalarFieldEditor(QWidget):
             return NullableTextInput(
                 placeholder=self.field.placeholder or "e.g. 1,2,3",
                 width=INPUT_TOTAL_WIDTH,
+                unit=self.field.unit,
                 value_parser=self._parse_list,
             )
         if self.field.widget_kind == "ex":
             return NullableTextInput(
                 placeholder=self.field.placeholder or "e.g. 40 + 10*cos(p)^2",
                 width=INPUT_TOTAL_WIDTH,
+                unit=self.field.unit,
             )
-        return NullableTextInput(placeholder="", width=INPUT_TOTAL_WIDTH)
+        return NullableTextInput(placeholder="", width=INPUT_TOTAL_WIDTH, unit=self.field.unit)
 
     def _parse_list(self, text: str) -> List[Any]:
         if not text.strip():
@@ -552,7 +566,7 @@ class ObjectFieldEditor(QWidget):
         self.props_frame = ContextFrame("Details")
         props_widget = QWidget()
         props_grid = QGridLayout(props_widget)
-        _configure_grid(props_grid)
+        configure_two_column_grid(props_grid)
 
         for index, property_field in enumerate(field.object_properties):
             label = QLabel(property_field.label)
@@ -562,10 +576,9 @@ class ObjectFieldEditor(QWidget):
             editor.changed.connect(self._on_child_changed)
             editor.set_is_set(False)
             row = index // 2
-            col = index % 2
-            base_col = col * 2
-            props_grid.addWidget(label, row, base_col)
-            props_grid.addWidget(editor, row, base_col + 1)
+            label_col, input_col = _two_column_positions(index % 2)
+            props_grid.addWidget(label, row, label_col)
+            props_grid.addWidget(editor, row, input_col, 1, 1, alignment=Qt.AlignLeft)
             self.property_editors[property_field.key] = editor
 
         self.props_frame.content_layout.addWidget(props_widget)
@@ -649,14 +662,10 @@ class ObjectFieldEditor(QWidget):
             self.setToolTip("Locked by runner mode.")
 
 
-def _configure_grid(grid: QGridLayout) -> None:
-    grid.setContentsMargins(6, 4, 6, 4)
-    grid.setHorizontalSpacing(6)
-    grid.setVerticalSpacing(6)
-    grid.setColumnStretch(0, 0)
-    grid.setColumnStretch(1, 1)
-    grid.setColumnStretch(2, 0)
-    grid.setColumnStretch(3, 1)
+def _two_column_positions(form_column: int) -> Tuple[int, int]:
+    if form_column <= 0:
+        return (0, 1)
+    return (3, 4)
 
 
 class ParameterForm(QWidget):
@@ -765,22 +774,41 @@ class ParameterForm(QWidget):
         ordered = sorted(fields, key=lambda field: (selection_priority.get(field.key, 9), field.order))
 
         box = QGroupBox("Core")
-        grid = QGridLayout(box)
-        _configure_grid(grid)
-        grid.setColumnStretch(0, 0)
-        grid.setColumnStretch(1, 1)
-        grid.setColumnStretch(2, 0)
-        grid.setColumnStretch(3, 0)
+        box_layout = QVBoxLayout(box)
+        box_layout.setContentsMargins(0, 0, 0, 0)
+        box_layout.setSpacing(0)
 
-        for row, field in enumerate(ordered):
+        selection_grid = QGridLayout()
+        configure_single_column_grid(selection_grid)
+        form_grid = QGridLayout()
+        configure_two_column_grid(form_grid)
+
+        selection_keys = {"Mesh.Quadrants", "Mesh.RearShape"}
+        selection_fields = [field for field in ordered if field.key in selection_keys]
+        other_fields = [field for field in ordered if field.key not in selection_keys]
+
+        for row, field in enumerate(selection_fields):
             label = QLabel(field.label)
             label.setWordWrap(True)
             label.setFixedWidth(LABEL_COLUMN_WIDTH)
             editor = self._ensure_editor(field)
-            grid.addWidget(label, row, 0)
-            grid.addWidget(editor, row, 1, 1, 1, alignment=Qt.AlignLeft)
+            selection_grid.addWidget(label, row, 0)
+            selection_grid.addWidget(editor, row, 1, 1, 1, alignment=Qt.AlignLeft)
             self._field_labels[field.key] = label
 
+        for index, field in enumerate(other_fields):
+            label = QLabel(field.label)
+            label.setWordWrap(True)
+            label.setFixedWidth(LABEL_COLUMN_WIDTH)
+            editor = self._ensure_editor(field)
+            row = index // 2
+            label_col, input_col = _two_column_positions(index % 2)
+            form_grid.addWidget(label, row, label_col)
+            form_grid.addWidget(editor, row, input_col, 1, 1, alignment=Qt.AlignLeft)
+            self._field_labels[field.key] = label
+
+        box_layout.addLayout(selection_grid)
+        box_layout.addLayout(form_grid)
         parent_layout.addWidget(box)
 
     def _add_mode_group(self, parent_layout: QVBoxLayout, stack: Optional[ModeStackSpec]) -> None:
@@ -805,7 +833,7 @@ class ParameterForm(QWidget):
         box_layout = QVBoxLayout(box)
 
         controller_grid = QGridLayout()
-        _configure_grid(controller_grid)
+        configure_single_column_grid(controller_grid)
         controller_label = QLabel(controller.label)
         controller_label.setWordWrap(True)
         controller_label.setFixedWidth(LABEL_COLUMN_WIDTH)
@@ -819,17 +847,16 @@ class ParameterForm(QWidget):
             detail_frame = ContextFrame("Details")
             detail_widget = QWidget()
             detail_grid = QGridLayout(detail_widget)
-            _configure_grid(detail_grid)
+            configure_two_column_grid(detail_grid)
             for index, field in enumerate(detail_fields):
                 label = QLabel(field.label)
                 label.setWordWrap(True)
                 label.setFixedWidth(LABEL_COLUMN_WIDTH)
                 editor = self._ensure_editor(field)
                 row = index // 2
-                col = index % 2
-                base_col = col * 2
-                detail_grid.addWidget(label, row, base_col)
-                detail_grid.addWidget(editor, row, base_col + 1)
+                label_col, input_col = _two_column_positions(index % 2)
+                detail_grid.addWidget(label, row, label_col)
+                detail_grid.addWidget(editor, row, input_col, 1, 1, alignment=Qt.AlignLeft)
                 self._field_labels[field.key] = label
             detail_frame.content_layout.addWidget(detail_widget)
             self._morph_detail_frame = detail_frame
@@ -854,7 +881,7 @@ class ParameterForm(QWidget):
         box_layout = QVBoxLayout(box)
 
         controller_grid = QGridLayout()
-        _configure_grid(controller_grid)
+        configure_single_column_grid(controller_grid)
         controller_label = QLabel(controller.label)
         controller_label.setWordWrap(True)
         controller_label.setFixedWidth(LABEL_COLUMN_WIDTH)
@@ -868,17 +895,16 @@ class ParameterForm(QWidget):
             detail_frame = ContextFrame("Details")
             detail_widget = QWidget()
             detail_grid = QGridLayout(detail_widget)
-            _configure_grid(detail_grid)
+            configure_two_column_grid(detail_grid)
             for index, field in enumerate(detail_fields):
                 label = QLabel(field.label)
                 label.setWordWrap(True)
                 label.setFixedWidth(LABEL_COLUMN_WIDTH)
                 editor = self._ensure_editor(field)
                 row = index // 2
-                col = index % 2
-                base_col = col * 2
-                detail_grid.addWidget(label, row, base_col)
-                detail_grid.addWidget(editor, row, base_col + 1)
+                label_col, input_col = _two_column_positions(index % 2)
+                detail_grid.addWidget(label, row, label_col)
+                detail_grid.addWidget(editor, row, input_col, 1, 1, alignment=Qt.AlignLeft)
                 self._field_labels[field.key] = label
             detail_frame.content_layout.addWidget(detail_widget)
             self._rollback_detail_frame = detail_frame
@@ -902,19 +928,25 @@ class ParameterForm(QWidget):
         for group_name, group_fields in grouped.items():
             box = QGroupBox(group_name)
             grid = QGridLayout(box)
-            _configure_grid(grid)
+            configure_two_column_grid(grid)
             ordered = sorted(group_fields, key=lambda field: field.order)
-            for index, field in enumerate(ordered):
+            scalar_index = 0
+            object_row = (len(ordered) + 1) // 2
+            for field in ordered:
+                editor = self._ensure_editor(field)
+                if field.widget_kind == "object":
+                    grid.addWidget(editor, object_row, 0, 1, 5, alignment=Qt.AlignLeft)
+                    object_row += 1
+                    continue
                 label = QLabel(field.label)
                 label.setWordWrap(True)
                 label.setFixedWidth(LABEL_COLUMN_WIDTH)
-                editor = self._ensure_editor(field)
-                row = index // 2
-                col = index % 2
-                base_col = col * 2
-                grid.addWidget(label, row, base_col)
-                grid.addWidget(editor, row, base_col + 1)
+                row = scalar_index // 2
+                label_col, input_col = _two_column_positions(scalar_index % 2)
+                grid.addWidget(label, row, label_col)
+                grid.addWidget(editor, row, input_col, 1, 1, alignment=Qt.AlignLeft)
                 self._field_labels[field.key] = label
+                scalar_index += 1
             parent_layout.addWidget(box)
 
     def _add_mode_groups(self, parent_layout: QVBoxLayout, stacks: Iterable[ModeStackSpec]) -> None:
@@ -927,7 +959,7 @@ class ParameterForm(QWidget):
             box_layout = QVBoxLayout(box)
 
             controller_grid = QGridLayout()
-            _configure_grid(controller_grid)
+            configure_single_column_grid(controller_grid)
             controller_label = QLabel(controller.label)
             controller_label.setWordWrap(True)
             controller_label.setFixedWidth(LABEL_COLUMN_WIDTH)
@@ -948,7 +980,7 @@ class ParameterForm(QWidget):
                 common_box = ContextFrame("Common")
                 common_widget = QWidget()
                 common_grid = QGridLayout(common_widget)
-                _configure_grid(common_grid)
+                configure_two_column_grid(common_grid)
                 for index, key in enumerate(sorted(common_keys)):
                     field = self._field_specs.get(key)
                     if field is None:
@@ -957,8 +989,10 @@ class ParameterForm(QWidget):
                     label.setWordWrap(True)
                     label.setFixedWidth(LABEL_COLUMN_WIDTH)
                     editor = self._ensure_editor(field)
-                    common_grid.addWidget(label, index, 0)
-                    common_grid.addWidget(editor, index, 1, 1, 1, alignment=Qt.AlignLeft)
+                    row = index // 2
+                    label_col, input_col = _two_column_positions(index % 2)
+                    common_grid.addWidget(label, row, label_col)
+                    common_grid.addWidget(editor, row, input_col, 1, 1, alignment=Qt.AlignLeft)
                     self._field_labels[key] = label
                 common_box.content_layout.addWidget(common_widget)
                 box_layout.addWidget(common_box)
@@ -988,9 +1022,9 @@ class ParameterForm(QWidget):
                 page_widget = ContextFrame(page.label)
                 page_grid_widget = QWidget()
                 page_grid = QGridLayout(page_grid_widget)
-                _configure_grid(page_grid)
+                configure_two_column_grid(page_grid)
 
-                for row_index, key in enumerate(page_fields):
+                for index, key in enumerate(page_fields):
                     field = self._field_specs.get(key)
                     if field is None:
                         continue
@@ -998,8 +1032,10 @@ class ParameterForm(QWidget):
                     label.setWordWrap(True)
                     label.setFixedWidth(LABEL_COLUMN_WIDTH)
                     editor = self._ensure_editor(field)
-                    page_grid.addWidget(label, row_index, 0)
-                    page_grid.addWidget(editor, row_index, 1, 1, 1, alignment=Qt.AlignLeft)
+                    row = index // 2
+                    label_col, input_col = _two_column_positions(index % 2)
+                    page_grid.addWidget(label, row, label_col)
+                    page_grid.addWidget(editor, row, input_col, 1, 1, alignment=Qt.AlignLeft)
                     self._field_labels[key] = label
                 page_grid.setRowStretch(99, 1)
                 page_widget.content_layout.addWidget(page_grid_widget)

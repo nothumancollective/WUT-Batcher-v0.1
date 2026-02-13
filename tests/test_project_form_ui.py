@@ -11,11 +11,12 @@ from app.gui import ProjectPage
 
 try:
     from PySide6.QtCore import Qt
-    from PySide6.QtWidgets import QApplication, QFrame, QGroupBox, QLabel, QPushButton, QToolButton
+    from PySide6.QtWidgets import QApplication, QFrame, QGridLayout, QGroupBox, QLabel, QPushButton, QToolButton
 except ImportError:  # pragma: no cover
     Qt = None  # type: ignore[assignment]
     QApplication = None  # type: ignore[assignment]
     QFrame = None  # type: ignore[assignment]
+    QGridLayout = None  # type: ignore[assignment]
     QGroupBox = None  # type: ignore[assignment]
     QLabel = None  # type: ignore[assignment]
     QPushButton = None  # type: ignore[assignment]
@@ -167,6 +168,7 @@ class ProjectFormUiTests(unittest.TestCase):
         assert isinstance(widget, NullableNumericInput)
         self.assertEqual(widget.edit.text(), "")
         self.assertEqual(widget.edit.placeholderText(), "optional")
+        self.assertTrue(bool(widget.edit.alignment() & Qt.AlignLeft))
         widget.edit.setText("12.5")
         self.assertEqual(widget.value(), 12.5)
         widget.edit.clear()
@@ -221,6 +223,70 @@ class ProjectFormUiTests(unittest.TestCase):
             if frame.objectName() == "ContextFrame"
         ]
         self.assertGreaterEqual(len(frames), 4)
+
+    def test_mesh_core_is_two_column_with_selection_anchor(self) -> None:
+        core_box = next(box for box in self.form.findChildren(QGroupBox) if box.title() == "Core")
+        box_layout = core_box.layout()
+        self.assertIsNotNone(box_layout)
+        assert box_layout is not None
+        selection_grid = box_layout.itemAt(0).layout()
+        form_grid = box_layout.itemAt(1).layout()
+        self.assertIsInstance(selection_grid, QGridLayout)
+        self.assertIsInstance(form_grid, QGridLayout)
+        assert isinstance(selection_grid, QGridLayout) and isinstance(form_grid, QGridLayout)
+
+        # left input anchor (selection) should match left input anchor (form)
+        _, sel_col, _, _ = selection_grid.getItemPosition(1)
+        self.assertEqual(sel_col, 1)
+        has_right_column = False
+        for index in range(form_grid.count()):
+            _, col, _, _ = form_grid.getItemPosition(index)
+            if col >= 3:
+                has_right_column = True
+                break
+        self.assertTrue(has_right_column)
+
+    def test_enclosure_group_has_no_redundant_mesh_enclosure_label(self) -> None:
+        labels = [label.text().strip() for label in self.form.findChildren(QLabel)]
+        self.assertNotIn("Mesh Enclosure", labels)
+
+    def test_slot_length_expression_shows_unit_mm(self) -> None:
+        widget = self.form.value_widget_for_key("Slot.Length")
+        self.assertIsNotNone(widget)
+        assert widget is not None
+        unit_label = getattr(widget, "unit_label", None)
+        self.assertIsNotNone(unit_label)
+        self.assertEqual(unit_label.text().strip(), "mm")
+
+    def test_half_angle_unit_overrides_are_applied(self) -> None:
+        specs = self.form.schema.by_key()
+        self.assertEqual(specs["Throat.Angle"].unit, "deg/2")
+        self.assertEqual(specs["Coverage.Angle"].unit, "deg/2")
+        self.assertEqual(specs["Throat.Ext.Angle"].unit, "deg/2")
+
+    def test_gcurve_common_and_superformula_use_two_columns(self) -> None:
+        gcurve_editor = self.form.editor_for_key("GCurve.Type")
+        self.assertIsNotNone(gcurve_editor)
+        assert gcurve_editor is not None
+        gcurve_editor.set_value(2)  # type: ignore[attr-defined]
+        self.form._on_any_field_changed()  # type: ignore[attr-defined]
+
+        stacked, _ = self.form._mode_widgets["GCurve.Type"]  # type: ignore[attr-defined]
+        current_page = stacked.currentWidget()
+        self.assertIsNotNone(current_page)
+        assert current_page is not None
+        page_grid = current_page.findChildren(QGridLayout)
+        self.assertTrue(page_grid)
+        has_page_right_column = False
+        for grid in page_grid:
+            for index in range(grid.count()):
+                _, col, _, _ = grid.getItemPosition(index)
+                if col >= 3:
+                    has_page_right_column = True
+                    break
+            if has_page_right_column:
+                break
+        self.assertTrue(has_page_right_column)
 
     def test_throat_page_headers_are_named_and_rosse_has_no_extra_header_frame(self) -> None:
         headings = [
