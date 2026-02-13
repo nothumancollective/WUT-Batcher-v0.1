@@ -35,6 +35,22 @@ from app.settings_store import UserSettings
 
 _CFG_BASENAME_RE = re.compile(r"^ProjectPageATHTest(\d+)\.cfg$", re.IGNORECASE)
 _ATH_CONFIG_OPTIONAL_MISSING_PREFIXES = ("Mesh.",)
+_WIDTH_HEIGHT_RE = re.compile(
+    r"(?im)\b(?:device|final)\s+width\s*x\s*height\s*=\s*([-+]?\d+(?:[.,]\d+)?)\s*x\s*([-+]?\d+(?:[.,]\d+)?)\s*(mm|m)\b"
+)
+_LENGTH_RE = re.compile(
+    r"(?im)\b(?:device|final)\s+length\s*=\s*([-+]?\d+(?:[.,]\d+)?)\s*(mm|m)\b"
+)
+_THROAT_ANGLE_RE = re.compile(
+    r"(?im)\b(?:final\s+mesh\s+average\s+throat\s+angle|average\s+mesh\s+throat\s+angle)\s*[:=]\s*([-+]?\d+(?:[.,]\d+)?)\s*(deg|°)?"
+)
+_ATH_WARN_RE = re.compile(r"(?im)\bwarning\b")
+_ATH_ERROR_PATTERNS: Tuple[Tuple[str, re.Pattern[str]], ...] = (
+    ("rollback_not_supported", re.compile(r"(?i)rollback feature is no longer supported")),
+    ("diameter_over_100m", re.compile(r"(?i)diameter[^\n]{0,160}larger than 100 m")),
+    ("numeric_overflow", re.compile(r"(?i)(?:inf|nan|overflow)")),
+    ("geometry_invalid", re.compile(r"(?i)(?:invalid geometry|math domain error|cannot generate geometry)")),
+)
 
 
 @dataclass(frozen=True)
@@ -257,6 +273,89 @@ def _parse_value_num(value: Any) -> Optional[float]:
         return None
 
 
+def _normalize_mm(value: str, unit: str) -> Optional[float]:
+    try:
+        parsed = float(str(value).replace(",", "."))
+    except Exception:
+        return None
+    if str(unit).strip().lower() == "m":
+        return parsed * 1000.0
+    return parsed
+
+
+def parse_ath_output_metrics(stdout_text: str, stderr_text: str) -> Dict[str, Any]:
+    combined = f"{stdout_text}\n{stderr_text}"
+    width_mm: Optional[float] = None
+    height_mm: Optional[float] = None
+    length_mm: Optional[float] = None
+    angle_deg: Optional[float] = None
+
+    width_match = _WIDTH_HEIGHT_RE.search(combined)
+    if width_match is not None:
+        width_mm = _normalize_mm(width_match.group(1), width_match.group(3))
+        height_mm = _normalize_mm(width_match.group(2), width_match.group(3))
+
+    length_match = _LENGTH_RE.search(combined)
+    if length_match is not None:
+        length_mm = _normalize_mm(length_match.group(1), length_match.group(2))
+
+    angle_match = _THROAT_ANGLE_RE.search(combined)
+    if angle_match is not None:
+        try:
+            angle_deg = float(str(angle_match.group(1)).replace(",", "."))
+        except Exception:
+            angle_deg = None
+
+    volume_m3: Optional[float] = None
+    if width_mm is not None and height_mm is not None and length_mm is not None:
+        volume_m3 = (width_mm * height_mm * length_mm) / 1_000_000_000.0
+
+    return {
+        "final_width_mm": width_mm,
+        "final_height_mm": height_mm,
+        "final_length_mm": length_mm,
+        "avg_throat_angle_deg": angle_deg,
+        "derived_volume_m3": volume_m3,
+    }
+
+
+def _first_matching_line(text: str, pattern: re.Pattern[str]) -> Optional[str]:
+    for line in text.splitlines():
+        if pattern.search(line):
+            return line.strip()
+    return None
+
+
+def classify_ath_output(stdout_text: str, stderr_text: str, *, exit_code: Optional[int]) -> Dict[str, Any]:
+    combined = f"{stdout_text}\n{stderr_text}"
+    warning_count = len(_ATH_WARN_RE.findall(combined))
+    if exit_code is None or exit_code == 0:
+        return {
+            "ath_warning_count": warning_count,
+            "ath_error_kind": None,
+            "ath_error_message": None,
+        }
+
+    for kind, pattern in _ATH_ERROR_PATTERNS:
+        if pattern.search(combined):
+            line = _first_matching_line(combined, pattern)
+            return {
+                "ath_warning_count": warning_count,
+                "ath_error_kind": kind,
+                "ath_error_message": line or kind,
+            }
+
+    tail_line = ""
+    lines = [line.strip() for line in combined.splitlines() if line.strip()]
+    if lines:
+        tail_line = lines[-1]
+    return {
+        "ath_warning_count": warning_count,
+        "ath_error_kind": "ath_nonzero_exit",
+        "ath_error_message": tail_line or f"ATH exited with code {exit_code}",
+    }
+
+
 def _ensure_db_schema(conn: sqlite3.Connection) -> None:
     conn.execute(
         """
@@ -353,6 +452,7 @@ def _persist_experiment_row(
     extra_keys_defaulted: Sequence[str],
     extra_keys_ghost: Sequence[str],
     mismatches: Sequence[Mapping[str, Any]],
+    metrics: Mapping[str, Any],
 ) -> None:
     conn.execute(
         """
@@ -404,6 +504,22 @@ def _persist_experiment_row(
             json.dumps(list(extra_keys_defaulted), ensure_ascii=False),
             json.dumps(list(extra_keys_ghost), ensure_ascii=False),
             json.dumps(list(mismatches), ensure_ascii=False),
+        ),
+    )
+    conn.execute(
+        """
+        INSERT OR REPLACE INTO experiment_metrics(
+            run_id, final_width_mm, final_height_mm, final_length_mm, avg_throat_angle_deg, derived_volume_m3, flags_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            run_id,
+            metrics.get("final_width_mm"),
+            metrics.get("final_height_mm"),
+            metrics.get("final_length_mm"),
+            metrics.get("avg_throat_angle_deg"),
+            metrics.get("derived_volume_m3"),
+            json.dumps(dict(metrics.get("flags", {}) or {}), ensure_ascii=False),
         ),
     )
 
@@ -551,6 +667,14 @@ def run_projectpage_ath_experiment(
             ath_error_kind: Optional[str] = None
             ath_error_message: Optional[str] = None
             ath_warning_count = 0
+            metrics_payload: Dict[str, Any] = {
+                "final_width_mm": None,
+                "final_height_mm": None,
+                "final_length_mm": None,
+                "avg_throat_angle_deg": None,
+                "derived_volume_m3": None,
+                "flags": {},
+            }
 
             try:
                 payload, compat_state, missing_editors = _materialize_case_payload(case)
@@ -600,8 +724,6 @@ def run_projectpage_ath_experiment(
                         status = "ok"
                     elif ath_result:
                         status = "ath_error"
-                        ath_error_kind = "ath_nonzero_exit"
-                        ath_error_message = f"ATH exited with code {ath_result.exit_code}"
                     else:
                         status = "pipeline_error"
             except Exception as exc:  # pragma: no cover - integration path
@@ -640,6 +762,45 @@ def run_projectpage_ath_experiment(
                 ath_result.stderr_log if ath_result else None,
                 logs_root / f"{run_name}_stderr.txt",
             )
+            stdout_text = Path(run_stdout_path).read_text(encoding="utf-8", errors="replace") if run_stdout_path else ""
+            stderr_text = Path(run_stderr_path).read_text(encoding="utf-8", errors="replace") if run_stderr_path else ""
+
+            parsed_metrics = parse_ath_output_metrics(stdout_text, stderr_text)
+            metrics_payload.update(parsed_metrics)
+            observed_dims = [
+                value
+                for value in (
+                    parsed_metrics.get("final_width_mm"),
+                    parsed_metrics.get("final_height_mm"),
+                    parsed_metrics.get("final_length_mm"),
+                )
+                if isinstance(value, (int, float))
+            ]
+            max_observed_dim = max(observed_dims) if observed_dims else None
+            flags = {
+                "max_dim_warn": bool(max_observed_dim is not None and float(max_observed_dim) > float(max_dim_mm)),
+                "hard_cap_exceeded": bool(max_observed_dim is not None and float(max_observed_dim) > float(hard_cap_mm)),
+                "throat_angle_missing": parsed_metrics.get("avg_throat_angle_deg") is None,
+                "max_observed_dim_mm": max_observed_dim,
+            }
+            metrics_payload["flags"] = flags
+
+            classified = classify_ath_output(
+                stdout_text,
+                stderr_text,
+                exit_code=(ath_result.exit_code if ath_result else None),
+            )
+            ath_warning_count = int(classified["ath_warning_count"])
+            if classified.get("ath_error_kind"):
+                ath_error_kind = str(classified.get("ath_error_kind"))
+            if classified.get("ath_error_message"):
+                ath_error_message = str(classified.get("ath_error_message"))
+
+            if bool(flags.get("hard_cap_exceeded")):
+                status = "ath_error"
+                ath_error_kind = "hard_cap_exceeded"
+                ath_error_message = f"Observed dimension exceeded hard cap {hard_cap_mm} mm"
+                notes = "observed_hard_cap_exceeded"
 
             if cleanup_files:
                 cleanup_result["cfg"] = _safe_delete_cfg_file(cfg_path, cfg_root=cfg_root)
@@ -710,6 +871,7 @@ def run_projectpage_ath_experiment(
                     "ath_error_message": ath_error_message,
                     "ath_warning_count": ath_warning_count,
                 },
+                "metrics": metrics_payload,
                 "cleanup": cleanup_result,
             }
             case_report_path.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -739,14 +901,7 @@ def run_projectpage_ath_experiment(
                 extra_keys_defaulted=list(config_compare.get("extra_keys_defaulted", []) or []),
                 extra_keys_ghost=list(config_compare.get("extra_keys_ghost", []) or []),
                 mismatches=list(config_compare.get("value_mismatches", []) or []),
-            )
-            conn.execute(
-                """
-                INSERT OR REPLACE INTO experiment_metrics(
-                    run_id, final_width_mm, final_height_mm, final_length_mm, avg_throat_angle_deg, derived_volume_m3, flags_json
-                ) VALUES (?, NULL, NULL, NULL, NULL, NULL, ?)
-                """,
-                (run_id, json.dumps({}, ensure_ascii=False)),
+                metrics=metrics_payload,
             )
             conn.commit()
 
