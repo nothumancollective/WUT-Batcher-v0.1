@@ -491,3 +491,25 @@
   - `tests/test_runtime_orchestrator.py`
   - `tests/test_sql_dataset_store.py`
 - Full suite green: `83/83` passing, `2` optional integration tests skipped.
+
+### Update 17 (PROJECT Form UX Finalization)
+#### Done
+- PROJECT page cleaned up for constraints-only workflow:
+  - removed `Project Compatibility` panel from PROJECT view
+  - removed `Back to Dashboard` and PROJECT-side `Show details` actions
+  - PROJECT creation no longer blocks on compatibility `fatal` draft issues
+- Form widgets upgraded to nullable, unset-safe controls:
+  - new `NullableNumericInput` with empty-as-unset semantics and comma-decimal normalization
+  - new nullable enum/bool/text controls with explicit clear behavior
+  - per-field `Set` checkboxes removed across form fields
+  - `Mesh.Enclosure` remains the only object toggle (`Enable Enclosure`)
+- Layout and style polish:
+  - unified compact numeric input widths
+  - transparent label backgrounds (no dark text boxes)
+  - improved segmented-mode selected state styling (checked/hover/pressed)
+  - status bar adjusted as a single bottom line with left status and right brand label
+
+#### Tests
+- Updated/extended GUI contract tests:
+  - `tests/test_project_form_ui.py`
+  - covers nullable numeric mapping, ruleset-driven visibility switching, unset serialization, and PROJECT page button/panel cleanup

@@ -74,8 +74,19 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         font-size: 18px;
         font-weight: 700;
     }}
+    QLabel {{
+        background-color: transparent;
+    }}
     QLabel#MutedText {{
         color: {c['muted']};
+    }}
+    QLabel#InputUnit {{
+        color: {c['muted']};
+        padding-left: {s['xs']}px;
+    }}
+    QLabel#StatusBrand {{
+        font-weight: 700;
+        padding-right: {s['xs']}px;
     }}
     QFrame#Card {{
         background-color: {c['surface']};
@@ -145,6 +156,41 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         background-color: {c['button_disabled']};
         color: #666666;
     }}
+    QPushButton[segment=\"true\"] {{
+        background-color: {c['surface2']};
+        color: {c['text']};
+        border: 1px solid {c['border']};
+        border-radius: {r['md']}px;
+        padding: {s['sm']}px {s['md']}px;
+        font-weight: 500;
+    }}
+    QPushButton[segment=\"true\"]:hover {{
+        background-color: {c['surface']};
+        border-color: {c['accent']};
+    }}
+    QPushButton[segment=\"true\"]:pressed {{
+        background-color: {c['surface']};
+    }}
+    QPushButton[segment=\"true\"]:checked {{
+        background-color: #2a2a2a;
+        border: 1px solid #a9a9a9;
+        color: #ffffff;
+    }}
+    QToolButton#ClearValueButton {{
+        background-color: {c['surface2']};
+        color: {c['muted']};
+        border: 1px solid {c['border']};
+        border-radius: {r['sm']}px;
+        padding: 0 {s['xs']}px;
+        min-width: 18px;
+        max-width: 18px;
+        min-height: 18px;
+        max-height: 18px;
+    }}
+    QToolButton#ClearValueButton:hover {{
+        color: {c['text']};
+        border-color: {c['accent']};
+    }}
     QProgressBar {{
         background-color: {c['surface2']};
         border: 1px solid {c['border']};
@@ -158,6 +204,9 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     QStatusBar {{
         background-color: {c['sidebar']};
         border-top: 1px solid {c['border']};
+    }}
+    QStatusBar::item {{
+        border: none;
     }}
     QScrollBar:vertical {{
         background: {c['surface2']};
