@@ -30,27 +30,10 @@ def tooltip_for(param: Mapping[str, Any]) -> str:
     return description
 
 
-def _expression_example(param: Mapping[str, Any]) -> str:
-    for source in list(param.get("sources", []) or []):
-        if not isinstance(source, dict):
-            continue
-        quote_hint = str(source.get("quote-hint", "")).strip()
-        if "=" not in quote_hint:
-            continue
-        rhs = quote_hint.split("=", 1)[1].strip()
-        if rhs:
-            return rhs[:56]
-    return ""
-
-
 def placeholder_for(*, widget_kind: str, param: Mapping[str, Any]) -> str:
     kind = str(widget_kind)
-    if kind in {"float", "int"}:
-        return "optional"
-    if kind == "ex":
-        return _expression_example(param) or "e.g. 40 + 10*cos(p)^2"
-    if kind == "list":
-        return "e.g. 1,2,3"
+    if kind in {"float", "int", "ex", "list", "text"}:
+        return "0"
     return ""
 
 

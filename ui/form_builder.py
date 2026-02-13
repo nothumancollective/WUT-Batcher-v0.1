@@ -142,7 +142,7 @@ class NullableNumericInput(QWidget):
         minimum: Optional[float],
         maximum: Optional[float],
         unit: Optional[str],
-        placeholder: str = "optional",
+        placeholder: str = "0",
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -494,7 +494,7 @@ class ScalarFieldEditor(QWidget):
                 minimum=self.field.minimum,
                 maximum=self.field.maximum,
                 unit=self.field.unit,
-                placeholder=self.field.placeholder or "optional",
+                placeholder=self.field.placeholder or "0",
             )
         if self.field.widget_kind == "int":
             return NullableNumericInput(
@@ -503,7 +503,7 @@ class ScalarFieldEditor(QWidget):
                 minimum=self.field.minimum,
                 maximum=self.field.maximum,
                 unit=self.field.unit,
-                placeholder=self.field.placeholder or "optional",
+                placeholder=self.field.placeholder or "0",
             )
         if self.field.widget_kind == "bool":
             return NullableBoolInput()
@@ -514,18 +514,18 @@ class ScalarFieldEditor(QWidget):
             return NullableEnumComboInput(options=options)
         if self.field.widget_kind == "list":
             return NullableTextInput(
-                placeholder=self.field.placeholder or "e.g. 1,2,3",
+                placeholder=self.field.placeholder or "0",
                 width=INPUT_TOTAL_WIDTH,
                 unit=self.field.unit,
                 value_parser=self._parse_list,
             )
         if self.field.widget_kind == "ex":
             return NullableTextInput(
-                placeholder=self.field.placeholder or "e.g. 40 + 10*cos(p)^2",
+                placeholder=self.field.placeholder or "0",
                 width=INPUT_TOTAL_WIDTH,
                 unit=self.field.unit,
             )
-        return NullableTextInput(placeholder="", width=INPUT_TOTAL_WIDTH, unit=self.field.unit)
+        return NullableTextInput(placeholder=self.field.placeholder or "0", width=INPUT_TOTAL_WIDTH, unit=self.field.unit)
 
     def _parse_list(self, text: str) -> List[Any]:
         if not text.strip():
@@ -741,9 +741,11 @@ class ParameterForm(QWidget):
         self._root_layout = root
 
         self.geometry_scroll = QScrollArea()
+        self.geometry_scroll.setObjectName("ProjectGeometryScroll")
         self.geometry_scroll.setWidgetResizable(True)
         self.geometry_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.mesh_scroll = QScrollArea()
+        self.mesh_scroll.setObjectName("ProjectMeshScroll")
         self.mesh_scroll.setWidgetResizable(True)
         self.mesh_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         root.addWidget(self.geometry_scroll, 1)

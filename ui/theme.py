@@ -241,6 +241,36 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         border-radius: {r['md']}px;
         min-height: 20px;
     }}
+    QScrollArea#ProjectGeometryScroll QScrollBar:vertical,
+    QScrollArea#ProjectMeshScroll QScrollBar:vertical {{
+        background: transparent;
+        width: 10px;
+        margin: 2px 4px 2px 0px;
+        border: none;
+    }}
+    QScrollArea#ProjectGeometryScroll QScrollBar::handle:vertical,
+    QScrollArea#ProjectMeshScroll QScrollBar::handle:vertical {{
+        background: rgba(255, 255, 255, 0.24);
+        border-radius: 5px;
+        min-height: 28px;
+    }}
+    QScrollArea#ProjectGeometryScroll QScrollBar::handle:vertical:hover,
+    QScrollArea#ProjectMeshScroll QScrollBar::handle:vertical:hover {{
+        background: rgba(255, 255, 255, 0.36);
+    }}
+    QScrollArea#ProjectGeometryScroll QScrollBar::add-line:vertical,
+    QScrollArea#ProjectGeometryScroll QScrollBar::sub-line:vertical,
+    QScrollArea#ProjectMeshScroll QScrollBar::add-line:vertical,
+    QScrollArea#ProjectMeshScroll QScrollBar::sub-line:vertical {{
+        height: 0px;
+        background: transparent;
+    }}
+    QScrollArea#ProjectGeometryScroll QScrollBar::add-page:vertical,
+    QScrollArea#ProjectGeometryScroll QScrollBar::sub-page:vertical,
+    QScrollArea#ProjectMeshScroll QScrollBar::add-page:vertical,
+    QScrollArea#ProjectMeshScroll QScrollBar::sub-page:vertical {{
+        background: transparent;
+    }}
     """
 
 

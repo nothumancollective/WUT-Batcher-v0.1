@@ -162,12 +162,12 @@ class ProjectFormUiTests(unittest.TestCase):
         state = next(item for item in payload["param_states"] if item.get("param_name") == "Throat.Profile")
         self.assertEqual(state["is_set"], 0)
 
-    def test_optional_is_placeholder_not_actual_value_and_numeric_is_editable(self) -> None:
+    def test_zero_placeholder_is_not_actual_value_and_numeric_is_editable(self) -> None:
         widget = self.form.value_widget_for_key("Throat.Diameter")
         self.assertIsNotNone(widget)
         assert isinstance(widget, NullableNumericInput)
         self.assertEqual(widget.edit.text(), "")
-        self.assertEqual(widget.edit.placeholderText(), "optional")
+        self.assertEqual(widget.edit.placeholderText(), "0")
         self.assertTrue(bool(widget.edit.alignment() & Qt.AlignLeft))
         widget.edit.setText("12.5")
         self.assertEqual(widget.value(), 12.5)

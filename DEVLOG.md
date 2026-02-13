@@ -728,3 +728,18 @@
 - Regression status:
   - `tests.test_project_form_ui`: passing
   - compatibility/storage/runtime targeted suites: passing
+
+### Update 26 (PROJECT Window Controls + Placeholder 0 + Scrollbar Polish)
+#### Done
+- Replaced PROJECT main-window open mode from true fullscreen to native maximized window mode:
+  - keeps standard Windows titlebar controls (minimize / maximize / close) available
+  - applied consistently for both "open existing project" and "new project"
+- Unified PROJECT form placeholders for editable text-based controls to `0`:
+  - numeric, expression, list and text inputs now all show `0` when unset/empty
+  - placeholder remains visual-only; unset semantics stay unchanged (`is_set=0`, value `NULL`)
+- Added dedicated PROJECT column scroll-area styling (`Geometry` and `Mesh`) for cleaner dark UI:
+  - transparent track, slimmer handle, rounded thumb, no arrow buttons
+  - keeps horizontal scrolling disabled as before
+
+#### Tests
+- `python -m unittest tests.test_project_form_ui -v` (all passing)
