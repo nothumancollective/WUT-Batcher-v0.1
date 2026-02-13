@@ -62,6 +62,38 @@ class ContextFrame(QFrame):
         root.addLayout(self.content_layout)
 
 
+class SectionColumn(QWidget):
+    def __init__(self, title: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(8)
+
+        heading = QLabel(title)
+        heading.setObjectName("SectionTitle")
+        root.addWidget(heading, alignment=Qt.AlignLeft)
+
+        self.content = QWidget()
+        self.content_layout = QVBoxLayout(self.content)
+        self.content_layout.setContentsMargins(0, 0, 0, 0)
+        self.content_layout.setSpacing(10)
+        root.addWidget(self.content)
+
+
+class AutoSizingStackedWidget(QStackedWidget):
+    def sizeHint(self):  # type: ignore[override]
+        current = self.currentWidget()
+        if current is not None:
+            return current.sizeHint()
+        return super().sizeHint()
+
+    def minimumSizeHint(self):  # type: ignore[override]
+        current = self.currentWidget()
+        if current is not None:
+            return current.minimumSizeHint()
+        return super().minimumSizeHint()
+
+
 class CollapsibleSection(QWidget):
     def __init__(self, title: str, *, expanded: bool = True, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -124,13 +156,11 @@ class NullableNumericInput(QWidget):
         self.edit.setClearButtonEnabled(True)
         root.addWidget(self.edit, 0, Qt.AlignLeft)
 
-        self.unit_label: Optional[QLabel] = None
-        if unit:
-            self.unit_label = QLabel(str(unit))
-            self.unit_label.setObjectName("InputUnit")
-            self.unit_label.setFixedWidth(UNIT_LABEL_WIDTH)
-            self.edit.setFixedWidth(INPUT_TOTAL_WIDTH - UNIT_LABEL_WIDTH - 6)
-            root.addWidget(self.unit_label, 0, Qt.AlignLeft)
+        self.unit_label = QLabel(str(unit or ""))
+        self.unit_label.setObjectName("InputUnit")
+        self.unit_label.setFixedWidth(UNIT_LABEL_WIDTH)
+        self.edit.setFixedWidth(INPUT_TOTAL_WIDTH - UNIT_LABEL_WIDTH - 6)
+        root.addWidget(self.unit_label, 0, Qt.AlignLeft)
         self._install_validator()
         self.edit.textChanged.connect(lambda *_: self.changed.emit())
 
@@ -192,8 +222,7 @@ class NullableNumericInput(QWidget):
 
     def set_locked(self, locked: bool) -> None:
         self.edit.setEnabled(not locked)
-        if self.unit_label is not None:
-            self.unit_label.setEnabled(not locked)
+        self.unit_label.setEnabled(not locked)
 
 
 class NullableTextInput(QWidget):
@@ -224,13 +253,11 @@ class NullableTextInput(QWidget):
             self.edit.setPlaceholderText(placeholder)
         root.addWidget(self.edit, 0, Qt.AlignLeft)
 
-        self.unit_label: Optional[QLabel] = None
-        if unit:
-            self.unit_label = QLabel(str(unit))
-            self.unit_label.setObjectName("InputUnit")
-            self.unit_label.setFixedWidth(UNIT_LABEL_WIDTH)
-            self.edit.setFixedWidth(int(width or INPUT_TOTAL_WIDTH) - UNIT_LABEL_WIDTH - 6)
-            root.addWidget(self.unit_label, 0, Qt.AlignLeft)
+        self.unit_label = QLabel(str(unit or ""))
+        self.unit_label.setObjectName("InputUnit")
+        self.unit_label.setFixedWidth(UNIT_LABEL_WIDTH)
+        self.edit.setFixedWidth(int(width or INPUT_TOTAL_WIDTH) - UNIT_LABEL_WIDTH - 6)
+        root.addWidget(self.unit_label, 0, Qt.AlignLeft)
 
         self.edit.textChanged.connect(lambda *_: self.changed.emit())
 
@@ -259,8 +286,7 @@ class NullableTextInput(QWidget):
 
     def set_locked(self, locked: bool) -> None:
         self.edit.setEnabled(not locked)
-        if self.unit_label is not None:
-            self.unit_label.setEnabled(not locked)
+        self.unit_label.setEnabled(not locked)
 
 class NullableBoolInput(QWidget):
     changed = Signal()
@@ -678,6 +704,7 @@ class ParameterForm(QWidget):
         self._field_editors: Dict[str, QWidget] = {}
         self._field_labels: Dict[str, QLabel] = {}
         self._mode_widgets: Dict[str, Tuple[QStackedWidget, Dict[Optional[int], int]]] = {}
+        self._mode_common_frames: Dict[str, Tuple[ContextFrame, Tuple[str, ...]]] = {}
         self._compat_state: Dict[str, Any] = {"visible_keys": [], "locked_keys": [], "issues": []}
         self._compat_visible_keys: set[str] = set()
         self._morph_detail_frame: Optional[ContextFrame] = None
@@ -704,7 +731,7 @@ class ParameterForm(QWidget):
         geometry_layout = QVBoxLayout(geometry_container)
         geometry_layout.setContentsMargins(0, 0, 0, 0)
         geometry_layout.setSpacing(12)
-        self.geometry_section = CollapsibleSection("Geometry", expanded=True)
+        self.geometry_section = SectionColumn("Geometry")
         geometry_layout.addWidget(self.geometry_section)
         geometry_layout.addStretch(1)
 
@@ -713,7 +740,7 @@ class ParameterForm(QWidget):
         mesh_layout = QVBoxLayout(mesh_container)
         mesh_layout.setContentsMargins(0, 0, 0, 0)
         mesh_layout.setSpacing(12)
-        self.mesh_section = CollapsibleSection("Mesh", expanded=True)
+        self.mesh_section = SectionColumn("Mesh")
         mesh_layout.addWidget(self.mesh_section)
         mesh_layout.addStretch(1)
 
@@ -796,15 +823,26 @@ class ParameterForm(QWidget):
             selection_grid.addWidget(editor, row, 1, 1, 1, alignment=Qt.AlignLeft)
             self._field_labels[field.key] = label
 
-        for index, field in enumerate(other_fields):
+        left_count = len(other_fields) // 2
+        left_fields = other_fields[:left_count]
+        right_fields = other_fields[left_count:]
+
+        for row, field in enumerate(left_fields):
             label = QLabel(field.label)
             label.setWordWrap(True)
             label.setFixedWidth(LABEL_COLUMN_WIDTH)
             editor = self._ensure_editor(field)
-            row = index // 2
-            label_col, input_col = _two_column_positions(index % 2)
-            form_grid.addWidget(label, row, label_col)
-            form_grid.addWidget(editor, row, input_col, 1, 1, alignment=Qt.AlignLeft)
+            form_grid.addWidget(label, row, 0)
+            form_grid.addWidget(editor, row, 1, 1, 1, alignment=Qt.AlignLeft)
+            self._field_labels[field.key] = label
+
+        for row, field in enumerate(right_fields):
+            label = QLabel(field.label)
+            label.setWordWrap(True)
+            label.setFixedWidth(LABEL_COLUMN_WIDTH)
+            editor = self._ensure_editor(field)
+            form_grid.addWidget(label, row, 3)
+            form_grid.addWidget(editor, row, 4, 1, 1, alignment=Qt.AlignLeft)
             self._field_labels[field.key] = label
 
         box_layout.addLayout(selection_grid)
@@ -931,7 +969,7 @@ class ParameterForm(QWidget):
             configure_two_column_grid(grid)
             ordered = sorted(group_fields, key=lambda field: field.order)
             scalar_index = 0
-            object_row = (len(ordered) + 1) // 2
+            object_row = max((len([field for field in ordered if field.widget_kind != "object"]) + 1) // 2, 1)
             for field in ordered:
                 editor = self._ensure_editor(field)
                 if field.widget_kind == "object":
@@ -997,7 +1035,8 @@ class ParameterForm(QWidget):
                 common_box.content_layout.addWidget(common_widget)
                 box_layout.addWidget(common_box)
 
-            pages = QStackedWidget()
+            pages = AutoSizingStackedWidget()
+            pages.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
             index_by_value: Dict[Optional[int], int] = {}
             for page in stack.pages:
                 page_fields = [key for key in page.field_keys if key not in common_keys]
@@ -1037,13 +1076,15 @@ class ParameterForm(QWidget):
                     page_grid.addWidget(label, row, label_col)
                     page_grid.addWidget(editor, row, input_col, 1, 1, alignment=Qt.AlignLeft)
                     self._field_labels[key] = label
-                page_grid.setRowStretch(99, 1)
                 page_widget.content_layout.addWidget(page_grid_widget)
                 page_index = pages.addWidget(page_widget)
                 index_by_value[page.value] = page_index
 
             box_layout.addWidget(pages)
+            pages.currentChanged.connect(lambda *_: pages.updateGeometry())
             self._mode_widgets[stack.controller_key] = (pages, index_by_value)
+            if common_keys:
+                self._mode_common_frames[stack.controller_key] = (common_box, tuple(sorted(common_keys)))
             parent_layout.addWidget(box)
 
     def _ensure_editor(self, field: FieldSpec) -> QWidget:
@@ -1080,6 +1121,18 @@ class ParameterForm(QWidget):
             if page_index is None:
                 page_index = index_by_value.get(None, 0)
             stacked.setCurrentIndex(page_index)
+        self._refresh_mode_common_frames()
+
+    def _refresh_mode_common_frames(self) -> None:
+        for controller_key, (frame, keys) in self._mode_common_frames.items():
+            controller_value = self._controller_value(controller_key)
+            if controller_key == "GCurve.Type" and controller_value is None:
+                frame.setVisible(False)
+                continue
+            if self._compat_visible_keys:
+                frame.setVisible(any(key in self._compat_visible_keys for key in keys))
+            else:
+                frame.setVisible(True)
 
     def _sync_mode_side_effects(self) -> None:
         profile_value = self._controller_value("Throat.Profile")

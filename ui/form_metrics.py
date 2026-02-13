@@ -13,10 +13,10 @@ except ImportError as exc:  # pragma: no cover
 @dataclass(frozen=True)
 class FormMetrics:
     label_width: int = 148
-    input_width: int = 150
-    unit_label_width: int = 30
-    label_to_input_gap: int = 10
-    column_gap: int = 28
+    input_width: int = 104
+    unit_label_width: int = 34
+    label_to_input_gap: int = 6
+    column_gap: int = 24
     row_gap: int = 10
     margin_left: int = 10
     margin_top: int = 8

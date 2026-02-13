@@ -238,13 +238,20 @@ class ProjectFormUiTests(unittest.TestCase):
         # left input anchor (selection) should match left input anchor (form)
         _, sel_col, _, _ = selection_grid.getItemPosition(1)
         self.assertEqual(sel_col, 1)
-        has_right_column = False
+        left_label_count = 0
+        right_label_count = 0
         for index in range(form_grid.count()):
             _, col, _, _ = form_grid.getItemPosition(index)
-            if col >= 3:
-                has_right_column = True
-                break
-        self.assertTrue(has_right_column)
+            widget = form_grid.itemAt(index).widget()
+            if not isinstance(widget, QLabel):
+                continue
+            if col == 0:
+                left_label_count += 1
+            if col == 3:
+                right_label_count += 1
+        self.assertGreater(right_label_count, 0)
+        self.assertLessEqual(abs(left_label_count - right_label_count), 1)
+        self.assertGreaterEqual(right_label_count, left_label_count)
 
     def test_enclosure_group_has_no_redundant_mesh_enclosure_label(self) -> None:
         labels = [label.text().strip() for label in self.form.findChildren(QLabel)]
@@ -263,6 +270,14 @@ class ProjectFormUiTests(unittest.TestCase):
         self.assertEqual(specs["Throat.Angle"].unit, "deg/2")
         self.assertEqual(specs["Coverage.Angle"].unit, "deg/2")
         self.assertEqual(specs["Throat.Ext.Angle"].unit, "deg/2")
+        throat_angle_widget = self.form.value_widget_for_key("Throat.Angle")
+        self.assertIsNotNone(throat_angle_widget)
+        assert throat_angle_widget is not None
+        self.assertEqual(getattr(throat_angle_widget, "unit_label").text().strip(), "deg/2")
+        coverage_widget = self.form.value_widget_for_key("Coverage.Angle")
+        self.assertIsNotNone(coverage_widget)
+        assert coverage_widget is not None
+        self.assertEqual(getattr(coverage_widget, "unit_label").text().strip(), "deg/2")
 
     def test_gcurve_common_and_superformula_use_two_columns(self) -> None:
         gcurve_editor = self.form.editor_for_key("GCurve.Type")
@@ -287,6 +302,44 @@ class ProjectFormUiTests(unittest.TestCase):
             if has_page_right_column:
                 break
         self.assertTrue(has_page_right_column)
+
+    def test_common_block_hidden_for_no_gcurve(self) -> None:
+        headings = [
+            label
+            for label in self.form.findChildren(QLabel)
+            if label.text().strip() == "Common"
+        ]
+        self.assertTrue(headings)
+        self.assertTrue(all(not label.isVisible() for label in headings))
+
+    def test_input_widths_are_uniform_with_and_without_unit(self) -> None:
+        with_unit = self.form.value_widget_for_key("Throat.Angle")
+        without_unit = self.form.value_widget_for_key("Length")
+        self.assertIsNotNone(with_unit)
+        self.assertIsNotNone(without_unit)
+        assert with_unit is not None and without_unit is not None
+        with_edit = getattr(with_unit, "edit")
+        without_edit = getattr(without_unit, "edit")
+        self.assertEqual(with_edit.width(), without_edit.width())
+
+    def test_project_button_is_right_aligned(self) -> None:
+        page = ProjectPage()
+        layout = page.layout()
+        self.assertIsNotNone(layout)
+        assert layout is not None
+        buttons_layout = layout.itemAt(layout.count() - 1).layout()
+        self.assertIsNotNone(buttons_layout)
+        assert buttons_layout is not None
+        self.assertIsNotNone(buttons_layout.itemAt(0).spacerItem())
+        self.assertEqual(buttons_layout.itemAt(1).widget().text(), "Projekt erstellen")
+
+    def test_main_columns_are_not_collapsible(self) -> None:
+        toggle_buttons = [
+            button
+            for button in self.form.findChildren(QToolButton)
+            if button.text().strip() in {"Geometry", "Mesh"}
+        ]
+        self.assertEqual(toggle_buttons, [])
 
     def test_throat_page_headers_are_named_and_rosse_has_no_extra_header_frame(self) -> None:
         headings = [

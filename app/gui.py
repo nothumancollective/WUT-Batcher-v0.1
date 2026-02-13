@@ -608,8 +608,8 @@ class ProjectPage(QWidget):
         buttons = QHBoxLayout()
         self.create_btn = QPushButton("Projekt erstellen")
         self.create_btn.setObjectName("PrimaryButton")
-        buttons.addWidget(self.create_btn)
         buttons.addStretch(1)
+        buttons.addWidget(self.create_btn)
         root.addLayout(buttons)
 
         self.create_btn.clicked.connect(self._submit)
