@@ -350,6 +350,55 @@ def cmd_compat_verify(args: argparse.Namespace) -> int:
     return 0 if int(summary["status_counts"].get("fail", 0)) == 0 else 3
 
 
+def _inspect_ui_tool(
+    *,
+    tool_name: str,
+    executable: Optional[str],
+    output_dir: str,
+    timeout_s: int,
+    dry_run: bool,
+) -> Dict[str, Any]:
+    from app.ui_automation.inspector import inspect_tool_ui
+
+    if not executable:
+        raise ValueError(f"{tool_name} executable path is not configured.")
+    return inspect_tool_ui(
+        tool_name=tool_name,
+        executable=executable,
+        output_root=output_dir,
+        startup_timeout_s=timeout_s,
+        dry_run=dry_run,
+    )
+
+
+def cmd_ui_inspect_akabak(args: argparse.Namespace) -> int:
+    settings_store = SettingsStore()
+    settings = settings_store.load()
+    payload = _inspect_ui_tool(
+        tool_name="akabak",
+        executable=args.akabak_exe or settings.akabak_exe,
+        output_dir=args.output_dir,
+        timeout_s=args.timeout_s,
+        dry_run=args.dry_run,
+    )
+    print(json.dumps(payload, indent=2, ensure_ascii=False, default=_json_default))
+    return 0 if "error" not in payload else 3
+
+
+def cmd_ui_inspect_vacs(args: argparse.Namespace) -> int:
+    settings_store = SettingsStore()
+    settings = settings_store.load()
+    payload = _inspect_ui_tool(
+        tool_name="vacs",
+        executable=args.vacs_exe or settings.vacs_exe,
+        output_dir=args.output_dir,
+        timeout_s=args.timeout_s,
+        dry_run=args.dry_run,
+    )
+    print(json.dumps(payload, indent=2, ensure_ascii=False, default=_json_default))
+    return 0 if "error" not in payload else 3
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="batch-software")
     parser.add_argument("--config", default="app_config.json", help="Path to app_config.json (optional).")
@@ -480,6 +529,29 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_compat_verify.add_argument("--no-sql", action="store_true", help="Disable SQL persistence for results")
     p_compat_verify.set_defaults(func=cmd_compat_verify)
+
+    p_ui = sub.add_parser("ui", help="UI automation inspection utilities.")
+    sub_ui = p_ui.add_subparsers(dest="ui_cmd", required=True)
+
+    p_ui_inspect_akabak = sub_ui.add_parser(
+        "inspect-akabak",
+        help="Start/connect AKABAK and dump top-level windows + UIA tree to ui_maps/",
+    )
+    p_ui_inspect_akabak.add_argument("--akabak-exe", help="Override AKABAK executable path")
+    p_ui_inspect_akabak.add_argument("--output-dir", default="ui_maps", help="Directory for inspector artifacts")
+    p_ui_inspect_akabak.add_argument("--timeout-s", type=int, default=20, help="Startup/connect timeout in seconds")
+    p_ui_inspect_akabak.add_argument("--dry-run", action="store_true", help="Write planned outputs without launching tools")
+    p_ui_inspect_akabak.set_defaults(func=cmd_ui_inspect_akabak)
+
+    p_ui_inspect_vacs = sub_ui.add_parser(
+        "inspect-vacs",
+        help="Start/connect VACS and dump top-level windows + UIA tree to ui_maps/",
+    )
+    p_ui_inspect_vacs.add_argument("--vacs-exe", help="Override VACS executable path")
+    p_ui_inspect_vacs.add_argument("--output-dir", default="ui_maps", help="Directory for inspector artifacts")
+    p_ui_inspect_vacs.add_argument("--timeout-s", type=int, default=20, help="Startup/connect timeout in seconds")
+    p_ui_inspect_vacs.add_argument("--dry-run", action="store_true", help="Write planned outputs without launching tools")
+    p_ui_inspect_vacs.set_defaults(func=cmd_ui_inspect_vacs)
 
     return parser
 
