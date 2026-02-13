@@ -12,6 +12,13 @@ from ui.hints import placeholder_for, property_placeholder_for, property_tooltip
 
 _COND_EQ_RE = re.compile(r"^\s*([A-Za-z0-9_.-]+)\s*==\s*(-?\d+)\s*$")
 _SHOW_ACTION_RE = re.compile(r"^show\(([^)]+)\)$")
+_UNIT_OVERRIDES: Dict[str, str] = {
+    "Throat.Angle": "deg/2",
+    "Throat.Ext.Angle": "deg/2",
+    "Coverage.Angle": "deg/2",
+    "R-OSSE.a0": "deg/2",
+    "R-OSSE.a": "deg/2",
+}
 
 
 @dataclass(frozen=True)
@@ -74,6 +81,13 @@ def _clean_unit(raw: Any) -> Optional[str]:
     if not value:
         return None
     return value
+
+
+def _unit_for_key(key: str, raw: Any) -> Optional[str]:
+    override = _UNIT_OVERRIDES.get(key)
+    if override:
+        return override
+    return _clean_unit(raw)
 
 
 def _title_from_key(key: str) -> str:
@@ -331,7 +345,7 @@ def _property_specs(
                 decimals=2,
                 minimum=minimum,
                 maximum=maximum,
-                unit=_clean_unit(property_schema_raw.get("unit")),
+                unit=_unit_for_key(property_key, property_schema_raw.get("unit")),
                 tooltip=tooltip,
                 placeholder=property_placeholder_for(widget_kind=widget_kind, property_schema=property_schema_raw),
                 group_path=tuple(group_path),
@@ -380,7 +394,7 @@ def build_project_form_schema(bundle: AthKnowledgeBundle | None = None) -> FormS
             decimals=2,
             minimum=minimum,
             maximum=maximum,
-            unit=_clean_unit(param.get("unit")),
+            unit=_unit_for_key(key, param.get("unit")),
             tooltip=tooltip_for(param),
             placeholder=placeholder_for(widget_kind=widget_kind, param=param),
             group_path=group_path,

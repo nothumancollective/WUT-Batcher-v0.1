@@ -596,3 +596,34 @@
 - Regression status:
   - `tests.test_project_form_ui`: passing
   - compatibility/storage/runtime targeted suites: passing
+
+### Update 21 (PROJECT Form Metrics + Unit/Placeholder Alignment)
+#### Done
+- Introduced centralized form layout metrics in `ui/form_metrics.py`:
+  - shared label width, input width, label->input gap, column gap, row gap, and margins
+  - reusable grid configurators for single-column control rows and two-column form rows
+- Restored two-column subforms where regressions occurred:
+  - `Mesh/Core` now uses selection rows on top + two-column form grid below
+  - left control anchor stays aligned between selection rows and form rows
+  - `GCurve Common` and mode-specific pages (including Superformula) render as two-column grids again
+- Removed redundant Enclosure inner row label (`Mesh Enclosure`) by rendering object editor directly under `Enclosure` group title.
+- Placeholder/text alignment normalization:
+  - numeric and text inputs are explicitly left-aligned
+  - `optional` now aligns consistently with all other placeholders
+- Unit handling polish:
+  - expression/list text inputs now support inline unit suffix labels (fixes missing unit on `Slot.Length`)
+  - half-angle unit overrides applied where documentation confirms half-angle semantics:
+    - `Throat.Angle`, `Throat.Ext.Angle`, `Coverage.Angle` -> `deg/2`
+    - `R-OSSE.a0`, `R-OSSE.a` -> `deg/2`
+
+#### Tests
+- Expanded `tests/test_project_form_ui.py` coverage for:
+  - Mesh/Core two-column structure and control-anchor alignment
+  - removal of redundant Enclosure label
+  - Slot.Length unit visibility (`mm`)
+  - half-angle unit overrides
+  - placeholder left alignment
+  - two-column rendering for GCurve Common/Superformula
+- Regression status:
+  - `tests.test_project_form_ui`: passing
+  - compatibility/storage/runtime targeted suites: passing
