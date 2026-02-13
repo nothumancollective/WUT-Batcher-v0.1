@@ -1,4 +1,4 @@
-"""PySide6 GUI orchestrator for WUT Batcher."""
+﻿"""PySide6 GUI orchestrator for WUT Batcher."""
 
 from __future__ import annotations
 
@@ -28,6 +28,7 @@ try:
         QGridLayout,
         QGroupBox,
         QHBoxLayout,
+        QInputDialog,
         QLabel,
         QLineEdit,
         QListWidget,
@@ -327,11 +328,194 @@ class ExportDialog(QDialog):
         apply_windows_dark_titlebar(self)
 
 
+class RunManagerDialog(QDialog):
+    def __init__(self, service: OrchestratorService, project_id: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.service = service
+        self.project_id = project_id
+        self.setWindowTitle("Runs verwalten")
+        self.setModal(True)
+        self.resize(760, 420)
+
+        self.batch_filter = QComboBox()
+        self.run_list = QListWidget()
+        self.run_list.setSelectionMode(QAbstractItemView.SingleSelection)
+
+        refresh_btn = QPushButton("Refresh")
+        pin_btn = QPushButton("Pin")
+        pin_btn.setToolTip("Markiert einen Run als Ergebnis, das behalten werden soll.")
+        unpin_btn = QPushButton("Unpin")
+        close_btn = QPushButton("Close")
+
+        top = QFormLayout()
+        top.addRow("Batch Filter", self.batch_filter)
+
+        actions = QHBoxLayout()
+        actions.addWidget(refresh_btn)
+        actions.addWidget(pin_btn)
+        actions.addWidget(unpin_btn)
+        actions.addStretch(1)
+        actions.addWidget(close_btn)
+
+        root = QVBoxLayout(self)
+        root.addLayout(top)
+        root.addWidget(self.run_list, 1)
+        root.addLayout(actions)
+
+        refresh_btn.clicked.connect(self._reload_runs)
+        pin_btn.clicked.connect(self._pin_selected)
+        unpin_btn.clicked.connect(self._unpin_selected)
+        close_btn.clicked.connect(self.accept)
+        self.batch_filter.currentTextChanged.connect(lambda _: self._reload_runs())
+
+        self._reload_batches()
+        self._reload_runs()
+
+    def _reload_batches(self) -> None:
+        self.batch_filter.clear()
+        self.batch_filter.addItem("(all)")
+        for batch in self.service.repo.list_batches(self.project_id):
+            self.batch_filter.addItem(batch.batch_id)
+
+    def _selected_run_id(self) -> Optional[str]:
+        item = self.run_list.currentItem()
+        if item is None:
+            return None
+        value = item.data(Qt.UserRole)
+        return str(value) if value else None
+
+    def _reload_runs(self) -> None:
+        self.run_list.clear()
+        batch_text = self.batch_filter.currentText().strip()
+        batch_id = None if batch_text in {"", "(all)"} else batch_text
+        rows = self.service.list_runs(project_id=self.project_id, batch_id=batch_id)
+        for row in rows:
+            status = str(row.get("status", ""))
+            pinned = bool(row.get("pinned", False))
+            tag = str(row.get("tag") or "")
+            pin_flag = "PINNED" if pinned else "unpinned"
+            tag_text = f" [{tag}]" if tag else ""
+            label = f"{row['run_id']} | {row['batch_id']} | {status} | {pin_flag}{tag_text}"
+            item = QListWidgetItem(label)
+            item.setData(Qt.UserRole, str(row["run_id"]))
+            self.run_list.addItem(item)
+
+    def _pin_selected(self) -> None:
+        run_id = self._selected_run_id()
+        if not run_id:
+            return
+        tag, ok = QInputDialog.getText(self, "Run pinnen", "Tag (optional):")
+        if not ok:
+            return
+        self.service.pin_run(project_id=self.project_id, run_id=run_id, tag=tag.strip() or None)
+        self._reload_runs()
+
+    def _unpin_selected(self) -> None:
+        run_id = self._selected_run_id()
+        if not run_id:
+            return
+        self.service.unpin_run(project_id=self.project_id, run_id=run_id)
+        self._reload_runs()
+
+    def showEvent(self, event) -> None:  # type: ignore[override]
+        super().showEvent(event)
+        apply_windows_dark_titlebar(self)
+
+
+class CleanupTestDataDialog(QDialog):
+    def __init__(self, service: OrchestratorService, project_id: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.service = service
+        self.project_id = project_id
+        self.setWindowTitle("Testdaten aufraeumen")
+        self.setModal(True)
+        self.resize(760, 500)
+        self._last_preview: Dict[str, Any] = {}
+
+        info = QLabel("Behalten: angeheftete Runs. Loeschen: alle anderen Runs (Testdaten).")
+        info.setWordWrap(True)
+
+        self.delete_exports = QCheckBox("Exportdateien ebenfalls loeschen (empfohlen)")
+        self.delete_exports.setChecked(True)
+
+        self.preview_text = QTextEdit()
+        self.preview_text.setReadOnly(True)
+
+        self.confirm_input = QLineEdit()
+        self.confirm_input.setPlaceholderText("Type DELETE to confirm")
+
+        preview_btn = QPushButton("Preview")
+        cleanup_btn = QPushButton("Cleanup")
+        cleanup_btn.setObjectName("PrimaryButton")
+        cancel_btn = QPushButton("Cancel")
+
+        actions = QHBoxLayout()
+        actions.addWidget(preview_btn)
+        actions.addWidget(cleanup_btn)
+        actions.addStretch(1)
+        actions.addWidget(cancel_btn)
+
+        root = QVBoxLayout(self)
+        root.addWidget(info)
+        root.addWidget(self.delete_exports)
+        root.addWidget(self.preview_text, 1)
+        root.addWidget(QLabel("Confirmation"))
+        root.addWidget(self.confirm_input)
+        root.addLayout(actions)
+
+        preview_btn.clicked.connect(self._preview)
+        cleanup_btn.clicked.connect(self._cleanup)
+        cancel_btn.clicked.connect(self.reject)
+        self._preview()
+
+    def _preview(self) -> None:
+        result = self.service.cleanup_test_data(
+            project_id=self.project_id,
+            delete_exports=self.delete_exports.isChecked(),
+            dry_run=True,
+        )
+        self._last_preview = result
+        run_ids = list(result.get("run_ids", []))
+        counts = dict(result.get("counts", {}) or {})
+        lines = [
+            f"Project: {self.project_id}",
+            f"Runs to delete: {len(run_ids)}",
+            f"Counts: {json.dumps(counts, ensure_ascii=False)}",
+            "",
+            "Run IDs:",
+            *[f"- {run_id}" for run_id in run_ids],
+        ]
+        self.preview_text.setPlainText("\n".join(lines))
+
+    def _cleanup(self) -> None:
+        if self.confirm_input.text().strip() != "DELETE":
+            QMessageBox.warning(self, "Confirmation required", 'Type "DELETE" to continue.')
+            return
+        result = self.service.cleanup_test_data(
+            project_id=self.project_id,
+            delete_exports=self.delete_exports.isChecked(),
+            dry_run=False,
+        )
+        self._last_preview = result
+        QMessageBox.information(
+            self,
+            "Cleanup finished",
+            f"Deleted runs: {len(list(result.get('run_ids', [])))}\nAudit: {result.get('audit_log')}",
+        )
+        self.accept()
+
+    def showEvent(self, event) -> None:  # type: ignore[override]
+        super().showEvent(event)
+        apply_windows_dark_titlebar(self)
+
+
 class DashboardPage(QWidget):
     request_new_batch = Signal()
     request_edit_batch = Signal(str)
     request_clone_batch = Signal(str)
     request_open_export_dialog = Signal()
+    request_manage_runs = Signal()
+    request_cleanup_testdata = Signal()
     request_settings = Signal()
 
     def __init__(self) -> None:
@@ -363,7 +547,11 @@ class DashboardPage(QWidget):
         export_box = QGroupBox("Export")
         export_grid = QGridLayout(export_box)
         self.export_btn = QPushButton("Open Export Dialog")
+        self.manage_runs_btn = QPushButton("Runs verwalten...")
+        self.cleanup_testdata_btn = QPushButton("Testdaten aufraeumen...")
         export_grid.addWidget(self.export_btn, 0, 0)
+        export_grid.addWidget(self.manage_runs_btn, 0, 1)
+        export_grid.addWidget(self.cleanup_testdata_btn, 0, 2)
         root.addWidget(export_box)
 
         footer = QHBoxLayout()
@@ -376,6 +564,8 @@ class DashboardPage(QWidget):
         self.edit_batch_btn.clicked.connect(self._emit_edit)
         self.clone_batch_btn.clicked.connect(self._emit_clone)
         self.export_btn.clicked.connect(self.request_open_export_dialog.emit)
+        self.manage_runs_btn.clicked.connect(self.request_manage_runs.emit)
+        self.cleanup_testdata_btn.clicked.connect(self.request_cleanup_testdata.emit)
         self.settings_btn.clicked.connect(self.request_settings.emit)
 
     def _selected_batch_id(self) -> Optional[str]:
@@ -710,6 +900,8 @@ class MainWindow(QMainWindow):
         self.dashboard_page.request_edit_batch.connect(self._edit_batch)
         self.dashboard_page.request_clone_batch.connect(self._clone_batch)
         self.dashboard_page.request_open_export_dialog.connect(self._open_export_dialog)
+        self.dashboard_page.request_manage_runs.connect(self._open_run_manager)
+        self.dashboard_page.request_cleanup_testdata.connect(self._open_cleanup_dialog)
         self.dashboard_page.request_settings.connect(self._open_settings)
 
         self.project_page.submit_project.connect(self._create_project)
@@ -920,6 +1112,22 @@ class MainWindow(QMainWindow):
             bool(payload["export_stl"]),
             bool(payload["export_abec"]),
         )
+
+    def _open_run_manager(self) -> None:
+        if self.current_project is None:
+            self.set_status("No project loaded.")
+            return
+        RunManagerDialog(self.service, self.current_project.project_id, self).exec()
+        self.refresh_dashboard()
+
+    def _open_cleanup_dialog(self) -> None:
+        if self.current_project is None:
+            self.set_status("No project loaded.")
+            return
+        dialog = CleanupTestDataDialog(self.service, self.current_project.project_id, self)
+        if dialog.exec() == QDialog.Accepted:
+            self.set_status("Cleanup finished.")
+            self.refresh_dashboard()
 
     def _edit_batch(self, batch_id: str) -> None:
         self.set_status(f"Edit Batch requested: {batch_id} (placeholder).")
