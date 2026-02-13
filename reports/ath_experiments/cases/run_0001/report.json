@@ -1,0 +1,248 @@
+{
+  "run_id": "ath_exp_1337_0001_12958cbd25",
+  "run_name": "run_0001",
+  "case_index": 1,
+  "case_type": "safe",
+  "test_id": "PP_ATH_EXP_0001",
+  "project_name": "PP_ATH_EXP_0001",
+  "started_at": "2026-02-13T21:40:45+00:00",
+  "finished_at": "2026-02-13T21:40:45+00:00",
+  "status": "ok",
+  "notes": "",
+  "cfg_path": "C:\\Tools\\ATH\\ProjectPageATHTest23.cfg",
+  "horns_export_dir": "C:\\Horns\\ProjectPageATHTest23",
+  "config_path": "C:\\Horns\\ProjectPageATHTest23\\config.txt",
+  "stdout_path": "reports\\ath_experiments\\logs\\run_0001_stdout.txt",
+  "stderr_path": "reports\\ath_experiments\\logs\\run_0001_stderr.txt",
+  "success_flags": {
+    "cfg_written": true,
+    "ath_ok": true,
+    "config_ok": true,
+    "no_ghosts": true
+  },
+  "ath_result": {
+    "ok": true,
+    "exit_code": 0,
+    "timed_out": false,
+    "stdout_log": "reports\\ath_experiments\\cases\\run_0001\\runner_logs\\ath.stdout.log",
+    "stderr_log": "reports\\ath_experiments\\cases\\run_0001\\runner_logs\\ath.stderr.log",
+    "summary_log": "reports\\ath_experiments\\cases\\run_0001\\runner_logs\\ath.runner.log"
+  },
+  "compare": {
+    "expected_values": {
+      "Throat.Diameter": 54.88,
+      "Throat.Profile": 3,
+      "Throat.Angle": "4.496",
+      "Length": "1341.54",
+      "GCurve.Type": 2,
+      "GCurve.Dist": "696.9867",
+      "GCurve.Width": 261.54,
+      "GCurve.AspectRatio": 1.39,
+      "GCurve.SF.a": 1.19,
+      "GCurve.SF.b": 0.96,
+      "GCurve.SF.m1": 3.98,
+      "GCurve.SF.m2": 5.45,
+      "GCurve.SF.n1": 0.68,
+      "GCurve.SF.n2": 1.11,
+      "GCurve.SF.n3": 1.37,
+      "GCurve.Rot": 3.15,
+      "CircArc.TermAngle": "29.0298",
+      "CircArc.Radius": "346.2662",
+      "Morph.TargetShape": 1,
+      "Morph.TargetWidth": 804.52,
+      "Morph.TargetHeight": 389.88,
+      "Morph.CornerRadius": 20.65,
+      "Mesh.Quadrants": 12,
+      "Mesh.AngularSegments": 86,
+      "Mesh.LengthSegments": 12
+    },
+    "cfg": {
+      "missing_keys_required": [],
+      "missing_keys_optional": [],
+      "missing_keys": [],
+      "extra_keys_defaulted": [],
+      "extra_keys_ghost": [],
+      "extra_keys": [],
+      "value_mismatches": [],
+      "ok": true
+    },
+    "config": {
+      "missing_keys_required": [],
+      "missing_keys_optional": [],
+      "missing_keys": [],
+      "extra_keys_defaulted": [],
+      "extra_keys_ghost": [],
+      "extra_keys": [],
+      "value_mismatches": [],
+      "ok": true
+    }
+  },
+  "input_summary": {
+    "field_values": [
+      [
+        "Throat.Profile",
+        3
+      ],
+      [
+        "Throat.Diameter",
+        54.884
+      ],
+      [
+        "Throat.Angle",
+        4.496
+      ],
+      [
+        "Morph.TargetShape",
+        1
+      ],
+      [
+        "Length",
+        1341.54
+      ],
+      [
+        "CircArc.TermAngle",
+        29.0298
+      ],
+      [
+        "CircArc.Radius",
+        346.2662
+      ],
+      [
+        "GCurve.Type",
+        2
+      ],
+      [
+        "GCurve.Dist",
+        696.9867
+      ],
+      [
+        "GCurve.Width",
+        261.5449
+      ],
+      [
+        "GCurve.Rot",
+        3.1539
+      ],
+      [
+        "GCurve.AspectRatio",
+        1.3854
+      ],
+      [
+        "GCurve.SF.a",
+        1.1887
+      ],
+      [
+        "GCurve.SF.b",
+        0.9642
+      ],
+      [
+        "GCurve.SF.m1",
+        3.9784
+      ],
+      [
+        "GCurve.SF.m2",
+        5.4464
+      ],
+      [
+        "GCurve.SF.n1",
+        0.6831
+      ],
+      [
+        "GCurve.SF.n2",
+        1.1086
+      ],
+      [
+        "GCurve.SF.n3",
+        1.369
+      ],
+      [
+        "Morph.TargetWidth",
+        804.5231
+      ],
+      [
+        "Morph.TargetHeight",
+        389.881
+      ],
+      [
+        "Morph.CornerRadius",
+        20.6512
+      ],
+      [
+        "Mesh.Quadrants",
+        12
+      ],
+      [
+        "Mesh.AngularSegments",
+        86
+      ],
+      [
+        "Mesh.LengthSegments",
+        12
+      ]
+    ],
+    "runner_mode": "AkabakImportFixedSource",
+    "compat_issues": [],
+    "missing_editors": [],
+    "payload_fixed_params": {
+      "Throat.Diameter": 54.88,
+      "Throat.Profile": 3,
+      "Throat.Angle": "4.496",
+      "Length": "1341.54",
+      "GCurve.Type": 2,
+      "GCurve.Dist": "696.9867",
+      "GCurve.Width": 261.54,
+      "GCurve.AspectRatio": 1.39,
+      "GCurve.SF.a": 1.19,
+      "GCurve.SF.b": 0.96,
+      "GCurve.SF.m1": 3.98,
+      "GCurve.SF.m2": 5.45,
+      "GCurve.SF.n1": 0.68,
+      "GCurve.SF.n2": 1.11,
+      "GCurve.SF.n3": 1.37,
+      "GCurve.Rot": 3.15,
+      "CircArc.TermAngle": "29.0298",
+      "CircArc.Radius": "346.2662",
+      "Morph.TargetShape": 1,
+      "Morph.TargetWidth": 804.52,
+      "Morph.TargetHeight": 389.88,
+      "Morph.CornerRadius": 20.65
+    },
+    "payload_limits": {
+      "Mesh.Quadrants": 12,
+      "Mesh.AngularSegments": 86,
+      "Mesh.LengthSegments": 12
+    }
+  },
+  "errors": {
+    "cfg_error": null,
+    "ath_error": null,
+    "ath_error_kind": null,
+    "ath_error_message": null,
+    "ath_warning_count": 1
+  },
+  "metrics": {
+    "final_width_mm": 804.52,
+    "final_height_mm": 389.88,
+    "final_length_mm": 1341.54,
+    "avg_throat_angle_deg": null,
+    "derived_volume_m3": 0.420795831220704,
+    "flags": {
+      "max_dim_warn": false,
+      "hard_cap_exceeded": false,
+      "throat_angle_missing": true,
+      "max_observed_dim_mm": 1341.54
+    }
+  },
+  "cleanup": {
+    "cfg": {
+      "target": "C:\\Tools\\ATH\\ProjectPageATHTest23.cfg",
+      "deleted": true,
+      "reason": "deleted"
+    },
+    "export_dir": {
+      "target": "C:\\Horns\\ProjectPageATHTest23",
+      "deleted": true,
+      "reason": "deleted"
+    }
+  }
+}

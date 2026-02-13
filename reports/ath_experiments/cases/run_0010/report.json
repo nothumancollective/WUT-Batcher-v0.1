@@ -1,0 +1,214 @@
+{
+  "run_id": "ath_exp_1337_0010_a165a6b87f",
+  "run_name": "run_0010",
+  "case_index": 10,
+  "case_type": "exploratory",
+  "test_id": "PP_ATH_EXP_0010",
+  "project_name": "PP_ATH_EXP_0010",
+  "started_at": "2026-02-13T21:40:47+00:00",
+  "finished_at": "2026-02-13T21:40:47+00:00",
+  "status": "ok",
+  "notes": "",
+  "cfg_path": "C:\\Tools\\ATH\\ProjectPageATHTest32.cfg",
+  "horns_export_dir": "C:\\Horns\\ProjectPageATHTest32",
+  "config_path": "C:\\Horns\\ProjectPageATHTest32\\config.txt",
+  "stdout_path": "reports\\ath_experiments\\logs\\run_0010_stdout.txt",
+  "stderr_path": "reports\\ath_experiments\\logs\\run_0010_stderr.txt",
+  "success_flags": {
+    "cfg_written": true,
+    "ath_ok": true,
+    "config_ok": true,
+    "no_ghosts": true
+  },
+  "ath_result": {
+    "ok": true,
+    "exit_code": 0,
+    "timed_out": false,
+    "stdout_log": "reports\\ath_experiments\\cases\\run_0010\\runner_logs\\ath.stdout.log",
+    "stderr_log": "reports\\ath_experiments\\cases\\run_0010\\runner_logs\\ath.stderr.log",
+    "summary_log": "reports\\ath_experiments\\cases\\run_0010\\runner_logs\\ath.runner.log"
+  },
+  "compare": {
+    "expected_values": {
+      "Throat.Diameter": 64.33,
+      "Throat.Angle": "2.8",
+      "Coverage.Angle": "24.212",
+      "Morph.TargetShape": 2,
+      "Morph.TargetWidth": 45.0,
+      "Morph.TargetHeight": 791.04,
+      "R-OSSE": {
+        "R": 1250.0,
+        "r0": 46.19,
+        "a0": 16.2,
+        "a": 77.3,
+        "k": 1.9,
+        "r": 1.64,
+        "m": 8.22,
+        "b": 1.08,
+        "q": 0.78
+      },
+      "Mesh.Quadrants": 12,
+      "Mesh.AngularSegments": 126,
+      "Mesh.LengthSegments": 8
+    },
+    "cfg": {
+      "missing_keys_required": [],
+      "missing_keys_optional": [],
+      "missing_keys": [],
+      "extra_keys_defaulted": [],
+      "extra_keys_ghost": [],
+      "extra_keys": [],
+      "value_mismatches": [],
+      "ok": true
+    },
+    "config": {
+      "missing_keys_required": [],
+      "missing_keys_optional": [],
+      "missing_keys": [],
+      "extra_keys_defaulted": [],
+      "extra_keys_ghost": [],
+      "extra_keys": [],
+      "value_mismatches": [],
+      "ok": true
+    }
+  },
+  "input_summary": {
+    "field_values": [
+      [
+        "Throat.Profile",
+        2
+      ],
+      [
+        "Throat.Diameter",
+        64.326
+      ],
+      [
+        "Throat.Angle",
+        2.8
+      ],
+      [
+        "Morph.TargetShape",
+        2
+      ],
+      [
+        "R-OSSE.R",
+        1250.0
+      ],
+      [
+        "R-OSSE.r0",
+        46.1915
+      ],
+      [
+        "R-OSSE.a0",
+        16.2
+      ],
+      [
+        "R-OSSE.a",
+        77.3
+      ],
+      [
+        "R-OSSE.k",
+        1.9
+      ],
+      [
+        "R-OSSE.r",
+        1.635
+      ],
+      [
+        "R-OSSE.m",
+        8.22
+      ],
+      [
+        "R-OSSE.b",
+        1.08
+      ],
+      [
+        "R-OSSE.q",
+        0.775
+      ],
+      [
+        "Coverage.Angle",
+        24.212
+      ],
+      [
+        "Morph.TargetWidth",
+        45.0
+      ],
+      [
+        "Morph.TargetHeight",
+        791.0438
+      ],
+      [
+        "Mesh.Quadrants",
+        12
+      ],
+      [
+        "Mesh.AngularSegments",
+        126
+      ],
+      [
+        "Mesh.LengthSegments",
+        8
+      ]
+    ],
+    "runner_mode": "AkabakImportFixedSource",
+    "compat_issues": [],
+    "missing_editors": [],
+    "payload_fixed_params": {
+      "Throat.Diameter": 64.33,
+      "Throat.Angle": "2.8",
+      "Coverage.Angle": "24.212",
+      "Morph.TargetShape": 2,
+      "Morph.TargetWidth": 45.0,
+      "Morph.TargetHeight": 791.04,
+      "R-OSSE": {
+        "R": 1250.0,
+        "r0": 46.19,
+        "a0": 16.2,
+        "a": 77.3,
+        "k": 1.9,
+        "r": 1.64,
+        "m": 8.22,
+        "b": 1.08,
+        "q": 0.78
+      }
+    },
+    "payload_limits": {
+      "Mesh.Quadrants": 12,
+      "Mesh.AngularSegments": 126,
+      "Mesh.LengthSegments": 8
+    }
+  },
+  "errors": {
+    "cfg_error": null,
+    "ath_error": null,
+    "ath_error_kind": null,
+    "ath_error_message": null,
+    "ath_warning_count": 1
+  },
+  "metrics": {
+    "final_width_mm": 2500.0,
+    "final_height_mm": 2500.0,
+    "final_length_mm": 88.15,
+    "avg_throat_angle_deg": 16.2,
+    "derived_volume_m3": 0.5509375,
+    "flags": {
+      "max_dim_warn": true,
+      "hard_cap_exceeded": false,
+      "throat_angle_missing": false,
+      "max_observed_dim_mm": 2500.0
+    }
+  },
+  "cleanup": {
+    "cfg": {
+      "target": "C:\\Tools\\ATH\\ProjectPageATHTest32.cfg",
+      "deleted": true,
+      "reason": "deleted"
+    },
+    "export_dir": {
+      "target": "C:\\Horns\\ProjectPageATHTest32",
+      "deleted": true,
+      "reason": "deleted"
+    }
+  }
+}

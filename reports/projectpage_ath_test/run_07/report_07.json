@@ -1,0 +1,199 @@
+{
+  "test_id": "PP_ATH_TEST_07",
+  "project_name": "PP_ATH_TEST_07",
+  "started_at": "2026-02-13T20:22:55+00:00",
+  "finished_at": "2026-02-13T20:22:56+00:00",
+  "input_summary": {
+    "field_values": [
+      [
+        "Length",
+        140.0
+      ],
+      [
+        "Throat.Diameter",
+        35.0
+      ],
+      [
+        "Throat.Angle",
+        5.2
+      ],
+      [
+        "Throat.Profile",
+        1
+      ],
+      [
+        "Term.s",
+        0.72
+      ],
+      [
+        "Term.q",
+        0.995
+      ],
+      [
+        "Term.n",
+        3.6
+      ],
+      [
+        "OS.k",
+        1.05
+      ],
+      [
+        "Coverage.Angle",
+        50.0
+      ],
+      [
+        "Morph.TargetShape",
+        0
+      ],
+      [
+        "Rollback",
+        1
+      ],
+      [
+        "Rollback.StartAt",
+        0.5
+      ],
+      [
+        "Rollback.Angle",
+        172.0
+      ],
+      [
+        "Rollback.Exp",
+        1.35
+      ],
+      [
+        "Mesh.Quadrants",
+        1
+      ],
+      [
+        "Mesh.AngularSegments",
+        72
+      ],
+      [
+        "Mesh.LengthSegments",
+        20
+      ]
+    ],
+    "ui_set_keys": [
+      "Coverage.Angle",
+      "Length",
+      "Mesh.AngularSegments",
+      "Mesh.LengthSegments",
+      "Mesh.Quadrants",
+      "OS.k",
+      "Rollback",
+      "Rollback.Angle",
+      "Rollback.Exp",
+      "Rollback.StartAt",
+      "Term.n",
+      "Term.q",
+      "Term.s",
+      "Throat.Angle",
+      "Throat.Diameter",
+      "Throat.Profile"
+    ],
+    "payload_fixed_params": {
+      "Throat.Diameter": 35.0,
+      "Throat.Profile": 1,
+      "Throat.Angle": "5.2",
+      "Length": "140.0",
+      "Coverage.Angle": "50.0",
+      "OS.k": "1.05",
+      "Term.s": "0.72",
+      "Term.n": "3.6",
+      "Term.q": "0.995",
+      "Rollback": 1,
+      "Rollback.StartAt": "0.5",
+      "Rollback.Angle": "172.0",
+      "Rollback.Exp": "1.35"
+    },
+    "payload_limits": {
+      "Mesh.Quadrants": 1,
+      "Mesh.AngularSegments": 72,
+      "Mesh.LengthSegments": 20
+    },
+    "runner_mode": "AkabakImportFixedSource",
+    "compat_issues": [],
+    "missing_editors": []
+  },
+  "cfg_path": "C:\\Tools\\ATH\\ProjectPageATHTest15.cfg",
+  "horns_export_dir": "C:\\Horns\\ProjectPageATHTest15",
+  "config_path": null,
+  "report_path": "reports\\projectpage_ath_test\\run_07\\report_07.json",
+  "success_flags": {
+    "cfg_written": true,
+    "ath_ok": false,
+    "config_ok": false,
+    "no_ghosts": true
+  },
+  "ath_result": {
+    "ok": false,
+    "exit_code": 4294967295,
+    "timed_out": false,
+    "stdout_log": "reports\\projectpage_ath_test\\run_07\\logs\\ath.stdout.log",
+    "stderr_log": "reports\\projectpage_ath_test\\run_07\\logs\\ath.stderr.log",
+    "summary_log": "reports\\projectpage_ath_test\\run_07\\logs\\ath.runner.log"
+  },
+  "compare": {
+    "expected_values": {
+      "Throat.Diameter": 35.0,
+      "Throat.Profile": 1,
+      "Throat.Angle": "5.2",
+      "Length": "140.0",
+      "Coverage.Angle": "50.0",
+      "OS.k": "1.05",
+      "Term.s": "0.72",
+      "Term.n": "3.6",
+      "Term.q": "0.995",
+      "Rollback": 1,
+      "Rollback.StartAt": "0.5",
+      "Rollback.Angle": "172.0",
+      "Rollback.Exp": "1.35",
+      "Mesh.Quadrants": 1,
+      "Mesh.AngularSegments": 72,
+      "Mesh.LengthSegments": 20
+    },
+    "allowed_global_keys": [
+      "ABEC.AkabakMode",
+      "LE",
+      "LE.Voltage"
+    ],
+    "cfg": {
+      "missing_keys": [
+        "Mesh.AngularSegments",
+        "Mesh.LengthSegments",
+        "Mesh.Quadrants"
+      ],
+      "extra_keys": [],
+      "value_mismatches": [],
+      "ok": false
+    },
+    "config": {
+      "missing_keys": [
+        "Coverage.Angle",
+        "Length",
+        "Mesh.AngularSegments",
+        "Mesh.LengthSegments",
+        "Mesh.Quadrants",
+        "OS.k",
+        "Rollback",
+        "Rollback.Angle",
+        "Rollback.Exp",
+        "Rollback.StartAt",
+        "Term.n",
+        "Term.q",
+        "Term.s",
+        "Throat.Angle",
+        "Throat.Diameter",
+        "Throat.Profile"
+      ],
+      "extra_keys": [],
+      "value_mismatches": [],
+      "ok": false
+    }
+  },
+  "errors": {
+    "cfg_error": null,
+    "ath_error": null
+  }
+}

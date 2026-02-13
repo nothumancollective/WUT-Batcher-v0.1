@@ -1,0 +1,337 @@
+{
+  "generated_at": "2026-02-13T21:40:49+00:00",
+  "cases_requested": 20,
+  "seed": 1337,
+  "range_suggestions": {
+    "CircArc.Radius": {
+      "success_min": 35.0,
+      "success_max": 1353.5,
+      "fail_min": null,
+      "fail_max": null,
+      "suggested_safe_range": {
+        "min": 35.0,
+        "max": 1353.5
+      }
+    },
+    "CircArc.TermAngle": {
+      "success_min": 12.1326,
+      "success_max": 72.0,
+      "fail_min": null,
+      "fail_max": null,
+      "suggested_safe_range": {
+        "min": 12.1326,
+        "max": 72.0
+      }
+    },
+    "Coverage.Angle": {
+      "success_min": 23.8,
+      "success_max": 130.0,
+      "fail_min": null,
+      "fail_max": null,
+      "suggested_safe_range": {
+        "min": 23.8,
+        "max": 130.0
+      }
+    },
+    "GCurve.AspectRatio": {
+      "success_min": 0.3,
+      "success_max": 1.56,
+      "fail_min": 1.01,
+      "fail_max": 1.53,
+      "suggested_safe_range": {
+        "min": 0.3,
+        "max": 1.56
+      }
+    },
+    "GCurve.Dist": {
+      "success_min": 27.163,
+      "success_max": 1800.0,
+      "fail_min": 179.0408,
+      "fail_max": 226.0712,
+      "suggested_safe_range": {
+        "min": 27.163,
+        "max": 1800.0
+      }
+    },
+    "GCurve.Rot": {
+      "success_min": -20.0,
+      "success_max": 20.0,
+      "fail_min": -3.14,
+      "fail_max": -2.26,
+      "suggested_safe_range": {
+        "min": -20.0,
+        "max": 20.0
+      }
+    },
+    "GCurve.SE.n": {
+      "success_min": 2.03,
+      "success_max": 3.38,
+      "fail_min": null,
+      "fail_max": null,
+      "suggested_safe_range": {
+        "min": 2.03,
+        "max": 3.38
+      }
+    },
+    "GCurve.SF.a": {
+      "success_min": 1.02,
+      "success_max": 1.65,
+      "fail_min": 0.94,
+      "fail_max": 1.2,
+      "suggested_safe_range": {
+        "min": 1.02,
+        "max": 1.65
+      }
+    },
+    "GCurve.SF.b": {
+      "success_min": 0.3,
+      "success_max": 1.65,
+      "fail_min": 1.06,
+      "fail_max": 1.07,
+      "suggested_safe_range": {
+        "min": 0.3,
+        "max": 1.65
+      }
+    },
+    "GCurve.SF.m1": {
+      "success_min": 1.24,
+      "success_max": 14.0,
+      "fail_min": 6.66,
+      "fail_max": 7.76,
+      "suggested_safe_range": {
+        "min": 1.24,
+        "max": 14.0
+      }
+    },
+    "GCurve.SF.m2": {
+      "success_min": 1.0,
+      "success_max": 7.45,
+      "fail_min": 3.37,
+      "fail_max": 3.66,
+      "suggested_safe_range": {
+        "min": 1.0,
+        "max": 7.45
+      }
+    },
+    "GCurve.SF.n1": {
+      "success_min": 0.21,
+      "success_max": 1.81,
+      "fail_min": 0.2,
+      "fail_max": 0.5,
+      "suggested_safe_range": {
+        "min": 0.21,
+        "max": 1.81
+      }
+    },
+    "GCurve.SF.n2": {
+      "success_min": 0.56,
+      "success_max": 3.0,
+      "fail_min": 0.74,
+      "fail_max": 1.15,
+      "suggested_safe_range": {
+        "min": 0.56,
+        "max": 3.0
+      }
+    },
+    "GCurve.SF.n3": {
+      "success_min": 0.57,
+      "success_max": 3.0,
+      "fail_min": 1.49,
+      "fail_max": 1.87,
+      "suggested_safe_range": {
+        "min": 0.57,
+        "max": 3.0
+      }
+    },
+    "GCurve.Type": {
+      "success_min": 1.0,
+      "success_max": 2.0,
+      "fail_min": 2.0,
+      "fail_max": 2.0,
+      "suggested_safe_range": {
+        "min": 1.0,
+        "max": 2.0
+      }
+    },
+    "GCurve.Width": {
+      "success_min": 18.0,
+      "success_max": 1700.0,
+      "fail_min": 268.29,
+      "fail_max": 387.56,
+      "suggested_safe_range": {
+        "min": 18.0,
+        "max": 1700.0
+      }
+    },
+    "Length": {
+      "success_min": 538.5,
+      "success_max": 4726.5,
+      "fail_min": 1089.135,
+      "fail_max": 1165.892,
+      "suggested_safe_range": {
+        "min": 538.5,
+        "max": 4726.5
+      }
+    },
+    "Mesh.AngularSegments": {
+      "success_min": 31.0,
+      "success_max": 147.0,
+      "fail_min": 65.0,
+      "fail_max": 69.0,
+      "suggested_safe_range": {
+        "min": 31.0,
+        "max": 147.0
+      }
+    },
+    "Mesh.CornerSegments": {
+      "success_min": 1.0,
+      "success_max": 14.0,
+      "fail_min": 7.0,
+      "fail_max": 7.0,
+      "suggested_safe_range": {
+        "min": 1.0,
+        "max": 14.0
+      }
+    },
+    "Mesh.LengthSegments": {
+      "success_min": 8.0,
+      "success_max": 52.0,
+      "fail_min": 14.0,
+      "fail_max": 19.0,
+      "suggested_safe_range": {
+        "min": 8.0,
+        "max": 52.0
+      }
+    },
+    "Mesh.Quadrants": {
+      "success_min": 1.0,
+      "success_max": 14.0,
+      "fail_min": 1.0,
+      "fail_max": 12.0,
+      "suggested_safe_range": {
+        "min": 1.0,
+        "max": 14.0
+      }
+    },
+    "Mesh.ThroatSegments": {
+      "success_min": 4.0,
+      "success_max": 23.0,
+      "fail_min": null,
+      "fail_max": null,
+      "suggested_safe_range": {
+        "min": 4.0,
+        "max": 23.0
+      }
+    },
+    "Morph.CornerRadius": {
+      "success_min": 6.0,
+      "success_max": 27.38,
+      "fail_min": 12.9,
+      "fail_max": 12.9,
+      "suggested_safe_range": {
+        "min": 6.0,
+        "max": 27.38
+      }
+    },
+    "Morph.TargetHeight": {
+      "success_min": 171.65,
+      "success_max": 1900.0,
+      "fail_min": 130.68,
+      "fail_max": 650.65,
+      "suggested_safe_range": {
+        "min": 171.65,
+        "max": 1900.0
+      }
+    },
+    "Morph.TargetShape": {
+      "success_min": 1.0,
+      "success_max": 2.0,
+      "fail_min": 1.0,
+      "fail_max": 2.0,
+      "suggested_safe_range": {
+        "min": 1.0,
+        "max": 2.0
+      }
+    },
+    "Morph.TargetWidth": {
+      "success_min": 45.0,
+      "success_max": 1210.48,
+      "fail_min": 374.54,
+      "fail_max": 383.18,
+      "suggested_safe_range": {
+        "min": 45.0,
+        "max": 1210.48
+      }
+    },
+    "OS.k": {
+      "success_min": 0.77546,
+      "success_max": 1.09731,
+      "fail_min": 1.11998,
+      "fail_max": 1.18167,
+      "suggested_safe_range": {
+        "min": 0.77546,
+        "max": 1.09731
+      }
+    },
+    "Term.n": {
+      "success_min": 2.17498,
+      "success_max": 4.0561,
+      "fail_min": 2.40104,
+      "fail_max": 3.98443,
+      "suggested_safe_range": {
+        "min": 2.17498,
+        "max": 4.0561
+      }
+    },
+    "Term.q": {
+      "success_min": 0.82941,
+      "success_max": 0.99683,
+      "fail_min": 0.87717,
+      "fail_max": 0.89875,
+      "suggested_safe_range": {
+        "min": 0.82941,
+        "max": 0.99683
+      }
+    },
+    "Term.s": {
+      "success_min": 0.53222,
+      "success_max": 0.77625,
+      "fail_min": 0.56916,
+      "fail_max": 0.75026,
+      "suggested_safe_range": {
+        "min": 0.53222,
+        "max": 0.77625
+      }
+    },
+    "Throat.Angle": {
+      "success_min": 0.0,
+      "success_max": 28.0,
+      "fail_min": 2.2,
+      "fail_max": 6.05,
+      "suggested_safe_range": {
+        "min": 0.0,
+        "max": 28.0
+      }
+    },
+    "Throat.Diameter": {
+      "success_min": 10.0,
+      "success_max": 127.0,
+      "fail_min": 21.77,
+      "fail_max": 43.5,
+      "suggested_safe_range": {
+        "min": 10.0,
+        "max": 127.0
+      }
+    },
+    "Throat.Profile": {
+      "success_min": 1.0,
+      "success_max": 3.0,
+      "fail_min": 1.0,
+      "fail_max": 1.0,
+      "suggested_safe_range": {
+        "min": 1.0,
+        "max": 3.0
+      }
+    }
+  }
+}

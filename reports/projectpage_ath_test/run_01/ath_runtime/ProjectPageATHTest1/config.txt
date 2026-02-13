@@ -1,0 +1,14 @@
+; Ath version V2025-06
+; Created: 2026-02-13 20:22
+ABEC.AkabakMode = 1
+Coverage.Angle = 48.5
+LE = generic25
+LE.Voltage = 1.0
+Length = 130.0
+OS.k = 1.0
+Term.n = 3.7
+Term.q = 0.995
+Term.s = 0.7
+Throat.Angle = 4.2
+Throat.Diameter = 36
+Throat.Profile = 1

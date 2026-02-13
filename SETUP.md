@@ -17,6 +17,11 @@ python -m pip install -r requirements.txt
 python -m app gui
 ```
 
+## VS Code (Run and Debug)
+- Create the venv + install deps (see above), then open the folder in VS Code.
+- Select interpreter: `.venv\Scripts\python.exe`
+- Use **Run and Debug** and pick `WUT Batcher: GUI` (launch configs live in `.vscode/launch.json`).
+
 Optional theme preview:
 ```powershell
 python -m app theme preview

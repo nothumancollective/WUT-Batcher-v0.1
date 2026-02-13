@@ -1,0 +1,168 @@
+{
+  "run_id": "ath_exp_1337_0014_aca3f52467",
+  "run_name": "run_0014",
+  "case_index": 14,
+  "case_type": "exploratory",
+  "test_id": "PP_ATH_EXP_0014",
+  "project_name": "PP_ATH_EXP_0014",
+  "started_at": "2026-02-13T21:40:48+00:00",
+  "finished_at": "2026-02-13T21:40:48+00:00",
+  "status": "ok",
+  "notes": "",
+  "cfg_path": "C:\\Tools\\ATH\\ProjectPageATHTest36.cfg",
+  "horns_export_dir": "C:\\Horns\\ProjectPageATHTest36",
+  "config_path": "C:\\Horns\\ProjectPageATHTest36\\config.txt",
+  "stdout_path": "reports\\ath_experiments\\logs\\run_0014_stdout.txt",
+  "stderr_path": "reports\\ath_experiments\\logs\\run_0014_stderr.txt",
+  "success_flags": {
+    "cfg_written": true,
+    "ath_ok": true,
+    "config_ok": true,
+    "no_ghosts": true
+  },
+  "ath_result": {
+    "ok": true,
+    "exit_code": 0,
+    "timed_out": false,
+    "stdout_log": "reports\\ath_experiments\\cases\\run_0014\\runner_logs\\ath.stdout.log",
+    "stderr_log": "reports\\ath_experiments\\cases\\run_0014\\runner_logs\\ath.stderr.log",
+    "summary_log": "reports\\ath_experiments\\cases\\run_0014\\runner_logs\\ath.runner.log"
+  },
+  "compare": {
+    "expected_values": {
+      "Throat.Diameter": 23.0,
+      "Throat.Profile": 3,
+      "Throat.Angle": "25.2",
+      "Length": "2176.506",
+      "Coverage.Angle": "130.0",
+      "CircArc.TermAngle": "49.1544",
+      "CircArc.Radius": "1353.5",
+      "Mesh.Quadrants": 14,
+      "Mesh.AngularSegments": 31,
+      "Mesh.LengthSegments": 8,
+      "Mesh.CornerSegments": 1
+    },
+    "cfg": {
+      "missing_keys_required": [],
+      "missing_keys_optional": [],
+      "missing_keys": [],
+      "extra_keys_defaulted": [],
+      "extra_keys_ghost": [],
+      "extra_keys": [],
+      "value_mismatches": [],
+      "ok": true
+    },
+    "config": {
+      "missing_keys_required": [],
+      "missing_keys_optional": [],
+      "missing_keys": [],
+      "extra_keys_defaulted": [],
+      "extra_keys_ghost": [],
+      "extra_keys": [],
+      "value_mismatches": [],
+      "ok": true
+    }
+  },
+  "input_summary": {
+    "field_values": [
+      [
+        "Throat.Profile",
+        3
+      ],
+      [
+        "Throat.Diameter",
+        23.0
+      ],
+      [
+        "Throat.Angle",
+        25.2
+      ],
+      [
+        "Morph.TargetShape",
+        0
+      ],
+      [
+        "Length",
+        2176.506
+      ],
+      [
+        "CircArc.TermAngle",
+        49.1544
+      ],
+      [
+        "CircArc.Radius",
+        1353.5
+      ],
+      [
+        "Coverage.Angle",
+        130.0
+      ],
+      [
+        "Mesh.Quadrants",
+        14
+      ],
+      [
+        "Mesh.AngularSegments",
+        31
+      ],
+      [
+        "Mesh.LengthSegments",
+        8
+      ],
+      [
+        "Mesh.CornerSegments",
+        1
+      ]
+    ],
+    "runner_mode": "AkabakImportFixedSource",
+    "compat_issues": [],
+    "missing_editors": [],
+    "payload_fixed_params": {
+      "Throat.Diameter": 23.0,
+      "Throat.Profile": 3,
+      "Throat.Angle": "25.2",
+      "Length": "2176.506",
+      "Coverage.Angle": "130.0",
+      "CircArc.TermAngle": "49.1544",
+      "CircArc.Radius": "1353.5"
+    },
+    "payload_limits": {
+      "Mesh.Quadrants": 14,
+      "Mesh.AngularSegments": 31,
+      "Mesh.LengthSegments": 8,
+      "Mesh.CornerSegments": 1
+    }
+  },
+  "errors": {
+    "cfg_error": null,
+    "ath_error": null,
+    "ath_error_kind": null,
+    "ath_error_message": null,
+    "ath_warning_count": 1
+  },
+  "metrics": {
+    "final_width_mm": 0.0,
+    "final_height_mm": 0.0,
+    "final_length_mm": 2176.51,
+    "avg_throat_angle_deg": null,
+    "derived_volume_m3": 0.0,
+    "flags": {
+      "max_dim_warn": true,
+      "hard_cap_exceeded": false,
+      "throat_angle_missing": true,
+      "max_observed_dim_mm": 2176.51
+    }
+  },
+  "cleanup": {
+    "cfg": {
+      "target": "C:\\Tools\\ATH\\ProjectPageATHTest36.cfg",
+      "deleted": true,
+      "reason": "deleted"
+    },
+    "export_dir": {
+      "target": "C:\\Horns\\ProjectPageATHTest36",
+      "deleted": true,
+      "reason": "deleted"
+    }
+  }
+}

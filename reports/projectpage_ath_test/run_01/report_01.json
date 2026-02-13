@@ -1,0 +1,158 @@
+{
+  "test_id": "PP_ATH_TEST_01",
+  "project_name": "PP_ATH_TEST_01",
+  "started_at": "2026-02-13T20:45:14+00:00",
+  "finished_at": "2026-02-13T20:45:15+00:00",
+  "input_summary": {
+    "field_values": [
+      [
+        "Length",
+        130.0
+      ],
+      [
+        "Throat.Diameter",
+        36.0
+      ],
+      [
+        "Throat.Angle",
+        4.2
+      ],
+      [
+        "Throat.Profile",
+        1
+      ],
+      [
+        "Term.s",
+        0.7
+      ],
+      [
+        "Term.q",
+        0.995
+      ],
+      [
+        "Term.n",
+        3.7
+      ],
+      [
+        "OS.k",
+        1.0
+      ],
+      [
+        "Coverage.Angle",
+        48.5
+      ],
+      [
+        "Morph.TargetShape",
+        0
+      ],
+      [
+        "Mesh.Quadrants",
+        1
+      ],
+      [
+        "Mesh.AngularSegments",
+        64
+      ],
+      [
+        "Mesh.LengthSegments",
+        18
+      ]
+    ],
+    "ui_set_keys": [
+      "Coverage.Angle",
+      "Length",
+      "Mesh.AngularSegments",
+      "Mesh.LengthSegments",
+      "Mesh.Quadrants",
+      "OS.k",
+      "Term.n",
+      "Term.q",
+      "Term.s",
+      "Throat.Angle",
+      "Throat.Diameter",
+      "Throat.Profile"
+    ],
+    "payload_fixed_params": {
+      "Throat.Diameter": 36.0,
+      "Throat.Profile": 1,
+      "Throat.Angle": "4.2",
+      "Length": "130.0",
+      "Coverage.Angle": "48.5",
+      "OS.k": "1.0",
+      "Term.s": "0.7",
+      "Term.n": "3.7",
+      "Term.q": "0.995"
+    },
+    "payload_limits": {
+      "Mesh.Quadrants": 1,
+      "Mesh.AngularSegments": 64,
+      "Mesh.LengthSegments": 18
+    },
+    "runner_mode": "AkabakImportFixedSource",
+    "compat_issues": [],
+    "missing_editors": []
+  },
+  "cfg_path": "C:\\Tools\\ATH\\ProjectPageATHTest17.cfg",
+  "horns_export_dir": "C:\\Horns\\ProjectPageATHTest17",
+  "config_path": "C:\\Horns\\ProjectPageATHTest17\\config.txt",
+  "report_path": "reports\\projectpage_ath_test\\run_01\\report_01.json",
+  "success_flags": {
+    "cfg_written": true,
+    "ath_ok": true,
+    "config_ok": true,
+    "no_ghosts": true
+  },
+  "ath_result": {
+    "ok": true,
+    "exit_code": 0,
+    "timed_out": false,
+    "stdout_log": "reports\\projectpage_ath_test\\run_01\\logs\\ath.stdout.log",
+    "stderr_log": "reports\\projectpage_ath_test\\run_01\\logs\\ath.stderr.log",
+    "summary_log": "reports\\projectpage_ath_test\\run_01\\logs\\ath.runner.log"
+  },
+  "compare": {
+    "expected_values": {
+      "Throat.Diameter": 36.0,
+      "Throat.Profile": 1,
+      "Throat.Angle": "4.2",
+      "Length": "130.0",
+      "Coverage.Angle": "48.5",
+      "OS.k": "1.0",
+      "Term.s": "0.7",
+      "Term.n": "3.7",
+      "Term.q": "0.995",
+      "Mesh.Quadrants": 1,
+      "Mesh.AngularSegments": 64,
+      "Mesh.LengthSegments": 18
+    },
+    "allowed_global_keys": [
+      "ABEC.AkabakMode",
+      "LE",
+      "LE.Voltage"
+    ],
+    "cfg": {
+      "missing_keys_required": [],
+      "missing_keys_optional": [],
+      "missing_keys": [],
+      "extra_keys_defaulted": [],
+      "extra_keys_ghost": [],
+      "extra_keys": [],
+      "value_mismatches": [],
+      "ok": true
+    },
+    "config": {
+      "missing_keys_required": [],
+      "missing_keys_optional": [],
+      "missing_keys": [],
+      "extra_keys_defaulted": [],
+      "extra_keys_ghost": [],
+      "extra_keys": [],
+      "value_mismatches": [],
+      "ok": true
+    }
+  },
+  "errors": {
+    "cfg_error": null,
+    "ath_error": null
+  }
+}
