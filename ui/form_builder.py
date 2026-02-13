@@ -332,12 +332,24 @@ class NullableBoolInput(QWidget):
 class SegmentedEnumInput(QWidget):
     changed = Signal()
 
-    def __init__(self, options: List[Tuple[str, Any]], parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        options: List[Tuple[str, Any]],
+        parent: QWidget | None = None,
+        *,
+        fallback_value: Any | None = None,
+        enforce_fallback: bool = False,
+        fallback_is_unset: bool = False,
+    ) -> None:
         super().__init__(parent)
         self._values_by_id: Dict[int, Any] = {}
         self._buttons: List[QPushButton] = []
         self._pressed_checked: Dict[int, bool] = {}
         self._none_option_id: Optional[int] = None
+        self._fallback_value = fallback_value
+        self._enforce_fallback = enforce_fallback
+        self._fallback_is_unset = fallback_is_unset
+        self._fallback_option_id: Optional[int] = None
 
         root = QHBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -354,6 +366,8 @@ class SegmentedEnumInput(QWidget):
             self._values_by_id[index] = value
             if value is None:
                 self._none_option_id = index
+            if value == self._fallback_value:
+                self._fallback_option_id = index
             self._buttons.append(button)
             root.addWidget(button)
             button.pressed.connect(lambda idx=index: self._on_pressed(idx))
@@ -366,11 +380,27 @@ class SegmentedEnumInput(QWidget):
 
     def _on_clicked(self, button_id: int, checked: bool) -> None:
         if self._pressed_checked.get(button_id, False) and checked:
+            if self._enforce_fallback and self._fallback_option_id is not None:
+                if button_id == self._fallback_option_id:
+                    return
+                fallback = self.group.button(self._fallback_option_id)
+                if fallback is not None and not fallback.isChecked():
+                    fallback.setChecked(True)
+                    self.changed.emit()
+                return
             self.clear()
             return
         self.changed.emit()
 
-    def clear(self, *, emit: bool = True) -> None:
+    def clear(self, *, emit: bool = True, force_empty: bool = False) -> None:
+        if self._enforce_fallback and not force_empty and self._fallback_option_id is not None:
+            fallback = self.group.button(self._fallback_option_id)
+            if fallback is not None:
+                changed = not fallback.isChecked()
+                fallback.setChecked(True)
+                if emit and changed:
+                    self.changed.emit()
+                return
         self.group.setExclusive(False)
         for button in self._buttons:
             button.setChecked(False)
@@ -382,11 +412,15 @@ class SegmentedEnumInput(QWidget):
         checked = self.group.checkedId()
         if checked < 0:
             return False
+        if self._fallback_is_unset and checked == self._fallback_option_id:
+            return False
         return self._values_by_id.get(checked) is not None
 
     def value(self) -> Any:
         checked = self.group.checkedId()
         if checked < 0:
+            return None
+        if self._fallback_is_unset and checked == self._fallback_option_id:
             return None
         return self._values_by_id.get(checked)
 
@@ -397,7 +431,7 @@ class SegmentedEnumInput(QWidget):
                 if button is not None:
                     button.setChecked(True)
                 return
-            self.clear(emit=False)
+            self.clear(emit=False, force_empty=not self._enforce_fallback)
             return
         for button_id, option_value in self._values_by_id.items():
             if option_value == value:
@@ -405,7 +439,7 @@ class SegmentedEnumInput(QWidget):
                 if button is not None:
                     button.setChecked(True)
                 return
-        self.clear(emit=False)
+        self.clear(emit=False, force_empty=not self._enforce_fallback)
 
     def set_locked(self, locked: bool) -> None:
         for button in self._buttons:
@@ -477,6 +511,10 @@ class ScalarFieldEditor(QWidget):
             self.set_value(1)
         elif field.key == "GCurve.Type":
             self.set_value(None)
+        elif field.key == "Morph.TargetShape":
+            self.set_value(0)
+        elif field.key == "Rollback":
+            self.set_value(0)
         else:
             self.set_is_set(False)
 
@@ -486,7 +524,12 @@ class ScalarFieldEditor(QWidget):
 
     def _build_value_widget(self) -> QWidget:
         if self.field.key == "Rollback":
-            return SegmentedEnumInput(options=[("disabled", 0), ("enabled", 1)])
+            return SegmentedEnumInput(
+                options=[("disabled", 0), ("enabled", 1)],
+                fallback_value=0,
+                enforce_fallback=True,
+                fallback_is_unset=True,
+            )
         if self.field.widget_kind == "float":
             return NullableNumericInput(
                 is_float=True,
@@ -510,6 +553,15 @@ class ScalarFieldEditor(QWidget):
         if self.field.widget_kind == "enum":
             options = [(option.label, option.value) for option in list(self.field.enum_options)]
             if 1 < len(options) <= 4:
+                if self.field.key == "GCurve.Type":
+                    return SegmentedEnumInput(options=options, fallback_value=None, enforce_fallback=True)
+                if self.field.key == "Morph.TargetShape":
+                    return SegmentedEnumInput(
+                        options=options,
+                        fallback_value=0,
+                        enforce_fallback=True,
+                        fallback_is_unset=True,
+                    )
                 return SegmentedEnumInput(options=options)
             return NullableEnumComboInput(options=options)
         if self.field.widget_kind == "list":
@@ -594,7 +646,11 @@ class ObjectFieldEditor(QWidget):
 
         self.toggle: Optional[SegmentedEnumInput] = None
         if self._use_toggle:
-            self.toggle = SegmentedEnumInput(options=[("disabled", 0), ("enabled", 1)])
+            self.toggle = SegmentedEnumInput(
+                options=[("disabled", 0), ("enabled", 1)],
+                fallback_value=0,
+                enforce_fallback=True,
+            )
             root.addWidget(self.toggle, alignment=Qt.AlignLeft)
 
         self.props_frame = ContextFrame("Details")

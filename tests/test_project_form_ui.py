@@ -162,6 +162,94 @@ class ProjectFormUiTests(unittest.TestCase):
         state = next(item for item in payload["param_states"] if item.get("param_name") == "Throat.Profile")
         self.assertEqual(state["is_set"], 0)
 
+    def test_mode_defaults_start_on_no_or_disabled_selection(self) -> None:
+        gcurve_editor = self.form.editor_for_key("GCurve.Type")
+        morph_editor = self.form.editor_for_key("Morph.TargetShape")
+        rollback_editor = self.form.editor_for_key("Rollback")
+        enclosure_editor = self.form.editor_for_key("Mesh.Enclosure")
+        self.assertIsNotNone(gcurve_editor)
+        self.assertIsNotNone(morph_editor)
+        self.assertIsNotNone(rollback_editor)
+        self.assertIsNotNone(enclosure_editor)
+        assert gcurve_editor is not None
+        assert morph_editor is not None
+        assert rollback_editor is not None
+        assert enclosure_editor is not None
+
+        gcurve_segment = gcurve_editor.value_widget()  # type: ignore[attr-defined]
+        morph_segment = morph_editor.value_widget()  # type: ignore[attr-defined]
+        rollback_segment = rollback_editor.value_widget()  # type: ignore[attr-defined]
+        enclosure_toggle = enclosure_editor.toggle  # type: ignore[attr-defined]
+        self.assertIsInstance(gcurve_segment, SegmentedEnumInput)
+        self.assertIsInstance(morph_segment, SegmentedEnumInput)
+        self.assertIsInstance(rollback_segment, SegmentedEnumInput)
+        self.assertIsInstance(enclosure_toggle, SegmentedEnumInput)
+        assert isinstance(gcurve_segment, SegmentedEnumInput)
+        assert isinstance(morph_segment, SegmentedEnumInput)
+        assert isinstance(rollback_segment, SegmentedEnumInput)
+        assert isinstance(enclosure_toggle, SegmentedEnumInput)
+
+        self.assertIsNone(gcurve_segment.value())
+        self.assertIsNone(morph_segment.value())
+        self.assertIsNone(rollback_segment.value())
+        self.assertEqual(enclosure_toggle.value(), 0)
+
+    def test_reclick_other_option_returns_to_no_or_disabled_selection(self) -> None:
+        def click_value(segment: SegmentedEnumInput, target: object) -> None:
+            for button_id, value in segment._values_by_id.items():  # type: ignore[attr-defined]
+                if value == target:
+                    button = segment.group.button(button_id)
+                    assert button is not None
+                    button.click()
+                    return
+            self.fail(f"value {target!r} not found")
+
+        gcurve_editor = self.form.editor_for_key("GCurve.Type")
+        morph_editor = self.form.editor_for_key("Morph.TargetShape")
+        rollback_editor = self.form.editor_for_key("Rollback")
+        enclosure_editor = self.form.editor_for_key("Mesh.Enclosure")
+        self.assertIsNotNone(gcurve_editor)
+        self.assertIsNotNone(morph_editor)
+        self.assertIsNotNone(rollback_editor)
+        self.assertIsNotNone(enclosure_editor)
+        assert gcurve_editor is not None
+        assert morph_editor is not None
+        assert rollback_editor is not None
+        assert enclosure_editor is not None
+
+        gcurve_segment = gcurve_editor.value_widget()  # type: ignore[attr-defined]
+        morph_segment = morph_editor.value_widget()  # type: ignore[attr-defined]
+        rollback_segment = rollback_editor.value_widget()  # type: ignore[attr-defined]
+        enclosure_toggle = enclosure_editor.toggle  # type: ignore[attr-defined]
+        assert isinstance(gcurve_segment, SegmentedEnumInput)
+        assert isinstance(morph_segment, SegmentedEnumInput)
+        assert isinstance(rollback_segment, SegmentedEnumInput)
+        assert isinstance(enclosure_toggle, SegmentedEnumInput)
+
+        click_value(gcurve_segment, 1)
+        self.assertEqual(gcurve_segment.value(), 1)
+        click_value(gcurve_segment, 1)
+        self.assertIsNone(gcurve_segment.value())
+
+        non_zero_morph = next(
+            value for value in morph_segment._values_by_id.values()  # type: ignore[attr-defined]
+            if isinstance(value, int) and value != 0
+        )
+        click_value(morph_segment, non_zero_morph)
+        self.assertEqual(morph_segment.value(), non_zero_morph)
+        click_value(morph_segment, non_zero_morph)
+        self.assertIsNone(morph_segment.value())
+
+        click_value(rollback_segment, 1)
+        self.assertEqual(rollback_segment.value(), 1)
+        click_value(rollback_segment, 1)
+        self.assertIsNone(rollback_segment.value())
+
+        click_value(enclosure_toggle, 1)
+        self.assertEqual(enclosure_toggle.value(), 1)
+        click_value(enclosure_toggle, 1)
+        self.assertEqual(enclosure_toggle.value(), 0)
+
     def test_zero_placeholder_is_not_actual_value_and_numeric_is_editable(self) -> None:
         widget = self.form.value_widget_for_key("Throat.Diameter")
         self.assertIsNotNone(widget)

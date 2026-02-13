@@ -743,3 +743,18 @@
 
 #### Tests
 - `python -m unittest tests.test_project_form_ui -v` (all passing)
+
+### Update 27 (PROJECT Segments: Forced No/Disabled Fallbacks)
+#### Done
+- Added field-specific segmented-control fallback behavior for PROJECT mode selectors:
+  - `Morph.TargetShape`: defaults to `no morph` and cannot end in unselected state.
+  - `GCurve.Type`: defaults to `no GCurve` and cannot end in unselected state.
+  - `Rollback`: defaults to `disabled` and cannot end in unselected state.
+  - `Mesh.Enclosure` toggle: defaults to `disabled` and cannot end in unselected state.
+- Re-click behavior updated for these controls:
+  - when a non-default option is clicked again, selection now returns automatically to the fallback (`no...` / `disabled`).
+  - clicking the fallback itself no longer clears to empty for these controls.
+- Kept existing clear-to-unset behavior for unrelated segmented controls (e.g. `Throat.Profile`) unchanged.
+
+#### Tests
+- `python -m unittest tests.test_project_form_ui -v` (30 tests passing)
