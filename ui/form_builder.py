@@ -704,8 +704,10 @@ def _group_width_hint() -> int:
 
 
 def _finalize_group_box(box: QGroupBox) -> None:
-    box.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum)
-    box.setMaximumWidth(_group_width_hint())
+    width = _group_width_hint()
+    box.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Minimum)
+    box.setMinimumWidth(width)
+    box.setMaximumWidth(width)
 
 
 class ParameterForm(QWidget):
@@ -853,6 +855,23 @@ class ParameterForm(QWidget):
         selection_keys = {"Mesh.Quadrants", "Mesh.RearShape"}
         selection_fields = [field for field in ordered if field.key in selection_keys]
         other_fields = [field for field in ordered if field.key not in selection_keys]
+        core_body_order = [
+            "Mesh.AngularSegments",
+            "Mesh.LengthSegments",
+            "Mesh.ZMapPoints",
+            "Mesh.CornerSegments",
+            "Mesh.ThroatSegments",
+            "Mesh.ThroatResolution",
+            "Mesh.MouthResolution",
+            "Mesh.InterfaceResolution",
+            "Mesh.SubdomainSlices",
+            "Mesh.InterfaceDraw",
+            "Mesh.WallThickness",
+            "Mesh.RearResolution",
+            "Mesh.InterfaceOffset",
+        ]
+        rank = {key: index for index, key in enumerate(core_body_order)}
+        other_fields.sort(key=lambda field: rank.get(field.key, 10_000))
 
         for row, field in enumerate(selection_fields):
             label = QLabel(field.label)
@@ -863,8 +882,8 @@ class ParameterForm(QWidget):
             selection_grid.addWidget(editor, row, 1, 1, 1, alignment=Qt.AlignLeft)
             self._field_labels[field.key] = label
 
-        left_fields = other_fields[1::2]
-        right_fields = other_fields[::2]
+        left_fields = other_fields[:6]
+        right_fields = other_fields[6:]
 
         for row, field in enumerate(left_fields):
             label = QLabel(field.label)
@@ -1177,6 +1196,7 @@ class ParameterForm(QWidget):
             if page_index is None:
                 page_index = index_by_value.get(None, 0)
             stacked.setCurrentIndex(page_index)
+            stacked.setFixedHeight(max(stacked.sizeHint().height(), 0))
         self._refresh_mode_common_frames()
 
     def _refresh_mode_common_frames(self) -> None:

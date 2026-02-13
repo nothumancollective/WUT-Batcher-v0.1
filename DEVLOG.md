@@ -684,3 +684,22 @@
 - Regression status:
   - `tests.test_project_form_ui`: passing
   - compatibility/storage/runtime targeted suites: passing
+
+### Update 24 (PROJECT Follow-up Corrections)
+#### Done
+- Header styling scope corrected:
+  - block titles (`QGroupBox::title`) remain bold
+  - inner/context titles switched back to non-bold style (`ContextTitle`) to avoid emphasizing under-block labels
+- Mesh/Core column count normalized:
+  - moved `Mesh.InterfaceOffset` to `Enclosure` group mapping
+  - Core body now renders `6/6` label rows consistently
+- Mode block sizing refined:
+  - mode stacks now apply fixed current-page height on switch for deterministic vertical shrink/grow
+  - keeps Throat/GCurve block height synced to active subblock state
+- Width behavior tightened:
+  - block group width fixed to a shared form width hint
+  - prevents inner-column spacing drift while window grows (extra room is absorbed by outer margins/gaps)
+
+#### Tests
+- `tests.test_project_form_ui`: passing
+- compatibility/storage/runtime targeted suites: passing

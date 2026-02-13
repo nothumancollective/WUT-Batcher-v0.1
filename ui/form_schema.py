@@ -145,7 +145,7 @@ def _scope_for_key(key: str) -> str:
 
 def _group_path_for_key(key: str, catalog_group: str) -> Tuple[str, ...]:
     if key.startswith("Mesh."):
-        if key.startswith("Mesh.Enclosure"):
+        if key.startswith("Mesh.Enclosure") or key == "Mesh.InterfaceOffset":
             return ("Mesh", "Enclosure")
         return ("Mesh", "Core")
     if key.startswith("Morph."):

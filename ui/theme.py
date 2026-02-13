@@ -88,8 +88,8 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         color: {c['muted']};
     }}
     QLabel#ContextTitle {{
-        color: {c['text']};
-        font-weight: 700;
+        color: {c['muted']};
+        font-weight: 500;
         background-color: transparent;
     }}
     QLabel#InputUnit {{
