@@ -209,12 +209,19 @@ def _check_exe(config_data: Dict[str, Any], key: str, label: str) -> DoctorCheck
         )
 
     path = Path(str(raw))
-    if path.exists():
+    if path.exists() and path.is_file() and os.access(path, os.X_OK):
         return DoctorCheck(
             key=key,
             label=label,
             status=STATUS_OK,
-            detail=f"Found: {path}",
+            detail=f"Found executable: {path}",
+        )
+    if path.exists() and path.is_file():
+        return DoctorCheck(
+            key=key,
+            label=label,
+            status=STATUS_FAIL,
+            detail=f"Path exists but is not executable: {path}",
         )
     return DoctorCheck(
         key=key,
@@ -229,6 +236,8 @@ def _check_exe_with_dir_fallback(
     exe_key: str,
     dir_key: str,
     label: str,
+    *,
+    exe_override: Optional[str] = None,
 ) -> DoctorCheck:
     if os.name != "nt":
         return DoctorCheck(
@@ -238,9 +247,11 @@ def _check_exe_with_dir_fallback(
             detail="Skipped on non-Windows platform.",
         )
 
-    exe_value = config_data.get(exe_key)
+    exe_value = exe_override if exe_override else config_data.get(exe_key)
     if exe_value:
-        return _check_exe(config_data, exe_key, label)
+        payload = dict(config_data)
+        payload[exe_key] = exe_value
+        return _check_exe(payload, exe_key, label)
 
     dir_value = config_data.get(dir_key)
     if dir_value:
@@ -357,6 +368,7 @@ def run_doctor_checks(
     fix: bool = False,
     kill_zombies: bool = False,
     report_path: Optional[Path] = None,
+    tool_paths: Optional[Dict[str, Optional[str]]] = None,
 ) -> DoctorReport:
     checks: List[DoctorCheck] = []
 
@@ -459,15 +471,32 @@ def run_doctor_checks(
     checks.extend(_check_templates(templates_dir, ["akabak_ready.png", "akabak_processing.png"]))
     checks.append(_check_runner_dir(repo_root))
 
-    checks.append(_check_exe(config_payload, "ath_exe", "ATH executable"))
+    tool_paths = tool_paths or {}
     checks.append(
         _check_exe_with_dir_fallback(
-            config_payload, "akabak_exe", "akabak_dir", "Akabak executable"
+            config_payload,
+            "ath_exe",
+            "ath_dir",
+            "ATH executable",
+            exe_override=tool_paths.get("ath_exe"),
         )
     )
     checks.append(
         _check_exe_with_dir_fallback(
-            config_payload, "vacs_exe", "vacs_dir", "VACS Viewer executable"
+            config_payload,
+            "akabak_exe",
+            "akabak_dir",
+            "Akabak executable",
+            exe_override=tool_paths.get("akabak_exe"),
+        )
+    )
+    checks.append(
+        _check_exe_with_dir_fallback(
+            config_payload,
+            "vacs_exe",
+            "vacs_dir",
+            "VACS Viewer executable",
+            exe_override=tool_paths.get("vacs_exe"),
         )
     )
     checks.append(_check_zombies(kill_zombies))
