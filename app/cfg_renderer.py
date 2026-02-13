@@ -54,6 +54,32 @@ def _format_geometry_line(key: str, value: Any) -> str:
     return f"{key:<17}= {_format_value(value)}"
 
 
+def _ordered_object_items(key: str, value: Dict[str, Any]) -> List[Tuple[str, Any]]:
+    if key == "R-OSSE":
+        preferred = ["R", "r0", "a0", "a", "k", "r", "m", "b", "q"]
+        ranked: List[Tuple[str, Any]] = []
+        seen: set[str] = set()
+        for name in preferred:
+            if name in value:
+                ranked.append((name, value[name]))
+                seen.add(name)
+        for name in value.keys():
+            if str(name) not in seen:
+                ranked.append((str(name), value[name]))
+        return ranked
+    return [(str(name), sub_value) for name, sub_value in value.items()]
+
+
+def _format_geometry_lines(key: str, value: Any) -> List[str]:
+    if isinstance(value, dict):
+        lines = [f"{key} = {{"]
+        for sub_key, sub_value in _ordered_object_items(key, value):
+            lines.append(f"{sub_key} = {_format_value(sub_value)}")
+        lines.append("}")
+        return lines
+    return [_format_geometry_line(key, value)]
+
+
 def _format_mandatory_line(key: str, value: Any) -> str:
     if key == "ABEC.AkabakMode":
         return f"{key:<19}= {_format_value(value)}"
@@ -109,7 +135,7 @@ def render_cfg_text(
         if key in suppressed:
             continue
         if key in updates:
-            rendered.append(_format_geometry_line(key, updates[key]))
+            rendered.extend(_format_geometry_lines(key, updates[key]))
             consumed_updates.add(key)
             continue
         rendered.append(raw_line)
@@ -120,7 +146,7 @@ def render_cfg_text(
             rendered.append("")
         rendered.append("; --- appended geometry updates ---")
         for key in remaining_keys:
-            rendered.append(_format_geometry_line(key, updates[key]))
+            rendered.extend(_format_geometry_lines(key, updates[key]))
 
     if rendered and rendered[-1].strip():
         rendered.append("")

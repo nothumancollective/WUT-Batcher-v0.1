@@ -31,6 +31,20 @@ class ProjectPageAthTestParsingTests(unittest.TestCase):
         self.assertEqual(parsed["OSSE.q"], "0.995")
         self.assertEqual(parsed["Mesh.AngularSegments"], "80")
 
+    def test_parse_empty_object_assignment_with_following_members(self) -> None:
+        text = (
+            "R-OSSE = \n"
+            "R = 100\n"
+            "r0 = 17\n"
+            "a0 = 4.5\n"
+            "Coverage.Angle = 52\n"
+        )
+        parsed = parse_key_value_text(text)
+        self.assertEqual(parsed["R-OSSE.R"], "100")
+        self.assertEqual(parsed["R-OSSE.r0"], "17")
+        self.assertEqual(parsed["R-OSSE.a0"], "4.5")
+        self.assertEqual(parsed["Coverage.Angle"], "52")
+
     def test_compare_expected_detects_missing_extra_and_mismatch(self) -> None:
         expected = {"Length": 130.0, "Coverage.Angle": "48.5"}
         observed = {
@@ -66,4 +80,3 @@ class ProjectPageAthTestParsingTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

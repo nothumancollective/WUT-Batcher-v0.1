@@ -152,6 +152,51 @@ def parse_key_value_text(text: str) -> Dict[str, Any]:
             index += 1
             continue
 
+        if raw_value == "":
+            # Some ATH exports emit empty object assignments (e.g. "R-OSSE =")
+            # and place object members on following lines without braces.
+            lookahead = index + 1
+            consumed_any = False
+            while lookahead < len(lines):
+                next_line = _strip_inline_comment(lines[lookahead]).strip()
+                if not next_line:
+                    lookahead += 1
+                    continue
+                if next_line.startswith("{"):
+                    lookahead += 1
+                    while lookahead < len(lines):
+                        nested_line = _strip_inline_comment(lines[lookahead]).strip()
+                        if not nested_line:
+                            lookahead += 1
+                            continue
+                        if nested_line.startswith("}"):
+                            break
+                        nested_assign = _ASSIGN_RE.match(nested_line)
+                        if nested_assign is None:
+                            break
+                        sub_key = nested_assign.group(1).strip()
+                        parsed[f"{key}.{sub_key}"] = _collapse_ws(nested_assign.group(2))
+                        consumed_any = True
+                        lookahead += 1
+                    index = lookahead + 1
+                    break
+                next_assign = _ASSIGN_RE.match(next_line)
+                if next_assign is None:
+                    break
+                sub_key = next_assign.group(1).strip()
+                # Stop when next line clearly starts a new top-level key.
+                if "." in sub_key or sub_key == key:
+                    break
+                parsed[f"{key}.{sub_key}"] = _collapse_ws(next_assign.group(2))
+                consumed_any = True
+                lookahead += 1
+            if consumed_any:
+                index = lookahead
+                continue
+            parsed[key] = ""
+            index += 1
+            continue
+
         if raw_value.startswith("{") and raw_value.endswith("}") and '"' in raw_value:
             try:
                 obj_value = json.loads(raw_value)
