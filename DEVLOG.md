@@ -539,3 +539,36 @@
   - segment second-click clear behavior
   - placeholder/editability regression guard
   - absence of `x` clear buttons in selection controls
+
+### Update 19 (PROJECT Input Stability + Context UX Polish)
+#### Done
+- Fixed nullable numeric validator patterns so digits are accepted while placeholder text is visible.
+  - `optional` remains placeholder-only; empty text now consistently maps to `unset`.
+  - numeric parsing still normalizes locale decimal comma to dot on serialization.
+- Added centralized hint helpers (`ui/hints.py`) and wired schema placeholders/tooltips through them.
+  - numeric placeholders simplified to `optional`
+  - list placeholders standardized to `e.g. 1,2,3`
+  - expression placeholders use short examples (or fallback example) instead of long inline prose
+- GCurve mode UX updated to three explicit options:
+  - `no GCurve` -> `GCurve.Type` unset (explicit coverage mode)
+  - `Superellipse` -> `GCurve.Type = 1`
+  - `Superformula` -> `GCurve.Type = 2`
+- Introduced reusable inset `ContextFrame` styling/component and applied it to conditional sections:
+  - `R-OSSE` mode details
+  - Morph details (shown only when `Morph.TargetShape != 0`)
+  - Rollback details (shown only when rollback enabled)
+  - GCurve common/mode details
+  - Enclosure object details
+- Converted bool control presentation to segmented optional controls (`off/on`) for PROJECT consistency.
+  - includes `Morph.AllowShrinkage` (no checkbox look)
+- Reduced control widths and grid spacing; disabled horizontal scrollbars on both PROJECT columns to prevent sideways scrolling.
+
+#### Tests
+- Extended `tests/test_project_form_ui.py` with:
+  - horizontal scrollbar policy checks
+  - GCurve three-option mode + unset payload check
+  - Morph contextual frame disclosure + segmented bool control assertion
+  - context-frame presence assertion
+- Regression suite status:
+  - `tests.test_project_form_ui`: passing
+  - compatibility/storage/runtime targeted suites: passing

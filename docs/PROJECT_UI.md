@@ -16,11 +16,14 @@
   - Maps field types to Qt widgets:
     - `float/int -> NullableNumericInput` (empty allowed, locale `,` normalized to `.`)
     - `enum -> segmented buttons (<=4) or combo`
-    - `bool -> tri-state optional checkbox` (`unset/true/false`)
+    - `bool -> optional segmented off/on` (second click clears to `unset`)
     - `ex -> nullable line edit` (short example placeholder + tooltip semantics)
     - `list -> nullable line edit` (`e.g. 1,2,3`)
     - `object -> nested property subform` (segmented toggle for `Mesh.Enclosure`)
+  - Adds reusable inset `ContextFrame` blocks for conditional detail sections (`R-OSSE`, `Morph`, `GCurve`, `Rollback`, `Enclosure`).
+  - Uses centralized placeholder/tooltip hints from `ui/hints.py` to keep field hints short and consistent.
   - Uses two side-by-side columns (`Geometry | Mesh`) with dedicated scroll areas.
+  - Horizontal scrollbars are disabled in both PROJECT columns.
   - Geometry order: `Basics -> Throat Profile -> Morph -> GCurve -> Rollback`.
   - Mesh order: `Core -> Enclosure`.
   - Supports unset semantics without per-field `Set` toggles and serializes to `param_states`.
@@ -37,5 +40,6 @@
 - PROJECT page no longer renders a dedicated compatibility panel and no longer includes `Back to Dashboard` / `Show details` actions.
 - Source fields (`Source.*`) and `OSSE` object block are intentionally hidden from PROJECT UI to avoid duplication/conflicts.
 - `Throat.Profile = 2 (R-OSSE)` is treated as UI mode selector; it is kept in `param_states` for UI/rules evaluation and omitted from rendered fixed CFG key map.
+- `GCurve.Type` uses explicit UI modes: `no GCurve` (`unset`), `Superellipse` (`1`), `Superformula` (`2`).
 - TODO verification hook:
   - Confirm final production mapping strategy for R-OSSE mode against ATH export behavior (UI mode value vs. pure object-block mapping).

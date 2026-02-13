@@ -10,14 +10,17 @@ from app.constants import DEFAULT_RUNNER_MODE
 from app.gui import ProjectPage
 
 try:
-    from PySide6.QtWidgets import QApplication, QGroupBox, QPushButton, QToolButton
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QApplication, QFrame, QGroupBox, QPushButton, QToolButton
 except ImportError:  # pragma: no cover
+    Qt = None  # type: ignore[assignment]
     QApplication = None  # type: ignore[assignment]
+    QFrame = None  # type: ignore[assignment]
     QGroupBox = None  # type: ignore[assignment]
     QPushButton = None  # type: ignore[assignment]
     QToolButton = None  # type: ignore[assignment]
 
-from ui.form_builder import NullableNumericInput, ParameterForm, SegmentedEnumInput
+from ui.form_builder import NullableBoolInput, NullableNumericInput, ParameterForm, SegmentedEnumInput
 from ui.form_schema import build_project_form_schema
 
 
@@ -165,10 +168,58 @@ class ProjectFormUiTests(unittest.TestCase):
         self.assertEqual(widget.edit.placeholderText(), "optional")
         widget.edit.setText("12.5")
         self.assertEqual(widget.value(), 12.5)
+        widget.edit.clear()
+        self.assertIsNone(widget.value())
 
     def test_no_selection_clear_x_buttons_exist(self) -> None:
         clear_buttons = [button for button in self.form.findChildren(QToolButton) if button.text().strip() == "x"]
         self.assertEqual(clear_buttons, [])
+
+    def test_horizontal_scrollbars_are_disabled_for_project_columns(self) -> None:
+        self.assertEqual(self.form.geometry_scroll.horizontalScrollBarPolicy(), Qt.ScrollBarAlwaysOff)
+        self.assertEqual(self.form.mesh_scroll.horizontalScrollBarPolicy(), Qt.ScrollBarAlwaysOff)
+
+    def test_gcurve_selection_has_no_gcurve_mode_and_unset_payload(self) -> None:
+        editor = self.form.editor_for_key("GCurve.Type")
+        self.assertIsNotNone(editor)
+        assert editor is not None
+        widget = editor.value_widget()  # type: ignore[attr-defined]
+        self.assertIsInstance(widget, SegmentedEnumInput)
+        assert isinstance(widget, SegmentedEnumInput)
+        labels = [button.text() for button in widget.findChildren(QPushButton) if button.property("segment") == "true"]
+        self.assertEqual(labels, ["no GCurve", "Superellipse", "Superformula"])
+
+        payload = self.form.payload()
+        state = next(item for item in payload["param_states"] if item.get("param_name") == "GCurve.Type")
+        self.assertEqual(state["is_set"], 0)
+        self.assertIsNone(state["value"])
+
+    def test_morph_detail_context_frame_disclosure_and_bool_segment(self) -> None:
+        target_width_editor = self.form.editor_for_key("Morph.TargetWidth")
+        self.assertIsNotNone(target_width_editor)
+        assert target_width_editor is not None
+        self.assertTrue(target_width_editor.isHidden())
+
+        target_shape_editor = self.form.editor_for_key("Morph.TargetShape")
+        self.assertIsNotNone(target_shape_editor)
+        assert target_shape_editor is not None
+        target_shape_editor.set_value(1)  # type: ignore[attr-defined]
+        self.form._on_any_field_changed()  # type: ignore[attr-defined]
+        self.assertFalse(target_width_editor.isHidden())
+
+        shrink_editor = self.form.value_widget_for_key("Morph.AllowShrinkage")
+        self.assertIsNotNone(shrink_editor)
+        self.assertIsInstance(shrink_editor, NullableBoolInput)
+        assert isinstance(shrink_editor, NullableBoolInput)
+        self.assertIsInstance(shrink_editor.segment, SegmentedEnumInput)
+
+    def test_context_frames_exist_for_conditional_sections(self) -> None:
+        frames = [
+            frame
+            for frame in self.form.findChildren(QFrame)
+            if frame.objectName() == "ContextFrame"
+        ]
+        self.assertGreaterEqual(len(frames), 4)
 
 
 if __name__ == "__main__":
