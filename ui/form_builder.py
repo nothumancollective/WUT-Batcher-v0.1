@@ -53,7 +53,7 @@ class ContextFrame(QFrame):
 
         if title:
             heading = QLabel(title)
-            heading.setObjectName("MutedText")
+            heading.setObjectName("ContextTitle")
             root.addWidget(heading)
 
         self.content_layout = QVBoxLayout()
@@ -92,6 +92,10 @@ class AutoSizingStackedWidget(QStackedWidget):
         if current is not None:
             return current.minimumSizeHint()
         return super().minimumSizeHint()
+
+    def resizeEvent(self, event) -> None:  # type: ignore[override]
+        super().resizeEvent(event)
+        self.updateGeometry()
 
 
 class CollapsibleSection(QWidget):
@@ -694,6 +698,16 @@ def _two_column_positions(form_column: int) -> Tuple[int, int]:
     return (3, 4)
 
 
+def _group_width_hint() -> int:
+    # label + input + spacer + label + input + horizontal margins
+    return (2 * LABEL_COLUMN_WIDTH) + (2 * INPUT_TOTAL_WIDTH) + FORM_METRICS.column_gap + 32
+
+
+def _finalize_group_box(box: QGroupBox) -> None:
+    box.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum)
+    box.setMaximumWidth(_group_width_hint())
+
+
 class ParameterForm(QWidget):
     changed = Signal(dict)
 
@@ -712,10 +726,12 @@ class ParameterForm(QWidget):
         self._morph_detail_keys: Tuple[str, ...] = ()
         self._rollback_detail_keys: Tuple[str, ...] = ("Rollback.Angle", "Rollback.Exp", "Rollback.StartAt")
         self._suspend_emit = False
+        self._base_width: Optional[int] = None
 
         root = QHBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(12)
+        self._root_layout = root
 
         self.geometry_scroll = QScrollArea()
         self.geometry_scroll.setWidgetResizable(True)
@@ -747,7 +763,30 @@ class ParameterForm(QWidget):
         self._build_sections()
         self._refresh_mode_stacks()
         self._apply_local_disclosure()
+        self._apply_responsive_spacing()
         self.changed.emit(self.payload())
+
+    def showEvent(self, event) -> None:  # type: ignore[override]
+        super().showEvent(event)
+        if self._base_width is None:
+            self._base_width = max(int(self.width()), 1)
+        self._apply_responsive_spacing()
+
+    def resizeEvent(self, event) -> None:  # type: ignore[override]
+        super().resizeEvent(event)
+        self._apply_responsive_spacing()
+
+    def _apply_responsive_spacing(self) -> None:
+        if self._base_width is None:
+            self._base_width = max(int(self.width()), 1)
+        extra = max(int(self.width()) - int(self._base_width), 0)
+        self._root_layout.setSpacing(12 + min(extra // 60, 36))
+
+        hint = _group_width_hint()
+        for section in (self.geometry_section, self.mesh_section):
+            available = max(section.width(), hint)
+            margin = max((available - hint) // 2, 0)
+            section.content_layout.setContentsMargins(margin, 0, margin, 0)
 
     def _build_sections(self) -> None:
         mode_controller_keys = {stack.controller_key for stack in self.schema.mode_stacks}
@@ -801,6 +840,7 @@ class ParameterForm(QWidget):
         ordered = sorted(fields, key=lambda field: (selection_priority.get(field.key, 9), field.order))
 
         box = QGroupBox("Core")
+        _finalize_group_box(box)
         box_layout = QVBoxLayout(box)
         box_layout.setContentsMargins(0, 0, 0, 0)
         box_layout.setSpacing(0)
@@ -823,9 +863,8 @@ class ParameterForm(QWidget):
             selection_grid.addWidget(editor, row, 1, 1, 1, alignment=Qt.AlignLeft)
             self._field_labels[field.key] = label
 
-        left_count = len(other_fields) // 2
-        left_fields = other_fields[:left_count]
-        right_fields = other_fields[left_count:]
+        left_fields = other_fields[1::2]
+        right_fields = other_fields[::2]
 
         for row, field in enumerate(left_fields):
             label = QLabel(field.label)
@@ -847,7 +886,7 @@ class ParameterForm(QWidget):
 
         box_layout.addLayout(selection_grid)
         box_layout.addLayout(form_grid)
-        parent_layout.addWidget(box)
+        parent_layout.addWidget(box, 0, Qt.AlignTop | Qt.AlignLeft)
 
     def _add_mode_group(self, parent_layout: QVBoxLayout, stack: Optional[ModeStackSpec]) -> None:
         if stack is None:
@@ -868,7 +907,9 @@ class ParameterForm(QWidget):
         self._morph_detail_keys = tuple(field.key for field in detail_fields)
 
         box = QGroupBox("Morph")
+        _finalize_group_box(box)
         box_layout = QVBoxLayout(box)
+        box_layout.setAlignment(Qt.AlignTop)
 
         controller_grid = QGridLayout()
         configure_single_column_grid(controller_grid)
@@ -900,7 +941,7 @@ class ParameterForm(QWidget):
             self._morph_detail_frame = detail_frame
             box_layout.addWidget(detail_frame)
 
-        parent_layout.addWidget(box)
+        parent_layout.addWidget(box, 0, Qt.AlignTop | Qt.AlignLeft)
 
     def _add_rollback_group(self, parent_layout: QVBoxLayout, grouped_fields: Dict[str, List[FieldSpec]]) -> None:
         fields = sorted(grouped_fields.get("Rollback", []), key=lambda field: field.order)
@@ -916,7 +957,9 @@ class ParameterForm(QWidget):
         self._rollback_detail_keys = tuple(field.key for field in detail_fields)
 
         box = QGroupBox("Rollback")
+        _finalize_group_box(box)
         box_layout = QVBoxLayout(box)
+        box_layout.setAlignment(Qt.AlignTop)
 
         controller_grid = QGridLayout()
         configure_single_column_grid(controller_grid)
@@ -948,7 +991,7 @@ class ParameterForm(QWidget):
             self._rollback_detail_frame = detail_frame
             box_layout.addWidget(detail_frame)
 
-        parent_layout.addWidget(box)
+        parent_layout.addWidget(box, 0, Qt.AlignTop | Qt.AlignLeft)
 
     def _add_grouped_fields(
         self,
@@ -965,6 +1008,7 @@ class ParameterForm(QWidget):
 
         for group_name, group_fields in grouped.items():
             box = QGroupBox(group_name)
+            _finalize_group_box(box)
             grid = QGridLayout(box)
             configure_two_column_grid(grid)
             ordered = sorted(group_fields, key=lambda field: field.order)
@@ -985,7 +1029,7 @@ class ParameterForm(QWidget):
                 grid.addWidget(editor, row, input_col, 1, 1, alignment=Qt.AlignLeft)
                 self._field_labels[field.key] = label
                 scalar_index += 1
-            parent_layout.addWidget(box)
+            parent_layout.addWidget(box, 0, Qt.AlignTop | Qt.AlignLeft)
 
     def _add_mode_groups(self, parent_layout: QVBoxLayout, stacks: Iterable[ModeStackSpec]) -> None:
         for stack in stacks:
@@ -994,7 +1038,9 @@ class ParameterForm(QWidget):
                 continue
 
             box = QGroupBox(stack.label)
+            _finalize_group_box(box)
             box_layout = QVBoxLayout(box)
+            box_layout.setAlignment(Qt.AlignTop)
 
             controller_grid = QGridLayout()
             configure_single_column_grid(controller_grid)
@@ -1045,6 +1091,15 @@ class ParameterForm(QWidget):
                     page_single_field is not None and page_single_field.widget_kind == "object"
                 )
 
+                if page.value is None and not page_fields:
+                    page_widget = QWidget()
+                    page_layout = QVBoxLayout(page_widget)
+                    page_layout.setContentsMargins(0, 0, 0, 0)
+                    page_layout.setSpacing(0)
+                    page_index = pages.addWidget(page_widget)
+                    index_by_value[page.value] = page_index
+                    continue
+
                 if single_object_page:
                     page_widget = QWidget()
                     page_layout = QVBoxLayout(page_widget)
@@ -1081,11 +1136,12 @@ class ParameterForm(QWidget):
                 index_by_value[page.value] = page_index
 
             box_layout.addWidget(pages)
-            pages.currentChanged.connect(lambda *_: pages.updateGeometry())
+            pages.currentChanged.connect(lambda *_args, pages=pages: pages.updateGeometry())
+            pages.currentChanged.connect(lambda *_args, box=box: box.adjustSize())
             self._mode_widgets[stack.controller_key] = (pages, index_by_value)
             if common_keys:
                 self._mode_common_frames[stack.controller_key] = (common_box, tuple(sorted(common_keys)))
-            parent_layout.addWidget(box)
+            parent_layout.addWidget(box, 0, Qt.AlignTop | Qt.AlignLeft)
 
     def _ensure_editor(self, field: FieldSpec) -> QWidget:
         existing = self._field_editors.get(field.key)

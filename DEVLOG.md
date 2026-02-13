@@ -657,3 +657,30 @@
 - Regression status:
   - `tests.test_project_form_ui`: passing
   - compatibility/storage/runtime targeted suites: passing
+
+### Update 23 (PROJECT Fine Tuning: Anchoring, Header Cleanup, Unit Clipping)
+#### Done
+- Responsive layout behavior adjusted:
+  - inner form column gaps remain fixed while window growth now increases outer spacing (column-to-column spacing and section content margins).
+  - group blocks are width-capped and left/top anchored to avoid internal horizontal drift.
+- Mesh/Core refinement:
+  - right-column trailing blank row removed by rebalancing left/right field assignment.
+- Dynamic height/anchoring improvements:
+  - mode stacks (`Throat Profile`, `GCurve`) use auto-sizing pages and top-anchored container layouts.
+  - page switching now updates stack/group geometry immediately.
+  - `Throat.Profile` now has an explicit unset page (no OS-SE page shown when profile is cleared).
+- Header visual cleanup:
+  - context headings switched to `ContextTitle` (bold, transparent background).
+  - group-box title styling forced transparent and bold to remove remaining dark header artifacts.
+- Unit suffix clipping fix:
+  - increased reserved unit suffix width so `deg/2` renders fully without clipping.
+
+#### Tests
+- `tests/test_project_form_ui.py` extended and updated for:
+  - `Throat.Profile` unset hides OS-SE page content
+  - `deg/2` suffix visibility assertions
+  - Mesh/Core balanced two-column counts
+  - non-collapsible section headers and create-button alignment regression guards remain green
+- Regression status:
+  - `tests.test_project_form_ui`: passing
+  - compatibility/storage/runtime targeted suites: passing

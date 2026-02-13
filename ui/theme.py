@@ -87,9 +87,14 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     QLabel#MutedText {{
         color: {c['muted']};
     }}
+    QLabel#ContextTitle {{
+        color: {c['text']};
+        font-weight: 700;
+        background-color: transparent;
+    }}
     QLabel#InputUnit {{
         color: {c['muted']};
-        padding-left: {s['xs']}px;
+        padding-left: 0px;
     }}
     QLabel#StatusBrand {{
         font-weight: 700;
@@ -119,6 +124,8 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         subcontrol-origin: margin;
         left: {s['md']}px;
         padding: 0 {s['xs']}px;
+        background-color: transparent;
+        font-weight: 700;
     }}
     QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox {{
         background-color: {c['surface2']};

@@ -257,8 +257,9 @@ def _mode_stacks(
             pages.append(ModePageSpec(value=value, label=label, field_keys=page_keys))
 
         if controller_key == "Throat.Profile":
+            pages.insert(0, ModePageSpec(value=None, label="", field_keys=()))
             # TODO(max): Verify final CFG mapping strategy for R-OSSE mode against ATH export output.
-            pages.insert(1, ModePageSpec(value=2, label="R-OSSE", field_keys=("R-OSSE",)))
+            pages.insert(2, ModePageSpec(value=2, label="R-OSSE", field_keys=("R-OSSE",)))
 
         if len(pages) >= 2:
             label = "GCurve" if controller_key == "GCurve.Type" else _title_from_key(controller_key)

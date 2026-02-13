@@ -273,11 +273,15 @@ class ProjectFormUiTests(unittest.TestCase):
         throat_angle_widget = self.form.value_widget_for_key("Throat.Angle")
         self.assertIsNotNone(throat_angle_widget)
         assert throat_angle_widget is not None
-        self.assertEqual(getattr(throat_angle_widget, "unit_label").text().strip(), "deg/2")
+        throat_unit = getattr(throat_angle_widget, "unit_label")
+        self.assertEqual(throat_unit.text().strip(), "deg/2")
+        self.assertGreaterEqual(throat_unit.width(), throat_unit.fontMetrics().horizontalAdvance("deg/2"))
         coverage_widget = self.form.value_widget_for_key("Coverage.Angle")
         self.assertIsNotNone(coverage_widget)
         assert coverage_widget is not None
-        self.assertEqual(getattr(coverage_widget, "unit_label").text().strip(), "deg/2")
+        coverage_unit = getattr(coverage_widget, "unit_label")
+        self.assertEqual(coverage_unit.text().strip(), "deg/2")
+        self.assertGreaterEqual(coverage_unit.width(), coverage_unit.fontMetrics().horizontalAdvance("deg/2"))
 
     def test_gcurve_common_and_superformula_use_two_columns(self) -> None:
         gcurve_editor = self.form.editor_for_key("GCurve.Type")
@@ -345,11 +349,23 @@ class ProjectFormUiTests(unittest.TestCase):
         headings = [
             label.text().strip()
             for label in self.form.findChildren(QLabel)
-            if label.objectName() == "MutedText"
+            if label.objectName() == "ContextTitle"
         ]
         self.assertIn("OS-SE", headings)
         self.assertIn("Circular Arc", headings)
         self.assertNotIn("R-OSSE", headings)
+
+    def test_throat_profile_unset_hides_osse_page(self) -> None:
+        profile_editor = self.form.editor_for_key("Throat.Profile")
+        self.assertIsNotNone(profile_editor)
+        assert profile_editor is not None
+        profile_editor.set_is_set(False)  # type: ignore[attr-defined]
+        self.form._on_any_field_changed()  # type: ignore[attr-defined]
+
+        term_editor = self.form.editor_for_key("Term.s")
+        self.assertIsNotNone(term_editor)
+        assert term_editor is not None
+        self.assertFalse(term_editor.isVisible())
 
 
 if __name__ == "__main__":
