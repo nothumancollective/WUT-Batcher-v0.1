@@ -166,20 +166,14 @@ def _group_path_for_key(key: str, catalog_group: str) -> Tuple[str, ...]:
         if key.startswith("Mesh.Enclosure"):
             return ("Mesh", "Enclosure")
         return ("Mesh", "Core")
-    if key.startswith("Source."):
-        return ("Geometry", "Source")
     if key.startswith("Morph."):
         return ("Geometry", "Morph")
     if key.startswith("Rollback"):
         return ("Geometry", "Rollback")
     if key.startswith("GCurve.") or key == "Coverage.Angle":
-        return ("Geometry", "Guiding Curve")
+        return ("Geometry", "GCurve")
     if key.startswith("CircArc.") or key.startswith("Term.") or key.startswith("OS.k") or key.startswith("R-OSSE"):
         return ("Geometry", "Throat Profile")
-    if key.startswith("OSSE"):
-        return ("Geometry", "OS-SE Block")
-    if catalog_group == "OtherGeometry":
-        return ("Geometry", "Other")
     return ("Geometry", "Basics")
 
 
@@ -281,7 +275,8 @@ def _mode_stacks(
             pages.insert(1, ModePageSpec(value=2, label="R-OSSE", field_keys=("R-OSSE",)))
 
         if len(pages) >= 2:
-            stacks.append(ModeStackSpec(controller_key=controller_key, label=_title_from_key(controller_key), pages=tuple(pages)))
+            label = "GCurve" if controller_key == "GCurve.Type" else _title_from_key(controller_key)
+            stacks.append(ModeStackSpec(controller_key=controller_key, label=label, pages=tuple(pages)))
 
     return tuple(stacks)
 
@@ -376,6 +371,11 @@ def build_project_form_schema(bundle: AthKnowledgeBundle | None = None) -> FormS
             continue
         key = str(param.get("key", "")).strip()
         if not key:
+            continue
+        if key.startswith("Source."):
+            continue
+        if key == "OSSE":
+            # PROJECT UX keeps explicit OS-SE mode through Throat.Profile + Term/OS keys.
             continue
 
         widget_kind = _widget_kind_for_type(str(param.get("type", "")))
