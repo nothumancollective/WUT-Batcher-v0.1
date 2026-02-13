@@ -13,6 +13,8 @@ from app.constants import DEFAULT_RUNNER_MODE
 from app.models import AppConfig, Batch, Project
 from app.services import OrchestratorService
 from app.settings_store import UserSettings
+from ui.form_builder import ParameterForm
+from ui.form_schema import build_project_form_schema
 from ui.theme import apply_theme, apply_windows_dark_titlebar, configure_windows_qt_darkmode_env
 
 try:
@@ -587,7 +589,6 @@ class DashboardPage(QWidget):
 
 class ProjectPage(QWidget):
     submit_project = Signal(str, dict)
-    back_to_dashboard = Signal()
     draft_changed = Signal(dict)
 
     def __init__(self) -> None:
@@ -601,74 +602,33 @@ class ProjectPage(QWidget):
         self.project_name.setPlaceholderText("Project Name")
         root.addWidget(self.project_name)
 
-        groups = QHBoxLayout()
-        self.geometry_constraints = QTextEdit()
-        self.geometry_constraints.setPlaceholderText('Geometry constraints JSON, e.g. {"Length": 120}')
-        self.mesh_constraints = QTextEdit()
-        self.mesh_constraints.setPlaceholderText('Mesh limits JSON, e.g. {"Mesh.MaxElem": 120000}')
-
-        geo_box = QGroupBox("Geometry")
-        geo_layout = QVBoxLayout(geo_box)
-        geo_layout.addWidget(self.geometry_constraints)
-
-        mesh_box = QGroupBox("Mesh")
-        mesh_layout = QVBoxLayout(mesh_box)
-        mesh_layout.addWidget(self.mesh_constraints)
-
-        groups.addWidget(geo_box, 1)
-        groups.addWidget(mesh_box, 1)
-        root.addLayout(groups, 1)
-        self.compat_panel = CompatibilityPanel("Project Compatibility")
-        root.addWidget(self.compat_panel)
+        self.constraints_form = ParameterForm(build_project_form_schema())
+        root.addWidget(self.constraints_form, 1)
 
         buttons = QHBoxLayout()
-        create_btn = QPushButton("Projekt erstellen")
-        create_btn.setObjectName("PrimaryButton")
-        back_btn = QPushButton("Back to Dashboard")
-        buttons.addWidget(create_btn)
-        buttons.addWidget(back_btn)
+        self.create_btn = QPushButton("Projekt erstellen")
+        self.create_btn.setObjectName("PrimaryButton")
+        buttons.addWidget(self.create_btn)
         buttons.addStretch(1)
         root.addLayout(buttons)
 
-        create_btn.clicked.connect(self._submit)
-        back_btn.clicked.connect(self.back_to_dashboard.emit)
-        self.geometry_constraints.textChanged.connect(self._emit_draft_changed)
-        self.mesh_constraints.textChanged.connect(self._emit_draft_changed)
+        self.create_btn.clicked.connect(self._submit)
+        self.constraints_form.changed.connect(self._emit_draft_changed)
 
         self._compat_state: Dict[str, Any] = {"visible_keys": [], "locked_keys": [], "sweepable_keys": [], "issues": []}
 
-    def _emit_draft_changed(self) -> None:
-        self.draft_changed.emit(self._raw_constraints_payload())
+    def _emit_draft_changed(self, payload: Dict[str, Any] | None = None) -> None:
+        self.draft_changed.emit(payload or self._raw_constraints_payload())
 
     def _raw_constraints_payload(self) -> Dict[str, Any]:
-        return {
-            "fixed_params": _parse_json_object(self.geometry_constraints.toPlainText()),
-            "limits": _parse_json_object(self.mesh_constraints.toPlainText()),
-        }
+        return self.constraints_form.payload()
 
     def apply_compatibility(self, state: Dict[str, Any]) -> None:
         self._compat_state = dict(state)
-        self.compat_panel.update_state(state)
-        severity = _highest_issue_severity(self.compat_panel.issues())
-        self.geometry_constraints.setProperty("severity", severity)
-        self.geometry_constraints.style().unpolish(self.geometry_constraints)
-        self.geometry_constraints.style().polish(self.geometry_constraints)
+        self.constraints_form.apply_compatibility(state)
 
     def _submit(self) -> None:
-        geometry_payload: Dict[str, object] = _parse_json_object(self.geometry_constraints.toPlainText())
-        mesh_payload: Dict[str, object] = _parse_json_object(self.mesh_constraints.toPlainText())
-        visible = set(str(item) for item in list(self._compat_state.get("visible_keys", []) or []))
-        locked = set(str(item) for item in list(self._compat_state.get("locked_keys", []) or []))
-        if visible:
-            geometry_payload = {
-                key: value
-                for key, value in geometry_payload.items()
-                if str(key) in visible and str(key) not in locked
-            }
-        payload = {
-            "fixed_params": geometry_payload,
-            "limits": mesh_payload,
-        }
+        payload = self._raw_constraints_payload()
         self.submit_project.emit(self.project_name.text().strip(), payload)
 
 
@@ -885,6 +845,7 @@ class MainWindow(QMainWindow):
 
     def _build_statusbar(self) -> None:
         bar = QStatusBar()
+        bar.setSizeGripEnabled(False)
         self.setStatusBar(bar)
 
         self.status_message = ClickableLabel("Ready.")
@@ -892,6 +853,8 @@ class MainWindow(QMainWindow):
         bar.addWidget(self.status_message, 1)
 
         self.brand = ClickableLabel("WUT BATCHER")
+        self.brand.setObjectName("StatusBrand")
+        self.brand.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.brand.clicked.connect(self._show_about)
         bar.addPermanentWidget(self.brand)
 
@@ -905,11 +868,7 @@ class MainWindow(QMainWindow):
         self.dashboard_page.request_settings.connect(self._open_settings)
 
         self.project_page.submit_project.connect(self._create_project)
-        self.project_page.back_to_dashboard.connect(self.show_dashboard)
         self.project_page.draft_changed.connect(self._on_project_draft_changed)
-        self.project_page.compat_panel.request_show_details.connect(
-            lambda: self._show_validation_details(self.project_page.compat_panel.issues(), "Project Validation Details")
-        )
 
         self.batch_page.save_batch.connect(self._save_batch)
         self.batch_page.run_batch.connect(self._run_batch)
@@ -1027,16 +986,15 @@ class MainWindow(QMainWindow):
     def _create_project(self, project_name: str, constraints: Dict[str, object]) -> None:
         validation = self.service.evaluate_project_constraints(dict(constraints))
         issues = [item for item in list(validation.get("issues", []) or []) if isinstance(item, dict)]
-        if not self._present_validation_summary(
-            title="Project Validation Summary",
-            issues=issues,
-            block_on_fatal=True,
-        ):
-            self.set_status("Project creation blocked by validation.")
-            return
         project = self.service.create_project(project_name, constraints)
         self.load_project(project)
-        self.set_status(f"Project created: {project.project_id}")
+        if issues:
+            self.set_status(
+                f"Project created: {project.project_id} (draft issues: {len(issues)})",
+                detail=json.dumps(issues, indent=2, ensure_ascii=False),
+            )
+        else:
+            self.set_status(f"Project created: {project.project_id}")
 
     def _save_batch(self, payload: Dict[str, object]) -> Optional[str]:
         if self.current_project is None:
@@ -1161,10 +1119,17 @@ class MainWindow(QMainWindow):
         constraints_payload = {
             "fixed_params": dict(payload.get("fixed_params", {}) or {}),
             "limits": dict(payload.get("limits", {}) or {}),
+            "param_states": [item for item in list(payload.get("param_states", []) or []) if isinstance(item, dict)],
             "runner_mode": runner_mode,
         }
         state = self.service.evaluate_project_constraints(constraints_payload)
         self.project_page.apply_compatibility(state)
+        issues = [item for item in list(state.get("issues", []) or []) if isinstance(item, dict)]
+        if self.stack.currentWidget() is self.project_page and issues:
+            self.set_status(
+                f"Constraints draft has issues ({len(issues)})",
+                detail=json.dumps(issues, indent=2, ensure_ascii=False),
+            )
 
     def _on_batch_draft_changed(self, payload: Dict[str, object]) -> None:
         if self.current_project is None:
