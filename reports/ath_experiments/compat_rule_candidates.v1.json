@@ -1,0 +1,411 @@
+{
+  "generated_at": "2026-02-13T23:37:14+00:00",
+  "analysis_run_groups": [
+    "legacy_500_seed1337",
+    "legacy_500_seed1337_retry2",
+    "legacy_500_seed1337_retry3",
+    "legacy_5000_seed2026",
+    "legacy_5000_seed2026_retry2",
+    "pp10k_2026",
+    "pp10k_2027",
+    "pp10k_2028",
+    "pp10k_2029",
+    "pp10k_2030"
+  ],
+  "candidates": [
+    {
+      "id": "warn_large_observed_dimensions",
+      "kind": "warn",
+      "when": "gt(observed.max_dimension_mm, 2000)",
+      "then": "show_warning('Observed dimensions exceed 2000 mm. Risk of hard-cap errors is elevated.')",
+      "severity": "medium",
+      "evidence": {
+        "type": "experiment",
+        "refs": {
+          "label": "observed final width/height/length > 2000 mm",
+          "total": 3839,
+          "ath_error": 1513,
+          "ath_error_rate": 0.39411305027350874,
+          "sample_run_ids": [
+            "ath_exp_1337_0005_23fff8b3a5",
+            "ath_exp_1337_0005_5576d3f3a8",
+            "ath_exp_1337_0005_ed3639ff54",
+            "ath_exp_1337_0015_6cd37bcea5",
+            "ath_exp_1337_0015_83b7882d20"
+          ],
+          "by_run_group": {
+            "legacy_5000_seed2026": {
+              "total": 1195,
+              "ath_error": 501,
+              "ath_error_rate": 0.4192468619246862,
+              "uplift_vs_group_baseline": 0.3020468619246862
+            },
+            "legacy_5000_seed2026_retry2": {
+              "total": 15,
+              "ath_error": 5,
+              "ath_error_rate": 0.3333333333333333,
+              "uplift_vs_group_baseline": 0.21333333333333332
+            },
+            "legacy_500_seed1337": {
+              "total": 133,
+              "ath_error": 61,
+              "ath_error_rate": 0.45864661654135336,
+              "uplift_vs_group_baseline": 0.3086466165413534
+            },
+            "legacy_500_seed1337_retry2": {
+              "total": 7,
+              "ath_error": 2,
+              "ath_error_rate": 0.2857142857142857,
+              "uplift_vs_group_baseline": 0.1857142857142857
+            },
+            "legacy_500_seed1337_retry3": {
+              "total": 7,
+              "ath_error": 2,
+              "ath_error_rate": 0.2857142857142857,
+              "uplift_vs_group_baseline": 0.1857142857142857
+            },
+            "pp10k_2026": {
+              "total": 477,
+              "ath_error": 203,
+              "ath_error_rate": 0.42557651991614254,
+              "uplift_vs_group_baseline": 0.30707651991614254
+            },
+            "pp10k_2027": {
+              "total": 493,
+              "ath_error": 184,
+              "ath_error_rate": 0.37322515212981744,
+              "uplift_vs_group_baseline": 0.26022515212981745
+            },
+            "pp10k_2028": {
+              "total": 505,
+              "ath_error": 167,
+              "ath_error_rate": 0.3306930693069307,
+              "uplift_vs_group_baseline": 0.2291930693069307
+            },
+            "pp10k_2029": {
+              "total": 486,
+              "ath_error": 180,
+              "ath_error_rate": 0.37037037037037035,
+              "uplift_vs_group_baseline": 0.26237037037037036
+            },
+            "pp10k_2030": {
+              "total": 521,
+              "ath_error": 208,
+              "ath_error_rate": 0.39923224568138194,
+              "uplift_vs_group_baseline": 0.28073224568138194
+            }
+          },
+          "consistent_multi_group": true
+        }
+      },
+      "confidence": "high",
+      "verification_plan": "Counterfactual mini-run: hold mode fixed, vary Length in 100 mm steps around threshold and observe hard_cap_exceeded rate."
+    },
+    {
+      "id": "warn_superformula_osse_combo",
+      "kind": "warn",
+      "when": "and(eq('GCurve.Type', 2), eq('Throat.Profile', 1))",
+      "then": "show_warning('Superformula + OS-SE has elevated ATH error risk; use conservative Width/Dist/Coverage.')",
+      "severity": "high",
+      "evidence": {
+        "type": "experiment",
+        "refs": {
+          "label": "GCurve=superformula and Throat.Profile=OS-SE",
+          "total": 1545,
+          "ath_error": 779,
+          "ath_error_rate": 0.5042071197411003,
+          "sample_run_ids": [
+            "ath_exp_1337_0005_23fff8b3a5",
+            "ath_exp_1337_0005_5576d3f3a8",
+            "ath_exp_1337_0005_ed3639ff54",
+            "ath_exp_1337_0015_6cd37bcea5",
+            "ath_exp_1337_0015_83b7882d20"
+          ],
+          "by_run_group": {
+            "legacy_5000_seed2026": {
+              "total": 488,
+              "ath_error": 247,
+              "ath_error_rate": 0.5061475409836066,
+              "uplift_vs_group_baseline": 0.3889475409836066
+            },
+            "legacy_5000_seed2026_retry2": {
+              "total": 5,
+              "ath_error": 2,
+              "ath_error_rate": 0.4,
+              "uplift_vs_group_baseline": 0.28
+            },
+            "legacy_500_seed1337": {
+              "total": 63,
+              "ath_error": 42,
+              "ath_error_rate": 0.6666666666666666,
+              "uplift_vs_group_baseline": 0.5166666666666666
+            },
+            "legacy_500_seed1337_retry2": {
+              "total": 5,
+              "ath_error": 2,
+              "ath_error_rate": 0.4,
+              "uplift_vs_group_baseline": 0.30000000000000004
+            },
+            "legacy_500_seed1337_retry3": {
+              "total": 5,
+              "ath_error": 2,
+              "ath_error_rate": 0.4,
+              "uplift_vs_group_baseline": 0.30000000000000004
+            },
+            "pp10k_2026": {
+              "total": 210,
+              "ath_error": 108,
+              "ath_error_rate": 0.5142857142857142,
+              "uplift_vs_group_baseline": 0.39578571428571424
+            },
+            "pp10k_2027": {
+              "total": 195,
+              "ath_error": 107,
+              "ath_error_rate": 0.5487179487179488,
+              "uplift_vs_group_baseline": 0.4357179487179488
+            },
+            "pp10k_2028": {
+              "total": 188,
+              "ath_error": 89,
+              "ath_error_rate": 0.4734042553191489,
+              "uplift_vs_group_baseline": 0.37190425531914895
+            },
+            "pp10k_2029": {
+              "total": 203,
+              "ath_error": 90,
+              "ath_error_rate": 0.4433497536945813,
+              "uplift_vs_group_baseline": 0.3353497536945813
+            },
+            "pp10k_2030": {
+              "total": 183,
+              "ath_error": 90,
+              "ath_error_rate": 0.4918032786885246,
+              "uplift_vs_group_baseline": 0.3733032786885246
+            }
+          },
+          "consistent_multi_group": true
+        }
+      },
+      "confidence": "high",
+      "verification_plan": "Fix all parameters except GCurve.Type and compare superellipse vs superformula under OS-SE."
+    },
+    {
+      "id": "warn_coverage_angle_osse_high",
+      "kind": "warn",
+      "when": "and(eq('Throat.Profile', 1), gt('Coverage.Angle', 75))",
+      "then": "show_warning('High coverage angle with OS-SE increases ATH error probability.')",
+      "severity": "high",
+      "evidence": {
+        "type": "experiment",
+        "refs": {
+          "label": "Coverage.Angle > 75 and Throat.Profile=OS-SE",
+          "total": 585,
+          "ath_error": 363,
+          "ath_error_rate": 0.6205128205128205,
+          "sample_run_ids": [
+            "ath_exp_1337_0075_ffa2f0f7da",
+            "ath_exp_1337_0105_121cd781da",
+            "ath_exp_1337_0127_2f23ded12b",
+            "ath_exp_1337_0321_0ab564a63e",
+            "ath_exp_1337_0334_fb4c86b8e1"
+          ],
+          "by_run_group": {
+            "legacy_5000_seed2026": {
+              "total": 188,
+              "ath_error": 116,
+              "ath_error_rate": 0.6170212765957447,
+              "uplift_vs_group_baseline": 0.4998212765957447
+            },
+            "legacy_5000_seed2026_retry2": {
+              "total": 3,
+              "ath_error": 2,
+              "ath_error_rate": 0.6666666666666666,
+              "uplift_vs_group_baseline": 0.5466666666666666
+            },
+            "legacy_500_seed1337": {
+              "total": 20,
+              "ath_error": 9,
+              "ath_error_rate": 0.45,
+              "uplift_vs_group_baseline": 0.30000000000000004
+            },
+            "pp10k_2026": {
+              "total": 68,
+              "ath_error": 37,
+              "ath_error_rate": 0.5441176470588235,
+              "uplift_vs_group_baseline": 0.4256176470588235
+            },
+            "pp10k_2027": {
+              "total": 76,
+              "ath_error": 51,
+              "ath_error_rate": 0.6710526315789473,
+              "uplift_vs_group_baseline": 0.5580526315789474
+            },
+            "pp10k_2028": {
+              "total": 69,
+              "ath_error": 36,
+              "ath_error_rate": 0.5217391304347826,
+              "uplift_vs_group_baseline": 0.42023913043478256
+            },
+            "pp10k_2029": {
+              "total": 74,
+              "ath_error": 48,
+              "ath_error_rate": 0.6486486486486487,
+              "uplift_vs_group_baseline": 0.5406486486486487
+            },
+            "pp10k_2030": {
+              "total": 87,
+              "ath_error": 64,
+              "ath_error_rate": 0.735632183908046,
+              "uplift_vs_group_baseline": 0.6171321839080459
+            }
+          },
+          "consistent_multi_group": true
+        }
+      },
+      "confidence": "high",
+      "verification_plan": "Sweep only Coverage.Angle on fixed OS-SE baseline to identify transition band."
+    },
+    {
+      "id": "warn_length_over_1000",
+      "kind": "warn",
+      "when": "gt('Length', 1000)",
+      "then": "show_warning('Length above 1000 mm often co-occurs with hard-cap related ATH failures.')",
+      "severity": "medium",
+      "evidence": {
+        "type": "experiment",
+        "refs": {
+          "label": "Length > 1000 mm",
+          "total": 1350,
+          "ath_error": 319,
+          "ath_error_rate": 0.2362962962962963,
+          "sample_run_ids": [
+            "ath_exp_1337_0005_23fff8b3a5",
+            "ath_exp_1337_0005_5576d3f3a8",
+            "ath_exp_1337_0005_ed3639ff54",
+            "ath_exp_1337_0015_6cd37bcea5",
+            "ath_exp_1337_0015_83b7882d20"
+          ],
+          "by_run_group": {
+            "legacy_5000_seed2026": {
+              "total": 309,
+              "ath_error": 70,
+              "ath_error_rate": 0.22653721682847897,
+              "uplift_vs_group_baseline": 0.10933721682847897
+            },
+            "legacy_5000_seed2026_retry2": {
+              "total": 2,
+              "ath_error": 0,
+              "ath_error_rate": 0.0,
+              "uplift_vs_group_baseline": -0.12
+            },
+            "legacy_500_seed1337": {
+              "total": 213,
+              "ath_error": 42,
+              "ath_error_rate": 0.19718309859154928,
+              "uplift_vs_group_baseline": 0.04718309859154929
+            },
+            "legacy_500_seed1337_retry2": {
+              "total": 13,
+              "ath_error": 2,
+              "ath_error_rate": 0.15384615384615385,
+              "uplift_vs_group_baseline": 0.05384615384615385
+            },
+            "legacy_500_seed1337_retry3": {
+              "total": 13,
+              "ath_error": 2,
+              "ath_error_rate": 0.15384615384615385,
+              "uplift_vs_group_baseline": 0.05384615384615385
+            },
+            "pp10k_2026": {
+              "total": 113,
+              "ath_error": 26,
+              "ath_error_rate": 0.23008849557522124,
+              "uplift_vs_group_baseline": 0.11158849557522124
+            },
+            "pp10k_2027": {
+              "total": 184,
+              "ath_error": 46,
+              "ath_error_rate": 0.25,
+              "uplift_vs_group_baseline": 0.137
+            },
+            "pp10k_2028": {
+              "total": 177,
+              "ath_error": 49,
+              "ath_error_rate": 0.2768361581920904,
+              "uplift_vs_group_baseline": 0.1753361581920904
+            },
+            "pp10k_2029": {
+              "total": 159,
+              "ath_error": 39,
+              "ath_error_rate": 0.24528301886792453,
+              "uplift_vs_group_baseline": 0.13728301886792454
+            },
+            "pp10k_2030": {
+              "total": 167,
+              "ath_error": 43,
+              "ath_error_rate": 0.25748502994011974,
+              "uplift_vs_group_baseline": 0.13898502994011974
+            }
+          },
+          "consistent_multi_group": true
+        }
+      },
+      "confidence": "medium",
+      "verification_plan": "Counterfactual: fixed mode, vary Length only and monitor final dimensions and hard-cap hits."
+    },
+    {
+      "id": "fatal_rollback_not_supported",
+      "kind": "fatal",
+      "when": "isDefined('Rollback')",
+      "then": "block('Rollback is not supported in this ATH version. Use R-OSSE profile instead.')",
+      "severity": "high",
+      "evidence": {
+        "type": "ath_doc_or_known_pattern",
+        "refs": [
+          "ATH fatal pattern: 'rollback feature is no longer supported'"
+        ]
+      },
+      "confidence": "high",
+      "verification_plan": "Keep blocked unless ATH release notes explicitly re-enable rollback."
+    },
+    {
+      "id": "note_superformula_diameter_over_100m",
+      "kind": "note",
+      "when": "eq(error_class, 'diameter_over_100m')",
+      "then": "log_note('Diameter over 100m errors are concentrated in superformula mode; inspect SF shape parameters first.')",
+      "severity": "low",
+      "evidence": {
+        "type": "experiment",
+        "refs": {
+          "count": 262,
+          "example_run_ids": [
+            "ath_exp_1337_0025_bd94261911",
+            "ath_exp_1337_0049_3076cdc7d0",
+            "ath_exp_1337_0082_3e0ba2303f",
+            "ath_exp_1337_0094_b8bab71b6e",
+            "ath_exp_1337_0188_700b0dd5f8"
+          ],
+          "mode_counts": {
+            "gcurve": {
+              "superformula": 246,
+              "no_gcurve": 12,
+              "superellipse": 4
+            },
+            "throat_profile": {
+              "OS-SE": 262
+            },
+            "morph": {
+              "morph_on": 145,
+              "morph_off": 117
+            },
+            "enclosure": {
+              "enclosure_off": 262
+            }
+          }
+        }
+      },
+      "confidence": "high",
+      "verification_plan": "Run SF-only counterfactuals on m1/m2/n2/n3 with fixed Dist/Width."
+    }
+  ]
+}

@@ -32,6 +32,14 @@ python -m app theme preview
 python -m unittest discover -s tests -v
 ```
 
+## Git Hooks (Auto Push)
+Run once per local clone:
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\setup_git_hooks.ps1
+```
+This configures `core.hooksPath=.githooks` and enables push defaults so `post-commit` auto-push can run.
+Set `WUT_NO_AUTO_PUSH=1` in your shell if you need to temporarily disable auto-push.
+
 ## Notes
 - GUI requires `PySide6`.
 - If `python -m app gui` fails with missing Qt packages, reinstall from `requirements.txt`.
