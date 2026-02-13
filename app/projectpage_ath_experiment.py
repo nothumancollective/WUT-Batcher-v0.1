@@ -8,7 +8,9 @@ import json
 from pathlib import Path
 import random
 import re
+import sqlite3
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+import uuid
 
 from app.cfg_renderer import render_cfg_text
 from app.constants import DEFAULT_RUNNER_MODE, MANDATORY_SOURCE_BLOCK
@@ -245,6 +247,197 @@ def _safe_delete_cfg_file(cfg_path: Path, *, cfg_root: Path) -> Dict[str, Any]:
     return result
 
 
+def _parse_value_num(value: Any) -> Optional[float]:
+    try:
+        text = str(value).strip().replace(",", ".")
+        if not text:
+            return None
+        return float(text)
+    except Exception:
+        return None
+
+
+def _ensure_db_schema(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS experiment_runs(
+            run_id TEXT PRIMARY KEY,
+            created_at TEXT NOT NULL,
+            seed INTEGER NOT NULL,
+            case_index INTEGER NOT NULL,
+            status TEXT NOT NULL,
+            ath_exit_code INTEGER,
+            ath_error_kind TEXT,
+            ath_error_message TEXT,
+            ath_warning_count INTEGER NOT NULL DEFAULT 0,
+            cfg_path TEXT,
+            horns_export_dir TEXT,
+            stdout_path TEXT,
+            stderr_path TEXT,
+            notes TEXT
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS experiment_params(
+            run_id TEXT NOT NULL,
+            key TEXT NOT NULL,
+            value_text TEXT,
+            value_num REAL,
+            is_set INTEGER NOT NULL,
+            PRIMARY KEY(run_id, key)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS experiment_metrics(
+            run_id TEXT PRIMARY KEY,
+            final_width_mm REAL,
+            final_height_mm REAL,
+            final_length_mm REAL,
+            avg_throat_angle_deg REAL,
+            derived_volume_m3 REAL,
+            flags_json TEXT
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS experiment_compare(
+            run_id TEXT PRIMARY KEY,
+            config_ok INTEGER NOT NULL DEFAULT 0,
+            no_ghosts INTEGER NOT NULL DEFAULT 0,
+            missing_keys_required_json TEXT,
+            missing_keys_optional_json TEXT,
+            extra_keys_defaulted_json TEXT,
+            extra_keys_ghost_json TEXT,
+            mismatch_json TEXT
+        )
+        """
+    )
+
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_experiment_runs_status ON experiment_runs(status)")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_experiment_runs_case_index ON experiment_runs(case_index)")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_experiment_runs_error_kind ON experiment_runs(ath_error_kind)")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_experiment_params_key ON experiment_params(key)")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_experiment_params_value_num ON experiment_params(value_num)")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_experiment_metrics_length_mm ON experiment_metrics(final_length_mm)")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_experiment_metrics_width_mm ON experiment_metrics(final_width_mm)")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_experiment_metrics_height_mm ON experiment_metrics(final_height_mm)")
+
+
+def _persist_experiment_row(
+    conn: sqlite3.Connection,
+    *,
+    run_id: str,
+    created_at: str,
+    seed: int,
+    case_index: int,
+    status: str,
+    ath_exit_code: Optional[int],
+    ath_error_kind: Optional[str],
+    ath_error_message: Optional[str],
+    ath_warning_count: int,
+    cfg_path: Optional[str],
+    horns_export_dir: Optional[str],
+    stdout_path: Optional[str],
+    stderr_path: Optional[str],
+    notes: str,
+    params_rows: Sequence[Tuple[str, Optional[str], Optional[float], int]],
+    config_ok: bool,
+    no_ghosts: bool,
+    missing_keys_required: Sequence[str],
+    missing_keys_optional: Sequence[str],
+    extra_keys_defaulted: Sequence[str],
+    extra_keys_ghost: Sequence[str],
+    mismatches: Sequence[Mapping[str, Any]],
+) -> None:
+    conn.execute(
+        """
+        INSERT OR REPLACE INTO experiment_runs(
+            run_id, created_at, seed, case_index, status, ath_exit_code, ath_error_kind,
+            ath_error_message, ath_warning_count, cfg_path, horns_export_dir, stdout_path, stderr_path, notes
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            run_id,
+            created_at,
+            int(seed),
+            int(case_index),
+            status,
+            ath_exit_code,
+            ath_error_kind,
+            ath_error_message,
+            int(ath_warning_count),
+            cfg_path,
+            horns_export_dir,
+            stdout_path,
+            stderr_path,
+            notes,
+        ),
+    )
+    conn.execute("DELETE FROM experiment_params WHERE run_id = ?", (run_id,))
+    if params_rows:
+        conn.executemany(
+            """
+            INSERT INTO experiment_params(run_id, key, value_text, value_num, is_set)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            [(run_id, key, value_text, value_num, int(is_set)) for key, value_text, value_num, is_set in params_rows],
+        )
+
+    conn.execute(
+        """
+        INSERT OR REPLACE INTO experiment_compare(
+            run_id, config_ok, no_ghosts, missing_keys_required_json, missing_keys_optional_json,
+            extra_keys_defaulted_json, extra_keys_ghost_json, mismatch_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            run_id,
+            1 if config_ok else 0,
+            1 if no_ghosts else 0,
+            json.dumps(list(missing_keys_required), ensure_ascii=False),
+            json.dumps(list(missing_keys_optional), ensure_ascii=False),
+            json.dumps(list(extra_keys_defaulted), ensure_ascii=False),
+            json.dumps(list(extra_keys_ghost), ensure_ascii=False),
+            json.dumps(list(mismatches), ensure_ascii=False),
+        ),
+    )
+
+
+def _param_rows_from_payload(
+    *,
+    payload: Mapping[str, Any],
+    fallback_fields: Sequence[Tuple[str, Any]],
+) -> List[Tuple[str, Optional[str], Optional[float], int]]:
+    rows: List[Tuple[str, Optional[str], Optional[float], int]] = []
+    seen: set[str] = set()
+    for item in list(payload.get("param_states", []) or []):
+        if not isinstance(item, Mapping):
+            continue
+        key = str(item.get("param_name", "")).strip()
+        if not key:
+            continue
+        is_set = 1 if int(item.get("is_set", 0)) == 1 else 0
+        value = item.get("value") if is_set else None
+        value_text = str(value) if value is not None else None
+        rows.append((key, value_text, _parse_value_num(value), is_set))
+        seen.add(key)
+
+    if rows:
+        return rows
+
+    for key, value in fallback_fields:
+        norm_key = str(key).strip()
+        if not norm_key or norm_key in seen:
+            continue
+        rows.append((norm_key, str(value), _parse_value_num(value), 1))
+    return rows
+
+
 def _preflight_skip_reason(
     *,
     compat_state: Mapping[str, Any],
@@ -307,10 +500,12 @@ def run_projectpage_ath_experiment(
     reports_root_path = Path(reports_root)
     logs_root = reports_root_path / "logs"
     cases_root = reports_root_path / "cases"
+    db_path = reports_root_path / "ath_experiments.sqlite"
     cfg_root.mkdir(parents=True, exist_ok=True)
     export_root_path.mkdir(parents=True, exist_ok=True)
     logs_root.mkdir(parents=True, exist_ok=True)
     cases_root.mkdir(parents=True, exist_ok=True)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
 
     template_text = _load_template_text(template_cfg or settings.template_cfg)
     runner = AthRunner(str(ath_executable))
@@ -326,189 +521,237 @@ def run_projectpage_ath_experiment(
 
     reports: List[Dict[str, Any]] = []
     status_counts = {"ok": 0, "ath_error": 0, "pipeline_error": 0, "skipped": 0}
+    with sqlite3.connect(str(db_path)) as conn:
+        _ensure_db_schema(conn)
+        for offset, experiment_case in enumerate(all_cases):
+            cfg_index = start_cfg_index + offset
+            cfg_path = cfg_root / f"ProjectPageATHTest{cfg_index}.cfg"
+            run_name = f"run_{experiment_case.case_index:04d}"
+            run_id = f"ath_exp_{seed}_{experiment_case.case_index:04d}_{uuid.uuid4().hex[:10]}"
+            case_dir = cases_root / run_name
+            runtime_dir = case_dir / "ath_runtime"
+            version_logs_dir = case_dir / "runner_logs"
+            case_report_path = case_dir / "report.json"
+            case_dir.mkdir(parents=True, exist_ok=True)
 
-    for offset, experiment_case in enumerate(all_cases):
-        cfg_index = start_cfg_index + offset
-        cfg_path = cfg_root / f"ProjectPageATHTest{cfg_index}.cfg"
-        run_name = f"run_{experiment_case.case_index:04d}"
-        case_dir = cases_root / run_name
-        runtime_dir = case_dir / "ath_runtime"
-        version_logs_dir = case_dir / "runner_logs"
-        case_report_path = case_dir / "report.json"
-        case_dir.mkdir(parents=True, exist_ok=True)
-
-        case = experiment_case.case
-        started_at = _now_iso()
-        payload: Dict[str, Any] = {}
-        compat_state: Dict[str, Any] = {}
-        missing_editors: List[str] = []
-        cfg_written = False
-        cfg_error: Optional[str] = None
-        ath_result: Optional[RunnerResult] = None
-        ath_error: Optional[str] = None
-        export_dir: Optional[Path] = None
-        config_file: Optional[Path] = None
-        status = "pipeline_error"
-        notes = ""
-        cleanup_result: Dict[str, Any] = {}
-
-        try:
-            payload, compat_state, missing_editors = _materialize_case_payload(case)
-            runner_mode = str(payload.get("runner_mode") or DEFAULT_RUNNER_MODE)
-            expected_values = {
-                **dict(payload.get("fixed_params", {}) or {}),
-                **dict(payload.get("limits", {}) or {}),
-            }
-            skip_reason = _preflight_skip_reason(
-                compat_state=compat_state,
-                expected_values=expected_values,
-                hard_cap_mm=hard_cap_mm,
-            )
-            if skip_reason:
-                status = "skipped"
-                notes = skip_reason
-            else:
-                resolved_parameters, resolved_unset = _resolve_render_inputs(payload, runner_mode=runner_mode)
-                cfg_text = render_cfg_text(
-                    template_text=template_text,
-                    parameters=resolved_parameters,
-                    version_id=case.test_id,
-                    runner_mode=runner_mode,
-                    omit_keys=resolved_unset,
-                )
-                cfg_path.write_text(cfg_text, encoding="utf-8")
-                cfg_written = True
-
-                before_dirs = _path_dirs_snapshot(export_root_path)
-                _write_runtime_ath_cfg(
-                    runtime_dir,
-                    export_root=export_root_path,
-                    mesh_cmd=_best_mesh_cmd(ath_executable),
-                )
-                try:
-                    ath_result = runner.run_cfg(
-                        cfg_path,
-                        version_logs_dir=version_logs_dir,
-                        workdir=runtime_dir,
-                    )
-                except Exception as exc:  # pragma: no cover - integration path
-                    ath_error = str(exc)
-                export_dir = _detect_export_dir(export_root_path, before_dirs)
-                config_file = _find_config_file(export_dir) if export_dir else None
-
-                if ath_result and ath_result.ok:
-                    status = "ok"
-                elif ath_result:
-                    status = "ath_error"
-                else:
-                    status = "pipeline_error"
-        except Exception as exc:  # pragma: no cover - integration path
-            cfg_error = str(exc)
-            expected_values = {}
-            runner_mode = DEFAULT_RUNNER_MODE
+            case = experiment_case.case
+            started_at = _now_iso()
+            payload: Dict[str, Any] = {}
+            compat_state: Dict[str, Any] = {}
+            missing_editors: List[str] = []
+            cfg_written = False
+            cfg_error: Optional[str] = None
+            ath_result: Optional[RunnerResult] = None
+            ath_error: Optional[str] = None
+            export_dir: Optional[Path] = None
+            config_file: Optional[Path] = None
             status = "pipeline_error"
+            notes = ""
+            cleanup_result: Dict[str, Any] = {}
+            ath_error_kind: Optional[str] = None
+            ath_error_message: Optional[str] = None
+            ath_warning_count = 0
 
-        cfg_parsed = parse_key_value_text(cfg_path.read_text(encoding="utf-8")) if cfg_written and cfg_path.exists() else {}
-        config_parsed = parse_key_value_text(config_file.read_text(encoding="utf-8")) if config_file and config_file.exists() else {}
-        cfg_compare = compare_expected(
-            expected=expected_values,
-            observed=cfg_parsed,
-            allowed_global_keys=allowed_global_keys,
-        )
-        config_compare = compare_expected(
-            expected=expected_values,
-            observed=config_parsed,
-            allowed_global_keys=allowed_global_keys,
-            optional_missing_prefixes=_ATH_CONFIG_OPTIONAL_MISSING_PREFIXES,
-        )
-        cfg_ok = bool(cfg_written and cfg_compare["ok"])
-        ath_ok = bool(ath_result and ath_result.ok)
-        config_ok = bool(config_file is not None and config_compare["ok"])
-        no_ghosts = bool((not cfg_compare["extra_keys_ghost"]) and (not config_compare["extra_keys_ghost"]))
-
-        if status == "ok" and not (cfg_ok and ath_ok and config_ok and no_ghosts):
-            status = "pipeline_error" if not ath_ok else "ath_error"
-            notes = "compare_failed"
-
-        run_stdout_path = _copy_log_text(
-            ath_result.stdout_log if ath_result else None,
-            logs_root / f"{run_name}_stdout.txt",
-        )
-        run_stderr_path = _copy_log_text(
-            ath_result.stderr_log if ath_result else None,
-            logs_root / f"{run_name}_stderr.txt",
-        )
-
-        if cleanup_files:
-            cleanup_result["cfg"] = _safe_delete_cfg_file(cfg_path, cfg_root=cfg_root)
-            if export_dir is not None:
-                cleanup = guarded_delete_tree(
-                    export_dir,
-                    allowed_root=export_root_path,
-                    expected_dir_name=export_dir.name,
-                    perform_delete=True,
+            try:
+                payload, compat_state, missing_editors = _materialize_case_payload(case)
+                runner_mode = str(payload.get("runner_mode") or DEFAULT_RUNNER_MODE)
+                expected_values = {
+                    **dict(payload.get("fixed_params", {}) or {}),
+                    **dict(payload.get("limits", {}) or {}),
+                }
+                skip_reason = _preflight_skip_reason(
+                    compat_state=compat_state,
+                    expected_values=expected_values,
+                    hard_cap_mm=hard_cap_mm,
                 )
-                cleanup_result["export_dir"] = {
-                    "target": cleanup.target,
-                    "deleted": cleanup.deleted,
-                    "reason": cleanup.reason,
-                }
+                if skip_reason:
+                    status = "skipped"
+                    notes = skip_reason
+                else:
+                    resolved_parameters, resolved_unset = _resolve_render_inputs(payload, runner_mode=runner_mode)
+                    cfg_text = render_cfg_text(
+                        template_text=template_text,
+                        parameters=resolved_parameters,
+                        version_id=case.test_id,
+                        runner_mode=runner_mode,
+                        omit_keys=resolved_unset,
+                    )
+                    cfg_path.write_text(cfg_text, encoding="utf-8")
+                    cfg_written = True
 
-        report = {
-            "run_name": run_name,
-            "case_index": experiment_case.case_index,
-            "case_type": "exploratory" if experiment_case.exploratory else "safe",
-            "test_id": case.test_id,
-            "project_name": case.project_name,
-            "started_at": started_at,
-            "finished_at": _now_iso(),
-            "status": status,
-            "notes": notes,
-            "cfg_path": str(cfg_path),
-            "horns_export_dir": str(export_dir) if export_dir else None,
-            "config_path": str(config_file) if config_file else None,
-            "stdout_path": run_stdout_path,
-            "stderr_path": run_stderr_path,
-            "success_flags": {
-                "cfg_written": cfg_written,
-                "ath_ok": ath_ok,
-                "config_ok": config_ok,
-                "no_ghosts": no_ghosts,
-            },
-            "ath_result": (
-                {
-                    "ok": ath_result.ok,
-                    "exit_code": ath_result.exit_code,
-                    "timed_out": ath_result.timed_out,
-                    "stdout_log": ath_result.stdout_log,
-                    "stderr_log": ath_result.stderr_log,
-                    "summary_log": ath_result.summary_log,
-                }
-                if ath_result
-                else None
-            ),
-            "compare": {
-                "expected_values": expected_values,
-                "cfg": cfg_compare,
-                "config": config_compare,
-            },
-            "input_summary": {
-                "field_values": list(case.field_values),
-                "runner_mode": runner_mode,
-                "compat_issues": list(compat_state.get("issues", []) or []),
-                "missing_editors": missing_editors,
-                "payload_fixed_params": dict(payload.get("fixed_params", {}) or {}),
-                "payload_limits": dict(payload.get("limits", {}) or {}),
-            },
-            "errors": {
-                "cfg_error": cfg_error,
-                "ath_error": ath_error,
-            },
-            "cleanup": cleanup_result,
-        }
-        case_report_path.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-        reports.append(report)
-        status_counts[status] = int(status_counts.get(status, 0)) + 1
+                    before_dirs = _path_dirs_snapshot(export_root_path)
+                    _write_runtime_ath_cfg(
+                        runtime_dir,
+                        export_root=export_root_path,
+                        mesh_cmd=_best_mesh_cmd(ath_executable),
+                    )
+                    try:
+                        ath_result = runner.run_cfg(
+                            cfg_path,
+                            version_logs_dir=version_logs_dir,
+                            workdir=runtime_dir,
+                        )
+                    except Exception as exc:  # pragma: no cover - integration path
+                        ath_error = str(exc)
+                    export_dir = _detect_export_dir(export_root_path, before_dirs)
+                    config_file = _find_config_file(export_dir) if export_dir else None
+
+                    if ath_result and ath_result.ok:
+                        status = "ok"
+                    elif ath_result:
+                        status = "ath_error"
+                        ath_error_kind = "ath_nonzero_exit"
+                        ath_error_message = f"ATH exited with code {ath_result.exit_code}"
+                    else:
+                        status = "pipeline_error"
+            except Exception as exc:  # pragma: no cover - integration path
+                cfg_error = str(exc)
+                expected_values = {}
+                runner_mode = DEFAULT_RUNNER_MODE
+                status = "pipeline_error"
+
+            cfg_parsed = parse_key_value_text(cfg_path.read_text(encoding="utf-8")) if cfg_written and cfg_path.exists() else {}
+            config_parsed = parse_key_value_text(config_file.read_text(encoding="utf-8")) if config_file and config_file.exists() else {}
+            cfg_compare = compare_expected(
+                expected=expected_values,
+                observed=cfg_parsed,
+                allowed_global_keys=allowed_global_keys,
+            )
+            config_compare = compare_expected(
+                expected=expected_values,
+                observed=config_parsed,
+                allowed_global_keys=allowed_global_keys,
+                optional_missing_prefixes=_ATH_CONFIG_OPTIONAL_MISSING_PREFIXES,
+            )
+            cfg_ok = bool(cfg_written and cfg_compare["ok"])
+            ath_ok = bool(ath_result and ath_result.ok)
+            config_ok = bool(config_file is not None and config_compare["ok"])
+            no_ghosts = bool((not cfg_compare["extra_keys_ghost"]) and (not config_compare["extra_keys_ghost"]))
+
+            if status == "ok" and not (cfg_ok and ath_ok and config_ok and no_ghosts):
+                status = "pipeline_error" if not ath_ok else "ath_error"
+                notes = "compare_failed"
+
+            run_stdout_path = _copy_log_text(
+                ath_result.stdout_log if ath_result else None,
+                logs_root / f"{run_name}_stdout.txt",
+            )
+            run_stderr_path = _copy_log_text(
+                ath_result.stderr_log if ath_result else None,
+                logs_root / f"{run_name}_stderr.txt",
+            )
+
+            if cleanup_files:
+                cleanup_result["cfg"] = _safe_delete_cfg_file(cfg_path, cfg_root=cfg_root)
+                if export_dir is not None:
+                    cleanup = guarded_delete_tree(
+                        export_dir,
+                        allowed_root=export_root_path,
+                        expected_dir_name=export_dir.name,
+                        perform_delete=True,
+                    )
+                    cleanup_result["export_dir"] = {
+                        "target": cleanup.target,
+                        "deleted": cleanup.deleted,
+                        "reason": cleanup.reason,
+                    }
+
+            report = {
+                "run_id": run_id,
+                "run_name": run_name,
+                "case_index": experiment_case.case_index,
+                "case_type": "exploratory" if experiment_case.exploratory else "safe",
+                "test_id": case.test_id,
+                "project_name": case.project_name,
+                "started_at": started_at,
+                "finished_at": _now_iso(),
+                "status": status,
+                "notes": notes,
+                "cfg_path": str(cfg_path),
+                "horns_export_dir": str(export_dir) if export_dir else None,
+                "config_path": str(config_file) if config_file else None,
+                "stdout_path": run_stdout_path,
+                "stderr_path": run_stderr_path,
+                "success_flags": {
+                    "cfg_written": cfg_written,
+                    "ath_ok": ath_ok,
+                    "config_ok": config_ok,
+                    "no_ghosts": no_ghosts,
+                },
+                "ath_result": (
+                    {
+                        "ok": ath_result.ok,
+                        "exit_code": ath_result.exit_code,
+                        "timed_out": ath_result.timed_out,
+                        "stdout_log": ath_result.stdout_log,
+                        "stderr_log": ath_result.stderr_log,
+                        "summary_log": ath_result.summary_log,
+                    }
+                    if ath_result
+                    else None
+                ),
+                "compare": {
+                    "expected_values": expected_values,
+                    "cfg": cfg_compare,
+                    "config": config_compare,
+                },
+                "input_summary": {
+                    "field_values": list(case.field_values),
+                    "runner_mode": runner_mode,
+                    "compat_issues": list(compat_state.get("issues", []) or []),
+                    "missing_editors": missing_editors,
+                    "payload_fixed_params": dict(payload.get("fixed_params", {}) or {}),
+                    "payload_limits": dict(payload.get("limits", {}) or {}),
+                },
+                "errors": {
+                    "cfg_error": cfg_error,
+                    "ath_error": ath_error,
+                    "ath_error_kind": ath_error_kind,
+                    "ath_error_message": ath_error_message,
+                    "ath_warning_count": ath_warning_count,
+                },
+                "cleanup": cleanup_result,
+            }
+            case_report_path.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+            params_rows = _param_rows_from_payload(payload=payload, fallback_fields=case.field_values)
+            _persist_experiment_row(
+                conn,
+                run_id=run_id,
+                created_at=report["started_at"],
+                seed=int(seed),
+                case_index=experiment_case.case_index,
+                status=status,
+                ath_exit_code=(ath_result.exit_code if ath_result else None),
+                ath_error_kind=ath_error_kind,
+                ath_error_message=ath_error_message or ath_error,
+                ath_warning_count=ath_warning_count,
+                cfg_path=str(cfg_path),
+                horns_export_dir=str(export_dir) if export_dir else None,
+                stdout_path=run_stdout_path,
+                stderr_path=run_stderr_path,
+                notes=notes,
+                params_rows=params_rows,
+                config_ok=config_ok,
+                no_ghosts=no_ghosts,
+                missing_keys_required=list(config_compare.get("missing_keys_required", []) or []),
+                missing_keys_optional=list(config_compare.get("missing_keys_optional", []) or []),
+                extra_keys_defaulted=list(config_compare.get("extra_keys_defaulted", []) or []),
+                extra_keys_ghost=list(config_compare.get("extra_keys_ghost", []) or []),
+                mismatches=list(config_compare.get("value_mismatches", []) or []),
+            )
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO experiment_metrics(
+                    run_id, final_width_mm, final_height_mm, final_length_mm, avg_throat_angle_deg, derived_volume_m3, flags_json
+                ) VALUES (?, NULL, NULL, NULL, NULL, NULL, ?)
+                """,
+                (run_id, json.dumps({}, ensure_ascii=False)),
+            )
+            conn.commit()
+
+            reports.append(report)
+            status_counts[status] = int(status_counts.get(status, 0)) + 1
 
     summary = {
         "generated_at": _now_iso(),
@@ -522,6 +765,7 @@ def run_projectpage_ath_experiment(
         "cleanup_files": bool(cleanup_files),
         "max_dim_mm": float(max_dim_mm),
         "hard_cap_mm": float(hard_cap_mm),
+        "database_path": str(db_path),
         "status_counts": status_counts,
         "reports": reports,
         "report_files": [str(cases_root / f"run_{item['case_index']:04d}" / "report.json") for item in reports],
