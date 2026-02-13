@@ -7,6 +7,7 @@ import re
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from app.ath_knowledge import AthKnowledgeBundle, load_ath_knowledge
+from ui.hints import placeholder_for, property_placeholder_for, property_tooltip_for, tooltip_for
 
 
 _COND_EQ_RE = re.compile(r"^\s*([A-Za-z0-9_.-]+)\s*==\s*(-?\d+)\s*$")
@@ -87,39 +88,6 @@ def _field_label(param: Mapping[str, Any], fallback_key: str) -> str:
     if label:
         return label
     return _title_from_key(fallback_key)
-
-
-def _field_tooltip(param: Mapping[str, Any]) -> str:
-    description = str(param.get("description", "")).strip()
-    refs: List[str] = []
-    for source in list(param.get("sources", []) or []):
-        if not isinstance(source, dict):
-            continue
-        section = str(source.get("section", "")).strip()
-        quote_hint = str(source.get("quote-hint", "")).strip()
-        if section:
-            refs.append(section)
-        if quote_hint:
-            refs.append(quote_hint)
-            break
-    if refs and description:
-        return f"{description}\n\n{refs[0]}"
-    if refs:
-        return refs[0]
-    return description
-
-
-def _expr_placeholder(param: Mapping[str, Any]) -> str:
-    for source in list(param.get("sources", []) or []):
-        if not isinstance(source, dict):
-            continue
-        quote_hint = str(source.get("quote-hint", "")).strip()
-        if "=" not in quote_hint:
-            continue
-        rhs = quote_hint.split("=", 1)[1].strip()
-        if rhs:
-            return rhs[:72]
-    return ""
 
 
 def _numeric_limits(param: Mapping[str, Any]) -> Tuple[Optional[float], Optional[float]]:
@@ -255,12 +223,14 @@ def _mode_stacks(
         if not param:
             continue
         enum_opts = _enum_options(param)
+        if controller_key == "GCurve.Type":
+            enum_opts = _gcurve_options(enum_opts)
         enum_labels = {int(option.value): option.label for option in enum_opts if isinstance(option.value, int)}
         controller_modes = visibility_map.get(controller_key, {})
         pages: List[ModePageSpec] = []
 
         if controller_key == "GCurve.Type":
-            pages.append(ModePageSpec(value=None, label="Explicit", field_keys=("Coverage.Angle",)))
+            pages.append(ModePageSpec(value=None, label="no GCurve", field_keys=("Coverage.Angle",)))
 
         for value in sorted(controller_modes):
             label = enum_labels.get(value, str(value))
@@ -297,6 +267,17 @@ def _append_rosse_option(options: Tuple[EnumSpec, ...]) -> Tuple[EnumSpec, ...]:
     if 2 not in values:
         merged.append(EnumSpec(label="R-OSSE", value=2))
     merged.sort(key=lambda option: int(option.value) if isinstance(option.value, int) else 10_000)
+    return tuple(merged)
+
+
+def _gcurve_options(options: Tuple[EnumSpec, ...]) -> Tuple[EnumSpec, ...]:
+    label_override = {
+        1: "Superellipse",
+        2: "Superformula",
+    }
+    merged: List[EnumSpec] = [EnumSpec(label="no GCurve", value=None)]
+    for option in options:
+        merged.append(EnumSpec(label=label_override.get(option.value, option.label), value=option.value))
     return tuple(merged)
 
 
@@ -337,7 +318,7 @@ def _property_specs(
         widget_kind = _widget_kind_for_type(str(property_schema_raw.get("type", "text")))
         minimum, maximum = _numeric_limits(property_schema_raw)
         label = _field_label(property_schema_raw, property_name)
-        tooltip = str(property_schema_raw.get("meaning", property_schema_raw.get("note", ""))).strip()
+        tooltip = property_tooltip_for(property_schema_raw)
         options = _enum_options(property_schema_raw)
         specs.append(
             FieldSpec(
@@ -350,6 +331,7 @@ def _property_specs(
                 maximum=maximum,
                 unit=_clean_unit(property_schema_raw.get("unit")),
                 tooltip=tooltip,
+                placeholder=property_placeholder_for(widget_kind=widget_kind, property_schema=property_schema_raw),
                 group_path=tuple(group_path),
                 order=order_seed + index,
                 scope=_scope_for_key(parent_key),
@@ -384,6 +366,8 @@ def build_project_form_schema(bundle: AthKnowledgeBundle | None = None) -> FormS
         enum_options = _enum_options(param)
         if key == "Throat.Profile":
             enum_options = _append_rosse_option(enum_options)
+        if key == "GCurve.Type":
+            enum_options = _gcurve_options(enum_options)
 
         field = FieldSpec(
             key=key,
@@ -395,8 +379,8 @@ def build_project_form_schema(bundle: AthKnowledgeBundle | None = None) -> FormS
             minimum=minimum,
             maximum=maximum,
             unit=_clean_unit(param.get("unit")),
-            tooltip=_field_tooltip(param),
-            placeholder=_expr_placeholder(param),
+            tooltip=tooltip_for(param),
+            placeholder=placeholder_for(widget_kind=widget_kind, param=param),
             group_path=group_path,
             order=index,
             ui_mode_tags=_ui_mode_tags_for_key(key, visibility_map),
