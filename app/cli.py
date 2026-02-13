@@ -399,6 +399,44 @@ def cmd_ui_inspect_vacs(args: argparse.Namespace) -> int:
     return 0 if "error" not in payload else 3
 
 
+def cmd_vacs_discover_graphs(args: argparse.Namespace) -> int:
+    from app.ui_automation.inspector import inspect_tool_ui
+    from app.ui_automation.recipes import load_vacs_export_recipes
+    from app.vacs_graph_catalog import discover_graph_catalog
+
+    settings_store = SettingsStore()
+    settings = settings_store.load()
+    vacs_exe = args.vacs_exe or settings.vacs_exe
+    inspect_summary = None
+    if not args.dry_run and vacs_exe:
+        inspect_summary = inspect_tool_ui(
+            tool_name="vacs",
+            executable=vacs_exe,
+            output_root=args.ui_maps_output,
+            startup_timeout_s=args.timeout_s,
+            dry_run=False,
+        )
+
+    recipes = load_vacs_export_recipes()
+    catalog = discover_graph_catalog(
+        vacs_version=args.vacs_version,
+        output_root=args.catalog_root,
+        recipes=recipes,
+        inspect_summary=inspect_summary,
+    )
+    payload = {
+        "ok": True,
+        "vacs_version": args.vacs_version,
+        "catalog_path": catalog["catalog_path"],
+        "entry_count": catalog["entry_count"],
+        "inspect_summary": inspect_summary,
+        "recipes_loaded": len(recipes),
+        "dry_run": bool(args.dry_run),
+    }
+    print(json.dumps(payload, indent=2, ensure_ascii=False, default=_json_default))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="batch-software")
     parser.add_argument("--config", default="app_config.json", help="Path to app_config.json (optional).")
@@ -552,6 +590,33 @@ def build_parser() -> argparse.ArgumentParser:
     p_ui_inspect_vacs.add_argument("--timeout-s", type=int, default=20, help="Startup/connect timeout in seconds")
     p_ui_inspect_vacs.add_argument("--dry-run", action="store_true", help="Write planned outputs without launching tools")
     p_ui_inspect_vacs.set_defaults(func=cmd_ui_inspect_vacs)
+
+    p_vacs = sub.add_parser("vacs", help="VACS graph catalog and export mapping tools.")
+    sub_vacs = p_vacs.add_subparsers(dest="vacs_cmd", required=True)
+
+    p_vacs_discover = sub_vacs.add_parser(
+        "discover-graphs",
+        help="Best-effort discovery and graph catalog skeleton generation for a VACS version.",
+    )
+    p_vacs_discover.add_argument("--vacs-exe", help="Override VACS executable path")
+    p_vacs_discover.add_argument("--vacs-version", default="default", help="VACS version label for catalog folder")
+    p_vacs_discover.add_argument(
+        "--catalog-root",
+        default="ui_maps/vacs",
+        help="Graph catalog root folder (<root>/<vacs_version>/graph_catalog.json)",
+    )
+    p_vacs_discover.add_argument(
+        "--ui-maps-output",
+        default="ui_maps",
+        help="Output folder for optional UI inspection artifacts.",
+    )
+    p_vacs_discover.add_argument("--timeout-s", type=int, default=20, help="Inspector startup/connect timeout")
+    p_vacs_discover.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Generate catalog skeleton from recipes without launching VACS.",
+    )
+    p_vacs_discover.set_defaults(func=cmd_vacs_discover_graphs)
 
     return parser
 

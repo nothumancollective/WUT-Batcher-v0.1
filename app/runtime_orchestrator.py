@@ -11,10 +11,12 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from app.batch_orchestrator import materialize_batch_plan
 from app.cfg_renderer import render_cfg_text
+from app.export_specs import parse_export_specs
 from app.models import Batch, Project
 from app.safe_cleanup import guarded_delete_tree
 from app.runners import AkabakRunner, AthRunner, RunnerResult, VacsRunner, parse_ath_dimensions
 from app.tidy_dataset import TidyDatasetWriter
+from app.vacs_export_pipeline import VacsExportPipelineError, run_vacs_export_specs
 from app.vacs_txt_parser import parse_vacs_txt_file
 
 
@@ -178,6 +180,10 @@ def run_batch_pipeline(
     project_root = Path(planning_summary.project_root)
     template_text = _load_template_text(template_cfg_path)
     writer = TidyDatasetWriter(project_root)
+    sim_export_payload = batch.sim_export_settings.to_dict()
+    export_specs = parse_export_specs(sim_export_payload)
+    vacs_required = bool(export_specs)
+    vacs_version = str(sim_export_payload.get("vacs_version", "default") or "default")
 
     ath_runner = None if dry_run or not ath_executable else AthRunner(ath_executable, base_args=ath_base_args)
     akabak_runner = None if dry_run or not akabak_executable else AkabakRunner(akabak_executable, base_args=akabak_base_args)
@@ -195,7 +201,7 @@ def run_batch_pipeline(
         runner_mode = str(batch.runner_mode or project.constraints.runner_mode)
         ath_stage_ok = ath_runner is None
         akabak_stage_ok = akabak_runner is None
-        vacs_stage_ok = vacs_runner is None
+        vacs_stage_ok = (not vacs_required and vacs_runner is None)
 
         cfg_path = _version_cfg_path(project_root, version_id)
         cfg_text = render_cfg_text(
@@ -336,7 +342,143 @@ def run_batch_pipeline(
                 )
                 continue
 
-        if vacs_runner:
+        if vacs_required and not vacs_executable:
+            vacs_stage_ok = False
+            summary_path = _version_logs_dir(project_root, version_id) / "vacs.export_pipeline.json"
+            _write_json(
+                summary_path,
+                {
+                    "error": "vacs_executable_missing",
+                    "message": "VACS executable is required for configured export_specs.",
+                    "remediation": "Configure vacs_exe in settings or remove export_specs for this batch.",
+                },
+            )
+            stage_results.append(
+                StageExecution(
+                    version_id=version_id,
+                    stage="vacs",
+                    status="failed",
+                    exit_code=1,
+                    timed_out=False,
+                    summary_log=str(summary_path),
+                )
+            )
+            _update_version_state(
+                project_root,
+                version_id,
+                {
+                    "status": "vacs_failed",
+                    "vacs_result": {
+                        "exit_code": 1,
+                        "timed_out": False,
+                        "summary_log": str(summary_path),
+                        "error": "vacs_executable_missing",
+                    },
+                },
+            )
+            writer.update_version_status(version_id, status="vacs_failed")
+            if not continue_on_error:
+                elapsed = time.perf_counter() - version_started
+                writer.update_version_status(
+                    version_id,
+                    status="failed",
+                    duration_seconds=elapsed,
+                    finished_at=_now_iso(),
+                )
+                continue
+
+        elif vacs_executable and export_specs:
+            exports_dir = _version_exports_dir(project_root, version_id)
+            exports_dir.mkdir(parents=True, exist_ok=True)
+            vacs_summary_path = _version_logs_dir(project_root, version_id) / "vacs.export_pipeline.json"
+            try:
+                vacs_export_summary = run_vacs_export_specs(
+                    executable=vacs_executable,
+                    vacs_version=vacs_version,
+                    project_id=project.project_id,
+                    batch_id=batch.batch_id,
+                    version_id=version_id,
+                    abec_path=_version_abec_path(project_root, version_id),
+                    export_specs=export_specs,
+                    export_dir=exports_dir,
+                    log_dir=_version_logs_dir(project_root, version_id),
+                )
+                _write_json(vacs_summary_path, vacs_export_summary)
+                stage_results.append(
+                    StageExecution(
+                        version_id=version_id,
+                        stage="vacs",
+                        status="ok",
+                        exit_code=0,
+                        timed_out=False,
+                        summary_log=str(vacs_summary_path),
+                    )
+                )
+                vacs_ingest = _ingest_vacs_exports(
+                    writer=writer,
+                    project=project,
+                    batch=batch,
+                    version_id=version_id,
+                    exports_dir=exports_dir,
+                )
+                vacs_stage_ok = bool(vacs_export_summary.get("executed")) and not bool(vacs_ingest.get("parse_errors"))
+                if int(vacs_ingest.get("files_found", 0)) <= 0:
+                    vacs_stage_ok = False
+                vacs_status = "vacs_ok" if vacs_stage_ok else "vacs_failed"
+                _update_version_state(
+                    project_root,
+                    version_id,
+                    {
+                        "status": vacs_status,
+                        "vacs_result": {
+                            "exit_code": 0,
+                            "timed_out": False,
+                            "summary_log": str(vacs_summary_path),
+                        },
+                        "vacs_export_ingest": vacs_ingest,
+                        "vacs_export_pipeline": vacs_export_summary,
+                    },
+                )
+                writer.update_version_status(version_id, status=vacs_status)
+            except (VacsExportPipelineError, Exception) as exc:
+                vacs_stage_ok = False
+                error_payload = {"error": str(exc), "vacs_version": vacs_version}
+                _write_json(vacs_summary_path, error_payload)
+                stage_results.append(
+                    StageExecution(
+                        version_id=version_id,
+                        stage="vacs",
+                        status="failed",
+                        exit_code=1,
+                        timed_out=False,
+                        summary_log=str(vacs_summary_path),
+                    )
+                )
+                _update_version_state(
+                    project_root,
+                    version_id,
+                    {
+                        "status": "vacs_failed",
+                        "vacs_result": {
+                            "exit_code": 1,
+                            "timed_out": False,
+                            "summary_log": str(vacs_summary_path),
+                            "error": str(exc),
+                        },
+                    },
+                )
+                writer.update_version_status(version_id, status="vacs_failed")
+                if not continue_on_error:
+                    elapsed = time.perf_counter() - version_started
+                    writer.update_version_status(
+                        version_id,
+                        status="failed",
+                        duration_seconds=elapsed,
+                        finished_at=_now_iso(),
+                    )
+                    continue
+
+        elif vacs_runner:
             exports_dir = _version_exports_dir(project_root, version_id)
             exports_dir.mkdir(parents=True, exist_ok=True)
             vacs_result = vacs_runner.run_export(

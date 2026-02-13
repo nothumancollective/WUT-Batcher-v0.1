@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from app.constants import DEFAULT_RUNNER_MODE
+from app.export_specs import dump_export_specs, parse_export_specs
 
 
 def _now_iso() -> str:
@@ -243,6 +244,7 @@ class SimExportSettings:
     freq_end_hz: float = 15000.0
     num_points: int = 16
     exports: Dict[str, ExportOption] = field(default_factory=dict)
+    export_specs: List[Dict[str, Any]] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "SimExportSettings":
@@ -250,11 +252,13 @@ class SimExportSettings:
         for key, value in dict(data.get("exports", {}) or {}).items():
             if isinstance(value, dict):
                 exports[str(key)] = ExportOption.from_dict(value)
+        specs = dump_export_specs(parse_export_specs(data))
         return cls(
             freq_start_hz=float(data.get("freq_start_hz", 500.0)),
             freq_end_hz=float(data.get("freq_end_hz", 15000.0)),
             num_points=int(data.get("num_points", 16)),
             exports=exports,
+            export_specs=specs,
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -263,6 +267,7 @@ class SimExportSettings:
             "freq_end_hz": self.freq_end_hz,
             "num_points": self.num_points,
             "exports": {k: v.to_dict() for k, v in self.exports.items()},
+            "export_specs": list(self.export_specs),
         }
 
 
