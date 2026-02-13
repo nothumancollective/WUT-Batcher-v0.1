@@ -66,9 +66,12 @@ Primary tidy dataset storage is SQLite (not CSV/Parquet).
   - `version_id`, `project_id`, `batch_id`, `length_mm`, `width_mm`, `height_mm`, `raw_line`, `source_file`, `created_at`
 - `graphs`
   - `graph_id`, `project_id`, `batch_id`, `version_id`
-  - `graph_type`, `x_name`, `y_name`, `x_unit`, `y_unit`, `source_file`, `export_meta`, `created_at`
+  - `graph_type`, `graph_kind`, `x_name`, `y_name`, `x_axis`, `y_axis`, `x_unit`, `y_unit`
+  - `source_file`, `export_meta`, `meta_json`, `created_at`
+- `graph_series`
+  - `series_id`, `graph_id`, `series_kind`, `angle_deg`, `label`, `meta_json`, `created_at`
 - `graph_points`
-  - `graph_id`, `point_index`, `x_value`, `y_value`
+  - `series_id`, `point_index`, `x_value`, `y_value`, `y_imag`
 
 Additional operational table:
 - `replication_queue` for pending global-sync retries.
@@ -114,7 +117,9 @@ VACS TXT ingestion details:
 - parser module: `app/vacs_txt_parser.py`
 - supports key/value metadata + explicit `Data`/`Data_End` sections
 - supports delimiter-based exports (`;`, tab, `|`) and locale decimals (`90,5`)
-- writes graph metadata (`graph_type`, axis names/units, `source_file`, `export_meta`) and tidy points (`point_index`, `x_value`, `y_value`)
+- supports series markers (`Series=...`) and derives `angle_deg` for polar-style exports
+- supports optional complex point format (`x y y_imag`) with deterministic numeric parsing
+- writes graph metadata (`graphs`), per-series metadata (`graph_series`) and tidy points (`graph_points`)
 - if VACS stage succeeds but no TXT files are found or parse errors occur, version is marked `vacs_failed`
 
 ## Cleanup Policy (Guarded ATH Workdir Delete)
