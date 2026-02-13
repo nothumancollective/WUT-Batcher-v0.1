@@ -1,4 +1,4 @@
-"""Runtime orchestration for staged ATH -> AKABAK -> VACS execution."""
+﻿"""Runtime orchestration for staged ATH -> AKABAK -> VACS execution."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 import json
 from pathlib import Path
 import time
+import uuid
 from typing import Any, Dict, List, Optional, Sequence
 
 from app.batch_orchestrator import materialize_batch_plan
@@ -48,6 +49,8 @@ class StageExecution:
 
 @dataclass(frozen=True)
 class RuntimeSummary:
+    run_id: str
+    run_status: str
     project_id: str
     batch_id: str
     project_root: str
@@ -78,8 +81,8 @@ def _version_logs_dir(project_root: Path, version_id: str) -> Path:
     return project_root / "versions" / version_id / "logs"
 
 
-def _version_exports_dir(project_root: Path, version_id: str) -> Path:
-    return project_root / "versions" / version_id / "exports"
+def _version_exports_dir(project_root: Path, version_id: str, run_id: str) -> Path:
+    return project_root / "versions" / version_id / "exports" / run_id
 
 
 def _load_template_text(template_cfg_path: Optional[str | Path]) -> str:
@@ -111,6 +114,7 @@ def _ingest_vacs_exports(
     writer: TidyDatasetWriter,
     project: Project,
     batch: Batch,
+    run_id: str,
     version_id: str,
     exports_dir: Path,
 ) -> Dict[str, Any]:
@@ -126,14 +130,20 @@ def _ingest_vacs_exports(
             continue
 
         for series in parsed.series:
+            variant = "default"
+            metadata = parsed.export_meta.get("metadata")
+            if isinstance(metadata, dict):
+                variant = str(metadata.get("variant", metadata.get("Variant", "default")))
             for point_index, point in enumerate(series.points):
                 rows.append(
                     {
                         "project_id": project.project_id,
                         "batch_id": batch.batch_id,
+                        "run_id": run_id,
                         "version_id": version_id,
                         "graph_type": parsed.graph_type,
                         "graph_kind": parsed.graph_type,
+                        "variant": variant,
                         "x_name": parsed.x_name,
                         "y_name": parsed.y_name,
                         "x_axis": parsed.x_name,
@@ -181,15 +191,39 @@ def run_batch_pipeline(
     vacs_base_args: Sequence[str] | None = None,
     continue_on_error: bool = True,
     dry_run: bool = False,
+    run_id: Optional[str] = None,
+    git_commit: Optional[str] = None,
+    app_version: Optional[str] = "0.1-rebuild",
+    settings_hash: Optional[str] = None,
 ) -> RuntimeSummary:
-    planning_summary = materialize_batch_plan(
-        project=project,
-        batch=batch,
-        projects_root=projects_root,
-    )
+    planning_summary = materialize_batch_plan(project=project, batch=batch, projects_root=projects_root)
     project_root = Path(planning_summary.project_root)
     template_text = _load_template_text(template_cfg_path)
     writer = TidyDatasetWriter(project_root)
+    effective_run_id = run_id or str(uuid.uuid4())
+
+    writer.create_run(
+        run_id=effective_run_id,
+        project_id=project.project_id,
+        batch_id=batch.batch_id,
+        status="running",
+        git_commit=git_commit,
+        app_version=app_version,
+        settings_hash=settings_hash,
+    )
+    writer.write_run_versions(
+        [
+            {
+                "run_id": effective_run_id,
+                "version_id": version_id,
+                "project_id": project.project_id,
+                "batch_id": batch.batch_id,
+                "status": "planned",
+            }
+            for version_id in planning_summary.version_ids
+        ]
+    )
+
     sim_export_payload = batch.sim_export_settings.to_dict()
     export_specs = parse_export_specs(sim_export_payload)
     vacs_required = bool(export_specs)
@@ -203,257 +237,205 @@ def run_batch_pipeline(
     ath_dimension_rows = 0
     cleanup_results: List[Dict[str, Any]] = []
     versions_root = project_root / "versions"
+    run_status = "succeeded"
+    run_error_summary: Optional[str] = None
 
-    for version_id in planning_summary.version_ids:
-        version_started = time.perf_counter()
-        version_payload = _read_json(_version_json_path(project_root, version_id))
-        version_params = dict(version_payload.get("parameters", {}) or {})
-        runner_mode = str(batch.runner_mode or project.constraints.runner_mode)
-        ath_stage_ok = ath_runner is None
-        akabak_stage_ok = akabak_runner is None
-        vacs_stage_ok = (not vacs_required and vacs_runner is None)
+    try:
+        for version_id in planning_summary.version_ids:
+            version_started = time.perf_counter()
+            version_payload = _read_json(_version_json_path(project_root, version_id))
+            version_params = dict(version_payload.get("parameters", {}) or {})
+            runner_mode = str(batch.runner_mode or project.constraints.runner_mode)
 
-        cfg_path = _version_cfg_path(project_root, version_id)
-        cfg_text = render_cfg_text(
-            template_text=template_text,
-            parameters=version_params,
-            version_id=version_id,
-            runner_mode=runner_mode,
-        )
-        cfg_path.parent.mkdir(parents=True, exist_ok=True)
-        cfg_path.write_text(cfg_text, encoding="utf-8")
+            cfg_path = _version_cfg_path(project_root, version_id)
+            cfg_text = render_cfg_text(
+                template_text=template_text,
+                parameters=version_params,
+                version_id=version_id,
+                runner_mode=runner_mode,
+            )
+            cfg_path.parent.mkdir(parents=True, exist_ok=True)
+            cfg_path.write_text(cfg_text, encoding="utf-8")
 
-        if dry_run:
-            elapsed = time.perf_counter() - version_started
-            stage_results.append(
-                StageExecution(
-                    version_id=version_id,
-                    stage="dry_run",
-                    status="ok",
-                    exit_code=0,
-                    timed_out=False,
-                    summary_log="dry_run",
-                )
-            )
-            _update_version_state(
-                project_root,
-                version_id,
-                {
-                    "status": "dry_run_completed",
-                    "dry_run": True,
-                    "finished_at": _now_iso(),
-                    "duration_seconds": elapsed,
-                },
-            )
-            writer.update_version_status(
-                version_id,
-                status="dry_run_completed",
-                duration_seconds=elapsed,
-                finished_at=_now_iso(),
-            )
-            cleanup_result = guarded_delete_tree(
-                _version_ath_work_path(project_root, version_id),
-                allowed_root=versions_root,
-                expected_dir_name="ath_work",
-                perform_delete=False,
-                deny_paths=(project_root, project_root.parent, versions_root),
-            )
-            cleanup_results.append(
-                {
-                    "version_id": version_id,
-                    "target": cleanup_result.target,
-                    "deleted": cleanup_result.deleted,
-                    "reason": cleanup_result.reason,
-                }
-            )
-            continue
-
-        if ath_runner:
-            ath_work_dir = _version_ath_work_path(project_root, version_id)
-            ath_work_dir.mkdir(parents=True, exist_ok=True)
-            ath_result = ath_runner.run_cfg(
-                cfg_path,
-                version_logs_dir=_version_logs_dir(project_root, version_id),
-                workdir=ath_work_dir,
-            )
-            stage_results.append(_stage_from_result(version_id, "ath", ath_result))
-            _update_version_state(
-                project_root,
-                version_id,
-                {
-                    "status": "ath_ok" if ath_result.ok else "ath_failed",
-                    "ath_result": {
-                        "exit_code": ath_result.exit_code,
-                        "timed_out": ath_result.timed_out,
-                        "stdout_log": ath_result.stdout_log,
-                        "stderr_log": ath_result.stderr_log,
-                        "summary_log": ath_result.summary_log,
-                    },
-                },
-            )
-            writer.update_version_status(version_id, status="ath_ok" if ath_result.ok else "ath_failed")
-            ath_stage_ok = ath_result.ok
-
-            ath_stdout = Path(ath_result.stdout_log).read_text(encoding="utf-8")
-            dims = parse_ath_dimensions(ath_stdout)
-            if dims.raw_line:
-                writer.write_ath_dimensions(
-                    [
-                        {
-                            "project_id": project.project_id,
-                            "batch_id": batch.batch_id,
-                            "version_id": version_id,
-                            "horn_length_mm": dims.horn_length_mm,
-                            "horn_width_mm": dims.horn_width_mm,
-                            "horn_height_mm": dims.horn_height_mm,
-                            "raw_line": dims.raw_line,
-                            "source_file": ath_result.stdout_log,
-                        }
-                    ]
-                )
-                ath_dimension_rows += 1
-            if not ath_result.ok and not continue_on_error:
+            if dry_run:
                 elapsed = time.perf_counter() - version_started
-                writer.update_version_status(
-                    version_id,
-                    status="failed",
-                    duration_seconds=elapsed,
-                    finished_at=_now_iso(),
-                )
-                continue
-
-        if akabak_runner:
-            akabak_result = akabak_runner.run_project(
-                _version_abec_path(project_root, version_id),
-                version_logs_dir=_version_logs_dir(project_root, version_id),
-            )
-            stage_results.append(_stage_from_result(version_id, "akabak", akabak_result))
-            _update_version_state(
-                project_root,
-                version_id,
-                {
-                    "status": "akabak_ok" if akabak_result.ok else "akabak_failed",
-                    "akabak_result": {
-                        "exit_code": akabak_result.exit_code,
-                        "timed_out": akabak_result.timed_out,
-                        "summary_log": akabak_result.summary_log,
-                    },
-                },
-            )
-            writer.update_version_status(version_id, status="akabak_ok" if akabak_result.ok else "akabak_failed")
-            akabak_stage_ok = akabak_result.ok
-            if not akabak_result.ok and not continue_on_error:
-                elapsed = time.perf_counter() - version_started
-                writer.update_version_status(
-                    version_id,
-                    status="failed",
-                    duration_seconds=elapsed,
-                    finished_at=_now_iso(),
-                )
-                continue
-
-        if vacs_required and not vacs_executable:
-            vacs_stage_ok = False
-            summary_path = _version_logs_dir(project_root, version_id) / "vacs.export_pipeline.json"
-            _write_json(
-                summary_path,
-                {
-                    "error": "vacs_executable_missing",
-                    "message": "VACS executable is required for configured export_specs.",
-                    "remediation": "Configure vacs_exe in settings or remove export_specs for this batch.",
-                },
-            )
-            stage_results.append(
-                StageExecution(
-                    version_id=version_id,
-                    stage="vacs",
-                    status="failed",
-                    exit_code=1,
-                    timed_out=False,
-                    summary_log=str(summary_path),
-                )
-            )
-            _update_version_state(
-                project_root,
-                version_id,
-                {
-                    "status": "vacs_failed",
-                    "vacs_result": {
-                        "exit_code": 1,
-                        "timed_out": False,
-                        "summary_log": str(summary_path),
-                        "error": "vacs_executable_missing",
-                    },
-                },
-            )
-            writer.update_version_status(version_id, status="vacs_failed")
-            if not continue_on_error:
-                elapsed = time.perf_counter() - version_started
-                writer.update_version_status(
-                    version_id,
-                    status="failed",
-                    duration_seconds=elapsed,
-                    finished_at=_now_iso(),
-                )
-                continue
-
-        elif vacs_executable and export_specs:
-            exports_dir = _version_exports_dir(project_root, version_id)
-            exports_dir.mkdir(parents=True, exist_ok=True)
-            vacs_summary_path = _version_logs_dir(project_root, version_id) / "vacs.export_pipeline.json"
-            try:
-                vacs_export_summary = run_vacs_export_specs(
-                    executable=vacs_executable,
-                    vacs_version=vacs_version,
-                    project_id=project.project_id,
-                    batch_id=batch.batch_id,
-                    version_id=version_id,
-                    abec_path=_version_abec_path(project_root, version_id),
-                    export_specs=export_specs,
-                    export_dir=exports_dir,
-                    log_dir=_version_logs_dir(project_root, version_id),
-                )
-                _write_json(vacs_summary_path, vacs_export_summary)
                 stage_results.append(
                     StageExecution(
                         version_id=version_id,
-                        stage="vacs",
+                        stage="dry_run",
                         status="ok",
                         exit_code=0,
                         timed_out=False,
-                        summary_log=str(vacs_summary_path),
+                        summary_log="dry_run",
                     )
                 )
-                vacs_ingest = _ingest_vacs_exports(
-                    writer=writer,
-                    project=project,
-                    batch=batch,
-                    version_id=version_id,
-                    exports_dir=exports_dir,
-                )
-                vacs_stage_ok = bool(vacs_export_summary.get("executed")) and not bool(vacs_ingest.get("parse_errors"))
-                if int(vacs_ingest.get("files_found", 0)) <= 0:
-                    vacs_stage_ok = False
-                vacs_status = "vacs_ok" if vacs_stage_ok else "vacs_failed"
                 _update_version_state(
                     project_root,
                     version_id,
                     {
-                        "status": vacs_status,
-                        "vacs_result": {
-                            "exit_code": 0,
-                            "timed_out": False,
-                            "summary_log": str(vacs_summary_path),
-                        },
-                        "vacs_export_ingest": vacs_ingest,
-                        "vacs_export_pipeline": vacs_export_summary,
+                        "status": "dry_run_completed",
+                        "dry_run": True,
+                        "run_id": effective_run_id,
+                        "finished_at": _now_iso(),
+                        "duration_seconds": elapsed,
                     },
                 )
-                writer.update_version_status(version_id, status=vacs_status)
-            except (VacsExportPipelineError, Exception) as exc:
+                writer.update_version_status(
+                    version_id,
+                    status="dry_run_completed",
+                    run_id=effective_run_id,
+                    duration_seconds=elapsed,
+                    finished_at=_now_iso(),
+                )
+                cleanup_result = guarded_delete_tree(
+                    _version_ath_work_path(project_root, version_id),
+                    allowed_root=versions_root,
+                    expected_dir_name="ath_work",
+                    perform_delete=False,
+                    deny_paths=(project_root, project_root.parent, versions_root),
+                )
+                cleanup_results.append(
+                    {
+                        "version_id": version_id,
+                        "target": cleanup_result.target,
+                        "deleted": cleanup_result.deleted,
+                        "reason": cleanup_result.reason,
+                    }
+                )
+                continue
+
+            ath_stage_ok = ath_runner is None
+            akabak_stage_ok = akabak_runner is None
+            vacs_stage_ok = not vacs_required
+
+            if ath_runner is not None:
+                ath_work_dir = _version_ath_work_path(project_root, version_id)
+                ath_work_dir.mkdir(parents=True, exist_ok=True)
+                ath_result = ath_runner.run_cfg(
+                    cfg_path,
+                    version_logs_dir=_version_logs_dir(project_root, version_id),
+                    workdir=ath_work_dir,
+                )
+                stage_results.append(_stage_from_result(version_id, "ath", ath_result))
+                _update_version_state(
+                    project_root,
+                    version_id,
+                    {
+                        "status": "ath_ok" if ath_result.ok else "ath_failed",
+                        "run_id": effective_run_id,
+                        "ath_result": {
+                            "exit_code": ath_result.exit_code,
+                            "timed_out": ath_result.timed_out,
+                            "stdout_log": ath_result.stdout_log,
+                            "stderr_log": ath_result.stderr_log,
+                            "summary_log": ath_result.summary_log,
+                        },
+                    },
+                )
+                writer.update_version_status(
+                    version_id,
+                    status="ath_ok" if ath_result.ok else "ath_failed",
+                    run_id=effective_run_id,
+                )
+                ath_stage_ok = ath_result.ok
+
+                ath_stdout = Path(ath_result.stdout_log).read_text(encoding="utf-8")
+                dims = parse_ath_dimensions(ath_stdout)
+                if dims.raw_line:
+                    writer.write_ath_dimensions(
+                        [
+                            {
+                                "project_id": project.project_id,
+                                "batch_id": batch.batch_id,
+                                "run_id": effective_run_id,
+                                "version_id": version_id,
+                                "horn_length_mm": dims.horn_length_mm,
+                                "horn_width_mm": dims.horn_width_mm,
+                                "horn_height_mm": dims.horn_height_mm,
+                                "raw_line": dims.raw_line,
+                                "source_file": ath_result.stdout_log,
+                            }
+                        ]
+                    )
+                    ath_dimension_rows += 1
+                if not ath_result.ok and not continue_on_error:
+                    elapsed = time.perf_counter() - version_started
+                    writer.update_version_status(
+                        version_id,
+                        status="failed",
+                        run_id=effective_run_id,
+                        duration_seconds=elapsed,
+                        finished_at=_now_iso(),
+                        error_summary="ath_failed",
+                    )
+                    cleanup_results.append(
+                        {
+                            "version_id": version_id,
+                            "target": str(_version_ath_work_path(project_root, version_id)),
+                            "deleted": False,
+                            "reason": "skipped_due_to_failure",
+                        }
+                    )
+                    run_status = "failed"
+                    continue
+
+            if akabak_runner is not None:
+                akabak_result = akabak_runner.run_project(
+                    _version_abec_path(project_root, version_id),
+                    version_logs_dir=_version_logs_dir(project_root, version_id),
+                )
+                stage_results.append(_stage_from_result(version_id, "akabak", akabak_result))
+                _update_version_state(
+                    project_root,
+                    version_id,
+                    {
+                        "status": "akabak_ok" if akabak_result.ok else "akabak_failed",
+                        "run_id": effective_run_id,
+                        "akabak_result": {
+                            "exit_code": akabak_result.exit_code,
+                            "timed_out": akabak_result.timed_out,
+                            "summary_log": akabak_result.summary_log,
+                        },
+                    },
+                )
+                writer.update_version_status(
+                    version_id,
+                    status="akabak_ok" if akabak_result.ok else "akabak_failed",
+                    run_id=effective_run_id,
+                )
+                akabak_stage_ok = akabak_result.ok
+                if not akabak_result.ok and not continue_on_error:
+                    elapsed = time.perf_counter() - version_started
+                    writer.update_version_status(
+                        version_id,
+                        status="failed",
+                        run_id=effective_run_id,
+                        duration_seconds=elapsed,
+                        finished_at=_now_iso(),
+                        error_summary="akabak_failed",
+                    )
+                    cleanup_results.append(
+                        {
+                            "version_id": version_id,
+                            "target": str(_version_ath_work_path(project_root, version_id)),
+                            "deleted": False,
+                            "reason": "skipped_due_to_failure",
+                        }
+                    )
+                    run_status = "failed"
+                    continue
+
+            if vacs_required and not vacs_executable:
                 vacs_stage_ok = False
-                error_payload = {"error": str(exc), "vacs_version": vacs_version}
-                _write_json(vacs_summary_path, error_payload)
+                summary_path = _version_logs_dir(project_root, version_id) / "vacs.export_pipeline.json"
+                _write_json(
+                    summary_path,
+                    {
+                        "error": "vacs_executable_missing",
+                        "message": "VACS executable is required for configured export_specs.",
+                        "remediation": "Configure vacs_exe in settings or remove export_specs for this batch.",
+                    },
+                )
                 stage_results.append(
                     StageExecution(
                         version_id=version_id,
@@ -461,7 +443,7 @@ def run_batch_pipeline(
                         status="failed",
                         exit_code=1,
                         timed_out=False,
-                        summary_log=str(vacs_summary_path),
+                        summary_log=str(summary_path),
                     )
                 )
                 _update_version_state(
@@ -469,111 +451,247 @@ def run_batch_pipeline(
                     version_id,
                     {
                         "status": "vacs_failed",
+                        "run_id": effective_run_id,
                         "vacs_result": {
                             "exit_code": 1,
                             "timed_out": False,
-                            "summary_log": str(vacs_summary_path),
-                            "error": str(exc),
+                            "summary_log": str(summary_path),
+                            "error": "vacs_executable_missing",
                         },
                     },
                 )
-                writer.update_version_status(version_id, status="vacs_failed")
+                writer.update_version_status(version_id, status="vacs_failed", run_id=effective_run_id)
                 if not continue_on_error:
                     elapsed = time.perf_counter() - version_started
                     writer.update_version_status(
                         version_id,
                         status="failed",
+                        run_id=effective_run_id,
                         duration_seconds=elapsed,
                         finished_at=_now_iso(),
+                        error_summary="vacs_executable_missing",
                     )
+                    cleanup_results.append(
+                        {
+                            "version_id": version_id,
+                            "target": str(_version_ath_work_path(project_root, version_id)),
+                            "deleted": False,
+                            "reason": "skipped_due_to_failure",
+                        }
+                    )
+                    run_status = "failed"
                     continue
 
-        elif vacs_runner:
-            exports_dir = _version_exports_dir(project_root, version_id)
-            exports_dir.mkdir(parents=True, exist_ok=True)
-            vacs_result = vacs_runner.run_export(
-                _version_abec_path(project_root, version_id),
-                version_logs_dir=_version_logs_dir(project_root, version_id),
-                workdir=exports_dir,
-            )
-            stage_results.append(_stage_from_result(version_id, "vacs", vacs_result))
+            elif vacs_executable and export_specs:
+                exports_dir = _version_exports_dir(project_root, version_id, effective_run_id)
+                exports_dir.mkdir(parents=True, exist_ok=True)
+                vacs_summary_path = _version_logs_dir(project_root, version_id) / "vacs.export_pipeline.json"
+                try:
+                    vacs_export_summary = run_vacs_export_specs(
+                        executable=vacs_executable,
+                        vacs_version=vacs_version,
+                        project_id=project.project_id,
+                        batch_id=batch.batch_id,
+                        version_id=version_id,
+                        abec_path=_version_abec_path(project_root, version_id),
+                        export_specs=export_specs,
+                        export_dir=exports_dir,
+                        log_dir=_version_logs_dir(project_root, version_id),
+                    )
+                    _write_json(vacs_summary_path, vacs_export_summary)
+                    stage_results.append(
+                        StageExecution(
+                            version_id=version_id,
+                            stage="vacs",
+                            status="ok",
+                            exit_code=0,
+                            timed_out=False,
+                            summary_log=str(vacs_summary_path),
+                        )
+                    )
+                    vacs_ingest = _ingest_vacs_exports(
+                        writer=writer,
+                        project=project,
+                        batch=batch,
+                        run_id=effective_run_id,
+                        version_id=version_id,
+                        exports_dir=exports_dir,
+                    )
+                    vacs_stage_ok = bool(vacs_export_summary.get("executed")) and not bool(vacs_ingest.get("parse_errors"))
+                    if int(vacs_ingest.get("files_found", 0)) <= 0:
+                        vacs_stage_ok = False
+                    vacs_status = "vacs_ok" if vacs_stage_ok else "vacs_failed"
+                    _update_version_state(
+                        project_root,
+                        version_id,
+                        {
+                            "status": vacs_status,
+                            "run_id": effective_run_id,
+                            "vacs_result": {
+                                "exit_code": 0,
+                                "timed_out": False,
+                                "summary_log": str(vacs_summary_path),
+                            },
+                            "vacs_export_ingest": vacs_ingest,
+                            "vacs_export_pipeline": vacs_export_summary,
+                        },
+                    )
+                    writer.update_version_status(version_id, status=vacs_status, run_id=effective_run_id)
+                except (VacsExportPipelineError, Exception) as exc:
+                    vacs_stage_ok = False
+                    _write_json(vacs_summary_path, {"error": str(exc), "vacs_version": vacs_version})
+                    stage_results.append(
+                        StageExecution(
+                            version_id=version_id,
+                            stage="vacs",
+                            status="failed",
+                            exit_code=1,
+                            timed_out=False,
+                            summary_log=str(vacs_summary_path),
+                        )
+                    )
+                    _update_version_state(
+                        project_root,
+                        version_id,
+                        {
+                            "status": "vacs_failed",
+                            "run_id": effective_run_id,
+                            "vacs_result": {
+                                "exit_code": 1,
+                                "timed_out": False,
+                                "summary_log": str(vacs_summary_path),
+                                "error": str(exc),
+                            },
+                        },
+                    )
+                    writer.update_version_status(
+                        version_id,
+                        status="vacs_failed",
+                        run_id=effective_run_id,
+                        error_summary=str(exc),
+                    )
+                    if not continue_on_error:
+                        elapsed = time.perf_counter() - version_started
+                        writer.update_version_status(
+                            version_id,
+                            status="failed",
+                            run_id=effective_run_id,
+                            duration_seconds=elapsed,
+                            finished_at=_now_iso(),
+                            error_summary="vacs_export_failed",
+                        )
+                        cleanup_results.append(
+                            {
+                                "version_id": version_id,
+                                "target": str(_version_ath_work_path(project_root, version_id)),
+                                "deleted": False,
+                                "reason": "skipped_due_to_failure",
+                            }
+                        )
+                        run_status = "failed"
+                        continue
 
-            vacs_ingest: Dict[str, Any] = {}
-            vacs_stage_ok = vacs_result.ok
-            if vacs_result.ok:
-                vacs_ingest = _ingest_vacs_exports(
-                    writer=writer,
-                    project=project,
-                    batch=batch,
-                    version_id=version_id,
-                    exports_dir=exports_dir,
+            elif vacs_runner is not None:
+                exports_dir = _version_exports_dir(project_root, version_id, effective_run_id)
+                exports_dir.mkdir(parents=True, exist_ok=True)
+                vacs_result = vacs_runner.run_export(
+                    _version_abec_path(project_root, version_id),
+                    version_logs_dir=_version_logs_dir(project_root, version_id),
+                    workdir=exports_dir,
                 )
-                if int(vacs_ingest.get("files_found", 0)) <= 0:
-                    vacs_stage_ok = False
-                if vacs_ingest.get("parse_errors"):
-                    vacs_stage_ok = False
+                stage_results.append(_stage_from_result(version_id, "vacs", vacs_result))
+                vacs_stage_ok = vacs_result.ok
+                vacs_ingest: Dict[str, Any] = {}
+                if vacs_result.ok:
+                    vacs_ingest = _ingest_vacs_exports(
+                        writer=writer,
+                        project=project,
+                        batch=batch,
+                        run_id=effective_run_id,
+                        version_id=version_id,
+                        exports_dir=exports_dir,
+                    )
+                    if int(vacs_ingest.get("files_found", 0)) <= 0 or vacs_ingest.get("parse_errors"):
+                        vacs_stage_ok = False
+                vacs_status = "vacs_ok" if vacs_stage_ok else "vacs_failed"
+                _update_version_state(
+                    project_root,
+                    version_id,
+                    {
+                        "status": vacs_status,
+                        "run_id": effective_run_id,
+                        "vacs_result": {
+                            "exit_code": vacs_result.exit_code,
+                            "timed_out": vacs_result.timed_out,
+                            "summary_log": vacs_result.summary_log,
+                        },
+                        "vacs_export_ingest": vacs_ingest,
+                    },
+                )
+                writer.update_version_status(version_id, status=vacs_status, run_id=effective_run_id)
 
-            vacs_status = "vacs_ok" if vacs_stage_ok else "vacs_failed"
+            elapsed = time.perf_counter() - version_started
+            final_ok = ath_stage_ok and akabak_stage_ok and vacs_stage_ok
+            final_status = "success" if final_ok else "failed"
             _update_version_state(
                 project_root,
                 version_id,
                 {
-                    "status": vacs_status,
-                    "vacs_result": {
-                        "exit_code": vacs_result.exit_code,
-                        "timed_out": vacs_result.timed_out,
-                        "summary_log": vacs_result.summary_log,
-                    },
-                    "vacs_export_ingest": vacs_ingest,
+                    "status": final_status,
+                    "run_id": effective_run_id,
+                    "finished_at": _now_iso(),
+                    "duration_seconds": elapsed,
                 },
             )
-            writer.update_version_status(version_id, status=vacs_status)
+            writer.update_version_status(
+                version_id,
+                status=final_status,
+                run_id=effective_run_id,
+                duration_seconds=elapsed,
+                finished_at=_now_iso(),
+                error_summary=None if final_ok else "version_stage_failed",
+            )
 
-        elapsed = time.perf_counter() - version_started
-        final_ok = ath_stage_ok and akabak_stage_ok and vacs_stage_ok
-        final_status = "success" if final_ok else "failed"
-        _update_version_state(
-            project_root,
-            version_id,
-            {
-                "status": final_status,
-                "finished_at": _now_iso(),
-                "duration_seconds": elapsed,
-            },
-        )
-        writer.update_version_status(
-            version_id,
-            status=final_status,
-            duration_seconds=elapsed,
+            if final_ok:
+                cleanup_result = guarded_delete_tree(
+                    _version_ath_work_path(project_root, version_id),
+                    allowed_root=versions_root,
+                    expected_dir_name="ath_work",
+                    deny_paths=(project_root, project_root.parent, versions_root),
+                )
+                cleanup_results.append(
+                    {
+                        "version_id": version_id,
+                        "target": cleanup_result.target,
+                        "deleted": cleanup_result.deleted,
+                        "reason": cleanup_result.reason,
+                    }
+                )
+            else:
+                cleanup_results.append(
+                    {
+                        "version_id": version_id,
+                        "target": str(_version_ath_work_path(project_root, version_id)),
+                        "deleted": False,
+                        "reason": "skipped_due_to_failure",
+                    }
+                )
+                run_status = "failed"
+    except Exception as exc:
+        run_status = "failed"
+        run_error_summary = str(exc)
+        raise
+    finally:
+        writer.update_run(
+            effective_run_id,
+            status=run_status,
             finished_at=_now_iso(),
+            error_summary=run_error_summary,
         )
-
-        if final_ok and vacs_runner is not None:
-            cleanup_result = guarded_delete_tree(
-                _version_ath_work_path(project_root, version_id),
-                allowed_root=versions_root,
-                expected_dir_name="ath_work",
-                deny_paths=(project_root, project_root.parent, versions_root),
-            )
-            cleanup_results.append(
-                {
-                    "version_id": version_id,
-                    "target": cleanup_result.target,
-                    "deleted": cleanup_result.deleted,
-                    "reason": cleanup_result.reason,
-                }
-            )
-        elif vacs_runner is None:
-            cleanup_results.append(
-                {
-                    "version_id": version_id,
-                    "target": str(_version_ath_work_path(project_root, version_id)),
-                    "deleted": False,
-                    "reason": "skipped_without_vacs_stage",
-                }
-            )
 
     return RuntimeSummary(
+        run_id=effective_run_id,
+        run_status=run_status,
         project_id=project.project_id,
         batch_id=batch.batch_id,
         project_root=str(project_root),

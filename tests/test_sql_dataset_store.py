@@ -48,8 +48,14 @@ class SqlDatasetStoreTests(unittest.TestCase):
                     "SELECT is_set FROM version_params WHERE version_id = ? AND param_name = ?",
                     ("V001", "Coverage.Angle"),
                 ).fetchone()
+                hash_row = conn.execute(
+                    "SELECT version_config_hash FROM versions WHERE version_id = ?",
+                    ("V001",),
+                ).fetchone()
             self.assertIsNotNone(row)
             self.assertEqual(int(row[0]), 0)
+            self.assertIsNotNone(hash_row)
+            self.assertTrue(bool(hash_row[0]))
 
     def test_global_write_failure_is_queued(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

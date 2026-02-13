@@ -5,10 +5,12 @@ from __future__ import annotations
 from dataclasses import asdict
 from datetime import datetime, timezone
 import json
+import hashlib
 from contextlib import closing
 from pathlib import Path
 import sqlite3
 import shutil
+import subprocess
 from typing import Any, Dict, List, Optional
 
 from app.batch_orchestrator import PlanningSummary, materialize_batch_plan
@@ -74,6 +76,37 @@ def _is_executable_path(path: Optional[str]) -> bool:
     return candidate.exists() and candidate.is_file()
 
 
+def _settings_hash(settings: UserSettings) -> str:
+    payload = {
+        "library_root": settings.library_root,
+        "ath_exe": settings.ath_exe,
+        "akabak_exe": settings.akabak_exe,
+        "vacs_exe": settings.vacs_exe,
+        "template_cfg": settings.template_cfg,
+    }
+    canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _detect_git_commit() -> Optional[str]:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=2,
+            check=False,
+        )
+    except Exception:
+        return None
+    if result.returncode != 0:
+        return None
+    value = (result.stdout or "").strip()
+    return value or None
+
+
 class OrchestratorService:
     def __init__(self, settings_store: SettingsStore | None = None) -> None:
         self.settings_store = settings_store or SettingsStore()
@@ -126,6 +159,39 @@ class OrchestratorService:
 
     def list_versions(self, project_id: str, batch_id: Optional[str] = None) -> List[Dict[str, Any]]:
         project_paths = self.repo.project_paths(project_id, ensure=True)
+        dataset = TidyDatasetWriter(project_paths.project_dir, library_root=self.settings.library_root)
+        if batch_id:
+            latest_success = dataset.latest_successful_run_per_version(batch_id)
+            if latest_success:
+                return [
+                    {
+                        "version_id": str(row["version_id"]),
+                        "batch_id": batch_id,
+                        "status": str(row["status"]),
+                        "created_at": row["started_at"],
+                        "finished_at": row["finished_at"],
+                        "run_id": str(row["run_id"]),
+                    }
+                    for row in latest_success
+                ]
+        else:
+            rows: List[Dict[str, Any]] = []
+            for batch in self.repo.list_batches(project_id):
+                latest_success = dataset.latest_successful_run_per_version(batch.batch_id)
+                rows.extend(
+                    {
+                        "version_id": str(item["version_id"]),
+                        "batch_id": batch.batch_id,
+                        "status": str(item["status"]),
+                        "created_at": item["started_at"],
+                        "finished_at": item["finished_at"],
+                        "run_id": str(item["run_id"]),
+                    }
+                    for item in latest_success
+                )
+            if rows:
+                return sorted(rows, key=lambda item: (str(item["batch_id"]), str(item["version_id"])))
+
         project_db = project_paths.dataset_dir / "project.sqlite"
         if not project_db.exists():
             return []
@@ -157,9 +223,42 @@ class OrchestratorService:
                 "status": str(row[2]),
                 "created_at": row[3],
                 "finished_at": row[4],
+                "run_id": None,
             }
             for row in rows
         ]
+
+    def list_runs(
+        self,
+        *,
+        project_id: str,
+        batch_id: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        project_paths = self.repo.project_paths(project_id, ensure=True)
+        dataset = TidyDatasetWriter(project_paths.project_dir, library_root=self.settings.library_root)
+        return dataset.list_runs(batch_id=batch_id, status=status)
+
+    def pin_run(self, *, project_id: str, run_id: str, tag: Optional[str] = None) -> Dict[str, Any]:
+        project_paths = self.repo.project_paths(project_id, ensure=True)
+        dataset = TidyDatasetWriter(project_paths.project_dir, library_root=self.settings.library_root)
+        return dataset.set_run_pin(run_id, pinned=True, tag=tag)
+
+    def unpin_run(self, *, project_id: str, run_id: str) -> Dict[str, Any]:
+        project_paths = self.repo.project_paths(project_id, ensure=True)
+        dataset = TidyDatasetWriter(project_paths.project_dir, library_root=self.settings.library_root)
+        return dataset.set_run_pin(run_id, pinned=False, tag=None)
+
+    def cleanup_test_data(
+        self,
+        *,
+        project_id: str,
+        delete_exports: bool,
+        dry_run: bool,
+    ) -> Dict[str, Any]:
+        project_paths = self.repo.project_paths(project_id, ensure=True)
+        dataset = TidyDatasetWriter(project_paths.project_dir, library_root=self.settings.library_root)
+        return dataset.cleanup_unpinned_runs(delete_exports=delete_exports, dry_run=dry_run)
 
     def sync_global_db(self, max_items_per_project: int = 100) -> Dict[str, Any]:
         results: List[Dict[str, Any]] = []
@@ -282,6 +381,9 @@ class OrchestratorService:
             vacs_executable=self.settings.vacs_exe if not dry_run else None,
             continue_on_error=continue_on_error,
             dry_run=bool(dry_run),
+            git_commit=_detect_git_commit(),
+            app_version="0.1-rebuild",
+            settings_hash=_settings_hash(self.settings),
         )
 
     def export_version(

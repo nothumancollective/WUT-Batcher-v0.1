@@ -50,14 +50,18 @@ class RuntimeOrchestratorTests(unittest.TestCase):
             self.assertEqual(summary.stage_results[0].stage, "ath")
             self.assertEqual(summary.stage_results[0].status, "ok")
             self.assertEqual(len(summary.cleanup_results), 1)
-            self.assertEqual(summary.cleanup_results[0]["reason"], "skipped_without_vacs_stage")
+            self.assertEqual(summary.cleanup_results[0]["reason"], "deleted")
 
             project_root = Path(summary.project_root)
             project_db = project_root / "dataset" / "project.sqlite"
             self.assertTrue(project_db.exists())
             with closing(sqlite3.connect(str(project_db))) as conn:
                 dims_count = conn.execute("SELECT COUNT(*) FROM ath_dimensions").fetchone()[0]
+                run_count = conn.execute("SELECT COUNT(*) FROM runs").fetchone()[0]
+                run_status = conn.execute("SELECT status FROM runs ORDER BY started_at DESC LIMIT 1").fetchone()[0]
             self.assertEqual(dims_count, 1)
+            self.assertEqual(int(run_count), 1)
+            self.assertEqual(str(run_status), "succeeded")
 
     def test_pipeline_ingests_vacs_txt_into_sql(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -109,9 +113,11 @@ class RuntimeOrchestratorTests(unittest.TestCase):
                 graph_count = conn.execute("SELECT COUNT(*) FROM graphs").fetchone()[0]
                 series_count = conn.execute("SELECT COUNT(*) FROM graph_series").fetchone()[0]
                 point_count = conn.execute("SELECT COUNT(*) FROM graph_points").fetchone()[0]
+                run_graph_count = conn.execute("SELECT COUNT(*) FROM graphs WHERE run_id IS NOT NULL").fetchone()[0]
             self.assertEqual(graph_count, 1)
             self.assertEqual(series_count, 1)
             self.assertEqual(point_count, 2)
+            self.assertEqual(run_graph_count, 1)
 
     def test_pipeline_dry_run_keeps_ath_work_and_marks_status(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

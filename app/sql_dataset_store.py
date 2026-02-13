@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 from app.models import Batch, Project, VersionSpec
 
 
-SCHEMA_VERSION = "2.2"
+SCHEMA_VERSION = "2.3"
 
 
 def _now_iso() -> str:
@@ -44,13 +44,37 @@ def _stable_graph_id(
     project_id: str,
     batch_id: str,
     version_id: str,
+    run_id: Optional[str],
     graph_type: str,
+    variant: str,
     x_name: str,
     y_name: str,
     source_file: str,
 ) -> str:
-    raw = "|".join([project_id, batch_id, version_id, graph_type, x_name, y_name, source_file])
+    raw = "|".join([project_id, batch_id, version_id, run_id or "", graph_type, variant, x_name, y_name, source_file])
     return "G" + hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
+
+
+def _canonical_effective_params(
+    parameters: Dict[str, Any],
+    unset_parameters: Sequence[str],
+) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {}
+    keys = sorted(set(parameters.keys()).union(set(unset_parameters)))
+    for key in keys:
+        if key in parameters:
+            payload[str(key)] = {"is_set": 1, "value": parameters[key]}
+        else:
+            payload[str(key)] = {"is_set": 0, "value": None}
+    return payload
+
+
+def _version_config_hash(
+    parameters: Dict[str, Any],
+    unset_parameters: Sequence[str],
+) -> str:
+    canonical = _to_json(_canonical_effective_params(parameters, unset_parameters))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def _stable_series_id(
@@ -138,6 +162,7 @@ class SqlDatasetStore:
                     batch_id TEXT NOT NULL,
                     batch_name TEXT,
                     resolved_parameters_snapshot TEXT,
+                    version_config_hash TEXT,
                     status TEXT NOT NULL,
                     duration_seconds REAL,
                     ath_length_mm REAL,
@@ -163,7 +188,8 @@ class SqlDatasetStore:
                 );
 
                 CREATE TABLE IF NOT EXISTS ath_dimensions (
-                    version_id TEXT PRIMARY KEY,
+                    run_id TEXT NOT NULL,
+                    version_id TEXT NOT NULL,
                     project_id TEXT NOT NULL,
                     batch_id TEXT NOT NULL,
                     length_mm REAL,
@@ -172,6 +198,38 @@ class SqlDatasetStore:
                     raw_line TEXT,
                     source_file TEXT,
                     created_at TEXT NOT NULL,
+                    PRIMARY KEY (run_id, version_id),
+                    FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE,
+                    FOREIGN KEY (version_id) REFERENCES versions(version_id) ON DELETE CASCADE
+                );
+
+                CREATE TABLE IF NOT EXISTS runs (
+                    run_id TEXT PRIMARY KEY,
+                    project_id TEXT NOT NULL,
+                    batch_id TEXT NOT NULL,
+                    started_at TEXT NOT NULL,
+                    finished_at TEXT,
+                    status TEXT NOT NULL,
+                    git_commit TEXT,
+                    app_version TEXT,
+                    settings_hash TEXT,
+                    error_summary TEXT,
+                    pinned INTEGER NOT NULL DEFAULT 0 CHECK (pinned IN (0, 1)),
+                    tag TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS run_versions (
+                    run_id TEXT NOT NULL,
+                    version_id TEXT NOT NULL,
+                    project_id TEXT NOT NULL,
+                    batch_id TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    duration_seconds REAL,
+                    created_at TEXT NOT NULL,
+                    finished_at TEXT,
+                    error_summary TEXT,
+                    PRIMARY KEY (run_id, version_id),
+                    FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE,
                     FOREIGN KEY (version_id) REFERENCES versions(version_id) ON DELETE CASCADE
                 );
 
@@ -180,8 +238,10 @@ class SqlDatasetStore:
                     project_id TEXT NOT NULL,
                     batch_id TEXT NOT NULL,
                     version_id TEXT NOT NULL,
+                    run_id TEXT,
                     graph_type TEXT,
                     graph_kind TEXT,
+                    variant TEXT,
                     x_name TEXT,
                     y_name TEXT,
                     x_axis TEXT,
@@ -192,7 +252,8 @@ class SqlDatasetStore:
                     export_meta TEXT,
                     meta_json TEXT,
                     created_at TEXT NOT NULL,
-                    FOREIGN KEY (version_id) REFERENCES versions(version_id) ON DELETE CASCADE
+                    FOREIGN KEY (version_id) REFERENCES versions(version_id) ON DELETE CASCADE,
+                    FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE
                 );
 
                 CREATE TABLE IF NOT EXISTS graph_series (
@@ -243,6 +304,8 @@ class SqlDatasetStore:
                 CREATE INDEX IF NOT EXISTS idx_versions_project_batch ON versions(project_id, batch_id);
                 CREATE INDEX IF NOT EXISTS idx_version_params_project_batch ON version_params(project_id, batch_id);
                 CREATE INDEX IF NOT EXISTS idx_graphs_version ON graphs(version_id);
+                CREATE INDEX IF NOT EXISTS idx_runs_project_batch ON runs(project_id, batch_id, started_at);
+                CREATE INDEX IF NOT EXISTS idx_run_versions_batch_status ON run_versions(project_id, batch_id, status);
                 CREATE INDEX IF NOT EXISTS idx_replication_queue_status ON replication_queue(status, queue_id);
                 CREATE INDEX IF NOT EXISTS idx_compat_results_project_fact ON compat_verification_results(project_id, fact_id);
                 """
@@ -257,7 +320,9 @@ class SqlDatasetStore:
         columns = set(self._table_columns(conn, "graphs"))
         missing = []
         for name, sql_type in (
+            ("run_id", "TEXT"),
             ("graph_kind", "TEXT"),
+            ("variant", "TEXT"),
             ("x_axis", "TEXT"),
             ("y_axis", "TEXT"),
             ("meta_json", "TEXT"),
@@ -266,6 +331,107 @@ class SqlDatasetStore:
                 missing.append((name, sql_type))
         for name, sql_type in missing:
             conn.execute(f"ALTER TABLE graphs ADD COLUMN {name} {sql_type}")
+
+    def _ensure_versions_columns(self, conn: sqlite3.Connection) -> None:
+        columns = set(self._table_columns(conn, "versions"))
+        if "version_config_hash" not in columns:
+            conn.execute("ALTER TABLE versions ADD COLUMN version_config_hash TEXT")
+
+    def _migrate_ath_dimensions_schema(self, conn: sqlite3.Connection) -> None:
+        columns = self._table_columns(conn, "ath_dimensions")
+        if not columns:
+            return
+        column_names = [str(name) for name in columns]
+        pk_columns = [str(row["name"]) for row in conn.execute("PRAGMA table_info(ath_dimensions)").fetchall() if int(row["pk"]) > 0]
+        if pk_columns == ["run_id", "version_id"]:
+            return
+
+        select_cols = [name for name in ("run_id", "version_id", "project_id", "batch_id", "length_mm", "width_mm", "height_mm", "raw_line", "source_file", "created_at") if name in column_names]
+        select_sql = ", ".join(select_cols)
+        old_rows = conn.execute(f"SELECT {select_sql} FROM ath_dimensions").fetchall()
+
+        conn.execute("PRAGMA foreign_keys = OFF")
+        conn.execute(
+            """
+            CREATE TABLE ath_dimensions_new (
+                run_id TEXT NOT NULL,
+                version_id TEXT NOT NULL,
+                project_id TEXT NOT NULL,
+                batch_id TEXT NOT NULL,
+                length_mm REAL,
+                width_mm REAL,
+                height_mm REAL,
+                raw_line TEXT,
+                source_file TEXT,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (run_id, version_id),
+                FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE,
+                FOREIGN KEY (version_id) REFERENCES versions(version_id) ON DELETE CASCADE
+            )
+            """
+        )
+        for row in old_rows:
+            run_id = str(row["run_id"]) if "run_id" in row.keys() and row["run_id"] else "legacy"
+            conn.execute(
+                """
+                INSERT INTO ath_dimensions_new (
+                    run_id, version_id, project_id, batch_id, length_mm, width_mm, height_mm, raw_line, source_file, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    str(row["version_id"]),
+                    str(row["project_id"]),
+                    str(row["batch_id"]),
+                    float(row["length_mm"]) if row["length_mm"] is not None else None,
+                    float(row["width_mm"]) if row["width_mm"] is not None else None,
+                    float(row["height_mm"]) if row["height_mm"] is not None else None,
+                    str(row["raw_line"]) if row["raw_line"] is not None else "",
+                    str(row["source_file"]) if row["source_file"] is not None else "",
+                    str(row["created_at"]) if row["created_at"] is not None else _now_iso(),
+                ),
+            )
+        conn.execute("DROP TABLE ath_dimensions")
+        conn.execute("ALTER TABLE ath_dimensions_new RENAME TO ath_dimensions")
+        conn.execute("PRAGMA foreign_keys = ON")
+
+    def _ensure_runs_tables(self, conn: sqlite3.Connection) -> None:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS runs (
+                run_id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                batch_id TEXT NOT NULL,
+                started_at TEXT NOT NULL,
+                finished_at TEXT,
+                status TEXT NOT NULL,
+                git_commit TEXT,
+                app_version TEXT,
+                settings_hash TEXT,
+                error_summary TEXT,
+                pinned INTEGER NOT NULL DEFAULT 0 CHECK (pinned IN (0, 1)),
+                tag TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS run_versions (
+                run_id TEXT NOT NULL,
+                version_id TEXT NOT NULL,
+                project_id TEXT NOT NULL,
+                batch_id TEXT NOT NULL,
+                status TEXT NOT NULL,
+                duration_seconds REAL,
+                created_at TEXT NOT NULL,
+                finished_at TEXT,
+                error_summary TEXT,
+                PRIMARY KEY (run_id, version_id),
+                FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE,
+                FOREIGN KEY (version_id) REFERENCES versions(version_id) ON DELETE CASCADE
+            )
+            """
+        )
 
     def _migrate_graph_points_schema(self, conn: sqlite3.Connection) -> None:
         columns = set(self._table_columns(conn, "graph_points"))
@@ -365,13 +531,30 @@ class SqlDatasetStore:
         conn.execute("PRAGMA foreign_keys = ON")
 
     def _migrate_schema(self, conn: sqlite3.Connection) -> None:
+        self._ensure_runs_tables(conn)
+        self._ensure_versions_columns(conn)
+        self._migrate_ath_dimensions_schema(conn)
         self._ensure_graphs_columns(conn)
         self._migrate_graph_points_schema(conn)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_runs_project_batch ON runs(project_id, batch_id, started_at)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_run_versions_batch_status ON run_versions(project_id, batch_id, status)"
+        )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_graphs_version_kind ON graphs(version_id, graph_kind)"
         )
         conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_graphs_run_version_kind_variant ON "
+            "graphs(run_id, version_id, graph_kind, variant) WHERE run_id IS NOT NULL"
+        )
+        conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_graph_series_graph_angle ON graph_series(graph_id, angle_deg)"
+        )
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_graph_series_graph_angle_label ON "
+            "graph_series(graph_id, angle_deg, label)"
         )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_graph_points_series_x ON graph_points(series_id, x_value)"
@@ -389,6 +572,8 @@ class SqlDatasetStore:
                 "versions",
                 "version_params",
                 "ath_dimensions",
+                "runs",
+                "run_versions",
                 "graphs",
                 "graph_series",
                 "graph_points",
@@ -422,6 +607,16 @@ class SqlDatasetStore:
             self._op_upsert_ath_dimensions(conn, payload)
         elif operation == "upsert_graphs":
             self._op_upsert_graphs(conn, payload)
+        elif operation == "upsert_run":
+            self._op_upsert_run(conn, payload)
+        elif operation == "update_run":
+            self._op_update_run(conn, payload)
+        elif operation == "set_run_pin":
+            self._op_set_run_pin(conn, payload)
+        elif operation == "upsert_run_versions":
+            self._op_upsert_run_versions(conn, payload)
+        elif operation == "delete_runs":
+            self._op_delete_runs(conn, payload)
         elif operation == "insert_compat_verification":
             self._op_insert_compat_verification(conn, payload)
         elif operation == "update_version_status":
@@ -508,14 +703,15 @@ class SqlDatasetStore:
                 """
                 INSERT INTO versions (
                     version_id, project_id, project_name, batch_id, batch_name,
-                    resolved_parameters_snapshot, status, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    resolved_parameters_snapshot, version_config_hash, status, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(version_id) DO UPDATE SET
                     project_id=excluded.project_id,
                     project_name=excluded.project_name,
                     batch_id=excluded.batch_id,
                     batch_name=excluded.batch_name,
                     resolved_parameters_snapshot=excluded.resolved_parameters_snapshot,
+                    version_config_hash=excluded.version_config_hash,
                     status=excluded.status,
                     created_at=excluded.created_at
                 """,
@@ -526,6 +722,7 @@ class SqlDatasetStore:
                     batch_id,
                     batch_name,
                     version.get("resolved_parameters_snapshot"),
+                    version.get("version_config_hash"),
                     str(version.get("status", "planned")),
                     created_at,
                 ),
@@ -568,15 +765,26 @@ class SqlDatasetStore:
     def _op_upsert_ath_dimensions(self, conn: sqlite3.Connection, payload: Dict[str, Any]) -> None:
         for row in payload.get("rows", []):
             version_id = str(row["version_id"])
+            run_id_value = str(row.get("run_id") or "legacy").strip() or "legacy"
+            project_id = str(row["project_id"])
+            batch_id = str(row["batch_id"])
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO runs (
+                    run_id, project_id, batch_id, started_at, status, pinned
+                ) VALUES (?, ?, ?, ?, 'succeeded', 0)
+                """,
+                (run_id_value, project_id, batch_id, str(row.get("created_at") or _now_iso())),
+            )
             length_mm = row.get("length_mm")
             width_mm = row.get("width_mm")
             height_mm = row.get("height_mm")
             conn.execute(
                 """
                 INSERT INTO ath_dimensions (
-                    version_id, project_id, batch_id, length_mm, width_mm, height_mm, raw_line, source_file, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(version_id) DO UPDATE SET
+                    run_id, version_id, project_id, batch_id, length_mm, width_mm, height_mm, raw_line, source_file, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(run_id, version_id) DO UPDATE SET
                     length_mm=excluded.length_mm,
                     width_mm=excluded.width_mm,
                     height_mm=excluded.height_mm,
@@ -585,9 +793,10 @@ class SqlDatasetStore:
                     created_at=excluded.created_at
                 """,
                 (
+                    run_id_value,
                     version_id,
-                    str(row["project_id"]),
-                    str(row["batch_id"]),
+                    project_id,
+                    batch_id,
                     float(length_mm) if length_mm is not None else None,
                     float(width_mm) if width_mm is not None else None,
                     float(height_mm) if height_mm is not None else None,
@@ -613,18 +822,36 @@ class SqlDatasetStore:
     def _op_upsert_graphs(self, conn: sqlite3.Connection, payload: Dict[str, Any]) -> None:
         for graph in payload.get("graphs", []):
             graph_id = str(graph["graph_id"])
+            raw_run_id = graph.get("run_id")
+            run_id_value = str(raw_run_id).strip() if raw_run_id is not None else ""
+            if run_id_value:
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO runs (
+                        run_id, project_id, batch_id, started_at, status, pinned
+                    ) VALUES (?, ?, ?, ?, 'succeeded', 0)
+                    """,
+                    (
+                        run_id_value,
+                        str(graph["project_id"]),
+                        str(graph["batch_id"]),
+                        str(graph.get("created_at") or _now_iso()),
+                    ),
+                )
             conn.execute(
                 """
                 INSERT INTO graphs (
-                    graph_id, project_id, batch_id, version_id, graph_type, graph_kind,
+                    graph_id, project_id, batch_id, version_id, run_id, graph_type, graph_kind, variant,
                     x_name, y_name, x_axis, y_axis, x_unit, y_unit, source_file, export_meta, meta_json, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(graph_id) DO UPDATE SET
                     project_id=excluded.project_id,
                     batch_id=excluded.batch_id,
                     version_id=excluded.version_id,
+                    run_id=excluded.run_id,
                     graph_type=excluded.graph_type,
                     graph_kind=excluded.graph_kind,
+                    variant=excluded.variant,
                     x_name=excluded.x_name,
                     y_name=excluded.y_name,
                     x_axis=excluded.x_axis,
@@ -641,8 +868,10 @@ class SqlDatasetStore:
                     str(graph["project_id"]),
                     str(graph["batch_id"]),
                     str(graph["version_id"]),
+                    run_id_value or None,
                     str(graph.get("graph_type", "")),
                     str(graph.get("graph_kind", graph.get("graph_type", ""))),
+                    str(graph.get("variant", "default")),
                     str(graph.get("x_name", "")),
                     str(graph.get("y_name", "")),
                     str(graph.get("x_axis", graph.get("x_name", ""))),
@@ -724,6 +953,101 @@ class SqlDatasetStore:
                         ),
                     )
 
+    def _op_upsert_run(self, conn: sqlite3.Connection, payload: Dict[str, Any]) -> None:
+        conn.execute(
+            """
+            INSERT INTO runs (
+                run_id, project_id, batch_id, started_at, finished_at, status,
+                git_commit, app_version, settings_hash, error_summary, pinned, tag
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(run_id) DO UPDATE SET
+                project_id=excluded.project_id,
+                batch_id=excluded.batch_id,
+                started_at=excluded.started_at,
+                finished_at=excluded.finished_at,
+                status=excluded.status,
+                git_commit=excluded.git_commit,
+                app_version=excluded.app_version,
+                settings_hash=excluded.settings_hash,
+                error_summary=excluded.error_summary,
+                pinned=excluded.pinned,
+                tag=excluded.tag
+            """,
+            (
+                str(payload["run_id"]),
+                str(payload["project_id"]),
+                str(payload["batch_id"]),
+                str(payload.get("started_at") or _now_iso()),
+                payload.get("finished_at"),
+                str(payload.get("status", "planned")),
+                payload.get("git_commit"),
+                payload.get("app_version"),
+                payload.get("settings_hash"),
+                payload.get("error_summary"),
+                int(payload.get("pinned", 0)),
+                payload.get("tag"),
+            ),
+        )
+
+    def _op_update_run(self, conn: sqlite3.Connection, payload: Dict[str, Any]) -> None:
+        fields: List[str] = []
+        values: List[Any] = []
+        for key in ("status", "finished_at", "error_summary", "git_commit", "app_version", "settings_hash"):
+            if key in payload:
+                fields.append(f"{key} = ?")
+                values.append(payload[key])
+        if not fields:
+            return
+        values.append(str(payload["run_id"]))
+        conn.execute(f"UPDATE runs SET {', '.join(fields)} WHERE run_id = ?", tuple(values))
+
+    def _op_set_run_pin(self, conn: sqlite3.Connection, payload: Dict[str, Any]) -> None:
+        conn.execute(
+            "UPDATE runs SET pinned = ?, tag = ? WHERE run_id = ?",
+            (
+                int(payload.get("pinned", 0)),
+                payload.get("tag"),
+                str(payload["run_id"]),
+            ),
+        )
+
+    def _op_upsert_run_versions(self, conn: sqlite3.Connection, payload: Dict[str, Any]) -> None:
+        for row in payload.get("rows", []):
+            conn.execute(
+                """
+                INSERT INTO run_versions (
+                    run_id, version_id, project_id, batch_id, status, duration_seconds,
+                    created_at, finished_at, error_summary
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(run_id, version_id) DO UPDATE SET
+                    status=excluded.status,
+                    duration_seconds=excluded.duration_seconds,
+                    finished_at=excluded.finished_at,
+                    error_summary=excluded.error_summary
+                """,
+                (
+                    str(row["run_id"]),
+                    str(row["version_id"]),
+                    str(row["project_id"]),
+                    str(row["batch_id"]),
+                    str(row.get("status", "planned")),
+                    row.get("duration_seconds"),
+                    str(row.get("created_at") or _now_iso()),
+                    row.get("finished_at"),
+                    row.get("error_summary"),
+                ),
+            )
+
+    def _op_delete_runs(self, conn: sqlite3.Connection, payload: Dict[str, Any]) -> None:
+        run_ids = [str(item) for item in list(payload.get("run_ids", []))]
+        if not run_ids:
+            return
+        placeholders = ", ".join("?" for _ in run_ids)
+        conn.execute(f"DELETE FROM ath_dimensions WHERE run_id IN ({placeholders})", tuple(run_ids))
+        conn.execute(f"DELETE FROM graphs WHERE run_id IN ({placeholders})", tuple(run_ids))
+        conn.execute(f"DELETE FROM run_versions WHERE run_id IN ({placeholders})", tuple(run_ids))
+        conn.execute(f"DELETE FROM runs WHERE run_id IN ({placeholders})", tuple(run_ids))
+
     def _op_update_version_status(self, conn: sqlite3.Connection, payload: Dict[str, Any]) -> None:
         fields = ["status = ?"]
         values: List[Any] = [str(payload["status"])]
@@ -738,6 +1062,32 @@ class SqlDatasetStore:
             values.append(payload["tool_versions"])
         values.append(str(payload["version_id"]))
         conn.execute(f"UPDATE versions SET {', '.join(fields)} WHERE version_id = ?", tuple(values))
+        run_id = payload.get("run_id")
+        if run_id:
+            conn.execute(
+                """
+                INSERT INTO run_versions (
+                    run_id, version_id, project_id, batch_id, status, duration_seconds, created_at, finished_at, error_summary
+                )
+                SELECT ?, v.version_id, v.project_id, v.batch_id, ?, ?, ?, ?, ?
+                FROM versions v
+                WHERE v.version_id = ?
+                ON CONFLICT(run_id, version_id) DO UPDATE SET
+                    status=excluded.status,
+                    duration_seconds=excluded.duration_seconds,
+                    finished_at=excluded.finished_at,
+                    error_summary=excluded.error_summary
+                """,
+                (
+                    str(run_id),
+                    str(payload["status"]),
+                    payload.get("duration_seconds"),
+                    str(payload.get("created_at") or _now_iso()),
+                    payload.get("finished_at"),
+                    payload.get("error_summary"),
+                    str(payload["version_id"]),
+                ),
+            )
 
     def _op_insert_compat_verification(self, conn: sqlite3.Connection, payload: Dict[str, Any]) -> None:
         for row in payload.get("rows", []):
@@ -855,6 +1205,7 @@ class SqlDatasetStore:
                     "status": version.status,
                     "created_at": version.created_at or _now_iso(),
                     "resolved_parameters_snapshot": _to_json(version.to_dict()),
+                    "version_config_hash": _version_config_hash(version.parameters, version.unset_parameters),
                     "params": params,
                 }
             )
@@ -914,6 +1265,7 @@ class SqlDatasetStore:
                     "status": version.status,
                     "created_at": version.created_at or now,
                     "resolved_parameters_snapshot": _to_json(version.to_dict()),
+                    "version_config_hash": _version_config_hash(version.parameters, version.unset_parameters),
                     "params": params,
                 }
             )
@@ -939,15 +1291,21 @@ class SqlDatasetStore:
         version_id: str,
         *,
         status: str,
+        run_id: Optional[str] = None,
         finished_at: Optional[str] = None,
         duration_seconds: Optional[float] = None,
+        error_summary: Optional[str] = None,
         tool_versions: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         payload: Dict[str, Any] = {"version_id": version_id, "status": status}
+        if run_id is not None:
+            payload["run_id"] = run_id
         if finished_at is not None:
             payload["finished_at"] = finished_at
         if duration_seconds is not None:
             payload["duration_seconds"] = duration_seconds
+        if error_summary is not None:
+            payload["error_summary"] = error_summary
         if tool_versions is not None:
             payload["tool_versions"] = _to_json(tool_versions)
         return self._dual_write("update_version_status", payload)
@@ -960,6 +1318,7 @@ class SqlDatasetStore:
                     "project_id": str(row["project_id"]),
                     "batch_id": str(row["batch_id"]),
                     "version_id": str(row["version_id"]),
+                    "run_id": row.get("run_id"),
                     "length_mm": row.get("horn_length_mm"),
                     "width_mm": row.get("horn_width_mm"),
                     "height_mm": row.get("horn_height_mm"),
@@ -979,13 +1338,15 @@ class SqlDatasetStore:
             project_id = str(row["project_id"])
             batch_id = str(row["batch_id"])
             version_id = str(row["version_id"])
+            run_id = str(row.get("run_id", "")).strip() or None
             graph_type = str(row.get("graph_type", row.get("graph_kind", "")))
+            variant = str(row.get("variant", "default"))
             x_name = str(row.get("x_name", "x"))
             y_name = str(row.get("y_name", "y"))
             source_file = str(row.get("source_file", ""))
             graph_id = str(
                 row.get("graph_id")
-                or _stable_graph_id(project_id, batch_id, version_id, graph_type, x_name, y_name, source_file)
+                or _stable_graph_id(project_id, batch_id, version_id, run_id, graph_type, variant, x_name, y_name, source_file)
             )
             if graph_id not in graphs:
                 graphs[graph_id] = {
@@ -993,8 +1354,10 @@ class SqlDatasetStore:
                     "project_id": project_id,
                     "batch_id": batch_id,
                     "version_id": version_id,
+                    "run_id": run_id,
                     "graph_type": graph_type,
                     "graph_kind": str(row.get("graph_kind", graph_type)),
+                    "variant": variant,
                     "x_name": x_name,
                     "y_name": y_name,
                     "x_axis": str(row.get("x_axis", x_name)),
@@ -1086,6 +1449,301 @@ class SqlDatasetStore:
             )
         result = self._dual_write("insert_compat_verification", {"rows": payload_rows})
         return {**result, "rows_written": len(payload_rows)}
+
+    def create_run(
+        self,
+        *,
+        run_id: str,
+        project_id: str,
+        batch_id: str,
+        started_at: Optional[str] = None,
+        status: str = "running",
+        git_commit: Optional[str] = None,
+        app_version: Optional[str] = None,
+        settings_hash: Optional[str] = None,
+        error_summary: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        payload = {
+            "run_id": run_id,
+            "project_id": project_id,
+            "batch_id": batch_id,
+            "started_at": started_at or _now_iso(),
+            "status": status,
+            "git_commit": git_commit,
+            "app_version": app_version,
+            "settings_hash": settings_hash,
+            "error_summary": error_summary,
+            "pinned": 0,
+            "tag": None,
+        }
+        return self._dual_write("upsert_run", payload)
+
+    def update_run(
+        self,
+        run_id: str,
+        *,
+        status: Optional[str] = None,
+        finished_at: Optional[str] = None,
+        error_summary: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {"run_id": run_id}
+        if status is not None:
+            payload["status"] = status
+        if finished_at is not None:
+            payload["finished_at"] = finished_at
+        if error_summary is not None:
+            payload["error_summary"] = error_summary
+        return self._dual_write("update_run", payload)
+
+    def write_run_versions(self, rows: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+        payload_rows: List[Dict[str, Any]] = []
+        for row in rows:
+            payload_rows.append(
+                {
+                    "run_id": str(row["run_id"]),
+                    "version_id": str(row["version_id"]),
+                    "project_id": str(row["project_id"]),
+                    "batch_id": str(row["batch_id"]),
+                    "status": str(row.get("status", "planned")),
+                    "duration_seconds": row.get("duration_seconds"),
+                    "created_at": str(row.get("created_at") or _now_iso()),
+                    "finished_at": row.get("finished_at"),
+                    "error_summary": row.get("error_summary"),
+                }
+            )
+        result = self._dual_write("upsert_run_versions", {"rows": payload_rows})
+        return {**result, "rows_written": len(payload_rows)}
+
+    def set_run_pin(self, run_id: str, *, pinned: bool, tag: Optional[str] = None) -> Dict[str, Any]:
+        return self._dual_write(
+            "set_run_pin",
+            {
+                "run_id": run_id,
+                "pinned": 1 if pinned else 0,
+                "tag": tag,
+            },
+        )
+
+    def list_runs(
+        self,
+        *,
+        batch_id: Optional[str] = None,
+        status: Optional[str] = None,
+        pinned: Optional[bool] = None,
+    ) -> List[Dict[str, Any]]:
+        where = ["project_id = ?"]
+        values: List[Any] = [self.project_root.name]
+        if batch_id:
+            where.append("batch_id = ?")
+            values.append(batch_id)
+        if status:
+            where.append("status = ?")
+            values.append(status)
+        if pinned is not None:
+            where.append("pinned = ?")
+            values.append(1 if pinned else 0)
+        query = (
+            "SELECT run_id, project_id, batch_id, started_at, finished_at, status, "
+            "git_commit, app_version, settings_hash, error_summary, pinned, tag "
+            f"FROM runs WHERE {' AND '.join(where)} ORDER BY started_at DESC"
+        )
+        with self._open_conn(self.project_db_path) as conn:
+            rows = conn.execute(query, tuple(values)).fetchall()
+        return [
+            {
+                "run_id": str(row["run_id"]),
+                "project_id": str(row["project_id"]),
+                "batch_id": str(row["batch_id"]),
+                "started_at": row["started_at"],
+                "finished_at": row["finished_at"],
+                "status": str(row["status"]),
+                "git_commit": row["git_commit"],
+                "app_version": row["app_version"],
+                "settings_hash": row["settings_hash"],
+                "error_summary": row["error_summary"],
+                "pinned": bool(row["pinned"]),
+                "tag": row["tag"],
+            }
+            for row in rows
+        ]
+
+    def latest_successful_run_per_version(self, batch_id: str) -> List[Dict[str, Any]]:
+        with self._open_conn(self.project_db_path) as conn:
+            rows = conn.execute(
+                """
+                WITH ranked AS (
+                    SELECT
+                        rv.version_id,
+                        rv.run_id,
+                        rv.status AS version_status,
+                        r.started_at,
+                        r.finished_at,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY rv.version_id
+                            ORDER BY r.started_at DESC, r.run_id DESC
+                        ) AS rn
+                    FROM run_versions rv
+                    JOIN runs r ON r.run_id = rv.run_id
+                    WHERE rv.project_id = ? AND rv.batch_id = ?
+                      AND r.status = 'succeeded'
+                      AND rv.status IN ('success', 'dry_run_completed')
+                )
+                SELECT version_id, run_id, version_status, started_at, finished_at
+                FROM ranked
+                WHERE rn = 1
+                ORDER BY version_id
+                """,
+                (self.project_root.name, batch_id),
+            ).fetchall()
+        return [
+            {
+                "version_id": str(row["version_id"]),
+                "run_id": str(row["run_id"]),
+                "status": str(row["version_status"]),
+                "started_at": row["started_at"],
+                "finished_at": row["finished_at"],
+            }
+            for row in rows
+        ]
+
+    def _resolve_project_local_path(self, raw: str) -> Path:
+        candidate = Path(raw)
+        if not candidate.is_absolute():
+            candidate = self.project_root / candidate
+        return candidate.resolve()
+
+    def _is_within_project_root(self, path: Path) -> bool:
+        root = self.project_root.resolve()
+        return path == root or root in path.parents
+
+    def cleanup_unpinned_runs(
+        self,
+        *,
+        delete_exports: bool,
+        dry_run: bool,
+    ) -> Dict[str, Any]:
+        with self._open_conn(self.project_db_path) as conn:
+            runs = conn.execute(
+                """
+                SELECT run_id
+                FROM runs
+                WHERE project_id = ? AND pinned = 0
+                ORDER BY started_at
+                """,
+                (self.project_root.name,),
+            ).fetchall()
+        run_ids = [str(row["run_id"]) for row in runs]
+        if not run_ids:
+            return {
+                "project_id": self.project_root.name,
+                "dry_run": dry_run,
+                "deleted": False,
+                "run_ids": [],
+                "counts": {
+                    "runs": 0,
+                    "run_versions": 0,
+                    "ath_dimensions": 0,
+                    "graphs": 0,
+                    "graph_series": 0,
+                    "graph_points": 0,
+                    "files": 0,
+                },
+                "deleted_files": [],
+                "audit_log": None,
+            }
+
+        placeholders = ", ".join("?" for _ in run_ids)
+        with self._open_conn(self.project_db_path) as conn:
+            counts_row = conn.execute(
+                f"""
+                SELECT
+                    (SELECT COUNT(*) FROM runs WHERE run_id IN ({placeholders})) AS runs_count,
+                    (SELECT COUNT(*) FROM run_versions WHERE run_id IN ({placeholders})) AS run_versions_count,
+                    (SELECT COUNT(*) FROM ath_dimensions WHERE run_id IN ({placeholders})) AS ath_dimensions_count,
+                    (SELECT COUNT(*) FROM graphs WHERE run_id IN ({placeholders})) AS graphs_count,
+                    (SELECT COUNT(*) FROM graph_series gs
+                        JOIN graphs g ON g.graph_id = gs.graph_id
+                        WHERE g.run_id IN ({placeholders})) AS graph_series_count,
+                    (SELECT COUNT(*) FROM graph_points gp
+                        JOIN graph_series gs ON gs.series_id = gp.series_id
+                        JOIN graphs g ON g.graph_id = gs.graph_id
+                        WHERE g.run_id IN ({placeholders})) AS graph_points_count
+                """,
+                tuple(run_ids + run_ids + run_ids + run_ids + run_ids + run_ids),
+            ).fetchone()
+            file_rows = conn.execute(
+                f"""
+                SELECT DISTINCT source_file
+                FROM graphs
+                WHERE run_id IN ({placeholders}) AND source_file IS NOT NULL AND source_file != ''
+                ORDER BY source_file
+                """,
+                tuple(run_ids),
+            ).fetchall()
+
+        export_files: List[Path] = []
+        skipped_files: List[Dict[str, str]] = []
+        for row in file_rows:
+            raw = str(row["source_file"])
+            try:
+                resolved = self._resolve_project_local_path(raw)
+            except Exception:
+                skipped_files.append({"path": raw, "reason": "resolve_failed"})
+                continue
+            if not self._is_within_project_root(resolved):
+                skipped_files.append({"path": raw, "reason": "outside_project_root"})
+                continue
+            export_files.append(resolved)
+
+        deleted_files: List[str] = []
+        if delete_exports and not dry_run:
+            for path in export_files:
+                if path.exists() and path.is_file():
+                    path.unlink()
+                    deleted_files.append(str(path))
+
+        deleted_rows = False
+        if not dry_run:
+            self._dual_write("delete_runs", {"run_ids": run_ids})
+            deleted_rows = True
+
+        counts = {
+            "runs": int(counts_row["runs_count"]) if counts_row else 0,
+            "run_versions": int(counts_row["run_versions_count"]) if counts_row else 0,
+            "ath_dimensions": int(counts_row["ath_dimensions_count"]) if counts_row else 0,
+            "graphs": int(counts_row["graphs_count"]) if counts_row else 0,
+            "graph_series": int(counts_row["graph_series_count"]) if counts_row else 0,
+            "graph_points": int(counts_row["graph_points_count"]) if counts_row else 0,
+            "files": len(export_files),
+        }
+
+        audit_payload = {
+            "project_id": self.project_root.name,
+            "created_at": _now_iso(),
+            "dry_run": dry_run,
+            "delete_exports": delete_exports,
+            "run_ids": run_ids,
+            "counts": counts,
+            "deleted_rows": deleted_rows,
+            "deleted_files": deleted_files,
+            "skipped_files": skipped_files,
+        }
+        audit_dir = self.project_root / "logs"
+        audit_dir.mkdir(parents=True, exist_ok=True)
+        audit_path = audit_dir / f"cleanup_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}.json"
+        audit_path.write_text(json.dumps(audit_payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+        return {
+            "project_id": self.project_root.name,
+            "dry_run": dry_run,
+            "delete_exports": delete_exports,
+            "deleted": deleted_rows,
+            "run_ids": run_ids,
+            "counts": counts,
+            "deleted_files": deleted_files,
+            "skipped_files": skipped_files,
+            "audit_log": str(audit_path),
+        }
 
     def write_project_table(self, project_id: Optional[str] = None) -> Dict[str, Any]:
         query_project_id = project_id or self.project_root.name
@@ -1193,7 +1851,7 @@ class SqlDatasetStore:
             row = conn.execute(
                 """
                 SELECT version_id, project_id, project_name, batch_id, batch_name, status, created_at, finished_at,
-                       resolved_parameters_snapshot, ath_length_mm, ath_width_mm, ath_height_mm
+                       resolved_parameters_snapshot, version_config_hash, ath_length_mm, ath_width_mm, ath_height_mm
                 FROM versions
                 WHERE version_id = ?
                 """,
@@ -1211,6 +1869,7 @@ class SqlDatasetStore:
             "created_at": row["created_at"],
             "finished_at": row["finished_at"],
             "resolved_parameters_snapshot": row["resolved_parameters_snapshot"],
+            "version_config_hash": row["version_config_hash"],
             "ath_length_mm": row["ath_length_mm"],
             "ath_width_mm": row["ath_width_mm"],
             "ath_height_mm": row["ath_height_mm"],

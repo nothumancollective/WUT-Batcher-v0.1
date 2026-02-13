@@ -438,6 +438,77 @@ def cmd_vacs_discover_graphs(args: argparse.Namespace) -> int:
     return 0
 
 
+def _resolve_run_project_id(service: OrchestratorService, run_id: str, project_id: Optional[str]) -> str:
+    if project_id:
+        return project_id
+    matches: list[str] = []
+    for project in service.list_projects():
+        rows = service.list_runs(project_id=project.project_id)
+        if any(str(row.get("run_id")) == run_id for row in rows):
+            matches.append(project.project_id)
+    if len(matches) == 1:
+        return matches[0]
+    if not matches:
+        raise ValueError(f"Run not found in library: {run_id}")
+    raise ValueError(f"Run id is ambiguous across projects; pass --project-id explicitly: {run_id}")
+
+
+def cmd_runs_pin(args: argparse.Namespace) -> int:
+    service = OrchestratorService(settings_store=SettingsStore())
+    project_id = _resolve_run_project_id(service, args.run_id, args.project_id)
+    result = service.pin_run(project_id=project_id, run_id=args.run_id, tag=args.tag)
+    print(json.dumps({"ok": True, "project_id": project_id, "run_id": args.run_id, **result}, indent=2, ensure_ascii=False))
+    return 0
+
+
+def cmd_runs_unpin(args: argparse.Namespace) -> int:
+    service = OrchestratorService(settings_store=SettingsStore())
+    project_id = _resolve_run_project_id(service, args.run_id, args.project_id)
+    result = service.unpin_run(project_id=project_id, run_id=args.run_id)
+    print(json.dumps({"ok": True, "project_id": project_id, "run_id": args.run_id, **result}, indent=2, ensure_ascii=False))
+    return 0
+
+
+def cmd_runs_cleanup_testdata(args: argparse.Namespace) -> int:
+    service = OrchestratorService(settings_store=SettingsStore())
+    if args.project_id:
+        projects = [args.project_id]
+    else:
+        projects = [project.project_id for project in service.list_projects()]
+
+    project_results: list[dict[str, Any]] = []
+    aggregate = {
+        "runs": 0,
+        "run_versions": 0,
+        "ath_dimensions": 0,
+        "graphs": 0,
+        "graph_series": 0,
+        "graph_points": 0,
+        "files": 0,
+    }
+    for project_id in projects:
+        result = service.cleanup_test_data(
+            project_id=project_id,
+            delete_exports=bool(args.delete_exports),
+            dry_run=bool(args.dry_run),
+        )
+        project_results.append(result)
+        counts = dict(result.get("counts", {}) or {})
+        for key in aggregate:
+            aggregate[key] += int(counts.get(key, 0))
+
+    payload = {
+        "ok": True,
+        "dry_run": bool(args.dry_run),
+        "delete_exports": bool(args.delete_exports),
+        "project_count": len(project_results),
+        "aggregate_counts": aggregate,
+        "projects": project_results,
+    }
+    print(json.dumps(payload, indent=2, ensure_ascii=False, default=_json_default))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="batch-software")
     parser.add_argument("--config", default="app_config.json", help="Path to app_config.json (optional).")
@@ -618,6 +689,33 @@ def build_parser() -> argparse.ArgumentParser:
         help="Generate catalog skeleton from recipes without launching VACS.",
     )
     p_vacs_discover.set_defaults(func=cmd_vacs_discover_graphs)
+
+    p_runs = sub.add_parser("runs", help="Run pinning and cleanup utilities.")
+    sub_runs = p_runs.add_subparsers(dest="runs_cmd", required=True)
+
+    p_runs_pin = sub_runs.add_parser("pin", help="Pin a run to keep it during cleanup.")
+    p_runs_pin.add_argument("run_id", help="Run identifier")
+    p_runs_pin.add_argument("--project-id", help="Project id override if run id exists in multiple projects")
+    p_runs_pin.add_argument("--tag", help="Optional tag (e.g. baseline/final)")
+    p_runs_pin.set_defaults(func=cmd_runs_pin)
+
+    p_runs_unpin = sub_runs.add_parser("unpin", help="Remove pin from a run.")
+    p_runs_unpin.add_argument("run_id", help="Run identifier")
+    p_runs_unpin.add_argument("--project-id", help="Project id override if run id exists in multiple projects")
+    p_runs_unpin.set_defaults(func=cmd_runs_unpin)
+
+    p_runs_cleanup = sub_runs.add_parser(
+        "cleanup-testdata",
+        help="Delete all unpinned runs (test data) with optional export file deletion.",
+    )
+    p_runs_cleanup.add_argument("--project-id", help="Limit cleanup to one project id")
+    p_runs_cleanup.add_argument(
+        "--delete-exports",
+        action="store_true",
+        help="Delete run-linked export TXT files (inside project root only).",
+    )
+    p_runs_cleanup.add_argument("--dry-run", action="store_true", help="Preview only; do not mutate data.")
+    p_runs_cleanup.set_defaults(func=cmd_runs_cleanup_testdata)
 
     return parser
 
