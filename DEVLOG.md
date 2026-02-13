@@ -379,3 +379,31 @@
 - SQL result location:
   - project DB: `<library>/<project_id>/dataset/project.sqlite` table `compat_verification_results`
   - mirrored global DB: `<library>/global.sqlite` table `compat_verification_results`
+
+### Update 13 (UI Automation Contracts: AKABAK + VACS, No Pixel Scanning)
+#### Done
+- Added UIA contract foundation (no image/pixel matching):
+  - `app/ui_contracts/window_signatures.py` with robust signatures (process/class/control/automation_id based, title regex not sole selector)
+  - `app/ui_automation/session.py` with `pywinauto` primary backend and `uiautomation` fallback
+  - `app/ui_automation/watchdog.py` for modal dialog monitoring, whitelist handling, unknown-dialog debug capture, strict timeouts
+- Added deterministic drivers with state-machine style APIs and structured logs:
+  - `app/akabak_driver.py`
+  - `app/vacs_driver.py`
+  - idempotent method contracts and pre/postcondition checks
+- Added versioned VACS export recipes:
+  - `ui_recipes/vacs/export_spl.txt.json`
+  - `ui_recipes/vacs/export_impedance.txt.json`
+  - recipe schema validation in `app/ui_automation/recipes.py`
+- Added UI inspection CLI commands:
+  - `python -m app ui inspect-akabak`
+  - `python -m app ui inspect-vacs`
+  - outputs written to `ui_maps/` (summary + tree dump artifacts)
+- Added documentation:
+  - `docs/UI_AUTOMATION_CONTRACTS.md` (update workflow for `ui_maps` + recipes, strict no-pixel policy)
+
+#### Tests
+- Added contract tests:
+  - `tests/test_ui_automation_contracts.py` (recipes/signatures/inspector dry-run)
+- Added optional integration tests (env gated):
+  - `tests/test_ui_automation_integration_optional.py` (`WUT_UIA_INTEGRATION=1`)
+- Full suite status after changes: `69/69` passing, `2` optional integration tests skipped by default.
