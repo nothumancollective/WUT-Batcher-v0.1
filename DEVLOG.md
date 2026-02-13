@@ -758,3 +758,23 @@
 
 #### Tests
 - `python -m unittest tests.test_project_form_ui -v` (30 tests passing)
+
+### Update 28 (PROJECT Page ATH Pipeline Test Harness)
+#### Done
+- Added isolated real-run harness for PROJECT-page constraints:
+  - new module `app/projectpage_ath_test.py`
+  - uses PROJECT form schema + `ParameterForm` + `CompatibilityService` to build the same constraints draft structure as UI
+  - resolves one version via existing resolver path (`resolve_versions`) and renders CFG via existing renderer (`render_cfg_text`)
+  - writes CFGs to `C:\Tools\ATH\ProjectPageATHTestN.cfg`
+  - runs ATH real via `AthRunner`, writes runtime `ath.cfg`, detects newest export folder in `C:\Horns`
+  - parses generated CFG and exported `config`/`config.txt`, compares against expected UI-set values (+ allowed mandatory globals), reports missing/extra/mismatch keys
+  - writes per-run JSON reports and suite summary to `reports/projectpage_ath_test/`
+- Added CLI entrypoint:
+  - `python -m app projectpage-ath-test`
+  - options: `--ath-exe`, `--template-cfg`, `--cfg-dir`, `--export-root`, `--reports-root`, `--count`
+- Added parser/compare unit tests:
+  - `tests/test_projectpage_ath_test.py`
+
+#### Tests
+- `python -m py_compile app/projectpage_ath_test.py app/cli.py tests/test_projectpage_ath_test.py`
+- `python -m unittest tests.test_projectpage_ath_test -v`

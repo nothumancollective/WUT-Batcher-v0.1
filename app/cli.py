@@ -351,6 +351,25 @@ def cmd_compat_verify(args: argparse.Namespace) -> int:
     return 0 if int(summary["status_counts"].get("fail", 0)) == 0 else 3
 
 
+def cmd_projectpage_ath_test(args: argparse.Namespace) -> int:
+    from app.projectpage_ath_test import run_projectpage_ath_test_suite
+
+    settings_store = SettingsStore()
+    settings = settings_store.load()
+    summary = run_projectpage_ath_test_suite(
+        settings=settings,
+        ath_exe=args.ath_exe,
+        template_cfg=args.template_cfg,
+        cfg_dir=args.cfg_dir,
+        export_root=args.export_root,
+        reports_root=args.reports_root,
+        case_limit=args.count,
+    )
+    print(json.dumps(summary, indent=2, ensure_ascii=False, default=_json_default))
+    failed = int(summary.get("status_counts", {}).get("failed", 0))
+    return 0 if failed == 0 else 3
+
+
 def _inspect_ui_tool(
     *,
     tool_name: str,
@@ -639,6 +658,34 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_compat_verify.add_argument("--no-sql", action="store_true", help="Disable SQL persistence for results")
     p_compat_verify.set_defaults(func=cmd_compat_verify)
+
+    p_projectpage_ath = sub.add_parser(
+        "projectpage-ath-test",
+        help="Run isolated PROJECT-page -> CFG -> ATH -> export config consistency tests.",
+    )
+    p_projectpage_ath.add_argument("--ath-exe", help="Override ATH executable path")
+    p_projectpage_ath.add_argument("--template-cfg", help="Override template CFG path")
+    p_projectpage_ath.add_argument(
+        "--cfg-dir",
+        default=r"C:\Tools\ATH",
+        help="Directory for generated ProjectPageATHTestN.cfg files",
+    )
+    p_projectpage_ath.add_argument(
+        "--export-root",
+        default=r"C:\Horns",
+        help="ATH export root directory to monitor",
+    )
+    p_projectpage_ath.add_argument(
+        "--reports-root",
+        default="reports/projectpage_ath_test",
+        help="Directory for per-case JSON reports and summary",
+    )
+    p_projectpage_ath.add_argument(
+        "--count",
+        type=int,
+        help="Optional max number of autonomous cases to execute",
+    )
+    p_projectpage_ath.set_defaults(func=cmd_projectpage_ath_test)
 
     p_ui = sub.add_parser("ui", help="UI automation inspection utilities.")
     sub_ui = p_ui.add_subparsers(dest="ui_cmd", required=True)
