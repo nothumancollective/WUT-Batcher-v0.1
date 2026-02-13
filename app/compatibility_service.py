@@ -176,13 +176,16 @@ class CompatibilityService:
         selected_params: Dict[str, Any],
     ) -> Dict[str, Any]:
         fixed = dict(constraints_payload.get("fixed_params", {}) or {})
+        param_states = [item for item in list(constraints_payload.get("param_states", []) or []) if isinstance(item, dict)]
         for key, value in dict(selected_params or {}).items():
             if value is None:
                 continue
             fixed[str(key)] = value
+            param_states.append({"param_name": str(key), "is_set": 1, "value": value})
         return {
             "fixed_params": fixed,
             "limits": dict(constraints_payload.get("limits", {}) or {}),
+            "param_states": param_states,
             "runner_mode": str(constraints_payload.get("runner_mode") or DEFAULT_RUNNER_MODE),
         }
 
@@ -197,6 +200,9 @@ class CompatibilityService:
         preview = {
             "fixed_params": dict(constraints_payload.get("fixed_params", {}) or {}),
             "limits": dict(constraints_payload.get("limits", {}) or {}),
+            "param_states": [
+                item for item in list(constraints_payload.get("param_states", []) or []) if isinstance(item, dict)
+            ],
             "runner_mode": resolved_runner_mode,
         }
         visible = visible_params(preview, runner_mode=resolved_runner_mode, bundle=self.bundle)

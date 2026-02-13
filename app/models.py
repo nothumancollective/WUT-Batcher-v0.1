@@ -123,6 +123,7 @@ class ProjectConstraints:
     notes: Optional[str] = None
     fixed_params: Dict[str, Any] = field(default_factory=dict)
     limits: Dict[str, Any] = field(default_factory=dict)
+    param_states: List[Dict[str, Any]] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ProjectConstraints":
@@ -134,6 +135,9 @@ class ProjectConstraints:
             notes=data.get("notes"),
             fixed_params=dict(data.get("fixed_params", {}) or {}),
             limits=dict(data.get("limits", {}) or {}),
+            param_states=[
+                item for item in list(data.get("param_states", []) or []) if isinstance(item, dict)
+            ],
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -145,6 +149,7 @@ class ProjectConstraints:
             "notes": self.notes,
             "fixed_params": dict(self.fixed_params),
             "limits": dict(self.limits),
+            "param_states": [dict(item) for item in self.param_states if isinstance(item, dict)],
         }
 
 

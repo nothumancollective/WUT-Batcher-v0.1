@@ -295,6 +295,9 @@ class OrchestratorService:
                     "project_id": project_id,
                     "fixed_params": dict(constraints.get("fixed_params", {}) or {}),
                     "limits": dict(constraints.get("limits", {}) or {}),
+                    "param_states": [
+                        item for item in list(constraints.get("param_states", []) or []) if isinstance(item, dict)
+                    ],
                     "runner_mode": str(constraints.get("runner_mode") or "AkabakImportFixedSource"),
                     "notes": constraints.get("notes"),
                 }
