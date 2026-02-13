@@ -21,9 +21,11 @@
     - `list -> nullable line edit` (`e.g. 1,2,3`)
     - `object -> nested property subform` (segmented toggle for `Mesh.Enclosure`)
   - Adds reusable inset `ContextFrame` blocks for conditional detail sections (`R-OSSE`, `Morph`, `GCurve`, `Rollback`, `Enclosure`).
+  - `Throat.Profile` mode pages now render with clean headers (`OS-SE`, `Circular Arc`); `R-OSSE` avoids an extra nested mode-frame and shows only one inset details frame.
   - Uses centralized placeholder/tooltip hints from `ui/hints.py` to keep field hints short and consistent.
   - Uses two side-by-side columns (`Geometry | Mesh`) with dedicated scroll areas.
   - Horizontal scrollbars are disabled in both PROJECT columns.
+  - Mesh Core uses a single aligned control column (selection rows and numeric/text rows share the same left control anchor).
   - Geometry order: `Basics -> Throat Profile -> Morph -> GCurve -> Rollback`.
   - Mesh order: `Core -> Enclosure`.
   - Supports unset semantics without per-field `Set` toggles and serializes to `param_states`.
@@ -37,6 +39,9 @@
 - `create_project` and compatibility preview flow preserve and evaluate `param_states`.
 
 ## Notes
+- Theme polish:
+  - generic inner `QWidget` backgrounds are transparent to avoid dark overlay artifacts in nested forms.
+  - `ContextFrame` uses a subtle inset tone + border (no heavy full-block fill).
 - PROJECT page no longer renders a dedicated compatibility panel and no longer includes `Back to Dashboard` / `Show details` actions.
 - Source fields (`Source.*`) and `OSSE` object block are intentionally hidden from PROJECT UI to avoid duplication/conflicts.
 - `Throat.Profile = 2 (R-OSSE)` is treated as UI mode selector; it is kept in `param_states` for UI/rules evaluation and omitted from rendered fixed CFG key map.

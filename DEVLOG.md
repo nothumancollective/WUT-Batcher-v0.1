@@ -572,3 +572,27 @@
 - Regression suite status:
   - `tests.test_project_form_ui`: passing
   - compatibility/storage/runtime targeted suites: passing
+
+### Update 20 (PROJECT Visual Polish + Layout Cleanup)
+#### Done
+- Removed nested dark overlay artifacts in PROJECT subblocks:
+  - switched generic `QWidget` background styling to transparent
+  - kept tone/border responsibility on explicit containers (`QGroupBox`, `ContextFrame`)
+  - refined `ContextFrame` to a subtle inset style (no heavy dark fill)
+- Reduced clipping risk and tightened layout spacing:
+  - removed rigid grid minimum-width constraints
+  - reduced sub-grid margins/spacing and slightly tightened control widths
+  - kept horizontal scrollbars disabled in both PROJECT columns
+- Throat mode sections polished:
+  - ensured mode page headers resolve to `OS-SE` and `Circular Arc`
+  - removed extra nested R-OSSE mode wrapper; R-OSSE now shows a single inset `Details` frame below selector
+- Mesh/Core alignment cleanup:
+  - custom core renderer with one aligned control column
+  - selection controls (`Mesh.Quadrants`, `Mesh.RearShape`) and following inputs share the same left control anchor
+
+#### Tests
+- Extended `tests/test_project_form_ui.py`:
+  - verifies throat page headers (`OS-SE`, `Circular Arc`) and absence of extra `R-OSSE` mode header frame
+- Regression status:
+  - `tests.test_project_form_ui`: passing
+  - compatibility/storage/runtime targeted suites: passing
