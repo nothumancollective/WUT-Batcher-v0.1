@@ -1,0 +1,49 @@
+#!/usr/bin/env sh
+# Auto-push after commit. Never fail the commit path.
+
+if [ "${WUT_NO_AUTO_PUSH:-0}" = "1" ]; then
+  exit 0
+fi
+
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
+if [ -z "$ROOT" ]; then
+  exit 0
+fi
+
+LOG_DIR="$ROOT/reports"
+LOG_FILE="$LOG_DIR/git_auto_push.log"
+mkdir -p "$LOG_DIR" >/dev/null 2>&1 || true
+
+TS="$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null)"
+if [ -z "$TS" ]; then
+  TS="unknown-time"
+fi
+
+BRANCH="$(git symbolic-ref --quiet --short HEAD 2>/dev/null)"
+if [ -z "$BRANCH" ]; then
+  echo "$TS branch=<detached> result=skip reason=detached_head" >> "$LOG_FILE"
+  exit 0
+fi
+
+if ! git remote get-url origin >/dev/null 2>&1; then
+  echo "$TS branch=$BRANCH result=skip reason=missing_origin_remote" >> "$LOG_FILE"
+  exit 0
+fi
+
+UPSTREAM="$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null)"
+if [ -z "$UPSTREAM" ]; then
+  if git push -u origin HEAD >/dev/null 2>&1; then
+    echo "$TS branch=$BRANCH result=ok mode=push_set_upstream" >> "$LOG_FILE"
+  else
+    echo "$TS branch=$BRANCH result=fail mode=push_set_upstream" >> "$LOG_FILE"
+  fi
+  exit 0
+fi
+
+if git push >/dev/null 2>&1; then
+  echo "$TS branch=$BRANCH result=ok mode=push" >> "$LOG_FILE"
+else
+  echo "$TS branch=$BRANCH result=fail mode=push" >> "$LOG_FILE"
+fi
+
+exit 0

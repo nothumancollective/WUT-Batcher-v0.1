@@ -811,6 +811,86 @@ def _ensure_db_schema(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS ix_experiment_metrics_height_mm ON experiment_metrics(final_height_mm)")
 
 
+def _legacy_group_base_name(seed: int) -> str:
+    seed_int = int(seed)
+    if seed_int == 1337:
+        return "legacy_500_seed1337"
+    if seed_int == 2026:
+        return "legacy_5000_seed2026"
+    return f"legacy_seed_{seed_int}"
+
+
+def _backfill_legacy_null_run_groups(conn: sqlite3.Connection) -> Dict[str, Any]:
+    rows = conn.execute(
+        """
+        SELECT run_id, seed, case_index, created_at
+        FROM experiment_runs
+        WHERE run_group_id IS NULL
+        ORDER BY seed, case_index, created_at, run_id
+        """
+    ).fetchall()
+    if not rows:
+        return {
+            "applied": True,
+            "changed_rows": 0,
+            "source_null_rows": 0,
+            "groups_created": {},
+            "idempotent_noop": True,
+        }
+
+    target_seeds = sorted({int(row[1]) for row in rows})
+    occupied_rows = conn.execute(
+        f"""
+        SELECT seed, case_index, run_group_id
+        FROM experiment_runs
+        WHERE run_group_id IS NOT NULL
+          AND seed IN ({", ".join("?" for _ in target_seeds)})
+        """,
+        tuple(target_seeds),
+    ).fetchall()
+    occupied: set[Tuple[int, int, str]] = set()
+    for seed, case_index, run_group_id in occupied_rows:
+        if run_group_id is None:
+            continue
+        occupied.add((int(seed), int(case_index), str(run_group_id)))
+
+    attempts_per_case: Dict[Tuple[int, int], int] = {}
+    updates: List[Tuple[str, str]] = []
+    groups_created: Dict[str, int] = {}
+
+    for row in rows:
+        run_id = str(row[0])
+        seed = int(row[1])
+        case_index = int(row[2])
+        base = _legacy_group_base_name(seed)
+        key = (seed, case_index)
+        attempt = int(attempts_per_case.get(key, 0)) + 1
+        while True:
+            group_name = base if attempt == 1 else f"{base}_retry{attempt}"
+            slot = (seed, case_index, group_name)
+            if slot not in occupied:
+                occupied.add(slot)
+                break
+            attempt += 1
+        attempts_per_case[key] = attempt
+        updates.append((group_name, run_id))
+        groups_created[group_name] = int(groups_created.get(group_name, 0)) + 1
+
+    conn.executemany(
+        "UPDATE experiment_runs SET run_group_id = ? WHERE run_id = ? AND run_group_id IS NULL",
+        updates,
+    )
+    remaining_null = conn.execute("SELECT COUNT(*) FROM experiment_runs WHERE run_group_id IS NULL").fetchone()
+    changed = int(len(rows) - int(remaining_null[0] if remaining_null else 0))
+    return {
+        "applied": True,
+        "changed_rows": changed,
+        "source_null_rows": len(rows),
+        "groups_created": groups_created,
+        "idempotent_noop": changed == 0,
+    }
+
+
 def _persist_experiment_row(
     conn: sqlite3.Connection,
     *,
@@ -1558,6 +1638,552 @@ def _write_summary_markdown(
     return summary_path
 
 
+def _sanitize_history_label(value: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(value or "").strip())
+    return cleaned.strip("_") or "default"
+
+
+def _write_history_snapshots(
+    *,
+    reports_root: Path,
+    summary_payload: Mapping[str, Any],
+    range_payload: Mapping[str, Any],
+    run_group_label: str,
+) -> Dict[str, str]:
+    history_root = reports_root / "history"
+    history_root.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    group_token = _sanitize_history_label(run_group_label)[:80]
+    summary_path = history_root / f"summary_{group_token}_{timestamp}.json"
+    range_path = history_root / f"range_suggestions_{timestamp}.json"
+    summary_path.write_text(json.dumps(dict(summary_payload), indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    range_path.write_text(json.dumps(dict(range_payload), indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return {
+        "summary_snapshot_path": str(summary_path),
+        "range_snapshot_path": str(range_path),
+    }
+
+
+def _table_columns(conn: sqlite3.Connection, *, table_name: str) -> List[str]:
+    rows = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+    return [str(row[1]) for row in rows]
+
+
+def _group_top_errors(conn: sqlite3.Connection, *, limit: int = 3) -> Dict[str, List[Dict[str, Any]]]:
+    rows = conn.execute(
+        """
+        SELECT COALESCE(run_group_id, '<null>') AS run_group, COALESCE(ath_error_kind, 'unknown') AS error_kind, COUNT(*) AS count
+        FROM experiment_runs
+        WHERE status = 'ath_error'
+        GROUP BY COALESCE(run_group_id, '<null>'), COALESCE(ath_error_kind, 'unknown')
+        ORDER BY run_group ASC, count DESC, error_kind ASC
+        """
+    ).fetchall()
+    grouped: Dict[str, List[Dict[str, Any]]] = {}
+    for run_group, error_kind, count in rows:
+        key = str(run_group)
+        bucket = grouped.setdefault(key, [])
+        if len(bucket) >= max(1, int(limit)):
+            continue
+        bucket.append({"kind": str(error_kind), "count": int(count)})
+    return grouped
+
+
+def _write_data_inventory_markdown(
+    *,
+    conn: sqlite3.Connection,
+    reports_root: Path,
+    backfill_result: Optional[Mapping[str, Any]],
+) -> Tuple[Path, Dict[str, Any]]:
+    table_rows = conn.execute(
+        """
+        SELECT name
+        FROM sqlite_master
+        WHERE type = 'table'
+          AND name LIKE 'experiment_%'
+        ORDER BY name
+        """
+    ).fetchall()
+    table_names = [str(row[0]) for row in table_rows]
+    table_meta: List[Dict[str, Any]] = []
+    for table_name in table_names:
+        count_row = conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()
+        table_meta.append(
+            {
+                "name": table_name,
+                "row_count": int(count_row[0] if count_row else 0),
+                "columns": _table_columns(conn, table_name=table_name),
+            }
+        )
+
+    run_group_rows = conn.execute(
+        """
+        SELECT
+            COALESCE(run_group_id, '<null>') AS run_group,
+            seed,
+            COUNT(*) AS total,
+            SUM(CASE WHEN status='ok' THEN 1 ELSE 0 END) AS ok_count,
+            SUM(CASE WHEN status='ath_error' THEN 1 ELSE 0 END) AS ath_error_count,
+            SUM(CASE WHEN status='pipeline_error' THEN 1 ELSE 0 END) AS pipeline_error_count,
+            SUM(CASE WHEN status='skipped' THEN 1 ELSE 0 END) AS skipped_count,
+            MIN(case_index) AS min_case_index,
+            MAX(case_index) AS max_case_index
+        FROM experiment_runs
+        GROUP BY COALESCE(run_group_id, '<null>'), seed
+        ORDER BY run_group, seed
+        """
+    ).fetchall()
+    run_group_counts: List[Dict[str, Any]] = []
+    for row in run_group_rows:
+        run_group_counts.append(
+            {
+                "run_group": str(row[0]),
+                "seed": int(row[1]) if row[1] is not None else None,
+                "total": int(row[2] or 0),
+                "ok": int(row[3] or 0),
+                "ath_error": int(row[4] or 0),
+                "pipeline_error": int(row[5] or 0),
+                "skipped": int(row[6] or 0),
+                "min_case_index": int(row[7]) if row[7] is not None else None,
+                "max_case_index": int(row[8]) if row[8] is not None else None,
+            }
+        )
+    top_errors = _group_top_errors(conn, limit=3)
+    null_row = conn.execute("SELECT COUNT(*) FROM experiment_runs WHERE run_group_id IS NULL").fetchone()
+    null_count = int(null_row[0] if null_row else 0)
+
+    lines: List[str] = [
+        "# ATH Experiment Data Inventory",
+        "",
+        f"- Generated at: {_now_iso()}",
+        f"- Database: `{str((reports_root / 'ath_experiments.sqlite').resolve())}`",
+        f"- Remaining NULL run_group rows: {null_count}",
+        "",
+        "## Relevant Data Model",
+        "- `experiment_runs`: outcomes, grouping (`run_group_id`, `seed`, `case_index`), ATH errors/warnings, file refs.",
+        "- `experiment_params`: Project-page input snapshot (`key`, `value_text/value_num`, `is_set`).",
+        "- `experiment_metrics`: observed dimensions/angles (`final_width_mm`, `final_height_mm`, `final_length_mm`, `avg_throat_angle_deg`).",
+        "- `experiment_compare`: compare-quality flags (`config_ok`, `no_ghosts`) and mismatch payloads.",
+        "",
+        "## Tables and Columns",
+    ]
+    for item in table_meta:
+        lines.append(
+            f"- `{item['name']}`: rows={int(item['row_count'])}, columns={', '.join(list(item['columns']))}"
+        )
+
+    lines.extend(
+        [
+            "",
+            "## Run Groups (including legacy)",
+            "| run_group | seed | total | ok | ath_error | pipeline_error | skipped | min_case | max_case |",
+            "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
+        ]
+    )
+    for item in run_group_counts:
+        lines.append(
+            f"| {item['run_group']} | {item['seed']} | {item['total']} | {item['ok']} | {item['ath_error']} | "
+            f"{item['pipeline_error']} | {item['skipped']} | {item['min_case_index']} | {item['max_case_index']} |"
+        )
+
+    lines.extend(["", "## Top Error Patterns by run_group"])
+    for run_group, items in sorted(top_errors.items()):
+        compact = ", ".join(f"{entry['kind']}={int(entry['count'])}" for entry in items) if items else "none"
+        lines.append(f"- {run_group}: {compact}")
+
+    if backfill_result is not None:
+        lines.extend(
+            [
+                "",
+                "## Legacy Backfill Result",
+                f"- applied: {bool(backfill_result.get('applied'))}",
+                f"- changed_rows: {int(backfill_result.get('changed_rows', 0))}",
+                f"- source_null_rows: {int(backfill_result.get('source_null_rows', 0))}",
+                f"- idempotent_noop: {bool(backfill_result.get('idempotent_noop'))}",
+                f"- groups_created: {json.dumps(dict(backfill_result.get('groups_created', {}) or {}), ensure_ascii=False)}",
+            ]
+        )
+
+    lines.append("")
+    inventory_path = reports_root / "data_inventory.md"
+    inventory_path.write_text("\n".join(lines), encoding="utf-8")
+    return inventory_path, {
+        "tables": table_meta,
+        "run_group_counts": run_group_counts,
+        "top_errors_by_group": top_errors,
+        "null_run_group_rows": null_count,
+    }
+
+
+def _build_range_suggestions_v12(
+    *,
+    range_suggestions: Mapping[str, Any],
+    analysis_run_groups: Sequence[str],
+) -> Dict[str, Any]:
+    per_key: Dict[str, Any] = {}
+    for key in sorted(range_suggestions.keys()):
+        payload = dict(range_suggestions.get(key, {}) or {})
+        safe = dict(payload.get("suggested_safe_range", {}) or {})
+        rec = dict(payload.get("recommended_range_p05_p95", {}) or {})
+        by_group = dict(payload.get("by_run_group", {}) or {})
+        group_names = sorted(str(name) for name in by_group.keys() if str(name).strip())
+
+        ranges: List[Tuple[float, float]] = []
+        for group_name in group_names:
+            group_payload = dict(by_group.get(group_name, {}) or {})
+            low = _float_or_none(group_payload.get("recommended_min"))
+            high = _float_or_none(group_payload.get("recommended_max"))
+            if low is None or high is None:
+                continue
+            if low > high:
+                low, high = high, low
+            ranges.append((low, high))
+
+        consistency_score = None
+        consistent = False
+        if ranges:
+            lows = [item[0] for item in ranges]
+            highs = [item[1] for item in ranges]
+            union_width = max(0.0, max(highs) - min(lows))
+            intersection_width = max(0.0, min(highs) - max(lows))
+            consistency_score = 1.0 if union_width <= 1e-9 else intersection_width / union_width
+            consistent = bool(len(ranges) >= 3 and consistency_score >= 0.25)
+
+        notes = "insufficient_group_coverage"
+        if consistent:
+            notes = "consistent_across_multiple_run_groups"
+        elif ranges:
+            notes = "group_ranges_partially_overlapping"
+
+        per_key[key] = {
+            "safe_min": _float_or_none(safe.get("min")),
+            "safe_max": _float_or_none(safe.get("max")),
+            "rec_p05": _float_or_none(rec.get("min")),
+            "rec_p95": _float_or_none(rec.get("max")),
+            "based_on_run_groups": group_names,
+            "consistent_across_groups": consistent,
+            "consistency_score": consistency_score,
+            "notes": notes,
+        }
+
+    return {
+        "generated_at": _now_iso(),
+        "analysis_run_groups": [str(group) for group in analysis_run_groups],
+        "analysis_run_group_count": len({str(group) for group in analysis_run_groups}),
+        "per_key": per_key,
+    }
+
+
+def _build_precision_outputs(
+    *,
+    conn: sqlite3.Connection,
+    run_ids: Sequence[str],
+    analysis_run_groups: Sequence[str],
+    reports_root: Path,
+    status_counts: Mapping[str, Any],
+    top_errors: Sequence[Mapping[str, Any]],
+    error_class_modes: Mapping[str, Any],
+    threshold_hits: Mapping[str, Any],
+    range_suggestions: Mapping[str, Any],
+) -> Tuple[Path, Path, Dict[str, Any]]:
+    if not run_ids:
+        empty_rules = {
+            "generated_at": _now_iso(),
+            "analysis_run_groups": [str(item) for item in analysis_run_groups],
+            "candidates": [],
+        }
+        candidates_path = reports_root / "compat_rule_candidates.v1.json"
+        candidates_path.write_text(json.dumps(empty_rules, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        plan_path = reports_root / "precision_plan.md"
+        plan_path.write_text("# ATH Precision Plan\n\nNo analysis run_ids available.\n", encoding="utf-8")
+        return plan_path, candidates_path, {"condition_stats": {}, "baseline_rate": 0.0}
+
+    run_sql = """
+        SELECT run_id, COALESCE(run_group_id, '<null>'), status, COALESCE(ath_error_kind, '')
+        FROM experiment_runs
+        WHERE run_id IN ({placeholders})
+    """
+    param_sql = """
+        SELECT run_id, key, value_num
+        FROM experiment_params
+        WHERE run_id IN ({placeholders})
+          AND is_set = 1
+          AND key IN (
+            'Throat.Profile', 'GCurve.Type', 'Coverage.Angle', 'Length',
+            'GCurve.Width', 'GCurve.Dist', 'GCurve.Rot', 'Morph.TargetShape'
+          )
+    """
+    metrics_sql = """
+        SELECT run_id, final_width_mm, final_height_mm, final_length_mm, avg_throat_angle_deg
+        FROM experiment_metrics
+        WHERE run_id IN ({placeholders})
+    """
+    run_rows = _query_with_run_ids(conn, run_sql, run_ids)
+    param_rows = _query_with_run_ids(conn, param_sql, run_ids)
+    metric_rows = _query_with_run_ids(conn, metrics_sql, run_ids)
+
+    records: Dict[str, Dict[str, Any]] = {}
+    for row in run_rows:
+        run_id = str(row[0])
+        records[run_id] = {
+            "run_group": str(row[1] or "<null>"),
+            "status": str(row[2] or "pipeline_error"),
+            "ath_error_kind": str(row[3] or ""),
+            "params": {},
+            "metrics": {},
+        }
+    for row in param_rows:
+        run_id = str(row[0])
+        key = str(row[1])
+        value = _float_or_none(row[2])
+        if run_id in records and value is not None:
+            records[run_id]["params"][key] = value
+    for row in metric_rows:
+        run_id = str(row[0])
+        if run_id not in records:
+            continue
+        records[run_id]["metrics"] = {
+            "final_width_mm": _float_or_none(row[1]),
+            "final_height_mm": _float_or_none(row[2]),
+            "final_length_mm": _float_or_none(row[3]),
+            "avg_throat_angle_deg": _float_or_none(row[4]),
+        }
+
+    baseline_total = len(records)
+    baseline_errors = sum(1 for item in records.values() if str(item.get("status")) == "ath_error")
+    baseline_rate = (float(baseline_errors) / float(baseline_total)) if baseline_total else 0.0
+    baseline_by_group: Dict[str, float] = {}
+    for group in sorted({str(item.get("run_group")) for item in records.values()}):
+        group_rows = [item for item in records.values() if str(item.get("run_group")) == group]
+        total = len(group_rows)
+        err = sum(1 for item in group_rows if str(item.get("status")) == "ath_error")
+        baseline_by_group[group] = (float(err) / float(total)) if total else 0.0
+
+    conditions: List[Tuple[str, str, Any]] = [
+        (
+            "superformula_osse",
+            "GCurve=superformula and Throat.Profile=OS-SE",
+            lambda row: row["params"].get("GCurve.Type") == 2 and row["params"].get("Throat.Profile") == 1,
+        ),
+        (
+            "coverage_gt_75_osse",
+            "Coverage.Angle > 75 and Throat.Profile=OS-SE",
+            lambda row: (row["params"].get("Coverage.Angle") or -1.0) > 75.0 and row["params"].get("Throat.Profile") == 1,
+        ),
+        (
+            "length_gt_1000",
+            "Length > 1000 mm",
+            lambda row: (row["params"].get("Length") or -1.0) > 1000.0,
+        ),
+        (
+            "observed_dim_gt_2000",
+            "observed final width/height/length > 2000 mm",
+            lambda row: max(
+                [
+                    value
+                    for value in (
+                        row["metrics"].get("final_width_mm"),
+                        row["metrics"].get("final_height_mm"),
+                        row["metrics"].get("final_length_mm"),
+                    )
+                    if value is not None
+                ]
+                or [0.0]
+            )
+            > 2000.0,
+        ),
+    ]
+
+    condition_stats: Dict[str, Any] = {}
+    for condition_id, label, fn in conditions:
+        matched = [item for item in records.values() if bool(fn(item))]
+        total = len(matched)
+        errors = sum(1 for item in matched if str(item.get("status")) == "ath_error")
+        sample_run_ids = [
+            run_id
+            for run_id, row in records.items()
+            if bool(fn(row)) and str(row.get("status")) == "ath_error"
+        ][:5]
+        by_group: Dict[str, Any] = {}
+        consistent_hits = 0
+        group_total_for_consistency = 0
+        for group in sorted({str(item.get("run_group")) for item in matched}):
+            group_rows = [item for item in matched if str(item.get("run_group")) == group]
+            group_total = len(group_rows)
+            group_errors = sum(1 for item in group_rows if str(item.get("status")) == "ath_error")
+            group_rate = (float(group_errors) / float(group_total)) if group_total else 0.0
+            uplift = group_rate - float(baseline_by_group.get(group, baseline_rate))
+            by_group[group] = {
+                "total": group_total,
+                "ath_error": group_errors,
+                "ath_error_rate": group_rate,
+                "uplift_vs_group_baseline": uplift,
+            }
+            if group_total >= 30:
+                group_total_for_consistency += 1
+                if uplift >= 0.10:
+                    consistent_hits += 1
+        consistent = bool(group_total_for_consistency >= 3 and consistent_hits >= max(2, int(math.ceil(group_total_for_consistency * 0.6))))
+        condition_stats[condition_id] = {
+            "label": label,
+            "total": total,
+            "ath_error": errors,
+            "ath_error_rate": (float(errors) / float(total)) if total else 0.0,
+            "sample_run_ids": sample_run_ids,
+            "by_run_group": by_group,
+            "consistent_multi_group": consistent,
+        }
+
+    range_v12 = _build_range_suggestions_v12(
+        range_suggestions=range_suggestions,
+        analysis_run_groups=analysis_run_groups,
+    )
+
+    rules_payload = {
+        "generated_at": _now_iso(),
+        "analysis_run_groups": [str(group) for group in analysis_run_groups],
+        "candidates": [
+            {
+                "id": "warn_large_observed_dimensions",
+                "kind": "warn",
+                "when": "gt(observed.max_dimension_mm, 2000)",
+                "then": "show_warning('Observed dimensions exceed 2000 mm. Risk of hard-cap errors is elevated.')",
+                "severity": "medium",
+                "evidence": {
+                    "type": "experiment",
+                    "refs": dict(condition_stats.get("observed_dim_gt_2000", {})),
+                },
+                "confidence": "high",
+                "verification_plan": "Counterfactual mini-run: hold mode fixed, vary Length in 100 mm steps around threshold and observe hard_cap_exceeded rate.",
+            },
+            {
+                "id": "warn_superformula_osse_combo",
+                "kind": "warn",
+                "when": "and(eq('GCurve.Type', 2), eq('Throat.Profile', 1))",
+                "then": "show_warning('Superformula + OS-SE has elevated ATH error risk; use conservative Width/Dist/Coverage.')",
+                "severity": "high",
+                "evidence": {
+                    "type": "experiment",
+                    "refs": dict(condition_stats.get("superformula_osse", {})),
+                },
+                "confidence": "high",
+                "verification_plan": "Fix all parameters except GCurve.Type and compare superellipse vs superformula under OS-SE.",
+            },
+            {
+                "id": "warn_coverage_angle_osse_high",
+                "kind": "warn",
+                "when": "and(eq('Throat.Profile', 1), gt('Coverage.Angle', 75))",
+                "then": "show_warning('High coverage angle with OS-SE increases ATH error probability.')",
+                "severity": "high",
+                "evidence": {
+                    "type": "experiment",
+                    "refs": dict(condition_stats.get("coverage_gt_75_osse", {})),
+                },
+                "confidence": "high",
+                "verification_plan": "Sweep only Coverage.Angle on fixed OS-SE baseline to identify transition band.",
+            },
+            {
+                "id": "warn_length_over_1000",
+                "kind": "warn",
+                "when": "gt('Length', 1000)",
+                "then": "show_warning('Length above 1000 mm often co-occurs with hard-cap related ATH failures.')",
+                "severity": "medium",
+                "evidence": {
+                    "type": "experiment",
+                    "refs": dict(condition_stats.get("length_gt_1000", {})),
+                },
+                "confidence": "medium",
+                "verification_plan": "Counterfactual: fixed mode, vary Length only and monitor final dimensions and hard-cap hits.",
+            },
+            {
+                "id": "fatal_rollback_not_supported",
+                "kind": "fatal",
+                "when": "isDefined('Rollback')",
+                "then": "block('Rollback is not supported in this ATH version. Use R-OSSE profile instead.')",
+                "severity": "high",
+                "evidence": {
+                    "type": "ath_doc_or_known_pattern",
+                    "refs": [
+                        "ATH fatal pattern: 'rollback feature is no longer supported'",
+                    ],
+                },
+                "confidence": "high",
+                "verification_plan": "Keep blocked unless ATH release notes explicitly re-enable rollback.",
+            },
+            {
+                "id": "note_superformula_diameter_over_100m",
+                "kind": "note",
+                "when": "eq(error_class, 'diameter_over_100m')",
+                "then": "log_note('Diameter over 100m errors are concentrated in superformula mode; inspect SF shape parameters first.')",
+                "severity": "low",
+                "evidence": {
+                    "type": "experiment",
+                    "refs": dict(error_class_modes.get("diameter_over_100m", {})),
+                },
+                "confidence": "high",
+                "verification_plan": "Run SF-only counterfactuals on m1/m2/n2/n3 with fixed Dist/Width.",
+            },
+        ],
+    }
+
+    plan_lines: List[str] = [
+        "# ATH Precision Plan",
+        "",
+        "## Was wir jetzt sicher wissen",
+        f"- Analysierte Runs: {len(run_ids)} across run_groups={', '.join([str(group) for group in analysis_run_groups])}",
+        f"- Hard-cap Treffer: {int(threshold_hits.get('hard_cap_hits', 0))}; max_dim_warn Hits: {int(threshold_hits.get('max_dim_warn_hits', 0))}",
+        f"- Baseline ATH-Error-Rate: {baseline_rate:.4f}",
+        "- Robuste Aussagen basieren auf Fehlerklassen und Modus-/Schwellenmustern, nicht auf Einzelparametern.",
+        "",
+        "## Was wir vermuten (mit Confidence + Verification Plan)",
+    ]
+    for condition_id in ("superformula_osse", "coverage_gt_75_osse", "length_gt_1000", "observed_dim_gt_2000"):
+        stats = dict(condition_stats.get(condition_id, {}) or {})
+        if not stats:
+            continue
+        confidence = "high" if bool(stats.get("consistent_multi_group")) else "medium"
+        plan_lines.append(
+            f"- {stats.get('label')}: rate={float(stats.get('ath_error_rate', 0.0)):.4f}, "
+            f"consistent_multi_group={bool(stats.get('consistent_multi_group'))}, confidence={confidence}."
+        )
+
+    plan_lines.extend(
+        [
+            "",
+            "## Naechste 5 Gegenproben",
+            "1. Base: OS-SE + superformula konservativ; vary nur `Coverage.Angle` in 5 deg Schritten (40..95). Expected signal: Fehleranstieg ab Schwelle. Success criterion: monotones Risiko-Delta.",
+            "2. Base: OS-SE fixed; vary nur `GCurve.Type` no_gcurve/superellipse/superformula. Expected signal: superformula bleibt riskanter. Success criterion: stabile Rangfolge ueber >=3 seeds.",
+            "3. Base: no_gcurve + OS-SE; vary nur `Length` (300..1400). Expected signal: final dimensions + hard_cap steigen mit Length. Success criterion: klarer Threshold-Bereich.",
+            "4. Base: superformula + OS-SE fixed; vary nur `GCurve.Width` (200..900). Expected signal: diameter_over_100m Cluster im oberen Bereich. Success criterion: reproduzierbare Fehlerzone.",
+            "5. Base: superformula + OS-SE fixed; vary nur `GCurve.Dist` (50..900). Expected signal: Interaktion mit Width, keine Einzelfaktor-Behauptung. Success criterion: 2D-Risikokarte Width x Dist.",
+            "",
+            "## Neue/zu ergaenzende Regeln",
+            "- warn_large_observed_dimensions (warn): observed max dimension > 2000 mm.",
+            "- warn_superformula_osse_combo (warn): GCurve superformula + OS-SE.",
+            "- warn_coverage_angle_osse_high (warn): Coverage.Angle > 75 bei OS-SE.",
+            "- warn_length_over_1000 (warn): Length > 1000 mm als Risikoindikator.",
+            "- fatal_rollback_not_supported (fatal): Rollback gesetzt -> blocken (ATH inkompatibel).",
+            "",
+            "## Anti-Spurious Guardrails",
+            "- Aussagen sind klassenbasiert (hard_cap_exceeded, diameter_over_100m, ...).",
+            "- Kausale Claims nur nach Gegenprobe mit Ein-Parameter-Variation.",
+            "- Interaktionen nur als Kandidaten markieren, bis ueber mehrere Seeds reproduziert.",
+        ]
+    )
+    plan_lines.append("")
+
+    plan_path = reports_root / "precision_plan.md"
+    plan_path.write_text("\n".join(plan_lines), encoding="utf-8")
+
+    candidates_path = reports_root / "compat_rule_candidates.v1.json"
+    candidates_path.write_text(json.dumps(rules_payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return plan_path, candidates_path, {
+        "condition_stats": condition_stats,
+        "baseline_rate": baseline_rate,
+        "range_v12": range_v12,
+    }
+
+
 def _preflight_skip_reason(
     *,
     compat_state: Mapping[str, Any],
@@ -1614,6 +2240,8 @@ def run_projectpage_ath_experiment(
     cleanup_cases: str = "never",
     cleanup_log: str = "never",
     aggregate_run_groups: Optional[Sequence[str]] = None,
+    backfill_legacy_null_run_groups: bool = False,
+    write_history_snapshots: bool = True,
 ) -> Dict[str, Any]:
     resolved_ath_exe = ath_exe or settings.ath_exe
     if not resolved_ath_exe:
@@ -1668,9 +2296,19 @@ def run_projectpage_ath_experiment(
     reports: List[Dict[str, Any]] = []
     status_counts = {"ok": 0, "ath_error": 0, "pipeline_error": 0, "skipped": 0}
     run_group_id = str(run_group).strip() if run_group else f"pp_ath_exp_seed_{int(seed)}"
+    legacy_backfill_result: Optional[Dict[str, Any]] = None
+    data_inventory_path: Optional[Path] = None
+    data_inventory_payload: Dict[str, Any] = {}
+    range_suggestions_v12_path: Optional[Path] = None
+    range_suggestions_v12_payload: Dict[str, Any] = {}
+    precision_plan_path: Optional[Path] = None
+    compat_rule_candidates_path: Optional[Path] = None
+    precision_analysis_payload: Dict[str, Any] = {}
     with sqlite3.connect(str(db_path)) as conn:
         conn.row_factory = sqlite3.Row
         _ensure_db_schema(conn)
+        if bool(backfill_legacy_null_run_groups):
+            legacy_backfill_result = _backfill_legacy_null_run_groups(conn)
         for offset, experiment_case in enumerate(all_cases):
             existing = conn.execute(
                 """
@@ -2031,9 +2669,18 @@ def run_projectpage_ath_experiment(
             json.dumps(range_suggestions_payload, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8",
         )
+        range_suggestions_v12_payload = _build_range_suggestions_v12(
+            range_suggestions=range_suggestions,
+            analysis_run_groups=analysis_groups,
+        )
+        range_suggestions_v12_path = reports_root_path / "range_suggestions.v1.2.json"
+        range_suggestions_v12_path.write_text(
+            json.dumps(range_suggestions_v12_payload, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
         summary_md_path = _write_summary_markdown(
             summary_path=reports_root_path / "summary.md",
-            status_counts=status_counts,
+            status_counts=analysis_status_counts,
             top_errors=top_errors,
             threshold_hits=threshold_hits,
             mode_error_rates=mode_error_rates,
@@ -2046,6 +2693,22 @@ def run_projectpage_ath_experiment(
         mode_error_matrix_path.write_text(
             json.dumps(mode_error_matrix, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8",
+        )
+        data_inventory_path, data_inventory_payload = _write_data_inventory_markdown(
+            conn=conn,
+            reports_root=reports_root_path,
+            backfill_result=legacy_backfill_result,
+        )
+        precision_plan_path, compat_rule_candidates_path, precision_analysis_payload = _build_precision_outputs(
+            conn=conn,
+            run_ids=analysis_run_ids,
+            analysis_run_groups=analysis_groups,
+            reports_root=reports_root_path,
+            status_counts=analysis_status_counts,
+            top_errors=top_errors,
+            error_class_modes=error_class_modes,
+            threshold_hits=threshold_hits,
+            range_suggestions=range_suggestions,
         )
 
     end_cleanup_result: Optional[Dict[str, Any]] = None
@@ -2091,7 +2754,14 @@ def run_projectpage_ath_experiment(
         "largest_safe_range_tightenings": range_tightenings,
         "range_suggestions_path": str(range_suggestions_path),
         "range_suggestions_v11_path": str(range_suggestions_v11_path),
+        "range_suggestions_v12_path": str(range_suggestions_v12_path) if range_suggestions_v12_path else None,
         "summary_markdown_path": str(summary_md_path),
+        "data_inventory_path": str(data_inventory_path) if data_inventory_path else None,
+        "precision_plan_path": str(precision_plan_path) if precision_plan_path else None,
+        "compat_rule_candidates_path": str(compat_rule_candidates_path) if compat_rule_candidates_path else None,
+        "legacy_backfill_result": legacy_backfill_result,
+        "precision_analysis": precision_analysis_payload,
+        "data_inventory": data_inventory_payload,
         "preclean_result": preclean_result,
         "end_cleanup_result": end_cleanup_result,
         "report_files_count": len(reports),
@@ -2099,5 +2769,18 @@ def run_projectpage_ath_experiment(
     }
     summary_path = reports_root_path / "summary.json"
     summary_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    if bool(write_history_snapshots):
+        if analysis_groups:
+            history_label = "agg_" + "_".join([_sanitize_history_label(group) for group in analysis_groups])
+        else:
+            history_label = _sanitize_history_label(run_group_id)
+        history_paths = _write_history_snapshots(
+            reports_root=reports_root_path,
+            summary_payload=summary,
+            range_payload=range_suggestions_v12_payload or range_suggestions_payload,
+            run_group_label=history_label,
+        )
+        summary["history_snapshot_paths"] = history_paths
+        summary_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     summary["summary_path"] = str(summary_path)
     return summary

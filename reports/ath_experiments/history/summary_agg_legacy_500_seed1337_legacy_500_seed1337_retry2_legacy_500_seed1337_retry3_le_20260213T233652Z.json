@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-02-13T23:37:14+00:00",
+  "generated_at": "2026-02-13T23:36:52+00:00",
   "ath_executable": "C:\\Tools\\ATH\\ath.exe",
   "template_cfg": null,
   "cfg_dir": "C:\\Tools\\ATH",
@@ -402,10 +402,16 @@
   "compat_rule_candidates_path": "reports\\ath_experiments\\compat_rule_candidates.v1.json",
   "legacy_backfill_result": {
     "applied": true,
-    "changed_rows": 0,
-    "source_null_rows": 0,
-    "groups_created": {},
-    "idempotent_noop": true
+    "changed_rows": 5590,
+    "source_null_rows": 5590,
+    "groups_created": {
+      "legacy_500_seed1337": 500,
+      "legacy_500_seed1337_retry2": 20,
+      "legacy_500_seed1337_retry3": 20,
+      "legacy_5000_seed2026": 5000,
+      "legacy_5000_seed2026_retry2": 50
+    },
+    "idempotent_noop": false
   },
   "precision_analysis": {
     "condition_stats": {
@@ -704,7 +710,7 @@
     },
     "baseline_rate": 0.11481719050673508,
     "range_v12": {
-      "generated_at": "2026-02-13T23:37:14+00:00",
+      "generated_at": "2026-02-13T23:36:52+00:00",
       "analysis_run_groups": [
         "legacy_500_seed1337",
         "legacy_500_seed1337_retry2",
@@ -1764,9 +1770,5 @@
     }
   },
   "report_files_count": 0,
-  "report_files_preview": [],
-  "history_snapshot_paths": {
-    "summary_snapshot_path": "reports\\ath_experiments\\history\\summary_agg_legacy_500_seed1337_legacy_500_seed1337_retry2_legacy_500_seed1337_retry3_le_20260213T233714Z.json",
-    "range_snapshot_path": "reports\\ath_experiments\\history\\range_suggestions_20260213T233714Z.json"
-  }
+  "report_files_preview": []
 }

@@ -1764,9 +1764,5 @@
     }
   },
   "report_files_count": 0,
-  "report_files_preview": [],
-  "history_snapshot_paths": {
-    "summary_snapshot_path": "reports\\ath_experiments\\history\\summary_agg_legacy_500_seed1337_legacy_500_seed1337_retry2_legacy_500_seed1337_retry3_le_20260213T233714Z.json",
-    "range_snapshot_path": "reports\\ath_experiments\\history\\range_suggestions_20260213T233714Z.json"
-  }
+  "report_files_preview": []
 }

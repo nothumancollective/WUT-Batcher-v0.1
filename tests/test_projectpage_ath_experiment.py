@@ -6,6 +6,7 @@ import tempfile
 import unittest
 
 from app.projectpage_ath_experiment import (
+    _backfill_legacy_null_run_groups,
     _ensure_db_schema,
     classify_ath_output,
     generate_experiment_cases,
@@ -77,6 +78,50 @@ class ProjectPageAthExperimentTests(unittest.TestCase):
                 self.assertIn("experiment_params", tables)
                 self.assertIn("experiment_metrics", tables)
                 self.assertIn("experiment_compare", tables)
+
+    def test_backfill_legacy_null_run_groups_is_idempotent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = f"{tmp_dir}/exp.sqlite"
+            with closing(sqlite3.connect(db_path)) as conn:
+                _ensure_db_schema(conn)
+                rows = [
+                    ("r1", None, "2026-01-01T00:00:00Z", 1337, 1, "ok"),
+                    ("r2", None, "2026-01-01T00:00:01Z", 1337, 1, "ath_error"),
+                    ("r3", None, "2026-01-01T00:00:02Z", 1337, 2, "ok"),
+                    ("r4", None, "2026-01-01T00:00:03Z", 2026, 1, "ok"),
+                    ("r5", None, "2026-01-01T00:00:04Z", 2026, 1, "ath_error"),
+                ]
+                conn.executemany(
+                    """
+                    INSERT INTO experiment_runs(
+                        run_id, run_group_id, created_at, seed, case_index, status
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    rows,
+                )
+                conn.commit()
+
+                first = _backfill_legacy_null_run_groups(conn)
+                conn.commit()
+                second = _backfill_legacy_null_run_groups(conn)
+                conn.commit()
+
+                self.assertGreaterEqual(int(first.get("changed_rows", 0)), 5)
+                self.assertEqual(int(second.get("changed_rows", 0)), 0)
+                null_remaining = conn.execute(
+                    "SELECT COUNT(*) FROM experiment_runs WHERE run_group_id IS NULL"
+                ).fetchone()
+                self.assertEqual(int(null_remaining[0]), 0)
+
+                duplicate_slots = conn.execute(
+                    """
+                    SELECT run_group_id, seed, case_index, COUNT(*)
+                    FROM experiment_runs
+                    GROUP BY run_group_id, seed, case_index
+                    HAVING COUNT(*) > 1
+                    """
+                ).fetchall()
+                self.assertEqual(len(duplicate_slots), 0)
 
 
 if __name__ == "__main__":

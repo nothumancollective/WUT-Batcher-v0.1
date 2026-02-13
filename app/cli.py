@@ -397,6 +397,8 @@ def cmd_projectpage_ath_experiment(args: argparse.Namespace) -> int:
         cleanup_cases=args.cleanup_cases,
         cleanup_log=args.cleanup_log,
         aggregate_run_groups=aggregate_groups,
+        backfill_legacy_null_run_groups=bool(args.backfill_legacy_null_run_groups),
+        write_history_snapshots=bool(args.write_history_snapshots),
     )
     print(json.dumps(summary, indent=2, ensure_ascii=False, default=_json_default))
     return 0
@@ -793,6 +795,18 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["end", "always", "never"],
         help="Cleanup policy for reports/ath_experiments/log files.",
     )
+    p_projectpage_ath_exp.add_argument(
+        "--backfill-legacy-null-run-groups",
+        default="false",
+        choices=["true", "false"],
+        help="Idempotently migrate legacy NULL run_group rows to stable legacy_* group ids.",
+    )
+    p_projectpage_ath_exp.add_argument(
+        "--history-snapshots",
+        default="true",
+        choices=["true", "false"],
+        help="Write timestamped snapshots to reports/ath_experiments/history on each aggregation run.",
+    )
     p_projectpage_ath_exp.set_defaults(
         func=lambda a: cmd_projectpage_ath_experiment(
             argparse.Namespace(
@@ -800,6 +814,12 @@ def build_parser() -> argparse.ArgumentParser:
                     **vars(a),
                     "cleanup_files": str(getattr(a, "cleanup_files", "true")).strip().lower() == "true",
                     "preclean_files": str(getattr(a, "preclean_files", "false")).strip().lower() == "true",
+                    "backfill_legacy_null_run_groups": str(
+                        getattr(a, "backfill_legacy_null_run_groups", "false")
+                    ).strip().lower()
+                    == "true",
+                    "write_history_snapshots": str(getattr(a, "history_snapshots", "true")).strip().lower()
+                    == "true",
                 }
             )
         )
