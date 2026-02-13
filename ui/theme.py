@@ -93,6 +93,11 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         border: 1px solid {c['border']};
         border-radius: {r['lg']}px;
     }}
+    QFrame#ContextFrame {{
+        background-color: {c['surface2']};
+        border: 1px solid {c['border']};
+        border-radius: {r['md']}px;
+    }}
     QGroupBox {{
         background-color: {c['surface']};
         border: 1px solid {c['border']};

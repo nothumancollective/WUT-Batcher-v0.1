@@ -12,8 +12,8 @@ try:
     from PySide6.QtGui import QRegularExpressionValidator
     from PySide6.QtWidgets import (
         QButtonGroup,
-        QCheckBox,
         QComboBox,
+        QFrame,
         QGridLayout,
         QGroupBox,
         QHBoxLayout,
@@ -31,9 +31,10 @@ except ImportError as exc:  # pragma: no cover
     raise RuntimeError("PySide6 is required for form builder.") from exc
 
 
-INPUT_TOTAL_WIDTH = 220
-UNIT_LABEL_WIDTH = 44
-INPUT_COLUMN_WIDTH = 280
+INPUT_TOTAL_WIDTH = 156
+UNIT_LABEL_WIDTH = 34
+INPUT_COLUMN_WIDTH = 180
+LABEL_COLUMN_WIDTH = 132
 
 
 @dataclass(frozen=True)
@@ -42,23 +43,23 @@ class FieldState:
     value: Any
 
 
-class TriStateOptionalCheckBox(QCheckBox):
-    """Cycles through unset -> true -> false -> unset."""
-
-    def __init__(self, parent: QWidget | None = None) -> None:
+class ContextFrame(QFrame):
+    def __init__(self, title: Optional[str] = None, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setTristate(True)
-        self.setCheckState(Qt.PartiallyChecked)
+        self.setObjectName("ContextFrame")
+        root = QVBoxLayout(self)
+        root.setContentsMargins(10, 8, 10, 10)
+        root.setSpacing(8)
 
-    def nextCheckState(self) -> None:  # type: ignore[override]
-        state = self.checkState()
-        if state == Qt.PartiallyChecked:
-            self.setCheckState(Qt.Checked)
-            return
-        if state == Qt.Checked:
-            self.setCheckState(Qt.Unchecked)
-            return
-        self.setCheckState(Qt.PartiallyChecked)
+        if title:
+            heading = QLabel(title)
+            heading.setObjectName("MutedText")
+            root.addWidget(heading)
+
+        self.content_layout = QVBoxLayout()
+        self.content_layout.setContentsMargins(0, 0, 0, 0)
+        self.content_layout.setSpacing(8)
+        root.addLayout(self.content_layout)
 
 
 class CollapsibleSection(QWidget):
@@ -101,6 +102,7 @@ class NullableNumericInput(QWidget):
         minimum: Optional[float],
         maximum: Optional[float],
         unit: Optional[str],
+        placeholder: str = "optional",
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -118,7 +120,7 @@ class NullableNumericInput(QWidget):
         self.edit.setObjectName("NullableInput")
         self.edit.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.edit.setFixedWidth(INPUT_TOTAL_WIDTH)
-        self.edit.setPlaceholderText("optional")
+        self.edit.setPlaceholderText(placeholder)
         self.edit.setClearButtonEnabled(True)
         root.addWidget(self.edit, 0, Qt.AlignLeft)
 
@@ -134,9 +136,9 @@ class NullableNumericInput(QWidget):
 
     def _install_validator(self) -> None:
         if self._is_float:
-            regex = QRegularExpression(rf"^-?\\d*(?:[.,]\\d{{0,{max(self._decimals, 0)}}})?$")
+            regex = QRegularExpression(rf"^-?\d*(?:[.,]\d{{0,{max(self._decimals, 0)}}})?$")
         else:
-            regex = QRegularExpression(r"^-?\\d*$")
+            regex = QRegularExpression(r"^-?\d*$")
         self.edit.setValidator(QRegularExpressionValidator(regex, self.edit))
 
     def decimals(self) -> int:
@@ -256,33 +258,29 @@ class NullableBoolInput(QWidget):
         root = QHBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(6)
-
-        self.checkbox = TriStateOptionalCheckBox()
-        self.checkbox.setToolTip("Unset / On / Off")
-        root.addWidget(self.checkbox, 0, Qt.AlignLeft)
+        self.segment = SegmentedEnumInput(options=[("off", False), ("on", True)])
+        root.addWidget(self.segment, 0, Qt.AlignLeft)
         root.addStretch(1)
-
-        self.checkbox.stateChanged.connect(lambda *_: self.changed.emit())
+        self.segment.changed.connect(lambda *_: self.changed.emit())
 
     def is_set(self) -> bool:
-        return self.checkbox.checkState() != Qt.PartiallyChecked
+        return self.segment.is_set()
 
     def clear(self) -> None:
-        self.checkbox.setCheckState(Qt.PartiallyChecked)
+        self.segment.clear(emit=False)
 
     def value(self) -> Optional[bool]:
-        if not self.is_set():
-            return None
-        return self.checkbox.checkState() == Qt.Checked
+        value = self.segment.value()
+        return bool(value) if value is not None else None
 
     def set_value(self, value: Any) -> None:
         if value is None:
             self.clear()
             return
-        self.checkbox.setCheckState(Qt.Checked if bool(value) else Qt.Unchecked)
+        self.segment.set_value(bool(value))
 
     def set_locked(self, locked: bool) -> None:
-        self.checkbox.setEnabled(not locked)
+        self.segment.set_locked(locked)
 
 
 class SegmentedEnumInput(QWidget):
@@ -293,6 +291,7 @@ class SegmentedEnumInput(QWidget):
         self._values_by_id: Dict[int, Any] = {}
         self._buttons: List[QPushButton] = []
         self._pressed_checked: Dict[int, bool] = {}
+        self._none_option_id: Optional[int] = None
 
         root = QHBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -307,6 +306,8 @@ class SegmentedEnumInput(QWidget):
             button.setProperty("segment", "true")
             self.group.addButton(button, index)
             self._values_by_id[index] = value
+            if value is None:
+                self._none_option_id = index
             self._buttons.append(button)
             root.addWidget(button)
             button.pressed.connect(lambda idx=index: self._on_pressed(idx))
@@ -332,7 +333,10 @@ class SegmentedEnumInput(QWidget):
             self.changed.emit()
 
     def is_set(self) -> bool:
-        return self.group.checkedId() >= 0
+        checked = self.group.checkedId()
+        if checked < 0:
+            return False
+        return self._values_by_id.get(checked) is not None
 
     def value(self) -> Any:
         checked = self.group.checkedId()
@@ -342,6 +346,11 @@ class SegmentedEnumInput(QWidget):
 
     def set_value(self, value: Any) -> None:
         if value is None:
+            if self._none_option_id is not None:
+                button = self.group.button(self._none_option_id)
+                if button is not None:
+                    button.setChecked(True)
+                return
             self.clear(emit=False)
             return
         for button_id, option_value in self._values_by_id.items():
@@ -350,6 +359,7 @@ class SegmentedEnumInput(QWidget):
                 if button is not None:
                     button.setChecked(True)
                 return
+        self.clear(emit=False)
 
     def set_locked(self, locked: bool) -> None:
         for button in self._buttons:
@@ -419,6 +429,8 @@ class ScalarFieldEditor(QWidget):
 
         if field.key == "Throat.Profile":
             self.set_value(1)
+        elif field.key == "GCurve.Type":
+            self.set_value(None)
         else:
             self.set_is_set(False)
 
@@ -436,6 +448,7 @@ class ScalarFieldEditor(QWidget):
                 minimum=self.field.minimum,
                 maximum=self.field.maximum,
                 unit=self.field.unit,
+                placeholder=self.field.placeholder or "optional",
             )
         if self.field.widget_kind == "int":
             return NullableNumericInput(
@@ -444,6 +457,7 @@ class ScalarFieldEditor(QWidget):
                 minimum=self.field.minimum,
                 maximum=self.field.maximum,
                 unit=self.field.unit,
+                placeholder=self.field.placeholder or "optional",
             )
         if self.field.widget_kind == "bool":
             return NullableBoolInput()
@@ -453,7 +467,11 @@ class ScalarFieldEditor(QWidget):
                 return SegmentedEnumInput(options=options)
             return NullableEnumComboInput(options=options)
         if self.field.widget_kind == "list":
-            return NullableTextInput(placeholder="e.g. 1,2,3", width=INPUT_TOTAL_WIDTH, value_parser=self._parse_list)
+            return NullableTextInput(
+                placeholder=self.field.placeholder or "e.g. 1,2,3",
+                width=INPUT_TOTAL_WIDTH,
+                value_parser=self._parse_list,
+            )
         if self.field.widget_kind == "ex":
             return NullableTextInput(
                 placeholder=self.field.placeholder or "e.g. 40 + 10*cos(p)^2",
@@ -531,12 +549,15 @@ class ObjectFieldEditor(QWidget):
             self.toggle = SegmentedEnumInput(options=[("disabled", 0), ("enabled", 1)])
             root.addWidget(self.toggle, alignment=Qt.AlignLeft)
 
-        self.props_box = QGroupBox("Details")
-        props_grid = QGridLayout(self.props_box)
+        self.props_frame = ContextFrame("Details")
+        props_widget = QWidget()
+        props_grid = QGridLayout(props_widget)
         _configure_grid(props_grid)
 
         for index, property_field in enumerate(field.object_properties):
             label = QLabel(property_field.label)
+            label.setWordWrap(True)
+            label.setMaximumWidth(LABEL_COLUMN_WIDTH)
             editor = ScalarFieldEditor(property_field)
             editor.changed.connect(self._on_child_changed)
             editor.set_is_set(False)
@@ -547,11 +568,12 @@ class ObjectFieldEditor(QWidget):
             props_grid.addWidget(editor, row, base_col + 1)
             self.property_editors[property_field.key] = editor
 
-        root.addWidget(self.props_box)
+        self.props_frame.content_layout.addWidget(props_widget)
+        root.addWidget(self.props_frame)
 
         if field.tooltip:
             self.setToolTip(field.tooltip)
-            self.props_box.setToolTip(field.tooltip)
+            self.props_frame.setToolTip(field.tooltip)
 
         if self.toggle is not None:
             self.toggle.changed.connect(self._on_toggle_changed)
@@ -579,7 +601,7 @@ class ObjectFieldEditor(QWidget):
 
     def _apply_enabled_state(self) -> None:
         enabled = self._toggle_enabled()
-        self.props_box.setVisible(enabled if self.toggle is not None else True)
+        self.props_frame.setVisible(enabled if self.toggle is not None else True)
         for editor in self.property_editors.values():
             editor.setEnabled(enabled)
 
@@ -628,6 +650,11 @@ class ObjectFieldEditor(QWidget):
 
 
 def _configure_grid(grid: QGridLayout) -> None:
+    grid.setContentsMargins(8, 6, 8, 6)
+    grid.setHorizontalSpacing(8)
+    grid.setVerticalSpacing(8)
+    grid.setColumnMinimumWidth(0, LABEL_COLUMN_WIDTH)
+    grid.setColumnMinimumWidth(2, LABEL_COLUMN_WIDTH)
     grid.setColumnStretch(1, 1)
     grid.setColumnStretch(3, 1)
     grid.setColumnMinimumWidth(1, INPUT_COLUMN_WIDTH)
@@ -646,6 +673,10 @@ class ParameterForm(QWidget):
         self._mode_widgets: Dict[str, Tuple[QStackedWidget, Dict[Optional[int], int]]] = {}
         self._compat_state: Dict[str, Any] = {"visible_keys": [], "locked_keys": [], "issues": []}
         self._compat_visible_keys: set[str] = set()
+        self._morph_detail_frame: Optional[ContextFrame] = None
+        self._rollback_detail_frame: Optional[ContextFrame] = None
+        self._morph_detail_keys: Tuple[str, ...] = ()
+        self._rollback_detail_keys: Tuple[str, ...] = ("Rollback.Angle", "Rollback.Exp", "Rollback.StartAt")
         self._suspend_emit = False
 
         root = QHBoxLayout(self)
@@ -654,8 +685,10 @@ class ParameterForm(QWidget):
 
         self.geometry_scroll = QScrollArea()
         self.geometry_scroll.setWidgetResizable(True)
+        self.geometry_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.mesh_scroll = QScrollArea()
         self.mesh_scroll.setWidgetResizable(True)
+        self.mesh_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         root.addWidget(self.geometry_scroll, 1)
         root.addWidget(self.mesh_scroll, 1)
 
@@ -700,9 +733,9 @@ class ParameterForm(QWidget):
 
         self._add_group_by_name(self.geometry_section.content_layout, grouped_geometry, "Basics")
         self._add_mode_group(self.geometry_section.content_layout, stacks_by_controller.get("Throat.Profile"))
-        self._add_group_by_name(self.geometry_section.content_layout, grouped_geometry, "Morph")
+        self._add_morph_group(self.geometry_section.content_layout, grouped_geometry)
         self._add_mode_group(self.geometry_section.content_layout, stacks_by_controller.get("GCurve.Type"))
-        self._add_group_by_name(self.geometry_section.content_layout, grouped_geometry, "Rollback")
+        self._add_rollback_group(self.geometry_section.content_layout, grouped_geometry)
 
         self._add_group_by_name(self.mesh_section.content_layout, grouped_mesh, "Core")
         self._add_group_by_name(self.mesh_section.content_layout, grouped_mesh, "Enclosure")
@@ -730,6 +763,104 @@ class ParameterForm(QWidget):
             return
         self._add_mode_groups(parent_layout, [stack])
 
+    def _add_morph_group(self, parent_layout: QVBoxLayout, grouped_fields: Dict[str, List[FieldSpec]]) -> None:
+        fields = sorted(grouped_fields.get("Morph", []), key=lambda field: field.order)
+        if not fields:
+            return
+
+        controller = next((field for field in fields if field.key == "Morph.TargetShape"), None)
+        if controller is None:
+            self._add_grouped_fields(parent_layout, fields, forced_group_name="Morph")
+            return
+
+        detail_fields = [field for field in fields if field.key != controller.key]
+        self._morph_detail_keys = tuple(field.key for field in detail_fields)
+
+        box = QGroupBox("Morph")
+        box_layout = QVBoxLayout(box)
+
+        controller_grid = QGridLayout()
+        _configure_grid(controller_grid)
+        controller_label = QLabel(controller.label)
+        controller_label.setWordWrap(True)
+        controller_label.setMaximumWidth(LABEL_COLUMN_WIDTH)
+        controller_editor = self._ensure_editor(controller)
+        controller_grid.addWidget(controller_label, 0, 0)
+        controller_grid.addWidget(controller_editor, 0, 1)
+        self._field_labels[controller.key] = controller_label
+        box_layout.addLayout(controller_grid)
+
+        if detail_fields:
+            detail_frame = ContextFrame("Details")
+            detail_widget = QWidget()
+            detail_grid = QGridLayout(detail_widget)
+            _configure_grid(detail_grid)
+            for index, field in enumerate(detail_fields):
+                label = QLabel(field.label)
+                label.setWordWrap(True)
+                label.setMaximumWidth(LABEL_COLUMN_WIDTH)
+                editor = self._ensure_editor(field)
+                row = index // 2
+                col = index % 2
+                base_col = col * 2
+                detail_grid.addWidget(label, row, base_col)
+                detail_grid.addWidget(editor, row, base_col + 1)
+                self._field_labels[field.key] = label
+            detail_frame.content_layout.addWidget(detail_widget)
+            self._morph_detail_frame = detail_frame
+            box_layout.addWidget(detail_frame)
+
+        parent_layout.addWidget(box)
+
+    def _add_rollback_group(self, parent_layout: QVBoxLayout, grouped_fields: Dict[str, List[FieldSpec]]) -> None:
+        fields = sorted(grouped_fields.get("Rollback", []), key=lambda field: field.order)
+        if not fields:
+            return
+
+        controller = next((field for field in fields if field.key == "Rollback"), None)
+        if controller is None:
+            self._add_grouped_fields(parent_layout, fields, forced_group_name="Rollback")
+            return
+
+        detail_fields = [field for field in fields if field.key != controller.key]
+        self._rollback_detail_keys = tuple(field.key for field in detail_fields)
+
+        box = QGroupBox("Rollback")
+        box_layout = QVBoxLayout(box)
+
+        controller_grid = QGridLayout()
+        _configure_grid(controller_grid)
+        controller_label = QLabel(controller.label)
+        controller_label.setWordWrap(True)
+        controller_label.setMaximumWidth(LABEL_COLUMN_WIDTH)
+        controller_editor = self._ensure_editor(controller)
+        controller_grid.addWidget(controller_label, 0, 0)
+        controller_grid.addWidget(controller_editor, 0, 1)
+        self._field_labels[controller.key] = controller_label
+        box_layout.addLayout(controller_grid)
+
+        if detail_fields:
+            detail_frame = ContextFrame("Details")
+            detail_widget = QWidget()
+            detail_grid = QGridLayout(detail_widget)
+            _configure_grid(detail_grid)
+            for index, field in enumerate(detail_fields):
+                label = QLabel(field.label)
+                label.setWordWrap(True)
+                label.setMaximumWidth(LABEL_COLUMN_WIDTH)
+                editor = self._ensure_editor(field)
+                row = index // 2
+                col = index % 2
+                base_col = col * 2
+                detail_grid.addWidget(label, row, base_col)
+                detail_grid.addWidget(editor, row, base_col + 1)
+                self._field_labels[field.key] = label
+            detail_frame.content_layout.addWidget(detail_widget)
+            self._rollback_detail_frame = detail_frame
+            box_layout.addWidget(detail_frame)
+
+        parent_layout.addWidget(box)
+
     def _add_grouped_fields(
         self,
         parent_layout: QVBoxLayout,
@@ -750,6 +881,8 @@ class ParameterForm(QWidget):
             ordered = sorted(group_fields, key=lambda field: field.order)
             for index, field in enumerate(ordered):
                 label = QLabel(field.label)
+                label.setWordWrap(True)
+                label.setMaximumWidth(LABEL_COLUMN_WIDTH)
                 editor = self._ensure_editor(field)
                 row = index // 2
                 col = index % 2
@@ -771,6 +904,8 @@ class ParameterForm(QWidget):
             controller_grid = QGridLayout()
             _configure_grid(controller_grid)
             controller_label = QLabel(controller.label)
+            controller_label.setWordWrap(True)
+            controller_label.setMaximumWidth(LABEL_COLUMN_WIDTH)
             controller_editor = self._ensure_editor(controller)
             controller_grid.addWidget(controller_label, 0, 0)
             controller_grid.addWidget(controller_editor, 0, 1)
@@ -785,14 +920,17 @@ class ParameterForm(QWidget):
                     common_keys &= set(page.field_keys)
 
             if common_keys:
-                common_box = QGroupBox("Common")
-                common_grid = QGridLayout(common_box)
+                common_box = ContextFrame("Common")
+                common_widget = QWidget()
+                common_grid = QGridLayout(common_widget)
                 _configure_grid(common_grid)
                 for index, key in enumerate(sorted(common_keys)):
                     field = self._field_specs.get(key)
                     if field is None:
                         continue
                     label = QLabel(field.label)
+                    label.setWordWrap(True)
+                    label.setMaximumWidth(LABEL_COLUMN_WIDTH)
                     editor = self._ensure_editor(field)
                     row = index // 2
                     col = index % 2
@@ -800,30 +938,34 @@ class ParameterForm(QWidget):
                     common_grid.addWidget(label, row, base_col)
                     common_grid.addWidget(editor, row, base_col + 1)
                     self._field_labels[key] = label
+                common_box.content_layout.addWidget(common_widget)
                 box_layout.addWidget(common_box)
 
             pages = QStackedWidget()
             index_by_value: Dict[Optional[int], int] = {}
             for page in stack.pages:
-                page_widget = QWidget()
-                page_grid = QGridLayout(page_widget)
+                page_widget = ContextFrame(page.label)
+                page_grid_widget = QWidget()
+                page_grid = QGridLayout(page_grid_widget)
                 _configure_grid(page_grid)
                 page_fields = [key for key in page.field_keys if key not in common_keys]
-                page_grid.addWidget(QLabel(page.label), 0, 0, 1, 4)
 
-                for row_index, key in enumerate(page_fields, start=1):
+                for row_index, key in enumerate(page_fields):
                     field = self._field_specs.get(key)
                     if field is None:
                         continue
                     label = QLabel(field.label)
+                    label.setWordWrap(True)
+                    label.setMaximumWidth(LABEL_COLUMN_WIDTH)
                     editor = self._ensure_editor(field)
-                    row = (row_index - 1) // 2 + 1
-                    col = (row_index - 1) % 2
+                    row = row_index // 2
+                    col = row_index % 2
                     base_col = col * 2
                     page_grid.addWidget(label, row, base_col)
                     page_grid.addWidget(editor, row, base_col + 1)
                     self._field_labels[key] = label
                 page_grid.setRowStretch(99, 1)
+                page_widget.content_layout.addWidget(page_grid_widget)
                 page_index = pages.addWidget(page_widget)
                 index_by_value[page.value] = page_index
 
@@ -898,18 +1040,30 @@ class ParameterForm(QWidget):
             return int(value) != 0
         return str(value).strip().lower() in {"1", "true", "enabled", "on"}
 
-    def _apply_local_disclosure(self) -> bool:
-        changed = False
-        rollback_enabled = self._rollback_enabled()
-        rollback_detail_keys = ("Rollback.Angle", "Rollback.Exp", "Rollback.StartAt")
+    def _morph_enabled(self) -> bool:
+        value = self._controller_value("Morph.TargetShape")
+        if value is None:
+            return False
+        return int(value) != 0
 
-        for key in rollback_detail_keys:
+    def _apply_conditional_visibility(
+        self,
+        keys: Tuple[str, ...],
+        *,
+        enabled: bool,
+        context_frame: Optional[ContextFrame],
+    ) -> bool:
+        changed = False
+        any_visible = False
+
+        for key in keys:
             editor = self._field_editors.get(key)
             if editor is None:
                 continue
             label = self._field_labels.get(key)
             compat_visible = key in self._compat_visible_keys if self._compat_visible_keys else True
-            should_show = compat_visible and rollback_enabled
+            should_show = bool(enabled and compat_visible)
+            any_visible = any_visible or should_show
             if label is not None:
                 label.setVisible(should_show)
             editor.setVisible(should_show)
@@ -918,6 +1072,23 @@ class ParameterForm(QWidget):
                 if getattr(state, "is_set", False):
                     editor.set_is_set(False)  # type: ignore[attr-defined]
                     changed = True
+
+        if context_frame is not None:
+            context_frame.setVisible(any_visible)
+        return changed
+
+    def _apply_local_disclosure(self) -> bool:
+        changed = False
+        changed = self._apply_conditional_visibility(
+            self._morph_detail_keys,
+            enabled=self._morph_enabled(),
+            context_frame=self._morph_detail_frame,
+        ) or changed
+        changed = self._apply_conditional_visibility(
+            self._rollback_detail_keys,
+            enabled=self._rollback_enabled(),
+            context_frame=self._rollback_detail_frame,
+        ) or changed
         return changed
 
     def payload(self) -> Dict[str, Any]:
