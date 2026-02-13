@@ -513,3 +513,29 @@
 - Updated/extended GUI contract tests:
   - `tests/test_project_form_ui.py`
   - covers nullable numeric mapping, ruleset-driven visibility switching, unset serialization, and PROJECT page button/panel cleanup
+
+### Update 18 (PROJECT Layout/Selection Corrections)
+#### Done
+- PROJECT form layout switched to two columns (`Geometry | Mesh`) with separate scroll containers to reduce vertical scroll pressure.
+- Geometry/Mesh card ordering fixed:
+  - Geometry: `Basics -> Throat Profile -> Morph -> GCurve -> Rollback`
+  - Mesh: `Core -> Enclosure`
+- Removed `Source.*` and `OSSE` object block from PROJECT UI to avoid duplicated/conflicting parameter presentation.
+- Selection controls refactored:
+  - removed extra `x` clear buttons
+  - segmented controls now clear on second click of the active option
+- `Mesh.Enclosure` changed from checkbox to segmented `disabled/enabled`; detail fields hide and unset when disabled.
+- `Rollback` changed to segmented `disabled/enabled`; `Rollback.Angle/Exp/StartAt` now use contextual disclosure and are unset when disabled.
+- Input UX fixes:
+  - ensured `optional` is placeholder only (not literal field text)
+  - validated numeric entry remains editable
+  - unified input widths with and without units using fixed total-width input rows.
+
+#### Tests
+- Expanded `tests/test_project_form_ui.py` with coverage for:
+  - two-column layout presence
+  - required geometry/mesh card order
+  - source removal + single `R-OSSE` presence
+  - segment second-click clear behavior
+  - placeholder/editability regression guard
+  - absence of `x` clear buttons in selection controls
