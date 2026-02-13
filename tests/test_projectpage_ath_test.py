@@ -57,8 +57,8 @@ class ProjectPageAthTestParsingTests(unittest.TestCase):
             observed=observed,
             allowed_global_keys={"ABEC.AkabakMode", "LE", "LE.Voltage"},
         )
-        self.assertEqual(result["missing_keys"], [])
-        self.assertEqual(result["extra_keys"], ["Ghost.Key"])
+        self.assertEqual(result["missing_keys_required"], [])
+        self.assertEqual(result["extra_keys_ghost"], ["Ghost.Key"])
         self.assertEqual(len(result["value_mismatches"]), 1)
         self.assertEqual(result["value_mismatches"][0]["key"], "Length")
 
@@ -76,6 +76,19 @@ class ProjectPageAthTestParsingTests(unittest.TestCase):
             allowed_global_keys={"ABEC.AkabakMode", "LE", "LE.Voltage"},
         )
         self.assertTrue(result["ok"])
+
+    def test_compare_expected_supports_optional_missing_prefixes(self) -> None:
+        expected = {"Mesh.AngularSegments": 64, "Length": 120}
+        observed = {"Length": "120"}
+        result = compare_expected(
+            expected=expected,
+            observed=observed,
+            allowed_global_keys={"ABEC.AkabakMode", "LE", "LE.Voltage"},
+            optional_missing_prefixes=("Mesh.",),
+        )
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["missing_keys_required"], [])
+        self.assertEqual(result["missing_keys_optional"], ["Mesh.AngularSegments"])
 
 
 if __name__ == "__main__":

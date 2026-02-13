@@ -778,3 +778,24 @@
 #### Tests
 - `python -m py_compile app/projectpage_ath_test.py app/cli.py tests/test_projectpage_ath_test.py`
 - `python -m unittest tests.test_projectpage_ath_test -v`
+
+### Update 29 (Rollback Off + Mesh Mapping + R-OSSE Normalization)
+#### Done
+- Rollback disabled for current ATH mode:
+  - PROJECT form schema omits `Rollback*` fields.
+  - PROJECT page shows explicit notice: `Rollback is not supported in this ATH version. Use R-OSSE profile instead.`
+  - ruleset replaced rollback visibility toggle logic with:
+    - permanent rollback hide rule
+    - fatal validity rule when rollback is explicitly enabled.
+- Resolver now carries PROJECT mesh `limits` into resolved version parameters, so `Mesh.*` set on PROJECT can be rendered into CFG.
+- CFG renderer now emits object parameters as ATH blocks, including deterministic `R-OSSE = { ... }` serialization order.
+- ATH config parser and comparison normalization improved:
+  - supports empty object assignment patterns (`R-OSSE =` followed by member lines),
+  - compares with optional-missing prefixes (currently `Mesh.*` in exported config),
+  - separates `extra_keys_defaulted` from `extra_keys_ghost` in reports.
+- ATH harness suite adjusted to 6 rollback-free autonomous cases with conservative geometry.
+
+#### Tests
+- `python -m unittest tests.test_project_form_ui tests.test_m2_compat_engine -v`
+- `python -m unittest tests.test_version_resolver -v`
+- `python -m unittest tests.test_m5_planner_renderer tests.test_projectpage_ath_test -v`

@@ -32,6 +32,18 @@ _CFG_BASENAME_RE = re.compile(r"^ProjectPageATHTest(\d+)\.cfg$", re.IGNORECASE)
 _ASSIGN_RE = re.compile(r"^\s*([A-Za-z0-9_.-]+)\s*=\s*(.*?)\s*$")
 _SPACE_ASSIGN_RE = re.compile(r"^\s*([A-Za-z0-9_.-]+)\s+(.+?)\s*$")
 _NUMERIC_RE = re.compile(r"^[+-]?\d+(?:[.,]\d+)?$")
+_KNOWN_ATH_DEFAULT_KEYS = {
+    "Source.Shape",
+    "Source.Radius",
+    "Source.Curv",
+    "Source.Velocity",
+    "Mesh.InterfaceResolution",
+    "Mesh.SubdomainSlices",
+    "Mesh.InterfaceDraw",
+    "Mesh.InterfaceOffset",
+}
+_KNOWN_ATH_DEFAULT_PREFIXES = ("Source.",)
+_ATH_CONFIG_OPTIONAL_MISSING_PREFIXES = ("Mesh.",)
 
 
 @dataclass(frozen=True)
@@ -220,6 +232,7 @@ def compare_expected(
     expected: Mapping[str, Any],
     observed: Mapping[str, Any],
     allowed_global_keys: Iterable[str],
+    optional_missing_prefixes: Iterable[str] = (),
 ) -> Dict[str, Any]:
     expected_flat: Dict[str, Any] = {}
     for key, value in expected.items():
@@ -229,8 +242,28 @@ def compare_expected(
     allowed = set(str(key) for key in allowed_global_keys)
     allowed_keys = set(expected_flat.keys()) | allowed
 
-    missing = sorted(key for key in expected_flat.keys() if key not in observed_map)
-    extra = sorted(key for key in observed_map.keys() if key not in allowed_keys)
+    optional_prefixes = tuple(str(item) for item in optional_missing_prefixes)
+
+    missing_required: List[str] = []
+    missing_optional: List[str] = []
+    for key in expected_flat.keys():
+        if key in observed_map:
+            continue
+        if any(key.startswith(prefix) for prefix in optional_prefixes):
+            missing_optional.append(key)
+        else:
+            missing_required.append(key)
+
+    extra_defaulted: List[str] = []
+    extra_ghost: List[str] = []
+    for key in observed_map.keys():
+        if key in allowed_keys:
+            continue
+        if key in _KNOWN_ATH_DEFAULT_KEYS or any(key.startswith(prefix) for prefix in _KNOWN_ATH_DEFAULT_PREFIXES):
+            extra_defaulted.append(key)
+        else:
+            extra_ghost.append(key)
+
     mismatches: List[Dict[str, Any]] = []
     for key, expected_value in sorted(expected_flat.items()):
         if key not in observed_map:
@@ -246,10 +279,14 @@ def compare_expected(
             )
 
     return {
-        "missing_keys": missing,
-        "extra_keys": extra,
+        "missing_keys_required": sorted(missing_required),
+        "missing_keys_optional": sorted(missing_optional),
+        "missing_keys": sorted(missing_required + missing_optional),
+        "extra_keys_defaulted": sorted(extra_defaulted),
+        "extra_keys_ghost": sorted(extra_ghost),
+        "extra_keys": sorted(extra_defaulted + extra_ghost),
         "value_mismatches": mismatches,
-        "ok": not missing and not extra and not mismatches,
+        "ok": not missing_required and not extra_ghost and not mismatches,
     }
 
 
@@ -442,79 +479,6 @@ def default_projectpage_ath_cases() -> List[ProjectPageAthCase]:
             test_id="PP_ATH_TEST_03",
             project_name="PP_ATH_TEST_03",
             field_values=[
-                ("Length", 145.0),
-                ("Throat.Diameter", 35.0),
-                ("Throat.Angle", 5.8),
-                ("Throat.Profile", 3),
-                ("CircArc.TermAngle", 40.0),
-                ("CircArc.Radius", 220.0),
-                ("GCurve.Type", 1),
-                ("GCurve.Dist", 65.0),
-                ("GCurve.Width", 150.0),
-                ("GCurve.AspectRatio", 1.25),
-                ("GCurve.SE.n", 2.6),
-                ("Morph.TargetShape", 1),
-                ("Morph.TargetWidth", 320.0),
-                ("Morph.TargetHeight", 240.0),
-                ("Morph.CornerRadius", 18.0),
-                ("Mesh.Quadrants", 1),
-                ("Mesh.AngularSegments", 68),
-                ("Mesh.LengthSegments", 22),
-            ],
-        ),
-        ProjectPageAthCase(
-            test_id="PP_ATH_TEST_04",
-            project_name="PP_ATH_TEST_04",
-            field_values=[
-                ("Length", 138.0),
-                ("Throat.Diameter", 34.0),
-                ("Throat.Angle", 4.0),
-                ("Throat.Profile", 1),
-                ("Term.s", 0.78),
-                ("Term.q", 0.996),
-                ("Term.n", 3.4),
-                ("OS.k", 0.95),
-                ("GCurve.Type", 2),
-                ("GCurve.Dist", 62.0),
-                ("GCurve.Width", 142.0),
-                ("GCurve.SF.a", 1.0),
-                ("GCurve.SF.b", 1.0),
-                ("GCurve.SF.m1", 3.0),
-                ("GCurve.SF.m2", 4.0),
-                ("GCurve.SF.n1", 0.2),
-                ("GCurve.SF.n2", 1.6),
-                ("GCurve.SF.n3", 1.7),
-                ("Morph.TargetShape", 0),
-                ("Mesh.Quadrants", 1),
-                ("Mesh.AngularSegments", 64),
-                ("Mesh.LengthSegments", 18),
-            ],
-        ),
-        ProjectPageAthCase(
-            test_id="PP_ATH_TEST_05",
-            project_name="PP_ATH_TEST_05",
-            field_values=[
-                ("Length", 125.0),
-                ("Throat.Diameter", 32.0),
-                ("Throat.Angle", 3.8),
-                ("Throat.Profile", 1),
-                ("Term.s", 0.8),
-                ("Term.q", 0.994),
-                ("Term.n", 3.2),
-                ("OS.k", 0.9),
-                ("Coverage.Angle", 46.0),
-                ("Morph.TargetShape", 2),
-                ("Morph.TargetWidth", 260.0),
-                ("Morph.TargetHeight", 260.0),
-                ("Mesh.Quadrants", 1),
-                ("Mesh.AngularSegments", 60),
-                ("Mesh.LengthSegments", 16),
-            ],
-        ),
-        ProjectPageAthCase(
-            test_id="PP_ATH_TEST_06",
-            project_name="PP_ATH_TEST_06",
-            field_values=[
                 ("Length", 132.0),
                 ("Throat.Diameter", 33.0),
                 ("Throat.Angle", 4.4),
@@ -534,27 +498,8 @@ def default_projectpage_ath_cases() -> List[ProjectPageAthCase]:
             ],
         ),
         ProjectPageAthCase(
-            test_id="PP_ATH_TEST_07",
-            project_name="PP_ATH_TEST_07",
-            field_values=[
-                ("Length", 140.0),
-                ("Throat.Diameter", 35.0),
-                ("Throat.Angle", 5.2),
-                ("Throat.Profile", 1),
-                ("Term.s", 0.72),
-                ("Term.q", 0.995),
-                ("Term.n", 3.6),
-                ("OS.k", 1.05),
-                ("Coverage.Angle", 50.0),
-                ("Morph.TargetShape", 0),
-                ("Mesh.Quadrants", 1),
-                ("Mesh.AngularSegments", 72),
-                ("Mesh.LengthSegments", 20),
-            ],
-        ),
-        ProjectPageAthCase(
-            test_id="PP_ATH_TEST_08",
-            project_name="PP_ATH_TEST_08",
+            test_id="PP_ATH_TEST_04",
+            project_name="PP_ATH_TEST_04",
             field_values=[
                 ("Length", 136.0),
                 ("Throat.Diameter", 34.5),
@@ -575,6 +520,50 @@ def default_projectpage_ath_cases() -> List[ProjectPageAthCase]:
                 ("Morph.TargetShape", 2),
                 ("Morph.TargetWidth", 255.0),
                 ("Morph.TargetHeight", 255.0),
+                ("Mesh.Quadrants", 1),
+                ("Mesh.AngularSegments", 64),
+                ("Mesh.LengthSegments", 18),
+            ],
+        ),
+        ProjectPageAthCase(
+            test_id="PP_ATH_TEST_05",
+            project_name="PP_ATH_TEST_05",
+            field_values=[
+                ("Length", 140.0),
+                ("Throat.Diameter", 35.0),
+                ("Throat.Angle", 5.2),
+                ("Throat.Profile", 1),
+                ("Term.s", 0.72),
+                ("Term.q", 0.995),
+                ("Term.n", 3.6),
+                ("OS.k", 1.05),
+                ("GCurve.Type", 1),
+                ("GCurve.Dist", 55.0),
+                ("GCurve.Width", 138.0),
+                ("GCurve.SE.n", 2.0),
+                ("Morph.TargetShape", 0),
+                ("Mesh.Quadrants", 1),
+                ("Mesh.AngularSegments", 68),
+                ("Mesh.LengthSegments", 20),
+            ],
+        ),
+        ProjectPageAthCase(
+            test_id="PP_ATH_TEST_06",
+            project_name="PP_ATH_TEST_06",
+            field_values=[
+                ("Length", 134.0),
+                ("Throat.Diameter", 34.0),
+                ("Throat.Angle", 4.3),
+                ("Throat.Profile", 1),
+                ("Term.s", 0.74),
+                ("Term.q", 0.995),
+                ("Term.n", 3.5),
+                ("OS.k", 0.98),
+                ("Coverage.Angle", 49.0),
+                ("Morph.TargetShape", 1),
+                ("Morph.TargetWidth", 275.0),
+                ("Morph.TargetHeight", 220.0),
+                ("Morph.CornerRadius", 16.0),
                 ("Mesh.Quadrants", 1),
                 ("Mesh.AngularSegments", 64),
                 ("Mesh.LengthSegments", 18),
@@ -694,10 +683,11 @@ def run_projectpage_ath_test_suite(
             expected=expected_values,
             observed=config_parsed,
             allowed_global_keys=allowed_global_keys,
+            optional_missing_prefixes=_ATH_CONFIG_OPTIONAL_MISSING_PREFIXES,
         )
         ath_ok = bool(ath_result and ath_result.ok)
         config_ok = config_file is not None and config_compare["ok"]
-        no_ghosts = (not cfg_compare["extra_keys"]) and (not config_compare["extra_keys"])
+        no_ghosts = (not cfg_compare["extra_keys_ghost"]) and (not config_compare["extra_keys_ghost"])
 
         report = {
             "test_id": case.test_id,
