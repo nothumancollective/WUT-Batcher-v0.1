@@ -223,6 +223,8 @@ def _mode_stacks(
         if not param:
             continue
         enum_opts = _enum_options(param)
+        if controller_key == "Throat.Profile":
+            enum_opts = _append_rosse_option(enum_opts)
         if controller_key == "GCurve.Type":
             enum_opts = _gcurve_options(enum_opts)
         enum_labels = {int(option.value): option.label for option in enum_opts if isinstance(option.value, int)}

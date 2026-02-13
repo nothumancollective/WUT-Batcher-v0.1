@@ -11,12 +11,13 @@ from app.gui import ProjectPage
 
 try:
     from PySide6.QtCore import Qt
-    from PySide6.QtWidgets import QApplication, QFrame, QGroupBox, QPushButton, QToolButton
+    from PySide6.QtWidgets import QApplication, QFrame, QGroupBox, QLabel, QPushButton, QToolButton
 except ImportError:  # pragma: no cover
     Qt = None  # type: ignore[assignment]
     QApplication = None  # type: ignore[assignment]
     QFrame = None  # type: ignore[assignment]
     QGroupBox = None  # type: ignore[assignment]
+    QLabel = None  # type: ignore[assignment]
     QPushButton = None  # type: ignore[assignment]
     QToolButton = None  # type: ignore[assignment]
 
@@ -220,6 +221,16 @@ class ProjectFormUiTests(unittest.TestCase):
             if frame.objectName() == "ContextFrame"
         ]
         self.assertGreaterEqual(len(frames), 4)
+
+    def test_throat_page_headers_are_named_and_rosse_has_no_extra_header_frame(self) -> None:
+        headings = [
+            label.text().strip()
+            for label in self.form.findChildren(QLabel)
+            if label.objectName() == "MutedText"
+        ]
+        self.assertIn("OS-SE", headings)
+        self.assertIn("Circular Arc", headings)
+        self.assertNotIn("R-OSSE", headings)
 
 
 if __name__ == "__main__":

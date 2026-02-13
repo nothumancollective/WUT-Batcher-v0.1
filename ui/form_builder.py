@@ -31,10 +31,10 @@ except ImportError as exc:  # pragma: no cover
     raise RuntimeError("PySide6 is required for form builder.") from exc
 
 
-INPUT_TOTAL_WIDTH = 156
-UNIT_LABEL_WIDTH = 34
-INPUT_COLUMN_WIDTH = 180
-LABEL_COLUMN_WIDTH = 132
+INPUT_TOTAL_WIDTH = 150
+UNIT_LABEL_WIDTH = 30
+INPUT_COLUMN_WIDTH = 170
+LABEL_COLUMN_WIDTH = 148
 
 
 @dataclass(frozen=True)
@@ -557,7 +557,7 @@ class ObjectFieldEditor(QWidget):
         for index, property_field in enumerate(field.object_properties):
             label = QLabel(property_field.label)
             label.setWordWrap(True)
-            label.setMaximumWidth(LABEL_COLUMN_WIDTH)
+            label.setFixedWidth(LABEL_COLUMN_WIDTH)
             editor = ScalarFieldEditor(property_field)
             editor.changed.connect(self._on_child_changed)
             editor.set_is_set(False)
@@ -650,15 +650,13 @@ class ObjectFieldEditor(QWidget):
 
 
 def _configure_grid(grid: QGridLayout) -> None:
-    grid.setContentsMargins(8, 6, 8, 6)
-    grid.setHorizontalSpacing(8)
-    grid.setVerticalSpacing(8)
-    grid.setColumnMinimumWidth(0, LABEL_COLUMN_WIDTH)
-    grid.setColumnMinimumWidth(2, LABEL_COLUMN_WIDTH)
+    grid.setContentsMargins(6, 4, 6, 4)
+    grid.setHorizontalSpacing(6)
+    grid.setVerticalSpacing(6)
+    grid.setColumnStretch(0, 0)
     grid.setColumnStretch(1, 1)
+    grid.setColumnStretch(2, 0)
     grid.setColumnStretch(3, 1)
-    grid.setColumnMinimumWidth(1, INPUT_COLUMN_WIDTH)
-    grid.setColumnMinimumWidth(3, INPUT_COLUMN_WIDTH)
 
 
 class ParameterForm(QWidget):
@@ -737,7 +735,7 @@ class ParameterForm(QWidget):
         self._add_mode_group(self.geometry_section.content_layout, stacks_by_controller.get("GCurve.Type"))
         self._add_rollback_group(self.geometry_section.content_layout, grouped_geometry)
 
-        self._add_group_by_name(self.mesh_section.content_layout, grouped_mesh, "Core")
+        self._add_mesh_core_group(self.mesh_section.content_layout, grouped_mesh)
         self._add_group_by_name(self.mesh_section.content_layout, grouped_mesh, "Enclosure")
 
     def _fields_by_group(self, fields: Iterable[FieldSpec]) -> Dict[str, List[FieldSpec]]:
@@ -757,6 +755,33 @@ class ParameterForm(QWidget):
         if not fields:
             return
         self._add_grouped_fields(parent_layout, fields, forced_group_name=group_name)
+
+    def _add_mesh_core_group(self, parent_layout: QVBoxLayout, grouped_fields: Dict[str, List[FieldSpec]]) -> None:
+        fields = list(grouped_fields.get("Core", []))
+        if not fields:
+            return
+
+        selection_priority = {"Mesh.Quadrants": 0, "Mesh.RearShape": 1}
+        ordered = sorted(fields, key=lambda field: (selection_priority.get(field.key, 9), field.order))
+
+        box = QGroupBox("Core")
+        grid = QGridLayout(box)
+        _configure_grid(grid)
+        grid.setColumnStretch(0, 0)
+        grid.setColumnStretch(1, 1)
+        grid.setColumnStretch(2, 0)
+        grid.setColumnStretch(3, 0)
+
+        for row, field in enumerate(ordered):
+            label = QLabel(field.label)
+            label.setWordWrap(True)
+            label.setFixedWidth(LABEL_COLUMN_WIDTH)
+            editor = self._ensure_editor(field)
+            grid.addWidget(label, row, 0)
+            grid.addWidget(editor, row, 1, 1, 1, alignment=Qt.AlignLeft)
+            self._field_labels[field.key] = label
+
+        parent_layout.addWidget(box)
 
     def _add_mode_group(self, parent_layout: QVBoxLayout, stack: Optional[ModeStackSpec]) -> None:
         if stack is None:
@@ -783,7 +808,7 @@ class ParameterForm(QWidget):
         _configure_grid(controller_grid)
         controller_label = QLabel(controller.label)
         controller_label.setWordWrap(True)
-        controller_label.setMaximumWidth(LABEL_COLUMN_WIDTH)
+        controller_label.setFixedWidth(LABEL_COLUMN_WIDTH)
         controller_editor = self._ensure_editor(controller)
         controller_grid.addWidget(controller_label, 0, 0)
         controller_grid.addWidget(controller_editor, 0, 1)
@@ -798,7 +823,7 @@ class ParameterForm(QWidget):
             for index, field in enumerate(detail_fields):
                 label = QLabel(field.label)
                 label.setWordWrap(True)
-                label.setMaximumWidth(LABEL_COLUMN_WIDTH)
+                label.setFixedWidth(LABEL_COLUMN_WIDTH)
                 editor = self._ensure_editor(field)
                 row = index // 2
                 col = index % 2
@@ -832,7 +857,7 @@ class ParameterForm(QWidget):
         _configure_grid(controller_grid)
         controller_label = QLabel(controller.label)
         controller_label.setWordWrap(True)
-        controller_label.setMaximumWidth(LABEL_COLUMN_WIDTH)
+        controller_label.setFixedWidth(LABEL_COLUMN_WIDTH)
         controller_editor = self._ensure_editor(controller)
         controller_grid.addWidget(controller_label, 0, 0)
         controller_grid.addWidget(controller_editor, 0, 1)
@@ -847,7 +872,7 @@ class ParameterForm(QWidget):
             for index, field in enumerate(detail_fields):
                 label = QLabel(field.label)
                 label.setWordWrap(True)
-                label.setMaximumWidth(LABEL_COLUMN_WIDTH)
+                label.setFixedWidth(LABEL_COLUMN_WIDTH)
                 editor = self._ensure_editor(field)
                 row = index // 2
                 col = index % 2
@@ -882,7 +907,7 @@ class ParameterForm(QWidget):
             for index, field in enumerate(ordered):
                 label = QLabel(field.label)
                 label.setWordWrap(True)
-                label.setMaximumWidth(LABEL_COLUMN_WIDTH)
+                label.setFixedWidth(LABEL_COLUMN_WIDTH)
                 editor = self._ensure_editor(field)
                 row = index // 2
                 col = index % 2
@@ -905,7 +930,7 @@ class ParameterForm(QWidget):
             _configure_grid(controller_grid)
             controller_label = QLabel(controller.label)
             controller_label.setWordWrap(True)
-            controller_label.setMaximumWidth(LABEL_COLUMN_WIDTH)
+            controller_label.setFixedWidth(LABEL_COLUMN_WIDTH)
             controller_editor = self._ensure_editor(controller)
             controller_grid.addWidget(controller_label, 0, 0)
             controller_grid.addWidget(controller_editor, 0, 1)
@@ -930,13 +955,10 @@ class ParameterForm(QWidget):
                         continue
                     label = QLabel(field.label)
                     label.setWordWrap(True)
-                    label.setMaximumWidth(LABEL_COLUMN_WIDTH)
+                    label.setFixedWidth(LABEL_COLUMN_WIDTH)
                     editor = self._ensure_editor(field)
-                    row = index // 2
-                    col = index % 2
-                    base_col = col * 2
-                    common_grid.addWidget(label, row, base_col)
-                    common_grid.addWidget(editor, row, base_col + 1)
+                    common_grid.addWidget(label, index, 0)
+                    common_grid.addWidget(editor, index, 1, 1, 1, alignment=Qt.AlignLeft)
                     self._field_labels[key] = label
                 common_box.content_layout.addWidget(common_widget)
                 box_layout.addWidget(common_box)
@@ -944,11 +966,29 @@ class ParameterForm(QWidget):
             pages = QStackedWidget()
             index_by_value: Dict[Optional[int], int] = {}
             for page in stack.pages:
+                page_fields = [key for key in page.field_keys if key not in common_keys]
+                page_single_field = self._field_specs.get(page_fields[0]) if len(page_fields) == 1 else None
+                single_object_page = bool(
+                    page_single_field is not None and page_single_field.widget_kind == "object"
+                )
+
+                if single_object_page:
+                    page_widget = QWidget()
+                    page_layout = QVBoxLayout(page_widget)
+                    page_layout.setContentsMargins(0, 0, 0, 0)
+                    page_layout.setSpacing(0)
+                    field = page_single_field
+                    if field is not None:
+                        editor = self._ensure_editor(field)
+                        page_layout.addWidget(editor, 0, Qt.AlignLeft)
+                    page_index = pages.addWidget(page_widget)
+                    index_by_value[page.value] = page_index
+                    continue
+
                 page_widget = ContextFrame(page.label)
                 page_grid_widget = QWidget()
                 page_grid = QGridLayout(page_grid_widget)
                 _configure_grid(page_grid)
-                page_fields = [key for key in page.field_keys if key not in common_keys]
 
                 for row_index, key in enumerate(page_fields):
                     field = self._field_specs.get(key)
@@ -956,13 +996,10 @@ class ParameterForm(QWidget):
                         continue
                     label = QLabel(field.label)
                     label.setWordWrap(True)
-                    label.setMaximumWidth(LABEL_COLUMN_WIDTH)
+                    label.setFixedWidth(LABEL_COLUMN_WIDTH)
                     editor = self._ensure_editor(field)
-                    row = row_index // 2
-                    col = row_index % 2
-                    base_col = col * 2
-                    page_grid.addWidget(label, row, base_col)
-                    page_grid.addWidget(editor, row, base_col + 1)
+                    page_grid.addWidget(label, row_index, 0)
+                    page_grid.addWidget(editor, row_index, 1, 1, 1, alignment=Qt.AlignLeft)
                     self._field_labels[key] = label
                 page_grid.setRowStretch(99, 1)
                 page_widget.content_layout.addWidget(page_grid_widget)

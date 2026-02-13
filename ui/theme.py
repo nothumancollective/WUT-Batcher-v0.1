@@ -58,13 +58,20 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     r = tokens.radii
     return f"""
     QWidget {{
-        background-color: {c['bg']};
+        background-color: transparent;
         color: {c['text']};
         font-size: {int(tokens.typography['font_size_base'])}px;
         font-family: {_font_css_stack(tokens)};
     }}
-    QMainWindow {{
+    QMainWindow, QDialog {{
         background-color: {c['bg']};
+    }}
+    QStackedWidget, QScrollArea {{
+        background-color: transparent;
+        border: none;
+    }}
+    QScrollArea > QWidget > QWidget {{
+        background-color: transparent;
     }}
     QLabel#PageTitle {{
         font-size: 28px;
@@ -94,9 +101,12 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         border-radius: {r['lg']}px;
     }}
     QFrame#ContextFrame {{
-        background-color: {c['surface2']};
+        background-color: rgba(255, 255, 255, 0.02);
         border: 1px solid {c['border']};
         border-radius: {r['md']}px;
+    }}
+    QFrame#ContextFrame > QWidget {{
+        background-color: transparent;
     }}
     QGroupBox {{
         background-color: {c['surface']};
