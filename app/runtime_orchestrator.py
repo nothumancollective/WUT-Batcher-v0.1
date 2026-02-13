@@ -125,24 +125,34 @@ def _ingest_vacs_exports(
             parse_errors.append(f"{path.name}: {exc}")
             continue
 
-        for point_index, (x_value, y_value) in enumerate(parsed.points):
-            rows.append(
-                {
-                    "project_id": project.project_id,
-                    "batch_id": batch.batch_id,
-                    "version_id": version_id,
-                    "graph_type": parsed.graph_type,
-                    "x_name": parsed.x_name,
-                    "y_name": parsed.y_name,
-                    "x_unit": parsed.x_unit,
-                    "y_unit": parsed.y_unit,
-                    "x_value": x_value,
-                    "y_value": y_value,
-                    "point_index": point_index,
-                    "source_file": str(path),
-                    "export_meta": parsed.export_meta,
-                }
-            )
+        for series in parsed.series:
+            for point_index, point in enumerate(series.points):
+                rows.append(
+                    {
+                        "project_id": project.project_id,
+                        "batch_id": batch.batch_id,
+                        "version_id": version_id,
+                        "graph_type": parsed.graph_type,
+                        "graph_kind": parsed.graph_type,
+                        "x_name": parsed.x_name,
+                        "y_name": parsed.y_name,
+                        "x_axis": parsed.x_name,
+                        "y_axis": parsed.y_name,
+                        "x_unit": parsed.x_unit,
+                        "y_unit": parsed.y_unit,
+                        "series_kind": series.series_kind,
+                        "angle_deg": series.angle_deg,
+                        "series_label": series.label,
+                        "series_meta": series.meta,
+                        "x_value": point.x_value,
+                        "y_value": point.y_value,
+                        "y_imag": point.y_imag,
+                        "point_index": point_index,
+                        "source_file": str(path),
+                        "export_meta": parsed.export_meta,
+                        "meta_json": parsed.export_meta,
+                    }
+                )
 
     write_result: Dict[str, Any] = {}
     if rows:

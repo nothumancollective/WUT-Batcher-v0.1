@@ -10,6 +10,24 @@ from typing import Any, Dict, List, Optional, Tuple
 
 NUMBER_RE = re.compile(r"[-+]?(?:\d+(?:[.,]\d*)?|[.,]\d+)(?:[eE][-+]?\d+)?")
 RESULT_GRAPH_RE = re.compile(r"(?i)^Result_(?:V\d+)?_?([A-Za-z][A-Za-z0-9_-]*)$")
+SERIES_MARKER_RE = re.compile(r"(?i)^(?:series|curve|angle)\s*[:=]\s*(.+)$")
+SERIES_BRACKET_RE = re.compile(r"(?i)^\[(?:series|curve|angle)\s*[:=]\s*(.+)\]$")
+
+
+@dataclass(frozen=True)
+class VacsSeriesPoint:
+    x_value: float
+    y_value: float
+    y_imag: Optional[float] = None
+
+
+@dataclass(frozen=True)
+class VacsSeries:
+    series_kind: str
+    angle_deg: Optional[float]
+    label: str
+    points: List[VacsSeriesPoint]
+    meta: Dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -19,8 +37,16 @@ class VacsGraph:
     y_name: str
     x_unit: str
     y_unit: str
-    points: List[Tuple[float, float]]
+    series: List[VacsSeries]
     export_meta: Dict[str, Any]
+
+    @property
+    def points(self) -> List[Tuple[float, float]]:
+        flattened: List[Tuple[float, float]] = []
+        for series in self.series:
+            for point in series.points:
+                flattened.append((point.x_value, point.y_value))
+        return flattened
 
 
 def _strip_quotes(value: str) -> str:
@@ -95,6 +121,31 @@ def _pick_meta(metadata: Dict[str, str], keys: List[str]) -> str:
     return ""
 
 
+def _extract_angle_deg(value: str) -> Optional[float]:
+    stripped = value.strip()
+    if not stripped:
+        return None
+    lower = stripped.lower()
+    numbers = NUMBER_RE.findall(stripped)
+    if not numbers:
+        return None
+    if "angle" in lower or "deg" in lower:
+        return _parse_decimal(numbers[0])
+    if re.fullmatch(r"[-+]?(?:\d+(?:[.,]\d*)?|[.,]\d+)", stripped):
+        return _parse_decimal(stripped)
+    return None
+
+
+def _series_marker(line: str) -> Optional[str]:
+    match = SERIES_MARKER_RE.match(line.strip())
+    if match:
+        return _strip_quotes(match.group(1))
+    match = SERIES_BRACKET_RE.match(line.strip())
+    if match:
+        return _strip_quotes(match.group(1))
+    return None
+
+
 def parse_vacs_txt_file(path: str | Path, *, default_graph_type: Optional[str] = None) -> VacsGraph:
     source_path = Path(path)
     lines = source_path.read_text(encoding="utf-8-sig", errors="replace").splitlines()
@@ -117,7 +168,26 @@ def parse_vacs_txt_file(path: str | Path, *, default_graph_type: Optional[str] =
 
     data_started = not has_explicit_data_markers
     header_tokens: List[str] = []
-    points: List[Tuple[float, float]] = []
+    series_order: List[str] = []
+    series_points: Dict[str, List[VacsSeriesPoint]] = {}
+    series_meta: Dict[str, Dict[str, Any]] = {}
+    active_series = "default"
+
+    def ensure_series(label: str) -> str:
+        normalized = (label or "default").strip() or "default"
+        if normalized not in series_points:
+            series_points[normalized] = []
+            angle = _extract_angle_deg(normalized)
+            series_kind = "angle_slice" if angle is not None else "curve"
+            series_meta[normalized] = {
+                "label": normalized,
+                "series_kind": series_kind,
+                "angle_deg": angle,
+            }
+            series_order.append(normalized)
+        return normalized
+
+    ensure_series(active_series)
 
     for line in lines:
         stripped = line.strip()
@@ -132,6 +202,10 @@ def parse_vacs_txt_file(path: str | Path, *, default_graph_type: Optional[str] =
             continue
         if stripped.startswith(("#", ";")):
             continue
+        marker = _series_marker(stripped)
+        if marker is not None:
+            active_series = ensure_series(marker)
+            continue
         if "=" in stripped and NUMBER_RE.search(stripped) is None:
             continue
 
@@ -139,14 +213,16 @@ def parse_vacs_txt_file(path: str | Path, *, default_graph_type: Optional[str] =
         if len(numbers) >= 2:
             x = _parse_decimal(numbers[0])
             y = _parse_decimal(numbers[1])
+            y_imag = _parse_decimal(numbers[2]) if len(numbers) >= 3 else None
             if x is not None and y is not None:
-                points.append((x, y))
+                series_points[active_series].append(VacsSeriesPoint(x_value=x, y_value=y, y_imag=y_imag))
             continue
 
         if not header_tokens and re.search(r"[A-Za-z]", stripped):
             header_tokens = _split_header_tokens(stripped)
 
-    if not points:
+    total_points = sum(len(points) for points in series_points.values())
+    if total_points <= 0:
         raise ValueError(f"No numeric graph points found in VACS export: {source_path}")
 
     x_name = _pick_meta(metadata, ["x_name", "xname", "data_x_name", "data_xname", "data_abscissa_name"]) or "x"
@@ -167,9 +243,30 @@ def parse_vacs_txt_file(path: str | Path, *, default_graph_type: Optional[str] =
             y_unit = header_y_unit
 
     graph_type = _infer_graph_type(source_path, metadata, default_graph_type)
+    parsed_series: List[VacsSeries] = []
+    for label in series_order:
+        points = series_points.get(label, [])
+        if not points:
+            continue
+        meta = series_meta.get(label, {})
+        parsed_series.append(
+            VacsSeries(
+                series_kind=str(meta.get("series_kind", "curve")),
+                angle_deg=float(meta["angle_deg"]) if meta.get("angle_deg") is not None else None,
+                label=label,
+                points=points,
+                meta={
+                    "label": label,
+                    "point_count": len(points),
+                },
+            )
+        )
+
     export_meta: Dict[str, Any] = {
         "metadata": metadata,
-        "point_count": len(points),
+        "point_count": total_points,
+        "series_count": len(parsed_series),
+        "contains_complex": any(point.y_imag is not None for series in parsed_series for point in series.points),
         "source_file": str(source_path),
     }
 
@@ -179,6 +276,6 @@ def parse_vacs_txt_file(path: str | Path, *, default_graph_type: Optional[str] =
         y_name=y_name,
         x_unit=x_unit,
         y_unit=y_unit,
-        points=points,
+        series=parsed_series,
         export_meta=export_meta,
     )

@@ -428,3 +428,25 @@
 - Added migration regression test:
   - `tests/test_sql_dataset_store.py::test_migrates_legacy_graph_points_schema_to_series_model`
 - Extended storage smoke assertions with `graph_series` row counts.
+
+### Update 15 (VACS Polar/Complex TXT Ingestion)
+#### Done
+- Extended `app/vacs_txt_parser.py` from flat point parsing to series-aware parsing:
+  - new model: `VacsGraph -> VacsSeries[] -> VacsSeriesPoint[]`
+  - supports per-series markers (e.g. `Series=Angle:30`)
+  - extracts `angle_deg` for polar slices
+  - parses optional third numeric column into `y_imag` for complex-valued exports
+- Updated runtime ingestion (`app/runtime_orchestrator.py`) to write:
+  - graph metadata to `graphs`
+  - per-angle/per-curve rows to `graph_series`
+  - point data with optional imaginary part to `graph_points`
+  - includes `meta_json/export_meta` persistence for reproducible provenance.
+
+#### Tests
+- Added fixtures:
+  - `tests/fixtures/vacs/result_v001polar.txt` (3 angles x 5 freqs)
+  - `tests/fixtures/vacs/result_v001polar_complex.txt` (complex samples)
+- Added parser coverage:
+  - `tests/test_vacs_txt_parser.py` polar + complex parsing assertions
+- Added run-loop integration coverage:
+  - `tests/test_runtime_orchestrator.py::test_pipeline_ingests_polar_series_into_sql`
