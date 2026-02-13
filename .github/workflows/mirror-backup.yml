@@ -20,6 +20,15 @@ jobs:
         run: |
           git clone --mirror "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" repo.mirror
 
+      - name: Remove workflow files from backup mirror
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-pip
+          pip3 install git-filter-repo
+          cd repo.mirror
+          # entferne nur Actions-Workflows
+          git filter-repo --force --path .github/workflows --invert-paths
+
       - name: Push mirror to backup repo
         env:
           BACKUP_REPO: ${{ secrets.BACKUP_REPO }}
