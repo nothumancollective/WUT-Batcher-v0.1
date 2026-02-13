@@ -375,6 +375,9 @@ def build_project_form_schema(bundle: AthKnowledgeBundle | None = None) -> FormS
             continue
         if key.startswith("Source."):
             continue
+        if key.startswith("Rollback"):
+            # ATH runtime no longer supports rollback in current mode.
+            continue
         if key == "OSSE":
             # PROJECT UX keeps explicit OS-SE mode through Throat.Profile + Term/OS keys.
             continue

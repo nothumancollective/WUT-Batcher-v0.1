@@ -207,24 +207,34 @@
       "rationale": "Morph-enabled modes expose morph detail fields."
     },
     {
-      "id": "visibility_rollback_off",
+      "id": "visibility_rollback_unsupported",
       "scope": "visibility",
-      "when": "!isDefined(Rollback) || Rollback == 0",
+      "when": "true",
       "then": [
+        "hide(Rollback)",
+        "hide(Rollback.Angle)",
+        "hide(Rollback.Exp)",
         "hide(Rollback.StartAt)"
       ],
       "severity": "info",
-      "rationale": "Rollback details are hidden while rollback is disabled."
+      "rationale": "Rollback is unsupported in the current ATH runtime and is hidden from PROJECT constraints."
     },
     {
-      "id": "visibility_rollback_on",
-      "scope": "visibility",
+      "id": "validity_rollback_not_supported",
+      "scope": "validity",
       "when": "isDefined(Rollback) && Rollback != 0",
       "then": [
-        "show(Rollback.StartAt)"
+        "warn(\"Rollback is not supported in this ATH version. Use R-OSSE profile instead.\")"
       ],
-      "severity": "info",
-      "rationale": "Rollback.StartAt shown when rollback is enabled."
+      "severity": "fatal",
+      "rationale": "ATH runtime rejects rollback geometry; use R-OSSE profile alternatives.",
+      "evidence": {
+        "type": "hypothesis",
+        "refs": [],
+        "confidence": 0.4,
+        "notes": "Observed in ATH V2025-06 runtime output: 'The rollback feature is no longer supported. Use R-OSSE profile instead.'"
+      },
+      "verification_plan": "Run targeted ATH cases with Rollback enabled and verify deterministic fatal output across runs."
     },
     {
       "id": "visibility_mesh_interfaceoffset_off",

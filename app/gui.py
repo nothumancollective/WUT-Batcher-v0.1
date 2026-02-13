@@ -616,6 +616,12 @@ class ProjectPage(QWidget):
 
         self.constraints_form = ParameterForm(build_project_form_schema())
         root.addWidget(self.constraints_form, 1)
+        self.rollback_notice = QLabel(
+            "Rollback is not supported in this ATH version. Use R-OSSE profile instead."
+        )
+        self.rollback_notice.setWordWrap(True)
+        self.rollback_notice.setObjectName("IssueHint")
+        root.addWidget(self.rollback_notice)
 
         buttons = QGridLayout()
         buttons.setContentsMargins(0, 0, 0, 0)

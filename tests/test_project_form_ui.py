@@ -107,6 +107,12 @@ class ProjectFormUiTests(unittest.TestCase):
         self.assertIn("Projekt erstellen", labels)
         self.assertNotIn("Back to Dashboard", labels)
         self.assertNotIn("Show details", labels)
+        notice_labels = [
+            label.text()
+            for label in page.findChildren(QLabel)
+            if "Rollback is not supported in this ATH version." in label.text()
+        ]
+        self.assertTrue(notice_labels)
         self.assertFalse(
             any("Project Compatibility" == str(box.title()) for box in page.findChildren(QGroupBox))
         )
@@ -123,7 +129,7 @@ class ProjectFormUiTests(unittest.TestCase):
             if section_layout.itemAt(index).widget() is not None
             and isinstance(section_layout.itemAt(index).widget(), QGroupBox)
         ]
-        self.assertEqual(titles, ["Basics", "Throat Profile", "Morph", "GCurve", "Rollback"])
+        self.assertEqual(titles, ["Basics", "Throat Profile", "Morph", "GCurve"])
 
     def test_mesh_order_matches_spec(self) -> None:
         section_layout = self.form.mesh_section.content_layout
@@ -165,33 +171,27 @@ class ProjectFormUiTests(unittest.TestCase):
     def test_mode_defaults_start_on_no_or_disabled_selection(self) -> None:
         gcurve_editor = self.form.editor_for_key("GCurve.Type")
         morph_editor = self.form.editor_for_key("Morph.TargetShape")
-        rollback_editor = self.form.editor_for_key("Rollback")
         enclosure_editor = self.form.editor_for_key("Mesh.Enclosure")
         self.assertIsNotNone(gcurve_editor)
         self.assertIsNotNone(morph_editor)
-        self.assertIsNotNone(rollback_editor)
+        self.assertIsNone(self.form.editor_for_key("Rollback"))
         self.assertIsNotNone(enclosure_editor)
         assert gcurve_editor is not None
         assert morph_editor is not None
-        assert rollback_editor is not None
         assert enclosure_editor is not None
 
         gcurve_segment = gcurve_editor.value_widget()  # type: ignore[attr-defined]
         morph_segment = morph_editor.value_widget()  # type: ignore[attr-defined]
-        rollback_segment = rollback_editor.value_widget()  # type: ignore[attr-defined]
         enclosure_toggle = enclosure_editor.toggle  # type: ignore[attr-defined]
         self.assertIsInstance(gcurve_segment, SegmentedEnumInput)
         self.assertIsInstance(morph_segment, SegmentedEnumInput)
-        self.assertIsInstance(rollback_segment, SegmentedEnumInput)
         self.assertIsInstance(enclosure_toggle, SegmentedEnumInput)
         assert isinstance(gcurve_segment, SegmentedEnumInput)
         assert isinstance(morph_segment, SegmentedEnumInput)
-        assert isinstance(rollback_segment, SegmentedEnumInput)
         assert isinstance(enclosure_toggle, SegmentedEnumInput)
 
         self.assertIsNone(gcurve_segment.value())
         self.assertIsNone(morph_segment.value())
-        self.assertIsNone(rollback_segment.value())
         self.assertEqual(enclosure_toggle.value(), 0)
 
     def test_reclick_other_option_returns_to_no_or_disabled_selection(self) -> None:
@@ -206,24 +206,20 @@ class ProjectFormUiTests(unittest.TestCase):
 
         gcurve_editor = self.form.editor_for_key("GCurve.Type")
         morph_editor = self.form.editor_for_key("Morph.TargetShape")
-        rollback_editor = self.form.editor_for_key("Rollback")
         enclosure_editor = self.form.editor_for_key("Mesh.Enclosure")
         self.assertIsNotNone(gcurve_editor)
         self.assertIsNotNone(morph_editor)
-        self.assertIsNotNone(rollback_editor)
+        self.assertIsNone(self.form.editor_for_key("Rollback"))
         self.assertIsNotNone(enclosure_editor)
         assert gcurve_editor is not None
         assert morph_editor is not None
-        assert rollback_editor is not None
         assert enclosure_editor is not None
 
         gcurve_segment = gcurve_editor.value_widget()  # type: ignore[attr-defined]
         morph_segment = morph_editor.value_widget()  # type: ignore[attr-defined]
-        rollback_segment = rollback_editor.value_widget()  # type: ignore[attr-defined]
         enclosure_toggle = enclosure_editor.toggle  # type: ignore[attr-defined]
         assert isinstance(gcurve_segment, SegmentedEnumInput)
         assert isinstance(morph_segment, SegmentedEnumInput)
-        assert isinstance(rollback_segment, SegmentedEnumInput)
         assert isinstance(enclosure_toggle, SegmentedEnumInput)
 
         click_value(gcurve_segment, 1)
@@ -239,11 +235,6 @@ class ProjectFormUiTests(unittest.TestCase):
         self.assertEqual(morph_segment.value(), non_zero_morph)
         click_value(morph_segment, non_zero_morph)
         self.assertIsNone(morph_segment.value())
-
-        click_value(rollback_segment, 1)
-        self.assertEqual(rollback_segment.value(), 1)
-        click_value(rollback_segment, 1)
-        self.assertIsNone(rollback_segment.value())
 
         click_value(enclosure_toggle, 1)
         self.assertEqual(enclosure_toggle.value(), 1)
