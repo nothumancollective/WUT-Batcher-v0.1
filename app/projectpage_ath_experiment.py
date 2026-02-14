@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
@@ -10,6 +11,7 @@ from pathlib import Path
 import random
 import re
 import sqlite3
+import time
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 import uuid
 
@@ -973,12 +975,77 @@ def _cleanup_report_files(
 
 def _parse_value_num(value: Any) -> Optional[float]:
     try:
+        if isinstance(value, bool):
+            return 1.0 if bool(value) else 0.0
+        if isinstance(value, (int, float)):
+            return float(value)
         text = str(value).strip().replace(",", ".")
         if not text:
             return None
         return float(text)
     except Exception:
         return None
+
+
+def _parse_structured_value_text(value_text: Optional[str]) -> Any:
+    text = str(value_text or "").strip()
+    if not text:
+        return None
+    if not (text.startswith("{") or text.startswith("[")):
+        return None
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+    try:
+        return ast.literal_eval(text)
+    except Exception:
+        return None
+
+
+def _value_to_text(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return "1" if bool(value) else "0"
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, str):
+        return value
+    try:
+        return json.dumps(value, ensure_ascii=False)
+    except Exception:
+        return str(value)
+
+
+def _flatten_param_subkeys(
+    *,
+    key: str,
+    value: Any,
+    max_list_items: int = 16,
+) -> List[Tuple[str, Any]]:
+    derived: List[Tuple[str, Any]] = []
+
+    def walk(prefix: str, current: Any) -> None:
+        if isinstance(current, Mapping):
+            for raw_child, child in list(current.items()):
+                child_key = str(raw_child).strip()
+                if not child_key:
+                    continue
+                full_key = f"{prefix}.{child_key}"
+                derived.append((full_key, child))
+                walk(full_key, child)
+            return
+        if isinstance(current, list):
+            if len(current) > max(1, int(max_list_items)):
+                return
+            for idx, child in enumerate(current):
+                full_key = f"{prefix}.{idx}"
+                derived.append((full_key, child))
+                walk(full_key, child)
+
+    walk(str(key), value)
+    return derived
 
 
 def _normalize_mm(value: str, unit: str) -> Optional[float]:
@@ -1059,7 +1126,7 @@ def classify_ath_output(stdout_text: str, stderr_text: str, *, exit_code: Option
         tail_line = lines[-1]
     return {
         "ath_warning_count": warning_count,
-        "ath_error_kind": "ath_nonzero_exit",
+        "ath_error_kind": "ath_runtime_unknown",
         "ath_error_message": tail_line or f"ATH exited with code {exit_code}",
     }
 
@@ -1076,6 +1143,7 @@ def _ensure_db_schema(conn: sqlite3.Connection) -> None:
             status TEXT NOT NULL,
             ath_exit_code INTEGER,
             ath_error_kind TEXT,
+            error_pattern_refined TEXT,
             ath_error_message TEXT,
             ath_warning_count INTEGER NOT NULL DEFAULT 0,
             cfg_path TEXT,
@@ -1132,11 +1200,15 @@ def _ensure_db_schema(conn: sqlite3.Connection) -> None:
     }
     if "run_group_id" not in columns:
         conn.execute("ALTER TABLE experiment_runs ADD COLUMN run_group_id TEXT")
+    if "error_pattern_refined" not in columns:
+        conn.execute("ALTER TABLE experiment_runs ADD COLUMN error_pattern_refined TEXT")
 
     conn.execute("CREATE INDEX IF NOT EXISTS ix_experiment_runs_status ON experiment_runs(status)")
     conn.execute("CREATE INDEX IF NOT EXISTS ix_experiment_runs_case_index ON experiment_runs(case_index)")
     conn.execute("CREATE INDEX IF NOT EXISTS ix_experiment_runs_error_kind ON experiment_runs(ath_error_kind)")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_experiment_runs_error_pattern_refined ON experiment_runs(error_pattern_refined)")
     conn.execute("CREATE INDEX IF NOT EXISTS ix_experiment_runs_group ON experiment_runs(run_group_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_experiment_runs_group_run_id ON experiment_runs(run_group_id, run_id)")
     conn.execute(
         """
         CREATE UNIQUE INDEX IF NOT EXISTS ux_experiment_runs_group_seed_case
@@ -1145,6 +1217,7 @@ def _ensure_db_schema(conn: sqlite3.Connection) -> None:
     )
     conn.execute("CREATE INDEX IF NOT EXISTS ix_experiment_params_key ON experiment_params(key)")
     conn.execute("CREATE INDEX IF NOT EXISTS ix_experiment_params_value_num ON experiment_params(value_num)")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_experiment_params_key_is_set ON experiment_params(key, is_set)")
     conn.execute("CREATE INDEX IF NOT EXISTS ix_experiment_metrics_length_mm ON experiment_metrics(final_length_mm)")
     conn.execute("CREATE INDEX IF NOT EXISTS ix_experiment_metrics_width_mm ON experiment_metrics(final_width_mm)")
     conn.execute("CREATE INDEX IF NOT EXISTS ix_experiment_metrics_height_mm ON experiment_metrics(final_height_mm)")
@@ -1241,6 +1314,7 @@ def _persist_experiment_row(
     status: str,
     ath_exit_code: Optional[int],
     ath_error_kind: Optional[str],
+    error_pattern_refined: Optional[str],
     ath_error_message: Optional[str],
     ath_warning_count: int,
     cfg_path: Optional[str],
@@ -1261,9 +1335,9 @@ def _persist_experiment_row(
     conn.execute(
         """
         INSERT OR REPLACE INTO experiment_runs(
-            run_id, run_group_id, created_at, seed, case_index, status, ath_exit_code, ath_error_kind,
+            run_id, run_group_id, created_at, seed, case_index, status, ath_exit_code, ath_error_kind, error_pattern_refined,
             ath_error_message, ath_warning_count, cfg_path, horns_export_dir, stdout_path, stderr_path, notes
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             run_id,
@@ -1274,6 +1348,7 @@ def _persist_experiment_row(
             status,
             ath_exit_code,
             ath_error_kind,
+            error_pattern_refined,
             ath_error_message,
             int(ath_warning_count),
             cfg_path,
@@ -1334,8 +1409,8 @@ def _param_rows_from_payload(
     payload: Mapping[str, Any],
     fallback_fields: Sequence[Tuple[str, Any]],
 ) -> List[Tuple[str, Optional[str], Optional[float], int]]:
-    rows: List[Tuple[str, Optional[str], Optional[float], int]] = []
-    seen: set[str] = set()
+    entries: List[Tuple[str, Any, int]] = []
+    seen_states: set[str] = set()
     for item in list(payload.get("param_states", []) or []):
         if not isinstance(item, Mapping):
             continue
@@ -1344,19 +1419,265 @@ def _param_rows_from_payload(
             continue
         is_set = 1 if int(item.get("is_set", 0)) == 1 else 0
         value = item.get("value") if is_set else None
-        value_text = str(value) if value is not None else None
-        rows.append((key, value_text, _parse_value_num(value), is_set))
-        seen.add(key)
+        entries.append((key, value, is_set))
+        seen_states.add(key)
 
-    if rows:
-        return rows
+    if not entries:
+        for key, value in fallback_fields:
+            norm_key = str(key).strip()
+            if not norm_key:
+                continue
+            entries.append((norm_key, value, 1))
+            seen_states.add(norm_key)
 
-    for key, value in fallback_fields:
-        norm_key = str(key).strip()
-        if not norm_key or norm_key in seen:
+    rows_by_key: Dict[str, Tuple[str, Optional[str], Optional[float], int]] = {}
+
+    def add_row(row_key: str, row_value: Any, row_is_set: int) -> None:
+        clean_key = str(row_key).strip()
+        if not clean_key:
+            return
+        is_set = 1 if int(row_is_set) == 1 else 0
+        value = row_value if is_set else None
+        value_text = _value_to_text(value) if value is not None else None
+        rows_by_key[clean_key] = (clean_key, value_text, _parse_value_num(value), is_set)
+
+    for key, value, is_set in entries:
+        add_row(key, value, is_set)
+
+    # Back-compat: keep parent object key and append flattened scalar/list subkeys.
+    for key, value, is_set in entries:
+        if int(is_set) != 1:
             continue
-        rows.append((norm_key, str(value), _parse_value_num(value), 1))
-    return rows
+        if not isinstance(value, (Mapping, list)):
+            continue
+        for derived_key, derived_value in _flatten_param_subkeys(key=str(key), value=value):
+            if derived_key in rows_by_key:
+                continue
+            add_row(derived_key, derived_value, 1)
+
+    return [rows_by_key[key] for key in sorted(rows_by_key.keys())]
+
+
+def _refine_error_pattern(
+    *,
+    status: str,
+    ath_error_kind: Optional[str],
+    ath_exit_code: Optional[int],
+    config_ok: Optional[bool] = None,
+    no_ghosts: Optional[bool] = None,
+) -> Optional[str]:
+    if str(status) != "ath_error":
+        return None
+    kind = str(ath_error_kind or "").strip()
+    if kind and kind.lower() != "unknown":
+        return kind
+    if ath_exit_code is not None and int(ath_exit_code) == 0:
+        compare_failed = (config_ok is False) or (no_ghosts is False)
+        if compare_failed:
+            return "compare_mismatch_exit0"
+    if ath_exit_code is not None and int(ath_exit_code) != 0:
+        return "ath_runtime_unknown"
+    return "compare_mismatch_exit0"
+
+
+def _backfill_param_subkeys(
+    conn: sqlite3.Connection,
+    *,
+    run_groups: Optional[Sequence[str]] = None,
+    max_list_items: int = 16,
+    batch_size: int = 200,
+) -> Dict[str, Any]:
+    groups = [str(item).strip() for item in list(run_groups or []) if str(item).strip()]
+    params: List[Any] = []
+    where = ""
+    if groups:
+        placeholders = ", ".join("?" for _ in groups)
+        where = f"WHERE run_group_id IN ({placeholders})"
+        params.extend(groups)
+
+    run_rows = conn.execute(
+        f"""
+        SELECT run_id, COALESCE(run_group_id, '<null>')
+        FROM experiment_runs
+        {where}
+        ORDER BY created_at, run_id
+        """,
+        tuple(params),
+    ).fetchall()
+    run_ids = [str(row[0]) for row in run_rows]
+    if not run_ids:
+        return {
+            "applied": True,
+            "rows_added": 0,
+            "runs_processed": 0,
+            "groups_touched": [],
+            "idempotent_noop": True,
+        }
+
+    groups_touched = sorted({str(row[1]) for row in run_rows})
+    rows_added = 0
+    runs_processed = 0
+    start_ts = time.perf_counter()
+
+    for start in range(0, len(run_ids), max(1, int(batch_size))):
+        chunk = run_ids[start : start + max(1, int(batch_size))]
+        placeholders = ", ".join("?" for _ in chunk)
+        param_rows = conn.execute(
+            f"""
+            SELECT run_id, key, value_text, is_set
+            FROM experiment_params
+            WHERE run_id IN ({placeholders})
+            ORDER BY run_id, key
+            """,
+            tuple(chunk),
+        ).fetchall()
+        by_run: Dict[str, List[sqlite3.Row]] = {}
+        for row in param_rows:
+            by_run.setdefault(str(row[0]), []).append(row)
+
+        insert_rows: List[Tuple[str, str, Optional[str], Optional[float], int]] = []
+        for run_id in chunk:
+            run_params = by_run.get(str(run_id), [])
+            existing_keys = {str(row[1]) for row in run_params}
+            for row in run_params:
+                key = str(row[1] or "").strip()
+                if not key:
+                    continue
+                if int(row[3] or 0) != 1:
+                    continue
+                parsed_value = _parse_structured_value_text(row[2])
+                if parsed_value is None:
+                    continue
+                if not isinstance(parsed_value, (Mapping, list)):
+                    continue
+                for derived_key, derived_value in _flatten_param_subkeys(
+                    key=key,
+                    value=parsed_value,
+                    max_list_items=max_list_items,
+                ):
+                    if derived_key in existing_keys:
+                        continue
+                    value_text = _value_to_text(derived_value)
+                    insert_rows.append(
+                        (
+                            str(run_id),
+                            str(derived_key),
+                            value_text,
+                            _parse_value_num(derived_value),
+                            1,
+                        )
+                    )
+                    existing_keys.add(derived_key)
+
+        if insert_rows:
+            before_changes = int(conn.total_changes)
+            conn.executemany(
+                """
+                INSERT OR IGNORE INTO experiment_params(run_id, key, value_text, value_num, is_set)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                insert_rows,
+            )
+            rows_added += int(conn.total_changes) - before_changes
+        runs_processed += len(chunk)
+        conn.commit()
+
+    elapsed_s = time.perf_counter() - start_ts
+    return {
+        "applied": True,
+        "rows_added": int(rows_added),
+        "runs_processed": int(runs_processed),
+        "groups_touched": groups_touched,
+        "elapsed_s": round(float(elapsed_s), 3),
+        "idempotent_noop": int(rows_added) == 0,
+    }
+
+
+def _backfill_unknown_split(
+    conn: sqlite3.Connection,
+    *,
+    run_groups: Optional[Sequence[str]] = None,
+) -> Dict[str, Any]:
+    groups = [str(item).strip() for item in list(run_groups or []) if str(item).strip()]
+    params: List[Any] = []
+    where = ""
+    if groups:
+        placeholders = ", ".join("?" for _ in groups)
+        where = f"AND r.run_group_id IN ({placeholders})"
+        params.extend(groups)
+
+    rows = conn.execute(
+        f"""
+        SELECT
+            r.run_id,
+            r.status,
+            r.ath_error_kind,
+            r.error_pattern_refined,
+            r.ath_exit_code,
+            c.config_ok,
+            c.no_ghosts
+        FROM experiment_runs r
+        LEFT JOIN experiment_compare c ON c.run_id = r.run_id
+        WHERE 1=1
+          {where}
+        ORDER BY r.created_at, r.run_id
+        """,
+        tuple(params),
+    ).fetchall()
+    if not rows:
+        return {
+            "applied": True,
+            "rows_updated": 0,
+            "runs_processed": 0,
+            "unknown_to_compare_mismatch_exit0": 0,
+            "unknown_to_ath_runtime_unknown": 0,
+            "idempotent_noop": True,
+        }
+
+    updates: List[Tuple[Optional[str], str]] = []
+    compare_count = 0
+    runtime_count = 0
+    for row in rows:
+        run_id = str(row[0])
+        status = str(row[1] or "")
+        kind = str(row[2] or "").strip() or None
+        current_refined = str(row[3] or "").strip() or None
+        exit_code = row[4]
+        config_ok = (None if row[5] is None else bool(int(row[5])))
+        no_ghosts = (None if row[6] is None else bool(int(row[6])))
+        refined = _refine_error_pattern(
+            status=status,
+            ath_error_kind=kind,
+            ath_exit_code=(int(exit_code) if exit_code is not None else None),
+            config_ok=config_ok,
+            no_ghosts=no_ghosts,
+        )
+        if str(kind or "").lower() in {"", "unknown"}:
+            if refined == "compare_mismatch_exit0":
+                compare_count += 1
+            elif refined == "ath_runtime_unknown":
+                runtime_count += 1
+        if str(current_refined or "") == str(refined or ""):
+            continue
+        updates.append((refined, run_id))
+
+    rows_updated = 0
+    if updates:
+        before_changes = int(conn.total_changes)
+        conn.executemany(
+            "UPDATE experiment_runs SET error_pattern_refined = ? WHERE run_id = ?",
+            updates,
+        )
+        rows_updated = int(conn.total_changes) - before_changes
+        conn.commit()
+    return {
+        "applied": True,
+        "rows_updated": rows_updated,
+        "runs_processed": len(rows),
+        "unknown_to_compare_mismatch_exit0": int(compare_count),
+        "unknown_to_ath_runtime_unknown": int(runtime_count),
+        "idempotent_noop": rows_updated == 0,
+    }
 
 
 def _query_with_run_ids(conn: sqlite3.Connection, base_sql: str, run_ids: Sequence[str]) -> List[sqlite3.Row]:
@@ -1472,14 +1793,28 @@ def _compute_range_suggestions(conn: sqlite3.Connection, run_ids: Sequence[str])
     return suggestions
 
 
-def _top_error_patterns(reports: Sequence[Mapping[str, Any]], *, limit: int = 10) -> List[Dict[str, Any]]:
+def _report_error_kind(report: Mapping[str, Any], *, prefer_refined: bool = False) -> str:
+    errors = dict(report.get("errors", {}) or {})
+    if prefer_refined:
+        refined = str(errors.get("error_pattern_refined") or "").strip()
+        if refined:
+            return refined
+    kind = str(errors.get("ath_error_kind") or "").strip()
+    return kind or "unknown"
+
+
+def _top_error_patterns(
+    reports: Sequence[Mapping[str, Any]],
+    *,
+    limit: int = 10,
+    prefer_refined: bool = False,
+) -> List[Dict[str, Any]]:
     counts: Dict[str, Dict[str, Any]] = {}
     for report in reports:
         status = str(report.get("status", ""))
         if status != "ath_error":
             continue
-        error_payload = dict(report.get("errors", {}) or {})
-        kind = str(error_payload.get("ath_error_kind") or "unknown")
+        kind = _report_error_kind(report, prefer_refined=prefer_refined)
         item = counts.setdefault(kind, {"kind": kind, "count": 0, "example_run_ids": []})
         item["count"] = int(item["count"]) + 1
         run_id = str(report.get("run_id") or "")
@@ -1576,14 +1911,17 @@ def _mode_error_rates(reports: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
     return result
 
 
-def _error_class_mode_breakdown(reports: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
+def _error_class_mode_breakdown(
+    reports: Sequence[Mapping[str, Any]],
+    *,
+    prefer_refined: bool = False,
+) -> Dict[str, Any]:
     classes: Dict[str, Dict[str, Any]] = {}
     for report in reports:
         status = str(report.get("status", ""))
         if status != "ath_error":
             continue
-        errors = dict(report.get("errors", {}) or {})
-        error_class = str(errors.get("ath_error_kind") or "unknown")
+        error_class = _report_error_kind(report, prefer_refined=prefer_refined)
         item = classes.setdefault(
             error_class,
             {
@@ -1612,7 +1950,11 @@ def _error_class_mode_breakdown(reports: Sequence[Mapping[str, Any]]) -> Dict[st
     return {key: value for key, value in ranked}
 
 
-def _build_mode_error_matrix(reports: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
+def _build_mode_error_matrix(
+    reports: Sequence[Mapping[str, Any]],
+    *,
+    prefer_refined: bool = False,
+) -> Dict[str, Any]:
     matrix: Dict[str, Dict[str, Dict[str, int]]] = {
         "gcurve": {},
         "throat_profile": {},
@@ -1621,8 +1963,7 @@ def _build_mode_error_matrix(reports: Sequence[Mapping[str, Any]]) -> Dict[str, 
     }
     for report in reports:
         status = str(report.get("status", "ok"))
-        errors = dict(report.get("errors", {}) or {})
-        error_class = "ok" if status == "ok" else str(errors.get("ath_error_kind") or status)
+        error_class = "ok" if status == "ok" else _report_error_kind(report, prefer_refined=prefer_refined)
         modes = _mode_from_report(report)
         for axis in ("gcurve", "throat_profile", "morph", "enclosure"):
             mode_name = str(modes.get(axis, "unknown"))
@@ -1770,7 +2111,7 @@ def _reports_from_db(conn: sqlite3.Connection, *, run_ids: Sequence[str]) -> Lis
     if not run_ids:
         return []
     runs_sql = """
-        SELECT run_id, status, ath_error_kind
+        SELECT run_id, status, ath_error_kind, error_pattern_refined
         FROM experiment_runs
         WHERE run_id IN ({placeholders})
     """
@@ -1799,6 +2140,7 @@ def _reports_from_db(conn: sqlite3.Connection, *, run_ids: Sequence[str]) -> Lis
         runs_map[str(row[0])] = {
             "status": str(row[1] or "pipeline_error"),
             "ath_error_kind": str(row[2] or "") or None,
+            "error_pattern_refined": str(row[3] or "") or None,
         }
 
     metrics_map: Dict[str, Dict[str, Any]] = {}
@@ -1837,6 +2179,7 @@ def _reports_from_db(conn: sqlite3.Connection, *, run_ids: Sequence[str]) -> Lis
                 "status": str(run_payload.get("status", "pipeline_error")),
                 "errors": {
                     "ath_error_kind": run_payload.get("ath_error_kind"),
+                    "error_pattern_refined": run_payload.get("error_pattern_refined"),
                 },
                 "metrics": metrics,
                 "input_summary": {
@@ -2000,6 +2343,245 @@ def _write_history_snapshots(
     return {
         "summary_snapshot_path": str(summary_path),
         "range_snapshot_path": str(range_path),
+    }
+
+
+def _parse_run_group_selector(run_group: Optional[str]) -> Optional[List[str]]:
+    text = str(run_group or "").strip()
+    if not text or text.lower() == "all":
+        return None
+    return [item.strip() for item in text.split(",") if item.strip()]
+
+
+def _all_run_ids(conn: sqlite3.Connection) -> List[str]:
+    rows = conn.execute(
+        """
+        SELECT run_id
+        FROM experiment_runs
+        ORDER BY created_at, run_id
+        """
+    ).fetchall()
+    return [str(row[0]) for row in rows]
+
+
+def run_ath_experiments_backfill_subkeys(
+    *,
+    reports_root: str | Path = "reports/ath_experiments",
+    run_group: Optional[str] = None,
+) -> Dict[str, Any]:
+    reports_root_path = Path(reports_root)
+    reports_root_path.mkdir(parents=True, exist_ok=True)
+    history_root = reports_root_path / "history"
+    history_root.mkdir(parents=True, exist_ok=True)
+    db_path = reports_root_path / "ath_experiments.sqlite"
+    run_groups = _parse_run_group_selector(run_group)
+
+    with sqlite3.connect(str(db_path)) as conn:
+        conn.row_factory = sqlite3.Row
+        _ensure_db_schema(conn)
+        summary = _backfill_param_subkeys(conn, run_groups=run_groups)
+
+    payload = {
+        "generated_at": _now_iso(),
+        "db_path": str(db_path),
+        "run_group_selector": run_group if run_group else "all",
+        **summary,
+    }
+    report_path = history_root / f"backfill_subkeys_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}.json"
+    report_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    payload["report_path"] = str(report_path)
+    return payload
+
+
+def run_ath_experiments_backfill_unknown_split(
+    *,
+    reports_root: str | Path = "reports/ath_experiments",
+    run_group: Optional[str] = None,
+) -> Dict[str, Any]:
+    reports_root_path = Path(reports_root)
+    reports_root_path.mkdir(parents=True, exist_ok=True)
+    history_root = reports_root_path / "history"
+    history_root.mkdir(parents=True, exist_ok=True)
+    db_path = reports_root_path / "ath_experiments.sqlite"
+    run_groups = _parse_run_group_selector(run_group)
+
+    with sqlite3.connect(str(db_path)) as conn:
+        conn.row_factory = sqlite3.Row
+        _ensure_db_schema(conn)
+        summary = _backfill_unknown_split(conn, run_groups=run_groups)
+
+    payload = {
+        "generated_at": _now_iso(),
+        "db_path": str(db_path),
+        "run_group_selector": run_group if run_group else "all",
+        **summary,
+    }
+    report_path = history_root / f"unknown_split_backfill_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}.json"
+    report_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    payload["report_path"] = str(report_path)
+    return payload
+
+
+def run_ath_experiments_refined_reports(
+    *,
+    reports_root: str | Path = "reports/ath_experiments",
+    run_group: Optional[str] = None,
+) -> Dict[str, Any]:
+    reports_root_path = Path(reports_root)
+    reports_root_path.mkdir(parents=True, exist_ok=True)
+    history_root = reports_root_path / "history"
+    history_root.mkdir(parents=True, exist_ok=True)
+    db_path = reports_root_path / "ath_experiments.sqlite"
+    run_groups = _parse_run_group_selector(run_group)
+
+    with sqlite3.connect(str(db_path)) as conn:
+        conn.row_factory = sqlite3.Row
+        _ensure_db_schema(conn)
+        if run_groups:
+            run_ids = _run_ids_for_groups(conn, run_groups=run_groups)
+            analysis_groups = list(run_groups)
+        else:
+            run_ids = _all_run_ids(conn)
+            analysis_groups = [
+                str(row[0])
+                for row in conn.execute(
+                    "SELECT DISTINCT COALESCE(run_group_id, '<null>') FROM experiment_runs ORDER BY 1"
+                ).fetchall()
+            ]
+
+        reports = _reports_from_db(conn, run_ids=run_ids)
+        status_counts: Dict[str, int] = {"ok": 0, "ath_error": 0, "pipeline_error": 0, "skipped": 0}
+        for item in reports:
+            key = str(item.get("status", "pipeline_error"))
+            status_counts[key] = int(status_counts.get(key, 0)) + 1
+
+        query_start = time.perf_counter()
+        if run_groups:
+            placeholders = ", ".join("?" for _ in run_groups)
+            coverage_rows = conn.execute(
+                f"""
+                SELECT p.key, SUM(CASE WHEN p.is_set=1 THEN 1 ELSE 0 END) AS set_count, COUNT(*) AS row_count
+                FROM experiment_params p
+                JOIN experiment_runs r ON r.run_id=p.run_id
+                WHERE r.run_group_id IN ({placeholders})
+                GROUP BY p.key
+                ORDER BY key
+                """,
+                tuple(run_groups),
+            ).fetchall()
+        else:
+            coverage_rows = conn.execute(
+                """
+                SELECT key, SUM(CASE WHEN is_set=1 THEN 1 ELSE 0 END) AS set_count, COUNT(*) AS row_count
+                FROM experiment_params
+                GROUP BY key
+                ORDER BY key
+                """
+            ).fetchall()
+        coverage_ms = (time.perf_counter() - query_start) * 1000.0
+
+        top_errors = _top_error_patterns(reports, limit=12, prefer_refined=True)
+        mode_error_matrix = _build_mode_error_matrix(reports, prefer_refined=True)
+        unknown_legacy = 0
+        refined_compare = 0
+        refined_runtime = 0
+        for item in reports:
+            if str(item.get("status", "")) != "ath_error":
+                continue
+            kind = _report_error_kind(item, prefer_refined=False)
+            refined = _report_error_kind(item, prefer_refined=True)
+            if kind == "unknown":
+                unknown_legacy += 1
+            if refined == "compare_mismatch_exit0":
+                refined_compare += 1
+            if refined == "ath_runtime_unknown":
+                refined_runtime += 1
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    summary_refined_path = reports_root_path / f"summary_refined_{timestamp}.json"
+    matrix_refined_path = reports_root_path / f"mode_error_matrix_refined_{timestamp}.json"
+    md_refined_path = reports_root_path / f"post100k_executive_summary_refined_{timestamp}.md"
+
+    coverage_payload = [
+        {
+            "key": str(row[0]),
+            "set_count": int(row[1] or 0),
+            "row_count": int(row[2] or 0),
+            "analysis_run_count": int(len(run_ids)),
+            "set_ratio": (float(row[1]) / float(len(run_ids))) if len(run_ids) > 0 else 0.0,
+        }
+        for row in coverage_rows
+    ]
+
+    refined_summary = {
+        "generated_at": _now_iso(),
+        "db_path": str(db_path),
+        "run_group_selector": run_group if run_group else "all",
+        "analysis_run_groups": analysis_groups,
+        "analysis_run_count": len(run_ids),
+        "status_counts": status_counts,
+        "top_error_patterns_refined": top_errors,
+        "unknown_legacy_count": int(unknown_legacy),
+        "compare_mismatch_exit0_count": int(refined_compare),
+        "ath_runtime_unknown_count": int(refined_runtime),
+        "coverage_by_key": coverage_payload,
+        "performance_ms": {
+            "coverage_by_key": round(float(coverage_ms), 2),
+        },
+        "mode_error_matrix_refined_path": str(matrix_refined_path),
+    }
+    summary_refined_path.write_text(json.dumps(refined_summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    matrix_refined_path.write_text(json.dumps(mode_error_matrix, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+    lines = [
+        "# Post-100k Refined Executive Summary",
+        "",
+        f"- Generated: {_now_iso()}",
+        f"- Selector: `{run_group if run_group else 'all'}`",
+        f"- Runs analysed: {len(run_ids)}",
+        f"- Legacy `unknown` rows: {unknown_legacy}",
+        f"- Refined `compare_mismatch_exit0`: {refined_compare}",
+        f"- Refined `ath_runtime_unknown`: {refined_runtime}",
+        "",
+        "## Top Refined Error Patterns",
+    ]
+    for item in top_errors[:8]:
+        lines.append(f"- {item['kind']}: {item['count']}")
+    lines.extend(
+        [
+            "",
+            "## Performance Notes",
+            f"- coverage_by_key query: {coverage_ms:.2f} ms",
+            "",
+        ]
+    )
+    md_refined_path.write_text("\n".join(lines), encoding="utf-8")
+
+    history_payload = {
+        "generated_at": _now_iso(),
+        "summary_refined_path": str(summary_refined_path),
+        "mode_error_matrix_refined_path": str(matrix_refined_path),
+        "post100k_refined_md_path": str(md_refined_path),
+        "top_error_patterns_refined": top_errors,
+        "unknown_legacy_count": int(unknown_legacy),
+        "compare_mismatch_exit0_count": int(refined_compare),
+        "ath_runtime_unknown_count": int(refined_runtime),
+    }
+    history_path = history_root / f"summary_refined_{timestamp}.json"
+    history_path.write_text(json.dumps(history_payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    refined_summary["history_snapshot_path"] = str(history_path)
+    summary_refined_path.write_text(json.dumps(refined_summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return {
+        "summary_refined_path": str(summary_refined_path),
+        "mode_error_matrix_refined_path": str(matrix_refined_path),
+        "post100k_refined_md_path": str(md_refined_path),
+        "history_snapshot_path": str(history_path),
+        "unknown_legacy_count": int(unknown_legacy),
+        "compare_mismatch_exit0_count": int(refined_compare),
+        "ath_runtime_unknown_count": int(refined_runtime),
+        "performance_ms": {
+            "coverage_by_key": round(float(coverage_ms), 2),
+        },
     }
 
 
@@ -2698,6 +3280,7 @@ def run_projectpage_ath_experiment(
             notes = ""
             cleanup_result: Dict[str, Any] = {}
             ath_error_kind: Optional[str] = None
+            error_pattern_refined: Optional[str] = None
             ath_error_message: Optional[str] = None
             ath_warning_count = 0
             metrics_payload: Dict[str, Any] = {
@@ -2786,6 +3369,11 @@ def run_projectpage_ath_experiment(
             if status == "ok" and not (cfg_ok and ath_ok and config_ok and no_ghosts):
                 status = "pipeline_error" if not ath_ok else "ath_error"
                 notes = "compare_failed"
+                ath_exit_val = (ath_result.exit_code if ath_result is not None else None)
+                if status == "ath_error" and ath_exit_val is not None and int(ath_exit_val) == 0:
+                    ath_error_kind = "compare_mismatch_exit0"
+                    if not ath_error_message:
+                        ath_error_message = "ATH exit code 0 but compare mismatch detected"
 
             run_stdout_path = _copy_log_text(
                 ath_result.stdout_log if ath_result else None,
@@ -2834,6 +3422,18 @@ def run_projectpage_ath_experiment(
                 ath_error_kind = "hard_cap_exceeded"
                 ath_error_message = f"Observed dimension exceeded hard cap {hard_cap_mm} mm"
                 notes = "observed_hard_cap_exceeded"
+
+            error_pattern_refined = _refine_error_pattern(
+                status=status,
+                ath_error_kind=ath_error_kind,
+                ath_exit_code=(ath_result.exit_code if ath_result else None),
+                config_ok=config_ok,
+                no_ghosts=no_ghosts,
+            )
+            if status == "ath_error" and not ath_error_kind and error_pattern_refined:
+                ath_error_kind = str(error_pattern_refined)
+                if not ath_error_message:
+                    ath_error_message = str(error_pattern_refined)
 
             if cleanup_files:
                 cleanup_result["cfg"] = _safe_delete_cfg_file(cfg_path, cfg_root=cfg_root)
@@ -2902,6 +3502,7 @@ def run_projectpage_ath_experiment(
                     "cfg_error": cfg_error,
                     "ath_error": ath_error,
                     "ath_error_kind": ath_error_kind,
+                    "error_pattern_refined": error_pattern_refined,
                     "ath_error_message": ath_error_message,
                     "ath_warning_count": ath_warning_count,
                 },
@@ -2921,6 +3522,7 @@ def run_projectpage_ath_experiment(
                 status=status,
                 ath_exit_code=(ath_result.exit_code if ath_result else None),
                 ath_error_kind=ath_error_kind,
+                error_pattern_refined=error_pattern_refined,
                 ath_error_message=ath_error_message or ath_error,
                 ath_warning_count=ath_warning_count,
                 cfg_path=str(cfg_path),

@@ -9,7 +9,11 @@ import unittest
 from app.projectpage_ath_experiment import (
     _append_cleanup_log,
     _backfill_legacy_null_run_groups,
+    _backfill_param_subkeys,
+    _backfill_unknown_split,
     _ensure_db_schema,
+    _param_rows_from_payload,
+    _refine_error_pattern,
     _scaled_quota,
     classify_ath_output,
     generate_experiment_cases,
@@ -47,6 +51,10 @@ class ProjectPageAthExperimentTests(unittest.TestCase):
         result = classify_ath_output("", stderr, exit_code=2)
         self.assertEqual(result["ath_error_kind"], "rollback_not_supported")
         self.assertEqual(int(result["ath_warning_count"]), 0)
+
+    def test_classify_ath_output_nonzero_unknown_is_runtime_unknown(self) -> None:
+        result = classify_ath_output("", "fatal unknown situation", exit_code=5)
+        self.assertEqual(result["ath_error_kind"], "ath_runtime_unknown")
 
     def test_generator_avoids_rollback_keys(self) -> None:
         cases = generate_experiment_cases(
@@ -169,6 +177,156 @@ class ProjectPageAthExperimentTests(unittest.TestCase):
                 self.assertIn("experiment_params", tables)
                 self.assertIn("experiment_metrics", tables)
                 self.assertIn("experiment_compare", tables)
+                run_columns = {
+                    str(row[1]) for row in conn.execute("PRAGMA table_info(experiment_runs)").fetchall()
+                }
+                self.assertIn("error_pattern_refined", run_columns)
+
+    def test_param_rows_flatten_object_subkeys(self) -> None:
+        payload = {
+            "param_states": [
+                {
+                    "param_name": "Mesh.Enclosure",
+                    "is_set": 1,
+                    "value": {
+                        "Depth": 120.5,
+                        "Spacing": [10.0, 20.0, 30.0, 40.0],
+                        "Plan": "my_plan",
+                    },
+                },
+                {
+                    "param_name": "R-OSSE",
+                    "is_set": 1,
+                    "value": {"a0": 14.0, "k": 0.85},
+                },
+            ]
+        }
+        rows = _param_rows_from_payload(payload=payload, fallback_fields=[])
+        by_key = {row[0]: row for row in rows}
+        self.assertIn("Mesh.Enclosure", by_key)
+        self.assertIn("Mesh.Enclosure.Depth", by_key)
+        self.assertIn("Mesh.Enclosure.Spacing", by_key)
+        self.assertIn("Mesh.Enclosure.Spacing.0", by_key)
+        self.assertIn("Mesh.Enclosure.Spacing.3", by_key)
+        self.assertIn("R-OSSE.a0", by_key)
+        self.assertIn("R-OSSE.k", by_key)
+
+    def test_backfill_param_subkeys_is_idempotent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = f"{tmp_dir}/exp.sqlite"
+            with closing(sqlite3.connect(db_path)) as conn:
+                _ensure_db_schema(conn)
+                conn.execute(
+                    """
+                    INSERT INTO experiment_runs(
+                        run_id, run_group_id, created_at, seed, case_index, status
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    ("run1", "pp100k_2100", "2026-02-14T00:00:00Z", 2100, 1, "ok"),
+                )
+                conn.executemany(
+                    """
+                    INSERT INTO experiment_params(run_id, key, value_text, value_num, is_set)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    [
+                        (
+                            "run1",
+                            "Mesh.Enclosure",
+                            str({"Depth": 123.4, "Spacing": [1.0, 2.0, 3.0, 4.0], "EdgeType": "round"}),
+                            None,
+                            1,
+                        ),
+                        ("run1", "R-OSSE", str({"a0": 12.0, "k": 0.75}), None, 1),
+                    ],
+                )
+                conn.commit()
+
+                first = _backfill_param_subkeys(conn, run_groups=["pp100k_2100"])
+                second = _backfill_param_subkeys(conn, run_groups=["pp100k_2100"])
+                self.assertGreater(int(first.get("rows_added", 0)), 0)
+                self.assertEqual(int(second.get("rows_added", 0)), 0)
+                keys = {
+                    str(row[0])
+                    for row in conn.execute(
+                        "SELECT key FROM experiment_params WHERE run_id='run1'"
+                    ).fetchall()
+                }
+                self.assertIn("Mesh.Enclosure.Depth", keys)
+                self.assertIn("Mesh.Enclosure.Spacing.0", keys)
+                self.assertIn("R-OSSE.a0", keys)
+
+    def test_refine_error_pattern_compare_mismatch_exit0(self) -> None:
+        refined = _refine_error_pattern(
+            status="ath_error",
+            ath_error_kind=None,
+            ath_exit_code=0,
+            config_ok=False,
+            no_ghosts=True,
+        )
+        self.assertEqual(refined, "compare_mismatch_exit0")
+
+    def test_refine_error_pattern_runtime_unknown(self) -> None:
+        refined = _refine_error_pattern(
+            status="ath_error",
+            ath_error_kind=None,
+            ath_exit_code=2,
+            config_ok=True,
+            no_ghosts=True,
+        )
+        self.assertEqual(refined, "ath_runtime_unknown")
+
+    def test_backfill_unknown_split_sets_refined(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = f"{tmp_dir}/exp.sqlite"
+            with closing(sqlite3.connect(db_path)) as conn:
+                _ensure_db_schema(conn)
+                conn.execute(
+                    """
+                    INSERT INTO experiment_runs(
+                        run_id, run_group_id, created_at, seed, case_index, status, ath_exit_code, ath_error_kind
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    ("r_cmp", "pp100k_2100", "2026-02-14T00:00:00Z", 2100, 1, "ath_error", 0, None),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO experiment_runs(
+                        run_id, run_group_id, created_at, seed, case_index, status, ath_exit_code, ath_error_kind
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    ("r_rt", "pp100k_2100", "2026-02-14T00:00:01Z", 2100, 2, "ath_error", 3, None),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO experiment_compare(
+                        run_id, config_ok, no_ghosts, missing_keys_required_json, missing_keys_optional_json,
+                        extra_keys_defaulted_json, extra_keys_ghost_json, mismatch_json
+                    ) VALUES (?, ?, ?, '[]', '[]', '[]', '[]', '[]')
+                    """,
+                    ("r_cmp", 0, 1),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO experiment_compare(
+                        run_id, config_ok, no_ghosts, missing_keys_required_json, missing_keys_optional_json,
+                        extra_keys_defaulted_json, extra_keys_ghost_json, mismatch_json
+                    ) VALUES (?, ?, ?, '[]', '[]', '[]', '[]', '[]')
+                    """,
+                    ("r_rt", 1, 1),
+                )
+                conn.commit()
+
+                summary = _backfill_unknown_split(conn, run_groups=["pp100k_2100"])
+                self.assertGreaterEqual(int(summary.get("rows_updated", 0)), 2)
+                rows = {
+                    str(row[0]): str(row[1] or "")
+                    for row in conn.execute(
+                        "SELECT run_id, error_pattern_refined FROM experiment_runs ORDER BY run_id"
+                    ).fetchall()
+                }
+                self.assertEqual(rows["r_cmp"], "compare_mismatch_exit0")
+                self.assertEqual(rows["r_rt"], "ath_runtime_unknown")
 
     def test_backfill_legacy_null_run_groups_is_idempotent(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

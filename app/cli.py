@@ -405,6 +405,39 @@ def cmd_projectpage_ath_experiment(args: argparse.Namespace) -> int:
     return 0 if pipeline_errors == 0 else 3
 
 
+def cmd_ath_experiments_backfill_subkeys(args: argparse.Namespace) -> int:
+    from app.projectpage_ath_experiment import run_ath_experiments_backfill_subkeys
+
+    summary = run_ath_experiments_backfill_subkeys(
+        reports_root=args.reports_root,
+        run_group=args.run_group,
+    )
+    print(json.dumps(summary, indent=2, ensure_ascii=False, default=_json_default))
+    return 0
+
+
+def cmd_ath_experiments_split_unknown(args: argparse.Namespace) -> int:
+    from app.projectpage_ath_experiment import run_ath_experiments_backfill_unknown_split
+
+    summary = run_ath_experiments_backfill_unknown_split(
+        reports_root=args.reports_root,
+        run_group=args.run_group,
+    )
+    print(json.dumps(summary, indent=2, ensure_ascii=False, default=_json_default))
+    return 0
+
+
+def cmd_ath_experiments_refined_reports(args: argparse.Namespace) -> int:
+    from app.projectpage_ath_experiment import run_ath_experiments_refined_reports
+
+    summary = run_ath_experiments_refined_reports(
+        reports_root=args.reports_root,
+        run_group=args.run_group,
+    )
+    print(json.dumps(summary, indent=2, ensure_ascii=False, default=_json_default))
+    return 0
+
+
 def _inspect_ui_tool(
     *,
     tool_name: str,
@@ -825,6 +858,57 @@ def build_parser() -> argparse.ArgumentParser:
             )
         )
     )
+
+    p_ath_exp_admin = sub.add_parser("ath-experiments", help="ATH experiment DB maintenance utilities.")
+    sub_ath_exp_admin = p_ath_exp_admin.add_subparsers(dest="ath_exp_cmd", required=True)
+
+    p_backfill_subkeys = sub_ath_exp_admin.add_parser(
+        "backfill-subkeys",
+        help="Backfill flattened subkeys for object/list experiment params (idempotent).",
+    )
+    p_backfill_subkeys.add_argument(
+        "--reports-root",
+        default="reports/ath_experiments",
+        help="ATH experiment reports root containing ath_experiments.sqlite",
+    )
+    p_backfill_subkeys.add_argument(
+        "--run-group",
+        default="all",
+        help="Run-group selector (single, comma-separated, or 'all').",
+    )
+    p_backfill_subkeys.set_defaults(func=cmd_ath_experiments_backfill_subkeys)
+
+    p_split_unknown = sub_ath_exp_admin.add_parser(
+        "split-unknown",
+        help="Refine unknown ATH errors into compare_mismatch_exit0 or ath_runtime_unknown.",
+    )
+    p_split_unknown.add_argument(
+        "--reports-root",
+        default="reports/ath_experiments",
+        help="ATH experiment reports root containing ath_experiments.sqlite",
+    )
+    p_split_unknown.add_argument(
+        "--run-group",
+        default="all",
+        help="Run-group selector (single, comma-separated, or 'all').",
+    )
+    p_split_unknown.set_defaults(func=cmd_ath_experiments_split_unknown)
+
+    p_refined_reports = sub_ath_exp_admin.add_parser(
+        "refined-reports",
+        help="Write timestamped refined summary and mode error matrix using refined error patterns.",
+    )
+    p_refined_reports.add_argument(
+        "--reports-root",
+        default="reports/ath_experiments",
+        help="ATH experiment reports root containing ath_experiments.sqlite",
+    )
+    p_refined_reports.add_argument(
+        "--run-group",
+        default="all",
+        help="Run-group selector (single, comma-separated, or 'all').",
+    )
+    p_refined_reports.set_defaults(func=cmd_ath_experiments_refined_reports)
 
     p_ui = sub.add_parser("ui", help="UI automation inspection utilities.")
     sub_ui = p_ui.add_subparsers(dest="ui_cmd", required=True)
