@@ -141,10 +141,77 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         background-color: transparent;
         font-weight: 700;
     }}
-    QGroupBox[blockState="warn"] {{
+    QGroupBox[customHeader="true"] {{
+        margin-top: 0px;
+        padding-top: 0px;
+    }}
+    QGroupBox[customHeader="true"]::title {{
+        color: transparent;
+        padding: 0px;
+        margin: 0px;
+    }}
+    QGroupBox[customHeader="true"][expanded="true"][blockState="warn"] {{
+        border: 1px solid #3d3420;
+    }}
+    QGroupBox[customHeader="true"][expanded="true"][blockState="fatal"] {{
+        border: 1px solid #3e2626;
+    }}
+    QFrame#AccordionHeaderRow {{
+        background-color: #1d1d1d;
+        border-radius: {r['md']}px;
+    }}
+    QFrame#AccordionHeaderRow[expanded="true"] {{
+        background-color: #202020;
+    }}
+    QFrame#AccordionHeaderRow:hover {{
+        background-color: #242424;
+    }}
+    QFrame#AccordionHeaderRow:focus {{
+        border: 1px solid {c['accent']};
+    }}
+    QFrame#AccordionHeaderAccent {{
+        background-color: transparent;
+        border-top-left-radius: {r['md']}px;
+        border-bottom-left-radius: {r['md']}px;
+    }}
+    QFrame#AccordionHeaderAccent[severity="warn"] {{
+        background-color: {c['warning_border']};
+    }}
+    QFrame#AccordionHeaderAccent[severity="fatal"] {{
+        background-color: {c['danger_border']};
+    }}
+    QLabel#AccordionHeaderTitle {{
+        color: {c['text']};
+        font-weight: 700;
+    }}
+    QLabel#AccordionChevron {{
+        color: {c['muted']};
+        font-size: 13px;
+        font-weight: 700;
+    }}
+    QLabel#AccordionChip {{
+        background-color: #262626;
+        color: {c['muted']};
+        border: 1px solid {c['border']};
+        border-radius: {r['sm']}px;
+        padding: 2px 6px;
+        font-size: 10px;
+    }}
+    QLabel#AccordionStatusBadge {{
+        background-color: transparent;
+        color: {c['muted']};
+        border: 1px solid {c['border']};
+        border-radius: {r['sm']}px;
+        padding: 1px 6px;
+        font-size: 10px;
+        font-weight: 700;
+    }}
+    QLabel#AccordionStatusBadge[severity="warn"] {{
+        color: {c['warning_border']};
         border: 1px solid {c['warning_border']};
     }}
-    QGroupBox[blockState="fatal"] {{
+    QLabel#AccordionStatusBadge[severity="fatal"] {{
+        color: {c['danger_border']};
         border: 1px solid {c['danger_border']};
     }}
     QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox {{

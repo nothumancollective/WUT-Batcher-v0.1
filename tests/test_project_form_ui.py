@@ -225,6 +225,44 @@ class ProjectFormUiTests(unittest.TestCase):
         assert box is not None
         self.assertEqual(box.property("blockState"), "warn")
 
+    def test_group_badge_fatal_dominates_warn(self) -> None:
+        length_editor = self.form.editor_for_key("Length")
+        throat_editor = self.form.editor_for_key("Throat.Diameter")
+        self.assertIsNotNone(length_editor)
+        self.assertIsNotNone(throat_editor)
+        assert length_editor is not None
+        assert throat_editor is not None
+        length_editor.set_is_set(True)  # type: ignore[attr-defined]
+        length_editor.set_value(1400.0)  # type: ignore[attr-defined]
+        throat_editor.set_is_set(True)  # type: ignore[attr-defined]
+        throat_editor.set_value(20.0)  # type: ignore[attr-defined]
+        self.form._on_any_field_changed()  # type: ignore[attr-defined]
+
+        self.form.apply_ui_risks(
+            [
+                {"field_key": "Length", "severity": "warn", "message": "Length warning."},
+                {"field_key": "Throat.Diameter", "severity": "fatal", "message": "Diameter fatal."},
+            ]
+        )
+        box = self.form._field_group_boxes.get("Length")  # type: ignore[attr-defined]
+        self.assertIsNotNone(box)
+        assert box is not None
+        header = box.header_row()  # type: ignore[attr-defined]
+        badges = [label for label in header.findChildren(QLabel) if label.objectName() == "AccordionStatusBadge"]
+        self.assertTrue(badges)
+        self.assertEqual(badges[0].property("severity"), "fatal")
+        self.assertIn("x", badges[0].text().lower())
+
+    def test_collapsed_header_chips_show_plus_n(self) -> None:
+        box = self.form._field_group_boxes.get("Length")  # type: ignore[attr-defined]
+        self.assertIsNotNone(box)
+        assert box is not None
+        box.set_summary_chips(["one", "two", "three", "four", "five"])  # type: ignore[attr-defined]
+        box.set_collapsed(True)
+        header = box.header_row()  # type: ignore[attr-defined]
+        chips = [label.text() for label in header.findChildren(QLabel) if label.objectName() == "AccordionChip"]
+        self.assertIn("+2", chips)
+
     def test_source_is_removed_and_rosse_not_duplicated(self) -> None:
         self.assertIsNone(self.form.editor_for_key("Source.Shape"))
         self.assertIsNone(self.form.editor_for_key("Source.Radius"))
@@ -392,7 +430,18 @@ class ProjectFormUiTests(unittest.TestCase):
         box_layout = core_box.layout()
         self.assertIsNotNone(box_layout)
         assert box_layout is not None
-        body_widget = box_layout.itemAt(0).widget()
+        body_widget = None
+        for index in range(box_layout.count()):
+            candidate = box_layout.itemAt(index).widget()
+            if candidate is None:
+                continue
+            candidate_layout = candidate.layout()
+            if candidate_layout is not None and candidate_layout.count() >= 2:
+                first = candidate_layout.itemAt(0).layout()
+                second = candidate_layout.itemAt(1).layout()
+                if isinstance(first, QGridLayout) and isinstance(second, QGridLayout):
+                    body_widget = candidate
+                    break
         self.assertIsNotNone(body_widget)
         assert body_widget is not None
         body_layout = body_widget.layout()

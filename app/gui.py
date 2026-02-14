@@ -844,6 +844,7 @@ class ProjectPage(QWidget):
         self.project_name.setFixedWidth(form_column_width)
         name_row.addWidget(self.project_name, 0, 0, alignment=Qt.AlignHCenter)
         root.addLayout(name_row)
+        root.addSpacing(8)
 
         self.constraints_form = ParameterForm(build_project_form_schema())
         root.addWidget(self.constraints_form, 1)

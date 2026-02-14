@@ -113,8 +113,8 @@ class SectionColumn(QWidget):
     def __init__(self, title: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         root = QVBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
-        root.setSpacing(8)
+        root.setContentsMargins(0, 4, 0, 0)
+        root.setSpacing(12)
 
         heading = QLabel(title)
         heading.setObjectName("SectionTitle")
@@ -123,7 +123,7 @@ class SectionColumn(QWidget):
         self.content = QWidget()
         self.content_layout = QVBoxLayout(self.content)
         self.content_layout.setContentsMargins(0, 0, 0, 0)
-        self.content_layout.setSpacing(10)
+        self.content_layout.setSpacing(12)
         root.addWidget(self.content)
         self._root_layout = root
 
@@ -178,15 +178,159 @@ class CollapsibleSection(QWidget):
         self.content.setVisible(checked)
 
 
+class AccordionHeaderRow(QFrame):
+    clicked = Signal()
+
+    def __init__(self, title: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("AccordionHeaderRow")
+        self.setFocusPolicy(Qt.StrongFocus)
+        self.setProperty("severity", "neutral")
+        self.setMinimumHeight(48)
+
+        root = QHBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        self._accent = QFrame()
+        self._accent.setObjectName("AccordionHeaderAccent")
+        self._accent.setFixedWidth(3)
+        self._accent.setProperty("severity", "neutral")
+        root.addWidget(self._accent)
+
+        content = QWidget()
+        content.setObjectName("AccordionHeaderContent")
+        content_layout = QHBoxLayout(content)
+        content_layout.setContentsMargins(12, 8, 12, 8)
+        content_layout.setSpacing(8)
+
+        self._title = QLabel(title)
+        self._title.setObjectName("AccordionHeaderTitle")
+        content_layout.addWidget(self._title, 0, Qt.AlignVCenter)
+
+        self._chips_wrap = QWidget()
+        self._chips_wrap.setObjectName("AccordionChipWrap")
+        self._chips_layout = QHBoxLayout(self._chips_wrap)
+        self._chips_layout.setContentsMargins(0, 0, 0, 0)
+        self._chips_layout.setSpacing(6)
+        content_layout.addWidget(self._chips_wrap, 0, Qt.AlignVCenter)
+
+        content_layout.addStretch(1)
+
+        self._status_badge = QLabel("")
+        self._status_badge.setObjectName("AccordionStatusBadge")
+        self._status_badge.setVisible(False)
+        content_layout.addWidget(self._status_badge, 0, Qt.AlignVCenter)
+
+        self._chevron = QLabel("▾")
+        self._chevron.setObjectName("AccordionChevron")
+        content_layout.addWidget(self._chevron, 0, Qt.AlignVCenter)
+
+        root.addWidget(content, 1)
+        self._chips: List[str] = []
+        self._expanded = True
+
+    def set_title(self, text: str) -> None:
+        self._title.setText(str(text or ""))
+
+    def set_summary_chips(self, chips: Sequence[str]) -> None:
+        self._chips = [str(item).strip() for item in chips if str(item).strip()]
+        self._render_chips()
+
+    def set_expanded(self, expanded: bool) -> None:
+        self._expanded = bool(expanded)
+        self._chevron.setText("▾" if self._expanded else "▸")
+        self._chips_wrap.setVisible(not self._expanded and bool(self._chips))
+        self.setProperty("expanded", "true" if self._expanded else "false")
+        self.style().unpolish(self)
+        self.style().polish(self)
+        self.update()
+
+    def set_status_counts(self, *, ok_count: int, warn_count: int, fatal_count: int) -> None:
+        _ = ok_count
+        if int(fatal_count) > 0:
+            self._status_badge.setText(f"x {int(fatal_count)}")
+            self._status_badge.setProperty("severity", "fatal")
+            if int(warn_count) > 0:
+                self._status_badge.setToolTip(f"fatal: {int(fatal_count)}, warn: {int(warn_count)}")
+            else:
+                self._status_badge.setToolTip(f"fatal: {int(fatal_count)}")
+            level = "fatal"
+            self._status_badge.setVisible(True)
+        elif int(warn_count) > 0:
+            self._status_badge.setText(f"! {int(warn_count)}")
+            self._status_badge.setProperty("severity", "warn")
+            self._status_badge.setToolTip(f"warn: {int(warn_count)}")
+            level = "warn"
+            self._status_badge.setVisible(True)
+        else:
+            self._status_badge.setVisible(False)
+            self._status_badge.setText("")
+            self._status_badge.setToolTip("")
+            self._status_badge.setProperty("severity", "neutral")
+            level = "neutral"
+        self._accent.setProperty("severity", level)
+        self.setProperty("severity", level)
+        self._status_badge.style().unpolish(self._status_badge)
+        self._status_badge.style().polish(self._status_badge)
+        self._accent.style().unpolish(self._accent)
+        self._accent.style().polish(self._accent)
+        self.style().unpolish(self)
+        self.style().polish(self)
+        self.update()
+
+    def _render_chips(self) -> None:
+        while self._chips_layout.count():
+            item = self._chips_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+        if not self._chips:
+            self._chips_wrap.setVisible(False)
+            return
+        max_visible = 3
+        visible = self._chips[:max_visible]
+        remaining = max(0, len(self._chips) - max_visible)
+        for value in visible:
+            chip = QLabel(value)
+            chip.setObjectName("AccordionChip")
+            self._chips_layout.addWidget(chip, 0, Qt.AlignVCenter)
+        if remaining > 0:
+            extra = QLabel(f"+{remaining}")
+            extra.setObjectName("AccordionChip")
+            self._chips_layout.addWidget(extra, 0, Qt.AlignVCenter)
+        self._chips_wrap.setVisible(not self._expanded)
+
+    def mousePressEvent(self, event) -> None:  # type: ignore[override]
+        if event.button() == Qt.LeftButton:
+            self.clicked.emit()
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def keyPressEvent(self, event) -> None:  # type: ignore[override]
+        if event.key() in {Qt.Key_Return, Qt.Key_Enter, Qt.Key_Space}:
+            self.clicked.emit()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+
 class AccordionGroupBox(QGroupBox):
     toggled = Signal(bool)
 
     def __init__(self, title: str, parent: QWidget | None = None) -> None:
         super().__init__(title, parent)
         self._collapsed = False
+        self.setProperty("customHeader", "true")
+        self.setProperty("expanded", "true")
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
+
+        self._header = AccordionHeaderRow(title)
+        self._header.clicked.connect(lambda: self.set_collapsed(not self._collapsed))
+        root.addWidget(self._header)
 
         self._body = QWidget(self)
         self._body_layout = QVBoxLayout(self._body)
@@ -199,6 +343,9 @@ class AccordionGroupBox(QGroupBox):
     def body_layout(self) -> QVBoxLayout:
         return self._body_layout
 
+    def header_row(self) -> AccordionHeaderRow:
+        return self._header
+
     def is_collapsed(self) -> bool:
         return bool(self._collapsed)
 
@@ -209,20 +356,18 @@ class AccordionGroupBox(QGroupBox):
         self._collapsed = state
         self._body.setVisible(not state)
         self.setProperty("collapsed", "true" if state else "false")
+        self.setProperty("expanded", "false" if state else "true")
+        self._header.set_expanded(not state)
         self.style().unpolish(self)
         self.style().polish(self)
         self.updateGeometry()
         self.toggled.emit(not state)
 
-    def _title_hit_height(self) -> int:
-        return max(28, int(self.fontMetrics().height() + 14))
+    def set_summary_chips(self, chips: Sequence[str]) -> None:
+        self._header.set_summary_chips(chips)
 
-    def mousePressEvent(self, event) -> None:  # type: ignore[override]
-        if event.button() == Qt.LeftButton and int(event.position().y()) <= self._title_hit_height():
-            self.set_collapsed(not self._collapsed)
-            event.accept()
-            return
-        super().mousePressEvent(event)
+    def set_status_counts(self, *, ok_count: int, warn_count: int, fatal_count: int) -> None:
+        self._header.set_status_counts(ok_count=ok_count, warn_count=warn_count, fatal_count=fatal_count)
 
 
 class NullableNumericInput(QWidget):
@@ -969,6 +1114,7 @@ class ParameterForm(QWidget):
         self._base_width: Optional[int] = None
         self._risk_widgets: Dict[int, QWidget] = {}
         self._risk_original_tooltips: Dict[int, str] = {}
+        self._section_counts_by_box: Dict[int, Dict[str, int]] = {}
         self._risk_hover_installed: Dict[int, QWidget] = {}
         self._pending_hover_widget: Optional[QWidget] = None
         self._hover_tooltip_timer = QTimer(self)
@@ -996,8 +1142,8 @@ class ParameterForm(QWidget):
         geometry_container = QWidget()
         self.geometry_scroll.setWidget(geometry_container)
         geometry_layout = QVBoxLayout(geometry_container)
-        geometry_layout.setContentsMargins(0, 0, 0, 0)
-        geometry_layout.setSpacing(12)
+        geometry_layout.setContentsMargins(0, 8, 0, 0)
+        geometry_layout.setSpacing(14)
         self.geometry_section = SectionColumn("Geometry")
         geometry_layout.addWidget(self.geometry_section)
         geometry_layout.addStretch(1)
@@ -1005,8 +1151,8 @@ class ParameterForm(QWidget):
         mesh_container = QWidget()
         self.mesh_scroll.setWidget(mesh_container)
         mesh_layout = QVBoxLayout(mesh_container)
-        mesh_layout.setContentsMargins(0, 0, 0, 0)
-        mesh_layout.setSpacing(12)
+        mesh_layout.setContentsMargins(0, 8, 0, 0)
+        mesh_layout.setSpacing(14)
         self.mesh_section = SectionColumn("Mesh")
         mesh_layout.addWidget(self.mesh_section)
         mesh_layout.addStretch(1)
@@ -1090,6 +1236,76 @@ class ParameterForm(QWidget):
         for column_key, boxes in self._accordion_groups_by_column.items():
             for index, box in enumerate(boxes):
                 box.set_collapsed(index != 0)
+        self._refresh_section_headers()
+
+    def _field_state(self, key: str) -> FieldState:
+        editor = self._field_editors.get(key)
+        if editor is None or not hasattr(editor, "current_state"):
+            return FieldState(is_set=False, value=None)
+        return editor.current_state()  # type: ignore[return-value]
+
+    def _enum_label(self, key: str, value: Any) -> Optional[str]:
+        field = self._field_specs.get(key)
+        if field is None:
+            return None
+        for option in field.enum_options:
+            if option.value == value:
+                return option.label
+        return str(value) if value is not None else None
+
+    def _chips_for_box(self, box: AccordionGroupBox) -> List[str]:
+        title = str(box.title()).strip()
+        chips: List[str] = []
+
+        if title == "Throat Profile":
+            state = self._field_state("Throat.Profile")
+            if state.is_set:
+                label = self._enum_label("Throat.Profile", state.value)
+                if label:
+                    chips.append(label)
+        elif title == "GCurve":
+            state = self._field_state("GCurve.Type")
+            label = self._enum_label("GCurve.Type", state.value if state.is_set else None)
+            if label:
+                chips.append(label)
+        elif title == "Morph":
+            state = self._field_state("Morph.TargetShape")
+            label = self._enum_label("Morph.TargetShape", state.value if state.is_set else 0)
+            if label:
+                chips.append(label)
+        elif title == "Enclosure":
+            state = self._field_state("Mesh.Enclosure")
+            chips.append("enabled" if state.is_set else "disabled")
+        elif title == "Core":
+            q_state = self._field_state("Mesh.Quadrants")
+            if q_state.is_set:
+                chips.append(f"Quadrants={q_state.value}")
+            r_state = self._field_state("Mesh.RearShape")
+            if r_state.is_set:
+                label = self._enum_label("Mesh.RearShape", r_state.value)
+                if label:
+                    chips.append(f"RearShape={label}")
+        elif title == "Basics":
+            d_state = self._field_state("Throat.Diameter")
+            l_state = self._field_state("Length")
+            if d_state.is_set:
+                chips.append(f"Throat={d_state.value}")
+            if l_state.is_set:
+                chips.append(f"Length={l_state.value}")
+
+        return chips
+
+    def _refresh_section_headers(self) -> None:
+        for boxes in self._accordion_groups_by_column.values():
+            for box in boxes:
+                chips = self._chips_for_box(box)
+                box.set_summary_chips(chips)
+                counts = self._section_counts_by_box.get(id(box), {})
+                box.set_status_counts(
+                    ok_count=int(counts.get("ok", 0)),
+                    warn_count=int(counts.get("warn", 0)),
+                    fatal_count=int(counts.get("fatal", 0)),
+                )
 
     def _fields_by_group(self, fields: Iterable[FieldSpec]) -> Dict[str, List[FieldSpec]]:
         grouped: Dict[str, List[FieldSpec]] = {}
@@ -1553,6 +1769,7 @@ class ParameterForm(QWidget):
         self._refresh_mode_stacks()
         self._sync_mode_side_effects()
         self._apply_local_disclosure()
+        self._refresh_section_headers()
         self.changed.emit(self.payload())
 
     def _rollback_enabled(self) -> bool:
@@ -1752,6 +1969,7 @@ class ParameterForm(QWidget):
         QToolTip.hideText()
         self._risk_widgets.clear()
         self._risk_original_tooltips.clear()
+        self._section_counts_by_box = {}
         for boxes in self._accordion_groups_by_column.values():
             for box in boxes:
                 box.setProperty("blockState", "neutral")
@@ -1761,6 +1979,7 @@ class ParameterForm(QWidget):
                 editor.set_field_state_visual("neutral")  # type: ignore[attr-defined]
             if hasattr(editor, "clear_helper_message"):
                 editor.clear_helper_message()  # type: ignore[attr-defined]
+        self._refresh_section_headers()
 
     def _risk_target_for_key(self, key: str) -> Optional[QWidget]:
         editor = self._field_editors.get(key)
@@ -1818,7 +2037,7 @@ class ParameterForm(QWidget):
     def apply_ui_risks(self, issues: List[Dict[str, Any]]) -> None:
         self._clear_risk_highlights()
         grouped: Dict[str, List[Dict[str, Any]]] = {}
-        block_levels: Dict[int, str] = {}
+        section_counts: Dict[int, Dict[str, int]] = {}
         for issue in issues:
             if not isinstance(issue, dict):
                 continue
@@ -1852,9 +2071,9 @@ class ParameterForm(QWidget):
                 severity = "ok"
             box = self._field_group_boxes.get(key)
             if box is not None:
-                existing = block_levels.get(id(box), "neutral")
-                if severity == "fatal" or (severity == "warn" and existing != "fatal"):
-                    block_levels[id(box)] = severity
+                counts = section_counts.setdefault(id(box), {"ok": 0, "warn": 0, "fatal": 0})
+                if severity in {"ok", "warn", "fatal"}:
+                    counts[severity] = int(counts.get(severity, 0)) + 1
             editor = self._field_editors.get(key)
             if editor is not None and hasattr(editor, "set_field_state_visual"):
                 editor.set_field_state_visual(severity)  # type: ignore[attr-defined]
@@ -1876,11 +2095,19 @@ class ParameterForm(QWidget):
                 target.setProperty("riskTooltipSeverity", "")
             self._repolish(target)
 
+        self._section_counts_by_box = section_counts
         for boxes in self._accordion_groups_by_column.values():
             for box in boxes:
-                level = block_levels.get(id(box), "neutral")
+                counts = section_counts.get(id(box), {})
+                if int(counts.get("fatal", 0)) > 0:
+                    level = "fatal"
+                elif int(counts.get("warn", 0)) > 0:
+                    level = "warn"
+                else:
+                    level = "neutral"
                 box.setProperty("blockState", level)
                 self._repolish(box)
+        self._refresh_section_headers()
 
     def apply_compatibility(self, state: Dict[str, Any]) -> None:
         self._compat_state = dict(state)
@@ -1913,6 +2140,7 @@ class ParameterForm(QWidget):
             self._suspend_emit = False
 
         self._refresh_mode_stacks()
+        self._refresh_section_headers()
         if changed_hidden:
             self.changed.emit(self.payload())
 
