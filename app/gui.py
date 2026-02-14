@@ -14,14 +14,14 @@ from app.constants import DEFAULT_RUNNER_MODE
 from app.models import AppConfig, Batch, Project
 from app.services import OrchestratorService
 from app.settings_store import UserSettings
-from app.ui_risk_layer import UiRiskLayer
+from app.ui_validation import UiValidationEngine
 from ui.form_builder import ParameterForm
 from ui.form_metrics import FORM_METRICS
 from ui.form_schema import build_project_form_schema
 from ui.theme import apply_theme, apply_windows_dark_titlebar, configure_windows_qt_darkmode_env
 
 try:
-    from PySide6.QtCore import QPoint, Qt, Signal
+    from PySide6.QtCore import QPoint, Qt, QTimer, Signal
     from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPixmap
     from PySide6.QtWidgets import (
         QAbstractItemView,
@@ -1124,7 +1124,13 @@ class MainWindow(QMainWindow):
         self.service = service
         self.current_project: Optional[Project] = None
         self.last_status_detail = ""
-        self.ui_risk_layer = UiRiskLayer()
+        self.ui_validation = UiValidationEngine()
+        self._project_validation_debounce_ms = 200
+        self._pending_project_payload: Optional[Dict[str, object]] = None
+        self._project_validation_timer = QTimer(self)
+        self._project_validation_timer.setSingleShot(True)
+        self._project_validation_timer.setInterval(self._project_validation_debounce_ms)
+        self._project_validation_timer.timeout.connect(self._flush_project_draft_validation)
 
         self.setWindowTitle("WUT Batcher")
         self.resize(1280, 860)
@@ -1170,7 +1176,7 @@ class MainWindow(QMainWindow):
         self.dashboard_page.request_settings.connect(self._open_settings)
 
         self.project_page.submit_project.connect(self._create_project)
-        self.project_page.draft_changed.connect(self._on_project_draft_changed)
+        self.project_page.draft_changed.connect(self._queue_project_draft_changed)
 
         self.batch_page.save_batch.connect(self._save_batch)
         self.batch_page.run_batch.connect(self._run_batch)
@@ -1414,6 +1420,17 @@ class MainWindow(QMainWindow):
             return
         self.set_status(f"Export finished for {version_id}", detail=json.dumps(result, indent=2, ensure_ascii=False))
 
+    def _queue_project_draft_changed(self, payload: Dict[str, object]) -> None:
+        self._pending_project_payload = dict(payload)
+        self._project_validation_timer.start()
+
+    def _flush_project_draft_validation(self) -> None:
+        payload = self._pending_project_payload
+        self._pending_project_payload = None
+        if payload is None:
+            payload = self.project_page._raw_constraints_payload()
+        self._on_project_draft_changed(payload)
+
     def _on_project_draft_changed(self, payload: Dict[str, object]) -> None:
         runner_mode = DEFAULT_RUNNER_MODE
         if self.current_project is not None:
@@ -1428,23 +1445,12 @@ class MainWindow(QMainWindow):
         self.project_page.apply_compatibility(state)
         visible_keys = set(str(item) for item in list(state.get("visible_keys", []) or []))
         issues = [item for item in list(state.get("issues", []) or []) if isinstance(item, dict)]
-        compat_field_issues: List[Dict[str, Any]] = []
-        for issue in issues:
-            field_key = str(issue.get("field_key", "")).strip()
-            if not field_key:
-                continue
-            compat_field_issues.append(
-                {
-                    "rule_id": issue.get("rule_id", "compat_issue"),
-                    "severity": issue.get("severity", "warn"),
-                    "message": issue.get("message", ""),
-                    "field_key": field_key,
-                    "source": "compatibility",
-                    "evidence_type": issue.get("evidence_type", "hypothesis"),
-                }
-            )
-        ui_risk_issues = self.ui_risk_layer.evaluate(constraints_payload, visible_keys=visible_keys)
-        self.project_page.apply_ui_risks(compat_field_issues + ui_risk_issues)
+        field_issues = self.ui_validation.evaluate(
+            draft_payload=constraints_payload,
+            validation_state=state,
+            visible_keys=visible_keys,
+        )
+        self.project_page.apply_ui_risks(field_issues)
         if self.stack.currentWidget() is self.project_page and issues:
             self.set_status(
                 f"Constraints draft has issues ({len(issues)})",
