@@ -6,6 +6,7 @@ from dataclasses import asdict
 import json
 from pathlib import Path
 import subprocess
+import sys
 from typing import Any, Dict, List, Optional
 
 from app.doctor_service import run_doctor_checks
@@ -20,7 +21,7 @@ from ui.form_schema import build_project_form_schema
 from ui.theme import apply_theme, apply_windows_dark_titlebar, configure_windows_qt_darkmode_env
 
 try:
-    from PySide6.QtCore import Qt, Signal
+    from PySide6.QtCore import Qt, QTimer, Signal
     from PySide6.QtGui import QPixmap
     from PySide6.QtWidgets import (
         QAbstractItemView,
@@ -1219,13 +1220,50 @@ class GuiController:
 
     @staticmethod
     def _show_window_maximized_foreground(window: QMainWindow) -> None:
-        state = window.windowState()
-        state = (state | Qt.WindowMaximized) & ~Qt.WindowFullScreen & ~Qt.WindowMinimized
-        window.setWindowState(state)
+        # Keep native titlebar controls while forcing a true maximized state.
+        window.setWindowState(window.windowState() & ~Qt.WindowFullScreen & ~Qt.WindowMinimized)
+        window.showNormal()
+        window.showMaximized()
         window.show()
         window.raise_()
         window.activateWindow()
+        app = QApplication.instance()
+        if app is not None:
+            app.setActiveWindow(window)
         apply_windows_dark_titlebar(window)
+        QTimer.singleShot(120, lambda w=window: GuiController._boost_foreground(w))
+
+    @staticmethod
+    def _boost_foreground(window: QMainWindow) -> None:
+        if window is None or not window.isVisible():
+            return
+        window.showMaximized()
+        window.raise_()
+        window.activateWindow()
+        app = QApplication.instance()
+        if app is not None:
+            app.setActiveWindow(window)
+        if sys.platform != "win32":
+            return
+        try:
+            import ctypes
+
+            user32 = ctypes.windll.user32
+            hwnd = int(window.winId())
+            SW_MAXIMIZE = 3
+            SWP_NOMOVE = 0x0002
+            SWP_NOSIZE = 0x0001
+            SWP_SHOWWINDOW = 0x0040
+            HWND_TOPMOST = -1
+            HWND_NOTOPMOST = -2
+            user32.ShowWindow(hwnd, SW_MAXIMIZE)
+            user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW)
+            user32.SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW)
+            user32.BringWindowToTop(hwnd)
+            user32.SetForegroundWindow(hwnd)
+        except Exception:
+            # If foreground boost is denied by OS policy, keep the normal Qt behavior.
+            return
 
     def _open_project(self, project_id: str) -> None:
         project = self.service.repo.load_project(project_id)
