@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 from app.doctor_service import run_doctor_checks
 from app.constants import DEFAULT_RUNNER_MODE
 from app.models import AppConfig, Batch, Project
+from app.project_issue_model import UiProjectIssue, classify_ui_severity, issue_counts, normalize_project_issues
 from app.services import OrchestratorService
 from app.settings_store import UserSettings
 from app.ui_validation import UiValidationEngine
@@ -43,6 +44,7 @@ try:
         QMessageBox,
         QPushButton,
         QProgressBar,
+        QScrollArea,
         QSplashScreen,
         QStackedWidget,
         QStatusBar,
@@ -819,6 +821,90 @@ class DashboardPage(QWidget):
         if batch_id:
             self.request_clone_batch.emit(batch_id)
 
+class ProjectIssuesPanel(QFrame):
+    issue_selected = Signal(str)
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("ProjectIssuesPanel")
+        root = QVBoxLayout(self)
+        root.setContentsMargins(10, 10, 10, 10)
+        root.setSpacing(8)
+
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.setSpacing(8)
+        title = QLabel("Issues")
+        title.setObjectName("IssuesPanelTitle")
+        header.addWidget(title)
+        header.addStretch(1)
+        self.counts = QLabel("Errors: 0 · Warnings: 0 · Incomplete: 0")
+        self.counts.setObjectName("IssuesPanelCounts")
+        header.addWidget(self.counts)
+        root.addLayout(header)
+
+        self._scroll = QScrollArea()
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self._container = QWidget()
+        self._rows = QVBoxLayout(self._container)
+        self._rows.setContentsMargins(0, 0, 0, 0)
+        self._rows.setSpacing(6)
+        self._scroll.setWidget(self._container)
+        root.addWidget(self._scroll)
+
+    def _clear_rows(self) -> None:
+        while self._rows.count():
+            item = self._rows.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
+    def set_issues(self, issues: List[UiProjectIssue]) -> None:
+        self._clear_rows()
+        counts = issue_counts(issues)
+        self.counts.setText(
+            f"Errors: {int(counts.get('error', 0))} · "
+            f"Warnings: {int(counts.get('warn', 0))} · "
+            f"Incomplete: {int(counts.get('incomplete', 0))}"
+        )
+
+        groups: Dict[str, List[UiProjectIssue]] = {"error": [], "warn": [], "incomplete": []}
+        for issue in issues:
+            groups.setdefault(issue.severity, []).append(issue)
+
+        labels = {
+            "error": "Errors",
+            "warn": "Warnings",
+            "incomplete": "Incomplete",
+        }
+        for severity in ("error", "warn", "incomplete"):
+            rows = groups.get(severity, [])
+            if not rows:
+                continue
+            section_label = QLabel(f"{labels[severity]} ({len(rows)})")
+            section_label.setObjectName("IssuesPanelGroupTitle")
+            section_label.setProperty("severity", severity)
+            self._rows.addWidget(section_label)
+            for issue in rows:
+                button = QPushButton(
+                    f"{issue.field_label}  ·  {issue.message}  [{issue.section}]"
+                )
+                button.setObjectName("IssueRowButton")
+                button.setProperty("severity", severity)
+                button.setCursor(Qt.PointingHandCursor)
+                button.setFlat(True)
+                button.setToolTip(issue.message)
+                button.clicked.connect(lambda _checked=False, key=issue.key: self.issue_selected.emit(str(key)))
+                self._rows.addWidget(button)
+        if self._rows.count() == 0:
+            empty = QLabel("No open issues.")
+            empty.setObjectName("IssuesPanelEmpty")
+            self._rows.addWidget(empty)
+        self._rows.addStretch(1)
+
+
 class ProjectPage(QWidget):
     submit_project = Signal(str, dict)
     draft_changed = Signal(dict)
@@ -826,21 +912,23 @@ class ProjectPage(QWidget):
     def __init__(self) -> None:
         super().__init__()
         root = QVBoxLayout(self)
-        root.setContentsMargins(24, 12, 24, 16)
-        root.setSpacing(12)
+        root.setContentsMargins(20, 12, 20, 14)
+        root.setSpacing(10)
         title = QLabel("PROJECT")
         title.setObjectName("PageTitle")
         root.addWidget(title)
+        root.addSpacing(4)
 
         form_column_width = (2 * FORM_METRICS.label_width) + (2 * FORM_METRICS.input_width) + FORM_METRICS.column_gap + 32
         self._form_column_width = form_column_width
 
-        name_row = QHBoxLayout()
+        name_wrap = QWidget()
+        name_row = QHBoxLayout(name_wrap)
         name_row.setContentsMargins(0, 0, 0, 0)
         name_row.setSpacing(10)
-        name_row.addStretch(1)
         left_col = QWidget()
-        left_col.setFixedWidth(form_column_width)
+        left_col.setMinimumWidth(form_column_width)
+        left_col.setMaximumWidth(form_column_width)
         left_col_layout = QVBoxLayout(left_col)
         left_col_layout.setContentsMargins(0, 0, 0, 0)
         left_col_layout.setSpacing(6)
@@ -849,14 +937,12 @@ class ProjectPage(QWidget):
         left_col_layout.addWidget(name_label)
         self.project_name = QLineEdit()
         self.project_name.setPlaceholderText("Project Name")
-        self.project_name.setFixedWidth(form_column_width)
-        left_col_layout.addWidget(self.project_name, 0, Qt.AlignLeft)
+        self.project_name.setMinimumWidth(form_column_width)
+        left_col_layout.addWidget(self.project_name)
         name_row.addWidget(left_col, 0, Qt.AlignTop)
-        right_col_spacer = QWidget()
-        right_col_spacer.setFixedWidth(form_column_width)
-        name_row.addWidget(right_col_spacer, 0, Qt.AlignTop)
         name_row.addStretch(1)
-        root.addLayout(name_row)
+        root.addWidget(name_wrap)
+        root.addSpacing(4)
 
         self.summary_panel = QFrame()
         self.summary_panel.setObjectName("ProjectSummaryPanel")
@@ -876,7 +962,7 @@ class ProjectPage(QWidget):
         self.summary_line_2.setObjectName("SummaryText")
         self.summary_line_2.setWordWrap(True)
         summary_layout.addWidget(self.summary_line_2)
-        self.summary_counts = QLabel("Errors: 0 • Warnings: 0")
+        self.summary_counts = QLabel("Errors: 0 • Warnings: 0 • Incomplete: 0")
         self.summary_counts.setObjectName("SummaryMeta")
         summary_layout.addWidget(self.summary_counts)
         self.summary_chips_wrap = QWidget()
@@ -885,35 +971,41 @@ class ProjectPage(QWidget):
         self.summary_chips_layout.setSpacing(6)
         summary_layout.addWidget(self.summary_chips_wrap)
         root.addWidget(self.summary_panel)
-        root.addSpacing(6)
+        root.addSpacing(2)
+
+        self.issues_panel = ProjectIssuesPanel()
+        self.issues_panel.setVisible(False)
+        root.addWidget(self.issues_panel)
 
         self.constraints_form = ParameterForm(build_project_form_schema())
         root.addWidget(self.constraints_form, 1)
 
         self.action_bar = QFrame()
         self.action_bar.setObjectName("ProjectActionBar")
-        self.action_bar.setFixedHeight(60)
+        self.action_bar.setFixedHeight(58)
         action_layout = QHBoxLayout(self.action_bar)
-        action_layout.setContentsMargins(12, 8, 12, 8)
+        action_layout.setContentsMargins(10, 8, 10, 8)
         action_layout.setSpacing(10)
 
-        left_action = QHBoxLayout()
-        left_action.setContentsMargins(0, 0, 0, 0)
-        left_action.setSpacing(8)
-        self.action_status_pill = QLabel("Ready to create")
+        self.action_status_pill = QLabel("Ready to create project.")
         self.action_status_pill.setObjectName("ProjectStatusPill")
         self.action_status_pill.setProperty("severity", "ok")
-        left_action.addWidget(self.action_status_pill)
+        action_layout.addWidget(self.action_status_pill, 0, Qt.AlignVCenter)
+
+        self.action_counts = QLabel("0 errors · 0 warnings · 0 incomplete")
+        self.action_counts.setObjectName("ProjectStatusHint")
+        action_layout.addWidget(self.action_counts, 0, Qt.AlignVCenter)
+
         self.action_status_hint = QLabel("")
         self.action_status_hint.setObjectName("ProjectStatusHint")
-        left_action.addWidget(self.action_status_hint)
+        action_layout.addWidget(self.action_status_hint, 0, Qt.AlignVCenter)
+
+        action_layout.addStretch(1)
+
         self.view_issues_btn = QPushButton("View issues")
         self.view_issues_btn.setObjectName("ProjectViewIssuesButton")
         self.view_issues_btn.setVisible(False)
-        left_action.addWidget(self.view_issues_btn)
-        left_wrap = QWidget()
-        left_wrap.setLayout(left_action)
-        action_layout.addWidget(left_wrap, 1)
+        action_layout.addWidget(self.view_issues_btn, 0, Qt.AlignVCenter)
 
         self.create_btn = QPushButton("Create Project")
         self.create_btn.setObjectName("PrimaryButton")
@@ -921,11 +1013,13 @@ class ProjectPage(QWidget):
         root.addWidget(self.action_bar)
 
         self.create_btn.clicked.connect(self._submit)
-        self.view_issues_btn.clicked.connect(self._focus_first_issue)
+        self.view_issues_btn.clicked.connect(self._toggle_issues_panel)
+        self.issues_panel.issue_selected.connect(self._focus_issue_key)
         self.constraints_form.changed.connect(self._emit_draft_changed)
 
         self._compat_state: Dict[str, Any] = {"visible_keys": [], "locked_keys": [], "sweepable_keys": [], "issues": []}
         self._latest_field_issues: List[Dict[str, Any]] = []
+        self._ui_issues: List[UiProjectIssue] = []
         self._validation_phase = "idle"
         self._creating_project = False
         self._constraints_locked = False
@@ -943,12 +1037,37 @@ class ProjectPage(QWidget):
         self.constraints_form.apply_compatibility(state)
 
     def apply_ui_risks(self, issues: List[Dict[str, Any]]) -> None:
-        self._latest_field_issues = [item for item in issues if isinstance(item, dict)]
-        self.constraints_form.apply_ui_risks(issues)
+        raw_issues = [item for item in issues if isinstance(item, dict)]
+        field_is_set = self.constraints_form.field_is_set_map()
+        field_labels = self.constraints_form.field_label_map()
+        field_sections = self.constraints_form.field_section_map()
+
+        mapped: List[Dict[str, Any]] = []
+        for issue in raw_issues:
+            key = str(issue.get("field_key") or issue.get("key") or "").strip()
+            severity = classify_ui_severity(issue, field_is_set=bool(field_is_set.get(key, False)))
+            normalized = dict(issue)
+            if severity == "error":
+                normalized["severity"] = "fatal"
+            elif severity == "warn":
+                normalized["severity"] = "warn"
+            elif severity == "incomplete":
+                normalized["severity"] = "incomplete"
+            mapped.append(normalized)
+
+        self._latest_field_issues = mapped
+        self._ui_issues = normalize_project_issues(
+            raw_issues,
+            field_is_set=field_is_set,
+            field_labels=field_labels,
+            field_sections=field_sections,
+        )
+        self.constraints_form.apply_ui_risks(mapped)
         if self._validation_phase == "validating":
             self._validation_phase = "idle"
         self._update_action_state()
         self._update_summary_panel()
+        self._update_issues_panel()
 
     def set_validation_phase(self, phase: str) -> None:
         self._validation_phase = str(phase or "idle").strip().lower()
@@ -967,23 +1086,15 @@ class ProjectPage(QWidget):
             self._validation_phase = "idle"
         self._update_action_state()
         self._update_summary_panel()
+        self._update_issues_panel()
 
     def _issue_counts(self) -> Dict[str, int]:
-        rank = {"fatal": 0, "warn": 1, "ok": 2, "info": 3}
-        per_key: Dict[str, str] = {}
-        for issue in self._latest_field_issues:
-            key = str(issue.get("field_key") or issue.get("key") or "").strip()
-            if not key:
-                continue
-            severity = str(issue.get("severity", "")).strip().lower()
-            if severity not in {"fatal", "warn"}:
-                continue
-            current = per_key.get(key)
-            if current is None or rank.get(severity, 99) < rank.get(current, 99):
-                per_key[key] = severity
-        fatal = sum(1 for value in per_key.values() if value == "fatal")
-        warn = sum(1 for value in per_key.values() if value == "warn")
-        return {"fatal": fatal, "warn": warn}
+        raw = issue_counts(self._ui_issues)
+        return {
+            "fatal": int(raw.get("error", 0)),
+            "warn": int(raw.get("warn", 0)),
+            "incomplete": int(raw.get("incomplete", 0)),
+        }
 
     @staticmethod
     def _mode_label(mapping: Dict[int, str], value: Any, *, fallback: str) -> str:
@@ -1036,13 +1147,19 @@ class ProjectPage(QWidget):
     def _update_summary_panel(self) -> None:
         payload = self._raw_constraints_payload()
         counts = self._issue_counts()
-        self.summary_counts.setText(f"Errors: {counts['fatal']} • Warnings: {counts['warn']}")
+        self.summary_counts.setText(
+            f"Errors: {counts['fatal']} • Warnings: {counts['warn']} • Incomplete: {counts['incomplete']}"
+        )
         self._set_summary_chips(self._mode_chips(payload))
+
+    def _update_issues_panel(self) -> None:
+        self.issues_panel.set_issues(self._ui_issues)
 
     def _update_action_state(self) -> None:
         counts = self._issue_counts()
         fatal = int(counts.get("fatal", 0))
         warn = int(counts.get("warn", 0))
+        incomplete = int(counts.get("incomplete", 0))
 
         if self._creating_project:
             text = "Creating project..."
@@ -1057,15 +1174,23 @@ class ProjectPage(QWidget):
             severity = "progress"
             hint = ""
         elif fatal > 0:
-            text = f"Fix errors: {fatal}"
+            text = "Resolve errors to continue."
             severity = "fatal"
             hint = "Resolve errors to proceed."
+        elif incomplete > 0 and warn > 0:
+            text = "Complete required fields and review warnings."
+            severity = "warn"
+            hint = "Missing required values are shown as incomplete."
+        elif incomplete > 0:
+            text = "Complete required fields to continue."
+            severity = "neutral"
+            hint = ""
         elif warn > 0:
-            text = f"Warnings: {warn}"
+            text = "Warnings present — you can continue, but review them."
             severity = "warn"
             hint = "You can continue, but results may be unstable."
         else:
-            text = "Ready to create"
+            text = "Ready to create project."
             severity = "ok"
             hint = ""
 
@@ -1075,19 +1200,34 @@ class ProjectPage(QWidget):
         self.action_status_pill.style().polish(self.action_status_pill)
         self.action_status_hint.setText(hint)
         self.action_status_hint.setVisible(bool(hint))
+        self.action_counts.setText(f"{fatal} errors · {warn} warnings · {incomplete} incomplete")
 
-        has_issues = fatal > 0 or warn > 0
+        has_issues = fatal > 0 or warn > 0 or incomplete > 0
         self.view_issues_btn.setVisible(has_issues)
+        self.view_issues_btn.setText("Hide issues" if self.issues_panel.isVisible() and has_issues else "View issues")
 
-        enabled = (fatal == 0) and (not self._creating_project)
+        enabled = (fatal == 0) and (incomplete == 0) and (not self._creating_project)
         self.create_btn.setEnabled(enabled)
         if not enabled and fatal > 0:
             self.create_btn.setToolTip("Resolve errors before creating the project.")
+        elif not enabled and incomplete > 0:
+            self.create_btn.setToolTip("Complete required fields before creating the project.")
         else:
             self.create_btn.setToolTip("")
 
-    def _focus_first_issue(self) -> None:
-        self.constraints_form.open_first_issue_section(self._latest_field_issues)
+    def _toggle_issues_panel(self) -> None:
+        if not self._ui_issues:
+            self.issues_panel.setVisible(False)
+            self._update_action_state()
+            return
+        self.issues_panel.setVisible(not self.issues_panel.isVisible())
+        self._update_action_state()
+
+    def _focus_issue_key(self, key: str) -> None:
+        self.constraints_form.focus_issue_key(str(key))
+        if self.issues_panel.isVisible():
+            self.issues_panel.setVisible(False)
+        self._update_action_state()
 
     def _submit(self) -> None:
         if not self.create_btn.isEnabled():
@@ -1341,6 +1481,7 @@ class MainWindow(QMainWindow):
         self._project_validation_timer.timeout.connect(self._flush_project_draft_validation)
 
         self.setWindowTitle("WUT Batcher")
+        self.setMinimumSize(1120, 760)
         self.resize(1280, 860)
 
         self.stack = QStackedWidget()

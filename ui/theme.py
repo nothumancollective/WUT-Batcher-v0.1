@@ -180,6 +180,12 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     QFrame#AccordionHeaderAccent[severity="fatal"] {{
         background-color: {c['danger_border']};
     }}
+    QFrame#AccordionHeaderAccent[severity="ok"] {{
+        background-color: {c['risk_ok']};
+    }}
+    QFrame#AccordionHeaderAccent[severity="incomplete"] {{
+        background-color: {c['accent']};
+    }}
     QLabel#AccordionHeaderTitle {{
         color: {c['text']};
         font-weight: 700;
@@ -197,6 +203,22 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         padding: 2px 6px;
         font-size: 10px;
     }}
+    QLabel#AccordionChip[state="ok"] {{
+        color: {c['risk_ok']};
+        border: 1px solid #3d5e49;
+    }}
+    QLabel#AccordionChip[state="warn"] {{
+        color: {c['warning_border']};
+        border: 1px solid #4a3d23;
+    }}
+    QLabel#AccordionChip[state="fatal"] {{
+        color: {c['danger_border']};
+        border: 1px solid #4d2d2d;
+    }}
+    QLabel#AccordionChip[state="incomplete"] {{
+        color: {c['text']};
+        border: 1px solid {c['accent']};
+    }}
     QLabel#AccordionStatusBadge {{
         background-color: transparent;
         color: {c['muted']};
@@ -213,6 +235,18 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     QLabel#AccordionStatusBadge[severity="fatal"] {{
         color: {c['danger_border']};
         border: 1px solid {c['danger_border']};
+    }}
+    QLabel#AccordionStatusBadge[severity="ok"] {{
+        color: {c['risk_ok']};
+        border: 1px solid #3d5e49;
+    }}
+    QLabel#AccordionStatusBadge[severity="incomplete"] {{
+        color: {c['text']};
+        border: 1px solid {c['accent']};
+    }}
+    QLabel#AccordionStatusBadge[severity="unset"] {{
+        color: {c['muted']};
+        border: 1px solid {c['border']};
     }}
     QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox {{
         background-color: {c['surface2']};
@@ -249,6 +283,10 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     QLineEdit[fieldState="ok"], QComboBox[fieldState="ok"],
     QTextEdit[fieldState="ok"], QPlainTextEdit[fieldState="ok"] {{
         border: 1px solid {c['risk_ok']};
+    }}
+    QLineEdit[issueFlash="true"], QComboBox[issueFlash="true"],
+    QTextEdit[issueFlash="true"], QPlainTextEdit[issueFlash="true"] {{
+        border: 1px solid {c['accent']};
     }}
     SegmentedEnumInput[fieldState="warn"], ScalarFieldEditor[fieldState="warn"],
     ObjectFieldEditor[fieldState="warn"], ContextFrame[fieldState="warn"] {{
@@ -329,8 +367,9 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         font-size: 10px;
     }}
     QFrame#ProjectActionBar {{
-        background-color: #1c1c1c;
+        background-color: #1a1a1a;
         border-top: 1px solid {c['border']};
+        border-radius: {r['md']}px;
     }}
     QLabel#ProjectStatusPill {{
         background-color: #262626;
@@ -357,6 +396,10 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         color: {c['accent']};
         border: 1px solid {c['accent']};
     }}
+    QLabel#ProjectStatusPill[severity="neutral"] {{
+        color: {c['muted']};
+        border: 1px solid {c['accent']};
+    }}
     QLabel#ProjectStatusHint {{
         color: {c['muted']};
         font-size: 11px;
@@ -371,6 +414,58 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     QPushButton#ProjectViewIssuesButton:hover {{
         color: {c['text']};
         border-color: {c['accent']};
+    }}
+    QFrame#ProjectIssuesPanel {{
+        background-color: #1b1b1b;
+        border: 1px solid {c['border']};
+        border-radius: {r['md']}px;
+    }}
+    QLabel#IssuesPanelTitle {{
+        color: {c['text']};
+        font-weight: 700;
+    }}
+    QLabel#IssuesPanelCounts {{
+        color: {c['muted']};
+        font-size: 11px;
+    }}
+    QLabel#IssuesPanelGroupTitle {{
+        color: {c['text']};
+        font-weight: 600;
+        padding-top: 4px;
+    }}
+    QLabel#IssuesPanelGroupTitle[severity="warn"] {{
+        color: {c['warning_border']};
+    }}
+    QLabel#IssuesPanelGroupTitle[severity="error"] {{
+        color: {c['danger_border']};
+    }}
+    QLabel#IssuesPanelGroupTitle[severity="incomplete"] {{
+        color: {c['accent']};
+    }}
+    QPushButton#IssueRowButton {{
+        text-align: left;
+        background-color: #222222;
+        color: {c['text']};
+        border: 1px solid {c['border']};
+        border-radius: {r['sm']}px;
+        padding: 6px 8px;
+    }}
+    QPushButton#IssueRowButton[severity="warn"] {{
+        border-color: #4a3d23;
+    }}
+    QPushButton#IssueRowButton[severity="error"] {{
+        border-color: #4d2d2d;
+    }}
+    QPushButton#IssueRowButton[severity="incomplete"] {{
+        border-color: {c['accent']};
+    }}
+    QPushButton#IssueRowButton:hover {{
+        border-color: {c['accent']};
+        color: {c['text']};
+    }}
+    QLabel#IssuesPanelEmpty {{
+        color: {c['muted']};
+        font-size: 11px;
     }}
     QLabel#InputCaption {{
         color: {c['muted']};

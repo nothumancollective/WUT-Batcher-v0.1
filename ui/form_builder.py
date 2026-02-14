@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import re
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from ui.form_metrics import FORM_METRICS, configure_single_column_grid, configure_two_column_grid
 from ui.form_schema import FieldSpec, FormSchema, ModeStackSpec, build_project_form_schema
@@ -23,6 +23,7 @@ try:
         QLineEdit,
         QPushButton,
         QScrollArea,
+        QSplitter,
         QSizePolicy,
         QStackedWidget,
         QToolTip,
@@ -249,6 +250,7 @@ class AccordionHeaderRow(QFrame):
         root.addWidget(content, 1)
         self._chips: List[str] = []
         self._expanded = True
+        self._status_level = "unset"
 
     def set_title(self, text: str) -> None:
         self._title.setText(str(text or ""))
@@ -266,8 +268,16 @@ class AccordionHeaderRow(QFrame):
         self.style().polish(self)
         self.update()
 
-    def set_status_counts(self, *, ok_count: int, warn_count: int, fatal_count: int) -> None:
-        _ = ok_count
+    def set_status_counts(
+        self,
+        *,
+        ok_count: int,
+        warn_count: int,
+        fatal_count: int,
+        incomplete_count: int = 0,
+        active_count: int = 0,
+        total_fields: int = 0,
+    ) -> None:
         if int(fatal_count) > 0:
             self._status_badge.setText(f"x {int(fatal_count)}")
             self._status_badge.setProperty("severity", "fatal")
@@ -281,13 +291,25 @@ class AccordionHeaderRow(QFrame):
             self._status_badge.setProperty("severity", "warn")
             self._status_badge.setToolTip(f"warn: {int(warn_count)}")
             level = "warn"
+        elif int(incomplete_count) > 0:
+            self._status_badge.setText(f"• {int(incomplete_count)}")
+            self._status_badge.setProperty("severity", "incomplete")
+            self._status_badge.setToolTip(f"incomplete: {int(incomplete_count)}")
+            level = "incomplete"
+        elif int(active_count) > 0:
+            self._status_badge.setText("✓")
+            self._status_badge.setProperty("severity", "ok")
+            self._status_badge.setToolTip(f"configured: {int(active_count)}")
+            level = "ok"
         else:
-            self._status_badge.setText("")
-            self._status_badge.setToolTip("")
-            self._status_badge.setProperty("severity", "neutral")
-            level = "neutral"
+            self._status_badge.setText("•")
+            self._status_badge.setProperty("severity", "unset")
+            self._status_badge.setToolTip(f"unset: {int(total_fields)}")
+            level = "unset"
         self._accent.setProperty("severity", level)
         self.setProperty("severity", level)
+        self._status_level = level
+        self._render_chips()
         self._status_badge.style().unpolish(self._status_badge)
         self._status_badge.style().polish(self._status_badge)
         self._accent.style().unpolish(self._accent)
@@ -311,10 +333,12 @@ class AccordionHeaderRow(QFrame):
         for value in visible:
             chip = QLabel(value)
             chip.setObjectName("AccordionChip")
+            chip.setProperty("state", self._status_level)
             self._chips_layout.addWidget(chip, 0, Qt.AlignVCenter)
         if remaining > 0:
             extra = QLabel(f"+{remaining}")
             extra.setObjectName("AccordionChip")
+            extra.setProperty("state", self._status_level)
             self._chips_layout.addWidget(extra, 0, Qt.AlignVCenter)
         self._chips_wrap.setVisible(not self._expanded)
 
@@ -383,8 +407,24 @@ class AccordionGroupBox(QGroupBox):
     def set_summary_chips(self, chips: Sequence[str]) -> None:
         self._header.set_summary_chips(chips)
 
-    def set_status_counts(self, *, ok_count: int, warn_count: int, fatal_count: int) -> None:
-        self._header.set_status_counts(ok_count=ok_count, warn_count=warn_count, fatal_count=fatal_count)
+    def set_status_counts(
+        self,
+        *,
+        ok_count: int,
+        warn_count: int,
+        fatal_count: int,
+        incomplete_count: int = 0,
+        active_count: int = 0,
+        total_fields: int = 0,
+    ) -> None:
+        self._header.set_status_counts(
+            ok_count=ok_count,
+            warn_count=warn_count,
+            fatal_count=fatal_count,
+            incomplete_count=incomplete_count,
+            active_count=active_count,
+            total_fields=total_fields,
+        )
 
 
 class NullableNumericInput(QWidget):
@@ -1101,9 +1141,9 @@ def _group_width_hint() -> int:
 
 def _finalize_group_box(box: QGroupBox) -> None:
     width = _group_width_hint()
-    box.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Minimum)
+    box.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
     box.setMinimumWidth(width)
-    box.setMaximumWidth(width)
+    box.setMaximumWidth(16_777_215)
 
 
 class ParameterForm(QWidget):
@@ -1120,6 +1160,8 @@ class ParameterForm(QWidget):
         self._compat_state: Dict[str, Any] = {"visible_keys": [], "locked_keys": [], "issues": []}
         self._compat_visible_keys: set[str] = set()
         self._field_group_boxes: Dict[str, AccordionGroupBox] = {}
+        self._field_column_map: Dict[str, str] = {}
+        self._section_key_map: Dict[int, set[str]] = {}
         self._accordion_groups_by_column: Dict[str, List[AccordionGroupBox]] = {"Geometry": [], "Mesh": []}
         self._accordion_sync_active = False
         self._morph_detail_frame: Optional[ContextFrame] = None
@@ -1142,24 +1184,34 @@ class ParameterForm(QWidget):
 
         root = QHBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
-        root.setSpacing(12)
+        root.setSpacing(0)
         self._root_layout = root
+        self._columns_splitter = QSplitter(Qt.Horizontal)
+        self._columns_splitter.setChildrenCollapsible(False)
+        self._columns_splitter.setHandleWidth(6)
+        root.addWidget(self._columns_splitter, 1)
 
         self.geometry_scroll = QScrollArea()
         self.geometry_scroll.setObjectName("ProjectGeometryScroll")
         self.geometry_scroll.setWidgetResizable(True)
         self.geometry_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.geometry_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.geometry_scroll.setMinimumWidth(_group_width_hint() + 28)
         self.mesh_scroll = QScrollArea()
         self.mesh_scroll.setObjectName("ProjectMeshScroll")
         self.mesh_scroll.setWidgetResizable(True)
         self.mesh_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        root.addWidget(self.geometry_scroll, 1)
-        root.addWidget(self.mesh_scroll, 1)
+        self.mesh_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.mesh_scroll.setMinimumWidth(_group_width_hint() + 28)
+        self._columns_splitter.addWidget(self.geometry_scroll)
+        self._columns_splitter.addWidget(self.mesh_scroll)
+        self._columns_splitter.setStretchFactor(0, 1)
+        self._columns_splitter.setStretchFactor(1, 1)
 
         geometry_container = QWidget()
         self.geometry_scroll.setWidget(geometry_container)
         geometry_layout = QVBoxLayout(geometry_container)
-        geometry_layout.setContentsMargins(0, 8, 0, 0)
+        geometry_layout.setContentsMargins(0, 4, 0, 0)
         geometry_layout.setSpacing(14)
         self.geometry_section = SectionColumn("Geometry")
         geometry_layout.addWidget(self.geometry_section)
@@ -1168,7 +1220,7 @@ class ParameterForm(QWidget):
         mesh_container = QWidget()
         self.mesh_scroll.setWidget(mesh_container)
         mesh_layout = QVBoxLayout(mesh_container)
-        mesh_layout.setContentsMargins(0, 8, 0, 0)
+        mesh_layout.setContentsMargins(0, 4, 0, 0)
         mesh_layout.setSpacing(14)
         self.mesh_section = SectionColumn("Mesh")
         mesh_layout.addWidget(self.mesh_section)
@@ -1184,6 +1236,8 @@ class ParameterForm(QWidget):
         super().showEvent(event)
         if self._base_width is None:
             self._base_width = max(int(self.width()), 1)
+        if sum(self._columns_splitter.sizes()) <= 0:
+            self._columns_splitter.setSizes([1, 1])
         self._apply_responsive_spacing()
 
     def resizeEvent(self, event) -> None:  # type: ignore[override]
@@ -1194,15 +1248,36 @@ class ParameterForm(QWidget):
         if self._base_width is None:
             self._base_width = max(int(self.width()), 1)
         extra = max(int(self.width()) - int(self._base_width), 0)
-        self._root_layout.setSpacing(8 + min(extra // 220, 10))
+        compact = int(self.width()) < 1280
+        self._columns_splitter.setHandleWidth(4 if compact else 6)
 
         hint = _group_width_hint()
-        block_spacing = 10 + min(extra // 260, 8)
+        block_spacing = 9 + min(extra // 260, 8)
         for section in (self.geometry_section, self.mesh_section):
             available = max(section.width(), hint)
-            margin = max((available - hint) // 4, 0)
+            margin = max((available - hint) // 6, 0)
             section.set_horizontal_inset(margin)
             section.content_layout.setSpacing(block_spacing)
+
+    def _make_field_label(self, text: str) -> QLabel:
+        label = QLabel(text)
+        label.setWordWrap(False)
+        label.setFixedWidth(LABEL_COLUMN_WIDTH)
+        label.setToolTip(str(text or ""))
+        return label
+
+    def _record_field_metadata(
+        self,
+        key: str,
+        box: AccordionGroupBox,
+        column_key: str,
+        label: Optional[QLabel] = None,
+    ) -> None:
+        if label is not None:
+            self._field_labels[key] = label
+        self._field_group_boxes[key] = box
+        self._field_column_map[key] = column_key
+        self._section_key_map.setdefault(id(box), set()).add(key)
 
     def _build_sections(self) -> None:
         mode_controller_keys = {stack.controller_key for stack in self.schema.mode_stacks}
@@ -1322,6 +1397,9 @@ class ParameterForm(QWidget):
                     ok_count=int(counts.get("ok", 0)),
                     warn_count=int(counts.get("warn", 0)),
                     fatal_count=int(counts.get("fatal", 0)),
+                    incomplete_count=int(counts.get("incomplete", 0)),
+                    active_count=int(counts.get("active", 0)),
+                    total_fields=len(self._section_key_map.get(id(box), set())),
                 )
 
     def _fields_by_group(self, fields: Iterable[FieldSpec]) -> Dict[str, List[FieldSpec]]:
@@ -1367,6 +1445,9 @@ class ParameterForm(QWidget):
         configure_single_column_grid(selection_grid)
         form_grid = QGridLayout()
         configure_two_column_grid(form_grid)
+        form_grid.setHorizontalSpacing(FORM_METRICS.label_to_input_gap + 4)
+        form_grid.setVerticalSpacing(FORM_METRICS.row_gap + 2)
+        form_grid.setColumnMinimumWidth(2, FORM_METRICS.column_gap + 18)
 
         selection_keys = {"Mesh.Quadrants", "Mesh.RearShape"}
         selection_fields = [field for field in ordered if field.key in selection_keys]
@@ -1390,37 +1471,28 @@ class ParameterForm(QWidget):
         other_fields.sort(key=lambda field: rank.get(field.key, 10_000))
 
         for row, field in enumerate(selection_fields):
-            label = QLabel(field.label)
-            label.setWordWrap(True)
-            label.setFixedWidth(LABEL_COLUMN_WIDTH)
+            label = self._make_field_label(field.label)
             editor = self._ensure_editor(field)
             selection_grid.addWidget(label, row, 0)
             selection_grid.addWidget(editor, row, 1, 1, 1, alignment=Qt.AlignLeft)
-            self._field_labels[field.key] = label
-            self._field_group_boxes[field.key] = box
+            self._record_field_metadata(field.key, box, column_key, label)
 
         left_fields = other_fields[:6]
         right_fields = other_fields[6:]
 
         for row, field in enumerate(left_fields):
-            label = QLabel(field.label)
-            label.setWordWrap(True)
-            label.setFixedWidth(LABEL_COLUMN_WIDTH)
+            label = self._make_field_label(field.label)
             editor = self._ensure_editor(field)
             form_grid.addWidget(label, row, 0)
             form_grid.addWidget(editor, row, 1, 1, 1, alignment=Qt.AlignLeft)
-            self._field_labels[field.key] = label
-            self._field_group_boxes[field.key] = box
+            self._record_field_metadata(field.key, box, column_key, label)
 
         for row, field in enumerate(right_fields):
-            label = QLabel(field.label)
-            label.setWordWrap(True)
-            label.setFixedWidth(LABEL_COLUMN_WIDTH)
+            label = self._make_field_label(field.label)
             editor = self._ensure_editor(field)
             form_grid.addWidget(label, row, 3)
             form_grid.addWidget(editor, row, 4, 1, 1, alignment=Qt.AlignLeft)
-            self._field_labels[field.key] = label
-            self._field_group_boxes[field.key] = box
+            self._record_field_metadata(field.key, box, column_key, label)
 
         box_layout.addLayout(selection_grid)
         box_layout.addLayout(form_grid)
@@ -1464,14 +1536,11 @@ class ParameterForm(QWidget):
 
         controller_grid = QGridLayout()
         configure_single_column_grid(controller_grid)
-        controller_label = QLabel(controller.label)
-        controller_label.setWordWrap(True)
-        controller_label.setFixedWidth(LABEL_COLUMN_WIDTH)
+        controller_label = self._make_field_label(controller.label)
         controller_editor = self._ensure_editor(controller)
         controller_grid.addWidget(controller_label, 0, 0)
         controller_grid.addWidget(controller_editor, 0, 1)
-        self._field_labels[controller.key] = controller_label
-        self._field_group_boxes[controller.key] = box
+        self._record_field_metadata(controller.key, box, column_key, controller_label)
         box_layout.addLayout(controller_grid)
 
         if detail_fields:
@@ -1480,16 +1549,13 @@ class ParameterForm(QWidget):
             detail_grid = QGridLayout(detail_widget)
             configure_two_column_grid(detail_grid)
             for index, field in enumerate(detail_fields):
-                label = QLabel(field.label)
-                label.setWordWrap(True)
-                label.setFixedWidth(LABEL_COLUMN_WIDTH)
+                label = self._make_field_label(field.label)
                 editor = self._ensure_editor(field)
                 row = index // 2
                 label_col, input_col = _two_column_positions(index % 2)
                 detail_grid.addWidget(label, row, label_col)
                 detail_grid.addWidget(editor, row, input_col, 1, 1, alignment=Qt.AlignLeft)
-                self._field_labels[field.key] = label
-                self._field_group_boxes[field.key] = box
+                self._record_field_metadata(field.key, box, column_key, label)
             detail_frame.content_layout.addWidget(detail_widget)
             self._morph_detail_frame = detail_frame
             box_layout.addWidget(detail_frame)
@@ -1523,14 +1589,11 @@ class ParameterForm(QWidget):
 
         controller_grid = QGridLayout()
         configure_single_column_grid(controller_grid)
-        controller_label = QLabel(controller.label)
-        controller_label.setWordWrap(True)
-        controller_label.setFixedWidth(LABEL_COLUMN_WIDTH)
+        controller_label = self._make_field_label(controller.label)
         controller_editor = self._ensure_editor(controller)
         controller_grid.addWidget(controller_label, 0, 0)
         controller_grid.addWidget(controller_editor, 0, 1)
-        self._field_labels[controller.key] = controller_label
-        self._field_group_boxes[controller.key] = box
+        self._record_field_metadata(controller.key, box, column_key, controller_label)
         box_layout.addLayout(controller_grid)
 
         if detail_fields:
@@ -1539,16 +1602,13 @@ class ParameterForm(QWidget):
             detail_grid = QGridLayout(detail_widget)
             configure_two_column_grid(detail_grid)
             for index, field in enumerate(detail_fields):
-                label = QLabel(field.label)
-                label.setWordWrap(True)
-                label.setFixedWidth(LABEL_COLUMN_WIDTH)
+                label = self._make_field_label(field.label)
                 editor = self._ensure_editor(field)
                 row = index // 2
                 label_col, input_col = _two_column_positions(index % 2)
                 detail_grid.addWidget(label, row, label_col)
                 detail_grid.addWidget(editor, row, input_col, 1, 1, alignment=Qt.AlignLeft)
-                self._field_labels[field.key] = label
-                self._field_group_boxes[field.key] = box
+                self._record_field_metadata(field.key, box, column_key, label)
             detail_frame.content_layout.addWidget(detail_widget)
             self._rollback_detail_frame = detail_frame
             box_layout.addWidget(detail_frame)
@@ -1583,18 +1643,15 @@ class ParameterForm(QWidget):
                 editor = self._ensure_editor(field)
                 if field.widget_kind == "object":
                     grid.addWidget(editor, object_row, 0, 1, 5, alignment=Qt.AlignLeft)
-                    self._field_group_boxes[field.key] = box
+                    self._record_field_metadata(field.key, box, column_key)
                     object_row += 1
                     continue
-                label = QLabel(field.label)
-                label.setWordWrap(True)
-                label.setFixedWidth(LABEL_COLUMN_WIDTH)
+                label = self._make_field_label(field.label)
                 row = scalar_index // 2
                 label_col, input_col = _two_column_positions(scalar_index % 2)
                 grid.addWidget(label, row, label_col)
                 grid.addWidget(editor, row, input_col, 1, 1, alignment=Qt.AlignLeft)
-                self._field_labels[field.key] = label
-                self._field_group_boxes[field.key] = box
+                self._record_field_metadata(field.key, box, column_key, label)
                 scalar_index += 1
             box.body_layout().addWidget(grid_holder)
             parent_layout.addWidget(box, 0, Qt.AlignTop | Qt.AlignLeft)
@@ -1619,14 +1676,11 @@ class ParameterForm(QWidget):
 
             controller_grid = QGridLayout()
             configure_single_column_grid(controller_grid)
-            controller_label = QLabel(controller.label)
-            controller_label.setWordWrap(True)
-            controller_label.setFixedWidth(LABEL_COLUMN_WIDTH)
+            controller_label = self._make_field_label(controller.label)
             controller_editor = self._ensure_editor(controller)
             controller_grid.addWidget(controller_label, 0, 0)
             controller_grid.addWidget(controller_editor, 0, 1)
-            self._field_labels[controller.key] = controller_label
-            self._field_group_boxes[controller.key] = box
+            self._record_field_metadata(controller.key, box, column_key, controller_label)
             box_layout.addLayout(controller_grid)
 
             keyed_pages = [page for page in stack.pages if page.value is not None]
@@ -1645,16 +1699,13 @@ class ParameterForm(QWidget):
                     field = self._field_specs.get(key)
                     if field is None:
                         continue
-                    label = QLabel(field.label)
-                    label.setWordWrap(True)
-                    label.setFixedWidth(LABEL_COLUMN_WIDTH)
+                    label = self._make_field_label(field.label)
                     editor = self._ensure_editor(field)
                     row = index // 2
                     label_col, input_col = _two_column_positions(index % 2)
                     common_grid.addWidget(label, row, label_col)
                     common_grid.addWidget(editor, row, input_col, 1, 1, alignment=Qt.AlignLeft)
-                    self._field_labels[key] = label
-                    self._field_group_boxes[key] = box
+                    self._record_field_metadata(key, box, column_key, label)
                 common_box.content_layout.addWidget(common_widget)
                 box_layout.addWidget(common_box)
 
@@ -1686,7 +1737,7 @@ class ParameterForm(QWidget):
                     if field is not None:
                         editor = self._ensure_editor(field)
                         page_layout.addWidget(editor, 0, Qt.AlignLeft)
-                        self._field_group_boxes[field.key] = box
+                        self._record_field_metadata(field.key, box, column_key)
                     page_index = pages.addWidget(page_widget)
                     index_by_value[page.value] = page_index
                     continue
@@ -1700,16 +1751,13 @@ class ParameterForm(QWidget):
                     field = self._field_specs.get(key)
                     if field is None:
                         continue
-                    label = QLabel(field.label)
-                    label.setWordWrap(True)
-                    label.setFixedWidth(LABEL_COLUMN_WIDTH)
+                    label = self._make_field_label(field.label)
                     editor = self._ensure_editor(field)
                     row = index // 2
                     label_col, input_col = _two_column_positions(index % 2)
                     page_grid.addWidget(label, row, label_col)
                     page_grid.addWidget(editor, row, input_col, 1, 1, alignment=Qt.AlignLeft)
-                    self._field_labels[key] = label
-                    self._field_group_boxes[key] = box
+                    self._record_field_metadata(key, box, column_key, label)
                 page_widget.content_layout.addWidget(page_grid_widget)
                 page_index = pages.addWidget(page_widget)
                 index_by_value[page.value] = page_index
@@ -1899,7 +1947,7 @@ class ParameterForm(QWidget):
 
     @staticmethod
     def _risk_rank(value: str) -> int:
-        order = {"fatal": 0, "warn": 1, "info": 2, "ok": 3, "neutral": 4}
+        order = {"fatal": 0, "warn": 1, "incomplete": 2, "info": 3, "ok": 4, "neutral": 5}
         return order.get(str(value).lower(), 99)
 
     @staticmethod
@@ -2053,29 +2101,31 @@ class ParameterForm(QWidget):
 
     def apply_ui_risks(self, issues: List[Dict[str, Any]]) -> None:
         self._clear_risk_highlights()
-        grouped: Dict[str, List[Dict[str, Any]]] = {}
+        grouped_active: Dict[str, List[Dict[str, Any]]] = {}
+        grouped_all: Dict[str, List[Dict[str, Any]]] = {}
         section_counts: Dict[int, Dict[str, int]] = {}
         for issue in issues:
             if not isinstance(issue, dict):
                 continue
             severity = str(issue.get("severity", "")).strip().lower()
-            if severity not in {"warn", "fatal", "ok", "info"}:
+            if severity not in {"warn", "fatal", "ok", "info", "incomplete"}:
                 continue
             key = str(issue.get("field_key") or issue.get("key") or "").strip()
             if not key:
                 continue
             if key not in self._field_editors:
                 continue
-            if not self._field_is_set(key):
-                continue
             target = self._risk_target_for_key(key)
             if target is None:
                 continue
-            grouped.setdefault(key, []).append(issue)
+            grouped_all.setdefault(key, []).append(issue)
+            if self._field_is_set(key):
+                grouped_active.setdefault(key, []).append(issue)
 
         active_keys = [key for key in self._field_editors.keys() if self._field_is_set(key)]
+        key_status: Dict[str, str] = {key: "ok" for key in active_keys}
         for key in active_keys:
-            key_issues = grouped.get(key, [])
+            key_issues = grouped_active.get(key, [])
             target = self._risk_target_for_key(key)
             if target is None:
                 continue
@@ -2084,22 +2134,27 @@ class ParameterForm(QWidget):
                 severity = "fatal"
             elif "warn" in severities:
                 severity = "warn"
+            elif "incomplete" in severities:
+                severity = "incomplete"
             else:
                 severity = "ok"
+            key_status[key] = severity
             box = self._field_group_boxes.get(key)
             if box is not None:
-                counts = section_counts.setdefault(id(box), {"ok": 0, "warn": 0, "fatal": 0})
-                if severity in {"ok", "warn", "fatal"}:
+                counts = section_counts.setdefault(id(box), {"ok": 0, "warn": 0, "fatal": 0, "incomplete": 0, "active": 0})
+                counts["active"] = int(counts.get("active", 0)) + 1
+                if severity in {"ok", "warn", "fatal", "incomplete"}:
                     counts[severity] = int(counts.get(severity, 0)) + 1
             editor = self._field_editors.get(key)
             if editor is not None and hasattr(editor, "set_field_state_visual"):
-                editor.set_field_state_visual(severity)  # type: ignore[attr-defined]
+                editor.set_field_state_visual("ok" if severity == "incomplete" else severity)  # type: ignore[attr-defined]
             target_id = id(target)
             self._install_risk_hover_filter(target)
             self._risk_widgets[target_id] = target
             self._risk_original_tooltips[target_id] = target.toolTip()
-            target.setProperty("fieldState", severity)
-            target.setProperty("riskLevel", severity)
+            visual_severity = "neutral" if severity == "incomplete" else severity
+            target.setProperty("fieldState", visual_severity)
+            target.setProperty("riskLevel", visual_severity)
             if severity in {"warn", "fatal"}:
                 tooltip = self._risk_tooltip(key_issues)
                 if tooltip:
@@ -2111,6 +2166,23 @@ class ParameterForm(QWidget):
                 target.setProperty("riskTooltipText", "")
                 target.setProperty("riskTooltipSeverity", "")
             self._repolish(target)
+
+        rank = {"fatal": 0, "warn": 1, "incomplete": 2, "ok": 3, "info": 4}
+        for key, key_issues in grouped_all.items():
+            if key in key_status:
+                continue
+            highest = "info"
+            for issue in key_issues:
+                severity = str(issue.get("severity", "info")).strip().lower()
+                if rank.get(severity, 99) < rank.get(highest, 99):
+                    highest = severity
+            if highest not in {"fatal", "warn", "incomplete"}:
+                continue
+            box = self._field_group_boxes.get(key)
+            if box is None:
+                continue
+            counts = section_counts.setdefault(id(box), {"ok": 0, "warn": 0, "fatal": 0, "incomplete": 0, "active": 0})
+            counts[highest] = int(counts.get(highest, 0)) + 1
 
         self._section_counts_by_box = section_counts
         for boxes in self._accordion_groups_by_column.values():
@@ -2174,7 +2246,7 @@ class ParameterForm(QWidget):
 
     def open_first_issue_section(self, issues: Sequence[Dict[str, Any]]) -> bool:
         grouped: Dict[str, str] = {}
-        rank = {"fatal": 0, "warn": 1, "ok": 2, "info": 3}
+        rank = {"fatal": 0, "warn": 1, "incomplete": 2, "ok": 3, "info": 4}
         for issue in issues:
             if not isinstance(issue, dict):
                 continue
@@ -2182,23 +2254,70 @@ class ParameterForm(QWidget):
             if not key:
                 continue
             severity = str(issue.get("severity", "")).strip().lower()
-            if severity not in {"fatal", "warn"}:
+            if severity not in {"fatal", "warn", "incomplete"}:
                 continue
             current = grouped.get(key)
             if current is None or rank.get(severity, 99) < rank.get(current, 99):
                 grouped[key] = severity
 
-        for wanted in ("fatal", "warn"):
+        for wanted in ("fatal", "warn", "incomplete"):
             for key, severity in grouped.items():
                 if severity != wanted:
                     continue
-                box = self._field_group_boxes.get(key)
-                if box is None:
-                    continue
-                box.set_collapsed(False)
-                box.header_row().setFocus()
-                return True
+                if self.focus_issue_key(key):
+                    return True
         return False
+
+    def field_is_set_map(self) -> Dict[str, bool]:
+        return {key: self._field_is_set(key) for key in self._field_editors.keys()}
+
+    def field_label_map(self) -> Dict[str, str]:
+        result: Dict[str, str] = {}
+        for key, spec in self._field_specs.items():
+            label = self._field_labels.get(key)
+            result[key] = str(label.text()).strip() if label is not None else str(spec.label or key)
+        return result
+
+    def field_section_map(self) -> Dict[str, str]:
+        result: Dict[str, str] = {}
+        for key, box in self._field_group_boxes.items():
+            result[key] = str(box.title() or "General")
+        return result
+
+    def focus_issue_key(self, key: str) -> bool:
+        key_s = str(key or "").strip()
+        if not key_s:
+            return False
+        box = self._field_group_boxes.get(key_s)
+        if box is None:
+            return False
+        box.set_collapsed(False)
+        column_key = self._field_column_map.get(key_s)
+        scroll: Optional[QScrollArea] = None
+        if column_key == "Geometry":
+            scroll = self.geometry_scroll
+        elif column_key == "Mesh":
+            scroll = self.mesh_scroll
+
+        editor = self._field_editors.get(key_s)
+        target = self._risk_target_for_key(key_s)
+        if scroll is not None and target is not None:
+            scroll.ensureWidgetVisible(target, 18, 36)
+        if isinstance(editor, QWidget):
+            editor.setFocus(Qt.OtherFocusReason)
+        if isinstance(target, QWidget):
+            target.setFocus(Qt.OtherFocusReason)
+            target.setProperty("issueFlash", "true")
+            self._repolish(target)
+            QTimer.singleShot(650, lambda w=target: self._clear_issue_flash(w))
+        box.header_row().setFocus()
+        return True
+
+    def _clear_issue_flash(self, widget: QWidget) -> None:
+        if widget is None:
+            return
+        widget.setProperty("issueFlash", "false")
+        self._repolish(widget)
 
 
 class FormBuilder:
