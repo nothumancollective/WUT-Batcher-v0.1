@@ -30,6 +30,7 @@ try:
         QCheckBox,
         QDialog,
         QFormLayout,
+        QFrame,
         QGridLayout,
         QGroupBox,
         QHBoxLayout,
