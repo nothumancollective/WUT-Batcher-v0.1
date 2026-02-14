@@ -912,3 +912,47 @@
 #### Tests
 - `python -m unittest tests.test_project_form_ui -v`
 - `python -m unittest tests.test_ui_validation_ranges tests.test_ui_validation_candidates -v`
+
+### Update 34 (PROJECT Responsive UX + Deterministic Issues Navigation)
+#### Done
+- Added responsive baseline for PROJECT columns:
+  - switched form columns to `QSplitter` with per-column internal scrolling
+  - kept bottom action area visible while columns resize
+  - set main window minimum size (`1120x760`) to avoid unusable cramped states.
+- Improved PROJECT top layout alignment and rhythm:
+  - aligned `Project Name` row with left content column
+  - adjusted top spacing so title/name/summary card read as a structured header area.
+- Reduced visual density issues in section content:
+  - mesh/core grid spacing increased (especially label-input rhythm in right-side fields)
+  - field labels switched to single-line with tooltip fallback to avoid wrapped labels pushing rows unpredictably.
+- Introduced deterministic UI issue model (presentation-only, no compat semantic changes):
+  - new `app/project_issue_model.py` classifies issues into `error`, `warn`, `incomplete`
+  - fatal "required missing" on unset fields now shown as `incomplete` (neutral) instead of immediate red error state
+  - stable ordering: errors -> warnings -> incomplete.
+- Reworked `View issues` behavior:
+  - added on-page `ProjectIssuesPanel` listing all issues grouped by severity
+  - clicking an issue opens the correct accordion section, scrolls to the field, focuses it, and applies a short subtle flash.
+- Refined action bar behavior (not a second status bar):
+  - compact issue counts (`errors · warnings · incomplete`)
+  - concise state copy for ready/incomplete/warn/error/creating/locked/validating
+  - create button disabled for `error` or `incomplete` with explicit tooltip reason.
+- Accordion section state chips/badges now communicate progress:
+  - `unset`, `ok`, `warn`, `fatal`, `incomplete` states represented via subtle tokenized badge/chip styling.
+
+#### Manual QA Checklist
+- Fullscreen:
+  - two-column layout remains stable, action bar visible above OS status bar
+  - section badges/chips update with field changes.
+- Restore-down window:
+  - no global page collapse; column scrolling stays inside Geometry/Mesh columns
+  - bottom action bar remains visible and usable.
+- Issues navigation:
+  - `View issues` shows full grouped list (no random single issue)
+  - clicking list item expands target accordion and focuses target field.
+- Create CTA:
+  - disabled for errors and incomplete required fields
+  - enabled when only warnings are present.
+
+#### Tests
+- `python -m unittest tests.test_project_issue_model tests.test_project_form_ui tests.test_ui_validation_ranges tests.test_ui_validation_candidates -v`
+- `python -m py_compile app/gui.py ui/form_builder.py ui/theme.py app/project_issue_model.py`
