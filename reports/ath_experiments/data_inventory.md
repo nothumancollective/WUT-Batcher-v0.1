@@ -1,6 +1,6 @@
 # ATH Experiment Data Inventory
 
-- Generated at: 2026-02-13T23:37:13+00:00
+- Generated at: 2026-02-14T00:11:37+00:00
 - Database: `C:\Users\maximilianheinze\Desktop\WUT Batcher v0.1\reports\ath_experiments\ath_experiments.sqlite`
 - Remaining NULL run_group rows: 0
 
@@ -43,10 +43,3 @@
 - pp10k_2029: hard_cap_exceeded=180, diameter_over_100m=34, ath_nonzero_exit=1
 - pp10k_2030: hard_cap_exceeded=208, diameter_over_100m=28, ath_nonzero_exit=1
 - pp10k_smoke_2026: hard_cap_exceeded=6, diameter_over_100m=1
-
-## Legacy Backfill Result
-- applied: True
-- changed_rows: 0
-- source_null_rows: 0
-- idempotent_noop: True
-- groups_created: {}
