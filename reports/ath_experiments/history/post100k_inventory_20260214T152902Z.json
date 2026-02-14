@@ -1,0 +1,610 @@
+{
+  "generated_at": "2026-02-14T15:30:20.672043+00:00",
+  "db_path": "reports\\ath_experiments\\ath_experiments.sqlite",
+  "db_size_bytes": 1062617088,
+  "table_counts": {
+    "experiment_compare": 115640,
+    "experiment_metrics": 115640,
+    "experiment_params": 6128920,
+    "experiment_runs": 115640
+  },
+  "run_group_counts": [
+    {
+      "run_group": "legacy_5000_seed2026",
+      "seed": 2026,
+      "total": 5000,
+      "ok": 4408,
+      "ath_error": 586,
+      "pipeline_error": 0,
+      "skipped": 6
+    },
+    {
+      "run_group": "legacy_5000_seed2026_retry2",
+      "seed": 2026,
+      "total": 50,
+      "ok": 44,
+      "ath_error": 6,
+      "pipeline_error": 0,
+      "skipped": 0
+    },
+    {
+      "run_group": "legacy_500_seed1337",
+      "seed": 1337,
+      "total": 500,
+      "ok": 403,
+      "ath_error": 75,
+      "pipeline_error": 0,
+      "skipped": 22
+    },
+    {
+      "run_group": "legacy_500_seed1337_retry2",
+      "seed": 1337,
+      "total": 20,
+      "ok": 18,
+      "ath_error": 2,
+      "pipeline_error": 0,
+      "skipped": 0
+    },
+    {
+      "run_group": "legacy_500_seed1337_retry3",
+      "seed": 1337,
+      "total": 20,
+      "ok": 18,
+      "ath_error": 2,
+      "pipeline_error": 0,
+      "skipped": 0
+    },
+    {
+      "run_group": "pp100k_2100",
+      "seed": 2100,
+      "total": 10000,
+      "ok": 7860,
+      "ath_error": 1842,
+      "pipeline_error": 0,
+      "skipped": 298
+    },
+    {
+      "run_group": "pp100k_2101",
+      "seed": 2101,
+      "total": 10000,
+      "ok": 7880,
+      "ath_error": 1834,
+      "pipeline_error": 0,
+      "skipped": 286
+    },
+    {
+      "run_group": "pp100k_2102",
+      "seed": 2102,
+      "total": 10000,
+      "ok": 7882,
+      "ath_error": 1844,
+      "pipeline_error": 0,
+      "skipped": 274
+    },
+    {
+      "run_group": "pp100k_2103",
+      "seed": 2103,
+      "total": 10000,
+      "ok": 7885,
+      "ath_error": 1847,
+      "pipeline_error": 0,
+      "skipped": 268
+    },
+    {
+      "run_group": "pp100k_2104",
+      "seed": 2104,
+      "total": 10000,
+      "ok": 7914,
+      "ath_error": 1799,
+      "pipeline_error": 0,
+      "skipped": 287
+    },
+    {
+      "run_group": "pp100k_2105",
+      "seed": 2105,
+      "total": 10000,
+      "ok": 7873,
+      "ath_error": 1837,
+      "pipeline_error": 0,
+      "skipped": 290
+    },
+    {
+      "run_group": "pp100k_2106",
+      "seed": 2106,
+      "total": 10000,
+      "ok": 7904,
+      "ath_error": 1815,
+      "pipeline_error": 0,
+      "skipped": 281
+    },
+    {
+      "run_group": "pp100k_2107",
+      "seed": 2107,
+      "total": 10000,
+      "ok": 7877,
+      "ath_error": 1837,
+      "pipeline_error": 0,
+      "skipped": 286
+    },
+    {
+      "run_group": "pp100k_2108",
+      "seed": 2108,
+      "total": 10000,
+      "ok": 7891,
+      "ath_error": 1845,
+      "pipeline_error": 0,
+      "skipped": 264
+    },
+    {
+      "run_group": "pp100k_2109",
+      "seed": 2109,
+      "total": 10000,
+      "ok": 7937,
+      "ath_error": 1789,
+      "pipeline_error": 0,
+      "skipped": 274
+    },
+    {
+      "run_group": "pp10k_2026",
+      "seed": 2026,
+      "total": 2000,
+      "ok": 1760,
+      "ath_error": 237,
+      "pipeline_error": 0,
+      "skipped": 3
+    },
+    {
+      "run_group": "pp10k_2027",
+      "seed": 2027,
+      "total": 2000,
+      "ok": 1765,
+      "ath_error": 226,
+      "pipeline_error": 0,
+      "skipped": 9
+    },
+    {
+      "run_group": "pp10k_2028",
+      "seed": 2028,
+      "total": 2000,
+      "ok": 1795,
+      "ath_error": 203,
+      "pipeline_error": 0,
+      "skipped": 2
+    },
+    {
+      "run_group": "pp10k_2029",
+      "seed": 2029,
+      "total": 2000,
+      "ok": 1780,
+      "ath_error": 216,
+      "pipeline_error": 0,
+      "skipped": 4
+    },
+    {
+      "run_group": "pp10k_2030",
+      "seed": 2030,
+      "total": 2000,
+      "ok": 1757,
+      "ath_error": 237,
+      "pipeline_error": 0,
+      "skipped": 6
+    },
+    {
+      "run_group": "pp10k_smoke_2026",
+      "seed": 2026,
+      "total": 50,
+      "ok": 43,
+      "ath_error": 7,
+      "pipeline_error": 0,
+      "skipped": 0
+    }
+  ],
+  "top_errors_by_group": {
+    "legacy_5000_seed2026": [
+      {
+        "error_kind": "hard_cap_exceeded",
+        "count": 501
+      },
+      {
+        "error_kind": "diameter_over_100m",
+        "count": 78
+      },
+      {
+        "error_kind": "ath_nonzero_exit",
+        "count": 5
+      },
+      {
+        "error_kind": "numeric_overflow",
+        "count": 2
+      }
+    ],
+    "legacy_5000_seed2026_retry2": [
+      {
+        "error_kind": "hard_cap_exceeded",
+        "count": 5
+      },
+      {
+        "error_kind": "diameter_over_100m",
+        "count": 1
+      }
+    ],
+    "legacy_500_seed1337": [
+      {
+        "error_kind": "hard_cap_exceeded",
+        "count": 61
+      },
+      {
+        "error_kind": "diameter_over_100m",
+        "count": 14
+      }
+    ],
+    "legacy_500_seed1337_retry2": [
+      {
+        "error_kind": "hard_cap_exceeded",
+        "count": 2
+      }
+    ],
+    "legacy_500_seed1337_retry3": [
+      {
+        "error_kind": "hard_cap_exceeded",
+        "count": 2
+      }
+    ],
+    "pp100k_2100": [
+      {
+        "error_kind": "hard_cap_exceeded",
+        "count": 905
+      },
+      {
+        "error_kind": "unknown",
+        "count": 790
+      },
+      {
+        "error_kind": "diameter_over_100m",
+        "count": 145
+      },
+      {
+        "error_kind": "ath_nonzero_exit",
+        "count": 1
+      },
+      {
+        "error_kind": "numeric_overflow",
+        "count": 1
+      }
+    ],
+    "pp100k_2101": [
+      {
+        "error_kind": "hard_cap_exceeded",
+        "count": 859
+      },
+      {
+        "error_kind": "unknown",
+        "count": 807
+      },
+      {
+        "error_kind": "diameter_over_100m",
+        "count": 166
+      },
+      {
+        "error_kind": "numeric_overflow",
+        "count": 2
+      }
+    ],
+    "pp100k_2102": [
+      {
+        "error_kind": "hard_cap_exceeded",
+        "count": 863
+      },
+      {
+        "error_kind": "unknown",
+        "count": 814
+      },
+      {
+        "error_kind": "diameter_over_100m",
+        "count": 164
+      },
+      {
+        "error_kind": "ath_nonzero_exit",
+        "count": 3
+      }
+    ],
+    "pp100k_2103": [
+      {
+        "error_kind": "hard_cap_exceeded",
+        "count": 894
+      },
+      {
+        "error_kind": "unknown",
+        "count": 794
+      },
+      {
+        "error_kind": "diameter_over_100m",
+        "count": 156
+      },
+      {
+        "error_kind": "ath_nonzero_exit",
+        "count": 3
+      }
+    ],
+    "pp100k_2104": [
+      {
+        "error_kind": "hard_cap_exceeded",
+        "count": 841
+      },
+      {
+        "error_kind": "unknown",
+        "count": 799
+      },
+      {
+        "error_kind": "diameter_over_100m",
+        "count": 155
+      },
+      {
+        "error_kind": "ath_nonzero_exit",
+        "count": 4
+      }
+    ],
+    "pp100k_2105": [
+      {
+        "error_kind": "hard_cap_exceeded",
+        "count": 898
+      },
+      {
+        "error_kind": "unknown",
+        "count": 788
+      },
+      {
+        "error_kind": "diameter_over_100m",
+        "count": 148
+      },
+      {
+        "error_kind": "ath_nonzero_exit",
+        "count": 3
+      }
+    ],
+    "pp100k_2106": [
+      {
+        "error_kind": "hard_cap_exceeded",
+        "count": 839
+      },
+      {
+        "error_kind": "unknown",
+        "count": 809
+      },
+      {
+        "error_kind": "diameter_over_100m",
+        "count": 164
+      },
+      {
+        "error_kind": "ath_nonzero_exit",
+        "count": 3
+      }
+    ],
+    "pp100k_2107": [
+      {
+        "error_kind": "hard_cap_exceeded",
+        "count": 872
+      },
+      {
+        "error_kind": "unknown",
+        "count": 837
+      },
+      {
+        "error_kind": "diameter_over_100m",
+        "count": 127
+      },
+      {
+        "error_kind": "ath_nonzero_exit",
+        "count": 1
+      }
+    ],
+    "pp100k_2108": [
+      {
+        "error_kind": "hard_cap_exceeded",
+        "count": 874
+      },
+      {
+        "error_kind": "unknown",
+        "count": 813
+      },
+      {
+        "error_kind": "diameter_over_100m",
+        "count": 157
+      },
+      {
+        "error_kind": "ath_nonzero_exit",
+        "count": 1
+      }
+    ],
+    "pp100k_2109": [
+      {
+        "error_kind": "hard_cap_exceeded",
+        "count": 832
+      },
+      {
+        "error_kind": "unknown",
+        "count": 799
+      },
+      {
+        "error_kind": "diameter_over_100m",
+        "count": 157
+      },
+      {
+        "error_kind": "ath_nonzero_exit",
+        "count": 1
+      }
+    ],
+    "pp10k_2026": [
+      {
+        "error_kind": "hard_cap_exceeded",
+        "count": 203
+      },
+      {
+        "error_kind": "diameter_over_100m",
+        "count": 33
+      },
+      {
+        "error_kind": "ath_nonzero_exit",
+        "count": 1
+      }
+    ],
+    "pp10k_2027": [
+      {
+        "error_kind": "hard_cap_exceeded",
+        "count": 184
+      },
+      {
+        "error_kind": "diameter_over_100m",
+        "count": 40
+      },
+      {
+        "error_kind": "ath_nonzero_exit",
+        "count": 1
+      },
+      {
+        "error_kind": "numeric_overflow",
+        "count": 1
+      }
+    ],
+    "pp10k_2028": [
+      {
+        "error_kind": "hard_cap_exceeded",
+        "count": 167
+      },
+      {
+        "error_kind": "diameter_over_100m",
+        "count": 34
+      },
+      {
+        "error_kind": "ath_nonzero_exit",
+        "count": 2
+      }
+    ],
+    "pp10k_2029": [
+      {
+        "error_kind": "hard_cap_exceeded",
+        "count": 180
+      },
+      {
+        "error_kind": "diameter_over_100m",
+        "count": 34
+      },
+      {
+        "error_kind": "ath_nonzero_exit",
+        "count": 1
+      },
+      {
+        "error_kind": "numeric_overflow",
+        "count": 1
+      }
+    ],
+    "pp10k_2030": [
+      {
+        "error_kind": "hard_cap_exceeded",
+        "count": 208
+      },
+      {
+        "error_kind": "diameter_over_100m",
+        "count": 28
+      },
+      {
+        "error_kind": "ath_nonzero_exit",
+        "count": 1
+      }
+    ],
+    "pp10k_smoke_2026": [
+      {
+        "error_kind": "hard_cap_exceeded",
+        "count": 6
+      },
+      {
+        "error_kind": "diameter_over_100m",
+        "count": 1
+      }
+    ]
+  },
+  "summary_meta": {
+    "exists": true,
+    "generated_at": "2026-02-14T15:04:03+00:00",
+    "run_group_id": "pp100k_aggregate_20260214_160319",
+    "analysis_run_groups": [
+      "pp100k_2100",
+      "pp100k_2101",
+      "pp100k_2102",
+      "pp100k_2103",
+      "pp100k_2104",
+      "pp100k_2105",
+      "pp100k_2106",
+      "pp100k_2107",
+      "pp100k_2108",
+      "pp100k_2109"
+    ],
+    "status_counts": {
+      "ok": 78903,
+      "ath_error": 18289,
+      "pipeline_error": 0,
+      "skipped": 2808
+    }
+  },
+  "file_inventory": {
+    "summary.json": {
+      "exists": true,
+      "size_bytes": 65583,
+      "last_write": "2026-02-14T15:04:03.788394+00:00"
+    },
+    "summary.md": {
+      "exists": true,
+      "size_bytes": 3635,
+      "last_write": "2026-02-14T15:04:00.988881+00:00"
+    },
+    "range_suggestions.v1.json": {
+      "exists": true,
+      "size_bytes": 199946,
+      "last_write": "2026-02-14T15:04:00.984864+00:00"
+    },
+    "range_suggestions.v1.1.json": {
+      "exists": true,
+      "size_bytes": 199946,
+      "last_write": "2026-02-14T15:04:00.988881+00:00"
+    },
+    "range_suggestions.v1.2.json": {
+      "exists": true,
+      "size_bytes": 25354,
+      "last_write": "2026-02-14T15:04:00.988881+00:00"
+    },
+    "compat_rule_candidates.v1.json": {
+      "exists": true,
+      "size_bytes": 15185,
+      "last_write": "2026-02-14T15:04:03.720765+00:00"
+    },
+    "mode_error_matrix.json": {
+      "exists": true,
+      "size_bytes": 2130,
+      "last_write": "2026-02-14T15:04:00.988881+00:00"
+    },
+    "data_inventory.md": {
+      "exists": true,
+      "size_bytes": 4555,
+      "last_write": "2026-02-14T15:04:01.236938+00:00"
+    },
+    "precision_plan.md": {
+      "exists": true,
+      "size_bytes": 2505,
+      "last_write": "2026-02-14T15:04:03.719023+00:00"
+    }
+  },
+  "history_counts": {
+    "summary": 14,
+    "range": 14
+  },
+  "cleanup_dirs": {
+    "cases": {
+      "exists": true,
+      "file_count": 0
+    },
+    "log": {
+      "exists": true,
+      "file_count": 0
+    }
+  }
+}

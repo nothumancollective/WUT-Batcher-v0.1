@@ -1,0 +1,431 @@
+{
+  "generated_at": "2026-02-14T15:30:20.672043+00:00",
+  "cohorts": {
+    "legacy_5k": {
+      "total": 5000,
+      "ok": 4408,
+      "ath_error": 586,
+      "pipeline_error": 0,
+      "skipped": 6,
+      "ok_rate": 0.8816,
+      "ath_error_rate": 0.1172,
+      "top_errors": [
+        {
+          "error_kind": "hard_cap_exceeded",
+          "count": 501
+        },
+        {
+          "error_kind": "diameter_over_100m",
+          "count": 78
+        },
+        {
+          "error_kind": "ath_nonzero_exit",
+          "count": 5
+        },
+        {
+          "error_kind": "numeric_overflow",
+          "count": 2
+        }
+      ]
+    },
+    "pp10k_multi_seed": {
+      "total": 10000,
+      "ok": 8857,
+      "ath_error": 1119,
+      "pipeline_error": 0,
+      "skipped": 24,
+      "ok_rate": 0.8857,
+      "ath_error_rate": 0.1119,
+      "top_errors": [
+        {
+          "error_kind": "hard_cap_exceeded",
+          "count": 942
+        },
+        {
+          "error_kind": "diameter_over_100m",
+          "count": 169
+        },
+        {
+          "error_kind": "ath_nonzero_exit",
+          "count": 6
+        },
+        {
+          "error_kind": "numeric_overflow",
+          "count": 2
+        }
+      ]
+    },
+    "pp100k_multi_seed": {
+      "total": 100000,
+      "ok": 78903,
+      "ath_error": 18289,
+      "pipeline_error": 0,
+      "skipped": 2808,
+      "ok_rate": 0.78903,
+      "ath_error_rate": 0.18289,
+      "top_errors": [
+        {
+          "error_kind": "hard_cap_exceeded",
+          "count": 8677
+        },
+        {
+          "error_kind": "unknown",
+          "count": 8050
+        },
+        {
+          "error_kind": "diameter_over_100m",
+          "count": 1539
+        },
+        {
+          "error_kind": "ath_nonzero_exit",
+          "count": 20
+        },
+        {
+          "error_kind": "numeric_overflow",
+          "count": 3
+        }
+      ]
+    }
+  },
+  "metric_stats_pp100k": {
+    "distribution": {
+      "final_width_mm": {
+        "count": 95630,
+        "min": 0.0,
+        "p50": 1203.74,
+        "p90": 4102.689000000002,
+        "p95": 7349.443000000001,
+        "p99": 57958.80240000026,
+        "max": 2807184607525.91
+      },
+      "final_height_mm": {
+        "count": 95630,
+        "min": 0.0,
+        "p50": 1219.435,
+        "p90": 4292.2580000000025,
+        "p95": 8075.424500000001,
+        "p99": 63151.264800002566,
+        "max": 3119553468808.71
+      },
+      "final_length_mm": {
+        "count": 95630,
+        "min": 0.0,
+        "p50": 542.61,
+        "p90": 979.7840000000002,
+        "p95": 1319.2340000000004,
+        "p99": 2523.4042,
+        "max": 105785024.13
+      },
+      "avg_throat_angle_deg": {
+        "count": 85296,
+        "min": -84.682,
+        "p50": 10.65,
+        "p90": 22.09,
+        "p95": 28.39675,
+        "p99": 48.63310000000001,
+        "max": 72.931
+      }
+    },
+    "thresholds": {
+      "final_width_mm": {
+        "measured": 95630,
+        "gt1000": 55020,
+        "gt2000": 27172,
+        "gt5000": 7242,
+        "gt1000_rate": 0.5753424657534246,
+        "gt2000_rate": 0.28413677716197844,
+        "gt5000_rate": 0.07572937362752274
+      },
+      "final_height_mm": {
+        "measured": 95630,
+        "gt1000": 55359,
+        "gt2000": 28048,
+        "gt5000": 7812,
+        "gt1000_rate": 0.5788873784377288,
+        "gt2000_rate": 0.2932970825054899,
+        "gt5000_rate": 0.08168984628254732
+      },
+      "final_length_mm": {
+        "measured": 95630,
+        "gt1000": 8301,
+        "gt2000": 1888,
+        "gt5000": 65,
+        "gt1000_rate": 0.0868033044023842,
+        "gt2000_rate": 0.019742758548572624,
+        "gt5000_rate": 0.0006797030220642057
+      }
+    }
+  },
+  "condition_stats_pp100k": {
+    "superformula_osse": {
+      "label": "GCurve=Superformula + Throat=OS-SE",
+      "matched_total": 10447,
+      "any_ath_error_rate": 0.637695032066622,
+      "hard_cap_rate": 0.42356657413611565,
+      "diameter_over_100m_rate": 0.14674069110749496,
+      "uplift_any_vs_baseline": 0.45480503206662204,
+      "uplift_hard_cap_vs_baseline": 0.33679657413611563,
+      "uplift_diameter_vs_baseline": 0.13135069110749498
+    },
+    "coverage_gt70_osse": {
+      "label": "Coverage.Angle>70 with OS-SE",
+      "matched_total": 490,
+      "any_ath_error_rate": 0.7591836734693878,
+      "hard_cap_rate": 0.7244897959183674,
+      "diameter_over_100m_rate": 0.012244897959183673,
+      "uplift_any_vs_baseline": 0.5762936734693878,
+      "uplift_hard_cap_vs_baseline": 0.6377197959183674,
+      "uplift_diameter_vs_baseline": -0.0031451020408163263
+    },
+    "length_gt1000": {
+      "label": "Length>1000 mm",
+      "matched_total": 2719,
+      "any_ath_error_rate": 0.23059948510481795,
+      "hard_cap_rate": 0.13938948142699523,
+      "diameter_over_100m_rate": 0.0158146377344612,
+      "uplift_any_vs_baseline": 0.047709485104817956,
+      "uplift_hard_cap_vs_baseline": 0.05261948142699523,
+      "uplift_diameter_vs_baseline": 0.00042463773446120047
+    },
+    "gcurve_width_gt900": {
+      "label": "GCurve.Width>900 mm",
+      "matched_total": 3258,
+      "any_ath_error_rate": 0.2918968692449355,
+      "hard_cap_rate": 0.18569674647022713,
+      "diameter_over_100m_rate": 0.029158993247391036,
+      "uplift_any_vs_baseline": 0.10900686924493552,
+      "uplift_hard_cap_vs_baseline": 0.09892674647022713,
+      "uplift_diameter_vs_baseline": 0.013768993247391037
+    },
+    "observed_dim_gt2000": {
+      "label": "observed max dimension > 2000 mm",
+      "matched_total": 30350,
+      "any_ath_error_rate": 0.34121911037891267,
+      "hard_cap_rate": 0.2858978583196046,
+      "diameter_over_100m_rate": 0.0,
+      "uplift_any_vs_baseline": 0.15832911037891267,
+      "uplift_hard_cap_vs_baseline": 0.1991278583196046,
+      "uplift_diameter_vs_baseline": -0.01539
+    }
+  },
+  "newly_covered_keys": [
+    {
+      "key": "Mesh.MouthResolution",
+      "set_pre": 0,
+      "set_100k": 100000
+    },
+    {
+      "key": "Mesh.RearResolution",
+      "set_pre": 0,
+      "set_100k": 100000
+    },
+    {
+      "key": "Mesh.ThroatResolution",
+      "set_pre": 0,
+      "set_100k": 100000
+    },
+    {
+      "key": "Mesh.WallThickness",
+      "set_pre": 0,
+      "set_100k": 100000
+    },
+    {
+      "key": "Throat.Ext.Angle",
+      "set_pre": 0,
+      "set_100k": 12120
+    },
+    {
+      "key": "Throat.Ext.Length",
+      "set_pre": 0,
+      "set_100k": 12120
+    },
+    {
+      "key": "Slot.Length",
+      "set_pre": 0,
+      "set_100k": 9065
+    },
+    {
+      "key": "Mesh.Enclosure",
+      "set_pre": 0,
+      "set_100k": 6893
+    },
+    {
+      "key": "Mesh.RearShape",
+      "set_pre": 0,
+      "set_100k": 6893
+    },
+    {
+      "key": "Morph.AllowShrinkage",
+      "set_pre": 0,
+      "set_100k": 3000
+    },
+    {
+      "key": "Morph.FixedPart",
+      "set_pre": 0,
+      "set_100k": 3000
+    },
+    {
+      "key": "Morph.Rate",
+      "set_pre": 0,
+      "set_100k": 3000
+    },
+    {
+      "key": "Mesh.InterfaceDraw",
+      "set_pre": 0,
+      "set_100k": 2500
+    },
+    {
+      "key": "Mesh.InterfaceResolution",
+      "set_pre": 0,
+      "set_100k": 2500
+    },
+    {
+      "key": "Mesh.SubdomainSlices",
+      "set_pre": 0,
+      "set_100k": 2500
+    },
+    {
+      "key": "Mesh.ZMapPoints",
+      "set_pre": 0,
+      "set_100k": 2500
+    },
+    {
+      "key": "Rot",
+      "set_pre": 0,
+      "set_100k": 2000
+    },
+    {
+      "key": "GCurve.SF",
+      "set_pre": 0,
+      "set_100k": 1500
+    }
+  ],
+  "class_contexts": {
+    "hard_cap_exceeded": [
+      {
+        "throat_profile": "OS-SE",
+        "gcurve_mode": "Superformula",
+        "morph_mode": "no morph",
+        "enclosure_mode": "off",
+        "count": 1756,
+        "share_within_class": 0.20237409242825863
+      },
+      {
+        "throat_profile": "OS-SE",
+        "gcurve_mode": "Superformula",
+        "morph_mode": "rectangle",
+        "enclosure_mode": "off",
+        "count": 1514,
+        "share_within_class": 0.17448426875648265
+      },
+      {
+        "throat_profile": "OS-SE",
+        "gcurve_mode": "Superellipse",
+        "morph_mode": "rectangle",
+        "enclosure_mode": "off",
+        "count": 912,
+        "share_within_class": 0.10510545119280858
+      },
+      {
+        "throat_profile": "OS-SE",
+        "gcurve_mode": "Superformula",
+        "morph_mode": "circle",
+        "enclosure_mode": "off",
+        "count": 835,
+        "share_within_class": 0.0962314163881526
+      },
+      {
+        "throat_profile": "OS-SE",
+        "gcurve_mode": "No GCurve",
+        "morph_mode": "rectangle",
+        "enclosure_mode": "off",
+        "count": 665,
+        "share_within_class": 0.07663939149475625
+      }
+    ],
+    "diameter_over_100m": [
+      {
+        "throat_profile": "OS-SE",
+        "gcurve_mode": "Superformula",
+        "morph_mode": "no morph",
+        "enclosure_mode": "off",
+        "count": 591,
+        "share_within_class": 0.3840155945419103
+      },
+      {
+        "throat_profile": "OS-SE",
+        "gcurve_mode": "Superformula",
+        "morph_mode": "rectangle",
+        "enclosure_mode": "off",
+        "count": 486,
+        "share_within_class": 0.3157894736842105
+      },
+      {
+        "throat_profile": "OS-SE",
+        "gcurve_mode": "Superformula",
+        "morph_mode": "circle",
+        "enclosure_mode": "off",
+        "count": 337,
+        "share_within_class": 0.2189733593242365
+      },
+      {
+        "throat_profile": "OS-SE",
+        "gcurve_mode": "Superformula",
+        "morph_mode": "no morph",
+        "enclosure_mode": "on",
+        "count": 62,
+        "share_within_class": 0.04028589993502274
+      },
+      {
+        "throat_profile": "OS-SE",
+        "gcurve_mode": "Superformula",
+        "morph_mode": "rectangle",
+        "enclosure_mode": "on",
+        "count": 50,
+        "share_within_class": 0.03248862897985705
+      }
+    ],
+    "unknown": [
+      {
+        "throat_profile": "Circular Arc",
+        "gcurve_mode": "Superformula",
+        "morph_mode": "rectangle",
+        "enclosure_mode": "off",
+        "count": 425,
+        "share_within_class": 0.052795031055900624
+      },
+      {
+        "throat_profile": "R-OSSE",
+        "gcurve_mode": "Superformula",
+        "morph_mode": "no morph",
+        "enclosure_mode": "off",
+        "count": 411,
+        "share_within_class": 0.05105590062111801
+      },
+      {
+        "throat_profile": "R-OSSE",
+        "gcurve_mode": "Superformula",
+        "morph_mode": "rectangle",
+        "enclosure_mode": "off",
+        "count": 397,
+        "share_within_class": 0.0493167701863354
+      },
+      {
+        "throat_profile": "Circular Arc",
+        "gcurve_mode": "Superformula",
+        "morph_mode": "no morph",
+        "enclosure_mode": "off",
+        "count": 373,
+        "share_within_class": 0.04633540372670807
+      },
+      {
+        "throat_profile": "Circular Arc",
+        "gcurve_mode": "Superellipse",
+        "morph_mode": "rectangle",
+        "enclosure_mode": "off",
+        "count": 336,
+        "share_within_class": 0.04173913043478261
+      }
+    ]
+  }
+}

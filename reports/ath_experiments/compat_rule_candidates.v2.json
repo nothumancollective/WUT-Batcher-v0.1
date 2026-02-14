@@ -1,0 +1,99 @@
+{
+  "generated_at": "2026-02-14T15:30:00.664549+00:00",
+  "version": "v2",
+  "candidates": [
+    {
+      "id": "warn_superformula_osse_risk",
+      "severity": "warn",
+      "condition": "and(eq('Throat.Profile',1), eq('GCurve.Type',2))",
+      "rationale": "Mode combination is consistently over baseline for hard_cap_exceeded and diameter_over_100m.",
+      "evidence": {
+        "matched_total": 10447,
+        "hard_cap_rate": 0.42356657413611565,
+        "hard_cap_uplift": 0.33679657413611563,
+        "diameter_over_100m_rate": 0.14674069110749496
+      },
+      "anti_spurious_note": "Mode-level pattern over all pp100k seeds; still verify via counterfactual sweeps on Width/Dist.",
+      "suggested_message_de": "Superformula + OS-SE ist in den Experimenten deutlich fehleranfaelliger. Nutze konservative Width/Dist/Coverage-Werte.",
+      "suggested_message_en": "Superformula + OS-SE shows elevated risk in experiments. Use conservative Width/Dist/Coverage values.",
+      "verification_plan": "Fix all parameters except GCurve.Type and repeat across seeds."
+    },
+    {
+      "id": "warn_high_coverage_osse",
+      "severity": "warn",
+      "condition": "and(eq('Throat.Profile',1), gt('Coverage.Angle',70))",
+      "rationale": "High coverage under OS-SE co-occurs with higher hard-cap and diameter risks.",
+      "evidence": {
+        "matched_total": 490,
+        "hard_cap_rate": 0.7244897959183674,
+        "hard_cap_uplift": 0.6377197959183674
+      },
+      "anti_spurious_note": "Threshold warning, not causal proof; validate with one-parameter coverage sweeps.",
+      "suggested_message_de": "Hohe Coverage bei OS-SE erhoeht das Risiko problematischer Geometrien.",
+      "suggested_message_en": "High coverage with OS-SE increases risk for problematic geometries.",
+      "verification_plan": "Coverage-only sweep on fixed OS-SE baseline (20..90, step 5)."
+    },
+    {
+      "id": "warn_length_over_1000_mm",
+      "severity": "warn",
+      "condition": "gt('Length',1000)",
+      "rationale": "Length above 1000mm aligns with larger observed dimensions and elevated hard-cap rates.",
+      "evidence": {
+        "matched_total": 2719,
+        "hard_cap_rate": 0.13938948142699523,
+        "hard_cap_uplift": 0.05261948142699523
+      },
+      "anti_spurious_note": "Length is a threshold proxy; interactions with mode and width still matter.",
+      "suggested_message_de": "Laengen ueber 1000 mm sind risikoreicher. Pruefe Coverage und GCurve-Breite zusaetzlich.",
+      "suggested_message_en": "Lengths above 1000 mm are riskier. Check coverage and guiding-curve width too.",
+      "verification_plan": "Length-only sweep with fixed mode to identify transition band."
+    },
+    {
+      "id": "warn_observed_dimension_over_2000_mm",
+      "severity": "warn",
+      "condition": "gt(observed.max_dimension_mm, 2000)",
+      "rationale": "Post-run observed dimensions >2000mm indicate high geometry risk for follow-up iterations.",
+      "evidence": {
+        "matched_total": 30350,
+        "hard_cap_rate": 0.2858978583196046
+      },
+      "anti_spurious_note": "Post-run observation only; no pre-run hard block.",
+      "suggested_message_de": "Beobachtete Endabmessung > 2000 mm. Naechste Iteration konservativer waehlen.",
+      "suggested_message_en": "Observed final dimension > 2000 mm. Use more conservative values in next iteration.",
+      "verification_plan": "Track warning and measure reduction after tuning Length/Width/Coverage."
+    },
+    {
+      "id": "fatal_rollback_not_supported",
+      "severity": "fatal",
+      "condition": "isDefined('Rollback')",
+      "rationale": "ATH runtime rejects rollback in current version.",
+      "evidence": {
+        "ath_pattern": "The rollback feature is no longer supported. Use R-OSSE profile instead."
+      },
+      "anti_spurious_note": "Deterministic runtime incompatibility, not empirical correlation.",
+      "suggested_message_de": "Rollback wird von dieser ATH-Version nicht unterstuetzt. Nutze R-OSSE.",
+      "suggested_message_en": "Rollback is not supported in this ATH version. Use R-OSSE.",
+      "verification_plan": "Keep fatal until ATH release notes explicitly re-enable rollback."
+    },
+    {
+      "id": "fatal_input_hard_cap_5000_mm",
+      "severity": "fatal",
+      "condition": "any(gt(input_numeric, 5000))",
+      "rationale": "Deterministic hard-cap guard for pathological geometry prevention.",
+      "evidence": {
+        "error_kind": "hard_cap_exceeded",
+        "count_pp100k": 8677,
+        "policy": "hard_cap_mm=5000"
+      },
+      "anti_spurious_note": "Policy/safety guard, not causal model output.",
+      "suggested_message_de": "Mindestens ein Eingabewert liegt ueber 5000 mm (Hard Cap).",
+      "suggested_message_en": "At least one input exceeds 5000 mm hard cap.",
+      "verification_plan": "Re-evaluate only in dedicated large-geometry campaigns."
+    }
+  ],
+  "integration_note": {
+    "ui_risk_layer_path": "app/ui_risk_layer.py",
+    "compat_ruleset_path": "app/knowledge/ath/ruleset.v1.json",
+    "recommendation": "Apply as UI risk hints first; promote to fatal compat rules only with deterministic evidence."
+  }
+}
