@@ -345,6 +345,14 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         border: 1px solid {c['border']};
         border-radius: {r['md']}px;
     }}
+    QWidget#SummaryIssuesDock {{
+        background-color: transparent;
+    }}
+    QFrame#SummaryIssuesHost {{
+        background-color: #202020;
+        border: 1px solid {c['border']};
+        border-radius: {r['sm']}px;
+    }}
     QLabel#SummaryTitle {{
         color: {c['text']};
         font-weight: 700;
@@ -352,6 +360,7 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     QLabel#SummaryText {{
         color: {c['muted']};
         font-size: 11px;
+        min-height: 16px;
     }}
     QLabel#SummaryMeta {{
         color: {c['text']};
@@ -416,9 +425,9 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         border-color: {c['accent']};
     }}
     QFrame#ProjectIssuesPanel {{
-        background-color: #1b1b1b;
-        border: 1px solid {c['border']};
-        border-radius: {r['md']}px;
+        background-color: transparent;
+        border: none;
+        border-radius: 0px;
     }}
     QLabel#IssuesPanelTitle {{
         color: {c['text']};

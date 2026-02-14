@@ -161,6 +161,47 @@ class SectionColumn(QWidget):
         self._root_layout.setContentsMargins(max(inset, 0), 0, max(inset, 0), 0)
 
 
+class ResponsiveCompactGrid(QWidget):
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._cells: List[QWidget] = []
+        self._grid = QGridLayout(self)
+        self._grid.setContentsMargins(0, 0, 0, 0)
+        self._grid.setHorizontalSpacing(8)
+        self._grid.setVerticalSpacing(6)
+        self._min_three_width = 740
+
+    def add_cell(self, label: QLabel, editor: QWidget) -> None:
+        cell = QWidget(self)
+        row = QHBoxLayout(cell)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(6)
+        row.addWidget(label, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        row.addWidget(editor, 1, Qt.AlignLeft | Qt.AlignVCenter)
+        self._cells.append(cell)
+        self._relayout()
+
+    def resizeEvent(self, event) -> None:  # type: ignore[override]
+        super().resizeEvent(event)
+        self._relayout()
+
+    def _relayout(self) -> None:
+        while self._grid.count():
+            item = self._grid.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.setParent(self)
+        if not self._cells:
+            return
+        cols = 3 if self.width() >= self._min_three_width else 2
+        for index, cell in enumerate(self._cells):
+            row = index // cols
+            col = index % cols
+            self._grid.addWidget(cell, row, col)
+        for col in range(max(cols, 1)):
+            self._grid.setColumnStretch(col, 1)
+
+
 class AutoSizingStackedWidget(QStackedWidget):
     def sizeHint(self):  # type: ignore[override]
         current = self.currentWidget()
@@ -1256,9 +1297,8 @@ class ParameterForm(QWidget):
 
         root = QHBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
-        root.setSpacing(0)
+        root.setSpacing(30)
         self._root_layout = root
-        root.setSpacing(48)
 
         self.geometry_scroll = QScrollArea()
         self.geometry_scroll.setObjectName("ProjectGeometryScroll")
@@ -1316,7 +1356,7 @@ class ParameterForm(QWidget):
             self._base_width = max(int(self.width()), 1)
         extra = max(int(self.width()) - int(self._base_width), 0)
         compact = int(self.width()) < 1280
-        self._root_layout.setSpacing(36 if compact else 48)
+        self._root_layout.setSpacing(24 if compact else 30)
 
         hint = _group_width_hint()
         block_spacing = 9 + min(extra // 260, 8)
@@ -1326,10 +1366,10 @@ class ParameterForm(QWidget):
             section.set_horizontal_inset(margin)
             section.content_layout.setSpacing(block_spacing)
 
-    def _make_field_label(self, text: str) -> QLabel:
+    def _make_field_label(self, text: str, *, compact: bool = False) -> QLabel:
         label = QLabel(text)
         label.setWordWrap(False)
-        label.setFixedWidth(LABEL_COLUMN_WIDTH)
+        label.setFixedWidth(max(92, LABEL_COLUMN_WIDTH - 52) if compact else LABEL_COLUMN_WIDTH)
         label.setToolTip(str(text or ""))
         return label
 
@@ -1813,19 +1853,33 @@ class ParameterForm(QWidget):
                 page_grid_widget = QWidget()
                 page_grid = QGridLayout(page_grid_widget)
                 configure_two_column_grid(page_grid)
-
-                for index, key in enumerate(page_fields):
-                    field = self._field_specs.get(key)
-                    if field is None:
-                        continue
-                    label = self._make_field_label(field.label)
-                    editor = self._ensure_editor(field)
-                    row = index // 2
-                    label_col, input_col = _two_column_positions(index % 2)
-                    page_grid.addWidget(label, row, label_col)
-                    page_grid.addWidget(editor, row, input_col, 1, 1, alignment=Qt.AlignLeft)
-                    self._record_field_metadata(key, box, column_key, label)
-                page_widget.content_layout.addWidget(page_grid_widget)
+                use_compact_superformula = (
+                    stack.controller_key == "GCurve.Type" and column_key == "Geometry" and int(page.value or 0) == 2
+                )
+                if use_compact_superformula:
+                    compact_grid = ResponsiveCompactGrid()
+                    for key in page_fields:
+                        field = self._field_specs.get(key)
+                        if field is None:
+                            continue
+                        label = self._make_field_label(field.label, compact=True)
+                        editor = self._ensure_editor(field)
+                        compact_grid.add_cell(label, editor)
+                        self._record_field_metadata(key, box, column_key, label)
+                    page_widget.content_layout.addWidget(compact_grid)
+                else:
+                    for index, key in enumerate(page_fields):
+                        field = self._field_specs.get(key)
+                        if field is None:
+                            continue
+                        label = self._make_field_label(field.label)
+                        editor = self._ensure_editor(field)
+                        row = index // 2
+                        label_col, input_col = _two_column_positions(index % 2)
+                        page_grid.addWidget(label, row, label_col)
+                        page_grid.addWidget(editor, row, input_col, 1, 1, alignment=Qt.AlignLeft)
+                        self._record_field_metadata(key, box, column_key, label)
+                    page_widget.content_layout.addWidget(page_grid_widget)
                 page_index = pages.addWidget(page_widget)
                 index_by_value[page.value] = page_index
 
