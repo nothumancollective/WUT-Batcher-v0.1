@@ -17,7 +17,7 @@ class FormMetrics:
     unit_label_width: int = 60
     label_to_input_gap: int = 6
     column_gap: int = 24
-    row_gap: int = 10
+    row_gap: int = 8
     margin_left: int = 10
     margin_top: int = 8
     margin_right: int = 10

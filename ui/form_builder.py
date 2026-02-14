@@ -10,12 +10,24 @@ from ui.form_metrics import FORM_METRICS, configure_single_column_grid, configur
 from ui.form_schema import FieldSpec, FormSchema, ModeStackSpec, build_project_form_schema
 
 try:
-    from PySide6.QtCore import QEvent, QObject, QPoint, QRegularExpression, QTimer, Qt, Signal
+    from PySide6.QtCore import (
+        QEasingCurve,
+        QEvent,
+        QObject,
+        QPoint,
+        QPropertyAnimation,
+        QParallelAnimationGroup,
+        QRegularExpression,
+        QTimer,
+        Qt,
+        Signal,
+    )
     from PySide6.QtGui import QGuiApplication, QRegularExpressionValidator
     from PySide6.QtWidgets import (
         QButtonGroup,
         QComboBox,
         QFrame,
+        QGraphicsOpacityEffect,
         QGridLayout,
         QGroupBox,
         QHBoxLayout,
@@ -23,7 +35,6 @@ try:
         QLineEdit,
         QPushButton,
         QScrollArea,
-        QSplitter,
         QSizePolicy,
         QStackedWidget,
         QToolTip,
@@ -375,9 +386,13 @@ class AccordionGroupBox(QGroupBox):
 
         self._body = QWidget(self)
         self._body_layout = QVBoxLayout(self._body)
-        self._body_layout.setContentsMargins(10, 10, 10, 10)
-        self._body_layout.setSpacing(8)
+        self._body_layout.setContentsMargins(8, 8, 8, 8)
+        self._body_layout.setSpacing(6)
         root.addWidget(self._body)
+        self._body_effect = QGraphicsOpacityEffect(self._body)
+        self._body_effect.setOpacity(1.0)
+        self._body.setGraphicsEffect(self._body_effect)
+        self._anim_group: Optional[QParallelAnimationGroup] = None
         self.setProperty("blockState", "neutral")
         self.setProperty("collapsed", "false")
 
@@ -395,7 +410,7 @@ class AccordionGroupBox(QGroupBox):
         if state == self._collapsed:
             return
         self._collapsed = state
-        self._body.setVisible(not state)
+        self._animate_body(expand=not state)
         self.setProperty("collapsed", "true" if state else "false")
         self.setProperty("expanded", "false" if state else "true")
         self._header.set_expanded(not state)
@@ -403,6 +418,63 @@ class AccordionGroupBox(QGroupBox):
         self.style().polish(self)
         self.updateGeometry()
         self.toggled.emit(not state)
+
+    def _animate_body(self, *, expand: bool) -> None:
+        if self._anim_group is not None:
+            self._anim_group.stop()
+            self._anim_group.deleteLater()
+            self._anim_group = None
+
+        target_height = max(int(self._body.sizeHint().height()), 0)
+        raw_current = int(self._body.maximumHeight())
+
+        if expand:
+            was_visible = self._body.isVisible()
+            self._body.setVisible(True)
+            if (not was_visible) or raw_current <= 0 or raw_current > 10_000:
+                start_h = 0
+            else:
+                start_h = max(0, min(raw_current, target_height))
+            end_h = target_height
+            start_opacity, end_opacity = 0.0, 1.0
+        else:
+            if raw_current <= 0 or raw_current > 10_000:
+                start_h = target_height
+            else:
+                start_h = max(0, raw_current)
+            end_h = 0
+            start_opacity, end_opacity = 1.0, 0.0
+
+        height_anim = QPropertyAnimation(self._body, b"maximumHeight", self)
+        height_anim.setDuration(180)
+        height_anim.setEasingCurve(QEasingCurve.OutCubic)
+        height_anim.setStartValue(start_h)
+        height_anim.setEndValue(end_h)
+
+        opacity_anim = QPropertyAnimation(self._body_effect, b"opacity", self)
+        opacity_anim.setDuration(140)
+        opacity_anim.setEasingCurve(QEasingCurve.OutCubic)
+        opacity_anim.setStartValue(start_opacity)
+        opacity_anim.setEndValue(end_opacity)
+
+        group = QParallelAnimationGroup(self)
+        group.addAnimation(height_anim)
+        group.addAnimation(opacity_anim)
+
+        def _finish() -> None:
+            if expand:
+                self._body.setVisible(True)
+                self._body.setMaximumHeight(16_777_215)
+                self._body_effect.setOpacity(1.0)
+            else:
+                self._body.setVisible(False)
+                self._body.setMaximumHeight(0)
+                self._body_effect.setOpacity(1.0)
+            self._anim_group = None
+
+        group.finished.connect(_finish)
+        self._anim_group = group
+        group.start()
 
     def set_summary_chips(self, chips: Sequence[str]) -> None:
         self._header.set_summary_chips(chips)
@@ -831,7 +903,7 @@ class ScalarFieldEditor(QWidget):
         self._wire_signals()
 
         if field.key == "Throat.Profile":
-            self.set_value(1)
+            self.set_is_set(False)
         elif field.key == "GCurve.Type":
             self.set_value(None)
         elif field.key == "Morph.TargetShape":
@@ -1186,10 +1258,7 @@ class ParameterForm(QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
         self._root_layout = root
-        self._columns_splitter = QSplitter(Qt.Horizontal)
-        self._columns_splitter.setChildrenCollapsible(False)
-        self._columns_splitter.setHandleWidth(6)
-        root.addWidget(self._columns_splitter, 1)
+        root.setSpacing(48)
 
         self.geometry_scroll = QScrollArea()
         self.geometry_scroll.setObjectName("ProjectGeometryScroll")
@@ -1203,10 +1272,10 @@ class ParameterForm(QWidget):
         self.mesh_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.mesh_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.mesh_scroll.setMinimumWidth(_group_width_hint() + 28)
-        self._columns_splitter.addWidget(self.geometry_scroll)
-        self._columns_splitter.addWidget(self.mesh_scroll)
-        self._columns_splitter.setStretchFactor(0, 1)
-        self._columns_splitter.setStretchFactor(1, 1)
+        self.geometry_scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.mesh_scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        root.addWidget(self.geometry_scroll, 6)
+        root.addWidget(self.mesh_scroll, 5)
 
         geometry_container = QWidget()
         self.geometry_scroll.setWidget(geometry_container)
@@ -1236,8 +1305,6 @@ class ParameterForm(QWidget):
         super().showEvent(event)
         if self._base_width is None:
             self._base_width = max(int(self.width()), 1)
-        if sum(self._columns_splitter.sizes()) <= 0:
-            self._columns_splitter.setSizes([1, 1])
         self._apply_responsive_spacing()
 
     def resizeEvent(self, event) -> None:  # type: ignore[override]
@@ -1249,7 +1316,7 @@ class ParameterForm(QWidget):
             self._base_width = max(int(self.width()), 1)
         extra = max(int(self.width()) - int(self._base_width), 0)
         compact = int(self.width()) < 1280
-        self._columns_splitter.setHandleWidth(4 if compact else 6)
+        self._root_layout.setSpacing(36 if compact else 48)
 
         hint = _group_width_hint()
         block_spacing = 9 + min(extra // 260, 8)
@@ -1446,7 +1513,7 @@ class ParameterForm(QWidget):
         form_grid = QGridLayout()
         configure_two_column_grid(form_grid)
         form_grid.setHorizontalSpacing(FORM_METRICS.label_to_input_gap + 4)
-        form_grid.setVerticalSpacing(FORM_METRICS.row_gap + 2)
+        form_grid.setVerticalSpacing(FORM_METRICS.row_gap)
         form_grid.setColumnMinimumWidth(2, FORM_METRICS.column_gap + 18)
 
         selection_keys = {"Mesh.Quadrants", "Mesh.RearShape"}
