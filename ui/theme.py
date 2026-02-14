@@ -165,32 +165,57 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     QLabel#IssueHint[severity="ok"] {{
         color: {c['success']};
     }}
+    QLineEdit[fieldState="warn"], QComboBox[fieldState="warn"],
+    QTextEdit[fieldState="warn"], QPlainTextEdit[fieldState="warn"] {{
+        border: 1px solid {c['warning_border']};
+    }}
+    QLineEdit[fieldState="fatal"], QComboBox[fieldState="fatal"],
+    QTextEdit[fieldState="fatal"], QPlainTextEdit[fieldState="fatal"] {{
+        border: 1px solid {c['danger_border']};
+    }}
+    QLineEdit[fieldState="ok"], QComboBox[fieldState="ok"],
+    QTextEdit[fieldState="ok"], QPlainTextEdit[fieldState="ok"] {{
+        border: 1px solid {c['risk_ok']};
+    }}
+    SegmentedEnumInput[fieldState="warn"], ScalarFieldEditor[fieldState="warn"],
+    ObjectFieldEditor[fieldState="warn"], ContextFrame[fieldState="warn"] {{
+        border: 1px solid {c['warning_border']};
+        border-radius: {r['sm']}px;
+    }}
+    SegmentedEnumInput[fieldState="fatal"], ScalarFieldEditor[fieldState="fatal"],
+    ObjectFieldEditor[fieldState="fatal"], ContextFrame[fieldState="fatal"] {{
+        border: 1px solid {c['danger_border']};
+        border-radius: {r['sm']}px;
+    }}
+    SegmentedEnumInput[fieldState="ok"], ScalarFieldEditor[fieldState="ok"],
+    ObjectFieldEditor[fieldState="ok"], ContextFrame[fieldState="ok"] {{
+        border: 1px solid {c['risk_ok']};
+        border-radius: {r['sm']}px;
+    }}
+    /* Backward compatibility for legacy riskLevel property. */
     QLineEdit[riskLevel="warn"], QComboBox[riskLevel="warn"],
     QTextEdit[riskLevel="warn"], QPlainTextEdit[riskLevel="warn"] {{
-        border: 1px solid {c['risk_warn']};
+        border: 1px solid {c['warning_border']};
     }}
     QLineEdit[riskLevel="fatal"], QComboBox[riskLevel="fatal"],
     QTextEdit[riskLevel="fatal"], QPlainTextEdit[riskLevel="fatal"] {{
-        border: 1px solid {c['risk_fatal']};
+        border: 1px solid {c['danger_border']};
     }}
     QLineEdit[riskLevel="ok"], QComboBox[riskLevel="ok"],
     QTextEdit[riskLevel="ok"], QPlainTextEdit[riskLevel="ok"] {{
         border: 1px solid {c['risk_ok']};
     }}
-    SegmentedEnumInput[riskLevel="warn"], ScalarFieldEditor[riskLevel="warn"],
-    ObjectFieldEditor[riskLevel="warn"], ContextFrame[riskLevel="warn"] {{
-        border: 1px solid {c['risk_warn']};
-        border-radius: {r['sm']}px;
+    QLabel#FieldStateHint {{
+        color: {c['muted']};
+        font-size: 11px;
+        padding-left: 2px;
+        margin-top: 1px;
     }}
-    SegmentedEnumInput[riskLevel="fatal"], ScalarFieldEditor[riskLevel="fatal"],
-    ObjectFieldEditor[riskLevel="fatal"], ContextFrame[riskLevel="fatal"] {{
-        border: 1px solid {c['risk_fatal']};
-        border-radius: {r['sm']}px;
+    QLabel#FieldStateHint[severity="warn"] {{
+        color: {c['warning_text_muted']};
     }}
-    SegmentedEnumInput[riskLevel="ok"], ScalarFieldEditor[riskLevel="ok"],
-    ObjectFieldEditor[riskLevel="ok"], ContextFrame[riskLevel="ok"] {{
-        border: 1px solid {c['risk_ok']};
-        border-radius: {r['sm']}px;
+    QLabel#FieldStateHint[severity="fatal"] {{
+        color: {c['danger_text_muted']};
     }}
     QListWidget, QTableView, QTreeView {{
         background-color: {c['surface']};

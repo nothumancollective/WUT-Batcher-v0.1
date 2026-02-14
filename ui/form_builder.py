@@ -493,13 +493,26 @@ class ScalarFieldEditor(QWidget):
         super().__init__(parent)
         self.field = field
         self._value_widget: QWidget
+        self._helper_label: QLabel
 
-        root = QHBoxLayout(self)
+        root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
-        root.setSpacing(8)
+        root.setSpacing(4)
+
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(8)
 
         self._value_widget = self._build_value_widget()
-        root.addWidget(self._value_widget, 1)
+        row.addWidget(self._value_widget, 1)
+        root.addLayout(row)
+
+        self._helper_label = QLabel("")
+        self._helper_label.setObjectName("FieldStateHint")
+        self._helper_label.setVisible(False)
+        self._helper_label.setWordWrap(False)
+        self._helper_label.setTextInteractionFlags(Qt.NoTextInteraction)
+        root.addWidget(self._helper_label, 0, Qt.AlignLeft)
 
         if field.tooltip:
             self.setToolTip(field.tooltip)
@@ -631,6 +644,28 @@ class ScalarFieldEditor(QWidget):
         else:
             self._value_widget.setEnabled(not locked)
 
+    def set_helper_message(self, message: str, severity: str) -> None:
+        text = str(message or "").strip()
+        if not text:
+            self.clear_helper_message()
+            return
+        self._helper_label.setProperty("severity", str(severity or "").lower())
+        self._helper_label.setText(text)
+        self._helper_label.setToolTip(text)
+        self._helper_label.setVisible(True)
+        self._helper_label.style().unpolish(self._helper_label)
+        self._helper_label.style().polish(self._helper_label)
+        self._helper_label.update()
+
+    def clear_helper_message(self) -> None:
+        self._helper_label.setVisible(False)
+        self._helper_label.setText("")
+        self._helper_label.setToolTip("")
+        self._helper_label.setProperty("severity", "")
+        self._helper_label.style().unpolish(self._helper_label)
+        self._helper_label.style().polish(self._helper_label)
+        self._helper_label.update()
+
 class ObjectFieldEditor(QWidget):
     changed = Signal()
 
@@ -639,6 +674,7 @@ class ObjectFieldEditor(QWidget):
         self.field = field
         self._use_toggle = use_toggle
         self.property_editors: Dict[str, ScalarFieldEditor] = {}
+        self._helper_label: QLabel
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -673,6 +709,13 @@ class ObjectFieldEditor(QWidget):
 
         self.props_frame.content_layout.addWidget(props_widget)
         root.addWidget(self.props_frame)
+
+        self._helper_label = QLabel("")
+        self._helper_label.setObjectName("FieldStateHint")
+        self._helper_label.setVisible(False)
+        self._helper_label.setWordWrap(False)
+        self._helper_label.setTextInteractionFlags(Qt.NoTextInteraction)
+        root.addWidget(self._helper_label, 0, Qt.AlignLeft)
 
         if field.tooltip:
             self.setToolTip(field.tooltip)
@@ -750,6 +793,28 @@ class ObjectFieldEditor(QWidget):
             editor.set_locked(locked)
         if locked:
             self.setToolTip("Locked by runner mode.")
+
+    def set_helper_message(self, message: str, severity: str) -> None:
+        text = str(message or "").strip()
+        if not text:
+            self.clear_helper_message()
+            return
+        self._helper_label.setProperty("severity", str(severity or "").lower())
+        self._helper_label.setText(text)
+        self._helper_label.setToolTip(text)
+        self._helper_label.setVisible(True)
+        self._helper_label.style().unpolish(self._helper_label)
+        self._helper_label.style().polish(self._helper_label)
+        self._helper_label.update()
+
+    def clear_helper_message(self) -> None:
+        self._helper_label.setVisible(False)
+        self._helper_label.setText("")
+        self._helper_label.setToolTip("")
+        self._helper_label.setProperty("severity", "")
+        self._helper_label.style().unpolish(self._helper_label)
+        self._helper_label.style().polish(self._helper_label)
+        self._helper_label.update()
 
 
 def _two_column_positions(form_column: int) -> Tuple[int, int]:
@@ -1405,7 +1470,7 @@ class ParameterForm(QWidget):
 
     @staticmethod
     def _risk_rank(value: str) -> int:
-        order = {"fatal": 0, "warn": 1, "info": 2, "ok": 3}
+        order = {"fatal": 0, "warn": 1, "info": 2, "ok": 3, "neutral": 4}
         return order.get(str(value).lower(), 99)
 
     @staticmethod
@@ -1418,12 +1483,16 @@ class ParameterForm(QWidget):
         for widget_id, widget in list(self._risk_widgets.items()):
             if widget is None:
                 continue
+            widget.setProperty("fieldState", "neutral")
             widget.setProperty("riskLevel", "")
             if widget_id in self._risk_original_tooltips:
                 widget.setToolTip(self._risk_original_tooltips[widget_id])
             self._repolish(widget)
         self._risk_widgets.clear()
         self._risk_original_tooltips.clear()
+        for editor in self._field_editors.values():
+            if hasattr(editor, "clear_helper_message"):
+                editor.clear_helper_message()  # type: ignore[attr-defined]
 
     def _risk_target_for_key(self, key: str) -> Optional[QWidget]:
         editor = self._field_editors.get(key)
@@ -1478,12 +1547,28 @@ class ParameterForm(QWidget):
                     conf_suffix = f" (conf. {float(confidence):.2f})"
             except (TypeError, ValueError):
                 conf_suffix = ""
+            source = str(issue.get("source", "")).strip().lower()
+            source_tag = " [Experiment]" if source == "experiment" else ""
             if message:
-                lines.append(f"{severity}: {message}{conf_suffix}")
+                lines.append(f"{severity}{source_tag}: {message}{conf_suffix}")
             suggestion = str(issue.get("suggestion", "")).strip()
             if suggestion:
                 lines.append(f"Hint: {suggestion}")
         return "\n".join(lines[:4])
+
+    def _risk_helper_text(self, issues: List[Dict[str, Any]]) -> str:
+        ranked = sorted(
+            [item for item in issues if isinstance(item, dict)],
+            key=lambda item: self._risk_rank(str(item.get("severity", "info"))),
+        )
+        if not ranked:
+            return ""
+        best = ranked[0]
+        message = str(best.get("message", "")).strip()
+        suggestion = str(best.get("suggestion", "")).strip()
+        if suggestion and message:
+            return f"{message} {suggestion}"
+        return message or suggestion
 
     def apply_ui_risks(self, issues: List[Dict[str, Any]]) -> None:
         self._clear_risk_highlights()
@@ -1492,7 +1577,7 @@ class ParameterForm(QWidget):
             if not isinstance(issue, dict):
                 continue
             severity = str(issue.get("severity", "")).strip().lower()
-            if severity not in {"warn", "fatal", "ok"}:
+            if severity not in {"warn", "fatal", "ok", "info"}:
                 continue
             key = str(issue.get("field_key") or issue.get("key") or "").strip()
             if not key:
@@ -1502,25 +1587,37 @@ class ParameterForm(QWidget):
             if not self._field_is_set(key):
                 continue
             target = self._risk_target_for_key(key)
-            if target is None or not target.isVisible():
+            if target is None:
                 continue
             grouped.setdefault(key, []).append(issue)
 
-        for key, key_issues in grouped.items():
+        active_keys = [key for key in self._field_editors.keys() if self._field_is_set(key)]
+        for key in active_keys:
+            key_issues = grouped.get(key, [])
             target = self._risk_target_for_key(key)
             if target is None:
                 continue
-            best = sorted(key_issues, key=lambda item: self._risk_rank(str(item.get("severity", "info"))))[0]
-            severity = str(best.get("severity", "ok")).lower()
+            severities = {str(item.get("severity", "info")).lower() for item in key_issues}
+            if "fatal" in severities:
+                severity = "fatal"
+            elif "warn" in severities:
+                severity = "warn"
+            else:
+                severity = "ok"
             target_id = id(target)
             self._risk_widgets[target_id] = target
             self._risk_original_tooltips[target_id] = target.toolTip()
+            target.setProperty("fieldState", severity)
             target.setProperty("riskLevel", severity)
             if severity in {"warn", "fatal"}:
                 tooltip = self._risk_tooltip(key_issues)
                 if tooltip:
                     base_tooltip = self._risk_original_tooltips.get(target_id, "")
                     target.setToolTip(f"{base_tooltip}\n\n{tooltip}".strip() if base_tooltip else tooltip)
+                helper = self._risk_helper_text(key_issues)
+                editor = self._field_editors.get(key)
+                if helper and editor is not None and hasattr(editor, "set_helper_message"):
+                    editor.set_helper_message(helper, severity)  # type: ignore[attr-defined]
             self._repolish(target)
 
     def apply_compatibility(self, state: Dict[str, Any]) -> None:
