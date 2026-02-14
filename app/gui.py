@@ -825,27 +825,39 @@ class DashboardPage(QWidget):
 class ProjectIssuesPanel(QFrame):
     issue_selected = Signal(str)
 
-    def __init__(self, parent: QWidget | None = None, *, popup: bool = False) -> None:
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        *,
+        popup: bool = False,
+        show_header: bool = True,
+    ) -> None:
         _ = popup
         super().__init__(parent)
         self.setObjectName("ProjectIssuesPanel")
         self.setMinimumWidth(360)
         self.setMinimumHeight(96)
+        self._show_header = bool(show_header)
+        self._compact_counts = "E0 W0 I0"
         root = QVBoxLayout(self)
         root.setContentsMargins(10, 10, 10, 10)
         root.setSpacing(8)
 
-        header = QHBoxLayout()
-        header.setContentsMargins(0, 0, 0, 0)
-        header.setSpacing(8)
-        title = QLabel("Issues")
-        title.setObjectName("IssuesPanelTitle")
-        header.addWidget(title)
-        header.addStretch(1)
-        self.counts = QLabel("Errors: 0 · Warnings: 0 · Incomplete: 0")
-        self.counts.setObjectName("IssuesPanelCounts")
-        header.addWidget(self.counts)
-        root.addLayout(header)
+        if self._show_header:
+            header = QHBoxLayout()
+            header.setContentsMargins(0, 0, 0, 0)
+            header.setSpacing(8)
+            title = QLabel("Issues")
+            title.setObjectName("IssuesPanelTitle")
+            header.addWidget(title)
+            header.addStretch(1)
+            self.counts = QLabel("Errors: 0 · Warnings: 0 · Incomplete: 0")
+            self.counts.setObjectName("IssuesPanelCounts")
+            header.addWidget(self.counts)
+            root.addLayout(header)
+        else:
+            self.counts = QLabel("")
+            self.counts.setVisible(False)
 
         self._scroll = QScrollArea()
         self._scroll.setWidgetResizable(True)
@@ -868,11 +880,16 @@ class ProjectIssuesPanel(QFrame):
     def set_issues(self, issues: List[UiProjectIssue]) -> None:
         self._clear_rows()
         counts = issue_counts(issues)
-        self.counts.setText(
-            f"Errors: {int(counts.get('error', 0))} · "
-            f"Warnings: {int(counts.get('warn', 0))} · "
-            f"Incomplete: {int(counts.get('incomplete', 0))}"
-        )
+        fatal_count = int(counts.get("error", 0))
+        warn_count = int(counts.get("warn", 0))
+        incomplete_count = int(counts.get("incomplete", 0))
+        self._compact_counts = f"E{fatal_count} W{warn_count} I{incomplete_count}"
+        if self._show_header:
+            self.counts.setText(
+                f"Errors: {fatal_count} · "
+                f"Warnings: {warn_count} · "
+                f"Incomplete: {incomplete_count}"
+            )
 
         groups: Dict[str, List[UiProjectIssue]] = {"error": [], "warn": [], "incomplete": []}
         for issue in issues:
@@ -892,8 +909,9 @@ class ProjectIssuesPanel(QFrame):
             section_label.setProperty("severity", severity)
             self._rows.addWidget(section_label)
             for issue in rows:
+                badge = {"error": "[E]", "warn": "[W]", "incomplete": "[I]"}.get(severity, "[I]")
                 button = QPushButton(
-                    f"{issue.field_label}  ·  {issue.message}  [{issue.section}]"
+                    f"{badge}  {issue.field_label}: {issue.message}  [{issue.section}]"
                 )
                 button.setObjectName("IssueRowButton")
                 button.setProperty("severity", severity)
@@ -912,6 +930,159 @@ class ProjectIssuesPanel(QFrame):
         _ = anchor
         self.setVisible(True)
 
+    def compact_counts(self) -> str:
+        return self._compact_counts
+
+
+class IssuesSubsectionHeader(QFrame):
+    clicked = Signal()
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("SummaryIssuesHeader")
+        self.setFocusPolicy(Qt.StrongFocus)
+        self.setProperty("severity", "ok")
+        self.setFixedHeight(34)
+        root = QHBoxLayout(self)
+        root.setContentsMargins(10, 6, 10, 6)
+        root.setSpacing(8)
+        self._title = QLabel("Issues")
+        self._title.setObjectName("SummaryIssuesHeaderTitle")
+        root.addWidget(self._title, 0, Qt.AlignVCenter)
+        root.addStretch(1)
+        self._counts = QLabel("E0 W0 I0")
+        self._counts.setObjectName("SummaryIssuesHeaderCounts")
+        root.addWidget(self._counts, 0, Qt.AlignVCenter)
+        self._chevron = QLabel(">")
+        self._chevron.setObjectName("SummaryIssuesChevron")
+        root.addWidget(self._chevron, 0, Qt.AlignVCenter)
+
+    def set_counts(self, text: str) -> None:
+        self._counts.setText(str(text or "E0 W0 I0"))
+
+    def set_expanded(self, expanded: bool) -> None:
+        self._chevron.setText("v" if expanded else ">")
+        self.setProperty("expanded", "true" if expanded else "false")
+        self.style().unpolish(self)
+        self.style().polish(self)
+
+    def set_severity(self, level: str) -> None:
+        self.setProperty("severity", str(level or "ok"))
+        self.style().unpolish(self)
+        self.style().polish(self)
+
+    def mousePressEvent(self, event) -> None:  # type: ignore[override]
+        if event.button() == Qt.LeftButton:
+            self.clicked.emit()
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def keyPressEvent(self, event) -> None:  # type: ignore[override]
+        if event.key() in {Qt.Key_Return, Qt.Key_Enter, Qt.Key_Space}:
+            self.clicked.emit()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+
+class SummaryIssuesSection(QFrame):
+    issue_selected = Signal(str)
+    toggled = Signal(bool)
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("SummaryIssuesSection")
+        self._expanded = False
+        self._target_body_height = 84
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(4)
+
+        self.header = IssuesSubsectionHeader(self)
+        root.addWidget(self.header)
+
+        self.body = QFrame(self)
+        self.body.setObjectName("SummaryIssuesBody")
+        self.body.setMaximumHeight(0)
+        self.body.setVisible(False)
+        self.body_effect = QGraphicsOpacityEffect(self.body)
+        self.body_effect.setOpacity(0.0)
+        self.body.setGraphicsEffect(self.body_effect)
+        body_layout = QVBoxLayout(self.body)
+        body_layout.setContentsMargins(0, 0, 0, 0)
+        body_layout.setSpacing(0)
+        self.panel = ProjectIssuesPanel(self, popup=False, show_header=False)
+        body_layout.addWidget(self.panel)
+        root.addWidget(self.body, 1)
+
+        self._height_anim = QPropertyAnimation(self.body, b"maximumHeight", self)
+        self._height_anim.setDuration(190)
+        self._height_anim.setEasingCurve(QEasingCurve.OutCubic)
+        self._opacity_anim = QPropertyAnimation(self.body_effect, b"opacity", self)
+        self._opacity_anim.setDuration(180)
+        self._opacity_anim.setEasingCurve(QEasingCurve.OutCubic)
+
+        self.panel.issue_selected.connect(self.issue_selected.emit)
+
+    def set_issues(self, issues: List[UiProjectIssue]) -> None:
+        self.panel.set_issues(issues)
+        counts = issue_counts(issues)
+        fatal_count = int(counts.get("error", 0))
+        warn_count = int(counts.get("warn", 0))
+        incomplete_count = int(counts.get("incomplete", 0))
+        self.header.set_counts(self.panel.compact_counts())
+        if fatal_count > 0:
+            self.header.set_severity("fatal")
+        elif warn_count > 0:
+            self.header.set_severity("warn")
+        elif incomplete_count > 0:
+            self.header.set_severity("incomplete")
+        else:
+            self.header.set_severity("ok")
+
+    def set_body_target_height(self, height: int) -> None:
+        self._target_body_height = max(int(height), 36)
+        if self._expanded:
+            self.body.setMaximumHeight(self._target_body_height)
+
+    def toggle(self) -> None:
+        self.set_expanded(not self._expanded, animated=True)
+
+    def is_expanded(self) -> bool:
+        return self._expanded
+
+    def set_expanded(self, expanded: bool, *, animated: bool) -> None:
+        target = bool(expanded)
+        if target == self._expanded:
+            return
+        self._expanded = target
+        self.header.set_expanded(target)
+        self.toggled.emit(target)
+        self._height_anim.stop()
+        self._opacity_anim.stop()
+        if target:
+            self.body.setVisible(True)
+
+        start_height = int(self.body.maximumHeight())
+        end_height = self._target_body_height if target else 0
+        start_opacity = float(self.body_effect.opacity())
+        end_opacity = 1.0 if target else 0.0
+
+        if animated:
+            self._height_anim.setStartValue(start_height)
+            self._height_anim.setEndValue(end_height)
+            self._opacity_anim.setStartValue(start_opacity)
+            self._opacity_anim.setEndValue(end_opacity)
+            self._height_anim.start()
+            self._opacity_anim.start()
+            if not target:
+                QTimer.singleShot(200, lambda: self.body.setVisible(False))
+        else:
+            self.body.setMaximumHeight(end_height)
+            self.body_effect.setOpacity(end_opacity)
+            self.body.setVisible(target)
 
 class ProjectPage(QWidget):
     submit_project = Signal(str, dict)
@@ -952,14 +1123,14 @@ class ProjectPage(QWidget):
 
         self.summary_panel = QFrame()
         self.summary_panel.setObjectName("ProjectSummaryPanel")
-        self.summary_panel.setFixedHeight(124)
+        self.summary_panel.setFixedHeight(104)
         summary_layout = QHBoxLayout(self.summary_panel)
-        summary_layout.setContentsMargins(12, 8, 12, 8)
+        summary_layout.setContentsMargins(12, 6, 12, 6)
         summary_layout.setSpacing(10)
         self.summary_left = QWidget()
         summary_left_layout = QVBoxLayout(self.summary_left)
         summary_left_layout.setContentsMargins(0, 0, 0, 0)
-        summary_left_layout.setSpacing(2)
+        summary_left_layout.setSpacing(1)
 
         summary_head = QHBoxLayout()
         summary_head.setContentsMargins(0, 0, 0, 0)
@@ -975,13 +1146,9 @@ class ProjectPage(QWidget):
         self.summary_line_1.setObjectName("SummaryText")
         self.summary_line_1.setWordWrap(False)
         summary_left_layout.addWidget(self.summary_line_1)
-        self.summary_line_2 = QLabel("Batch runs can only vary parameters that are not locked here.")
-        self.summary_line_2.setObjectName("SummaryText")
-        self.summary_line_2.setWordWrap(False)
-        summary_left_layout.addWidget(self.summary_line_2)
         self.summary_chips_wrap = QWidget()
         self.summary_chips_layout = QHBoxLayout(self.summary_chips_wrap)
-        self.summary_chips_layout.setContentsMargins(0, 1, 0, 0)
+        self.summary_chips_layout.setContentsMargins(0, 0, 0, 0)
         self.summary_chips_layout.setSpacing(6)
         summary_left_layout.addWidget(self.summary_chips_wrap)
         summary_left_layout.addStretch(1)
@@ -989,42 +1156,18 @@ class ProjectPage(QWidget):
 
         self.summary_right = QWidget()
         self.summary_right.setObjectName("SummaryIssuesDock")
-        self.summary_right.setMaximumWidth(120)
+        self.summary_right.setMinimumWidth(210)
+        self.summary_right.setMaximumWidth(210)
         summary_right_layout = QVBoxLayout(self.summary_right)
         summary_right_layout.setContentsMargins(0, 0, 0, 0)
-        summary_right_layout.setSpacing(6)
-        controls_row = QHBoxLayout()
-        controls_row.setContentsMargins(0, 0, 0, 0)
-        controls_row.setSpacing(6)
-        controls_row.addStretch(1)
-        self.view_issues_btn = QPushButton("View issues")
-        self.view_issues_btn.setObjectName("ProjectViewIssuesButton")
-        self.view_issues_btn.setVisible(False)
-        controls_row.addWidget(self.view_issues_btn, 0, Qt.AlignRight | Qt.AlignVCenter)
-        summary_right_layout.addLayout(controls_row)
-        self.issues_host = QFrame()
-        self.issues_host.setObjectName("SummaryIssuesHost")
-        self.issues_host.setVisible(False)
-        self.issues_host_effect = QGraphicsOpacityEffect(self.issues_host)
-        self.issues_host_effect.setOpacity(0.0)
-        self.issues_host.setGraphicsEffect(self.issues_host_effect)
-        issues_host_layout = QVBoxLayout(self.issues_host)
-        issues_host_layout.setContentsMargins(0, 0, 0, 0)
-        issues_host_layout.setSpacing(0)
-        self.issues_panel = ProjectIssuesPanel(self.summary_panel, popup=False)
-        self.issues_panel.setVisible(True)
-        issues_host_layout.addWidget(self.issues_panel, 1)
-        summary_right_layout.addWidget(self.issues_host, 1)
+        summary_right_layout.setSpacing(0)
+        self.issues_section = SummaryIssuesSection(self.summary_right)
+        self.issues_section.set_body_target_height(58)
+        summary_right_layout.addWidget(self.issues_section, 1)
         summary_layout.addWidget(self.summary_right, 0)
         root.addWidget(self.summary_panel)
         root.addSpacing(2)
         self._issues_open = False
-        self._issues_width_anim = QPropertyAnimation(self.summary_right, b"maximumWidth", self)
-        self._issues_width_anim.setDuration(190)
-        self._issues_width_anim.setEasingCurve(QEasingCurve.OutCubic)
-        self._issues_opacity_anim = QPropertyAnimation(self.issues_host_effect, b"opacity", self)
-        self._issues_opacity_anim.setDuration(180)
-        self._issues_opacity_anim.setEasingCurve(QEasingCurve.OutCubic)
 
         self.constraints_form = ParameterForm(build_project_form_schema())
         root.addWidget(self.constraints_form, 1)
@@ -1057,8 +1200,8 @@ class ProjectPage(QWidget):
         root.addWidget(self.action_bar)
 
         self.create_btn.clicked.connect(self._submit)
-        self.view_issues_btn.clicked.connect(self._toggle_issues_panel)
-        self.issues_panel.issue_selected.connect(self._focus_issue_key)
+        self.issues_section.header.clicked.connect(self._toggle_issues_panel)
+        self.issues_section.issue_selected.connect(self._focus_issue_key)
         self.constraints_form.changed.connect(self._emit_draft_changed)
 
         self._compat_state: Dict[str, Any] = {"visible_keys": [], "locked_keys": [], "sweepable_keys": [], "issues": []}
@@ -1069,6 +1212,7 @@ class ProjectPage(QWidget):
         self._constraints_locked = False
         self._update_action_state()
         self._update_summary_panel()
+        self._update_issues_panel()
 
     def _emit_draft_changed(self, payload: Dict[str, Any] | None = None) -> None:
         self.draft_changed.emit(payload or self._raw_constraints_payload())
@@ -1200,7 +1344,7 @@ class ProjectPage(QWidget):
         self._set_summary_chips(self._mode_chips(payload))
 
     def _update_issues_panel(self) -> None:
-        self.issues_panel.set_issues(self._ui_issues)
+        self.issues_section.set_issues(self._ui_issues)
 
     def _update_action_state(self) -> None:
         counts = self._issue_counts()
@@ -1252,8 +1396,7 @@ class ProjectPage(QWidget):
         has_issues = fatal > 0 or warn > 0 or incomplete > 0
         if not has_issues and self._issues_open:
             self._set_issues_open(False, animated=False)
-        self.view_issues_btn.setVisible(has_issues)
-        self.view_issues_btn.setText("Hide issues" if self._issues_open and has_issues else "View issues")
+        self.summary_right.setVisible(True)
 
         enabled = (fatal == 0) and (incomplete == 0) and (not self._creating_project)
         self.create_btn.setEnabled(enabled)
@@ -1281,31 +1424,12 @@ class ProjectPage(QWidget):
     def _set_issues_open(self, open_state: bool, *, animated: bool) -> None:
         target_open = bool(open_state)
         self._issues_open = target_open
-        collapsed_width = 120
-        expanded_width = 460
-        if target_open:
-            self.issues_host.setVisible(True)
-
-        self._issues_width_anim.stop()
-        self._issues_opacity_anim.stop()
-
-        if animated:
-            self._issues_width_anim.setStartValue(int(self.summary_right.maximumWidth()))
-            self._issues_width_anim.setEndValue(expanded_width if target_open else collapsed_width)
-            self._issues_opacity_anim.setStartValue(float(self.issues_host_effect.opacity()))
-            self._issues_opacity_anim.setEndValue(1.0 if target_open else 0.0)
-            self._issues_width_anim.start()
-            self._issues_opacity_anim.start()
-            if target_open:
-                self.issues_host.setMaximumHeight(16_777_215)
-            else:
-                QTimer.singleShot(190, lambda: self.issues_host.setVisible(False))
-        else:
-            self.summary_right.setMaximumWidth(expanded_width if target_open else collapsed_width)
-            self.issues_host_effect.setOpacity(1.0 if target_open else 0.0)
-            self.issues_host.setVisible(target_open)
-            if target_open:
-                self.issues_host.setMaximumHeight(16_777_215)
+        collapsed_width = 210
+        expanded_width = 560
+        self.summary_right.setMinimumWidth(collapsed_width if not target_open else min(280, expanded_width))
+        self.summary_right.setMaximumWidth(expanded_width if target_open else collapsed_width)
+        self.issues_section.set_body_target_height(58)
+        self.issues_section.set_expanded(target_open, animated=animated)
 
     def _submit(self) -> None:
         if not self.create_btn.isEnabled():

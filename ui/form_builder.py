@@ -164,21 +164,25 @@ class SectionColumn(QWidget):
 class ResponsiveCompactGrid(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self._cells: List[QWidget] = []
+        self._items: List[Tuple[str, QWidget]] = []
         self._grid = QGridLayout(self)
         self._grid.setContentsMargins(0, 0, 0, 0)
         self._grid.setHorizontalSpacing(8)
-        self._grid.setVerticalSpacing(6)
-        self._min_three_width = 740
+        self._grid.setVerticalSpacing(4)
+        self._min_three_width = 780
 
     def add_cell(self, label: QLabel, editor: QWidget) -> None:
         cell = QWidget(self)
         row = QHBoxLayout(cell)
         row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(6)
+        row.setSpacing(4)
         row.addWidget(label, 0, Qt.AlignLeft | Qt.AlignVCenter)
         row.addWidget(editor, 1, Qt.AlignLeft | Qt.AlignVCenter)
-        self._cells.append(cell)
+        self._items.append(("cell", cell))
+        self._relayout()
+
+    def add_full_width_widget(self, widget: QWidget) -> None:
+        self._items.append(("full", widget))
         self._relayout()
 
     def resizeEvent(self, event) -> None:  # type: ignore[override]
@@ -191,13 +195,24 @@ class ResponsiveCompactGrid(QWidget):
             widget = item.widget()
             if widget is not None:
                 widget.setParent(self)
-        if not self._cells:
+        if not self._items:
             return
         cols = 3 if self.width() >= self._min_three_width else 2
-        for index, cell in enumerate(self._cells):
-            row = index // cols
-            col = index % cols
-            self._grid.addWidget(cell, row, col)
+        row = 0
+        col = 0
+        for kind, widget in self._items:
+            if kind == "full":
+                if col != 0:
+                    row += 1
+                    col = 0
+                self._grid.addWidget(widget, row, 0, 1, cols)
+                row += 1
+                continue
+            self._grid.addWidget(widget, row, col)
+            col += 1
+            if col >= cols:
+                row += 1
+                col = 0
         for col in range(max(cols, 1)):
             self._grid.setColumnStretch(col, 1)
 
@@ -1288,6 +1303,7 @@ class ParameterForm(QWidget):
         self._risk_original_tooltips: Dict[int, str] = {}
         self._section_counts_by_box: Dict[int, Dict[str, int]] = {}
         self._risk_hover_installed: Dict[int, QWidget] = {}
+        self._geometry_dense_grids: List[ResponsiveCompactGrid] = []
         self._pending_hover_widget: Optional[QWidget] = None
         self._hover_tooltip_timer = QTimer(self)
         self._hover_tooltip_timer.setSingleShot(True)
@@ -1314,8 +1330,8 @@ class ParameterForm(QWidget):
         self.mesh_scroll.setMinimumWidth(_group_width_hint() + 28)
         self.geometry_scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.mesh_scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        root.addWidget(self.geometry_scroll, 6)
-        root.addWidget(self.mesh_scroll, 5)
+        root.addWidget(self.geometry_scroll, 2)
+        root.addWidget(self.mesh_scroll, 1)
 
         geometry_container = QWidget()
         self.geometry_scroll.setWidget(geometry_container)
@@ -1356,7 +1372,8 @@ class ParameterForm(QWidget):
             self._base_width = max(int(self.width()), 1)
         extra = max(int(self.width()) - int(self._base_width), 0)
         compact = int(self.width()) < 1280
-        self._root_layout.setSpacing(24 if compact else 30)
+        compact_window = self._is_geometry_compact()
+        self._root_layout.setSpacing(24 if compact else 28)
 
         hint = _group_width_hint()
         block_spacing = 9 + min(extra // 260, 8)
@@ -1365,6 +1382,21 @@ class ParameterForm(QWidget):
             margin = max((available - hint) // 6, 0)
             section.set_horizontal_inset(margin)
             section.content_layout.setSpacing(block_spacing)
+        for grid in self._geometry_dense_grids:
+            grid._min_three_width = 10_000 if compact_window else 780
+            grid._relayout()
+
+    def _is_geometry_compact(self) -> bool:
+        window = self.window()
+        if window is not None:
+            return int(window.width()) < 1200
+        return int(self.width()) < 1200
+
+    def _build_geometry_dense_grid(self) -> ResponsiveCompactGrid:
+        grid = ResponsiveCompactGrid()
+        grid._min_three_width = 10_000 if self._is_geometry_compact() else 780
+        self._geometry_dense_grids.append(grid)
+        return grid
 
     def _make_field_label(self, text: str, *, compact: bool = False) -> QLabel:
         label = QLabel(text)
@@ -1652,18 +1684,27 @@ class ParameterForm(QWidget):
 
         if detail_fields:
             detail_frame = ContextFrame("Details")
-            detail_widget = QWidget()
-            detail_grid = QGridLayout(detail_widget)
-            configure_two_column_grid(detail_grid)
-            for index, field in enumerate(detail_fields):
-                label = self._make_field_label(field.label)
-                editor = self._ensure_editor(field)
-                row = index // 2
-                label_col, input_col = _two_column_positions(index % 2)
-                detail_grid.addWidget(label, row, label_col)
-                detail_grid.addWidget(editor, row, input_col, 1, 1, alignment=Qt.AlignLeft)
-                self._record_field_metadata(field.key, box, column_key, label)
-            detail_frame.content_layout.addWidget(detail_widget)
+            if column_key == "Geometry":
+                detail_grid = self._build_geometry_dense_grid()
+                for field in detail_fields:
+                    label = self._make_field_label(field.label, compact=True)
+                    editor = self._ensure_editor(field)
+                    detail_grid.add_cell(label, editor)
+                    self._record_field_metadata(field.key, box, column_key, label)
+                detail_frame.content_layout.addWidget(detail_grid)
+            else:
+                detail_widget = QWidget()
+                detail_grid = QGridLayout(detail_widget)
+                configure_two_column_grid(detail_grid)
+                for index, field in enumerate(detail_fields):
+                    label = self._make_field_label(field.label)
+                    editor = self._ensure_editor(field)
+                    row = index // 2
+                    label_col, input_col = _two_column_positions(index % 2)
+                    detail_grid.addWidget(label, row, label_col)
+                    detail_grid.addWidget(editor, row, input_col, 1, 1, alignment=Qt.AlignLeft)
+                    self._record_field_metadata(field.key, box, column_key, label)
+                detail_frame.content_layout.addWidget(detail_widget)
             self._morph_detail_frame = detail_frame
             box_layout.addWidget(detail_frame)
 
@@ -1705,18 +1746,27 @@ class ParameterForm(QWidget):
 
         if detail_fields:
             detail_frame = ContextFrame("Details")
-            detail_widget = QWidget()
-            detail_grid = QGridLayout(detail_widget)
-            configure_two_column_grid(detail_grid)
-            for index, field in enumerate(detail_fields):
-                label = self._make_field_label(field.label)
-                editor = self._ensure_editor(field)
-                row = index // 2
-                label_col, input_col = _two_column_positions(index % 2)
-                detail_grid.addWidget(label, row, label_col)
-                detail_grid.addWidget(editor, row, input_col, 1, 1, alignment=Qt.AlignLeft)
-                self._record_field_metadata(field.key, box, column_key, label)
-            detail_frame.content_layout.addWidget(detail_widget)
+            if column_key == "Geometry":
+                detail_grid = self._build_geometry_dense_grid()
+                for field in detail_fields:
+                    label = self._make_field_label(field.label, compact=True)
+                    editor = self._ensure_editor(field)
+                    detail_grid.add_cell(label, editor)
+                    self._record_field_metadata(field.key, box, column_key, label)
+                detail_frame.content_layout.addWidget(detail_grid)
+            else:
+                detail_widget = QWidget()
+                detail_grid = QGridLayout(detail_widget)
+                configure_two_column_grid(detail_grid)
+                for index, field in enumerate(detail_fields):
+                    label = self._make_field_label(field.label)
+                    editor = self._ensure_editor(field)
+                    row = index // 2
+                    label_col, input_col = _two_column_positions(index % 2)
+                    detail_grid.addWidget(label, row, label_col)
+                    detail_grid.addWidget(editor, row, input_col, 1, 1, alignment=Qt.AlignLeft)
+                    self._record_field_metadata(field.key, box, column_key, label)
+                detail_frame.content_layout.addWidget(detail_widget)
             self._rollback_detail_frame = detail_frame
             box_layout.addWidget(detail_frame)
 
@@ -1740,27 +1790,40 @@ class ParameterForm(QWidget):
             box = AccordionGroupBox(group_name)
             _finalize_group_box(box)
             self._register_group_box(box, column_key=column_key)
-            grid_holder = QWidget()
-            grid = QGridLayout(grid_holder)
-            configure_two_column_grid(grid)
             ordered = sorted(group_fields, key=lambda field: field.order)
-            scalar_index = 0
-            object_row = max((len([field for field in ordered if field.widget_kind != "object"]) + 1) // 2, 1)
-            for field in ordered:
-                editor = self._ensure_editor(field)
-                if field.widget_kind == "object":
-                    grid.addWidget(editor, object_row, 0, 1, 5, alignment=Qt.AlignLeft)
-                    self._record_field_metadata(field.key, box, column_key)
-                    object_row += 1
-                    continue
-                label = self._make_field_label(field.label)
-                row = scalar_index // 2
-                label_col, input_col = _two_column_positions(scalar_index % 2)
-                grid.addWidget(label, row, label_col)
-                grid.addWidget(editor, row, input_col, 1, 1, alignment=Qt.AlignLeft)
-                self._record_field_metadata(field.key, box, column_key, label)
-                scalar_index += 1
-            box.body_layout().addWidget(grid_holder)
+            if column_key == "Geometry":
+                dense_grid = self._build_geometry_dense_grid()
+                for field in ordered:
+                    editor = self._ensure_editor(field)
+                    if field.widget_kind == "object":
+                        dense_grid.add_full_width_widget(editor)
+                        self._record_field_metadata(field.key, box, column_key)
+                        continue
+                    label = self._make_field_label(field.label, compact=True)
+                    dense_grid.add_cell(label, editor)
+                    self._record_field_metadata(field.key, box, column_key, label)
+                box.body_layout().addWidget(dense_grid)
+            else:
+                grid_holder = QWidget()
+                grid = QGridLayout(grid_holder)
+                configure_two_column_grid(grid)
+                scalar_index = 0
+                object_row = max((len([field for field in ordered if field.widget_kind != "object"]) + 1) // 2, 1)
+                for field in ordered:
+                    editor = self._ensure_editor(field)
+                    if field.widget_kind == "object":
+                        grid.addWidget(editor, object_row, 0, 1, 5, alignment=Qt.AlignLeft)
+                        self._record_field_metadata(field.key, box, column_key)
+                        object_row += 1
+                        continue
+                    label = self._make_field_label(field.label)
+                    row = scalar_index // 2
+                    label_col, input_col = _two_column_positions(scalar_index % 2)
+                    grid.addWidget(label, row, label_col)
+                    grid.addWidget(editor, row, input_col, 1, 1, alignment=Qt.AlignLeft)
+                    self._record_field_metadata(field.key, box, column_key, label)
+                    scalar_index += 1
+                box.body_layout().addWidget(grid_holder)
             parent_layout.addWidget(box, 0, Qt.AlignTop | Qt.AlignLeft)
 
     def _add_mode_groups(
@@ -1799,21 +1862,33 @@ class ParameterForm(QWidget):
 
             if common_keys:
                 common_box = ContextFrame("Common")
-                common_widget = QWidget()
-                common_grid = QGridLayout(common_widget)
-                configure_two_column_grid(common_grid)
-                for index, key in enumerate(sorted(common_keys)):
-                    field = self._field_specs.get(key)
-                    if field is None:
-                        continue
-                    label = self._make_field_label(field.label)
-                    editor = self._ensure_editor(field)
-                    row = index // 2
-                    label_col, input_col = _two_column_positions(index % 2)
-                    common_grid.addWidget(label, row, label_col)
-                    common_grid.addWidget(editor, row, input_col, 1, 1, alignment=Qt.AlignLeft)
-                    self._record_field_metadata(key, box, column_key, label)
-                common_box.content_layout.addWidget(common_widget)
+                if column_key == "Geometry":
+                    common_grid = self._build_geometry_dense_grid()
+                    for key in sorted(common_keys):
+                        field = self._field_specs.get(key)
+                        if field is None:
+                            continue
+                        label = self._make_field_label(field.label, compact=True)
+                        editor = self._ensure_editor(field)
+                        common_grid.add_cell(label, editor)
+                        self._record_field_metadata(key, box, column_key, label)
+                    common_box.content_layout.addWidget(common_grid)
+                else:
+                    common_widget = QWidget()
+                    common_grid = QGridLayout(common_widget)
+                    configure_two_column_grid(common_grid)
+                    for index, key in enumerate(sorted(common_keys)):
+                        field = self._field_specs.get(key)
+                        if field is None:
+                            continue
+                        label = self._make_field_label(field.label)
+                        editor = self._ensure_editor(field)
+                        row = index // 2
+                        label_col, input_col = _two_column_positions(index % 2)
+                        common_grid.addWidget(label, row, label_col)
+                        common_grid.addWidget(editor, row, input_col, 1, 1, alignment=Qt.AlignLeft)
+                        self._record_field_metadata(key, box, column_key, label)
+                    common_box.content_layout.addWidget(common_widget)
                 box_layout.addWidget(common_box)
 
             pages = AutoSizingStackedWidget()
@@ -1850,24 +1925,21 @@ class ParameterForm(QWidget):
                     continue
 
                 page_widget = ContextFrame(page.label)
-                page_grid_widget = QWidget()
-                page_grid = QGridLayout(page_grid_widget)
-                configure_two_column_grid(page_grid)
-                use_compact_superformula = (
-                    stack.controller_key == "GCurve.Type" and column_key == "Geometry" and int(page.value or 0) == 2
-                )
-                if use_compact_superformula:
-                    compact_grid = ResponsiveCompactGrid()
+                if column_key == "Geometry":
+                    dense_grid = self._build_geometry_dense_grid()
                     for key in page_fields:
                         field = self._field_specs.get(key)
                         if field is None:
                             continue
                         label = self._make_field_label(field.label, compact=True)
                         editor = self._ensure_editor(field)
-                        compact_grid.add_cell(label, editor)
+                        dense_grid.add_cell(label, editor)
                         self._record_field_metadata(key, box, column_key, label)
-                    page_widget.content_layout.addWidget(compact_grid)
+                    page_widget.content_layout.addWidget(dense_grid)
                 else:
+                    page_grid_widget = QWidget()
+                    page_grid = QGridLayout(page_grid_widget)
+                    configure_two_column_grid(page_grid)
                     for index, key in enumerate(page_fields):
                         field = self._field_specs.get(key)
                         if field is None:

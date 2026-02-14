@@ -170,7 +170,7 @@ class ProjectFormUiTests(unittest.TestCase):
             ]
         )
         self.assertFalse(page.create_btn.isEnabled())
-        self.assertFalse(page.view_issues_btn.isHidden())
+        self.assertFalse(page.summary_right.isHidden())
 
     def test_required_missing_is_presented_as_incomplete_not_error(self) -> None:
         page = ProjectPage()
@@ -188,10 +188,12 @@ class ProjectFormUiTests(unittest.TestCase):
         self.assertIn("Complete required fields", page.action_status_pill.text())
         self.assertEqual(str(page.action_status_pill.property("severity")), "neutral")
         self.assertFalse(page.create_btn.isEnabled())
-        self.assertFalse(page.view_issues_btn.isHidden())
+        self.assertFalse(page.summary_right.isHidden())
 
     def test_view_issues_panel_lists_all_and_orders_by_severity(self) -> None:
         page = ProjectPage()
+        page.resize(1600, 980)
+        page._update_action_state()  # type: ignore[attr-defined]
         length_editor = page.constraints_form.editor_for_key("Length")
         throat_editor = page.constraints_form.editor_for_key("Throat.Diameter")
         self.assertIsNotNone(length_editor)
@@ -219,10 +221,27 @@ class ProjectFormUiTests(unittest.TestCase):
             ]
         )
         page._toggle_issues_panel()  # type: ignore[attr-defined]
-        self.assertFalse(page.issues_host.isHidden())
+        self.assertTrue(page.issues_section.is_expanded())
+        self.assertFalse(page.issues_section.body.isHidden())
         self.assertGreaterEqual(len(page._ui_issues), 2)  # type: ignore[attr-defined]
         self.assertEqual(page._ui_issues[0].severity, "error")  # type: ignore[attr-defined]
         self.assertEqual(page._ui_issues[0].key, "Length")  # type: ignore[attr-defined]
+
+    def test_infobar_issues_header_toggle_expands_embedded_section(self) -> None:
+        page = ProjectPage()
+        page.apply_ui_risks(
+            [
+                {
+                    "field_key": "Length",
+                    "severity": "fatal",
+                    "message": "Length exceeds hard limit.",
+                }
+            ]
+        )
+        self.assertFalse(page.issues_section.is_expanded())
+        page._toggle_issues_panel()  # type: ignore[attr-defined]
+        self.assertTrue(page.issues_section.is_expanded())
+        self.assertGreater(page.summary_right.maximumWidth(), 210)
 
     def test_numeric_input_normalizes_decimal_comma_to_dot(self) -> None:
         editor = self.form.editor_for_key("Throat.Diameter")
@@ -655,6 +674,8 @@ class ProjectFormUiTests(unittest.TestCase):
         self.assertEqual(badge.text(), "")
 
     def test_gcurve_common_and_superformula_use_compact_grid(self) -> None:
+        self.form.resize(1700, 900)
+        self.form._apply_responsive_spacing()  # type: ignore[attr-defined]
         gcurve_editor = self.form.editor_for_key("GCurve.Type")
         self.assertIsNotNone(gcurve_editor)
         assert gcurve_editor is not None
@@ -687,6 +708,26 @@ class ProjectFormUiTests(unittest.TestCase):
             _, col, _, _ = grid.getItemPosition(index)
             max_col_small = max(max_col_small, col)
         self.assertLessEqual(max_col_small, 1)
+
+    def test_left_geometry_group_uses_three_columns_in_wide_mode(self) -> None:
+        self.form.resize(1700, 900)
+        self.form._apply_responsive_spacing()  # type: ignore[attr-defined]
+        basics_box = self.form._field_group_boxes.get("Length")  # type: ignore[attr-defined]
+        self.assertIsNotNone(basics_box)
+        assert basics_box is not None
+        compact_grids = basics_box.findChildren(ResponsiveCompactGrid)
+        self.assertTrue(compact_grids)
+        grid = compact_grids[0]
+        grid.resize(980, 420)
+        grid._relayout()  # type: ignore[attr-defined]
+        layout = grid.layout()
+        self.assertIsNotNone(layout)
+        assert layout is not None
+        max_col = 0
+        for index in range(layout.count()):
+            _, col, _, _ = layout.getItemPosition(index)
+            max_col = max(max_col, col)
+        self.assertGreaterEqual(max_col, 2)
 
     def test_common_block_hidden_for_no_gcurve(self) -> None:
         headings = [

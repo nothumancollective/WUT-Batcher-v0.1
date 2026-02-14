@@ -348,7 +348,40 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     QWidget#SummaryIssuesDock {{
         background-color: transparent;
     }}
-    QFrame#SummaryIssuesHost {{
+    QFrame#SummaryIssuesSection {{
+        background-color: transparent;
+        border: none;
+    }}
+    QFrame#SummaryIssuesHeader {{
+        background-color: #232323;
+        border: 1px solid {c['border']};
+        border-radius: {r['sm']}px;
+    }}
+    QFrame#SummaryIssuesHeader[severity="warn"] {{
+        border-color: {c['warning_border']};
+    }}
+    QFrame#SummaryIssuesHeader[severity="fatal"] {{
+        border-color: {c['danger_border']};
+    }}
+    QFrame#SummaryIssuesHeader[severity="incomplete"] {{
+        border-color: {c['accent']};
+    }}
+    QLabel#SummaryIssuesHeaderTitle {{
+        color: {c['text']};
+        font-size: 11px;
+        font-weight: 700;
+    }}
+    QLabel#SummaryIssuesHeaderCounts {{
+        color: {c['muted']};
+        font-size: 10px;
+        font-weight: 600;
+    }}
+    QLabel#SummaryIssuesChevron {{
+        color: {c['muted']};
+        font-size: 11px;
+        font-weight: 700;
+    }}
+    QFrame#SummaryIssuesBody {{
         background-color: #202020;
         border: 1px solid {c['border']};
         border-radius: {r['sm']}px;
@@ -413,17 +446,6 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         color: {c['muted']};
         font-size: 11px;
     }}
-    QPushButton#ProjectViewIssuesButton {{
-        background-color: transparent;
-        color: {c['muted']};
-        border: 1px solid {c['border']};
-        border-radius: {r['sm']}px;
-        padding: 3px 8px;
-    }}
-    QPushButton#ProjectViewIssuesButton:hover {{
-        color: {c['text']};
-        border-color: {c['accent']};
-    }}
     QFrame#ProjectIssuesPanel {{
         background-color: transparent;
         border: none;
@@ -457,7 +479,8 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         color: {c['text']};
         border: 1px solid {c['border']};
         border-radius: {r['sm']}px;
-        padding: 6px 8px;
+        padding: 5px 8px;
+        font-size: 11px;
     }}
     QPushButton#IssueRowButton[severity="warn"] {{
         border-color: #4a3d23;

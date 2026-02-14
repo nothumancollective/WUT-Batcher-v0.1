@@ -1019,3 +1019,57 @@
 #### Tests
 - `python -m unittest tests.test_project_form_ui tests.test_project_issue_model tests.test_ui_validation_ranges tests.test_ui_validation_candidates -v`
 - `python -m py_compile app/gui.py ui/form_builder.py ui/theme.py ui/form_metrics.py tests/test_project_form_ui.py`
+
+### Update 37 (Pre-Change Verification Checklist for Compact Project Page Pass)
+#### Current State Check (before implementation)
+- Requirement 1 (Issues subsection inside top InfoBar, header-toggle only): **Not implemented**
+  - Current state: top InfoBar uses a separate `View issues` / `Hide issues` button and an embedded panel area, but no subsection-style header row with chevron toggle semantics.
+- Requirement 2 (3-column input layout for all LEFT subsections): **Partially implemented**
+  - Current state: only `GCurve -> Superformula` uses a compact grid; other Geometry subsection bodies still render as 2-column grids.
+- Requirement 3 (main columns exactly 2/3 left and 1/3 right, no stretchy middle gap): **Not implemented**
+  - Current state: columns use stretch weights `6:5` with a reduced fixed spacing, not the required `2:1` split.
+- Requirement 4 (shorter InfoBar + chips one-line + no extra status line): **Partially implemented**
+  - Current state: redundant top counts line already removed and chips use single-line overflow (`+N`), but InfoBar still keeps two description lines and remains taller than required.
+
+### Update 38 (PROJECT Compact Pass: InfoBar Issues Subsection + 3-Column Geometry + 2:1 Main Split)
+#### What was wrong
+- Issues in the top panel were still controlled by a separate button instead of a real subsection-style header toggle.
+- Geometry subsections still used mostly 2-column field layouts, causing extra vertical growth.
+- Main Geometry/Mesh content split was not the requested fixed test ratio (`2/3` vs `1/3`).
+- InfoBar still consumed too much height due to two description lines.
+
+#### What changed
+- `app/gui.py`
+  - Replaced top-right button-driven issues area with an in-card, right-anchored issues subsection:
+    - header row (`Issues` + `E/W/I` counts + chevron)
+    - click header to expand/collapse (no standalone hide button)
+    - scrollable grouped issue list in subsection body
+    - row click still focuses the exact field and opens the right accordion section.
+  - Reduced summary InfoBar height and content density:
+    - fixed height reduced to a compact size
+    - one description line retained
+    - chips stay single-row with existing overflow behavior.
+- `ui/form_builder.py`
+  - Main column split changed to `2:1` (Geometry : Mesh).
+  - Geometry subsection bodies switched to dense `ResponsiveCompactGrid` usage broadly:
+    - 3 columns in normal/wide mode
+    - fallback to 2 columns for compact widths
+    - reduced intra-section spacing for lower vertical footprint.
+- `ui/theme.py`
+  - Added styling for new InfoBar issues subsection/header/body objects.
+  - Kept existing green/yellow/red semantics unchanged.
+- `tests/test_project_form_ui.py`
+  - Updated assertions for embedded subsection behavior.
+  - Added checks for Geometry 3-column rendering and InfoBar subsection toggle behavior.
+
+#### Manual test checklist
+- Fullscreen:
+  - open PROJECT page
+  - verify InfoBar is compact and chips remain one line (`+N` on overflow)
+  - open one Geometry + one Mesh section; page should avoid vertical scrollbar in normal use.
+- Windowed/restore-down:
+  - verify Geometry and Mesh keep `2:1` width relationship with moderate fixed center gap
+  - toggle Issues via InfoBar subsection header (right side), not by overlay/popover.
+- Issue navigation:
+  - trigger multiple severities
+  - open Issues subsection, click a row, verify focus jumps to the target field and correct accordion opens.
