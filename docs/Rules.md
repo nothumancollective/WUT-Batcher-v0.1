@@ -49,3 +49,11 @@ Conditions are evaluated by a restricted AST evaluator.
 - Use `hypothesis` only when no explicit reference is available.
 - Hypothesis entries must include a concrete `verification_plan`.
 - Hypothesis semantics can be regression-checked with `python -m app compat verify`.
+
+## UI Risk Layer
+- Experiment-backed UI hints are intentionally separated from normative rules.
+- Source artifacts:
+  - `reports/ath_experiments/range_suggestions.v1.2.json`
+  - `reports/ath_experiments/compat_rule_candidates.v1.json`
+- Runtime evaluator: `app/ui_risk_layer.py`.
+- These hints provide `warn|fatal` visuals on Project form fields and tooltip guidance, but do not add new hard flow blocks.
