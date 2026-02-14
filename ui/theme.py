@@ -66,6 +66,9 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     QMainWindow, QDialog {{
         background-color: {c['bg']};
     }}
+    QMainWindow[framelessShell="true"], QDialog[framelessShell="true"] {{
+        background-color: transparent;
+    }}
     QStackedWidget, QScrollArea {{
         background-color: transparent;
         border: none;
@@ -118,6 +121,11 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     }}
     QFrame#ContextFrame > QWidget {{
         background-color: transparent;
+    }}
+    QFrame#FramelessShell {{
+        background-color: {c['surface']};
+        border: 1px solid {c['border']};
+        border-radius: {r['lg']}px;
     }}
     QGroupBox {{
         background-color: {c['surface']};

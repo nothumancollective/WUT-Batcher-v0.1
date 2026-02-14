@@ -4,11 +4,9 @@ from __future__ import annotations
 
 from dataclasses import asdict
 import json
-import os
 from pathlib import Path
 import subprocess
 import sys
-import threading
 from typing import Any, Dict, List, Optional
 
 from app.doctor_service import run_doctor_checks
@@ -24,7 +22,7 @@ from ui.theme import apply_theme, apply_windows_dark_titlebar, configure_windows
 
 try:
     from PySide6.QtCore import QPoint, Qt, Signal
-    from PySide6.QtGui import QPixmap
+    from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPixmap
     from PySide6.QtWidgets import (
         QAbstractItemView,
         QApplication,
@@ -88,6 +86,12 @@ def _highest_issue_severity(issues: List[Dict[str, Any]]) -> str:
 
 
 def _status_entries(detail: str) -> List[Dict[str, str]]:
+    def _humanize_rule_id(value: str) -> str:
+        token = str(value or "").strip()
+        if not token:
+            return "Issue"
+        return token.replace("_", " ").replace(".", " ").strip().title()
+
     raw = str(detail or "").strip()
     if not raw:
         return [{"severity": "info", "title": "Status", "text": "No details available."}]
@@ -131,7 +135,7 @@ def _status_entries(detail: str) -> List[Dict[str, str]]:
                 entries.append(
                     {
                         "severity": str(item.get("severity", "info")).strip().lower(),
-                        "title": str(item.get("rule_id", "Issue")).strip() or "Issue",
+                        "title": _humanize_rule_id(str(item.get("rule_id", "Issue"))),
                         "text": str(item.get("message", "")).strip() or "No detail.",
                     }
                 )
@@ -141,7 +145,7 @@ def _status_entries(detail: str) -> List[Dict[str, str]]:
                 entries.append(
                     {
                         "severity": str(item.get("severity", "info")).strip().lower(),
-                        "title": str(item.get("rule_id", "Issue")).strip() or "Issue",
+                        "title": _humanize_rule_id(str(item.get("rule_id", "Issue"))),
                         "text": str(item.get("message", "")).strip() or str(item),
                     }
                 )
@@ -348,9 +352,17 @@ class StatusDetailDialog(QDialog):
         self.setModal(True)
         self.setWindowTitle("Status")
         self.resize(760, 520)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.setProperty("framelessShell", True)
         self._drag_offset: Optional[QPoint] = None
 
-        root = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(10, 10, 10, 10)
+        outer.setSpacing(0)
+        shell = QFrame()
+        shell.setObjectName("FramelessShell")
+        outer.addWidget(shell)
+        root = QVBoxLayout(shell)
         root.setContentsMargins(14, 12, 14, 12)
         root.setSpacing(10)
 
@@ -358,7 +370,7 @@ class StatusDetailDialog(QDialog):
         title_row = QHBoxLayout(title_bar)
         title_row.setContentsMargins(0, 0, 0, 0)
         title_row.setSpacing(8)
-        icon = QLabel("!")
+        icon = QLabel("●")
         icon.setObjectName("StatusSymbol")
         title_row.addWidget(icon)
         title = QLabel("Status Details")
@@ -1016,13 +1028,21 @@ class ProjectManagerWindow(QMainWindow):
         self.service = service
         self.setWindowTitle("WUT Batcher - Project Manager")
         self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.setProperty("framelessShell", True)
         self.setMinimumSize(760, 520)
         self.resize(920, 620)
         self._drag_offset: Optional[QPoint] = None
 
         central = QWidget()
         self.setCentralWidget(central)
-        root = QVBoxLayout(central)
+        outer = QVBoxLayout(central)
+        outer.setContentsMargins(10, 10, 10, 10)
+        outer.setSpacing(0)
+        shell = QFrame()
+        shell.setObjectName("FramelessShell")
+        outer.addWidget(shell)
+        root = QVBoxLayout(shell)
         root.setContentsMargins(14, 12, 14, 12)
         root.setSpacing(10)
 
@@ -1104,7 +1124,6 @@ class MainWindow(QMainWindow):
         self.current_project: Optional[Project] = None
         self.last_status_detail = ""
         self.ui_risk_layer = UiRiskLayer()
-        self._deferred_tool_probe_started = False
 
         self.setWindowTitle("WUT Batcher")
         self.resize(1280, 860)
@@ -1166,57 +1185,6 @@ class MainWindow(QMainWindow):
 
     def _show_status_detail(self) -> None:
         StatusDetailDialog(self.last_status_detail or "No details.", self).exec()
-
-    def _run_deferred_tool_probe(self) -> None:
-        if self._deferred_tool_probe_started:
-            return
-        self._deferred_tool_probe_started = True
-
-        def _probe() -> None:
-            settings = self.service.settings
-            probes = {
-                "akabak": settings.akabak_exe,
-                "vacs": settings.vacs_exe,
-            }
-            versions: Dict[str, str] = {}
-            for key, exe_path in probes.items():
-                if not exe_path:
-                    continue
-                try:
-                    kwargs: Dict[str, Any] = {
-                        "capture_output": True,
-                        "text": True,
-                        "encoding": "utf-8",
-                        "errors": "replace",
-                        "timeout": 3,
-                        "check": False,
-                    }
-                    if os.name == "nt":
-                        startupinfo = subprocess.STARTUPINFO()
-                        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                        startupinfo.wShowWindow = 0
-                        kwargs["startupinfo"] = startupinfo
-                        kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-                    result = subprocess.run([exe_path, "--version"], **kwargs)
-                    text = (result.stdout or result.stderr or "").strip().splitlines()
-                    if text:
-                        versions[key] = text[0]
-                except Exception:
-                    continue
-            if not versions:
-                return
-            existing = self.last_status_detail
-            try:
-                payload = json.loads(existing) if existing.strip() else {}
-            except Exception:
-                payload = {}
-            if isinstance(payload, dict):
-                merged = dict(payload.get("tool_versions", {}) or {})
-                merged.update(versions)
-                payload["tool_versions"] = merged
-                self.last_status_detail = json.dumps(payload, indent=2, ensure_ascii=False)
-
-        threading.Thread(target=_probe, daemon=True).start()
 
     def _show_about(self) -> None:
         AboutDialog(self).exec()
@@ -1516,7 +1484,6 @@ class GuiController:
 
     def _show_main_window_maximized(self) -> None:
         self._show_window_maximized_foreground(self.main_window)
-        self.main_window._run_deferred_tool_probe()
 
     @staticmethod
     def _show_window_normal_foreground(window: QMainWindow) -> None:
@@ -1545,10 +1512,22 @@ class GuiController:
 
 
 def _make_splash(app: QApplication) -> QSplashScreen:
-    pixmap = QPixmap(640, 300)
-    pixmap.fill(Qt.black)
-    splash = QSplashScreen(pixmap)
-    splash.showMessage("WUT Batcher\nLoading...", alignment=Qt.AlignCenter, color=Qt.white)
+    width, height = 760, 360
+    pixmap = QPixmap(width, height)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing, True)
+    path = QPainterPath()
+    path.addRoundedRect(0, 0, float(width), float(height), 18.0, 18.0)
+    painter.fillPath(path, QColor("#101010"))
+    painter.setPen(QColor("#F1F1F1"))
+    font = QFont("Condor", 58)
+    font.setBold(True)
+    painter.setFont(font)
+    painter.drawText(pixmap.rect(), Qt.AlignCenter, "WUT BATCHER")
+    painter.end()
+    splash = QSplashScreen(pixmap, Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint)
+    splash.setAttribute(Qt.WA_TranslucentBackground, True)
     splash.show()
     app.processEvents()
     return splash
@@ -1606,13 +1585,6 @@ def launch_gui() -> int:
     splash = _make_splash(app)
     apply_windows_dark_titlebar(splash)
     doctor_payload = _run_doctor_for_splash(service)
-    splash.showMessage(
-        f"Doctor status: {doctor_payload['overall_status']}\nOpening Project Manager...",
-        alignment=Qt.AlignCenter,
-        color=Qt.white,
-    )
-    app.processEvents()
-
     controller = GuiController(service)
     doctor_status = str(doctor_payload["overall_status"]).lower()
     if doctor_status in {"fail", "warn"}:
