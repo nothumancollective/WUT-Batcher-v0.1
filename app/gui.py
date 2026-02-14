@@ -21,7 +21,7 @@ from ui.form_schema import build_project_form_schema
 from ui.theme import apply_theme, apply_windows_dark_titlebar, configure_windows_qt_darkmode_env
 
 try:
-    from PySide6.QtCore import Qt, QTimer, Signal
+    from PySide6.QtCore import Qt, Signal
     from PySide6.QtGui import QPixmap
     from PySide6.QtWidgets import (
         QAbstractItemView,
@@ -44,7 +44,6 @@ try:
         QProgressBar,
         QSplashScreen,
         QStackedWidget,
-        QStatusBar,
         QTextEdit,
         QVBoxLayout,
         QWidget,
@@ -109,23 +108,18 @@ def _win32_force_foreground(window: QWidget) -> None:
 
 
 def _ensure_maximized_foreground(window: QWidget) -> None:
-    def _attempt(_step: int) -> None:
-        if window is None:
-            return
-        state = window.windowState()
-        state = (state | Qt.WindowMaximized) & ~Qt.WindowFullScreen & ~Qt.WindowMinimized
-        window.setWindowState(state)
-        window.showNormal()
-        window.showMaximized()
-        window.raise_()
-        window.activateWindow()
-        app = QApplication.instance()
-        if app is not None:
-            app.setActiveWindow(window)
-        _win32_force_foreground(window)
-
-    for step, delay_ms in enumerate((0, 120, 320, 700)):
-        QTimer.singleShot(delay_ms, lambda s=step: _attempt(s))
+    if window is None:
+        return
+    state = window.windowState()
+    state = (state | Qt.WindowMaximized) & ~Qt.WindowFullScreen & ~Qt.WindowMinimized
+    window.setWindowState(state)
+    window.showMaximized()
+    window.raise_()
+    window.activateWindow()
+    app = QApplication.instance()
+    if app is not None:
+        app.setActiveWindow(window)
+    _win32_force_foreground(window)
 
 
 class CompatibilityPanel(QGroupBox):
@@ -661,12 +655,6 @@ class ProjectPage(QWidget):
 
         self.constraints_form = ParameterForm(build_project_form_schema())
         root.addWidget(self.constraints_form, 1)
-        self.rollback_notice = QLabel(
-            "Rollback is not supported in this ATH version. Use R-OSSE profile instead."
-        )
-        self.rollback_notice.setWordWrap(True)
-        self.rollback_notice.setObjectName("IssueHint")
-        root.addWidget(self.rollback_notice)
 
         buttons = QGridLayout()
         buttons.setContentsMargins(0, 0, 0, 0)
@@ -916,24 +904,8 @@ class MainWindow(QMainWindow):
         self.stack.addWidget(self.run_page)
         self.setCentralWidget(self.stack)
 
-        self._build_statusbar()
         self._connect_page_signals()
         self.show_dashboard()
-
-    def _build_statusbar(self) -> None:
-        bar = QStatusBar()
-        bar.setSizeGripEnabled(False)
-        self.setStatusBar(bar)
-
-        self.status_message = ClickableLabel("Ready.")
-        self.status_message.clicked.connect(self._show_status_detail)
-        bar.addWidget(self.status_message, 1)
-
-        self.brand = ClickableLabel("WUT BATCHER")
-        self.brand.setObjectName("StatusBrand")
-        self.brand.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        self.brand.clicked.connect(self._show_about)
-        bar.addPermanentWidget(self.brand)
 
     def _connect_page_signals(self) -> None:
         self.dashboard_page.request_new_batch.connect(self.show_batch)
@@ -956,7 +928,8 @@ class MainWindow(QMainWindow):
         )
 
     def set_status(self, text: str, detail: Optional[str] = None) -> None:
-        self.status_message.setText(text)
+        if hasattr(self, "status_message"):
+            self.status_message.setText(text)  # pragma: no cover - legacy path
         self.last_status_detail = detail or text
 
     def _show_status_detail(self) -> None:
