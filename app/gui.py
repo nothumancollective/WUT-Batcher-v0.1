@@ -44,6 +44,7 @@ try:
         QProgressBar,
         QSplashScreen,
         QStackedWidget,
+        QStatusBar,
         QTextEdit,
         QVBoxLayout,
         QWidget,
@@ -904,8 +905,24 @@ class MainWindow(QMainWindow):
         self.stack.addWidget(self.run_page)
         self.setCentralWidget(self.stack)
 
+        self._build_statusbar()
         self._connect_page_signals()
         self.show_dashboard()
+
+    def _build_statusbar(self) -> None:
+        bar = QStatusBar()
+        bar.setSizeGripEnabled(False)
+        self.setStatusBar(bar)
+
+        self.status_message = ClickableLabel("Ready.")
+        self.status_message.clicked.connect(self._show_status_detail)
+        bar.addWidget(self.status_message, 1)
+
+        self.brand = ClickableLabel("WUT BATCHER")
+        self.brand.setObjectName("StatusBrand")
+        self.brand.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.brand.clicked.connect(self._show_about)
+        bar.addPermanentWidget(self.brand)
 
     def _connect_page_signals(self) -> None:
         self.dashboard_page.request_new_batch.connect(self.show_batch)
@@ -928,8 +945,7 @@ class MainWindow(QMainWindow):
         )
 
     def set_status(self, text: str, detail: Optional[str] = None) -> None:
-        if hasattr(self, "status_message"):
-            self.status_message.setText(text)  # pragma: no cover - legacy path
+        self.status_message.setText(text)
         self.last_status_detail = detail or text
 
     def _show_status_detail(self) -> None:
