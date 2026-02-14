@@ -85,6 +85,49 @@ def _highest_issue_severity(issues: List[Dict[str, Any]]) -> str:
     return ranked[0] if ranked else ""
 
 
+def _win32_force_foreground(window: QWidget) -> None:
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        user32 = ctypes.windll.user32
+        hwnd = int(window.winId())
+        SW_MAXIMIZE = 3
+        SWP_NOMOVE = 0x0002
+        SWP_NOSIZE = 0x0001
+        SWP_SHOWWINDOW = 0x0040
+        HWND_TOPMOST = -1
+        HWND_NOTOPMOST = -2
+        user32.ShowWindow(hwnd, SW_MAXIMIZE)
+        user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW)
+        user32.SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW)
+        user32.BringWindowToTop(hwnd)
+        user32.SetForegroundWindow(hwnd)
+    except Exception:
+        return
+
+
+def _ensure_maximized_foreground(window: QWidget) -> None:
+    def _attempt(_step: int) -> None:
+        if window is None:
+            return
+        state = window.windowState()
+        state = (state | Qt.WindowMaximized) & ~Qt.WindowFullScreen & ~Qt.WindowMinimized
+        window.setWindowState(state)
+        window.showNormal()
+        window.showMaximized()
+        window.raise_()
+        window.activateWindow()
+        app = QApplication.instance()
+        if app is not None:
+            app.setActiveWindow(window)
+        _win32_force_foreground(window)
+
+    for step, delay_ms in enumerate((0, 120, 320, 700)):
+        QTimer.singleShot(delay_ms, lambda s=step: _attempt(s))
+
+
 class CompatibilityPanel(QGroupBox):
     request_show_details = Signal()
 
@@ -1220,50 +1263,9 @@ class GuiController:
 
     @staticmethod
     def _show_window_maximized_foreground(window: QMainWindow) -> None:
-        # Keep native titlebar controls while forcing a true maximized state.
-        window.setWindowState(window.windowState() & ~Qt.WindowFullScreen & ~Qt.WindowMinimized)
-        window.showNormal()
-        window.showMaximized()
         window.show()
-        window.raise_()
-        window.activateWindow()
-        app = QApplication.instance()
-        if app is not None:
-            app.setActiveWindow(window)
         apply_windows_dark_titlebar(window)
-        QTimer.singleShot(120, lambda w=window: GuiController._boost_foreground(w))
-
-    @staticmethod
-    def _boost_foreground(window: QMainWindow) -> None:
-        if window is None or not window.isVisible():
-            return
-        window.showMaximized()
-        window.raise_()
-        window.activateWindow()
-        app = QApplication.instance()
-        if app is not None:
-            app.setActiveWindow(window)
-        if sys.platform != "win32":
-            return
-        try:
-            import ctypes
-
-            user32 = ctypes.windll.user32
-            hwnd = int(window.winId())
-            SW_MAXIMIZE = 3
-            SWP_NOMOVE = 0x0002
-            SWP_NOSIZE = 0x0001
-            SWP_SHOWWINDOW = 0x0040
-            HWND_TOPMOST = -1
-            HWND_NOTOPMOST = -2
-            user32.ShowWindow(hwnd, SW_MAXIMIZE)
-            user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW)
-            user32.SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW)
-            user32.BringWindowToTop(hwnd)
-            user32.SetForegroundWindow(hwnd)
-        except Exception:
-            # If foreground boost is denied by OS policy, keep the normal Qt behavior.
-            return
+        _ensure_maximized_foreground(window)
 
     def _open_project(self, project_id: str) -> None:
         project = self.service.repo.load_project(project_id)
