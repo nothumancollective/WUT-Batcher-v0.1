@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from dataclasses import asdict
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
+import threading
 from typing import Any, Dict, List, Optional
 
 from app.doctor_service import run_doctor_checks
@@ -83,6 +85,72 @@ def _highest_issue_severity(issues: List[Dict[str, Any]]) -> str:
         return ""
     ranked = sorted((str(item.get("severity", "info")).lower() for item in issues), key=_severity_rank)
     return ranked[0] if ranked else ""
+
+
+def _status_entries(detail: str) -> List[Dict[str, str]]:
+    raw = str(detail or "").strip()
+    if not raw:
+        return [{"severity": "info", "title": "Status", "text": "No details available."}]
+
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return [{"severity": "info", "title": "Status", "text": raw}]
+
+    entries: List[Dict[str, str]] = []
+    if isinstance(payload, dict):
+        overall = str(payload.get("overall_status", "")).strip().lower()
+        if overall:
+            overall_map = {"ok": "ok", "warn": "warn", "fail": "fatal"}
+            entries.append(
+                {
+                    "severity": overall_map.get(overall, "info"),
+                    "title": "Doctor Overall",
+                    "text": f"Overall status: {overall.upper()}",
+                }
+            )
+        checks = payload.get("checks")
+        if isinstance(checks, list):
+            for item in checks:
+                if not isinstance(item, dict):
+                    continue
+                status = str(item.get("status", "")).strip().lower()
+                severity_map = {"ok": "ok", "warn": "warn", "fail": "fatal"}
+                entries.append(
+                    {
+                        "severity": severity_map.get(status, "info"),
+                        "title": str(item.get("label", "Check")).strip() or "Check",
+                        "text": str(item.get("detail", "")).strip() or "No detail.",
+                    }
+                )
+        issues = payload.get("issues")
+        if isinstance(issues, list):
+            for item in issues:
+                if not isinstance(item, dict):
+                    continue
+                entries.append(
+                    {
+                        "severity": str(item.get("severity", "info")).strip().lower(),
+                        "title": str(item.get("rule_id", "Issue")).strip() or "Issue",
+                        "text": str(item.get("message", "")).strip() or "No detail.",
+                    }
+                )
+    elif isinstance(payload, list):
+        for item in payload:
+            if isinstance(item, dict):
+                entries.append(
+                    {
+                        "severity": str(item.get("severity", "info")).strip().lower(),
+                        "title": str(item.get("rule_id", "Issue")).strip() or "Issue",
+                        "text": str(item.get("message", "")).strip() or str(item),
+                    }
+                )
+            else:
+                entries.append({"severity": "info", "title": "Status", "text": str(item)})
+
+    if not entries:
+        entries.append({"severity": "info", "title": "Status", "text": raw})
+    return entries
 
 
 def _win32_force_foreground(window: QWidget) -> None:
@@ -271,6 +339,86 @@ class AboutDialog(QDialog):
     def showEvent(self, event) -> None:  # type: ignore[override]
         super().showEvent(event)
         apply_windows_dark_titlebar(self)
+
+
+class StatusDetailDialog(QDialog):
+    def __init__(self, detail_text: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
+        self.setModal(True)
+        self.setWindowTitle("Status")
+        self.resize(760, 520)
+        self._drag_offset: Optional[QPoint] = None
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(14, 12, 14, 12)
+        root.setSpacing(10)
+
+        title_bar = QWidget()
+        title_row = QHBoxLayout(title_bar)
+        title_row.setContentsMargins(0, 0, 0, 0)
+        title_row.setSpacing(8)
+        icon = QLabel("!")
+        icon.setObjectName("StatusSymbol")
+        title_row.addWidget(icon)
+        title = QLabel("Status Details")
+        title.setObjectName("SectionTitle")
+        title_row.addWidget(title)
+        title_row.addStretch(1)
+        close_btn = QPushButton("X")
+        close_btn.setObjectName("WindowCloseButton")
+        close_btn.setFixedSize(28, 24)
+        close_btn.clicked.connect(self.accept)
+        title_row.addWidget(close_btn, alignment=Qt.AlignRight)
+        root.addWidget(title_bar)
+        title_bar.mousePressEvent = self._title_mouse_press  # type: ignore[assignment]
+        title_bar.mouseMoveEvent = self._title_mouse_move  # type: ignore[assignment]
+        title_bar.mouseReleaseEvent = self._title_mouse_release  # type: ignore[assignment]
+
+        scroll = QListWidget()
+        scroll.setSelectionMode(QAbstractItemView.NoSelection)
+        entries = _status_entries(detail_text)
+        for entry in entries:
+            sev = str(entry.get("severity", "info")).lower()
+            title_text = str(entry.get("title", "Status"))
+            body_text = str(entry.get("text", ""))
+            item = QListWidgetItem()
+            row_widget = QWidget()
+            row_layout = QVBoxLayout(row_widget)
+            row_layout.setContentsMargins(10, 8, 10, 8)
+            row_layout.setSpacing(4)
+
+            title_label = QLabel(title_text)
+            title_label.setObjectName("SectionTitle")
+            body_label = QLabel(body_text)
+            body_label.setWordWrap(True)
+            body_label.setObjectName("IssueHint")
+            body_label.setProperty("severity", sev if sev in {"fatal", "warn", "ok"} else "")
+            row_layout.addWidget(title_label)
+            row_layout.addWidget(body_label)
+
+            item.setSizeHint(row_widget.sizeHint())
+            scroll.addItem(item)
+            scroll.setItemWidget(item, row_widget)
+        root.addWidget(scroll, 1)
+
+    def _title_mouse_press(self, event) -> None:  # type: ignore[override]
+        if event.button() != Qt.LeftButton:
+            return
+        self._drag_offset = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+        event.accept()
+
+    def _title_mouse_move(self, event) -> None:  # type: ignore[override]
+        if self._drag_offset is None:
+            return
+        if not (event.buttons() & Qt.LeftButton):
+            return
+        self.move(event.globalPosition().toPoint() - self._drag_offset)
+        event.accept()
+
+    def _title_mouse_release(self, event) -> None:  # type: ignore[override]
+        self._drag_offset = None
+        event.accept()
 
 
 class SettingsDialog(QDialog):
@@ -956,6 +1104,7 @@ class MainWindow(QMainWindow):
         self.current_project: Optional[Project] = None
         self.last_status_detail = ""
         self.ui_risk_layer = UiRiskLayer()
+        self._deferred_tool_probe_started = False
 
         self.setWindowTitle("WUT Batcher")
         self.resize(1280, 860)
@@ -1016,7 +1165,58 @@ class MainWindow(QMainWindow):
         self.last_status_detail = detail or text
 
     def _show_status_detail(self) -> None:
-        QMessageBox.information(self, "Status Detail", self.last_status_detail or "No details.")
+        StatusDetailDialog(self.last_status_detail or "No details.", self).exec()
+
+    def _run_deferred_tool_probe(self) -> None:
+        if self._deferred_tool_probe_started:
+            return
+        self._deferred_tool_probe_started = True
+
+        def _probe() -> None:
+            settings = self.service.settings
+            probes = {
+                "akabak": settings.akabak_exe,
+                "vacs": settings.vacs_exe,
+            }
+            versions: Dict[str, str] = {}
+            for key, exe_path in probes.items():
+                if not exe_path:
+                    continue
+                try:
+                    kwargs: Dict[str, Any] = {
+                        "capture_output": True,
+                        "text": True,
+                        "encoding": "utf-8",
+                        "errors": "replace",
+                        "timeout": 3,
+                        "check": False,
+                    }
+                    if os.name == "nt":
+                        startupinfo = subprocess.STARTUPINFO()
+                        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                        startupinfo.wShowWindow = 0
+                        kwargs["startupinfo"] = startupinfo
+                        kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                    result = subprocess.run([exe_path, "--version"], **kwargs)
+                    text = (result.stdout or result.stderr or "").strip().splitlines()
+                    if text:
+                        versions[key] = text[0]
+                except Exception:
+                    continue
+            if not versions:
+                return
+            existing = self.last_status_detail
+            try:
+                payload = json.loads(existing) if existing.strip() else {}
+            except Exception:
+                payload = {}
+            if isinstance(payload, dict):
+                merged = dict(payload.get("tool_versions", {}) or {})
+                merged.update(versions)
+                payload["tool_versions"] = merged
+                self.last_status_detail = json.dumps(payload, indent=2, ensure_ascii=False)
+
+        threading.Thread(target=_probe, daemon=True).start()
 
     def _show_about(self) -> None:
         AboutDialog(self).exec()
@@ -1316,6 +1516,7 @@ class GuiController:
 
     def _show_main_window_maximized(self) -> None:
         self._show_window_maximized_foreground(self.main_window)
+        self.main_window._run_deferred_tool_probe()
 
     @staticmethod
     def _show_window_normal_foreground(window: QMainWindow) -> None:
@@ -1371,8 +1572,6 @@ def _run_doctor_for_splash(service: OrchestratorService) -> Dict[str, object]:
     tool_versions: Dict[str, str] = {}
     for key, exe_path in {
         "ath": settings.ath_exe,
-        "akabak": settings.akabak_exe,
-        "vacs": settings.vacs_exe,
     }.items():
         if not exe_path:
             continue

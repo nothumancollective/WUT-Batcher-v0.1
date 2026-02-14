@@ -81,6 +81,12 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         font-size: 18px;
         font-weight: 700;
     }}
+    QLabel#StatusSymbol {{
+        color: {c['muted']};
+        font-size: 16px;
+        font-weight: 700;
+        min-width: 14px;
+    }}
     QLabel {{
         background-color: transparent;
     }}
@@ -148,6 +154,9 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     QLabel#IssueHint[severity="fatal"] {{
         color: {c['danger']};
     }}
+    QLabel#IssueHint[severity="ok"] {{
+        color: {c['success']};
+    }}
     QLineEdit[riskLevel="warn"], QComboBox[riskLevel="warn"],
     QTextEdit[riskLevel="warn"], QPlainTextEdit[riskLevel="warn"] {{
         border: 1px solid {c['risk_warn']};
@@ -155,6 +164,10 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     QLineEdit[riskLevel="fatal"], QComboBox[riskLevel="fatal"],
     QTextEdit[riskLevel="fatal"], QPlainTextEdit[riskLevel="fatal"] {{
         border: 1px solid {c['risk_fatal']};
+    }}
+    QLineEdit[riskLevel="ok"], QComboBox[riskLevel="ok"],
+    QTextEdit[riskLevel="ok"], QPlainTextEdit[riskLevel="ok"] {{
+        border: 1px solid {c['risk_ok']};
     }}
     SegmentedEnumInput[riskLevel="warn"], ScalarFieldEditor[riskLevel="warn"],
     ObjectFieldEditor[riskLevel="warn"], ContextFrame[riskLevel="warn"] {{
@@ -164,6 +177,11 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     SegmentedEnumInput[riskLevel="fatal"], ScalarFieldEditor[riskLevel="fatal"],
     ObjectFieldEditor[riskLevel="fatal"], ContextFrame[riskLevel="fatal"] {{
         border: 1px solid {c['risk_fatal']};
+        border-radius: {r['sm']}px;
+    }}
+    SegmentedEnumInput[riskLevel="ok"], ScalarFieldEditor[riskLevel="ok"],
+    ObjectFieldEditor[riskLevel="ok"], ContextFrame[riskLevel="ok"] {{
+        border: 1px solid {c['risk_ok']};
         border-radius: {r['sm']}px;
     }}
     QListWidget, QTableView, QTreeView {{
@@ -199,7 +217,7 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     QPushButton#WindowCloseButton {{
         background-color: transparent;
         color: {c['text']};
-        border: 1px solid {c['border']};
+        border: none;
         border-radius: {r['sm']}px;
         font-weight: 700;
         padding: 0px;
