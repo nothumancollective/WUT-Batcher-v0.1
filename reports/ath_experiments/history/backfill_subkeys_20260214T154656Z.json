@@ -1,0 +1,13 @@
+{
+  "generated_at": "2026-02-14T15:46:56+00:00",
+  "db_path": "reports\\ath_experiments\\ath_experiments.sqlite",
+  "run_group_selector": "pp10k_smoke_2026",
+  "applied": true,
+  "rows_added": 0,
+  "runs_processed": 50,
+  "groups_touched": [
+    "pp10k_smoke_2026"
+  ],
+  "elapsed_s": 0.006,
+  "idempotent_noop": true
+}

@@ -1,0 +1,33 @@
+{
+  "generated_at": "2026-02-14T15:46:28+00:00",
+  "db_path": "reports\\ath_experiments\\ath_experiments.sqlite",
+  "run_group_selector": "all",
+  "applied": true,
+  "rows_added": 494715,
+  "runs_processed": 115640,
+  "groups_touched": [
+    "legacy_5000_seed2026",
+    "legacy_5000_seed2026_retry2",
+    "legacy_500_seed1337",
+    "legacy_500_seed1337_retry2",
+    "legacy_500_seed1337_retry3",
+    "pp100k_2100",
+    "pp100k_2101",
+    "pp100k_2102",
+    "pp100k_2103",
+    "pp100k_2104",
+    "pp100k_2105",
+    "pp100k_2106",
+    "pp100k_2107",
+    "pp100k_2108",
+    "pp100k_2109",
+    "pp10k_2026",
+    "pp10k_2027",
+    "pp10k_2028",
+    "pp10k_2029",
+    "pp10k_2030",
+    "pp10k_smoke_2026"
+  ],
+  "elapsed_s": 84.286,
+  "idempotent_noop": false
+}
