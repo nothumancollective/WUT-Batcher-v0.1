@@ -831,3 +831,60 @@
 #### Tests
 - `python -m py_compile app/projectpage_ath_experiment.py app/cli.py`
 - `python -m unittest tests.test_projectpage_ath_experiment tests.test_projectpage_ath_test -v`
+
+### Update 31 (PROJECT UI Risk States + Hover Helper Refinement)
+#### Done
+- Unified PROJECT field-risk pipeline integrated in UI:
+  - source merge from normative compatibility issues + experiment hints (`range_suggestions`, `compat_rule_candidates`)
+  - deterministic per-field merge policy: `fatal > warn > ok > neutral`.
+- Added debounced live-validation update path for PROJECT draft changes.
+- Added persistent `fieldState` styling hooks:
+  - input-level outlines for `ok` (green), `warn` (amber), `fatal` (red), `neutral`.
+  - existing green "conform" state preserved.
+- Reworked helper behavior to avoid layout jumps:
+  - removed inline per-field helper lines that changed row height
+  - kept compact field badges (`!` / `x`) next to inputs
+  - introduced hover helper popup with severity styling and placement by column side.
+- Helper text normalization:
+  - clean English output (no "Experiment..." prefix)
+  - display-only decimal formatting to 2 places in helper popup.
+- Numeric input normalization:
+  - decimal comma is normalized to decimal dot in numeric editors (`123,45 -> 123.45`)
+  - matches ATH/CFG decimal notation expectations.
+
+#### Notes
+- Compatibility semantics/rules were not changed in this pass.
+- Only UI presentation and interaction around existing issue outputs were changed.
+
+#### Tests
+- `python -m unittest tests.test_ui_validation_ranges tests.test_ui_validation_candidates -v`
+- `python -m unittest tests.test_project_form_ui -v`
+
+### Update 32 (PROJECT Accordion Redesign: Header Row, Chips, Section Status)
+#### Done
+- Replaced minimal accordion header with full row-item header component:
+  - title + summary chips (collapsed state) + status badge + chevron
+  - full-row click target + keyboard toggle (`Enter` / `Space`) support.
+- Kept per-column exclusive expand behavior:
+  - opening one section collapses others in the same column
+  - values remain preserved while sections collapse.
+- Added section-level status aggregation from existing field issues:
+  - counts per section (`ok/warn/fatal`)
+  - fatal dominance for section badge (`x n`), warn badge (`! n`)
+  - summary chips clipped to max 3 with `+N` overflow indicator.
+- Styling refinement for calmer hierarchy:
+  - section severity emphasis moved primarily to header accent/badge
+  - expanded section frame uses subtle warn/fatal tone (no loud full-block warning style).
+- Vertical rhythm/spacing pass:
+  - more top space between project-name row and column headers
+  - larger, more intentional header rows to reduce "thin/unfinished" appearance.
+
+#### Tests
+- Extended `tests/test_project_form_ui.py` with:
+  - accordion collapse behavior + value persistence assertions
+  - section-level warning/fatal badge dominance assertions
+  - collapsed-chip overflow (`+N`) assertions
+- Regression status:
+  - `tests.test_project_form_ui`: passing
+  - `tests.test_ui_validation_ranges`: passing
+  - `tests.test_ui_validation_candidates`: passing
