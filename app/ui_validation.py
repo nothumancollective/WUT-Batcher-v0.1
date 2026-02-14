@@ -149,10 +149,10 @@ def _load_json(path: Optional[Path]) -> Any:
 
 
 def _normalize_candidate_message(raw: Mapping[str, Any]) -> str:
-    message_de = str(raw.get("suggested_message_de", "")).strip()
     message_en = str(raw.get("suggested_message_en", "")).strip()
+    message_de = str(raw.get("suggested_message_de", "")).strip()
     rationale = str(raw.get("rationale", "")).strip()
-    return message_de or message_en or rationale or "Experiment-basierte Warnung."
+    return message_en or message_de or rationale or "Potential risk detected."
 
 
 def _path_from_attribute(node: ast.AST) -> Optional[str]:
@@ -449,11 +449,11 @@ class UiValidationEngine:
                         source="experiment",
                         rule_id="exp_range_safe",
                         message=(
-                            f"Experiment-basierte Warnung: {key} liegt außerhalb des sicheren Bereichs "
+                            f"{key} is outside the safe range "
                             f"[{_fmt_num(hint.safe_min)}, {_fmt_num(hint.safe_max)}]."
                         ),
                         evidence_ref=hint.notes,
-                        suggestion=f"Empfohlen: [{_fmt_num(hint.rec_p05)}, {_fmt_num(hint.rec_p95)}].",
+                        suggestion=f"Recommended range: [{_fmt_num(hint.rec_p05)}, {_fmt_num(hint.rec_p95)}].",
                     )
                 )
                 continue
@@ -465,11 +465,11 @@ class UiValidationEngine:
                         source="experiment",
                         rule_id="exp_range_recommended",
                         message=(
-                            f"Experiment-basierte Warnung: {key} liegt außerhalb des empfohlenen Bereichs "
+                            f"{key} is outside the recommended range "
                             f"[{_fmt_num(hint.rec_p05)}, {_fmt_num(hint.rec_p95)}]."
                         ),
                         evidence_ref=hint.notes,
-                        suggestion=f"Sicherer Bereich: [{_fmt_num(hint.safe_min)}, {_fmt_num(hint.safe_max)}].",
+                        suggestion=f"Safe range: [{_fmt_num(hint.safe_min)}, {_fmt_num(hint.safe_max)}].",
                     )
                 )
                 continue

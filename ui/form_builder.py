@@ -1538,22 +1538,16 @@ class ParameterForm(QWidget):
         top = ranked[:3]
         lines: List[str] = []
         for issue in top:
-            severity = str(issue.get("severity", "warn")).strip().capitalize()
+            key = str(issue.get("field_key") or issue.get("key") or "").strip()
             message = str(issue.get("message", "")).strip()
-            confidence = issue.get("confidence")
-            conf_suffix = ""
-            try:
-                if confidence is not None:
-                    conf_suffix = f" (conf. {float(confidence):.2f})"
-            except (TypeError, ValueError):
-                conf_suffix = ""
-            source = str(issue.get("source", "")).strip().lower()
-            source_tag = " [Experiment]" if source == "experiment" else ""
             if message:
-                lines.append(f"{severity}{source_tag}: {message}{conf_suffix}")
+                if key and not message.lower().startswith(key.lower()):
+                    lines.append(f"{key}: {message}")
+                else:
+                    lines.append(message)
             suggestion = str(issue.get("suggestion", "")).strip()
             if suggestion:
-                lines.append(f"Hint: {suggestion}")
+                lines.append(suggestion)
         return "\n".join(lines[:4])
 
     def apply_ui_risks(self, issues: List[Dict[str, Any]]) -> None:

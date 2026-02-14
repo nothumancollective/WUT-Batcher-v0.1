@@ -111,7 +111,7 @@ class ProjectFormUiTests(unittest.TestCase):
             any("Project Compatibility" == str(box.title()) for box in page.findChildren(QGroupBox))
         )
 
-    def test_project_page_risk_inspector_updates_without_layout_shift(self) -> None:
+    def test_project_page_hover_tooltip_is_clean_and_english(self) -> None:
         page = ProjectPage()
         editor = page.constraints_form.editor_for_key("Length")
         self.assertIsNotNone(editor)
@@ -119,23 +119,27 @@ class ProjectFormUiTests(unittest.TestCase):
         editor.set_is_set(True)  # type: ignore[attr-defined]
         editor.set_value(1200.0)  # type: ignore[attr-defined]
         page.constraints_form._on_any_field_changed()  # type: ignore[attr-defined]
-        base_height = page.risk_inspector.height()
 
         page.apply_ui_risks(
             [
                 {
                     "field_key": "Length",
                     "severity": "warn",
-                    "message": "Outside recommended range.",
-                    "suggestion": "Use 200-1000.",
+                    "message": "Length is outside the safe range [120, 900].",
+                    "suggestion": "Recommended range: [200, 700].",
                     "source": "experiment",
                 }
             ]
         )
-        self.assertEqual(page.risk_inspector.property("severity"), "warn")
-        self.assertEqual(page.risk_inspector_icon.text(), "!")
-        self.assertTrue(page.risk_inspector_text.text())
-        self.assertEqual(base_height, page.risk_inspector.height())
+        value_widget = page.constraints_form.value_widget_for_key("Length")
+        self.assertIsNotNone(value_widget)
+        assert value_widget is not None
+        line_edit = getattr(value_widget, "edit", None)
+        self.assertIsNotNone(line_edit)
+        tooltip = str(line_edit.toolTip())
+        self.assertIn("Length is outside the safe range [120, 900].", tooltip)
+        self.assertIn("Recommended range: [200, 700].", tooltip)
+        self.assertNotIn("Experiment", tooltip)
 
     def test_form_layout_has_two_columns_geometry_and_mesh(self) -> None:
         self.assertTrue(hasattr(self.form, "geometry_scroll"))

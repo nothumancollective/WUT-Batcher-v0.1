@@ -848,23 +848,6 @@ class ProjectPage(QWidget):
         self.constraints_form = ParameterForm(build_project_form_schema())
         root.addWidget(self.constraints_form, 1)
 
-        self.risk_inspector = QFrame()
-        self.risk_inspector.setObjectName("RiskInspectorBar")
-        self.risk_inspector.setProperty("severity", "neutral")
-        inspector_layout = QHBoxLayout(self.risk_inspector)
-        inspector_layout.setContentsMargins(8, 5, 8, 5)
-        inspector_layout.setSpacing(8)
-        self.risk_inspector_icon = QLabel("")
-        self.risk_inspector_icon.setObjectName("RiskInspectorIcon")
-        self.risk_inspector_icon.setFixedWidth(14)
-        self.risk_inspector_icon.setAlignment(Qt.AlignCenter)
-        self.risk_inspector_text = QLabel("")
-        self.risk_inspector_text.setObjectName("RiskInspectorText")
-        self.risk_inspector_text.setWordWrap(False)
-        inspector_layout.addWidget(self.risk_inspector_icon, 0, Qt.AlignLeft)
-        inspector_layout.addWidget(self.risk_inspector_text, 1)
-        root.addWidget(self.risk_inspector)
-
         buttons = QGridLayout()
         buttons.setContentsMargins(0, 0, 0, 0)
         buttons.setHorizontalSpacing(12)
@@ -899,70 +882,6 @@ class ProjectPage(QWidget):
 
     def apply_ui_risks(self, issues: List[Dict[str, Any]]) -> None:
         self.constraints_form.apply_ui_risks(issues)
-        self._update_risk_inspector(issues)
-
-    @staticmethod
-    def _issue_rank(severity: str) -> int:
-        value = str(severity or "").lower()
-        if value == "fatal":
-            return 0
-        if value == "warn":
-            return 1
-        return 99
-
-    def _update_risk_inspector(self, issues: List[Dict[str, Any]]) -> None:
-        payload = self._raw_constraints_payload()
-        set_keys = {
-            str(item.get("param_name", "")).strip()
-            for item in list(payload.get("param_states", []) or [])
-            if isinstance(item, dict) and bool(item.get("is_set"))
-        }
-        ranked: List[Dict[str, Any]] = []
-        for issue in issues:
-            if not isinstance(issue, dict):
-                continue
-            severity = str(issue.get("severity", "")).strip().lower()
-            if severity not in {"warn", "fatal"}:
-                continue
-            key = str(issue.get("field_key") or issue.get("key") or "").strip()
-            if key and key not in set_keys:
-                continue
-            ranked.append(issue)
-        ranked.sort(key=lambda item: self._issue_rank(str(item.get("severity", ""))))
-        if not ranked:
-            self.risk_inspector.setProperty("severity", "neutral")
-            self.risk_inspector_icon.setText("")
-            self.risk_inspector_text.setText("")
-            self.risk_inspector_text.setToolTip("")
-            self.risk_inspector.style().unpolish(self.risk_inspector)
-            self.risk_inspector.style().polish(self.risk_inspector)
-            self.risk_inspector.update()
-            return
-
-        top = ranked[0]
-        severity = str(top.get("severity", "warn")).strip().lower()
-        message = str(top.get("message", "")).strip()
-        suggestion = str(top.get("suggestion", "")).strip()
-        source = str(top.get("source", "")).strip().lower()
-        key = str(top.get("field_key") or top.get("key") or "").strip()
-        prefix = "Experiment" if source == "experiment" else "Rule"
-        parts: List[str] = []
-        if key:
-            parts.append(key)
-        if message:
-            parts.append(message)
-        if suggestion:
-            parts.append(suggestion)
-        text = " - ".join(parts[:2]) if parts else ""
-        detail = " | ".join(parts)
-        icon = "!" if severity == "warn" else "x"
-        self.risk_inspector.setProperty("severity", severity)
-        self.risk_inspector_icon.setText(icon)
-        self.risk_inspector_text.setText(f"{prefix}: {text}".strip())
-        self.risk_inspector_text.setToolTip(detail)
-        self.risk_inspector.style().unpolish(self.risk_inspector)
-        self.risk_inspector.style().polish(self.risk_inspector)
-        self.risk_inspector.update()
 
     def _submit(self) -> None:
         payload = self._raw_constraints_payload()
