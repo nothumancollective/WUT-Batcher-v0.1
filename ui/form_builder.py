@@ -161,7 +161,7 @@ class NullableNumericInput(QWidget):
         self.edit.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.edit.setFixedWidth(INPUT_TOTAL_WIDTH)
         self.edit.setPlaceholderText(placeholder)
-        self.edit.setClearButtonEnabled(True)
+        self.edit.setClearButtonEnabled(False)
         root.addWidget(self.edit, 0, Qt.AlignLeft)
 
         self.unit_label = QLabel(str(unit or ""))
@@ -254,7 +254,7 @@ class NullableTextInput(QWidget):
 
         self.edit = QLineEdit()
         self.edit.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.edit.setClearButtonEnabled(True)
+        self.edit.setClearButtonEnabled(False)
         self.setFixedWidth(int(width or INPUT_TOTAL_WIDTH))
         self.edit.setFixedWidth(int(width or INPUT_TOTAL_WIDTH))
         if placeholder:
