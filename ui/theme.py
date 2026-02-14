@@ -196,6 +196,24 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         background-color: {c['button_disabled']};
         color: #666666;
     }}
+    QPushButton#WindowCloseButton {{
+        background-color: transparent;
+        color: {c['text']};
+        border: 1px solid {c['border']};
+        border-radius: {r['sm']}px;
+        font-weight: 700;
+        padding: 0px;
+    }}
+    QPushButton#WindowCloseButton:hover {{
+        background-color: {c['danger']};
+        color: #ffffff;
+        border-color: {c['danger']};
+    }}
+    QPushButton#WindowCloseButton:pressed {{
+        background-color: {c['danger']};
+        color: #ffffff;
+        border-color: {c['danger']};
+    }}
     QPushButton[segment=\"true\"] {{
         background-color: {c['surface2']};
         color: {c['text']};

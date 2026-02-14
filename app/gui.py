@@ -21,7 +21,7 @@ from ui.form_schema import build_project_form_schema
 from ui.theme import apply_theme, apply_windows_dark_titlebar, configure_windows_qt_darkmode_env
 
 try:
-    from PySide6.QtCore import Qt, Signal
+    from PySide6.QtCore import QPoint, Qt, Signal
     from PySide6.QtGui import QPixmap
     from PySide6.QtWidgets import (
         QAbstractItemView,
@@ -94,12 +94,14 @@ def _win32_force_foreground(window: QWidget) -> None:
         user32 = ctypes.windll.user32
         hwnd = int(window.winId())
         SW_MAXIMIZE = 3
+        SW_SHOWNORMAL = 1
         SWP_NOMOVE = 0x0002
         SWP_NOSIZE = 0x0001
         SWP_SHOWWINDOW = 0x0040
         HWND_TOPMOST = -1
         HWND_NOTOPMOST = -2
-        user32.ShowWindow(hwnd, SW_MAXIMIZE)
+        is_maximized = bool(window.windowState() & Qt.WindowMaximized)
+        user32.ShowWindow(hwnd, SW_MAXIMIZE if is_maximized else SW_SHOWNORMAL)
         user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW)
         user32.SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW)
         user32.BringWindowToTop(hwnd)
@@ -121,6 +123,34 @@ def _ensure_maximized_foreground(window: QWidget) -> None:
     if app is not None:
         app.setActiveWindow(window)
     _win32_force_foreground(window)
+
+
+def _ensure_normal_foreground(window: QWidget) -> None:
+    if window is None:
+        return
+    state = window.windowState()
+    state = state & ~Qt.WindowFullScreen & ~Qt.WindowMinimized & ~Qt.WindowMaximized
+    window.setWindowState(state)
+    window.showNormal()
+    window.raise_()
+    window.activateWindow()
+    app = QApplication.instance()
+    if app is not None:
+        app.setActiveWindow(window)
+    _win32_force_foreground(window)
+
+
+def _center_window(window: QWidget) -> None:
+    app = QApplication.instance()
+    if app is None:
+        return
+    screen = window.screen() or app.primaryScreen()
+    if screen is None:
+        return
+    area = screen.availableGeometry()
+    frame = window.frameGeometry()
+    frame.moveCenter(area.center())
+    window.move(frame.topLeft())
 
 
 class CompatibilityPanel(QGroupBox):
@@ -837,15 +867,34 @@ class ProjectManagerWindow(QMainWindow):
         super().__init__()
         self.service = service
         self.setWindowTitle("WUT Batcher - Project Manager")
-        self.resize(1200, 800)
+        self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)
+        self.setMinimumSize(760, 520)
+        self.resize(920, 620)
+        self._drag_offset: Optional[QPoint] = None
 
         central = QWidget()
         self.setCentralWidget(central)
         root = QVBoxLayout(central)
+        root.setContentsMargins(14, 12, 14, 12)
+        root.setSpacing(10)
 
+        title_bar = QWidget()
+        title_row = QHBoxLayout(title_bar)
+        title_row.setContentsMargins(0, 0, 0, 0)
+        title_row.setSpacing(8)
         title = QLabel("Project Manager")
-        title.setObjectName("PageTitle")
-        root.addWidget(title)
+        title.setObjectName("SectionTitle")
+        title_row.addWidget(title)
+        title_row.addStretch(1)
+        close_btn = QPushButton("X")
+        close_btn.setObjectName("WindowCloseButton")
+        close_btn.setFixedSize(28, 24)
+        close_btn.clicked.connect(self.close)
+        title_row.addWidget(close_btn, alignment=Qt.AlignRight)
+        root.addWidget(title_bar)
+        title_bar.mousePressEvent = self._title_mouse_press  # type: ignore[assignment]
+        title_bar.mouseMoveEvent = self._title_mouse_move  # type: ignore[assignment]
+        title_bar.mouseReleaseEvent = self._title_mouse_release  # type: ignore[assignment]
 
         self.project_list = QListWidget()
         root.addWidget(self.project_list, 1)
@@ -880,6 +929,24 @@ class ProjectManagerWindow(QMainWindow):
         project_id = item.data(Qt.UserRole)
         if project_id:
             self.open_project.emit(str(project_id))
+
+    def _title_mouse_press(self, event) -> None:  # type: ignore[override]
+        if event.button() != Qt.LeftButton:
+            return
+        self._drag_offset = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+        event.accept()
+
+    def _title_mouse_move(self, event) -> None:  # type: ignore[override]
+        if self._drag_offset is None:
+            return
+        if not (event.buttons() & Qt.LeftButton):
+            return
+        self.move(event.globalPosition().toPoint() - self._drag_offset)
+        event.accept()
+
+    def _title_mouse_release(self, event) -> None:  # type: ignore[override]
+        self._drag_offset = None
+        event.accept()
 
 
 class MainWindow(QMainWindow):
@@ -1245,10 +1312,17 @@ class GuiController:
 
     def show_project_manager(self) -> None:
         self.project_manager.refresh()
-        self._show_window_maximized_foreground(self.project_manager)
+        self._show_window_normal_foreground(self.project_manager)
 
     def _show_main_window_maximized(self) -> None:
         self._show_window_maximized_foreground(self.main_window)
+
+    @staticmethod
+    def _show_window_normal_foreground(window: QMainWindow) -> None:
+        _center_window(window)
+        window.show()
+        apply_windows_dark_titlebar(window)
+        _ensure_normal_foreground(window)
 
     @staticmethod
     def _show_window_maximized_foreground(window: QMainWindow) -> None:
