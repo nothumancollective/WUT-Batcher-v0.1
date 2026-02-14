@@ -302,16 +302,96 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     QLabel#FieldStateBadge[severity="fatal"] {{
         color: {c['danger_border']};
     }}
+    QFrame#ProjectSummaryPanel {{
+        background-color: #1f1f1f;
+        border: 1px solid {c['border']};
+        border-radius: {r['md']}px;
+    }}
+    QLabel#SummaryTitle {{
+        color: {c['text']};
+        font-weight: 700;
+    }}
+    QLabel#SummaryText {{
+        color: {c['muted']};
+        font-size: 11px;
+    }}
+    QLabel#SummaryMeta {{
+        color: {c['text']};
+        font-size: 11px;
+        font-weight: 600;
+    }}
+    QLabel#SummaryChip {{
+        background-color: #262626;
+        color: {c['muted']};
+        border: 1px solid {c['border']};
+        border-radius: {r['sm']}px;
+        padding: 2px 6px;
+        font-size: 10px;
+    }}
+    QFrame#ProjectActionBar {{
+        background-color: #1c1c1c;
+        border-top: 1px solid {c['border']};
+    }}
+    QLabel#ProjectStatusPill {{
+        background-color: #262626;
+        color: {c['muted']};
+        border: 1px solid {c['border']};
+        border-radius: {r['sm']}px;
+        padding: 3px 8px;
+        font-size: 11px;
+        font-weight: 700;
+    }}
+    QLabel#ProjectStatusPill[severity="ok"] {{
+        color: {c['risk_ok']};
+        border: 1px solid {c['risk_ok']};
+    }}
+    QLabel#ProjectStatusPill[severity="warn"] {{
+        color: {c['warning_border']};
+        border: 1px solid {c['warning_border']};
+    }}
+    QLabel#ProjectStatusPill[severity="fatal"] {{
+        color: {c['danger_border']};
+        border: 1px solid {c['danger_border']};
+    }}
+    QLabel#ProjectStatusPill[severity="progress"] {{
+        color: {c['accent']};
+        border: 1px solid {c['accent']};
+    }}
+    QLabel#ProjectStatusHint {{
+        color: {c['muted']};
+        font-size: 11px;
+    }}
+    QPushButton#ProjectViewIssuesButton {{
+        background-color: transparent;
+        color: {c['muted']};
+        border: 1px solid {c['border']};
+        border-radius: {r['sm']}px;
+        padding: 3px 8px;
+    }}
+    QPushButton#ProjectViewIssuesButton:hover {{
+        color: {c['text']};
+        border-color: {c['accent']};
+    }}
+    QLabel#InputCaption {{
+        color: {c['muted']};
+        font-size: 11px;
+        font-weight: 600;
+    }}
     QFrame#RiskHelperPopup {{
         background-color: {c['surface2']};
         border: 1px solid {c['border']};
         border-radius: {r['sm']}px;
     }}
-    QFrame#RiskHelperPopup[severity="warn"] {{
-        border: 1px solid {c['warning_border']};
+    QFrame#RiskHelperPopupAccent {{
+        background-color: transparent;
+        border-top-left-radius: {r['sm']}px;
+        border-bottom-left-radius: {r['sm']}px;
     }}
-    QFrame#RiskHelperPopup[severity="fatal"] {{
-        border: 1px solid {c['danger_border']};
+    QFrame#RiskHelperPopupAccent[severity="warn"] {{
+        background-color: {c['warning_border']};
+    }}
+    QFrame#RiskHelperPopupAccent[severity="fatal"] {{
+        background-color: {c['danger_border']};
     }}
     QLabel#RiskHelperPopupText {{
         color: {c['text']};

@@ -827,49 +827,110 @@ class ProjectPage(QWidget):
         super().__init__()
         root = QVBoxLayout(self)
         root.setContentsMargins(24, 12, 24, 16)
-        root.setSpacing(10)
+        root.setSpacing(12)
         title = QLabel("PROJECT")
         title.setObjectName("PageTitle")
         root.addWidget(title)
 
         form_column_width = (2 * FORM_METRICS.label_width) + (2 * FORM_METRICS.input_width) + FORM_METRICS.column_gap + 32
+        self._form_column_width = form_column_width
 
-        name_row = QGridLayout()
+        name_row = QHBoxLayout()
         name_row.setContentsMargins(0, 0, 0, 0)
-        name_row.setHorizontalSpacing(12)
-        name_row.setColumnStretch(0, 1)
-        name_row.setColumnStretch(1, 1)
+        name_row.setSpacing(10)
+        name_row.addStretch(1)
+        left_col = QWidget()
+        left_col.setFixedWidth(form_column_width)
+        left_col_layout = QVBoxLayout(left_col)
+        left_col_layout.setContentsMargins(0, 0, 0, 0)
+        left_col_layout.setSpacing(6)
+        name_label = QLabel("Project Name")
+        name_label.setObjectName("InputCaption")
+        left_col_layout.addWidget(name_label)
         self.project_name = QLineEdit()
         self.project_name.setPlaceholderText("Project Name")
         self.project_name.setFixedWidth(form_column_width)
-        name_row.addWidget(self.project_name, 0, 0, alignment=Qt.AlignHCenter)
+        left_col_layout.addWidget(self.project_name, 0, Qt.AlignLeft)
+        name_row.addWidget(left_col, 0, Qt.AlignTop)
+        right_col_spacer = QWidget()
+        right_col_spacer.setFixedWidth(form_column_width)
+        name_row.addWidget(right_col_spacer, 0, Qt.AlignTop)
+        name_row.addStretch(1)
         root.addLayout(name_row)
-        root.addSpacing(8)
+
+        self.summary_panel = QFrame()
+        self.summary_panel.setObjectName("ProjectSummaryPanel")
+        summary_layout = QVBoxLayout(self.summary_panel)
+        summary_layout.setContentsMargins(12, 10, 12, 10)
+        summary_layout.setSpacing(4)
+        summary_title = QLabel("Project constraints (locked after creation)")
+        summary_title.setObjectName("SummaryTitle")
+        summary_layout.addWidget(summary_title)
+        self.summary_line_1 = QLabel(
+            "Everything you set here becomes fixed for the project and cannot be changed in Batch runs."
+        )
+        self.summary_line_1.setObjectName("SummaryText")
+        self.summary_line_1.setWordWrap(True)
+        summary_layout.addWidget(self.summary_line_1)
+        self.summary_line_2 = QLabel("Batch runs can only vary parameters that are not locked here.")
+        self.summary_line_2.setObjectName("SummaryText")
+        self.summary_line_2.setWordWrap(True)
+        summary_layout.addWidget(self.summary_line_2)
+        self.summary_counts = QLabel("Errors: 0 • Warnings: 0")
+        self.summary_counts.setObjectName("SummaryMeta")
+        summary_layout.addWidget(self.summary_counts)
+        self.summary_chips_wrap = QWidget()
+        self.summary_chips_layout = QHBoxLayout(self.summary_chips_wrap)
+        self.summary_chips_layout.setContentsMargins(0, 2, 0, 0)
+        self.summary_chips_layout.setSpacing(6)
+        summary_layout.addWidget(self.summary_chips_wrap)
+        root.addWidget(self.summary_panel)
+        root.addSpacing(6)
 
         self.constraints_form = ParameterForm(build_project_form_schema())
         root.addWidget(self.constraints_form, 1)
 
-        buttons = QGridLayout()
-        buttons.setContentsMargins(0, 0, 0, 0)
-        buttons.setHorizontalSpacing(12)
-        buttons.setColumnStretch(0, 1)
-        buttons.setColumnStretch(1, 1)
-        right_box = QWidget()
-        right_layout = QHBoxLayout(right_box)
-        right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.setSpacing(0)
-        right_box.setFixedWidth(form_column_width)
-        self.create_btn = QPushButton("Projekt erstellen")
+        self.action_bar = QFrame()
+        self.action_bar.setObjectName("ProjectActionBar")
+        self.action_bar.setFixedHeight(60)
+        action_layout = QHBoxLayout(self.action_bar)
+        action_layout.setContentsMargins(12, 8, 12, 8)
+        action_layout.setSpacing(10)
+
+        left_action = QHBoxLayout()
+        left_action.setContentsMargins(0, 0, 0, 0)
+        left_action.setSpacing(8)
+        self.action_status_pill = QLabel("Ready to create")
+        self.action_status_pill.setObjectName("ProjectStatusPill")
+        self.action_status_pill.setProperty("severity", "ok")
+        left_action.addWidget(self.action_status_pill)
+        self.action_status_hint = QLabel("")
+        self.action_status_hint.setObjectName("ProjectStatusHint")
+        left_action.addWidget(self.action_status_hint)
+        self.view_issues_btn = QPushButton("View issues")
+        self.view_issues_btn.setObjectName("ProjectViewIssuesButton")
+        self.view_issues_btn.setVisible(False)
+        left_action.addWidget(self.view_issues_btn)
+        left_wrap = QWidget()
+        left_wrap.setLayout(left_action)
+        action_layout.addWidget(left_wrap, 1)
+
+        self.create_btn = QPushButton("Create Project")
         self.create_btn.setObjectName("PrimaryButton")
-        right_layout.addStretch(1)
-        right_layout.addWidget(self.create_btn)
-        buttons.addWidget(right_box, 0, 1, alignment=Qt.AlignHCenter)
-        root.addLayout(buttons)
+        action_layout.addWidget(self.create_btn, 0, Qt.AlignRight | Qt.AlignVCenter)
+        root.addWidget(self.action_bar)
 
         self.create_btn.clicked.connect(self._submit)
+        self.view_issues_btn.clicked.connect(self._focus_first_issue)
         self.constraints_form.changed.connect(self._emit_draft_changed)
 
         self._compat_state: Dict[str, Any] = {"visible_keys": [], "locked_keys": [], "sweepable_keys": [], "issues": []}
+        self._latest_field_issues: List[Dict[str, Any]] = []
+        self._validation_phase = "idle"
+        self._creating_project = False
+        self._constraints_locked = False
+        self._update_action_state()
+        self._update_summary_panel()
 
     def _emit_draft_changed(self, payload: Dict[str, Any] | None = None) -> None:
         self.draft_changed.emit(payload or self._raw_constraints_payload())
@@ -882,9 +943,155 @@ class ProjectPage(QWidget):
         self.constraints_form.apply_compatibility(state)
 
     def apply_ui_risks(self, issues: List[Dict[str, Any]]) -> None:
+        self._latest_field_issues = [item for item in issues if isinstance(item, dict)]
         self.constraints_form.apply_ui_risks(issues)
+        if self._validation_phase == "validating":
+            self._validation_phase = "idle"
+        self._update_action_state()
+        self._update_summary_panel()
+
+    def set_validation_phase(self, phase: str) -> None:
+        self._validation_phase = str(phase or "idle").strip().lower()
+        self._update_action_state()
+
+    def set_creating(self, creating: bool) -> None:
+        self._creating_project = bool(creating)
+        if creating:
+            self._constraints_locked = False
+        self._update_action_state()
+
+    def set_constraints_locked(self, locked: bool) -> None:
+        self._constraints_locked = bool(locked)
+        if locked:
+            self._creating_project = False
+            self._validation_phase = "idle"
+        self._update_action_state()
+        self._update_summary_panel()
+
+    def _issue_counts(self) -> Dict[str, int]:
+        rank = {"fatal": 0, "warn": 1, "ok": 2, "info": 3}
+        per_key: Dict[str, str] = {}
+        for issue in self._latest_field_issues:
+            key = str(issue.get("field_key") or issue.get("key") or "").strip()
+            if not key:
+                continue
+            severity = str(issue.get("severity", "")).strip().lower()
+            if severity not in {"fatal", "warn"}:
+                continue
+            current = per_key.get(key)
+            if current is None or rank.get(severity, 99) < rank.get(current, 99):
+                per_key[key] = severity
+        fatal = sum(1 for value in per_key.values() if value == "fatal")
+        warn = sum(1 for value in per_key.values() if value == "warn")
+        return {"fatal": fatal, "warn": warn}
+
+    @staticmethod
+    def _mode_label(mapping: Dict[int, str], value: Any, *, fallback: str) -> str:
+        try:
+            key = int(value)
+        except Exception:
+            return fallback
+        return mapping.get(key, fallback)
+
+    def _mode_chips(self, payload: Dict[str, Any]) -> List[str]:
+        state_by_key: Dict[str, Dict[str, Any]] = {}
+        for row in list(payload.get("param_states", []) or []):
+            if not isinstance(row, dict):
+                continue
+            key = str(row.get("param_name", "")).strip()
+            if not key:
+                continue
+            state_by_key[key] = {"is_set": bool(row.get("is_set")), "value": row.get("value")}
+
+        def get_value(key: str) -> Any:
+            row = state_by_key.get(key, {})
+            if bool(row.get("is_set")):
+                return row.get("value")
+            return None
+
+        throat_value = get_value("Throat.Profile")
+        gcurve_value = get_value("GCurve.Type")
+        morph_value = get_value("Morph.TargetShape")
+        enclosure_enabled = bool(state_by_key.get("Mesh.Enclosure", {}).get("is_set", False))
+        chips = [
+            f"Throat: {self._mode_label({1: 'OS-SE', 2: 'R-OSSE', 3: 'Circular Arc'}, throat_value, fallback='unset')}",
+            f"Morph: {self._mode_label({0: 'no morph', 1: 'rectangle', 2: 'circle'}, morph_value if morph_value is not None else 0, fallback='no morph')}",
+            f"GCurve: {self._mode_label({0: 'no GCurve', 1: 'Superellipse', 2: 'Superformula'}, gcurve_value if gcurve_value is not None else 0, fallback='no GCurve')}",
+            f"Enclosure: {'enabled' if enclosure_enabled else 'disabled'}",
+        ]
+        return chips
+
+    def _set_summary_chips(self, chips: List[str]) -> None:
+        while self.summary_chips_layout.count():
+            item = self.summary_chips_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+        for chip_text in chips[:4]:
+            chip = QLabel(chip_text)
+            chip.setObjectName("SummaryChip")
+            self.summary_chips_layout.addWidget(chip, 0, Qt.AlignVCenter)
+        self.summary_chips_layout.addStretch(1)
+
+    def _update_summary_panel(self) -> None:
+        payload = self._raw_constraints_payload()
+        counts = self._issue_counts()
+        self.summary_counts.setText(f"Errors: {counts['fatal']} • Warnings: {counts['warn']}")
+        self._set_summary_chips(self._mode_chips(payload))
+
+    def _update_action_state(self) -> None:
+        counts = self._issue_counts()
+        fatal = int(counts.get("fatal", 0))
+        warn = int(counts.get("warn", 0))
+
+        if self._creating_project:
+            text = "Creating project..."
+            severity = "progress"
+            hint = ""
+        elif self._constraints_locked:
+            text = "Constraints locked for this project"
+            severity = "ok"
+            hint = ""
+        elif self._validation_phase == "validating":
+            text = "Checking constraints..."
+            severity = "progress"
+            hint = ""
+        elif fatal > 0:
+            text = f"Fix errors: {fatal}"
+            severity = "fatal"
+            hint = "Resolve errors to proceed."
+        elif warn > 0:
+            text = f"Warnings: {warn}"
+            severity = "warn"
+            hint = "You can continue, but results may be unstable."
+        else:
+            text = "Ready to create"
+            severity = "ok"
+            hint = ""
+
+        self.action_status_pill.setText(text)
+        self.action_status_pill.setProperty("severity", severity)
+        self.action_status_pill.style().unpolish(self.action_status_pill)
+        self.action_status_pill.style().polish(self.action_status_pill)
+        self.action_status_hint.setText(hint)
+        self.action_status_hint.setVisible(bool(hint))
+
+        has_issues = fatal > 0 or warn > 0
+        self.view_issues_btn.setVisible(has_issues)
+
+        enabled = (fatal == 0) and (not self._creating_project)
+        self.create_btn.setEnabled(enabled)
+        if not enabled and fatal > 0:
+            self.create_btn.setToolTip("Resolve errors before creating the project.")
+        else:
+            self.create_btn.setToolTip("")
+
+    def _focus_first_issue(self) -> None:
+        self.constraints_form.open_first_issue_section(self._latest_field_issues)
 
     def _submit(self) -> None:
+        if not self.create_btn.isEnabled():
+            return
         payload = self._raw_constraints_payload()
         self.submit_project.emit(self.project_name.text().strip(), payload)
 
@@ -1258,6 +1465,7 @@ class MainWindow(QMainWindow):
 
     def load_project(self, project: Project) -> None:
         self.current_project = project
+        self.project_page.set_constraints_locked(True)
         self.refresh_dashboard()
         self._on_project_draft_changed(self.project_page._raw_constraints_payload())
         self._on_batch_draft_changed(self.batch_page._payload(include_name=False))
@@ -1293,17 +1501,22 @@ class MainWindow(QMainWindow):
         self.stack.setCurrentWidget(self.run_page)
 
     def _create_project(self, project_name: str, constraints: Dict[str, object]) -> None:
-        validation = self.service.evaluate_project_constraints(dict(constraints))
-        issues = [item for item in list(validation.get("issues", []) or []) if isinstance(item, dict)]
-        project = self.service.create_project(project_name, constraints)
-        self.load_project(project)
-        if issues:
-            self.set_status(
-                f"Project created: {project.project_id} (draft issues: {len(issues)})",
-                detail=json.dumps(issues, indent=2, ensure_ascii=False),
-            )
-        else:
-            self.set_status(f"Project created: {project.project_id}")
+        self.project_page.set_creating(True)
+        try:
+            validation = self.service.evaluate_project_constraints(dict(constraints))
+            issues = [item for item in list(validation.get("issues", []) or []) if isinstance(item, dict)]
+            project = self.service.create_project(project_name, constraints)
+            self.load_project(project)
+            self.project_page.set_constraints_locked(True)
+            if issues:
+                self.set_status(
+                    f"Project created: {project.project_id} (draft issues: {len(issues)})",
+                    detail=json.dumps(issues, indent=2, ensure_ascii=False),
+                )
+            else:
+                self.set_status(f"Project created: {project.project_id}")
+        finally:
+            self.project_page.set_creating(False)
 
     def _save_batch(self, payload: Dict[str, object]) -> Optional[str]:
         if self.current_project is None:
@@ -1423,6 +1636,7 @@ class MainWindow(QMainWindow):
 
     def _queue_project_draft_changed(self, payload: Dict[str, object]) -> None:
         self._pending_project_payload = dict(payload)
+        self.project_page.set_validation_phase("validating")
         self._project_validation_timer.start()
 
     def _flush_project_draft_validation(self) -> None:
@@ -1452,11 +1666,7 @@ class MainWindow(QMainWindow):
             visible_keys=visible_keys,
         )
         self.project_page.apply_ui_risks(field_issues)
-        if self.stack.currentWidget() is self.project_page and issues:
-            self.set_status(
-                f"Constraints draft has issues ({len(issues)})",
-                detail=json.dumps(issues, indent=2, ensure_ascii=False),
-            )
+        _ = issues
 
     def _on_batch_draft_changed(self, payload: Dict[str, object]) -> None:
         if self.current_project is None:
@@ -1514,6 +1724,7 @@ class GuiController:
 
     def _new_project(self) -> None:
         self.main_window.current_project = None
+        self.main_window.project_page.set_constraints_locked(False)
         self._show_main_window_maximized()
         self.main_window.show_project()
         self.project_manager.hide()

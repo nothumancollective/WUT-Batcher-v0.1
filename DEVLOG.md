@@ -888,3 +888,27 @@
   - `tests.test_project_form_ui`: passing
   - `tests.test_ui_validation_ranges`: passing
   - `tests.test_ui_validation_candidates`: passing
+
+### Update 33 (PROJECT Action Bar + Summary Panel + Tooltip Accent Styling)
+#### Done
+- Added a sticky PROJECT action bar above the global `QStatusBar`:
+  - left: status pill (`Ready to create`, `Warnings: n`, `Fix errors: n`, `Checking constraints...`, `Creating project...`, `Constraints locked for this project`)
+  - optional hint text and `View issues` action when warnings/errors exist
+  - right: primary CTA moved to `Create Project`.
+- Clarified status responsibilities:
+  - action bar now owns user-facing draft state on Project Page
+  - bottom `QStatusBar` remains for technical/transient messages.
+- Added compact summary/info panel under project name:
+  - explains constraint locking after creation
+  - shows `Errors: n • Warnings: n`
+  - shows mode chips (Throat/Morph/GCurve/Enclosure) for quick context.
+- Improved collapsed-state density:
+  - reduced geometry/mesh column gap
+  - aligned project-name row with the left column grid for cleaner rhythm.
+- Updated helper popup styling to reduce visual noise:
+  - removed heavy warning border look
+  - neutral popup border + severity accent strip.
+
+#### Tests
+- `python -m unittest tests.test_project_form_ui -v`
+- `python -m unittest tests.test_ui_validation_ranges tests.test_ui_validation_candidates -v`

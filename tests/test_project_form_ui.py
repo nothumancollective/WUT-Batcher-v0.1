@@ -104,7 +104,7 @@ class ProjectFormUiTests(unittest.TestCase):
     def test_project_page_has_only_create_button_and_no_compat_panel(self) -> None:
         page = ProjectPage()
         labels = [button.text() for button in page.findChildren(QPushButton)]
-        self.assertIn("Projekt erstellen", labels)
+        self.assertIn("Create Project", labels)
         self.assertNotIn("Back to Dashboard", labels)
         self.assertNotIn("Show details", labels)
         self.assertFalse(
@@ -140,6 +140,27 @@ class ProjectFormUiTests(unittest.TestCase):
         self.assertIn("Length is outside the safe range [120.00, 900.00].", tooltip)
         self.assertIn("Recommended range: [200.00, 700.00].", tooltip)
         self.assertNotIn("Experiment", tooltip)
+
+    def test_project_action_state_disables_create_on_fatal(self) -> None:
+        page = ProjectPage()
+        editor = page.constraints_form.editor_for_key("Length")
+        self.assertIsNotNone(editor)
+        assert editor is not None
+        editor.set_is_set(True)  # type: ignore[attr-defined]
+        editor.set_value(1200.0)  # type: ignore[attr-defined]
+        page.constraints_form._on_any_field_changed()  # type: ignore[attr-defined]
+        page.apply_ui_risks(
+            [
+                {
+                    "field_key": "Length",
+                    "severity": "fatal",
+                    "message": "Length exceeds hard limit.",
+                    "source": "normative",
+                }
+            ]
+        )
+        self.assertFalse(page.create_btn.isEnabled())
+        self.assertFalse(page.view_issues_btn.isHidden())
 
     def test_numeric_input_normalizes_decimal_comma_to_dot(self) -> None:
         editor = self.form.editor_for_key("Throat.Diameter")
@@ -261,7 +282,7 @@ class ProjectFormUiTests(unittest.TestCase):
         box.set_collapsed(True)
         header = box.header_row()  # type: ignore[attr-defined]
         chips = [label.text() for label in header.findChildren(QLabel) if label.objectName() == "AccordionChip"]
-        self.assertIn("+2", chips)
+        self.assertIn("+3", chips)
 
     def test_source_is_removed_and_rosse_not_duplicated(self) -> None:
         self.assertIsNone(self.form.editor_for_key("Source.Shape"))
@@ -597,23 +618,13 @@ class ProjectFormUiTests(unittest.TestCase):
         without_edit = getattr(without_unit, "edit")
         self.assertEqual(with_edit.width(), without_edit.width())
 
-    def test_project_button_is_right_aligned(self) -> None:
+    def test_project_action_bar_contains_primary_cta(self) -> None:
         page = ProjectPage()
-        layout = page.layout()
-        self.assertIsNotNone(layout)
-        assert layout is not None
-        buttons_layout = layout.itemAt(layout.count() - 1).layout()
-        self.assertIsNotNone(buttons_layout)
-        assert isinstance(buttons_layout, QGridLayout)
-        right_box_item = buttons_layout.itemAtPosition(0, 1)
-        self.assertIsNotNone(right_box_item)
-        right_box = right_box_item.widget()
-        self.assertIsNotNone(right_box)
-        assert right_box is not None
-        button = right_box.findChild(QPushButton)
-        self.assertIsNotNone(button)
-        assert button is not None
-        self.assertEqual(button.text(), "Projekt erstellen")
+        action_bar = getattr(page, "action_bar", None)
+        self.assertIsNotNone(action_bar)
+        assert action_bar is not None
+        self.assertIs(page.create_btn.parent(), action_bar)
+        self.assertEqual(page.create_btn.text(), "Create Project")
 
     def test_main_columns_are_not_collapsible(self) -> None:
         toggle_buttons = [

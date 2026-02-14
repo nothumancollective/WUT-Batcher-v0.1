@@ -71,17 +71,33 @@ class RiskHelperPopup(QFrame):
         self.setObjectName("RiskHelperPopup")
         self.setAttribute(Qt.WA_ShowWithoutActivating, True)
         root = QVBoxLayout(self)
-        root.setContentsMargins(10, 8, 10, 8)
+        root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(0)
+        self._accent = QFrame()
+        self._accent.setObjectName("RiskHelperPopupAccent")
+        self._accent.setFixedWidth(3)
+        self._accent.setProperty("severity", "neutral")
+        row.addWidget(self._accent)
+        content = QWidget()
+        content.setObjectName("RiskHelperPopupBody")
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(10, 8, 10, 8)
+        content_layout.setSpacing(0)
         self._label = QLabel("")
         self._label.setObjectName("RiskHelperPopupText")
         self._label.setWordWrap(True)
         self._label.setTextInteractionFlags(Qt.NoTextInteraction)
-        root.addWidget(self._label)
+        content_layout.addWidget(self._label)
+        row.addWidget(content, 1)
+        root.addLayout(row)
 
     def show_for(self, anchor: QWidget, text: str, severity: str, side: str) -> None:
         level = str(severity or "").lower()
         self.setProperty("severity", level)
+        self._accent.setProperty("severity", level)
         self._label.setText(str(text or ""))
         if level == "warn":
             self.setMinimumWidth(360)
@@ -105,6 +121,8 @@ class RiskHelperPopup(QFrame):
         self.move(x, y)
         self.style().unpolish(self)
         self.style().polish(self)
+        self._accent.style().unpolish(self._accent)
+        self._accent.style().polish(self._accent)
         self.show()
         self.raise_()
 
@@ -219,7 +237,9 @@ class AccordionHeaderRow(QFrame):
 
         self._status_badge = QLabel("")
         self._status_badge.setObjectName("AccordionStatusBadge")
-        self._status_badge.setVisible(False)
+        self._status_badge.setMinimumWidth(42)
+        self._status_badge.setAlignment(Qt.AlignCenter)
+        self._status_badge.setVisible(True)
         content_layout.addWidget(self._status_badge, 0, Qt.AlignVCenter)
 
         self._chevron = QLabel("▾")
@@ -256,15 +276,12 @@ class AccordionHeaderRow(QFrame):
             else:
                 self._status_badge.setToolTip(f"fatal: {int(fatal_count)}")
             level = "fatal"
-            self._status_badge.setVisible(True)
         elif int(warn_count) > 0:
             self._status_badge.setText(f"! {int(warn_count)}")
             self._status_badge.setProperty("severity", "warn")
             self._status_badge.setToolTip(f"warn: {int(warn_count)}")
             level = "warn"
-            self._status_badge.setVisible(True)
         else:
-            self._status_badge.setVisible(False)
             self._status_badge.setText("")
             self._status_badge.setToolTip("")
             self._status_badge.setProperty("severity", "neutral")
@@ -288,7 +305,7 @@ class AccordionHeaderRow(QFrame):
         if not self._chips:
             self._chips_wrap.setVisible(False)
             return
-        max_visible = 3
+        max_visible = 2
         visible = self._chips[:max_visible]
         remaining = max(0, len(self._chips) - max_visible)
         for value in visible:
@@ -1177,13 +1194,13 @@ class ParameterForm(QWidget):
         if self._base_width is None:
             self._base_width = max(int(self.width()), 1)
         extra = max(int(self.width()) - int(self._base_width), 0)
-        self._root_layout.setSpacing(12 + min(extra // 60, 36))
+        self._root_layout.setSpacing(8 + min(extra // 220, 10))
 
         hint = _group_width_hint()
-        block_spacing = 10 + min(extra // 180, 14)
+        block_spacing = 10 + min(extra // 260, 8)
         for section in (self.geometry_section, self.mesh_section):
             available = max(section.width(), hint)
-            margin = max((available - hint) // 2, 0)
+            margin = max((available - hint) // 4, 0)
             section.set_horizontal_inset(margin)
             section.content_layout.setSpacing(block_spacing)
 
@@ -2154,6 +2171,34 @@ class ParameterForm(QWidget):
 
     def editor_for_key(self, key: str) -> Optional[QWidget]:
         return self._field_editors.get(key)
+
+    def open_first_issue_section(self, issues: Sequence[Dict[str, Any]]) -> bool:
+        grouped: Dict[str, str] = {}
+        rank = {"fatal": 0, "warn": 1, "ok": 2, "info": 3}
+        for issue in issues:
+            if not isinstance(issue, dict):
+                continue
+            key = str(issue.get("field_key") or issue.get("key") or "").strip()
+            if not key:
+                continue
+            severity = str(issue.get("severity", "")).strip().lower()
+            if severity not in {"fatal", "warn"}:
+                continue
+            current = grouped.get(key)
+            if current is None or rank.get(severity, 99) < rank.get(current, 99):
+                grouped[key] = severity
+
+        for wanted in ("fatal", "warn"):
+            for key, severity in grouped.items():
+                if severity != wanted:
+                    continue
+                box = self._field_group_boxes.get(key)
+                if box is None:
+                    continue
+                box.set_collapsed(False)
+                box.header_row().setFocus()
+                return True
+        return False
 
 
 class FormBuilder:
