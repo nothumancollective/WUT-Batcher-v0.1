@@ -23,7 +23,13 @@ except ImportError:  # pragma: no cover
     QToolButton = None  # type: ignore[assignment]
     QSplitter = None  # type: ignore[assignment]
 
-from ui.form_builder import NullableBoolInput, NullableNumericInput, ParameterForm, SegmentedEnumInput
+from ui.form_builder import (
+    NullableBoolInput,
+    NullableNumericInput,
+    ParameterForm,
+    ResponsiveCompactGrid,
+    SegmentedEnumInput,
+)
 from ui.form_schema import build_project_form_schema
 
 
@@ -111,6 +117,9 @@ class ProjectFormUiTests(unittest.TestCase):
         self.assertFalse(
             any("Project Compatibility" == str(box.title()) for box in page.findChildren(QGroupBox))
         )
+        captions = [label.text().strip() for label in page.findChildren(QLabel)]
+        self.assertNotIn("Project Name", captions)
+        self.assertFalse(hasattr(page, "summary_counts"))
 
     def test_project_page_hover_tooltip_is_clean_and_english(self) -> None:
         page = ProjectPage()
@@ -210,7 +219,7 @@ class ProjectFormUiTests(unittest.TestCase):
             ]
         )
         page._toggle_issues_panel()  # type: ignore[attr-defined]
-        self.assertFalse(page.issues_panel.isHidden())
+        self.assertFalse(page.issues_host.isHidden())
         self.assertGreaterEqual(len(page._ui_issues), 2)  # type: ignore[attr-defined]
         self.assertEqual(page._ui_issues[0].severity, "error")  # type: ignore[attr-defined]
         self.assertEqual(page._ui_issues[0].key, "Length")  # type: ignore[attr-defined]
@@ -645,7 +654,7 @@ class ProjectFormUiTests(unittest.TestCase):
         self.assertEqual(badge.property("severity"), "neutral")
         self.assertEqual(badge.text(), "")
 
-    def test_gcurve_common_and_superformula_use_two_columns(self) -> None:
+    def test_gcurve_common_and_superformula_use_compact_grid(self) -> None:
         gcurve_editor = self.form.editor_for_key("GCurve.Type")
         self.assertIsNotNone(gcurve_editor)
         assert gcurve_editor is not None
@@ -656,18 +665,28 @@ class ProjectFormUiTests(unittest.TestCase):
         current_page = stacked.currentWidget()
         self.assertIsNotNone(current_page)
         assert current_page is not None
-        page_grid = current_page.findChildren(QGridLayout)
-        self.assertTrue(page_grid)
-        has_page_right_column = False
-        for grid in page_grid:
-            for index in range(grid.count()):
-                _, col, _, _ = grid.getItemPosition(index)
-                if col >= 3:
-                    has_page_right_column = True
-                    break
-            if has_page_right_column:
-                break
-        self.assertTrue(has_page_right_column)
+        compact_grids = current_page.findChildren(ResponsiveCompactGrid)
+        self.assertTrue(compact_grids)
+        assert compact_grids
+        compact = compact_grids[0]
+        compact.resize(900, 300)
+        compact._relayout()  # type: ignore[attr-defined]
+        grid = compact.layout()
+        self.assertIsNotNone(grid)
+        assert grid is not None
+        max_col = 0
+        for index in range(grid.count()):
+            _, col, _, _ = grid.getItemPosition(index)
+            max_col = max(max_col, col)
+        self.assertGreaterEqual(max_col, 2)
+
+        compact.resize(520, 300)
+        compact._relayout()  # type: ignore[attr-defined]
+        max_col_small = 0
+        for index in range(grid.count()):
+            _, col, _, _ = grid.getItemPosition(index)
+            max_col_small = max(max_col_small, col)
+        self.assertLessEqual(max_col_small, 1)
 
     def test_common_block_hidden_for_no_gcurve(self) -> None:
         headings = [

@@ -996,3 +996,26 @@
 #### Tests
 - `python -m unittest tests.test_project_issue_model tests.test_project_form_ui tests.test_ui_validation_ranges tests.test_ui_validation_candidates -v`
 - `python -m py_compile app/gui.py ui/form_builder.py ui/form_metrics.py ui/theme.py app/project_issue_model.py`
+
+### Update 36 (PROJECT Dense Top Area + Embedded In-Card Issues + Compact Superformula Grid)
+#### Done
+- Freed top vertical space:
+  - removed redundant top-panel `Errors/Warnings/Incomplete` line (counts remain in sticky bottom bar only)
+  - removed standalone `Project Name` caption row label; input now uses placeholder + tooltip.
+- Reworked top chips into a strict single-line strip:
+  - chips do not wrap
+  - overflow collapsed as `+N`.
+- Replaced issues overlay behavior with embedded in-card issues viewer:
+  - top info card now has internal left/right structure
+  - right side hosts toggleable embedded issues panel with internal scrolling
+  - toggle animation uses `QPropertyAnimation` (`OutCubic`, ~190ms) on width/opacity
+  - card height remains fixed while issues view opens/closes.
+- Reduced Geometry/Mesh middle gap:
+  - constant non-stretch spacing reduced to a compact range.
+- Reduced left-column expanded height pressure:
+  - introduced responsive compact grid for `GCurve -> Superformula` fields
+  - uses 3 columns when width allows, falls back to 2 columns on narrow width.
+
+#### Tests
+- `python -m unittest tests.test_project_form_ui tests.test_project_issue_model tests.test_ui_validation_ranges tests.test_ui_validation_candidates -v`
+- `python -m py_compile app/gui.py ui/form_builder.py ui/theme.py ui/form_metrics.py tests/test_project_form_ui.py`
