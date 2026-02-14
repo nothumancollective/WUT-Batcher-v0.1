@@ -1212,23 +1212,22 @@ class GuiController:
 
     def show_project_manager(self) -> None:
         self.project_manager.refresh()
-        self.project_manager.showMaximized()
+        self.project_manager.showFullScreen()
         apply_windows_dark_titlebar(self.project_manager)
 
-    def _show_main_window_maximized(self) -> None:
-        self.main_window.setWindowState(self.main_window.windowState() & ~Qt.WindowFullScreen)
-        self.main_window.showMaximized()
+    def _show_main_window_fullscreen(self) -> None:
+        self.main_window.showFullScreen()
         apply_windows_dark_titlebar(self.main_window)
 
     def _open_project(self, project_id: str) -> None:
         project = self.service.repo.load_project(project_id)
         self.main_window.load_project(project)
-        self._show_main_window_maximized()
+        self._show_main_window_fullscreen()
         self.project_manager.hide()
 
     def _new_project(self) -> None:
         self.main_window.current_project = None
-        self._show_main_window_maximized()
+        self._show_main_window_fullscreen()
         self.main_window.show_project()
         self.project_manager.hide()
 
