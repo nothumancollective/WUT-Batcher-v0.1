@@ -137,9 +137,21 @@ class ProjectFormUiTests(unittest.TestCase):
         line_edit = getattr(value_widget, "edit", None)
         self.assertIsNotNone(line_edit)
         tooltip = str(line_edit.toolTip())
-        self.assertIn("Length is outside the safe range [120, 900].", tooltip)
-        self.assertIn("Recommended range: [200, 700].", tooltip)
+        self.assertIn("Length is outside the safe range [120.00, 900.00].", tooltip)
+        self.assertIn("Recommended range: [200.00, 700.00].", tooltip)
         self.assertNotIn("Experiment", tooltip)
+
+    def test_numeric_input_normalizes_decimal_comma_to_dot(self) -> None:
+        editor = self.form.editor_for_key("Throat.Diameter")
+        self.assertIsNotNone(editor)
+        assert editor is not None
+        value_widget = self.form.value_widget_for_key("Throat.Diameter")
+        self.assertIsNotNone(value_widget)
+        assert value_widget is not None
+        line_edit = getattr(value_widget, "edit", None)
+        self.assertIsNotNone(line_edit)
+        line_edit.setText("123,45")
+        self.assertEqual(line_edit.text(), "123.45")
 
     def test_form_layout_has_two_columns_geometry_and_mesh(self) -> None:
         self.assertTrue(hasattr(self.form, "geometry_scroll"))

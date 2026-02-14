@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import html
+import re
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 from ui.form_metrics import FORM_METRICS, configure_single_column_grid, configure_two_column_grid
 from ui.form_schema import FieldSpec, FormSchema, ModeStackSpec, build_project_form_schema
 
 try:
-    from PySide6.QtCore import QRegularExpression, Qt, Signal
+    from PySide6.QtCore import QEvent, QObject, QPoint, QRegularExpression, QTimer, Qt, Signal
     from PySide6.QtGui import QRegularExpressionValidator
     from PySide6.QtWidgets import (
         QButtonGroup,
@@ -24,6 +26,7 @@ try:
         QScrollArea,
         QSizePolicy,
         QStackedWidget,
+        QToolTip,
         QToolButton,
         QVBoxLayout,
         QWidget,
@@ -35,6 +38,7 @@ except ImportError as exc:  # pragma: no cover
 INPUT_TOTAL_WIDTH = FORM_METRICS.input_width
 UNIT_LABEL_WIDTH = FORM_METRICS.unit_label_width
 LABEL_COLUMN_WIDTH = FORM_METRICS.label_width
+_HELPER_NUMBER_RE = re.compile(r"(?<![A-Za-z0-9_])[-+]?\d+(?:[.,]\d+)?(?:[eE][-+]?\d+)?")
 
 
 @dataclass(frozen=True)
@@ -170,7 +174,7 @@ class NullableNumericInput(QWidget):
         self.edit.setFixedWidth(INPUT_TOTAL_WIDTH - UNIT_LABEL_WIDTH - 6)
         root.addWidget(self.unit_label, 0, Qt.AlignLeft)
         self._install_validator()
-        self.edit.textChanged.connect(lambda *_: self.changed.emit())
+        self.edit.textChanged.connect(self._on_text_changed)
 
     def _install_validator(self) -> None:
         if self._is_float:
@@ -178,6 +182,23 @@ class NullableNumericInput(QWidget):
         else:
             regex = QRegularExpression(r"^-?\d*$")
         self.edit.setValidator(QRegularExpressionValidator(regex, self.edit))
+
+    def _on_text_changed(self, _text: str) -> None:
+        self._normalize_decimal_separator()
+        self.changed.emit()
+
+    def _normalize_decimal_separator(self) -> None:
+        raw = self.edit.text()
+        if "," not in raw:
+            return
+        cursor = self.edit.cursorPosition()
+        normalized = raw.replace(",", ".")
+        if normalized == raw:
+            return
+        self.edit.blockSignals(True)
+        self.edit.setText(normalized)
+        self.edit.setCursorPosition(min(cursor, len(normalized)))
+        self.edit.blockSignals(False)
 
     def decimals(self) -> int:
         return self._decimals if self._is_float else 0
@@ -855,6 +876,12 @@ class ParameterForm(QWidget):
         self._base_width: Optional[int] = None
         self._risk_widgets: Dict[int, QWidget] = {}
         self._risk_original_tooltips: Dict[int, str] = {}
+        self._risk_hover_installed: Dict[int, QWidget] = {}
+        self._pending_hover_widget: Optional[QWidget] = None
+        self._hover_tooltip_timer = QTimer(self)
+        self._hover_tooltip_timer.setSingleShot(True)
+        self._hover_tooltip_timer.setInterval(120)
+        self._hover_tooltip_timer.timeout.connect(self._show_pending_risk_tooltip)
 
         root = QHBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -1477,15 +1504,85 @@ class ParameterForm(QWidget):
         widget.style().polish(widget)
         widget.update()
 
+    @staticmethod
+    def _normalize_helper_decimals(text: str) -> str:
+        def repl(match: re.Match[str]) -> str:
+            token = match.group(0)
+            try:
+                value = float(token.replace(",", "."))
+            except ValueError:
+                return token
+            return f"{value:.2f}"
+
+        return _HELPER_NUMBER_RE.sub(repl, str(text or ""))
+
+    def _install_risk_hover_filter(self, widget: QWidget) -> None:
+        widget_id = id(widget)
+        if widget_id in self._risk_hover_installed:
+            return
+        widget.installEventFilter(self)
+        self._risk_hover_installed[widget_id] = widget
+
+    def _build_risk_helper_html(self, text: str, severity: str) -> str:
+        level = str(severity or "").lower()
+        border = "#D6A84B" if level == "warn" else "#C86A6A"
+        content = html.escape(self._normalize_helper_decimals(text)).replace("\n", "<br/>")
+        return (
+            f"<div style='border:1px solid {border}; border-radius:6px; "
+            f"padding:6px 8px; background:#1f1f1f;'>{content}</div>"
+        )
+
+    def _show_pending_risk_tooltip(self) -> None:
+        target = self._pending_hover_widget
+        self._pending_hover_widget = None
+        if target is None or not target.isVisible():
+            return
+        text = str(target.property("riskTooltipText") or "").strip()
+        severity = str(target.property("riskTooltipSeverity") or "warn").strip().lower()
+        if not text or severity not in {"warn", "fatal"}:
+            return
+        popup = self._build_risk_helper_html(text, severity)
+        pos = target.mapToGlobal(QPoint(0, target.height() + 4))
+        QToolTip.showText(pos, popup, target, target.rect(), 7000)
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # type: ignore[override]
+        if isinstance(watched, QWidget):
+            etype = event.type()
+            if etype in {QEvent.Enter, QEvent.HoverEnter}:
+                text = str(watched.property("riskTooltipText") or "").strip()
+                severity = str(watched.property("riskTooltipSeverity") or "").strip().lower()
+                if text and severity in {"warn", "fatal"}:
+                    self._pending_hover_widget = watched
+                    self._hover_tooltip_timer.start()
+            elif etype in {QEvent.Leave, QEvent.HoverLeave, QEvent.FocusOut, QEvent.MouseButtonPress}:
+                if self._pending_hover_widget is watched:
+                    self._pending_hover_widget = None
+                    self._hover_tooltip_timer.stop()
+                QToolTip.hideText()
+            elif etype == QEvent.ToolTip:
+                text = str(watched.property("riskTooltipText") or "").strip()
+                severity = str(watched.property("riskTooltipSeverity") or "").strip().lower()
+                if text and severity in {"warn", "fatal"}:
+                    popup = self._build_risk_helper_html(text, severity)
+                    pos = watched.mapToGlobal(QPoint(0, watched.height() + 4))
+                    QToolTip.showText(pos, popup, watched, watched.rect(), 7000)
+                    return True
+        return super().eventFilter(watched, event)
+
     def _clear_risk_highlights(self) -> None:
         for widget_id, widget in list(self._risk_widgets.items()):
             if widget is None:
                 continue
             widget.setProperty("fieldState", "neutral")
             widget.setProperty("riskLevel", "")
+            widget.setProperty("riskTooltipText", "")
+            widget.setProperty("riskTooltipSeverity", "")
             if widget_id in self._risk_original_tooltips:
                 widget.setToolTip(self._risk_original_tooltips[widget_id])
             self._repolish(widget)
+        self._pending_hover_widget = None
+        self._hover_tooltip_timer.stop()
+        QToolTip.hideText()
         self._risk_widgets.clear()
         self._risk_original_tooltips.clear()
         for editor in self._field_editors.values():
@@ -1539,13 +1636,13 @@ class ParameterForm(QWidget):
         lines: List[str] = []
         for issue in top:
             key = str(issue.get("field_key") or issue.get("key") or "").strip()
-            message = str(issue.get("message", "")).strip()
+            message = self._normalize_helper_decimals(str(issue.get("message", "")).strip())
             if message:
                 if key and not message.lower().startswith(key.lower()):
                     lines.append(f"{key}: {message}")
                 else:
                     lines.append(message)
-            suggestion = str(issue.get("suggestion", "")).strip()
+            suggestion = self._normalize_helper_decimals(str(issue.get("suggestion", "")).strip())
             if suggestion:
                 lines.append(suggestion)
         return "\n".join(lines[:4])
@@ -1588,6 +1685,7 @@ class ParameterForm(QWidget):
             if editor is not None and hasattr(editor, "set_field_state_visual"):
                 editor.set_field_state_visual(severity)  # type: ignore[attr-defined]
             target_id = id(target)
+            self._install_risk_hover_filter(target)
             self._risk_widgets[target_id] = target
             self._risk_original_tooltips[target_id] = target.toolTip()
             target.setProperty("fieldState", severity)
@@ -1597,6 +1695,11 @@ class ParameterForm(QWidget):
                 if tooltip:
                     base_tooltip = self._risk_original_tooltips.get(target_id, "")
                     target.setToolTip(f"{base_tooltip}\n\n{tooltip}".strip() if base_tooltip else tooltip)
+                    target.setProperty("riskTooltipText", tooltip)
+                    target.setProperty("riskTooltipSeverity", severity)
+            else:
+                target.setProperty("riskTooltipText", "")
+                target.setProperty("riskTooltipSeverity", "")
             self._repolish(target)
 
     def apply_compatibility(self, state: Dict[str, Any]) -> None:

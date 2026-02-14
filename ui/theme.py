@@ -232,9 +232,9 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     QToolTip {{
         background-color: {c['surface2']};
         color: {c['text']};
-        border: 1px solid {c['border']};
+        border: none;
         border-radius: {r['sm']}px;
-        padding: {s['sm']}px {s['md']}px;
+        padding: 0px;
     }}
     QListWidget, QTableView, QTreeView {{
         background-color: {c['surface']};
