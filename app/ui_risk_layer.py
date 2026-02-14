@@ -428,6 +428,26 @@ class UiRiskLayer:
                         ),
                     }
                 )
+                continue
+
+            # Value is within recommended range; mark as UI-ok candidate.
+            issues.append(
+                {
+                    "rule_id": "ui_risk_range_recommended_ok",
+                    "severity": "ok",
+                    "source": "ui_risk_layer",
+                    "scope": "project_ui_hint",
+                    "field_key": key,
+                    "message": (
+                        f"{key}={_fmt_num(number)} is within recommended range "
+                        f"[{_fmt_num(hint.rec_p05)}, {_fmt_num(hint.rec_p95)}]."
+                    ),
+                    "confidence": 0.8,
+                    "evidence_type": "experiment",
+                    "evidence_ref": hint.notes,
+                    "suggestion": "",
+                }
+            )
         return issues
 
     def _candidate_affected_keys(

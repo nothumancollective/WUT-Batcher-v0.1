@@ -106,6 +106,38 @@ class UiRiskLayerTests(unittest.TestCase):
             self.assertEqual(keys, ["GCurve.Type", "Throat.Profile"])
             self.assertTrue(all(str(item.get("severity")) == "warn" for item in issues))
 
+    def test_in_range_emits_ok_marker(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            range_path = root / "range.json"
+            candidates_path = root / "candidates.json"
+            _write_json(
+                range_path,
+                {
+                    "per_key": {
+                        "Length": {
+                            "safe_min": 100.0,
+                            "safe_max": 1200.0,
+                            "rec_p05": 200.0,
+                            "rec_p95": 1000.0,
+                            "notes": "test",
+                        }
+                    }
+                },
+            )
+            _write_json(candidates_path, {"candidates": []})
+            layer = UiRiskLayer(range_path=range_path, candidates_path=candidates_path)
+            issues = layer.evaluate(
+                {
+                    "fixed_params": {"Length": 600},
+                    "limits": {},
+                    "param_states": [{"param_name": "Length", "is_set": 1, "value": 600}],
+                },
+                visible_keys={"Length"},
+            )
+            self.assertEqual(len(issues), 1)
+            self.assertEqual(str(issues[0].get("severity")), "ok")
+
 
 if __name__ == "__main__":
     unittest.main()

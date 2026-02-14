@@ -36,6 +36,7 @@ DEFAULT_THEME = ThemeTokens(
         "danger": "#C86A6A",
         "risk_warn": "#D6A84B",
         "risk_fatal": "#C86A6A",
+        "risk_ok": "#5F9A74",
     },
     spacing={
         "xs": 4,

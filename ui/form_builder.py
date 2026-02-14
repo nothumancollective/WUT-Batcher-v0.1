@@ -1405,7 +1405,7 @@ class ParameterForm(QWidget):
 
     @staticmethod
     def _risk_rank(value: str) -> int:
-        order = {"fatal": 0, "warn": 1, "info": 2}
+        order = {"fatal": 0, "warn": 1, "info": 2, "ok": 3}
         return order.get(str(value).lower(), 99)
 
     @staticmethod
@@ -1492,7 +1492,7 @@ class ParameterForm(QWidget):
             if not isinstance(issue, dict):
                 continue
             severity = str(issue.get("severity", "")).strip().lower()
-            if severity not in {"warn", "fatal"}:
+            if severity not in {"warn", "fatal", "ok"}:
                 continue
             key = str(issue.get("field_key") or issue.get("key") or "").strip()
             if not key:
@@ -1511,15 +1511,16 @@ class ParameterForm(QWidget):
             if target is None:
                 continue
             best = sorted(key_issues, key=lambda item: self._risk_rank(str(item.get("severity", "info"))))[0]
-            severity = str(best.get("severity", "warn")).lower()
+            severity = str(best.get("severity", "ok")).lower()
             target_id = id(target)
             self._risk_widgets[target_id] = target
             self._risk_original_tooltips[target_id] = target.toolTip()
             target.setProperty("riskLevel", severity)
-            tooltip = self._risk_tooltip(key_issues)
-            if tooltip:
-                base_tooltip = self._risk_original_tooltips.get(target_id, "")
-                target.setToolTip(f"{base_tooltip}\n\n{tooltip}".strip() if base_tooltip else tooltip)
+            if severity in {"warn", "fatal"}:
+                tooltip = self._risk_tooltip(key_issues)
+                if tooltip:
+                    base_tooltip = self._risk_original_tooltips.get(target_id, "")
+                    target.setToolTip(f"{base_tooltip}\n\n{tooltip}".strip() if base_tooltip else tooltip)
             self._repolish(target)
 
     def apply_compatibility(self, state: Dict[str, Any]) -> None:
