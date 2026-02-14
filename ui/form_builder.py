@@ -790,6 +790,8 @@ class ParameterForm(QWidget):
         self._coverage_angle_key = "Coverage.Angle"
         self._suspend_emit = False
         self._base_width: Optional[int] = None
+        self._risk_widgets: Dict[int, QWidget] = {}
+        self._risk_original_tooltips: Dict[int, str] = {}
 
         root = QHBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -1400,6 +1402,125 @@ class ParameterForm(QWidget):
             "limits": limits,
             "param_states": param_states,
         }
+
+    @staticmethod
+    def _risk_rank(value: str) -> int:
+        order = {"fatal": 0, "warn": 1, "info": 2}
+        return order.get(str(value).lower(), 99)
+
+    @staticmethod
+    def _repolish(widget: QWidget) -> None:
+        widget.style().unpolish(widget)
+        widget.style().polish(widget)
+        widget.update()
+
+    def _clear_risk_highlights(self) -> None:
+        for widget_id, widget in list(self._risk_widgets.items()):
+            if widget is None:
+                continue
+            widget.setProperty("riskLevel", "")
+            if widget_id in self._risk_original_tooltips:
+                widget.setToolTip(self._risk_original_tooltips[widget_id])
+            self._repolish(widget)
+        self._risk_widgets.clear()
+        self._risk_original_tooltips.clear()
+
+    def _risk_target_for_key(self, key: str) -> Optional[QWidget]:
+        editor = self._field_editors.get(key)
+        if editor is None:
+            return None
+        target: QWidget = editor
+        if hasattr(editor, "value_widget"):
+            maybe_target = editor.value_widget()  # type: ignore[attr-defined]
+            if isinstance(maybe_target, QWidget):
+                target = maybe_target
+        if hasattr(target, "edit"):
+            maybe_edit = getattr(target, "edit")
+            if isinstance(maybe_edit, QWidget):
+                return maybe_edit
+        if hasattr(target, "combo"):
+            maybe_combo = getattr(target, "combo")
+            if isinstance(maybe_combo, QWidget):
+                return maybe_combo
+        if hasattr(target, "segment"):
+            maybe_segment = getattr(target, "segment")
+            if isinstance(maybe_segment, QWidget):
+                return maybe_segment
+        if hasattr(target, "props_frame"):
+            maybe_frame = getattr(target, "props_frame")
+            if isinstance(maybe_frame, QWidget):
+                return maybe_frame
+        return target
+
+    def _field_is_set(self, key: str) -> bool:
+        editor = self._field_editors.get(key)
+        if editor is None or editor.isHidden():
+            return False
+        if not hasattr(editor, "current_state"):
+            return False
+        state = editor.current_state()  # type: ignore[attr-defined]
+        return bool(getattr(state, "is_set", False))
+
+    def _risk_tooltip(self, issues: List[Dict[str, Any]]) -> str:
+        ranked = sorted(
+            [item for item in issues if isinstance(item, dict)],
+            key=lambda item: self._risk_rank(str(item.get("severity", "info"))),
+        )
+        top = ranked[:3]
+        lines: List[str] = []
+        for issue in top:
+            severity = str(issue.get("severity", "warn")).strip().capitalize()
+            message = str(issue.get("message", "")).strip()
+            confidence = issue.get("confidence")
+            conf_suffix = ""
+            try:
+                if confidence is not None:
+                    conf_suffix = f" (conf. {float(confidence):.2f})"
+            except (TypeError, ValueError):
+                conf_suffix = ""
+            if message:
+                lines.append(f"{severity}: {message}{conf_suffix}")
+            suggestion = str(issue.get("suggestion", "")).strip()
+            if suggestion:
+                lines.append(f"Hint: {suggestion}")
+        return "\n".join(lines[:4])
+
+    def apply_ui_risks(self, issues: List[Dict[str, Any]]) -> None:
+        self._clear_risk_highlights()
+        grouped: Dict[str, List[Dict[str, Any]]] = {}
+        for issue in issues:
+            if not isinstance(issue, dict):
+                continue
+            severity = str(issue.get("severity", "")).strip().lower()
+            if severity not in {"warn", "fatal"}:
+                continue
+            key = str(issue.get("field_key") or issue.get("key") or "").strip()
+            if not key:
+                continue
+            if key not in self._field_editors:
+                continue
+            if not self._field_is_set(key):
+                continue
+            target = self._risk_target_for_key(key)
+            if target is None or not target.isVisible():
+                continue
+            grouped.setdefault(key, []).append(issue)
+
+        for key, key_issues in grouped.items():
+            target = self._risk_target_for_key(key)
+            if target is None:
+                continue
+            best = sorted(key_issues, key=lambda item: self._risk_rank(str(item.get("severity", "info"))))[0]
+            severity = str(best.get("severity", "warn")).lower()
+            target_id = id(target)
+            self._risk_widgets[target_id] = target
+            self._risk_original_tooltips[target_id] = target.toolTip()
+            target.setProperty("riskLevel", severity)
+            tooltip = self._risk_tooltip(key_issues)
+            if tooltip:
+                base_tooltip = self._risk_original_tooltips.get(target_id, "")
+                target.setToolTip(f"{base_tooltip}\n\n{tooltip}".strip() if base_tooltip else tooltip)
+            self._repolish(target)
 
     def apply_compatibility(self, state: Dict[str, Any]) -> None:
         self._compat_state = dict(state)

@@ -148,6 +148,24 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     QLabel#IssueHint[severity="fatal"] {{
         color: {c['danger']};
     }}
+    QLineEdit[riskLevel="warn"], QComboBox[riskLevel="warn"],
+    QTextEdit[riskLevel="warn"], QPlainTextEdit[riskLevel="warn"] {{
+        border: 1px solid {c['risk_warn']};
+    }}
+    QLineEdit[riskLevel="fatal"], QComboBox[riskLevel="fatal"],
+    QTextEdit[riskLevel="fatal"], QPlainTextEdit[riskLevel="fatal"] {{
+        border: 1px solid {c['risk_fatal']};
+    }}
+    SegmentedEnumInput[riskLevel="warn"], ScalarFieldEditor[riskLevel="warn"],
+    ObjectFieldEditor[riskLevel="warn"], ContextFrame[riskLevel="warn"] {{
+        border: 1px solid {c['risk_warn']};
+        border-radius: {r['sm']}px;
+    }}
+    SegmentedEnumInput[riskLevel="fatal"], ScalarFieldEditor[riskLevel="fatal"],
+    ObjectFieldEditor[riskLevel="fatal"], ContextFrame[riskLevel="fatal"] {{
+        border: 1px solid {c['risk_fatal']};
+        border-radius: {r['sm']}px;
+    }}
     QListWidget, QTableView, QTreeView {{
         background-color: {c['surface']};
         border: 1px solid {c['border']};

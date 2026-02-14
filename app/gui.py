@@ -13,6 +13,7 @@ from app.constants import DEFAULT_RUNNER_MODE
 from app.models import AppConfig, Batch, Project
 from app.services import OrchestratorService
 from app.settings_store import UserSettings
+from app.ui_risk_layer import UiRiskLayer
 from ui.form_builder import ParameterForm
 from ui.form_metrics import FORM_METRICS
 from ui.form_schema import build_project_form_schema
@@ -655,6 +656,9 @@ class ProjectPage(QWidget):
         self._compat_state = dict(state)
         self.constraints_form.apply_compatibility(state)
 
+    def apply_ui_risks(self, issues: List[Dict[str, Any]]) -> None:
+        self.constraints_form.apply_ui_risks(issues)
+
     def _submit(self) -> None:
         payload = self._raw_constraints_payload()
         self.submit_project.emit(self.project_name.text().strip(), payload)
@@ -851,6 +855,7 @@ class MainWindow(QMainWindow):
         self.service = service
         self.current_project: Optional[Project] = None
         self.last_status_detail = ""
+        self.ui_risk_layer = UiRiskLayer()
 
         self.setWindowTitle("WUT Batcher")
         self.resize(1280, 860)
@@ -1152,7 +1157,25 @@ class MainWindow(QMainWindow):
         }
         state = self.service.evaluate_project_constraints(constraints_payload)
         self.project_page.apply_compatibility(state)
+        visible_keys = set(str(item) for item in list(state.get("visible_keys", []) or []))
         issues = [item for item in list(state.get("issues", []) or []) if isinstance(item, dict)]
+        compat_field_issues: List[Dict[str, Any]] = []
+        for issue in issues:
+            field_key = str(issue.get("field_key", "")).strip()
+            if not field_key:
+                continue
+            compat_field_issues.append(
+                {
+                    "rule_id": issue.get("rule_id", "compat_issue"),
+                    "severity": issue.get("severity", "warn"),
+                    "message": issue.get("message", ""),
+                    "field_key": field_key,
+                    "source": "compatibility",
+                    "evidence_type": issue.get("evidence_type", "hypothesis"),
+                }
+            )
+        ui_risk_issues = self.ui_risk_layer.evaluate(constraints_payload, visible_keys=visible_keys)
+        self.project_page.apply_ui_risks(compat_field_issues + ui_risk_issues)
         if self.stack.currentWidget() is self.project_page and issues:
             self.set_status(
                 f"Constraints draft has issues ({len(issues)})",
