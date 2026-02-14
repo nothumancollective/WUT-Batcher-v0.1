@@ -1,0 +1,95 @@
+{
+  "gcurve": {
+    "superformula": {
+      "ok": 24675,
+      "hard_cap_exceeded": 5460,
+      "diameter_over_100m": 1780,
+      "unknown": 885,
+      "ath_nonzero_exit": 9,
+      "numeric_overflow": 2,
+      "compare_mismatch_exit0": 3125
+    },
+    "superellipse": {
+      "ok": 33925,
+      "unknown": 1021,
+      "hard_cap_exceeded": 2590,
+      "ath_nonzero_exit": 9,
+      "diameter_over_100m": 4,
+      "numeric_overflow": 3,
+      "compare_mismatch_exit0": 2456
+    },
+    "no_gcurve": {
+      "ok": 34094,
+      "unknown": 954,
+      "hard_cap_exceeded": 2146,
+      "ath_nonzero_exit": 13,
+      "diameter_over_100m": 18,
+      "numeric_overflow": 2,
+      "compare_mismatch_exit0": 2469
+    }
+  },
+  "throat_profile": {
+    "Circular Arc": {
+      "ok": 34506,
+      "unknown": 973,
+      "compare_mismatch_exit0": 2947,
+      "hard_cap_exceeded": 54,
+      "numeric_overflow": 1,
+      "ath_nonzero_exit": 2
+    },
+    "OS-SE": {
+      "ok": 24942,
+      "hard_cap_exceeded": 8598,
+      "diameter_over_100m": 1802,
+      "unknown": 932,
+      "compare_mismatch_exit0": 2228,
+      "ath_nonzero_exit": 2
+    },
+    "R-OSSE": {
+      "ok": 33246,
+      "unknown": 955,
+      "hard_cap_exceeded": 1544,
+      "ath_nonzero_exit": 27,
+      "numeric_overflow": 6,
+      "compare_mismatch_exit0": 2875
+    }
+  },
+  "morph": {
+    "morph_on": {
+      "ok": 49605,
+      "hard_cap_exceeded": 7061,
+      "diameter_over_100m": 1028,
+      "unknown": 2838,
+      "ath_nonzero_exit": 29,
+      "numeric_overflow": 7,
+      "compare_mismatch_exit0": 5546
+    },
+    "morph_off": {
+      "ok": 43089,
+      "diameter_over_100m": 774,
+      "unknown": 22,
+      "hard_cap_exceeded": 3135,
+      "compare_mismatch_exit0": 2504,
+      "ath_nonzero_exit": 2
+    }
+  },
+  "enclosure": {
+    "enclosure_off": {
+      "ok": 87311,
+      "hard_cap_exceeded": 9534,
+      "diameter_over_100m": 1683,
+      "unknown": 2675,
+      "ath_nonzero_exit": 27,
+      "numeric_overflow": 7,
+      "compare_mismatch_exit0": 7510
+    },
+    "enclosure_on": {
+      "ok": 5383,
+      "hard_cap_exceeded": 662,
+      "compare_mismatch_exit0": 540,
+      "unknown": 185,
+      "diameter_over_100m": 119,
+      "ath_nonzero_exit": 4
+    }
+  }
+}

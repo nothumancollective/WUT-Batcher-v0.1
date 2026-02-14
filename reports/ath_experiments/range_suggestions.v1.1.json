@@ -1,1839 +1,648 @@
 {
-  "generated_at": "2026-02-14T00:11:37+00:00",
-  "cases_requested": 0,
-  "seed": 2026,
+  "generated_at": "2026-02-14T16:25:33+00:00",
+  "cases_requested": 200,
+  "seed": 2402,
   "source_priors_path": "reports\\ath_experiments\\range_suggestions.v1.json",
-  "analysis_run_groups": [
-    "legacy_500_seed1337",
-    "legacy_500_seed1337_retry2",
-    "legacy_500_seed1337_retry3",
-    "legacy_5000_seed2026",
-    "legacy_5000_seed2026_retry2",
-    "pp10k_2026",
-    "pp10k_2027",
-    "pp10k_2028",
-    "pp10k_2029",
-    "pp10k_2030"
-  ],
-  "analysis_run_count": 15590,
+  "analysis_run_groups": [],
+  "analysis_run_count": 200,
   "range_suggestions": {
     "CircArc.Radius": {
-      "success_min": 35.0,
-      "success_max": 1500.0,
+      "success_min": 39.2921,
+      "success_max": 1800.0,
       "fail_min": null,
       "fail_max": null,
       "suggested_safe_range": {
-        "min": 35.0,
-        "max": 1500.0
+        "min": 39.2921,
+        "max": 1800.0
       },
       "recommended_range_p05_p95": {
-        "min": 55.675,
-        "max": 1348.8643000000006
+        "min": 57.3348,
+        "max": 1769.16528
       },
       "by_seed": {
-        "1337": {
-          "success_min": 35.0,
-          "success_max": 1500.0,
-          "recommended_min": 59.4065,
-          "recommended_max": 1353.5,
-          "samples": 176
-        },
-        "2026": {
-          "success_min": 35.0,
-          "success_max": 1500.0,
-          "recommended_min": 38.4797,
-          "recommended_max": 1327.9095,
-          "samples": 2341
-        },
-        "2027": {
-          "success_min": 35.0,
-          "success_max": 1500.0,
-          "recommended_min": 84.13,
-          "recommended_max": 1334.8592649999996,
-          "samples": 690
-        },
-        "2028": {
-          "success_min": 35.0,
-          "success_max": 1500.0,
-          "recommended_min": 70.39812000000002,
-          "recommended_max": 1306.4141799999998,
-          "samples": 697
-        },
-        "2029": {
-          "success_min": 35.0,
-          "success_max": 1500.0,
-          "recommended_min": 81.46233,
-          "recommended_max": 1335.229409999999,
-          "samples": 700
-        },
-        "2030": {
-          "success_min": 35.0,
-          "success_max": 1500.0,
-          "recommended_min": 78.3943,
-          "recommended_max": 1318.9615250000002,
-          "samples": 686
+        "2402": {
+          "success_min": 39.2921,
+          "success_max": 1800.0,
+          "recommended_min": 57.3348,
+          "recommended_max": 1769.16528,
+          "samples": 69
         }
       },
       "by_run_group": {
-        "legacy_5000_seed2026": {
-          "success_min": 35.0,
-          "success_max": 1500.0,
-          "recommended_min": 38.4797,
-          "recommended_max": 1327.2678,
-          "samples": 1671
-        },
-        "legacy_5000_seed2026_retry2": {
-          "success_min": 79.5671,
-          "success_max": 1400.8762,
-          "recommended_min": 120.21694,
-          "recommended_max": 1113.7443199999996,
-          "samples": 15
-        },
-        "legacy_500_seed1337": {
-          "success_min": 35.0,
-          "success_max": 1500.0,
-          "recommended_min": 63.29611,
-          "recommended_max": 1353.5,
-          "samples": 162
-        },
-        "legacy_500_seed1337_retry2": {
-          "success_min": 35.0,
-          "success_max": 1353.5,
-          "recommended_min": 83.00423,
-          "recommended_max": 1353.5,
-          "samples": 7
-        },
-        "legacy_500_seed1337_retry3": {
-          "success_min": 35.0,
-          "success_max": 1353.5,
-          "recommended_min": 83.00423,
-          "recommended_max": 1353.5,
-          "samples": 7
-        },
-        "pp10k_2026": {
-          "success_min": 35.0,
-          "success_max": 1500.0,
-          "recommended_min": 38.4797,
-          "recommended_max": 1322.6222399999997,
-          "samples": 655
-        },
-        "pp10k_2027": {
-          "success_min": 35.0,
-          "success_max": 1500.0,
-          "recommended_min": 84.13,
-          "recommended_max": 1334.8592649999996,
-          "samples": 690
-        },
-        "pp10k_2028": {
-          "success_min": 35.0,
-          "success_max": 1500.0,
-          "recommended_min": 70.39812000000002,
-          "recommended_max": 1306.4141799999998,
-          "samples": 697
-        },
-        "pp10k_2029": {
-          "success_min": 35.0,
-          "success_max": 1500.0,
-          "recommended_min": 81.46233,
-          "recommended_max": 1335.229409999999,
-          "samples": 700
-        },
-        "pp10k_2030": {
-          "success_min": 35.0,
-          "success_max": 1500.0,
-          "recommended_min": 78.3943,
-          "recommended_max": 1318.9615250000002,
-          "samples": 686
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 39.2921,
+          "success_max": 1800.0,
+          "recommended_min": 57.3348,
+          "recommended_max": 1769.16528,
+          "samples": 69
         }
       }
     },
     "CircArc.TermAngle": {
-      "success_min": 3.0,
-      "success_max": 72.0,
+      "success_min": 7.0168,
+      "success_max": 56.1081,
       "fail_min": null,
       "fail_max": null,
       "suggested_safe_range": {
-        "min": 3.0,
-        "max": 72.0
+        "min": 7.0168,
+        "max": 56.1081
       },
       "recommended_range_p05_p95": {
-        "min": 3.0,
-        "max": 72.0
+        "min": 8.7138,
+        "max": 53.54271999999999
       },
       "by_seed": {
-        "1337": {
-          "success_min": 3.0,
-          "success_max": 72.0,
-          "recommended_min": 4.624325,
-          "recommended_max": 66.82499999999999,
-          "samples": 176
-        },
-        "2026": {
-          "success_min": 3.0,
-          "success_max": 72.0,
-          "recommended_min": 3.0,
-          "recommended_max": 72.0,
-          "samples": 2341
-        },
-        "2027": {
-          "success_min": 3.0,
-          "success_max": 72.0,
-          "recommended_min": 3.0,
-          "recommended_max": 72.0,
-          "samples": 690
-        },
-        "2028": {
-          "success_min": 3.0,
-          "success_max": 72.0,
-          "recommended_min": 3.0,
-          "recommended_max": 72.0,
-          "samples": 697
-        },
-        "2029": {
-          "success_min": 3.0,
-          "success_max": 72.0,
-          "recommended_min": 3.0,
-          "recommended_max": 72.0,
-          "samples": 700
-        },
-        "2030": {
-          "success_min": 3.0,
-          "success_max": 72.0,
-          "recommended_min": 3.0,
-          "recommended_max": 72.0,
-          "samples": 686
+        "2402": {
+          "success_min": 7.0168,
+          "success_max": 56.1081,
+          "recommended_min": 8.7138,
+          "recommended_max": 53.54271999999999,
+          "samples": 69
         }
       },
       "by_run_group": {
-        "legacy_5000_seed2026": {
-          "success_min": 3.0,
-          "success_max": 72.0,
-          "recommended_min": 3.0,
-          "recommended_max": 72.0,
-          "samples": 1671
-        },
-        "legacy_5000_seed2026_retry2": {
-          "success_min": 3.4107,
-          "success_max": 66.4151,
-          "recommended_min": 3.9530600000000002,
-          "recommended_max": 50.66362999999997,
-          "samples": 15
-        },
-        "legacy_500_seed1337": {
-          "success_min": 3.0,
-          "success_max": 72.0,
-          "recommended_min": 4.556075,
-          "recommended_max": 65.1,
-          "samples": 162
-        },
-        "legacy_500_seed1337_retry2": {
-          "success_min": 12.1326,
-          "success_max": 72.0,
-          "recommended_min": 13.24053,
-          "recommended_max": 69.92999999999999,
-          "samples": 7
-        },
-        "legacy_500_seed1337_retry3": {
-          "success_min": 12.1326,
-          "success_max": 72.0,
-          "recommended_min": 13.24053,
-          "recommended_max": 69.92999999999999,
-          "samples": 7
-        },
-        "pp10k_2026": {
-          "success_min": 3.0,
-          "success_max": 72.0,
-          "recommended_min": 3.5142900000000004,
-          "recommended_max": 72.0,
-          "samples": 655
-        },
-        "pp10k_2027": {
-          "success_min": 3.0,
-          "success_max": 72.0,
-          "recommended_min": 3.0,
-          "recommended_max": 72.0,
-          "samples": 690
-        },
-        "pp10k_2028": {
-          "success_min": 3.0,
-          "success_max": 72.0,
-          "recommended_min": 3.0,
-          "recommended_max": 72.0,
-          "samples": 697
-        },
-        "pp10k_2029": {
-          "success_min": 3.0,
-          "success_max": 72.0,
-          "recommended_min": 3.0,
-          "recommended_max": 72.0,
-          "samples": 700
-        },
-        "pp10k_2030": {
-          "success_min": 3.0,
-          "success_max": 72.0,
-          "recommended_min": 3.0,
-          "recommended_max": 72.0,
-          "samples": 686
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 7.0168,
+          "success_max": 56.1081,
+          "recommended_min": 8.7138,
+          "recommended_max": 53.54271999999999,
+          "samples": 69
         }
       }
     },
     "Coverage.Angle": {
-      "success_min": 12.0,
-      "success_max": 130.0,
-      "fail_min": 12.0,
-      "fail_max": 130.0,
+      "success_min": 21.2787,
+      "success_max": 91.6237,
+      "fail_min": 26.6456,
+      "fail_max": 57.5339,
       "suggested_safe_range": {
-        "min": 12.0,
-        "max": 130.0
+        "min": 21.2787,
+        "max": 91.6237
       },
       "recommended_range_p05_p95": {
-        "min": 12.0,
-        "max": 130.0
+        "min": 23.26092,
+        "max": 82.77228
       },
       "by_seed": {
-        "1337": {
-          "success_min": 12.0,
-          "success_max": 130.0,
-          "recommended_min": 12.734210000000001,
-          "recommended_max": 130.0,
-          "samples": 154
-        },
-        "2026": {
-          "success_min": 12.0,
-          "success_max": 130.0,
-          "recommended_min": 12.0,
-          "recommended_max": 130.0,
-          "samples": 2266
-        },
-        "2027": {
-          "success_min": 12.0,
-          "success_max": 130.0,
-          "recommended_min": 12.0,
-          "recommended_max": 130.0,
-          "samples": 634
-        },
-        "2028": {
-          "success_min": 12.0,
-          "success_max": 130.0,
-          "recommended_min": 12.0,
-          "recommended_max": 130.0,
-          "samples": 596
-        },
-        "2029": {
-          "success_min": 12.0,
-          "success_max": 130.0,
-          "recommended_min": 12.0,
-          "recommended_max": 130.0,
-          "samples": 598
-        },
-        "2030": {
-          "success_min": 12.0,
-          "success_max": 130.0,
-          "recommended_min": 12.0,
-          "recommended_max": 130.0,
-          "samples": 614
+        "2402": {
+          "success_min": 21.2787,
+          "success_max": 91.6237,
+          "recommended_min": 23.26092,
+          "recommended_max": 82.77228,
+          "samples": 65
         }
       },
       "by_run_group": {
-        "legacy_5000_seed2026": {
-          "success_min": 12.0,
-          "success_max": 130.0,
-          "recommended_min": 12.0,
-          "recommended_max": 130.0,
-          "samples": 1600
-        },
-        "legacy_5000_seed2026_retry2": {
-          "success_min": 14.9665,
-          "success_max": 130.0,
-          "recommended_min": 21.149950000000004,
-          "recommended_max": 130.0,
-          "samples": 15
-        },
-        "legacy_500_seed1337": {
-          "success_min": 12.0,
-          "success_max": 130.0,
-          "recommended_min": 12.650390000000002,
-          "recommended_max": 130.0,
-          "samples": 148
-        },
-        "legacy_500_seed1337_retry2": {
-          "success_min": 23.8,
-          "success_max": 130.0,
-          "recommended_min": 23.8412,
-          "recommended_max": 119.42119999999998,
-          "samples": 3
-        },
-        "legacy_500_seed1337_retry3": {
-          "success_min": 23.8,
-          "success_max": 130.0,
-          "recommended_min": 23.8412,
-          "recommended_max": 119.42119999999998,
-          "samples": 3
-        },
-        "pp10k_2026": {
-          "success_min": 12.0,
-          "success_max": 130.0,
-          "recommended_min": 12.0,
-          "recommended_max": 129.35385,
-          "samples": 651
-        },
-        "pp10k_2027": {
-          "success_min": 12.0,
-          "success_max": 130.0,
-          "recommended_min": 12.0,
-          "recommended_max": 130.0,
-          "samples": 634
-        },
-        "pp10k_2028": {
-          "success_min": 12.0,
-          "success_max": 130.0,
-          "recommended_min": 12.0,
-          "recommended_max": 130.0,
-          "samples": 596
-        },
-        "pp10k_2029": {
-          "success_min": 12.0,
-          "success_max": 130.0,
-          "recommended_min": 12.0,
-          "recommended_max": 130.0,
-          "samples": 598
-        },
-        "pp10k_2030": {
-          "success_min": 12.0,
-          "success_max": 130.0,
-          "recommended_min": 12.0,
-          "recommended_max": 130.0,
-          "samples": 614
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 21.2787,
+          "success_max": 91.6237,
+          "recommended_min": 23.26092,
+          "recommended_max": 82.77228,
+          "samples": 65
         }
       }
     },
     "GCurve.AspectRatio": {
-      "success_min": 0.3,
-      "success_max": 2.6,
-      "fail_min": 0.3,
-      "fail_max": 2.6,
+      "success_min": 0.42,
+      "success_max": 2.59,
+      "fail_min": 0.67,
+      "fail_max": 2.54,
       "suggested_safe_range": {
-        "min": 0.3,
-        "max": 2.6
+        "min": 0.42,
+        "max": 2.59
       },
       "recommended_range_p05_p95": {
-        "min": 0.3,
-        "max": 2.6
+        "min": 0.589,
+        "max": 2.1205
       },
       "by_seed": {
-        "1337": {
-          "success_min": 0.3,
-          "success_max": 2.6,
-          "recommended_min": 0.3,
-          "recommended_max": 2.080000000000007,
-          "samples": 285
-        },
-        "2026": {
-          "success_min": 0.3,
-          "success_max": 2.6,
-          "recommended_min": 0.3,
-          "recommended_max": 2.6,
-          "samples": 3946
-        },
-        "2027": {
-          "success_min": 0.3,
-          "success_max": 2.6,
-          "recommended_min": 0.3,
-          "recommended_max": 2.6,
-          "samples": 1131
-        },
-        "2028": {
-          "success_min": 0.3,
-          "success_max": 2.6,
-          "recommended_min": 0.30900000000000005,
-          "recommended_max": 2.6,
-          "samples": 1199
-        },
-        "2029": {
-          "success_min": 0.3,
-          "success_max": 2.6,
-          "recommended_min": 0.3,
-          "recommended_max": 2.6,
-          "samples": 1182
-        },
-        "2030": {
-          "success_min": 0.3,
-          "success_max": 2.6,
-          "recommended_min": 0.3,
-          "recommended_max": 2.464999999999993,
-          "samples": 1143
+        "2402": {
+          "success_min": 0.42,
+          "success_max": 2.59,
+          "recommended_min": 0.589,
+          "recommended_max": 2.1205,
+          "samples": 110
         }
       },
       "by_run_group": {
-        "legacy_5000_seed2026": {
-          "success_min": 0.3,
-          "success_max": 2.6,
-          "recommended_min": 0.3,
-          "recommended_max": 2.6,
-          "samples": 2808
-        },
-        "legacy_5000_seed2026_retry2": {
-          "success_min": 0.53,
-          "success_max": 2.37,
-          "recommended_min": 0.6020000000000001,
-          "recommended_max": 2.0499999999999985,
-          "samples": 29
-        },
-        "legacy_500_seed1337": {
-          "success_min": 0.3,
-          "success_max": 2.6,
-          "recommended_min": 0.3,
-          "recommended_max": 2.37,
-          "samples": 255
-        },
-        "legacy_500_seed1337_retry2": {
-          "success_min": 0.3,
-          "success_max": 1.56,
-          "recommended_min": 0.3,
-          "recommended_max": 1.4829999999999999,
-          "samples": 15
-        },
-        "legacy_500_seed1337_retry3": {
-          "success_min": 0.3,
-          "success_max": 1.56,
-          "recommended_min": 0.3,
-          "recommended_max": 1.4829999999999999,
-          "samples": 15
-        },
-        "pp10k_2026": {
-          "success_min": 0.3,
-          "success_max": 2.6,
-          "recommended_min": 0.3,
-          "recommended_max": 2.6,
-          "samples": 1109
-        },
-        "pp10k_2027": {
-          "success_min": 0.3,
-          "success_max": 2.6,
-          "recommended_min": 0.3,
-          "recommended_max": 2.6,
-          "samples": 1131
-        },
-        "pp10k_2028": {
-          "success_min": 0.3,
-          "success_max": 2.6,
-          "recommended_min": 0.30900000000000005,
-          "recommended_max": 2.6,
-          "samples": 1199
-        },
-        "pp10k_2029": {
-          "success_min": 0.3,
-          "success_max": 2.6,
-          "recommended_min": 0.3,
-          "recommended_max": 2.6,
-          "samples": 1182
-        },
-        "pp10k_2030": {
-          "success_min": 0.3,
-          "success_max": 2.6,
-          "recommended_min": 0.3,
-          "recommended_max": 2.464999999999993,
-          "samples": 1143
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 0.42,
+          "success_max": 2.59,
+          "recommended_min": 0.589,
+          "recommended_max": 2.1205,
+          "samples": 110
         }
       }
     },
     "GCurve.Dist": {
-      "success_min": 8.0,
-      "success_max": 1800.0,
-      "fail_min": 8.0,
-      "fail_max": 1800.0,
+      "success_min": 0.1066,
+      "success_max": 781.2708,
+      "fail_min": 0.1749,
+      "fail_max": 395.834,
       "suggested_safe_range": {
-        "min": 8.0,
-        "max": 1800.0
+        "min": 0.1066,
+        "max": 781.2708
       },
       "recommended_range_p05_p95": {
-        "min": 22.802349999999997,
-        "max": 781.5803
+        "min": 0.31665,
+        "max": 562.1193049999998
       },
       "by_seed": {
-        "1337": {
-          "success_min": 8.0,
-          "success_max": 1800.0,
-          "recommended_min": 29.25706,
-          "recommended_max": 1770.7538200000017,
-          "samples": 285
-        },
-        "2026": {
-          "success_min": 8.0,
-          "success_max": 1800.0,
-          "recommended_min": 9.8037,
-          "recommended_max": 717.9319999999999,
-          "samples": 3946
-        },
-        "2027": {
-          "success_min": 8.0,
-          "success_max": 1800.0,
-          "recommended_min": 52.1733,
-          "recommended_max": 814.5569,
-          "samples": 1131
-        },
-        "2028": {
-          "success_min": 8.0,
-          "success_max": 1800.0,
-          "recommended_min": 54.54067000000001,
-          "recommended_max": 845.7998699999996,
-          "samples": 1199
-        },
-        "2029": {
-          "success_min": 8.0,
-          "success_max": 1800.0,
-          "recommended_min": 57.181110000000025,
-          "recommended_max": 837.0997400000001,
-          "samples": 1182
-        },
-        "2030": {
-          "success_min": 8.0,
-          "success_max": 1800.0,
-          "recommended_min": 52.349349999999994,
-          "recommended_max": 862.1536599999998,
-          "samples": 1143
+        "2402": {
+          "success_min": 0.1066,
+          "success_max": 781.2708,
+          "recommended_min": 0.31665,
+          "recommended_max": 562.1193049999998,
+          "samples": 110
         }
       },
       "by_run_group": {
-        "legacy_5000_seed2026": {
-          "success_min": 8.0,
-          "success_max": 1800.0,
-          "recommended_min": 9.8037,
-          "recommended_max": 723.434965,
-          "samples": 2808
-        },
-        "legacy_5000_seed2026_retry2": {
-          "success_min": 8.0,
-          "success_max": 659.1546,
-          "recommended_min": 9.8037,
-          "recommended_max": 626.07486,
-          "samples": 29
-        },
-        "legacy_500_seed1337": {
-          "success_min": 8.0,
-          "success_max": 1800.0,
-          "recommended_min": 29.64046,
-          "recommended_max": 1697.6383699999974,
-          "samples": 255
-        },
-        "legacy_500_seed1337_retry2": {
-          "success_min": 27.163,
-          "success_max": 1800.0,
-          "recommended_min": 46.88634,
-          "recommended_max": 1347.4703699999993,
-          "samples": 15
-        },
-        "legacy_500_seed1337_retry3": {
-          "success_min": 27.163,
-          "success_max": 1800.0,
-          "recommended_min": 46.88634,
-          "recommended_max": 1347.4703699999993,
-          "samples": 15
-        },
-        "pp10k_2026": {
-          "success_min": 8.0,
-          "success_max": 1800.0,
-          "recommended_min": 9.8037,
-          "recommended_max": 706.6036999999999,
-          "samples": 1109
-        },
-        "pp10k_2027": {
-          "success_min": 8.0,
-          "success_max": 1800.0,
-          "recommended_min": 52.1733,
-          "recommended_max": 814.5569,
-          "samples": 1131
-        },
-        "pp10k_2028": {
-          "success_min": 8.0,
-          "success_max": 1800.0,
-          "recommended_min": 54.54067000000001,
-          "recommended_max": 845.7998699999996,
-          "samples": 1199
-        },
-        "pp10k_2029": {
-          "success_min": 8.0,
-          "success_max": 1800.0,
-          "recommended_min": 57.181110000000025,
-          "recommended_max": 837.0997400000001,
-          "samples": 1182
-        },
-        "pp10k_2030": {
-          "success_min": 8.0,
-          "success_max": 1800.0,
-          "recommended_min": 52.349349999999994,
-          "recommended_max": 862.1536599999998,
-          "samples": 1143
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 0.1066,
+          "success_max": 781.2708,
+          "recommended_min": 0.31665,
+          "recommended_max": 562.1193049999998,
+          "samples": 110
         }
       }
     },
     "GCurve.Rot": {
-      "success_min": -20.0,
-      "success_max": 20.0,
-      "fail_min": -20.0,
-      "fail_max": 20.0,
+      "success_min": -18.66,
+      "success_max": 19.13,
+      "fail_min": -10.7,
+      "fail_max": 10.1,
       "suggested_safe_range": {
-        "min": -20.0,
-        "max": 20.0
+        "min": -18.66,
+        "max": 19.13
       },
       "recommended_range_p05_p95": {
-        "min": -20.0,
-        "max": 20.0
+        "min": -13.657499999999999,
+        "max": 11.592499999999998
       },
       "by_seed": {
-        "1337": {
-          "success_min": -20.0,
-          "success_max": 20.0,
-          "recommended_min": -16.0,
-          "recommended_max": 16.0,
-          "samples": 285
-        },
-        "2026": {
-          "success_min": -20.0,
-          "success_max": 20.0,
-          "recommended_min": -20.0,
-          "recommended_max": 20.0,
-          "samples": 3946
-        },
-        "2027": {
-          "success_min": -20.0,
-          "success_max": 20.0,
-          "recommended_min": -16.645000000000003,
-          "recommended_max": 20.0,
-          "samples": 1131
-        },
-        "2028": {
-          "success_min": -20.0,
-          "success_max": 20.0,
-          "recommended_min": -20.0,
-          "recommended_max": 20.0,
-          "samples": 1199
-        },
-        "2029": {
-          "success_min": -20.0,
-          "success_max": 20.0,
-          "recommended_min": -20.0,
-          "recommended_max": 20.0,
-          "samples": 1182
-        },
-        "2030": {
-          "success_min": -20.0,
-          "success_max": 20.0,
-          "recommended_min": -20.0,
-          "recommended_max": 20.0,
-          "samples": 1143
+        "2402": {
+          "success_min": -18.66,
+          "success_max": 19.13,
+          "recommended_min": -13.657499999999999,
+          "recommended_max": 11.592499999999998,
+          "samples": 110
         }
       },
       "by_run_group": {
-        "legacy_5000_seed2026": {
-          "success_min": -20.0,
-          "success_max": 20.0,
-          "recommended_min": -20.0,
-          "recommended_max": 20.0,
-          "samples": 2808
-        },
-        "legacy_5000_seed2026_retry2": {
-          "success_min": -20.0,
-          "success_max": 16.0,
-          "recommended_min": -18.396,
-          "recommended_max": 7.469999999999999,
-          "samples": 29
-        },
-        "legacy_500_seed1337": {
-          "success_min": -20.0,
-          "success_max": 20.0,
-          "recommended_min": -16.0,
-          "recommended_max": 16.0,
-          "samples": 255
-        },
-        "legacy_500_seed1337_retry2": {
-          "success_min": -20.0,
-          "success_max": 20.0,
-          "recommended_min": -11.11,
-          "recommended_max": 17.199999999999996,
-          "samples": 15
-        },
-        "legacy_500_seed1337_retry3": {
-          "success_min": -20.0,
-          "success_max": 20.0,
-          "recommended_min": -11.11,
-          "recommended_max": 17.199999999999996,
-          "samples": 15
-        },
-        "pp10k_2026": {
-          "success_min": -20.0,
-          "success_max": 20.0,
-          "recommended_min": -20.0,
-          "recommended_max": 20.0,
-          "samples": 1109
-        },
-        "pp10k_2027": {
-          "success_min": -20.0,
-          "success_max": 20.0,
-          "recommended_min": -16.645000000000003,
-          "recommended_max": 20.0,
-          "samples": 1131
-        },
-        "pp10k_2028": {
-          "success_min": -20.0,
-          "success_max": 20.0,
-          "recommended_min": -20.0,
-          "recommended_max": 20.0,
-          "samples": 1199
-        },
-        "pp10k_2029": {
-          "success_min": -20.0,
-          "success_max": 20.0,
-          "recommended_min": -20.0,
-          "recommended_max": 20.0,
-          "samples": 1182
-        },
-        "pp10k_2030": {
-          "success_min": -20.0,
-          "success_max": 20.0,
-          "recommended_min": -20.0,
-          "recommended_max": 20.0,
-          "samples": 1143
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": -18.66,
+          "success_max": 19.13,
+          "recommended_min": -13.657499999999999,
+          "recommended_max": 11.592499999999998,
+          "samples": 110
         }
       }
     },
     "GCurve.SE.n": {
-      "success_min": 2.0,
-      "success_max": 7.0,
-      "fail_min": 2.0,
-      "fail_max": 7.0,
+      "success_min": 2.01,
+      "success_max": 6.67,
+      "fail_min": 2.39,
+      "fail_max": 6.61,
       "suggested_safe_range": {
-        "min": 2.0,
-        "max": 7.0
+        "min": 2.01,
+        "max": 6.67
       },
       "recommended_range_p05_p95": {
-        "min": 2.0,
-        "max": 7.0
+        "min": 2.1925,
+        "max": 6.432499999999999
       },
       "by_seed": {
-        "1337": {
-          "success_min": 2.0,
-          "success_max": 7.0,
-          "recommended_min": 2.034,
-          "recommended_max": 7.0,
-          "samples": 149
-        },
-        "2026": {
-          "success_min": 2.0,
-          "success_max": 7.0,
-          "recommended_min": 2.0,
-          "recommended_max": 7.0,
-          "samples": 2298
-        },
-        "2027": {
-          "success_min": 2.0,
-          "success_max": 7.0,
-          "recommended_min": 2.0,
-          "recommended_max": 7.0,
-          "samples": 638
-        },
-        "2028": {
-          "success_min": 2.0,
-          "success_max": 7.0,
-          "recommended_min": 2.0,
-          "recommended_max": 7.0,
-          "samples": 689
-        },
-        "2029": {
-          "success_min": 2.0,
-          "success_max": 7.0,
-          "recommended_min": 2.0,
-          "recommended_max": 7.0,
-          "samples": 679
-        },
-        "2030": {
-          "success_min": 2.0,
-          "success_max": 7.0,
-          "recommended_min": 2.0,
-          "recommended_max": 7.0,
-          "samples": 686
+        "2402": {
+          "success_min": 2.01,
+          "success_max": 6.67,
+          "recommended_min": 2.1925,
+          "recommended_max": 6.432499999999999,
+          "samples": 66
         }
       },
       "by_run_group": {
-        "legacy_5000_seed2026": {
-          "success_min": 2.0,
-          "success_max": 7.0,
-          "recommended_min": 2.0,
-          "recommended_max": 7.0,
-          "samples": 1659
-        },
-        "legacy_5000_seed2026_retry2": {
-          "success_min": 2.24,
-          "success_max": 7.0,
-          "recommended_min": 2.3505000000000003,
-          "recommended_max": 5.173499999999999,
-          "samples": 14
-        },
-        "legacy_500_seed1337": {
-          "success_min": 2.0,
-          "success_max": 7.0,
-          "recommended_min": 2.09,
-          "recommended_max": 7.0,
-          "samples": 141
-        },
-        "legacy_500_seed1337_retry2": {
-          "success_min": 2.03,
-          "success_max": 3.38,
-          "recommended_min": 2.045,
-          "recommended_max": 3.3785,
-          "samples": 4
-        },
-        "legacy_500_seed1337_retry3": {
-          "success_min": 2.03,
-          "success_max": 3.38,
-          "recommended_min": 2.045,
-          "recommended_max": 3.3785,
-          "samples": 4
-        },
-        "pp10k_2026": {
-          "success_min": 2.0,
-          "success_max": 7.0,
-          "recommended_min": 2.012,
-          "recommended_max": 7.0,
-          "samples": 625
-        },
-        "pp10k_2027": {
-          "success_min": 2.0,
-          "success_max": 7.0,
-          "recommended_min": 2.0,
-          "recommended_max": 7.0,
-          "samples": 638
-        },
-        "pp10k_2028": {
-          "success_min": 2.0,
-          "success_max": 7.0,
-          "recommended_min": 2.0,
-          "recommended_max": 7.0,
-          "samples": 689
-        },
-        "pp10k_2029": {
-          "success_min": 2.0,
-          "success_max": 7.0,
-          "recommended_min": 2.0,
-          "recommended_max": 7.0,
-          "samples": 679
-        },
-        "pp10k_2030": {
-          "success_min": 2.0,
-          "success_max": 7.0,
-          "recommended_min": 2.0,
-          "recommended_max": 7.0,
-          "samples": 686
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 2.01,
+          "success_max": 6.67,
+          "recommended_min": 2.1925,
+          "recommended_max": 6.432499999999999,
+          "samples": 66
+        }
+      }
+    },
+    "GCurve.SF.0": {
+      "success_min": 0.6383,
+      "success_max": 1.25,
+      "fail_min": null,
+      "fail_max": null,
+      "suggested_safe_range": {
+        "min": 0.6383,
+        "max": 1.25
+      },
+      "recommended_range_p05_p95": {
+        "min": 0.668885,
+        "max": 1.2194150000000001
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 0.6383,
+          "success_max": 1.25,
+          "recommended_min": 0.668885,
+          "recommended_max": 1.2194150000000001,
+          "samples": 2
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 0.6383,
+          "success_max": 1.25,
+          "recommended_min": 0.668885,
+          "recommended_max": 1.2194150000000001,
+          "samples": 2
+        }
+      }
+    },
+    "GCurve.SF.1": {
+      "success_min": 0.7515,
+      "success_max": 0.9698,
+      "fail_min": null,
+      "fail_max": null,
+      "suggested_safe_range": {
+        "min": 0.7515,
+        "max": 0.9698
+      },
+      "recommended_range_p05_p95": {
+        "min": 0.762415,
+        "max": 0.958885
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 0.7515,
+          "success_max": 0.9698,
+          "recommended_min": 0.762415,
+          "recommended_max": 0.958885,
+          "samples": 2
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 0.7515,
+          "success_max": 0.9698,
+          "recommended_min": 0.762415,
+          "recommended_max": 0.958885,
+          "samples": 2
+        }
+      }
+    },
+    "GCurve.SF.2": {
+      "success_min": 3.5434,
+      "success_max": 5.1079,
+      "fail_min": null,
+      "fail_max": null,
+      "suggested_safe_range": {
+        "min": 3.5434,
+        "max": 5.1079
+      },
+      "recommended_range_p05_p95": {
+        "min": 3.621625,
+        "max": 5.029675
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 3.5434,
+          "success_max": 5.1079,
+          "recommended_min": 3.621625,
+          "recommended_max": 5.029675,
+          "samples": 2
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 3.5434,
+          "success_max": 5.1079,
+          "recommended_min": 3.621625,
+          "recommended_max": 5.029675,
+          "samples": 2
+        }
+      }
+    },
+    "GCurve.SF.3": {
+      "success_min": 0.2147,
+      "success_max": 0.4702,
+      "fail_min": null,
+      "fail_max": null,
+      "suggested_safe_range": {
+        "min": 0.2147,
+        "max": 0.4702
+      },
+      "recommended_range_p05_p95": {
+        "min": 0.22747499999999998,
+        "max": 0.45742499999999997
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 0.2147,
+          "success_max": 0.4702,
+          "recommended_min": 0.22747499999999998,
+          "recommended_max": 0.45742499999999997,
+          "samples": 2
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 0.2147,
+          "success_max": 0.4702,
+          "recommended_min": 0.22747499999999998,
+          "recommended_max": 0.45742499999999997,
+          "samples": 2
+        }
+      }
+    },
+    "GCurve.SF.4": {
+      "success_min": 0.545,
+      "success_max": 1.2295,
+      "fail_min": null,
+      "fail_max": null,
+      "suggested_safe_range": {
+        "min": 0.545,
+        "max": 1.2295
+      },
+      "recommended_range_p05_p95": {
+        "min": 0.5792250000000001,
+        "max": 1.195275
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 0.545,
+          "success_max": 1.2295,
+          "recommended_min": 0.5792250000000001,
+          "recommended_max": 1.195275,
+          "samples": 2
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 0.545,
+          "success_max": 1.2295,
+          "recommended_min": 0.5792250000000001,
+          "recommended_max": 1.195275,
+          "samples": 2
+        }
+      }
+    },
+    "GCurve.SF.5": {
+      "success_min": 0.7192,
+      "success_max": 1.1705,
+      "fail_min": null,
+      "fail_max": null,
+      "suggested_safe_range": {
+        "min": 0.7192,
+        "max": 1.1705
+      },
+      "recommended_range_p05_p95": {
+        "min": 0.741765,
+        "max": 1.147935
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 0.7192,
+          "success_max": 1.1705,
+          "recommended_min": 0.741765,
+          "recommended_max": 1.147935,
+          "samples": 2
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 0.7192,
+          "success_max": 1.1705,
+          "recommended_min": 0.741765,
+          "recommended_max": 1.147935,
+          "samples": 2
         }
       }
     },
     "GCurve.SF.a": {
-      "success_min": 0.3,
-      "success_max": 1.8,
-      "fail_min": 0.3,
-      "fail_max": 1.8,
+      "success_min": 0.36,
+      "success_max": 1.25,
+      "fail_min": 0.58,
+      "fail_max": 1.24,
       "suggested_safe_range": {
-        "min": 0.3,
-        "max": 1.8
+        "min": 0.36,
+        "max": 1.25
       },
       "recommended_range_p05_p95": {
-        "min": 0.5,
-        "max": 1.6
+        "min": 0.603,
+        "max": 1.2264999999999997
       },
       "by_seed": {
-        "1337": {
-          "success_min": 0.3,
-          "success_max": 1.8,
-          "recommended_min": 0.45,
-          "recommended_max": 1.7625000000000002,
-          "samples": 136
-        },
-        "2026": {
-          "success_min": 0.5,
-          "success_max": 1.6,
-          "recommended_min": 0.5,
-          "recommended_max": 1.6,
-          "samples": 1648
-        },
-        "2027": {
-          "success_min": 0.5,
-          "success_max": 1.6,
-          "recommended_min": 0.5,
-          "recommended_max": 1.6,
-          "samples": 493
-        },
-        "2028": {
-          "success_min": 0.5,
-          "success_max": 1.6,
-          "recommended_min": 0.5,
-          "recommended_max": 1.577499999999998,
-          "samples": 510
-        },
-        "2029": {
-          "success_min": 0.5,
-          "success_max": 1.6,
-          "recommended_min": 0.5,
-          "recommended_max": 1.6,
-          "samples": 503
-        },
-        "2030": {
-          "success_min": 0.5,
-          "success_max": 1.6,
-          "recommended_min": 0.508,
-          "recommended_max": 1.6,
-          "samples": 457
+        "2402": {
+          "success_min": 0.36,
+          "success_max": 1.25,
+          "recommended_min": 0.603,
+          "recommended_max": 1.2264999999999997,
+          "samples": 42
         }
       },
       "by_run_group": {
-        "legacy_5000_seed2026": {
-          "success_min": 0.5,
-          "success_max": 1.6,
-          "recommended_min": 0.5,
-          "recommended_max": 1.6,
-          "samples": 1149
-        },
-        "legacy_5000_seed2026_retry2": {
-          "success_min": 0.61,
-          "success_max": 1.6,
-          "recommended_min": 0.694,
-          "recommended_max": 1.5229999999999997,
-          "samples": 15
-        },
-        "legacy_500_seed1337": {
-          "success_min": 0.3,
-          "success_max": 1.8,
-          "recommended_min": 0.44999999999999996,
-          "recommended_max": 1.7805,
-          "samples": 114
-        },
-        "legacy_500_seed1337_retry2": {
-          "success_min": 1.02,
-          "success_max": 1.65,
-          "recommended_min": 1.05,
-          "recommended_max": 1.635,
-          "samples": 11
-        },
-        "legacy_500_seed1337_retry3": {
-          "success_min": 1.02,
-          "success_max": 1.65,
-          "recommended_min": 1.05,
-          "recommended_max": 1.635,
-          "samples": 11
-        },
-        "pp10k_2026": {
-          "success_min": 0.5,
-          "success_max": 1.6,
-          "recommended_min": 0.5,
-          "recommended_max": 1.6,
-          "samples": 484
-        },
-        "pp10k_2027": {
-          "success_min": 0.5,
-          "success_max": 1.6,
-          "recommended_min": 0.5,
-          "recommended_max": 1.6,
-          "samples": 493
-        },
-        "pp10k_2028": {
-          "success_min": 0.5,
-          "success_max": 1.6,
-          "recommended_min": 0.5,
-          "recommended_max": 1.577499999999998,
-          "samples": 510
-        },
-        "pp10k_2029": {
-          "success_min": 0.5,
-          "success_max": 1.6,
-          "recommended_min": 0.5,
-          "recommended_max": 1.6,
-          "samples": 503
-        },
-        "pp10k_2030": {
-          "success_min": 0.5,
-          "success_max": 1.6,
-          "recommended_min": 0.508,
-          "recommended_max": 1.6,
-          "samples": 457
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 0.36,
+          "success_max": 1.25,
+          "recommended_min": 0.603,
+          "recommended_max": 1.2264999999999997,
+          "samples": 42
         }
       }
     },
     "GCurve.SF.b": {
-      "success_min": 0.3,
-      "success_max": 1.8,
-      "fail_min": 0.45,
-      "fail_max": 1.8,
+      "success_min": 0.43,
+      "success_max": 1.4,
+      "fail_min": 0.59,
+      "fail_max": 1.24,
       "suggested_safe_range": {
-        "min": 0.3,
-        "max": 1.8
+        "min": 0.43,
+        "max": 1.4
       },
       "recommended_range_p05_p95": {
-        "min": 0.5,
-        "max": 1.6
+        "min": 0.541,
+        "max": 1.2279999999999998
       },
       "by_seed": {
-        "1337": {
-          "success_min": 0.3,
-          "success_max": 1.8,
-          "recommended_min": 0.3,
-          "recommended_max": 1.65,
-          "samples": 136
-        },
-        "2026": {
-          "success_min": 0.5,
-          "success_max": 1.6,
-          "recommended_min": 0.5,
-          "recommended_max": 1.6,
-          "samples": 1648
-        },
-        "2027": {
-          "success_min": 0.5,
-          "success_max": 1.6,
-          "recommended_min": 0.5,
-          "recommended_max": 1.49,
-          "samples": 493
-        },
-        "2028": {
-          "success_min": 0.5,
-          "success_max": 1.6,
-          "recommended_min": 0.5,
-          "recommended_max": 1.5119999999999982,
-          "samples": 510
-        },
-        "2029": {
-          "success_min": 0.5,
-          "success_max": 1.6,
-          "recommended_min": 0.5,
-          "recommended_max": 1.6,
-          "samples": 503
-        },
-        "2030": {
-          "success_min": 0.5,
-          "success_max": 1.6,
-          "recommended_min": 0.5,
-          "recommended_max": 1.6,
-          "samples": 457
+        "2402": {
+          "success_min": 0.43,
+          "success_max": 1.4,
+          "recommended_min": 0.541,
+          "recommended_max": 1.2279999999999998,
+          "samples": 42
         }
       },
       "by_run_group": {
-        "legacy_5000_seed2026": {
-          "success_min": 0.5,
-          "success_max": 1.6,
-          "recommended_min": 0.5,
-          "recommended_max": 1.6,
-          "samples": 1149
-        },
-        "legacy_5000_seed2026_retry2": {
-          "success_min": 0.61,
-          "success_max": 1.19,
-          "recommended_min": 0.61,
-          "recommended_max": 1.1059999999999999,
-          "samples": 15
-        },
-        "legacy_500_seed1337": {
-          "success_min": 0.3,
-          "success_max": 1.8,
-          "recommended_min": 0.3975,
-          "recommended_max": 1.65,
-          "samples": 114
-        },
-        "legacy_500_seed1337_retry2": {
-          "success_min": 0.3,
-          "success_max": 1.65,
-          "recommended_min": 0.555,
-          "recommended_max": 1.44,
-          "samples": 11
-        },
-        "legacy_500_seed1337_retry3": {
-          "success_min": 0.3,
-          "success_max": 1.65,
-          "recommended_min": 0.555,
-          "recommended_max": 1.44,
-          "samples": 11
-        },
-        "pp10k_2026": {
-          "success_min": 0.5,
-          "success_max": 1.6,
-          "recommended_min": 0.5545000000000001,
-          "recommended_max": 1.6,
-          "samples": 484
-        },
-        "pp10k_2027": {
-          "success_min": 0.5,
-          "success_max": 1.6,
-          "recommended_min": 0.5,
-          "recommended_max": 1.49,
-          "samples": 493
-        },
-        "pp10k_2028": {
-          "success_min": 0.5,
-          "success_max": 1.6,
-          "recommended_min": 0.5,
-          "recommended_max": 1.5119999999999982,
-          "samples": 510
-        },
-        "pp10k_2029": {
-          "success_min": 0.5,
-          "success_max": 1.6,
-          "recommended_min": 0.5,
-          "recommended_max": 1.6,
-          "samples": 503
-        },
-        "pp10k_2030": {
-          "success_min": 0.5,
-          "success_max": 1.6,
-          "recommended_min": 0.5,
-          "recommended_max": 1.6,
-          "samples": 457
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 0.43,
+          "success_max": 1.4,
+          "recommended_min": 0.541,
+          "recommended_max": 1.2279999999999998,
+          "samples": 42
         }
       }
     },
     "GCurve.SF.m1": {
-      "success_min": 1.0,
-      "success_max": 14.0,
-      "fail_min": 1.0,
-      "fail_max": 14.0,
+      "success_min": 1.69,
+      "success_max": 10.02,
+      "fail_min": 2.3,
+      "fail_max": 9.89,
       "suggested_safe_range": {
-        "min": 1.0,
-        "max": 14.0
+        "min": 1.69,
+        "max": 10.02
       },
       "recommended_range_p05_p95": {
-        "min": 1.5,
-        "max": 10.0
+        "min": 2.2550000000000003,
+        "max": 8.708999999999994
       },
       "by_seed": {
-        "1337": {
-          "success_min": 1.0,
-          "success_max": 14.0,
-          "recommended_min": 1.0,
-          "recommended_max": 14.0,
-          "samples": 136
-        },
-        "2026": {
-          "success_min": 1.5,
-          "success_max": 10.0,
-          "recommended_min": 1.5,
-          "recommended_max": 10.0,
-          "samples": 1648
-        },
-        "2027": {
-          "success_min": 1.5,
-          "success_max": 10.0,
-          "recommended_min": 1.5,
-          "recommended_max": 10.0,
-          "samples": 493
-        },
-        "2028": {
-          "success_min": 1.5,
-          "success_max": 10.0,
-          "recommended_min": 1.5,
-          "recommended_max": 9.763999999999996,
-          "samples": 510
-        },
-        "2029": {
-          "success_min": 1.5,
-          "success_max": 10.0,
-          "recommended_min": 1.5,
-          "recommended_max": 10.0,
-          "samples": 503
-        },
-        "2030": {
-          "success_min": 1.5,
-          "success_max": 10.0,
-          "recommended_min": 1.5,
-          "recommended_max": 9.164,
-          "samples": 457
+        "2402": {
+          "success_min": 1.69,
+          "success_max": 10.02,
+          "recommended_min": 2.2550000000000003,
+          "recommended_max": 8.708999999999994,
+          "samples": 42
         }
       },
       "by_run_group": {
-        "legacy_5000_seed2026": {
-          "success_min": 1.5,
-          "success_max": 10.0,
-          "recommended_min": 1.5,
-          "recommended_max": 10.0,
-          "samples": 1149
-        },
-        "legacy_5000_seed2026_retry2": {
-          "success_min": 2.11,
-          "success_max": 10.0,
-          "recommended_min": 3.167,
-          "recommended_max": 10.0,
-          "samples": 15
-        },
-        "legacy_500_seed1337": {
-          "success_min": 1.0,
-          "success_max": 14.0,
-          "recommended_min": 1.0,
-          "recommended_max": 13.310999999999993,
-          "samples": 114
-        },
-        "legacy_500_seed1337_retry2": {
-          "success_min": 1.24,
-          "success_max": 14.0,
-          "recommended_min": 1.77,
-          "recommended_max": 10.5,
-          "samples": 11
-        },
-        "legacy_500_seed1337_retry3": {
-          "success_min": 1.24,
-          "success_max": 14.0,
-          "recommended_min": 1.77,
-          "recommended_max": 10.5,
-          "samples": 11
-        },
-        "pp10k_2026": {
-          "success_min": 1.5,
-          "success_max": 10.0,
-          "recommended_min": 1.5,
-          "recommended_max": 10.0,
-          "samples": 484
-        },
-        "pp10k_2027": {
-          "success_min": 1.5,
-          "success_max": 10.0,
-          "recommended_min": 1.5,
-          "recommended_max": 10.0,
-          "samples": 493
-        },
-        "pp10k_2028": {
-          "success_min": 1.5,
-          "success_max": 10.0,
-          "recommended_min": 1.5,
-          "recommended_max": 9.763999999999996,
-          "samples": 510
-        },
-        "pp10k_2029": {
-          "success_min": 1.5,
-          "success_max": 10.0,
-          "recommended_min": 1.5,
-          "recommended_max": 10.0,
-          "samples": 503
-        },
-        "pp10k_2030": {
-          "success_min": 1.5,
-          "success_max": 10.0,
-          "recommended_min": 1.5,
-          "recommended_max": 9.164,
-          "samples": 457
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 1.69,
+          "success_max": 10.02,
+          "recommended_min": 2.2550000000000003,
+          "recommended_max": 8.708999999999994,
+          "samples": 42
         }
       }
     },
     "GCurve.SF.m2": {
-      "success_min": 1.0,
-      "success_max": 14.0,
-      "fail_min": 1.0,
-      "fail_max": 14.0,
+      "success_min": 1.97,
+      "success_max": 7.89,
+      "fail_min": 2.02,
+      "fail_max": 7.27,
       "suggested_safe_range": {
-        "min": 1.0,
-        "max": 14.0
+        "min": 1.97,
+        "max": 7.89
       },
       "recommended_range_p05_p95": {
-        "min": 1.5,
-        "max": 10.0
+        "min": 2.334,
+        "max": 7.588
       },
       "by_seed": {
-        "1337": {
-          "success_min": 1.0,
-          "success_max": 14.0,
-          "recommended_min": 1.0475,
-          "recommended_max": 14.0,
-          "samples": 136
-        },
-        "2026": {
-          "success_min": 1.5,
-          "success_max": 10.0,
-          "recommended_min": 1.5,
-          "recommended_max": 10.0,
-          "samples": 1648
-        },
-        "2027": {
-          "success_min": 1.5,
-          "success_max": 10.0,
-          "recommended_min": 2.0380000000000003,
-          "recommended_max": 10.0,
-          "samples": 493
-        },
-        "2028": {
-          "success_min": 1.5,
-          "success_max": 10.0,
-          "recommended_min": 1.5,
-          "recommended_max": 10.0,
-          "samples": 510
-        },
-        "2029": {
-          "success_min": 1.5,
-          "success_max": 10.0,
-          "recommended_min": 1.5,
-          "recommended_max": 10.0,
-          "samples": 503
-        },
-        "2030": {
-          "success_min": 1.5,
-          "success_max": 10.0,
-          "recommended_min": 1.5,
-          "recommended_max": 10.0,
-          "samples": 457
+        "2402": {
+          "success_min": 1.97,
+          "success_max": 7.89,
+          "recommended_min": 2.334,
+          "recommended_max": 7.588,
+          "samples": 42
         }
       },
       "by_run_group": {
-        "legacy_5000_seed2026": {
-          "success_min": 1.5,
-          "success_max": 10.0,
-          "recommended_min": 1.5,
-          "recommended_max": 10.0,
-          "samples": 1149
-        },
-        "legacy_5000_seed2026_retry2": {
-          "success_min": 2.35,
-          "success_max": 7.11,
-          "recommended_min": 2.35,
-          "recommended_max": 6.402999999999999,
-          "samples": 15
-        },
-        "legacy_500_seed1337": {
-          "success_min": 1.0,
-          "success_max": 14.0,
-          "recommended_min": 1.1315,
-          "recommended_max": 14.0,
-          "samples": 114
-        },
-        "legacy_500_seed1337_retry2": {
-          "success_min": 1.0,
-          "success_max": 7.45,
-          "recommended_min": 1.65,
-          "recommended_max": 7.405,
-          "samples": 11
-        },
-        "legacy_500_seed1337_retry3": {
-          "success_min": 1.0,
-          "success_max": 7.45,
-          "recommended_min": 1.65,
-          "recommended_max": 7.405,
-          "samples": 11
-        },
-        "pp10k_2026": {
-          "success_min": 1.5,
-          "success_max": 10.0,
-          "recommended_min": 1.5,
-          "recommended_max": 10.0,
-          "samples": 484
-        },
-        "pp10k_2027": {
-          "success_min": 1.5,
-          "success_max": 10.0,
-          "recommended_min": 2.0380000000000003,
-          "recommended_max": 10.0,
-          "samples": 493
-        },
-        "pp10k_2028": {
-          "success_min": 1.5,
-          "success_max": 10.0,
-          "recommended_min": 1.5,
-          "recommended_max": 10.0,
-          "samples": 510
-        },
-        "pp10k_2029": {
-          "success_min": 1.5,
-          "success_max": 10.0,
-          "recommended_min": 1.5,
-          "recommended_max": 10.0,
-          "samples": 503
-        },
-        "pp10k_2030": {
-          "success_min": 1.5,
-          "success_max": 10.0,
-          "recommended_min": 1.5,
-          "recommended_max": 10.0,
-          "samples": 457
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 1.97,
+          "success_max": 7.89,
+          "recommended_min": 2.334,
+          "recommended_max": 7.588,
+          "samples": 42
         }
       }
     },
     "GCurve.SF.n1": {
-      "success_min": 0.08,
-      "success_max": 2.0,
-      "fail_min": 0.08,
-      "fail_max": 2.0,
+      "success_min": 0.11,
+      "success_max": 1.59,
+      "fail_min": 0.15,
+      "fail_max": 1.23,
       "suggested_safe_range": {
-        "min": 0.08,
-        "max": 2.0
+        "min": 0.11,
+        "max": 1.59
       },
       "recommended_range_p05_p95": {
-        "min": 0.1,
-        "max": 1.4
+        "min": 0.3305,
+        "max": 1.2495
       },
       "by_seed": {
-        "1337": {
-          "success_min": 0.08,
-          "success_max": 2.0,
-          "recommended_min": 0.1375,
-          "recommended_max": 1.8175,
-          "samples": 136
-        },
-        "2026": {
-          "success_min": 0.1,
-          "success_max": 1.4,
-          "recommended_min": 0.11350000000000009,
-          "recommended_max": 1.4,
-          "samples": 1648
-        },
-        "2027": {
-          "success_min": 0.1,
-          "success_max": 1.4,
-          "recommended_min": 0.20600000000000002,
-          "recommended_max": 1.4,
-          "samples": 493
-        },
-        "2028": {
-          "success_min": 0.1,
-          "success_max": 1.4,
-          "recommended_min": 0.12350000000000008,
-          "recommended_max": 1.4,
-          "samples": 510
-        },
-        "2029": {
-          "success_min": 0.1,
-          "success_max": 1.4,
-          "recommended_min": 0.1,
-          "recommended_max": 1.4,
-          "samples": 503
-        },
-        "2030": {
-          "success_min": 0.1,
-          "success_max": 1.4,
-          "recommended_min": 0.18000000000000008,
-          "recommended_max": 1.4,
-          "samples": 457
+        "2402": {
+          "success_min": 0.11,
+          "success_max": 1.59,
+          "recommended_min": 0.3305,
+          "recommended_max": 1.2495,
+          "samples": 42
         }
       },
       "by_run_group": {
-        "legacy_5000_seed2026": {
-          "success_min": 0.1,
-          "success_max": 1.4,
-          "recommended_min": 0.14400000000000035,
-          "recommended_max": 1.4,
-          "samples": 1149
-        },
-        "legacy_5000_seed2026_retry2": {
-          "success_min": 0.1,
-          "success_max": 1.27,
-          "recommended_min": 0.19100000000000003,
-          "recommended_max": 1.0179999999999998,
-          "samples": 15
-        },
-        "legacy_500_seed1337": {
-          "success_min": 0.08,
-          "success_max": 2.0,
-          "recommended_min": 0.13,
-          "recommended_max": 1.8959999999999992,
-          "samples": 114
-        },
-        "legacy_500_seed1337_retry2": {
-          "success_min": 0.21,
-          "success_max": 1.81,
-          "recommended_min": 0.215,
-          "recommended_max": 1.54,
-          "samples": 11
-        },
-        "legacy_500_seed1337_retry3": {
-          "success_min": 0.21,
-          "success_max": 1.81,
-          "recommended_min": 0.215,
-          "recommended_max": 1.54,
-          "samples": 11
-        },
-        "pp10k_2026": {
-          "success_min": 0.1,
-          "success_max": 1.4,
-          "recommended_min": 0.10300000000000005,
-          "recommended_max": 1.4,
-          "samples": 484
-        },
-        "pp10k_2027": {
-          "success_min": 0.1,
-          "success_max": 1.4,
-          "recommended_min": 0.20600000000000002,
-          "recommended_max": 1.4,
-          "samples": 493
-        },
-        "pp10k_2028": {
-          "success_min": 0.1,
-          "success_max": 1.4,
-          "recommended_min": 0.12350000000000008,
-          "recommended_max": 1.4,
-          "samples": 510
-        },
-        "pp10k_2029": {
-          "success_min": 0.1,
-          "success_max": 1.4,
-          "recommended_min": 0.1,
-          "recommended_max": 1.4,
-          "samples": 503
-        },
-        "pp10k_2030": {
-          "success_min": 0.1,
-          "success_max": 1.4,
-          "recommended_min": 0.18000000000000008,
-          "recommended_max": 1.4,
-          "samples": 457
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 0.11,
+          "success_max": 1.59,
+          "recommended_min": 0.3305,
+          "recommended_max": 1.2495,
+          "samples": 42
         }
       }
     },
     "GCurve.SF.n2": {
-      "success_min": 0.3,
-      "success_max": 3.0,
-      "fail_min": 0.3,
-      "fail_max": 3.0,
+      "success_min": 0.41,
+      "success_max": 2.0,
+      "fail_min": 0.77,
+      "fail_max": 1.69,
       "suggested_safe_range": {
-        "min": 0.3,
-        "max": 3.0
+        "min": 0.41,
+        "max": 2.0
       },
       "recommended_range_p05_p95": {
-        "min": 0.3,
-        "max": 2.04
+        "min": 0.4505,
+        "max": 1.8994999999999997
       },
       "by_seed": {
-        "1337": {
-          "success_min": 0.3,
-          "success_max": 3.0,
-          "recommended_min": 0.38749999999999996,
-          "recommended_max": 3.0,
-          "samples": 136
-        },
-        "2026": {
-          "success_min": 0.3,
-          "success_max": 2.1,
-          "recommended_min": 0.3,
-          "recommended_max": 2.05,
-          "samples": 1648
-        },
-        "2027": {
-          "success_min": 0.3,
-          "success_max": 2.1,
-          "recommended_min": 0.3,
-          "recommended_max": 2.02,
-          "samples": 493
-        },
-        "2028": {
-          "success_min": 0.3,
-          "success_max": 2.1,
-          "recommended_min": 0.3,
-          "recommended_max": 2.04,
-          "samples": 510
-        },
-        "2029": {
-          "success_min": 0.3,
-          "success_max": 2.1,
-          "recommended_min": 0.3,
-          "recommended_max": 2.0189999999999997,
-          "samples": 503
-        },
-        "2030": {
-          "success_min": 0.3,
-          "success_max": 2.1,
-          "recommended_min": 0.49800000000000005,
-          "recommended_max": 2.04,
-          "samples": 457
+        "2402": {
+          "success_min": 0.41,
+          "success_max": 2.0,
+          "recommended_min": 0.4505,
+          "recommended_max": 1.8994999999999997,
+          "samples": 42
         }
       },
       "by_run_group": {
-        "legacy_5000_seed2026": {
-          "success_min": 0.3,
-          "success_max": 2.1,
-          "recommended_min": 0.3,
-          "recommended_max": 2.04,
-          "samples": 1149
-        },
-        "legacy_5000_seed2026_retry2": {
-          "success_min": 0.3,
-          "success_max": 2.01,
-          "recommended_min": 0.461,
-          "recommended_max": 1.8349999999999997,
-          "samples": 15
-        },
-        "legacy_500_seed1337": {
-          "success_min": 0.3,
-          "success_max": 3.0,
-          "recommended_min": 0.373,
-          "recommended_max": 3.0,
-          "samples": 114
-        },
-        "legacy_500_seed1337_retry2": {
-          "success_min": 0.56,
-          "success_max": 3.0,
-          "recommended_min": 0.66,
-          "recommended_max": 2.865,
-          "samples": 11
-        },
-        "legacy_500_seed1337_retry3": {
-          "success_min": 0.56,
-          "success_max": 3.0,
-          "recommended_min": 0.66,
-          "recommended_max": 2.865,
-          "samples": 11
-        },
-        "pp10k_2026": {
-          "success_min": 0.3,
-          "success_max": 2.1,
-          "recommended_min": 0.3,
-          "recommended_max": 2.05,
-          "samples": 484
-        },
-        "pp10k_2027": {
-          "success_min": 0.3,
-          "success_max": 2.1,
-          "recommended_min": 0.3,
-          "recommended_max": 2.02,
-          "samples": 493
-        },
-        "pp10k_2028": {
-          "success_min": 0.3,
-          "success_max": 2.1,
-          "recommended_min": 0.3,
-          "recommended_max": 2.04,
-          "samples": 510
-        },
-        "pp10k_2029": {
-          "success_min": 0.3,
-          "success_max": 2.1,
-          "recommended_min": 0.3,
-          "recommended_max": 2.0189999999999997,
-          "samples": 503
-        },
-        "pp10k_2030": {
-          "success_min": 0.3,
-          "success_max": 2.1,
-          "recommended_min": 0.49800000000000005,
-          "recommended_max": 2.04,
-          "samples": 457
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 0.41,
+          "success_max": 2.0,
+          "recommended_min": 0.4505,
+          "recommended_max": 1.8994999999999997,
+          "samples": 42
         }
       }
     },
     "GCurve.SF.n3": {
-      "success_min": 0.3,
-      "success_max": 3.0,
-      "fail_min": 0.3,
-      "fail_max": 3.0,
+      "success_min": 0.37,
+      "success_max": 1.89,
+      "fail_min": 0.62,
+      "fail_max": 1.91,
       "suggested_safe_range": {
-        "min": 0.3,
-        "max": 3.0
+        "min": 0.37,
+        "max": 1.89
       },
       "recommended_range_p05_p95": {
-        "min": 0.3,
-        "max": 2.03
+        "min": 0.4305,
+        "max": 1.7819999999999994
       },
       "by_seed": {
-        "1337": {
-          "success_min": 0.3,
-          "success_max": 3.0,
-          "recommended_min": 0.39,
-          "recommended_max": 2.73,
-          "samples": 136
-        },
-        "2026": {
-          "success_min": 0.3,
-          "success_max": 2.1,
-          "recommended_min": 0.4099999999999999,
-          "recommended_max": 2.03,
-          "samples": 1648
-        },
-        "2027": {
-          "success_min": 0.3,
-          "success_max": 2.1,
-          "recommended_min": 0.3,
-          "recommended_max": 2.03,
-          "samples": 493
-        },
-        "2028": {
-          "success_min": 0.3,
-          "success_max": 2.1,
-          "recommended_min": 0.3,
-          "recommended_max": 2.0254999999999996,
-          "samples": 510
-        },
-        "2029": {
-          "success_min": 0.3,
-          "success_max": 2.1,
-          "recommended_min": 0.3,
-          "recommended_max": 2.029,
-          "samples": 503
-        },
-        "2030": {
-          "success_min": 0.3,
-          "success_max": 2.1,
-          "recommended_min": 0.3,
-          "recommended_max": 2.0119999999999996,
-          "samples": 457
+        "2402": {
+          "success_min": 0.37,
+          "success_max": 1.89,
+          "recommended_min": 0.4305,
+          "recommended_max": 1.7819999999999994,
+          "samples": 42
         }
       },
       "by_run_group": {
-        "legacy_5000_seed2026": {
-          "success_min": 0.3,
-          "success_max": 2.1,
-          "recommended_min": 0.404,
-          "recommended_max": 2.03,
-          "samples": 1149
-        },
-        "legacy_5000_seed2026_retry2": {
-          "success_min": 0.51,
-          "success_max": 2.03,
-          "recommended_min": 0.51,
-          "recommended_max": 1.8199999999999996,
-          "samples": 15
-        },
-        "legacy_500_seed1337": {
-          "success_min": 0.3,
-          "success_max": 3.0,
-          "recommended_min": 0.38650000000000007,
-          "recommended_max": 2.73,
-          "samples": 114
-        },
-        "legacy_500_seed1337_retry2": {
-          "success_min": 0.57,
-          "success_max": 3.0,
-          "recommended_min": 0.62,
-          "recommended_max": 2.455,
-          "samples": 11
-        },
-        "legacy_500_seed1337_retry3": {
-          "success_min": 0.57,
-          "success_max": 3.0,
-          "recommended_min": 0.62,
-          "recommended_max": 2.455,
-          "samples": 11
-        },
-        "pp10k_2026": {
-          "success_min": 0.3,
-          "success_max": 2.1,
-          "recommended_min": 0.4190000000000001,
-          "recommended_max": 2.03,
-          "samples": 484
-        },
-        "pp10k_2027": {
-          "success_min": 0.3,
-          "success_max": 2.1,
-          "recommended_min": 0.3,
-          "recommended_max": 2.03,
-          "samples": 493
-        },
-        "pp10k_2028": {
-          "success_min": 0.3,
-          "success_max": 2.1,
-          "recommended_min": 0.3,
-          "recommended_max": 2.0254999999999996,
-          "samples": 510
-        },
-        "pp10k_2029": {
-          "success_min": 0.3,
-          "success_max": 2.1,
-          "recommended_min": 0.3,
-          "recommended_max": 2.029,
-          "samples": 503
-        },
-        "pp10k_2030": {
-          "success_min": 0.3,
-          "success_max": 2.1,
-          "recommended_min": 0.3,
-          "recommended_max": 2.0119999999999996,
-          "samples": 457
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 0.37,
+          "success_max": 1.89,
+          "recommended_min": 0.4305,
+          "recommended_max": 1.7819999999999994,
+          "samples": 42
         }
       }
     },
@@ -1851,1293 +660,921 @@
         "max": 2.0
       },
       "by_seed": {
-        "1337": {
+        "2402": {
           "success_min": 1.0,
           "success_max": 2.0,
           "recommended_min": 1.0,
           "recommended_max": 2.0,
-          "samples": 285
-        },
-        "2026": {
-          "success_min": 1.0,
-          "success_max": 2.0,
-          "recommended_min": 1.0,
-          "recommended_max": 2.0,
-          "samples": 3946
-        },
-        "2027": {
-          "success_min": 1.0,
-          "success_max": 2.0,
-          "recommended_min": 1.0,
-          "recommended_max": 2.0,
-          "samples": 1131
-        },
-        "2028": {
-          "success_min": 1.0,
-          "success_max": 2.0,
-          "recommended_min": 1.0,
-          "recommended_max": 2.0,
-          "samples": 1199
-        },
-        "2029": {
-          "success_min": 1.0,
-          "success_max": 2.0,
-          "recommended_min": 1.0,
-          "recommended_max": 2.0,
-          "samples": 1182
-        },
-        "2030": {
-          "success_min": 1.0,
-          "success_max": 2.0,
-          "recommended_min": 1.0,
-          "recommended_max": 2.0,
-          "samples": 1143
+          "samples": 110
         }
       },
       "by_run_group": {
-        "legacy_5000_seed2026": {
+        "cmpfix2_smoke_20260214T1630Z": {
           "success_min": 1.0,
           "success_max": 2.0,
           "recommended_min": 1.0,
           "recommended_max": 2.0,
-          "samples": 2808
-        },
-        "legacy_5000_seed2026_retry2": {
-          "success_min": 1.0,
-          "success_max": 2.0,
-          "recommended_min": 1.0,
-          "recommended_max": 2.0,
-          "samples": 29
-        },
-        "legacy_500_seed1337": {
-          "success_min": 1.0,
-          "success_max": 2.0,
-          "recommended_min": 1.0,
-          "recommended_max": 2.0,
-          "samples": 255
-        },
-        "legacy_500_seed1337_retry2": {
-          "success_min": 1.0,
-          "success_max": 2.0,
-          "recommended_min": 1.0,
-          "recommended_max": 2.0,
-          "samples": 15
-        },
-        "legacy_500_seed1337_retry3": {
-          "success_min": 1.0,
-          "success_max": 2.0,
-          "recommended_min": 1.0,
-          "recommended_max": 2.0,
-          "samples": 15
-        },
-        "pp10k_2026": {
-          "success_min": 1.0,
-          "success_max": 2.0,
-          "recommended_min": 1.0,
-          "recommended_max": 2.0,
-          "samples": 1109
-        },
-        "pp10k_2027": {
-          "success_min": 1.0,
-          "success_max": 2.0,
-          "recommended_min": 1.0,
-          "recommended_max": 2.0,
-          "samples": 1131
-        },
-        "pp10k_2028": {
-          "success_min": 1.0,
-          "success_max": 2.0,
-          "recommended_min": 1.0,
-          "recommended_max": 2.0,
-          "samples": 1199
-        },
-        "pp10k_2029": {
-          "success_min": 1.0,
-          "success_max": 2.0,
-          "recommended_min": 1.0,
-          "recommended_max": 2.0,
-          "samples": 1182
-        },
-        "pp10k_2030": {
-          "success_min": 1.0,
-          "success_max": 2.0,
-          "recommended_min": 1.0,
-          "recommended_max": 2.0,
-          "samples": 1143
+          "samples": 110
         }
       }
     },
     "GCurve.Width": {
-      "success_min": 18.0,
-      "success_max": 1700.0,
-      "fail_min": 18.0,
-      "fail_max": 1700.0,
+      "success_min": 83.25,
+      "success_max": 1257.79,
+      "fail_min": 142.36,
+      "fail_max": 1052.0,
       "suggested_safe_range": {
-        "min": 18.0,
-        "max": 1700.0
+        "min": 83.25,
+        "max": 1257.79
       },
       "recommended_range_p05_p95": {
-        "min": 42.66,
-        "max": 735.4350000000001
+        "min": 130.5165,
+        "max": 870.7735
       },
       "by_seed": {
-        "1337": {
-          "success_min": 18.0,
-          "success_max": 1700.0,
-          "recommended_min": 30.220000000000006,
-          "recommended_max": 1531.8,
-          "samples": 285
-        },
-        "2026": {
-          "success_min": 18.0,
-          "success_max": 1700.0,
-          "recommended_min": 32.3775,
-          "recommended_max": 634.3425000000001,
-          "samples": 3946
-        },
-        "2027": {
-          "success_min": 18.0,
-          "success_max": 1700.0,
-          "recommended_min": 47.88,
-          "recommended_max": 818.21,
-          "samples": 1131
-        },
-        "2028": {
-          "success_min": 18.0,
-          "success_max": 1700.0,
-          "recommended_min": 47.059,
-          "recommended_max": 836.5369999999998,
-          "samples": 1199
-        },
-        "2029": {
-          "success_min": 18.0,
-          "success_max": 1700.0,
-          "recommended_min": 46.224500000000006,
-          "recommended_max": 795.238,
-          "samples": 1182
-        },
-        "2030": {
-          "success_min": 18.0,
-          "success_max": 1700.0,
-          "recommended_min": 46.904,
-          "recommended_max": 782.7979999999999,
-          "samples": 1143
+        "2402": {
+          "success_min": 83.25,
+          "success_max": 1257.79,
+          "recommended_min": 130.5165,
+          "recommended_max": 870.7735,
+          "samples": 110
         }
       },
       "by_run_group": {
-        "legacy_5000_seed2026": {
-          "success_min": 18.0,
-          "success_max": 1700.0,
-          "recommended_min": 33.148999999999994,
-          "recommended_max": 634.013,
-          "samples": 2808
-        },
-        "legacy_5000_seed2026_retry2": {
-          "success_min": 18.0,
-          "success_max": 730.17,
-          "recommended_min": 84.58400000000002,
-          "recommended_max": 616.374,
-          "samples": 29
-        },
-        "legacy_500_seed1337": {
-          "success_min": 18.0,
-          "success_max": 1700.0,
-          "recommended_min": 32.645,
-          "recommended_max": 1531.8,
-          "samples": 255
-        },
-        "legacy_500_seed1337_retry2": {
-          "success_min": 18.0,
-          "success_max": 1700.0,
-          "recommended_min": 32.063,
-          "recommended_max": 964.8739999999989,
-          "samples": 15
-        },
-        "legacy_500_seed1337_retry3": {
-          "success_min": 18.0,
-          "success_max": 1700.0,
-          "recommended_min": 32.063,
-          "recommended_max": 964.8739999999989,
-          "samples": 15
-        },
-        "pp10k_2026": {
-          "success_min": 18.0,
-          "success_max": 1700.0,
-          "recommended_min": 31.726000000000006,
-          "recommended_max": 637.2479999999998,
-          "samples": 1109
-        },
-        "pp10k_2027": {
-          "success_min": 18.0,
-          "success_max": 1700.0,
-          "recommended_min": 47.88,
-          "recommended_max": 818.21,
-          "samples": 1131
-        },
-        "pp10k_2028": {
-          "success_min": 18.0,
-          "success_max": 1700.0,
-          "recommended_min": 47.059,
-          "recommended_max": 836.5369999999998,
-          "samples": 1199
-        },
-        "pp10k_2029": {
-          "success_min": 18.0,
-          "success_max": 1700.0,
-          "recommended_min": 46.224500000000006,
-          "recommended_max": 795.238,
-          "samples": 1182
-        },
-        "pp10k_2030": {
-          "success_min": 18.0,
-          "success_max": 1700.0,
-          "recommended_min": 46.904,
-          "recommended_max": 782.7979999999999,
-          "samples": 1143
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 83.25,
+          "success_max": 1257.79,
+          "recommended_min": 130.5165,
+          "recommended_max": 870.7735,
+          "samples": 110
         }
       }
     },
     "Length": {
-      "success_min": 15.0,
-      "success_max": 4945.792,
-      "fail_min": 15.0,
-      "fail_max": 4976.213,
+      "success_min": 126.347,
+      "success_max": 997.4968,
+      "fail_min": 175.68,
+      "fail_max": 898.252,
       "suggested_safe_range": {
-        "min": 15.0,
-        "max": 4945.792
+        "min": 126.347,
+        "max": 997.4968
       },
       "recommended_range_p05_p95": {
-        "min": 130.04655,
-        "max": 1367.3267499999997
+        "min": 171.589,
+        "max": 942.452
       },
       "by_seed": {
-        "1337": {
-          "success_min": 15.0,
-          "success_max": 4851.489,
-          "recommended_min": 15.0,
-          "recommended_max": 4726.5,
-          "samples": 341
-        },
-        "2026": {
-          "success_min": 15.0,
-          "success_max": 4865.165,
-          "recommended_min": 102.267,
-          "recommended_max": 1137.335,
-          "samples": 4781
-        },
-        "2027": {
-          "success_min": 85.616,
-          "success_max": 4271.751,
-          "recommended_min": 198.91925,
-          "recommended_max": 1493.4180999999994,
-          "samples": 1340
-        },
-        "2028": {
-          "success_min": 15.0,
-          "success_max": 4369.576,
-          "recommended_min": 138.4996,
-          "recommended_max": 1426.452600000001,
-          "samples": 1377
-        },
-        "2029": {
-          "success_min": 20.383,
-          "success_max": 4945.792,
-          "recommended_min": 182.31439999999998,
-          "recommended_max": 1497.9342000000001,
-          "samples": 1397
-        },
-        "2030": {
-          "success_min": 15.0,
-          "success_max": 4916.098,
-          "recommended_min": 126.5209,
-          "recommended_max": 1482.2292500000005,
-          "samples": 1342
+        "2402": {
+          "success_min": 126.347,
+          "success_max": 997.4968,
+          "recommended_min": 171.589,
+          "recommended_max": 942.452,
+          "samples": 161
         }
       },
       "by_run_group": {
-        "legacy_5000_seed2026": {
-          "success_min": 15.0,
-          "success_max": 4865.165,
-          "recommended_min": 102.267,
-          "recommended_max": 1148.644999999999,
-          "samples": 3377
-        },
-        "legacy_5000_seed2026_retry2": {
-          "success_min": 90.0,
-          "success_max": 1303.2,
-          "recommended_min": 239.25700000000003,
-          "recommended_max": 1006.1564499999995,
-          "samples": 35
-        },
-        "legacy_500_seed1337": {
-          "success_min": 15.0,
-          "success_max": 4851.489,
-          "recommended_min": 15.0,
-          "recommended_max": 4561.4243999999935,
-          "samples": 313
-        },
-        "legacy_500_seed1337_retry2": {
-          "success_min": 538.5,
-          "success_max": 4726.5,
-          "recommended_min": 538.5,
-          "recommended_max": 3069.003899999999,
-          "samples": 14
-        },
-        "legacy_500_seed1337_retry3": {
-          "success_min": 538.5,
-          "success_max": 4726.5,
-          "recommended_min": 538.5,
-          "recommended_max": 3069.003899999999,
-          "samples": 14
-        },
-        "pp10k_2026": {
-          "success_min": 15.0,
-          "success_max": 4163.057,
-          "recommended_min": 102.267,
-          "recommended_max": 1119.9507999999996,
-          "samples": 1369
-        },
-        "pp10k_2027": {
-          "success_min": 85.616,
-          "success_max": 4271.751,
-          "recommended_min": 198.91925,
-          "recommended_max": 1493.4180999999994,
-          "samples": 1340
-        },
-        "pp10k_2028": {
-          "success_min": 15.0,
-          "success_max": 4369.576,
-          "recommended_min": 138.4996,
-          "recommended_max": 1426.452600000001,
-          "samples": 1377
-        },
-        "pp10k_2029": {
-          "success_min": 20.383,
-          "success_max": 4945.792,
-          "recommended_min": 182.31439999999998,
-          "recommended_max": 1497.9342000000001,
-          "samples": 1397
-        },
-        "pp10k_2030": {
-          "success_min": 15.0,
-          "success_max": 4916.098,
-          "recommended_min": 126.5209,
-          "recommended_max": 1482.2292500000005,
-          "samples": 1342
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 126.347,
+          "success_max": 997.4968,
+          "recommended_min": 171.589,
+          "recommended_max": 942.452,
+          "samples": 161
         }
       }
     },
     "Mesh.AngularSegments": {
-      "success_min": 24.0,
+      "success_min": 36.0,
       "success_max": 160.0,
-      "fail_min": 24.0,
-      "fail_max": 160.0,
+      "fail_min": 64.0,
+      "fail_max": 152.0,
       "suggested_safe_range": {
-        "min": 24.0,
+        "min": 36.0,
         "max": 160.0
       },
       "recommended_range_p05_p95": {
-        "min": 33.0,
-        "max": 152.0
+        "min": 66.80000000000001,
+        "max": 128.0
       },
       "by_seed": {
-        "1337": {
-          "success_min": 24.0,
+        "2402": {
+          "success_min": 36.0,
           "success_max": 160.0,
-          "recommended_min": 31.900000000000002,
-          "recommended_max": 137.19999999999993,
-          "samples": 439
-        },
-        "2026": {
-          "success_min": 24.0,
-          "success_max": 160.0,
-          "recommended_min": 34.0,
-          "recommended_max": 152.0,
-          "samples": 6212
-        },
-        "2027": {
-          "success_min": 24.0,
-          "success_max": 160.0,
-          "recommended_min": 36.0,
-          "recommended_max": 153.79999999999995,
-          "samples": 1765
-        },
-        "2028": {
-          "success_min": 24.0,
-          "success_max": 160.0,
-          "recommended_min": 31.0,
-          "recommended_max": 154.0,
-          "samples": 1795
-        },
-        "2029": {
-          "success_min": 24.0,
-          "success_max": 160.0,
-          "recommended_min": 29.0,
-          "recommended_max": 155.0,
-          "samples": 1780
-        },
-        "2030": {
-          "success_min": 24.0,
-          "success_max": 160.0,
-          "recommended_min": 31.0,
-          "recommended_max": 148.0,
-          "samples": 1757
+          "recommended_min": 66.80000000000001,
+          "recommended_max": 128.0,
+          "samples": 175
         }
       },
       "by_run_group": {
-        "legacy_5000_seed2026": {
-          "success_min": 24.0,
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 36.0,
           "success_max": 160.0,
-          "recommended_min": 34.0,
-          "recommended_max": 152.0,
-          "samples": 4408
-        },
-        "legacy_5000_seed2026_retry2": {
-          "success_min": 27.0,
-          "success_max": 160.0,
-          "recommended_min": 38.9,
-          "recommended_max": 128.15000000000006,
-          "samples": 44
-        },
-        "legacy_500_seed1337": {
-          "success_min": 24.0,
-          "success_max": 160.0,
-          "recommended_min": 32.2,
-          "recommended_max": 136.89999999999998,
-          "samples": 403
-        },
-        "legacy_500_seed1337_retry2": {
-          "success_min": 31.0,
-          "success_max": 147.0,
-          "recommended_min": 41.2,
-          "recommended_max": 129.14999999999998,
-          "samples": 18
-        },
-        "legacy_500_seed1337_retry3": {
-          "success_min": 31.0,
-          "success_max": 147.0,
-          "recommended_min": 41.2,
-          "recommended_max": 129.14999999999998,
-          "samples": 18
-        },
-        "pp10k_2026": {
-          "success_min": 24.0,
-          "success_max": 160.0,
-          "recommended_min": 35.95,
-          "recommended_max": 151.0,
-          "samples": 1760
-        },
-        "pp10k_2027": {
-          "success_min": 24.0,
-          "success_max": 160.0,
-          "recommended_min": 36.0,
-          "recommended_max": 153.79999999999995,
-          "samples": 1765
-        },
-        "pp10k_2028": {
-          "success_min": 24.0,
-          "success_max": 160.0,
-          "recommended_min": 31.0,
-          "recommended_max": 154.0,
-          "samples": 1795
-        },
-        "pp10k_2029": {
-          "success_min": 24.0,
-          "success_max": 160.0,
-          "recommended_min": 29.0,
-          "recommended_max": 155.0,
-          "samples": 1780
-        },
-        "pp10k_2030": {
-          "success_min": 24.0,
-          "success_max": 160.0,
-          "recommended_min": 31.0,
-          "recommended_max": 148.0,
-          "samples": 1757
+          "recommended_min": 66.80000000000001,
+          "recommended_max": 128.0,
+          "samples": 175
         }
       }
     },
     "Mesh.CornerSegments": {
-      "success_min": 1.0,
+      "success_min": 2.0,
       "success_max": 14.0,
-      "fail_min": 1.0,
-      "fail_max": 14.0,
+      "fail_min": 2.0,
+      "fail_max": 8.0,
       "suggested_safe_range": {
-        "min": 1.0,
+        "min": 2.0,
         "max": 14.0
       },
       "recommended_range_p05_p95": {
-        "min": 1.0,
-        "max": 14.0
+        "min": 2.0,
+        "max": 10.0
       },
       "by_seed": {
-        "1337": {
-          "success_min": 1.0,
+        "2402": {
+          "success_min": 2.0,
           "success_max": 14.0,
-          "recommended_min": 1.0,
-          "recommended_max": 13.199999999999989,
-          "samples": 137
-        },
-        "2026": {
-          "success_min": 1.0,
-          "success_max": 14.0,
-          "recommended_min": 1.0,
-          "recommended_max": 14.0,
-          "samples": 2135
-        },
-        "2027": {
-          "success_min": 1.0,
-          "success_max": 14.0,
-          "recommended_min": 1.0,
-          "recommended_max": 14.0,
-          "samples": 584
-        },
-        "2028": {
-          "success_min": 1.0,
-          "success_max": 14.0,
-          "recommended_min": 1.0,
-          "recommended_max": 14.0,
-          "samples": 639
-        },
-        "2029": {
-          "success_min": 1.0,
-          "success_max": 14.0,
-          "recommended_min": 1.0,
-          "recommended_max": 14.0,
-          "samples": 590
-        },
-        "2030": {
-          "success_min": 1.0,
-          "success_max": 14.0,
-          "recommended_min": 1.0,
-          "recommended_max": 14.0,
-          "samples": 580
+          "recommended_min": 2.0,
+          "recommended_max": 10.0,
+          "samples": 64
         }
       },
       "by_run_group": {
-        "legacy_5000_seed2026": {
-          "success_min": 1.0,
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 2.0,
           "success_max": 14.0,
-          "recommended_min": 1.0,
-          "recommended_max": 14.0,
-          "samples": 1521
-        },
-        "legacy_5000_seed2026_retry2": {
-          "success_min": 1.0,
-          "success_max": 14.0,
-          "recommended_min": 1.0,
-          "recommended_max": 10.999999999999993,
-          "samples": 13
-        },
-        "legacy_500_seed1337": {
-          "success_min": 1.0,
-          "success_max": 14.0,
-          "recommended_min": 1.0,
-          "recommended_max": 13.0,
-          "samples": 121
-        },
-        "legacy_500_seed1337_retry2": {
-          "success_min": 1.0,
-          "success_max": 14.0,
-          "recommended_min": 1.7,
-          "recommended_max": 13.299999999999999,
-          "samples": 8
-        },
-        "legacy_500_seed1337_retry3": {
-          "success_min": 1.0,
-          "success_max": 14.0,
-          "recommended_min": 1.7,
-          "recommended_max": 13.299999999999999,
-          "samples": 8
-        },
-        "pp10k_2026": {
-          "success_min": 1.0,
-          "success_max": 14.0,
-          "recommended_min": 1.0,
-          "recommended_max": 14.0,
-          "samples": 601
-        },
-        "pp10k_2027": {
-          "success_min": 1.0,
-          "success_max": 14.0,
-          "recommended_min": 1.0,
-          "recommended_max": 14.0,
-          "samples": 584
-        },
-        "pp10k_2028": {
-          "success_min": 1.0,
-          "success_max": 14.0,
-          "recommended_min": 1.0,
-          "recommended_max": 14.0,
-          "samples": 639
-        },
-        "pp10k_2029": {
-          "success_min": 1.0,
-          "success_max": 14.0,
-          "recommended_min": 1.0,
-          "recommended_max": 14.0,
-          "samples": 590
-        },
-        "pp10k_2030": {
-          "success_min": 1.0,
-          "success_max": 14.0,
-          "recommended_min": 1.0,
-          "recommended_max": 14.0,
-          "samples": 580
+          "recommended_min": 2.0,
+          "recommended_max": 10.0,
+          "samples": 64
+        }
+      }
+    },
+    "Mesh.Enclosure.BackResolution.0": {
+      "success_min": 2.119,
+      "success_max": 8.921,
+      "fail_min": 4.538,
+      "fail_max": 7.759,
+      "suggested_safe_range": {
+        "min": 2.119,
+        "max": 8.921
+      },
+      "recommended_range_p05_p95": {
+        "min": 2.9240000000000004,
+        "max": 7.3934999999999995
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 2.119,
+          "success_max": 8.921,
+          "recommended_min": 2.9240000000000004,
+          "recommended_max": 7.3934999999999995,
+          "samples": 11
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 2.119,
+          "success_max": 8.921,
+          "recommended_min": 2.9240000000000004,
+          "recommended_max": 7.3934999999999995,
+          "samples": 11
+        }
+      }
+    },
+    "Mesh.Enclosure.BackResolution.1": {
+      "success_min": 3.299,
+      "success_max": 11.398,
+      "fail_min": 3.846,
+      "fail_max": 18.51,
+      "suggested_safe_range": {
+        "min": 3.299,
+        "max": 11.398
+      },
+      "recommended_range_p05_p95": {
+        "min": 3.309,
+        "max": 10.207
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 3.299,
+          "success_max": 11.398,
+          "recommended_min": 3.309,
+          "recommended_max": 10.207,
+          "samples": 11
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 3.299,
+          "success_max": 11.398,
+          "recommended_min": 3.309,
+          "recommended_max": 10.207,
+          "samples": 11
+        }
+      }
+    },
+    "Mesh.Enclosure.BackResolution.2": {
+      "success_min": 2.065,
+      "success_max": 17.826,
+      "fail_min": 2.929,
+      "fail_max": 7.153,
+      "suggested_safe_range": {
+        "min": 2.065,
+        "max": 17.826
+      },
+      "recommended_range_p05_p95": {
+        "min": 2.7175000000000002,
+        "max": 15.064
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 2.065,
+          "success_max": 17.826,
+          "recommended_min": 2.7175000000000002,
+          "recommended_max": 15.064,
+          "samples": 11
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 2.065,
+          "success_max": 17.826,
+          "recommended_min": 2.7175000000000002,
+          "recommended_max": 15.064,
+          "samples": 11
+        }
+      }
+    },
+    "Mesh.Enclosure.BackResolution.3": {
+      "success_min": 2.144,
+      "success_max": 8.369,
+      "fail_min": 3.611,
+      "fail_max": 9.35,
+      "suggested_safe_range": {
+        "min": 2.144,
+        "max": 8.369
+      },
+      "recommended_range_p05_p95": {
+        "min": 2.4539999999999997,
+        "max": 8.286
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 2.144,
+          "success_max": 8.369,
+          "recommended_min": 2.4539999999999997,
+          "recommended_max": 8.286,
+          "samples": 11
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 2.144,
+          "success_max": 8.369,
+          "recommended_min": 2.4539999999999997,
+          "recommended_max": 8.286,
+          "samples": 11
+        }
+      }
+    },
+    "Mesh.Enclosure.Depth": {
+      "success_min": 150.54,
+      "success_max": 598.32,
+      "fail_min": 111.67,
+      "fail_max": 576.99,
+      "suggested_safe_range": {
+        "min": 150.54,
+        "max": 598.32
+      },
+      "recommended_range_p05_p95": {
+        "min": 154.2,
+        "max": 592.1600000000001
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 150.54,
+          "success_max": 598.32,
+          "recommended_min": 154.2,
+          "recommended_max": 592.1600000000001,
+          "samples": 11
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 150.54,
+          "success_max": 598.32,
+          "recommended_min": 154.2,
+          "recommended_max": 592.1600000000001,
+          "samples": 11
+        }
+      }
+    },
+    "Mesh.Enclosure.EdgeRadius": {
+      "success_min": 5.59,
+      "success_max": 60.12,
+      "fail_min": 10.58,
+      "fail_max": 35.41,
+      "suggested_safe_range": {
+        "min": 5.59,
+        "max": 60.12
+      },
+      "recommended_range_p05_p95": {
+        "min": 7.36,
+        "max": 46.535
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 5.59,
+          "success_max": 60.12,
+          "recommended_min": 7.36,
+          "recommended_max": 46.535,
+          "samples": 11
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 5.59,
+          "success_max": 60.12,
+          "recommended_min": 7.36,
+          "recommended_max": 46.535,
+          "samples": 11
+        }
+      }
+    },
+    "Mesh.Enclosure.FrontResolution.0": {
+      "success_min": 3.07,
+      "success_max": 14.45,
+      "fail_min": 6.642,
+      "fail_max": 9.86,
+      "suggested_safe_range": {
+        "min": 3.07,
+        "max": 14.45
+      },
+      "recommended_range_p05_p95": {
+        "min": 3.6535,
+        "max": 12.052
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 3.07,
+          "success_max": 14.45,
+          "recommended_min": 3.6535,
+          "recommended_max": 12.052,
+          "samples": 11
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 3.07,
+          "success_max": 14.45,
+          "recommended_min": 3.6535,
+          "recommended_max": 12.052,
+          "samples": 11
+        }
+      }
+    },
+    "Mesh.Enclosure.FrontResolution.1": {
+      "success_min": 2.032,
+      "success_max": 19.104,
+      "fail_min": 2.562,
+      "fail_max": 7.319,
+      "suggested_safe_range": {
+        "min": 2.032,
+        "max": 19.104
+      },
+      "recommended_range_p05_p95": {
+        "min": 2.0335,
+        "max": 18.945
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 2.032,
+          "success_max": 19.104,
+          "recommended_min": 2.0335,
+          "recommended_max": 18.945,
+          "samples": 11
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 2.032,
+          "success_max": 19.104,
+          "recommended_min": 2.0335,
+          "recommended_max": 18.945,
+          "samples": 11
+        }
+      }
+    },
+    "Mesh.Enclosure.FrontResolution.2": {
+      "success_min": 2.772,
+      "success_max": 9.955,
+      "fail_min": 7.295,
+      "fail_max": 9.496,
+      "suggested_safe_range": {
+        "min": 2.772,
+        "max": 9.955
+      },
+      "recommended_range_p05_p95": {
+        "min": 3.1505,
+        "max": 9.666
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 2.772,
+          "success_max": 9.955,
+          "recommended_min": 3.1505,
+          "recommended_max": 9.666,
+          "samples": 11
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 2.772,
+          "success_max": 9.955,
+          "recommended_min": 3.1505,
+          "recommended_max": 9.666,
+          "samples": 11
+        }
+      }
+    },
+    "Mesh.Enclosure.FrontResolution.3": {
+      "success_min": 2.434,
+      "success_max": 19.604,
+      "fail_min": 5.355,
+      "fail_max": 9.296,
+      "suggested_safe_range": {
+        "min": 2.434,
+        "max": 19.604
+      },
+      "recommended_range_p05_p95": {
+        "min": 3.032,
+        "max": 17.6905
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 2.434,
+          "success_max": 19.604,
+          "recommended_min": 3.032,
+          "recommended_max": 17.6905,
+          "samples": 11
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 2.434,
+          "success_max": 19.604,
+          "recommended_min": 3.032,
+          "recommended_max": 17.6905,
+          "samples": 11
+        }
+      }
+    },
+    "Mesh.Enclosure.Spacing.0": {
+      "success_min": 36.19,
+      "success_max": 173.565,
+      "fail_min": 26.728,
+      "fail_max": 169.259,
+      "suggested_safe_range": {
+        "min": 36.19,
+        "max": 173.565
+      },
+      "recommended_range_p05_p95": {
+        "min": 41.382999999999996,
+        "max": 146.09449999999998
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 36.19,
+          "success_max": 173.565,
+          "recommended_min": 41.382999999999996,
+          "recommended_max": 146.09449999999998,
+          "samples": 11
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 36.19,
+          "success_max": 173.565,
+          "recommended_min": 41.382999999999996,
+          "recommended_max": 146.09449999999998,
+          "samples": 11
+        }
+      }
+    },
+    "Mesh.Enclosure.Spacing.1": {
+      "success_min": 21.023,
+      "success_max": 241.736,
+      "fail_min": 84.137,
+      "fail_max": 223.964,
+      "suggested_safe_range": {
+        "min": 21.023,
+        "max": 241.736
+      },
+      "recommended_range_p05_p95": {
+        "min": 28.012500000000003,
+        "max": 195.805
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 21.023,
+          "success_max": 241.736,
+          "recommended_min": 28.012500000000003,
+          "recommended_max": 195.805,
+          "samples": 11
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 21.023,
+          "success_max": 241.736,
+          "recommended_min": 28.012500000000003,
+          "recommended_max": 195.805,
+          "samples": 11
+        }
+      }
+    },
+    "Mesh.Enclosure.Spacing.2": {
+      "success_min": 19.912,
+      "success_max": 182.069,
+      "fail_min": 55.753,
+      "fail_max": 212.783,
+      "suggested_safe_range": {
+        "min": 19.912,
+        "max": 182.069
+      },
+      "recommended_range_p05_p95": {
+        "min": 35.7615,
+        "max": 149.34799999999998
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 19.912,
+          "success_max": 182.069,
+          "recommended_min": 35.7615,
+          "recommended_max": 149.34799999999998,
+          "samples": 11
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 19.912,
+          "success_max": 182.069,
+          "recommended_min": 35.7615,
+          "recommended_max": 149.34799999999998,
+          "samples": 11
+        }
+      }
+    },
+    "Mesh.Enclosure.Spacing.3": {
+      "success_min": 26.502,
+      "success_max": 252.315,
+      "fail_min": 54.642,
+      "fail_max": 133.46,
+      "suggested_safe_range": {
+        "min": 26.502,
+        "max": 252.315
+      },
+      "recommended_range_p05_p95": {
+        "min": 28.354,
+        "max": 248.0525
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 26.502,
+          "success_max": 252.315,
+          "recommended_min": 28.354,
+          "recommended_max": 248.0525,
+          "samples": 11
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 26.502,
+          "success_max": 252.315,
+          "recommended_min": 28.354,
+          "recommended_max": 248.0525,
+          "samples": 11
+        }
+      }
+    },
+    "Mesh.InterfaceDraw.0": {
+      "success_min": 0.059,
+      "success_max": 11.45,
+      "fail_min": 3.89,
+      "fail_max": 3.89,
+      "suggested_safe_range": {
+        "min": 0.059,
+        "max": 11.45
+      },
+      "recommended_range_p05_p95": {
+        "min": 0.5694500000000001,
+        "max": 10.846249999999998
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 0.059,
+          "success_max": 11.45,
+          "recommended_min": 0.5694500000000001,
+          "recommended_max": 10.846249999999998,
+          "samples": 4
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 0.059,
+          "success_max": 11.45,
+          "recommended_min": 0.5694500000000001,
+          "recommended_max": 10.846249999999998,
+          "samples": 4
+        }
+      }
+    },
+    "Mesh.InterfaceDraw.1": {
+      "success_min": 5.296,
+      "success_max": 22.994,
+      "fail_min": 22.939,
+      "fail_max": 22.939,
+      "suggested_safe_range": {
+        "min": 5.296,
+        "max": 22.994
+      },
+      "recommended_range_p05_p95": {
+        "min": 6.06625,
+        "max": 21.338749999999994
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 5.296,
+          "success_max": 22.994,
+          "recommended_min": 6.06625,
+          "recommended_max": 21.338749999999994,
+          "samples": 4
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 5.296,
+          "success_max": 22.994,
+          "recommended_min": 6.06625,
+          "recommended_max": 21.338749999999994,
+          "samples": 4
+        }
+      }
+    },
+    "Mesh.InterfaceDraw.2": {
+      "success_min": 1.583,
+      "success_max": 10.725,
+      "fail_min": null,
+      "fail_max": null,
+      "suggested_safe_range": {
+        "min": 1.583,
+        "max": 10.725
+      },
+      "recommended_range_p05_p95": {
+        "min": 1.6952,
+        "max": 10.6398
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 1.583,
+          "success_max": 10.725,
+          "recommended_min": 1.6952,
+          "recommended_max": 10.6398,
+          "samples": 4
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 1.583,
+          "success_max": 10.725,
+          "recommended_min": 1.6952,
+          "recommended_max": 10.6398,
+          "samples": 4
+        }
+      }
+    },
+    "Mesh.InterfaceDraw.3": {
+      "success_min": 6.707,
+      "success_max": 14.677,
+      "fail_min": null,
+      "fail_max": null,
+      "suggested_safe_range": {
+        "min": 6.707,
+        "max": 14.677
+      },
+      "recommended_range_p05_p95": {
+        "min": 6.87155,
+        "max": 14.26525
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 6.707,
+          "success_max": 14.677,
+          "recommended_min": 6.87155,
+          "recommended_max": 14.26525,
+          "samples": 4
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 6.707,
+          "success_max": 14.677,
+          "recommended_min": 6.87155,
+          "recommended_max": 14.26525,
+          "samples": 4
+        }
+      }
+    },
+    "Mesh.InterfaceDraw.4": {
+      "success_min": 4.51,
+      "success_max": 21.131,
+      "fail_min": null,
+      "fail_max": null,
+      "suggested_safe_range": {
+        "min": 4.51,
+        "max": 21.131
+      },
+      "recommended_range_p05_p95": {
+        "min": 5.341049999999999,
+        "max": 20.29995
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 4.51,
+          "success_max": 21.131,
+          "recommended_min": 5.341049999999999,
+          "recommended_max": 20.29995,
+          "samples": 2
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 4.51,
+          "success_max": 21.131,
+          "recommended_min": 5.341049999999999,
+          "recommended_max": 20.29995,
+          "samples": 2
+        }
+      }
+    },
+    "Mesh.InterfaceResolution": {
+      "success_min": 4.05,
+      "success_max": 17.92,
+      "fail_min": 15.48,
+      "fail_max": 15.48,
+      "suggested_safe_range": {
+        "min": 4.05,
+        "max": 17.92
+      },
+      "recommended_range_p05_p95": {
+        "min": 5.8605,
+        "max": 17.7085
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 4.05,
+          "success_max": 17.92,
+          "recommended_min": 5.8605,
+          "recommended_max": 17.7085,
+          "samples": 4
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 4.05,
+          "success_max": 17.92,
+          "recommended_min": 5.8605,
+          "recommended_max": 17.7085,
+          "samples": 4
         }
       }
     },
     "Mesh.LengthSegments": {
-      "success_min": 8.0,
-      "success_max": 58.0,
-      "fail_min": 8.0,
-      "fail_max": 58.0,
+      "success_min": 11.0,
+      "success_max": 80.0,
+      "fail_min": 10.0,
+      "fail_max": 57.0,
       "suggested_safe_range": {
-        "min": 8.0,
-        "max": 58.0
+        "min": 11.0,
+        "max": 80.0
       },
       "recommended_range_p05_p95": {
-        "min": 10.0,
-        "max": 55.649999999999636
+        "min": 14.0,
+        "max": 60.89999999999995
       },
       "by_seed": {
-        "1337": {
-          "success_min": 8.0,
-          "success_max": 58.0,
-          "recommended_min": 12.0,
-          "recommended_max": 50.099999999999966,
-          "samples": 439
-        },
-        "2026": {
-          "success_min": 8.0,
-          "success_max": 58.0,
-          "recommended_min": 10.0,
-          "recommended_max": 55.0,
-          "samples": 6212
-        },
-        "2027": {
-          "success_min": 8.0,
-          "success_max": 58.0,
-          "recommended_min": 12.0,
-          "recommended_max": 55.0,
-          "samples": 1765
-        },
-        "2028": {
-          "success_min": 8.0,
-          "success_max": 58.0,
-          "recommended_min": 10.0,
-          "recommended_max": 56.0,
-          "samples": 1795
-        },
-        "2029": {
-          "success_min": 8.0,
-          "success_max": 58.0,
-          "recommended_min": 8.0,
-          "recommended_max": 56.0,
-          "samples": 1780
-        },
-        "2030": {
-          "success_min": 8.0,
-          "success_max": 58.0,
-          "recommended_min": 11.0,
-          "recommended_max": 56.0,
-          "samples": 1757
+        "2402": {
+          "success_min": 11.0,
+          "success_max": 80.0,
+          "recommended_min": 14.0,
+          "recommended_max": 60.89999999999995,
+          "samples": 175
         }
       },
       "by_run_group": {
-        "legacy_5000_seed2026": {
-          "success_min": 8.0,
-          "success_max": 58.0,
-          "recommended_min": 11.0,
-          "recommended_max": 55.0,
-          "samples": 4408
-        },
-        "legacy_5000_seed2026_retry2": {
-          "success_min": 8.0,
-          "success_max": 55.0,
-          "recommended_min": 9.45,
-          "recommended_max": 30.0,
-          "samples": 44
-        },
-        "legacy_500_seed1337": {
-          "success_min": 8.0,
-          "success_max": 58.0,
-          "recommended_min": 12.0,
-          "recommended_max": 50.0,
-          "samples": 403
-        },
-        "legacy_500_seed1337_retry2": {
-          "success_min": 8.0,
-          "success_max": 52.0,
-          "recommended_min": 8.0,
-          "recommended_max": 43.499999999999986,
-          "samples": 18
-        },
-        "legacy_500_seed1337_retry3": {
-          "success_min": 8.0,
-          "success_max": 52.0,
-          "recommended_min": 8.0,
-          "recommended_max": 43.499999999999986,
-          "samples": 18
-        },
-        "pp10k_2026": {
-          "success_min": 8.0,
-          "success_max": 58.0,
-          "recommended_min": 9.0,
-          "recommended_max": 56.0,
-          "samples": 1760
-        },
-        "pp10k_2027": {
-          "success_min": 8.0,
-          "success_max": 58.0,
-          "recommended_min": 12.0,
-          "recommended_max": 55.0,
-          "samples": 1765
-        },
-        "pp10k_2028": {
-          "success_min": 8.0,
-          "success_max": 58.0,
-          "recommended_min": 10.0,
-          "recommended_max": 56.0,
-          "samples": 1795
-        },
-        "pp10k_2029": {
-          "success_min": 8.0,
-          "success_max": 58.0,
-          "recommended_min": 8.0,
-          "recommended_max": 56.0,
-          "samples": 1780
-        },
-        "pp10k_2030": {
-          "success_min": 8.0,
-          "success_max": 58.0,
-          "recommended_min": 11.0,
-          "recommended_max": 56.0,
-          "samples": 1757
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 11.0,
+          "success_max": 80.0,
+          "recommended_min": 14.0,
+          "recommended_max": 60.89999999999995,
+          "samples": 175
+        }
+      }
+    },
+    "Mesh.MouthResolution": {
+      "success_min": 3.13,
+      "success_max": 19.89,
+      "fail_min": 4.68,
+      "fail_max": 18.71,
+      "suggested_safe_range": {
+        "min": 3.13,
+        "max": 19.89
+      },
+      "recommended_range_p05_p95": {
+        "min": 5.76,
+        "max": 17.986999999999995
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 3.13,
+          "success_max": 19.89,
+          "recommended_min": 5.76,
+          "recommended_max": 17.986999999999995,
+          "samples": 175
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 3.13,
+          "success_max": 19.89,
+          "recommended_min": 5.76,
+          "recommended_max": 17.986999999999995,
+          "samples": 175
         }
       }
     },
     "Mesh.Quadrants": {
       "success_min": 1.0,
-      "success_max": 14.0,
+      "success_max": 1234.0,
       "fail_min": 1.0,
-      "fail_max": 14.0,
+      "fail_max": 1234.0,
       "suggested_safe_range": {
         "min": 1.0,
-        "max": 14.0
+        "max": 1234.0
       },
       "recommended_range_p05_p95": {
         "min": 1.0,
-        "max": 14.0
+        "max": 1234.0
       },
       "by_seed": {
-        "1337": {
+        "2402": {
           "success_min": 1.0,
-          "success_max": 14.0,
+          "success_max": 1234.0,
           "recommended_min": 1.0,
-          "recommended_max": 14.0,
-          "samples": 439
-        },
-        "2026": {
-          "success_min": 1.0,
-          "success_max": 14.0,
-          "recommended_min": 1.0,
-          "recommended_max": 14.0,
-          "samples": 6212
-        },
-        "2027": {
-          "success_min": 1.0,
-          "success_max": 14.0,
-          "recommended_min": 1.0,
-          "recommended_max": 14.0,
-          "samples": 1765
-        },
-        "2028": {
-          "success_min": 1.0,
-          "success_max": 14.0,
-          "recommended_min": 1.0,
-          "recommended_max": 14.0,
-          "samples": 1795
-        },
-        "2029": {
-          "success_min": 1.0,
-          "success_max": 14.0,
-          "recommended_min": 1.0,
-          "recommended_max": 14.0,
-          "samples": 1780
-        },
-        "2030": {
-          "success_min": 1.0,
-          "success_max": 14.0,
-          "recommended_min": 1.0,
-          "recommended_max": 14.0,
-          "samples": 1757
+          "recommended_max": 1234.0,
+          "samples": 175
         }
       },
       "by_run_group": {
-        "legacy_5000_seed2026": {
+        "cmpfix2_smoke_20260214T1630Z": {
           "success_min": 1.0,
-          "success_max": 14.0,
+          "success_max": 1234.0,
           "recommended_min": 1.0,
-          "recommended_max": 14.0,
-          "samples": 4408
-        },
-        "legacy_5000_seed2026_retry2": {
-          "success_min": 1.0,
-          "success_max": 14.0,
-          "recommended_min": 1.0,
-          "recommended_max": 13.700000000000003,
-          "samples": 44
-        },
-        "legacy_500_seed1337": {
-          "success_min": 1.0,
-          "success_max": 14.0,
-          "recommended_min": 1.0,
-          "recommended_max": 14.0,
-          "samples": 403
-        },
-        "legacy_500_seed1337_retry2": {
-          "success_min": 1.0,
-          "success_max": 14.0,
-          "recommended_min": 1.0,
-          "recommended_max": 14.0,
-          "samples": 18
-        },
-        "legacy_500_seed1337_retry3": {
-          "success_min": 1.0,
-          "success_max": 14.0,
-          "recommended_min": 1.0,
-          "recommended_max": 14.0,
-          "samples": 18
-        },
-        "pp10k_2026": {
-          "success_min": 1.0,
-          "success_max": 14.0,
-          "recommended_min": 1.0,
-          "recommended_max": 14.0,
-          "samples": 1760
-        },
-        "pp10k_2027": {
-          "success_min": 1.0,
-          "success_max": 14.0,
-          "recommended_min": 1.0,
-          "recommended_max": 14.0,
-          "samples": 1765
-        },
-        "pp10k_2028": {
-          "success_min": 1.0,
-          "success_max": 14.0,
-          "recommended_min": 1.0,
-          "recommended_max": 14.0,
-          "samples": 1795
-        },
-        "pp10k_2029": {
-          "success_min": 1.0,
-          "success_max": 14.0,
-          "recommended_min": 1.0,
-          "recommended_max": 14.0,
-          "samples": 1780
-        },
-        "pp10k_2030": {
-          "success_min": 1.0,
-          "success_max": 14.0,
-          "recommended_min": 1.0,
-          "recommended_max": 14.0,
-          "samples": 1757
+          "recommended_max": 1234.0,
+          "samples": 175
         }
       }
     },
-    "Mesh.ThroatSegments": {
-      "success_min": 1.0,
-      "success_max": 24.0,
-      "fail_min": 1.0,
-      "fail_max": 24.0,
+    "Mesh.RearResolution": {
+      "success_min": 4.05,
+      "success_max": 24.87,
+      "fail_min": 4.87,
+      "fail_max": 19.35,
       "suggested_safe_range": {
-        "min": 1.0,
-        "max": 24.0
+        "min": 4.05,
+        "max": 24.87
       },
       "recommended_range_p05_p95": {
-        "min": 1.0,
-        "max": 24.0
+        "min": 4.75,
+        "max": 22.414999999999996
       },
       "by_seed": {
-        "1337": {
-          "success_min": 1.0,
-          "success_max": 24.0,
-          "recommended_min": 1.0,
-          "recommended_max": 20.400000000000006,
-          "samples": 153
-        },
-        "2026": {
-          "success_min": 1.0,
-          "success_max": 24.0,
-          "recommended_min": 1.0,
-          "recommended_max": 24.0,
-          "samples": 2022
-        },
-        "2027": {
-          "success_min": 1.0,
-          "success_max": 24.0,
-          "recommended_min": 1.0,
-          "recommended_max": 24.0,
-          "samples": 568
-        },
-        "2028": {
-          "success_min": 1.0,
-          "success_max": 24.0,
-          "recommended_min": 1.0,
-          "recommended_max": 24.0,
-          "samples": 541
-        },
-        "2029": {
-          "success_min": 1.0,
-          "success_max": 24.0,
-          "recommended_min": 1.0,
-          "recommended_max": 24.0,
-          "samples": 592
-        },
-        "2030": {
-          "success_min": 1.0,
-          "success_max": 24.0,
-          "recommended_min": 1.0,
-          "recommended_max": 24.0,
-          "samples": 587
+        "2402": {
+          "success_min": 4.05,
+          "success_max": 24.87,
+          "recommended_min": 4.75,
+          "recommended_max": 22.414999999999996,
+          "samples": 175
         }
       },
       "by_run_group": {
-        "legacy_5000_seed2026": {
-          "success_min": 1.0,
-          "success_max": 24.0,
-          "recommended_min": 1.0,
-          "recommended_max": 24.0,
-          "samples": 1426
-        },
-        "legacy_5000_seed2026_retry2": {
-          "success_min": 1.0,
-          "success_max": 24.0,
-          "recommended_min": 2.4,
-          "recommended_max": 21.9,
-          "samples": 15
-        },
-        "legacy_500_seed1337": {
-          "success_min": 1.0,
-          "success_max": 24.0,
-          "recommended_min": 1.0,
-          "recommended_max": 20.0,
-          "samples": 137
-        },
-        "legacy_500_seed1337_retry2": {
-          "success_min": 4.0,
-          "success_max": 23.0,
-          "recommended_min": 4.0,
-          "recommended_max": 20.9,
-          "samples": 8
-        },
-        "legacy_500_seed1337_retry3": {
-          "success_min": 4.0,
-          "success_max": 23.0,
-          "recommended_min": 4.0,
-          "recommended_max": 20.9,
-          "samples": 8
-        },
-        "pp10k_2026": {
-          "success_min": 1.0,
-          "success_max": 24.0,
-          "recommended_min": 1.0,
-          "recommended_max": 24.0,
-          "samples": 581
-        },
-        "pp10k_2027": {
-          "success_min": 1.0,
-          "success_max": 24.0,
-          "recommended_min": 1.0,
-          "recommended_max": 24.0,
-          "samples": 568
-        },
-        "pp10k_2028": {
-          "success_min": 1.0,
-          "success_max": 24.0,
-          "recommended_min": 1.0,
-          "recommended_max": 24.0,
-          "samples": 541
-        },
-        "pp10k_2029": {
-          "success_min": 1.0,
-          "success_max": 24.0,
-          "recommended_min": 1.0,
-          "recommended_max": 24.0,
-          "samples": 592
-        },
-        "pp10k_2030": {
-          "success_min": 1.0,
-          "success_max": 24.0,
-          "recommended_min": 1.0,
-          "recommended_max": 24.0,
-          "samples": 587
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 4.05,
+          "success_max": 24.87,
+          "recommended_min": 4.75,
+          "recommended_max": 22.414999999999996,
+          "samples": 175
         }
       }
     },
-    "Morph.CornerRadius": {
-      "success_min": 0.0,
-      "success_max": 60.0,
-      "fail_min": 0.0,
-      "fail_max": 60.0,
-      "suggested_safe_range": {
-        "min": 0.0,
-        "max": 60.0
-      },
-      "recommended_range_p05_p95": {
-        "min": 0.0,
-        "max": 60.0
-      },
-      "by_seed": {
-        "1337": {
-          "success_min": 0.0,
-          "success_max": 60.0,
-          "recommended_min": 0.0,
-          "recommended_max": 54.2999999999999,
-          "samples": 140
-        },
-        "2026": {
-          "success_min": 0.0,
-          "success_max": 60.0,
-          "recommended_min": 0.0,
-          "recommended_max": 56.48749999999997,
-          "samples": 2174
-        },
-        "2027": {
-          "success_min": 0.0,
-          "success_max": 60.0,
-          "recommended_min": 0.0,
-          "recommended_max": 60.0,
-          "samples": 603
-        },
-        "2028": {
-          "success_min": 0.0,
-          "success_max": 60.0,
-          "recommended_min": 0.0,
-          "recommended_max": 60.0,
-          "samples": 597
-        },
-        "2029": {
-          "success_min": 0.0,
-          "success_max": 60.0,
-          "recommended_min": 0.0,
-          "recommended_max": 60.0,
-          "samples": 611
-        },
-        "2030": {
-          "success_min": 0.0,
-          "success_max": 60.0,
-          "recommended_min": 0.0,
-          "recommended_max": 56.54000000000002,
-          "samples": 589
-        }
-      },
-      "by_run_group": {
-        "legacy_5000_seed2026": {
-          "success_min": 0.0,
-          "success_max": 60.0,
-          "recommended_min": 0.0,
-          "recommended_max": 57.16399999999976,
-          "samples": 1558
-        },
-        "legacy_5000_seed2026_retry2": {
-          "success_min": 0.71,
-          "success_max": 31.15,
-          "recommended_min": 1.582,
-          "recommended_max": 28.005999999999993,
-          "samples": 17
-        },
-        "legacy_500_seed1337": {
-          "success_min": 0.0,
-          "success_max": 60.0,
-          "recommended_min": 0.0,
-          "recommended_max": 57.89999999999995,
-          "samples": 128
-        },
-        "legacy_500_seed1337_retry2": {
-          "success_min": 6.0,
-          "success_max": 27.38,
-          "recommended_min": 6.7575,
-          "recommended_max": 26.68,
-          "samples": 6
-        },
-        "legacy_500_seed1337_retry3": {
-          "success_min": 6.0,
-          "success_max": 27.38,
-          "recommended_min": 6.7575,
-          "recommended_max": 26.68,
-          "samples": 6
-        },
-        "pp10k_2026": {
-          "success_min": 0.0,
-          "success_max": 60.0,
-          "recommended_min": 0.2960000000000001,
-          "recommended_max": 54.013000000000005,
-          "samples": 599
-        },
-        "pp10k_2027": {
-          "success_min": 0.0,
-          "success_max": 60.0,
-          "recommended_min": 0.0,
-          "recommended_max": 60.0,
-          "samples": 603
-        },
-        "pp10k_2028": {
-          "success_min": 0.0,
-          "success_max": 60.0,
-          "recommended_min": 0.0,
-          "recommended_max": 60.0,
-          "samples": 597
-        },
-        "pp10k_2029": {
-          "success_min": 0.0,
-          "success_max": 60.0,
-          "recommended_min": 0.0,
-          "recommended_max": 60.0,
-          "samples": 611
-        },
-        "pp10k_2030": {
-          "success_min": 0.0,
-          "success_max": 60.0,
-          "recommended_min": 0.0,
-          "recommended_max": 56.54000000000002,
-          "samples": 589
-        }
-      }
-    },
-    "Morph.TargetHeight": {
-      "success_min": 45.0,
-      "success_max": 1900.0,
-      "fail_min": 45.0,
-      "fail_max": 1900.0,
-      "suggested_safe_range": {
-        "min": 45.0,
-        "max": 1900.0
-      },
-      "recommended_range_p05_p95": {
-        "min": 46.025999999999996,
-        "max": 942.7559999999999
-      },
-      "by_seed": {
-        "1337": {
-          "success_min": 45.0,
-          "success_max": 1900.0,
-          "recommended_min": 50.965,
-          "recommended_max": 1714.5,
-          "samples": 222
-        },
-        "2026": {
-          "success_min": 45.0,
-          "success_max": 1900.0,
-          "recommended_min": 46.02,
-          "recommended_max": 898.95,
-          "samples": 3432
-        },
-        "2027": {
-          "success_min": 45.0,
-          "success_max": 1781.61,
-          "recommended_min": 85.97149999999999,
-          "recommended_max": 950.242,
-          "samples": 944
-        },
-        "2028": {
-          "success_min": 47.61,
-          "success_max": 1900.0,
-          "recommended_min": 98.1625,
-          "recommended_max": 966.8499999999999,
-          "samples": 956
-        },
-        "2029": {
-          "success_min": 45.0,
-          "success_max": 1866.6,
-          "recommended_min": 45.26,
-          "recommended_max": 947.579,
-          "samples": 967
-        },
-        "2030": {
-          "success_min": 46.4,
-          "success_max": 1900.0,
-          "recommended_min": 114.916,
-          "recommended_max": 970.1819999999999,
-          "samples": 952
-        }
-      },
-      "by_run_group": {
-        "legacy_5000_seed2026": {
-          "success_min": 45.0,
-          "success_max": 1900.0,
-          "recommended_min": 46.02,
-          "recommended_max": 898.6659999999999,
-          "samples": 2448
-        },
-        "legacy_5000_seed2026_retry2": {
-          "success_min": 46.02,
-          "success_max": 858.42,
-          "recommended_min": 51.330000000000005,
-          "recommended_max": 806.48,
-          "samples": 25
-        },
-        "legacy_500_seed1337": {
-          "success_min": 45.0,
-          "success_max": 1900.0,
-          "recommended_min": 50.64149999999999,
-          "recommended_max": 1714.5,
-          "samples": 208
-        },
-        "legacy_500_seed1337_retry2": {
-          "success_min": 171.65,
-          "success_max": 1900.0,
-          "recommended_min": 223.10000000000002,
-          "recommended_max": 1567.3119999999992,
-          "samples": 7
-        },
-        "legacy_500_seed1337_retry3": {
-          "success_min": 171.65,
-          "success_max": 1900.0,
-          "recommended_min": 223.10000000000002,
-          "recommended_max": 1567.3119999999992,
-          "samples": 7
-        },
-        "pp10k_2026": {
-          "success_min": 45.0,
-          "success_max": 1900.0,
-          "recommended_min": 46.02,
-          "recommended_max": 908.3580000000001,
-          "samples": 959
-        },
-        "pp10k_2027": {
-          "success_min": 45.0,
-          "success_max": 1781.61,
-          "recommended_min": 85.97149999999999,
-          "recommended_max": 950.242,
-          "samples": 944
-        },
-        "pp10k_2028": {
-          "success_min": 47.61,
-          "success_max": 1900.0,
-          "recommended_min": 98.1625,
-          "recommended_max": 966.8499999999999,
-          "samples": 956
-        },
-        "pp10k_2029": {
-          "success_min": 45.0,
-          "success_max": 1866.6,
-          "recommended_min": 45.26,
-          "recommended_max": 947.579,
-          "samples": 967
-        },
-        "pp10k_2030": {
-          "success_min": 46.4,
-          "success_max": 1900.0,
-          "recommended_min": 114.916,
-          "recommended_max": 970.1819999999999,
-          "samples": 952
-        }
-      }
-    },
-    "Morph.TargetShape": {
+    "Mesh.RearShape": {
       "success_min": 1.0,
       "success_max": 2.0,
       "fail_min": 1.0,
@@ -3151,1029 +1588,1205 @@
         "max": 2.0
       },
       "by_seed": {
-        "1337": {
+        "2402": {
           "success_min": 1.0,
           "success_max": 2.0,
           "recommended_min": 1.0,
           "recommended_max": 2.0,
-          "samples": 222
-        },
-        "2026": {
-          "success_min": 1.0,
-          "success_max": 2.0,
-          "recommended_min": 1.0,
-          "recommended_max": 2.0,
-          "samples": 3432
-        },
-        "2027": {
-          "success_min": 1.0,
-          "success_max": 2.0,
-          "recommended_min": 1.0,
-          "recommended_max": 2.0,
-          "samples": 944
-        },
-        "2028": {
-          "success_min": 1.0,
-          "success_max": 2.0,
-          "recommended_min": 1.0,
-          "recommended_max": 2.0,
-          "samples": 956
-        },
-        "2029": {
-          "success_min": 1.0,
-          "success_max": 2.0,
-          "recommended_min": 1.0,
-          "recommended_max": 2.0,
-          "samples": 967
-        },
-        "2030": {
-          "success_min": 1.0,
-          "success_max": 2.0,
-          "recommended_min": 1.0,
-          "recommended_max": 2.0,
-          "samples": 952
+          "samples": 11
         }
       },
       "by_run_group": {
-        "legacy_5000_seed2026": {
+        "cmpfix2_smoke_20260214T1630Z": {
           "success_min": 1.0,
           "success_max": 2.0,
           "recommended_min": 1.0,
           "recommended_max": 2.0,
-          "samples": 2448
-        },
-        "legacy_5000_seed2026_retry2": {
+          "samples": 11
+        }
+      }
+    },
+    "Mesh.SubdomainSlices.0": {
+      "success_min": 3.0,
+      "success_max": 26.0,
+      "fail_min": 21.0,
+      "fail_max": 21.0,
+      "suggested_safe_range": {
+        "min": 3.0,
+        "max": 26.0
+      },
+      "recommended_range_p05_p95": {
+        "min": 3.15,
+        "max": 25.099999999999998
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 3.0,
+          "success_max": 26.0,
+          "recommended_min": 3.15,
+          "recommended_max": 25.099999999999998,
+          "samples": 4
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 3.0,
+          "success_max": 26.0,
+          "recommended_min": 3.15,
+          "recommended_max": 25.099999999999998,
+          "samples": 4
+        }
+      }
+    },
+    "Mesh.SubdomainSlices.1": {
+      "success_min": 5.0,
+      "success_max": 46.0,
+      "fail_min": 42.0,
+      "fail_max": 42.0,
+      "suggested_safe_range": {
+        "min": 5.0,
+        "max": 46.0
+      },
+      "recommended_range_p05_p95": {
+        "min": 6.65,
+        "max": 43.599999999999994
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 5.0,
+          "success_max": 46.0,
+          "recommended_min": 6.65,
+          "recommended_max": 43.599999999999994,
+          "samples": 4
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 5.0,
+          "success_max": 46.0,
+          "recommended_min": 6.65,
+          "recommended_max": 43.599999999999994,
+          "samples": 4
+        }
+      }
+    },
+    "Mesh.SubdomainSlices.2": {
+      "success_min": 6.0,
+      "success_max": 49.0,
+      "fail_min": null,
+      "fail_max": null,
+      "suggested_safe_range": {
+        "min": 6.0,
+        "max": 49.0
+      },
+      "recommended_range_p05_p95": {
+        "min": 9.0,
+        "max": 46.3
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 6.0,
+          "success_max": 49.0,
+          "recommended_min": 9.0,
+          "recommended_max": 46.3,
+          "samples": 4
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 6.0,
+          "success_max": 49.0,
+          "recommended_min": 9.0,
+          "recommended_max": 46.3,
+          "samples": 4
+        }
+      }
+    },
+    "Mesh.SubdomainSlices.3": {
+      "success_min": 8.0,
+      "success_max": 54.0,
+      "fail_min": null,
+      "fail_max": null,
+      "suggested_safe_range": {
+        "min": 8.0,
+        "max": 54.0
+      },
+      "recommended_range_p05_p95": {
+        "min": 10.850000000000001,
+        "max": 51.14999999999999
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 8.0,
+          "success_max": 54.0,
+          "recommended_min": 10.850000000000001,
+          "recommended_max": 51.14999999999999,
+          "samples": 4
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 8.0,
+          "success_max": 54.0,
+          "recommended_min": 10.850000000000001,
+          "recommended_max": 51.14999999999999,
+          "samples": 4
+        }
+      }
+    },
+    "Mesh.SubdomainSlices.4": {
+      "success_min": 31.0,
+      "success_max": 57.0,
+      "fail_min": null,
+      "fail_max": null,
+      "suggested_safe_range": {
+        "min": 31.0,
+        "max": 57.0
+      },
+      "recommended_range_p05_p95": {
+        "min": 32.3,
+        "max": 55.7
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 31.0,
+          "success_max": 57.0,
+          "recommended_min": 32.3,
+          "recommended_max": 55.7,
+          "samples": 2
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 31.0,
+          "success_max": 57.0,
+          "recommended_min": 32.3,
+          "recommended_max": 55.7,
+          "samples": 2
+        }
+      }
+    },
+    "Mesh.ThroatResolution": {
+      "success_min": 2.0,
+      "success_max": 11.92,
+      "fail_min": 2.27,
+      "fail_max": 11.02,
+      "suggested_safe_range": {
+        "min": 2.0,
+        "max": 11.92
+      },
+      "recommended_range_p05_p95": {
+        "min": 2.516,
+        "max": 10.807999999999998
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 2.0,
+          "success_max": 11.92,
+          "recommended_min": 2.516,
+          "recommended_max": 10.807999999999998,
+          "samples": 175
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 2.0,
+          "success_max": 11.92,
+          "recommended_min": 2.516,
+          "recommended_max": 10.807999999999998,
+          "samples": 175
+        }
+      }
+    },
+    "Mesh.ThroatSegments": {
+      "success_min": 1.0,
+      "success_max": 22.0,
+      "fail_min": null,
+      "fail_max": null,
+      "suggested_safe_range": {
+        "min": 1.0,
+        "max": 22.0
+      },
+      "recommended_range_p05_p95": {
+        "min": 4.0,
+        "max": 16.0
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 1.0,
+          "success_max": 22.0,
+          "recommended_min": 4.0,
+          "recommended_max": 16.0,
+          "samples": 23
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 1.0,
+          "success_max": 22.0,
+          "recommended_min": 4.0,
+          "recommended_max": 16.0,
+          "samples": 23
+        }
+      }
+    },
+    "Mesh.WallThickness": {
+      "success_min": 2.06,
+      "success_max": 11.91,
+      "fail_min": 2.09,
+      "fail_max": 10.42,
+      "suggested_safe_range": {
+        "min": 2.06,
+        "max": 11.91
+      },
+      "recommended_range_p05_p95": {
+        "min": 2.39,
+        "max": 11.069999999999999
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 2.06,
+          "success_max": 11.91,
+          "recommended_min": 2.39,
+          "recommended_max": 11.069999999999999,
+          "samples": 175
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 2.06,
+          "success_max": 11.91,
+          "recommended_min": 2.39,
+          "recommended_max": 11.069999999999999,
+          "samples": 175
+        }
+      }
+    },
+    "Mesh.ZMapPoints.0": {
+      "success_min": 0.1686,
+      "success_max": 0.7067,
+      "fail_min": null,
+      "fail_max": null,
+      "suggested_safe_range": {
+        "min": 0.1686,
+        "max": 0.7067
+      },
+      "recommended_range_p05_p95": {
+        "min": 0.18126,
+        "max": 0.6577999999999999
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 0.1686,
+          "success_max": 0.7067,
+          "recommended_min": 0.18126,
+          "recommended_max": 0.6577999999999999,
+          "samples": 5
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 0.1686,
+          "success_max": 0.7067,
+          "recommended_min": 0.18126,
+          "recommended_max": 0.6577999999999999,
+          "samples": 5
+        }
+      }
+    },
+    "Mesh.ZMapPoints.1": {
+      "success_min": 0.2858,
+      "success_max": 0.8666,
+      "fail_min": null,
+      "fail_max": null,
+      "suggested_safe_range": {
+        "min": 0.2858,
+        "max": 0.8666
+      },
+      "recommended_range_p05_p95": {
+        "min": 0.29064,
+        "max": 0.84978
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 0.2858,
+          "success_max": 0.8666,
+          "recommended_min": 0.29064,
+          "recommended_max": 0.84978,
+          "samples": 5
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 0.2858,
+          "success_max": 0.8666,
+          "recommended_min": 0.29064,
+          "recommended_max": 0.84978,
+          "samples": 5
+        }
+      }
+    },
+    "Mesh.ZMapPoints.2": {
+      "success_min": 0.3307,
+      "success_max": 0.9802,
+      "fail_min": null,
+      "fail_max": null,
+      "suggested_safe_range": {
+        "min": 0.3307,
+        "max": 0.9802
+      },
+      "recommended_range_p05_p95": {
+        "min": 0.39280000000000004,
+        "max": 0.9434599999999999
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 0.3307,
+          "success_max": 0.9802,
+          "recommended_min": 0.39280000000000004,
+          "recommended_max": 0.9434599999999999,
+          "samples": 5
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 0.3307,
+          "success_max": 0.9802,
+          "recommended_min": 0.39280000000000004,
+          "recommended_max": 0.9434599999999999,
+          "samples": 5
+        }
+      }
+    },
+    "Morph.AllowShrinkage": {
+      "success_min": 1.0,
+      "success_max": 1.0,
+      "fail_min": null,
+      "fail_max": null,
+      "suggested_safe_range": {
+        "min": 1.0,
+        "max": 1.0
+      },
+      "recommended_range_p05_p95": {
+        "min": 1.0,
+        "max": 1.0
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 1.0,
+          "success_max": 1.0,
+          "recommended_min": 1.0,
+          "recommended_max": 1.0,
+          "samples": 6
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 1.0,
+          "success_max": 1.0,
+          "recommended_min": 1.0,
+          "recommended_max": 1.0,
+          "samples": 6
+        }
+      }
+    },
+    "Morph.CornerRadius": {
+      "success_min": 0.17,
+      "success_max": 59.75,
+      "fail_min": 2.98,
+      "fail_max": 58.6,
+      "suggested_safe_range": {
+        "min": 0.17,
+        "max": 59.75
+      },
+      "recommended_range_p05_p95": {
+        "min": 3.7525,
+        "max": 40.99599999999998
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 0.17,
+          "success_max": 59.75,
+          "recommended_min": 3.7525,
+          "recommended_max": 40.99599999999998,
+          "samples": 64
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 0.17,
+          "success_max": 59.75,
+          "recommended_min": 3.7525,
+          "recommended_max": 40.99599999999998,
+          "samples": 64
+        }
+      }
+    },
+    "Morph.FixedPart": {
+      "success_min": 0.0888,
+      "success_max": 0.6112,
+      "fail_min": 0.1566,
+      "fail_max": 0.9026,
+      "suggested_safe_range": {
+        "min": 0.0888,
+        "max": 0.6112
+      },
+      "recommended_range_p05_p95": {
+        "min": 0.11847000000000002,
+        "max": 0.59881
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 0.0888,
+          "success_max": 0.6112,
+          "recommended_min": 0.11847000000000002,
+          "recommended_max": 0.59881,
+          "samples": 4
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 0.0888,
+          "success_max": 0.6112,
+          "recommended_min": 0.11847000000000002,
+          "recommended_max": 0.59881,
+          "samples": 4
+        }
+      }
+    },
+    "Morph.Rate": {
+      "success_min": 4.8714,
+      "success_max": 11.6706,
+      "fail_min": 1.6774,
+      "fail_max": 11.6527,
+      "suggested_safe_range": {
+        "min": 4.8714,
+        "max": 11.6706
+      },
+      "recommended_range_p05_p95": {
+        "min": 4.9439400000000004,
+        "max": 10.767824999999998
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 4.8714,
+          "success_max": 11.6706,
+          "recommended_min": 4.9439400000000004,
+          "recommended_max": 10.767824999999998,
+          "samples": 4
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 4.8714,
+          "success_max": 11.6706,
+          "recommended_min": 4.9439400000000004,
+          "recommended_max": 10.767824999999998,
+          "samples": 4
+        }
+      }
+    },
+    "Morph.TargetHeight": {
+      "success_min": 79.62,
+      "success_max": 1892.85,
+      "fail_min": 110.19,
+      "fail_max": 1828.49,
+      "suggested_safe_range": {
+        "min": 79.62,
+        "max": 1892.85
+      },
+      "recommended_range_p05_p95": {
+        "min": 152.744,
+        "max": 1541.8799999999999
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 79.62,
+          "success_max": 1892.85,
+          "recommended_min": 152.744,
+          "recommended_max": 1541.8799999999999,
+          "samples": 94
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 79.62,
+          "success_max": 1892.85,
+          "recommended_min": 152.744,
+          "recommended_max": 1541.8799999999999,
+          "samples": 94
+        }
+      }
+    },
+    "Morph.TargetShape": {
+      "success_min": 1.0,
+      "success_max": 2.0,
+      "fail_min": 1.0,
+      "fail_max": 1.0,
+      "suggested_safe_range": {
+        "min": 1.0,
+        "max": 2.0
+      },
+      "recommended_range_p05_p95": {
+        "min": 1.0,
+        "max": 2.0
+      },
+      "by_seed": {
+        "2402": {
           "success_min": 1.0,
           "success_max": 2.0,
           "recommended_min": 1.0,
           "recommended_max": 2.0,
-          "samples": 25
-        },
-        "legacy_500_seed1337": {
+          "samples": 94
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
           "success_min": 1.0,
           "success_max": 2.0,
           "recommended_min": 1.0,
           "recommended_max": 2.0,
-          "samples": 208
-        },
-        "legacy_500_seed1337_retry2": {
-          "success_min": 1.0,
-          "success_max": 2.0,
-          "recommended_min": 1.0,
-          "recommended_max": 1.6999999999999993,
-          "samples": 7
-        },
-        "legacy_500_seed1337_retry3": {
-          "success_min": 1.0,
-          "success_max": 2.0,
-          "recommended_min": 1.0,
-          "recommended_max": 1.6999999999999993,
-          "samples": 7
-        },
-        "pp10k_2026": {
-          "success_min": 1.0,
-          "success_max": 2.0,
-          "recommended_min": 1.0,
-          "recommended_max": 2.0,
-          "samples": 959
-        },
-        "pp10k_2027": {
-          "success_min": 1.0,
-          "success_max": 2.0,
-          "recommended_min": 1.0,
-          "recommended_max": 2.0,
-          "samples": 944
-        },
-        "pp10k_2028": {
-          "success_min": 1.0,
-          "success_max": 2.0,
-          "recommended_min": 1.0,
-          "recommended_max": 2.0,
-          "samples": 956
-        },
-        "pp10k_2029": {
-          "success_min": 1.0,
-          "success_max": 2.0,
-          "recommended_min": 1.0,
-          "recommended_max": 2.0,
-          "samples": 967
-        },
-        "pp10k_2030": {
-          "success_min": 1.0,
-          "success_max": 2.0,
-          "recommended_min": 1.0,
-          "recommended_max": 2.0,
-          "samples": 952
+          "samples": 94
         }
       }
     },
     "Morph.TargetWidth": {
-      "success_min": 45.0,
-      "success_max": 1900.0,
-      "fail_min": 45.0,
+      "success_min": 63.56,
+      "success_max": 1847.58,
+      "fail_min": 275.26,
       "fail_max": 1900.0,
       "suggested_safe_range": {
-        "min": 45.0,
-        "max": 1900.0
+        "min": 63.56,
+        "max": 1847.58
       },
       "recommended_range_p05_p95": {
-        "min": 45.97,
-        "max": 909.8459999999999
+        "min": 158.56050000000002,
+        "max": 1576.8569999999986
       },
       "by_seed": {
-        "1337": {
-          "success_min": 45.0,
-          "success_max": 1900.0,
-          "recommended_min": 58.55,
-          "recommended_max": 1714.5,
-          "samples": 222
-        },
-        "2026": {
-          "success_min": 45.0,
-          "success_max": 1900.0,
-          "recommended_min": 66.29150000000004,
-          "recommended_max": 877.2439999999996,
-          "samples": 3432
-        },
-        "2027": {
-          "success_min": 46.08,
-          "success_max": 1900.0,
-          "recommended_min": 91.26950000000001,
-          "recommended_max": 961.4269999999999,
-          "samples": 944
-        },
-        "2028": {
-          "success_min": 45.0,
-          "success_max": 1854.7,
-          "recommended_min": 45.11,
-          "recommended_max": 944.5375,
-          "samples": 956
-        },
-        "2029": {
-          "success_min": 45.08,
-          "success_max": 1900.0,
-          "recommended_min": 87.75200000000001,
-          "recommended_max": 979.04,
-          "samples": 967
-        },
-        "2030": {
-          "success_min": 45.0,
-          "success_max": 1897.75,
-          "recommended_min": 45.0,
-          "recommended_max": 920.7299999999998,
-          "samples": 952
+        "2402": {
+          "success_min": 63.56,
+          "success_max": 1847.58,
+          "recommended_min": 158.56050000000002,
+          "recommended_max": 1576.8569999999986,
+          "samples": 94
         }
       },
       "by_run_group": {
-        "legacy_5000_seed2026": {
-          "success_min": 45.0,
-          "success_max": 1900.0,
-          "recommended_min": 76.4065,
-          "recommended_max": 874.7529999999999,
-          "samples": 2448
-        },
-        "legacy_5000_seed2026_retry2": {
-          "success_min": 45.0,
-          "success_max": 974.74,
-          "recommended_min": 58.76200000000001,
-          "recommended_max": 889.4039999999999,
-          "samples": 25
-        },
-        "legacy_500_seed1337": {
-          "success_min": 45.0,
-          "success_max": 1900.0,
-          "recommended_min": 61.643,
-          "recommended_max": 1714.5,
-          "samples": 208
-        },
-        "legacy_500_seed1337_retry2": {
-          "success_min": 45.0,
-          "success_max": 1210.48,
-          "recommended_min": 49.065,
-          "recommended_max": 1088.6919999999996,
-          "samples": 7
-        },
-        "legacy_500_seed1337_retry3": {
-          "success_min": 45.0,
-          "success_max": 1210.48,
-          "recommended_min": 49.065,
-          "recommended_max": 1088.6919999999996,
-          "samples": 7
-        },
-        "pp10k_2026": {
-          "success_min": 45.0,
-          "success_max": 1797.19,
-          "recommended_min": 52.83500000000001,
-          "recommended_max": 881.3629999999993,
-          "samples": 959
-        },
-        "pp10k_2027": {
-          "success_min": 46.08,
-          "success_max": 1900.0,
-          "recommended_min": 91.26950000000001,
-          "recommended_max": 961.4269999999999,
-          "samples": 944
-        },
-        "pp10k_2028": {
-          "success_min": 45.0,
-          "success_max": 1854.7,
-          "recommended_min": 45.11,
-          "recommended_max": 944.5375,
-          "samples": 956
-        },
-        "pp10k_2029": {
-          "success_min": 45.08,
-          "success_max": 1900.0,
-          "recommended_min": 87.75200000000001,
-          "recommended_max": 979.04,
-          "samples": 967
-        },
-        "pp10k_2030": {
-          "success_min": 45.0,
-          "success_max": 1897.75,
-          "recommended_min": 45.0,
-          "recommended_max": 920.7299999999998,
-          "samples": 952
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 63.56,
+          "success_max": 1847.58,
+          "recommended_min": 158.56050000000002,
+          "recommended_max": 1576.8569999999986,
+          "samples": 94
         }
       }
     },
     "OS.k": {
-      "success_min": 0.2,
-      "success_max": 1.6,
-      "fail_min": 0.2,
-      "fail_max": 1.6,
+      "success_min": 0.35905,
+      "success_max": 1.59921,
+      "fail_min": 0.35666,
+      "fail_max": 1.59994,
       "suggested_safe_range": {
-        "min": 0.2,
-        "max": 1.6
+        "min": 0.35905,
+        "max": 1.59921
       },
       "recommended_range_p05_p95": {
-        "min": 0.2,
-        "max": 1.6
+        "min": 0.652666,
+        "max": 1.2437799999999999
       },
       "by_seed": {
-        "1337": {
-          "success_min": 0.2,
-          "success_max": 1.6,
-          "recommended_min": 0.2910000000000001,
-          "recommended_max": 1.46,
-          "samples": 94
-        },
-        "2026": {
-          "success_min": 0.2,
-          "success_max": 1.6,
-          "recommended_min": 0.2,
-          "recommended_max": 1.6,
-          "samples": 1582
-        },
-        "2027": {
-          "success_min": 0.2,
-          "success_max": 1.6,
-          "recommended_min": 0.2,
-          "recommended_max": 1.6,
-          "samples": 447
-        },
-        "2028": {
-          "success_min": 0.2,
-          "success_max": 1.6,
-          "recommended_min": 0.2677790000000001,
-          "recommended_max": 1.6,
-          "samples": 459
-        },
-        "2029": {
-          "success_min": 0.2,
-          "success_max": 1.6,
-          "recommended_min": 0.2,
-          "recommended_max": 1.6,
-          "samples": 459
-        },
-        "2030": {
-          "success_min": 0.2,
-          "success_max": 1.6,
-          "recommended_min": 0.2,
-          "recommended_max": 1.6,
-          "samples": 453
+        "2402": {
+          "success_min": 0.35905,
+          "success_max": 1.59921,
+          "recommended_min": 0.652666,
+          "recommended_max": 1.2437799999999999,
+          "samples": 49
         }
       },
       "by_run_group": {
-        "legacy_5000_seed2026": {
-          "success_min": 0.2,
-          "success_max": 1.6,
-          "recommended_min": 0.2,
-          "recommended_max": 1.6,
-          "samples": 1117
-        },
-        "legacy_5000_seed2026_retry2": {
-          "success_min": 0.2,
-          "success_max": 1.46,
-          "recommended_min": 0.305,
-          "recommended_max": 1.1945375,
-          "samples": 16
-        },
-        "legacy_500_seed1337": {
-          "success_min": 0.2,
-          "success_max": 1.6,
-          "recommended_min": 0.23500000000000004,
-          "recommended_max": 1.46,
-          "samples": 86
-        },
-        "legacy_500_seed1337_retry2": {
-          "success_min": 0.77546,
-          "success_max": 1.09731,
-          "recommended_min": 0.7859825,
-          "recommended_max": 1.080681,
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 0.35905,
+          "success_max": 1.59921,
+          "recommended_min": 0.652666,
+          "recommended_max": 1.2437799999999999,
+          "samples": 49
+        }
+      }
+    },
+    "R-OSSE.R": {
+      "success_min": 121.78,
+      "success_max": 1681.83,
+      "fail_min": 1776.99,
+      "fail_max": 1776.99,
+      "suggested_safe_range": {
+        "min": 121.78,
+        "max": 1681.83
+      },
+      "recommended_range_p05_p95": {
+        "min": 182.184,
+        "max": 1300.5699999999993
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 121.78,
+          "success_max": 1681.83,
+          "recommended_min": 182.184,
+          "recommended_max": 1300.5699999999993,
+          "samples": 57
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 121.78,
+          "success_max": 1681.83,
+          "recommended_min": 182.184,
+          "recommended_max": 1300.5699999999993,
+          "samples": 57
+        }
+      }
+    },
+    "R-OSSE.a": {
+      "success_min": 10.68,
+      "success_max": 75.88,
+      "fail_min": 54.6,
+      "fail_max": 54.6,
+      "suggested_safe_range": {
+        "min": 10.68,
+        "max": 75.88
+      },
+      "recommended_range_p05_p95": {
+        "min": 13.762,
+        "max": 69.84
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 10.68,
+          "success_max": 75.88,
+          "recommended_min": 13.762,
+          "recommended_max": 69.84,
+          "samples": 57
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 10.68,
+          "success_max": 75.88,
+          "recommended_min": 13.762,
+          "recommended_max": 69.84,
+          "samples": 57
+        }
+      }
+    },
+    "R-OSSE.a0": {
+      "success_min": 2.48,
+      "success_max": 25.0,
+      "fail_min": 6.97,
+      "fail_max": 6.97,
+      "suggested_safe_range": {
+        "min": 2.48,
+        "max": 25.0
+      },
+      "recommended_range_p05_p95": {
+        "min": 3.088,
+        "max": 18.073999999999995
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 2.48,
+          "success_max": 25.0,
+          "recommended_min": 3.088,
+          "recommended_max": 18.073999999999995,
+          "samples": 57
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 2.48,
+          "success_max": 25.0,
+          "recommended_min": 3.088,
+          "recommended_max": 18.073999999999995,
+          "samples": 57
+        }
+      }
+    },
+    "R-OSSE.b": {
+      "success_min": 0.01,
+      "success_max": 0.93,
+      "fail_min": 0.3,
+      "fail_max": 0.3,
+      "suggested_safe_range": {
+        "min": 0.01,
+        "max": 0.93
+      },
+      "recommended_range_p05_p95": {
+        "min": 0.020000000000000004,
+        "max": 0.774
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 0.01,
+          "success_max": 0.93,
+          "recommended_min": 0.020000000000000004,
+          "recommended_max": 0.774,
+          "samples": 57
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 0.01,
+          "success_max": 0.93,
+          "recommended_min": 0.020000000000000004,
+          "recommended_max": 0.774,
+          "samples": 57
+        }
+      }
+    },
+    "R-OSSE.k": {
+      "success_min": 0.49,
+      "success_max": 1.74,
+      "fail_min": 1.27,
+      "fail_max": 1.27,
+      "suggested_safe_range": {
+        "min": 0.49,
+        "max": 1.74
+      },
+      "recommended_range_p05_p95": {
+        "min": 0.596,
+        "max": 1.322
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 0.49,
+          "success_max": 1.74,
+          "recommended_min": 0.596,
+          "recommended_max": 1.322,
+          "samples": 57
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 0.49,
+          "success_max": 1.74,
+          "recommended_min": 0.596,
+          "recommended_max": 1.322,
+          "samples": 57
+        }
+      }
+    },
+    "R-OSSE.m": {
+      "success_min": 1.56,
+      "success_max": 7.99,
+      "fail_min": 1.57,
+      "fail_max": 1.57,
+      "suggested_safe_range": {
+        "min": 1.56,
+        "max": 7.99
+      },
+      "recommended_range_p05_p95": {
+        "min": 1.7440000000000002,
+        "max": 7.114000000000001
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 1.56,
+          "success_max": 7.99,
+          "recommended_min": 1.7440000000000002,
+          "recommended_max": 7.114000000000001,
+          "samples": 57
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 1.56,
+          "success_max": 7.99,
+          "recommended_min": 1.7440000000000002,
+          "recommended_max": 7.114000000000001,
+          "samples": 57
+        }
+      }
+    },
+    "R-OSSE.q": {
+      "success_min": 0.77,
+      "success_max": 1.0,
+      "fail_min": 0.93,
+      "fail_max": 0.93,
+      "suggested_safe_range": {
+        "min": 0.77,
+        "max": 1.0
+      },
+      "recommended_range_p05_p95": {
+        "min": 0.832,
+        "max": 0.99
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 0.77,
+          "success_max": 1.0,
+          "recommended_min": 0.832,
+          "recommended_max": 0.99,
+          "samples": 57
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 0.77,
+          "success_max": 1.0,
+          "recommended_min": 0.832,
+          "recommended_max": 0.99,
+          "samples": 57
+        }
+      }
+    },
+    "R-OSSE.r": {
+      "success_min": 0.21,
+      "success_max": 1.25,
+      "fail_min": 1.1,
+      "fail_max": 1.1,
+      "suggested_safe_range": {
+        "min": 0.21,
+        "max": 1.25
+      },
+      "recommended_range_p05_p95": {
+        "min": 0.378,
+        "max": 1.222
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 0.21,
+          "success_max": 1.25,
+          "recommended_min": 0.378,
+          "recommended_max": 1.222,
+          "samples": 57
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 0.21,
+          "success_max": 1.25,
+          "recommended_min": 0.378,
+          "recommended_max": 1.222,
+          "samples": 57
+        }
+      }
+    },
+    "R-OSSE.r0": {
+      "success_min": 6.0,
+      "success_max": 42.0,
+      "fail_min": 21.5,
+      "fail_max": 21.5,
+      "suggested_safe_range": {
+        "min": 6.0,
+        "max": 42.0
+      },
+      "recommended_range_p05_p95": {
+        "min": 6.694000000000001,
+        "max": 38.4
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 6.0,
+          "success_max": 42.0,
+          "recommended_min": 6.694000000000001,
+          "recommended_max": 38.4,
+          "samples": 57
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 6.0,
+          "success_max": 42.0,
+          "recommended_min": 6.694000000000001,
+          "recommended_max": 38.4,
+          "samples": 57
+        }
+      }
+    },
+    "Rot": {
+      "success_min": -5.6286,
+      "success_max": 1.329,
+      "fail_min": null,
+      "fail_max": null,
+      "suggested_safe_range": {
+        "min": -5.6286,
+        "max": 1.329
+      },
+      "recommended_range_p05_p95": {
+        "min": -5.61456,
+        "max": 0.7680749999999987
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": -5.6286,
+          "success_max": 1.329,
+          "recommended_min": -5.61456,
+          "recommended_max": 0.7680749999999987,
           "samples": 4
-        },
-        "legacy_500_seed1337_retry3": {
-          "success_min": 0.77546,
-          "success_max": 1.09731,
-          "recommended_min": 0.7859825,
-          "recommended_max": 1.080681,
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": -5.6286,
+          "success_max": 1.329,
+          "recommended_min": -5.61456,
+          "recommended_max": 0.7680749999999987,
           "samples": 4
-        },
-        "pp10k_2026": {
-          "success_min": 0.2,
-          "success_max": 1.6,
-          "recommended_min": 0.2,
-          "recommended_max": 1.6,
-          "samples": 449
-        },
-        "pp10k_2027": {
-          "success_min": 0.2,
-          "success_max": 1.6,
-          "recommended_min": 0.2,
-          "recommended_max": 1.6,
-          "samples": 447
-        },
-        "pp10k_2028": {
-          "success_min": 0.2,
-          "success_max": 1.6,
-          "recommended_min": 0.2677790000000001,
-          "recommended_max": 1.6,
-          "samples": 459
-        },
-        "pp10k_2029": {
-          "success_min": 0.2,
-          "success_max": 1.6,
-          "recommended_min": 0.2,
-          "recommended_max": 1.6,
-          "samples": 459
-        },
-        "pp10k_2030": {
-          "success_min": 0.2,
-          "success_max": 1.6,
-          "recommended_min": 0.2,
-          "recommended_max": 1.6,
-          "samples": 453
+        }
+      }
+    },
+    "Slot.Length": {
+      "success_min": 8.6451,
+      "success_max": 119.2432,
+      "fail_min": null,
+      "fail_max": null,
+      "suggested_safe_range": {
+        "min": 8.6451,
+        "max": 119.2432
+      },
+      "recommended_range_p05_p95": {
+        "min": 13.1249,
+        "max": 117.6877
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 8.6451,
+          "success_max": 119.2432,
+          "recommended_min": 13.1249,
+          "recommended_max": 117.6877,
+          "samples": 11
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 8.6451,
+          "success_max": 119.2432,
+          "recommended_min": 13.1249,
+          "recommended_max": 117.6877,
+          "samples": 11
         }
       }
     },
     "Term.n": {
-      "success_min": 2.0,
-      "success_max": 8.0,
-      "fail_min": 2.0,
-      "fail_max": 8.0,
+      "success_min": 2.08644,
+      "success_max": 7.88182,
+      "fail_min": 2.1158,
+      "fail_max": 5.52857,
       "suggested_safe_range": {
-        "min": 2.0,
-        "max": 8.0
+        "min": 2.08644,
+        "max": 7.88182
       },
       "recommended_range_p05_p95": {
-        "min": 2.0,
-        "max": 8.0
+        "min": 2.304408,
+        "max": 7.41442
       },
       "by_seed": {
-        "1337": {
-          "success_min": 2.0,
-          "success_max": 8.0,
-          "recommended_min": 2.0304320000000002,
-          "recommended_max": 7.4,
-          "samples": 94
-        },
-        "2026": {
-          "success_min": 2.0,
-          "success_max": 8.0,
-          "recommended_min": 2.0,
-          "recommended_max": 8.0,
-          "samples": 1582
-        },
-        "2027": {
-          "success_min": 2.0,
-          "success_max": 8.0,
-          "recommended_min": 2.0,
-          "recommended_max": 8.0,
-          "samples": 447
-        },
-        "2028": {
-          "success_min": 2.0,
-          "success_max": 8.0,
-          "recommended_min": 2.0,
-          "recommended_max": 7.654163,
-          "samples": 459
-        },
-        "2029": {
-          "success_min": 2.0,
-          "success_max": 8.0,
-          "recommended_min": 2.011817,
-          "recommended_max": 8.0,
-          "samples": 459
-        },
-        "2030": {
-          "success_min": 2.0,
-          "success_max": 8.0,
-          "recommended_min": 2.0,
-          "recommended_max": 7.842129999999999,
-          "samples": 453
+        "2402": {
+          "success_min": 2.08644,
+          "success_max": 7.88182,
+          "recommended_min": 2.304408,
+          "recommended_max": 7.41442,
+          "samples": 49
         }
       },
       "by_run_group": {
-        "legacy_5000_seed2026": {
-          "success_min": 2.0,
-          "success_max": 8.0,
-          "recommended_min": 2.0,
-          "recommended_max": 8.0,
-          "samples": 1117
-        },
-        "legacy_5000_seed2026_retry2": {
-          "success_min": 2.0,
-          "success_max": 8.0,
-          "recommended_min": 2.022215,
-          "recommended_max": 7.550000000000001,
-          "samples": 16
-        },
-        "legacy_500_seed1337": {
-          "success_min": 2.0,
-          "success_max": 8.0,
-          "recommended_min": 2.0296,
-          "recommended_max": 7.4,
-          "samples": 86
-        },
-        "legacy_500_seed1337_retry2": {
-          "success_min": 2.17498,
-          "success_max": 4.0561,
-          "recommended_min": 2.4114115,
-          "recommended_max": 4.042558,
-          "samples": 4
-        },
-        "legacy_500_seed1337_retry3": {
-          "success_min": 2.17498,
-          "success_max": 4.0561,
-          "recommended_min": 2.4114115,
-          "recommended_max": 4.042558,
-          "samples": 4
-        },
-        "pp10k_2026": {
-          "success_min": 2.0,
-          "success_max": 8.0,
-          "recommended_min": 2.0,
-          "recommended_max": 8.0,
-          "samples": 449
-        },
-        "pp10k_2027": {
-          "success_min": 2.0,
-          "success_max": 8.0,
-          "recommended_min": 2.0,
-          "recommended_max": 8.0,
-          "samples": 447
-        },
-        "pp10k_2028": {
-          "success_min": 2.0,
-          "success_max": 8.0,
-          "recommended_min": 2.0,
-          "recommended_max": 7.654163,
-          "samples": 459
-        },
-        "pp10k_2029": {
-          "success_min": 2.0,
-          "success_max": 8.0,
-          "recommended_min": 2.011817,
-          "recommended_max": 8.0,
-          "samples": 459
-        },
-        "pp10k_2030": {
-          "success_min": 2.0,
-          "success_max": 8.0,
-          "recommended_min": 2.0,
-          "recommended_max": 7.842129999999999,
-          "samples": 453
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 2.08644,
+          "success_max": 7.88182,
+          "recommended_min": 2.304408,
+          "recommended_max": 7.41442,
+          "samples": 49
         }
       }
     },
     "Term.q": {
-      "success_min": 0.82,
-      "success_max": 1.0,
-      "fail_min": 0.82,
-      "fail_max": 1.0,
+      "success_min": 0.82146,
+      "success_max": 0.99923,
+      "fail_min": 0.85869,
+      "fail_max": 0.99629,
       "suggested_safe_range": {
-        "min": 0.82,
-        "max": 1.0
+        "min": 0.82146,
+        "max": 0.99923
       },
       "recommended_range_p05_p95": {
-        "min": 0.8199999999999998,
-        "max": 1.0
+        "min": 0.899254,
+        "max": 0.99204
       },
       "by_seed": {
-        "1337": {
-          "success_min": 0.82,
-          "success_max": 1.0,
-          "recommended_min": 0.8216964999999999,
-          "recommended_max": 0.99683,
-          "samples": 94
-        },
-        "2026": {
-          "success_min": 0.82,
-          "success_max": 1.0,
-          "recommended_min": 0.82,
-          "recommended_max": 0.9999945,
-          "samples": 1582
-        },
-        "2027": {
-          "success_min": 0.82,
-          "success_max": 1.0,
-          "recommended_min": 0.82,
-          "recommended_max": 1.0,
-          "samples": 447
-        },
-        "2028": {
-          "success_min": 0.82,
-          "success_max": 1.0,
-          "recommended_min": 0.8199999999999998,
-          "recommended_max": 0.999244,
-          "samples": 459
-        },
-        "2029": {
-          "success_min": 0.82,
-          "success_max": 1.0,
-          "recommended_min": 0.8199999999999998,
-          "recommended_max": 0.9992169999999999,
-          "samples": 459
-        },
-        "2030": {
-          "success_min": 0.82,
-          "success_max": 1.0,
-          "recommended_min": 0.82,
-          "recommended_max": 1.0,
-          "samples": 453
+        "2402": {
+          "success_min": 0.82146,
+          "success_max": 0.99923,
+          "recommended_min": 0.899254,
+          "recommended_max": 0.99204,
+          "samples": 49
         }
       },
       "by_run_group": {
-        "legacy_5000_seed2026": {
-          "success_min": 0.82,
-          "success_max": 1.0,
-          "recommended_min": 0.82,
-          "recommended_max": 1.0,
-          "samples": 1117
-        },
-        "legacy_5000_seed2026_retry2": {
-          "success_min": 0.82447,
-          "success_max": 0.99209,
-          "recommended_min": 0.8285125,
-          "recommended_max": 0.9845225,
-          "samples": 16
-        },
-        "legacy_500_seed1337": {
-          "success_min": 0.82,
-          "success_max": 1.0,
-          "recommended_min": 0.8206525,
-          "recommended_max": 0.9887349999999999,
-          "samples": 86
-        },
-        "legacy_500_seed1337_retry2": {
-          "success_min": 0.82941,
-          "success_max": 0.99683,
-          "recommended_min": 0.8334254999999999,
-          "recommended_max": 0.9790099999999999,
-          "samples": 4
-        },
-        "legacy_500_seed1337_retry3": {
-          "success_min": 0.82941,
-          "success_max": 0.99683,
-          "recommended_min": 0.8334254999999999,
-          "recommended_max": 0.9790099999999999,
-          "samples": 4
-        },
-        "pp10k_2026": {
-          "success_min": 0.82,
-          "success_max": 1.0,
-          "recommended_min": 0.82,
-          "recommended_max": 0.99953,
-          "samples": 449
-        },
-        "pp10k_2027": {
-          "success_min": 0.82,
-          "success_max": 1.0,
-          "recommended_min": 0.82,
-          "recommended_max": 1.0,
-          "samples": 447
-        },
-        "pp10k_2028": {
-          "success_min": 0.82,
-          "success_max": 1.0,
-          "recommended_min": 0.8199999999999998,
-          "recommended_max": 0.999244,
-          "samples": 459
-        },
-        "pp10k_2029": {
-          "success_min": 0.82,
-          "success_max": 1.0,
-          "recommended_min": 0.8199999999999998,
-          "recommended_max": 0.9992169999999999,
-          "samples": 459
-        },
-        "pp10k_2030": {
-          "success_min": 0.82,
-          "success_max": 1.0,
-          "recommended_min": 0.82,
-          "recommended_max": 1.0,
-          "samples": 453
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 0.82146,
+          "success_max": 0.99923,
+          "recommended_min": 0.899254,
+          "recommended_max": 0.99204,
+          "samples": 49
         }
       }
     },
     "Term.s": {
-      "success_min": 0.5,
-      "success_max": 1.05,
-      "fail_min": 0.5,
-      "fail_max": 1.05,
+      "success_min": 0.5182,
+      "success_max": 1.02209,
+      "fail_min": 0.50489,
+      "fail_max": 0.9488,
       "suggested_safe_range": {
-        "min": 0.5,
-        "max": 1.05
+        "min": 0.5182,
+        "max": 1.02209
       },
       "recommended_range_p05_p95": {
-        "min": 0.5,
-        "max": 1.05
+        "min": 0.53446,
+        "max": 0.9869279999999998
       },
       "by_seed": {
-        "1337": {
-          "success_min": 0.5,
-          "success_max": 1.05,
-          "recommended_min": 0.5,
-          "recommended_max": 1.0412249999999998,
-          "samples": 94
-        },
-        "2026": {
-          "success_min": 0.5,
-          "success_max": 1.05,
-          "recommended_min": 0.5,
-          "recommended_max": 1.05,
-          "samples": 1582
-        },
-        "2027": {
-          "success_min": 0.5,
-          "success_max": 1.05,
-          "recommended_min": 0.5,
-          "recommended_max": 1.05,
-          "samples": 447
-        },
-        "2028": {
-          "success_min": 0.5,
-          "success_max": 1.05,
-          "recommended_min": 0.501395,
-          "recommended_max": 1.05,
-          "samples": 459
-        },
-        "2029": {
-          "success_min": 0.5,
-          "success_max": 1.05,
-          "recommended_min": 0.502104,
-          "recommended_max": 1.05,
-          "samples": 459
-        },
-        "2030": {
-          "success_min": 0.5,
-          "success_max": 1.05,
-          "recommended_min": 0.5,
-          "recommended_max": 1.05,
-          "samples": 453
+        "2402": {
+          "success_min": 0.5182,
+          "success_max": 1.02209,
+          "recommended_min": 0.53446,
+          "recommended_max": 0.9869279999999998,
+          "samples": 49
         }
       },
       "by_run_group": {
-        "legacy_5000_seed2026": {
-          "success_min": 0.5,
-          "success_max": 1.05,
-          "recommended_min": 0.5,
-          "recommended_max": 1.05,
-          "samples": 1117
-        },
-        "legacy_5000_seed2026_retry2": {
-          "success_min": 0.5,
-          "success_max": 0.995,
-          "recommended_min": 0.521555,
-          "recommended_max": 0.8923025,
-          "samples": 16
-        },
-        "legacy_500_seed1337": {
-          "success_min": 0.5,
-          "success_max": 1.05,
-          "recommended_min": 0.5,
-          "recommended_max": 1.0466250000000001,
-          "samples": 86
-        },
-        "legacy_500_seed1337_retry2": {
-          "success_min": 0.53222,
-          "success_max": 0.77625,
-          "recommended_min": 0.5405105,
-          "recommended_max": 0.7491149999999999,
-          "samples": 4
-        },
-        "legacy_500_seed1337_retry3": {
-          "success_min": 0.53222,
-          "success_max": 0.77625,
-          "recommended_min": 0.5405105,
-          "recommended_max": 0.7491149999999999,
-          "samples": 4
-        },
-        "pp10k_2026": {
-          "success_min": 0.5,
-          "success_max": 1.05,
-          "recommended_min": 0.5,
-          "recommended_max": 1.05,
-          "samples": 449
-        },
-        "pp10k_2027": {
-          "success_min": 0.5,
-          "success_max": 1.05,
-          "recommended_min": 0.5,
-          "recommended_max": 1.05,
-          "samples": 447
-        },
-        "pp10k_2028": {
-          "success_min": 0.5,
-          "success_max": 1.05,
-          "recommended_min": 0.501395,
-          "recommended_max": 1.05,
-          "samples": 459
-        },
-        "pp10k_2029": {
-          "success_min": 0.5,
-          "success_max": 1.05,
-          "recommended_min": 0.502104,
-          "recommended_max": 1.05,
-          "samples": 459
-        },
-        "pp10k_2030": {
-          "success_min": 0.5,
-          "success_max": 1.05,
-          "recommended_min": 0.5,
-          "recommended_max": 1.05,
-          "samples": 453
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 0.5182,
+          "success_max": 1.02209,
+          "recommended_min": 0.53446,
+          "recommended_max": 0.9869279999999998,
+          "samples": 49
         }
       }
     },
     "Throat.Angle": {
-      "success_min": 0.0,
-      "success_max": 28.0,
-      "fail_min": 0.0,
-      "fail_max": 28.0,
+      "success_min": 0.04,
+      "success_max": 24.978,
+      "fail_min": 2.114,
+      "fail_max": 20.43,
       "suggested_safe_range": {
-        "min": 0.0,
-        "max": 28.0
+        "min": 0.04,
+        "max": 24.978
       },
       "recommended_range_p05_p95": {
-        "min": 2.008,
-        "max": 22.679199999999987
+        "min": 2.573,
+        "max": 22.873799999999996
       },
       "by_seed": {
-        "1337": {
-          "success_min": 0.0,
-          "success_max": 28.0,
-          "recommended_min": 0.0,
-          "recommended_max": 27.036099999999973,
-          "samples": 439
-        },
-        "2026": {
-          "success_min": 0.0,
-          "success_max": 28.0,
-          "recommended_min": 2.0,
-          "recommended_max": 19.117,
-          "samples": 6212
-        },
-        "2027": {
-          "success_min": 0.0,
-          "success_max": 28.0,
-          "recommended_min": 2.2018,
-          "recommended_max": 24.981,
-          "samples": 1765
-        },
-        "2028": {
-          "success_min": 0.0,
-          "success_max": 28.0,
-          "recommended_min": 2.1837,
-          "recommended_max": 25.2,
-          "samples": 1795
-        },
-        "2029": {
-          "success_min": 0.0,
-          "success_max": 28.0,
-          "recommended_min": 2.2415,
-          "recommended_max": 25.2,
-          "samples": 1780
-        },
-        "2030": {
-          "success_min": 0.0,
-          "success_max": 28.0,
-          "recommended_min": 2.2252,
-          "recommended_max": 25.2,
-          "samples": 1757
+        "2402": {
+          "success_min": 0.04,
+          "success_max": 24.978,
+          "recommended_min": 2.573,
+          "recommended_max": 22.873799999999996,
+          "samples": 175
         }
       },
       "by_run_group": {
-        "legacy_5000_seed2026": {
-          "success_min": 0.0,
-          "success_max": 28.0,
-          "recommended_min": 2.0,
-          "recommended_max": 19.32574999999999,
-          "samples": 4408
-        },
-        "legacy_5000_seed2026_retry2": {
-          "success_min": 2.0,
-          "success_max": 21.653,
-          "recommended_min": 2.01925,
-          "recommended_max": 15.467400000000003,
-          "samples": 44
-        },
-        "legacy_500_seed1337": {
-          "success_min": 0.0,
-          "success_max": 28.0,
-          "recommended_min": 2.0101000000000004,
-          "recommended_max": 26.906699999999994,
-          "samples": 403
-        },
-        "legacy_500_seed1337_retry2": {
-          "success_min": 0.0,
-          "success_max": 28.0,
-          "recommended_min": 0.0,
-          "recommended_max": 25.619999999999994,
-          "samples": 18
-        },
-        "legacy_500_seed1337_retry3": {
-          "success_min": 0.0,
-          "success_max": 28.0,
-          "recommended_min": 0.0,
-          "recommended_max": 25.619999999999994,
-          "samples": 18
-        },
-        "pp10k_2026": {
-          "success_min": 0.0,
-          "success_max": 28.0,
-          "recommended_min": 2.0,
-          "recommended_max": 18.587099999999996,
-          "samples": 1760
-        },
-        "pp10k_2027": {
-          "success_min": 0.0,
-          "success_max": 28.0,
-          "recommended_min": 2.2018,
-          "recommended_max": 24.981,
-          "samples": 1765
-        },
-        "pp10k_2028": {
-          "success_min": 0.0,
-          "success_max": 28.0,
-          "recommended_min": 2.1837,
-          "recommended_max": 25.2,
-          "samples": 1795
-        },
-        "pp10k_2029": {
-          "success_min": 0.0,
-          "success_max": 28.0,
-          "recommended_min": 2.2415,
-          "recommended_max": 25.2,
-          "samples": 1780
-        },
-        "pp10k_2030": {
-          "success_min": 0.0,
-          "success_max": 28.0,
-          "recommended_min": 2.2252,
-          "recommended_max": 25.2,
-          "samples": 1757
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 0.04,
+          "success_max": 24.978,
+          "recommended_min": 2.573,
+          "recommended_max": 22.873799999999996,
+          "samples": 175
         }
       }
     },
     "Throat.Diameter": {
-      "success_min": 10.0,
-      "success_max": 140.0,
-      "fail_min": 10.0,
-      "fail_max": 140.0,
+      "success_min": 12.0,
+      "success_max": 115.0,
+      "fail_min": 18.55,
+      "fail_max": 102.35,
       "suggested_safe_range": {
-        "min": 10.0,
-        "max": 140.0
+        "min": 12.0,
+        "max": 115.0
       },
       "recommended_range_p05_p95": {
-        "min": 20.01,
-        "max": 112.56649999999999
+        "min": 18.244,
+        "max": 95.48799999999999
       },
       "by_seed": {
-        "1337": {
-          "success_min": 10.0,
-          "success_max": 140.0,
-          "recommended_min": 10.0,
-          "recommended_max": 127.0,
-          "samples": 439
-        },
-        "2026": {
-          "success_min": 10.0,
-          "success_max": 140.0,
-          "recommended_min": 20.0,
-          "recommended_max": 100.44,
-          "samples": 6212
-        },
-        "2027": {
-          "success_min": 10.0,
-          "success_max": 140.0,
-          "recommended_min": 21.086,
-          "recommended_max": 127.0,
-          "samples": 1765
-        },
-        "2028": {
-          "success_min": 10.0,
-          "success_max": 140.0,
-          "recommended_min": 21.044,
-          "recommended_max": 127.0,
-          "samples": 1795
-        },
-        "2029": {
-          "success_min": 10.0,
-          "success_max": 140.0,
-          "recommended_min": 21.1175,
-          "recommended_max": 126.41,
-          "samples": 1780
-        },
-        "2030": {
-          "success_min": 10.0,
-          "success_max": 140.0,
-          "recommended_min": 21.464,
-          "recommended_max": 127.0,
-          "samples": 1757
+        "2402": {
+          "success_min": 12.0,
+          "success_max": 115.0,
+          "recommended_min": 18.244,
+          "recommended_max": 95.48799999999999,
+          "samples": 175
         }
       },
       "by_run_group": {
-        "legacy_5000_seed2026": {
-          "success_min": 10.0,
-          "success_max": 140.0,
-          "recommended_min": 20.0,
-          "recommended_max": 100.4095,
-          "samples": 4408
-        },
-        "legacy_5000_seed2026_retry2": {
-          "success_min": 11.01,
-          "success_max": 136.84,
-          "recommended_min": 20.0075,
-          "recommended_max": 63.9285,
-          "samples": 44
-        },
-        "legacy_500_seed1337": {
-          "success_min": 10.0,
-          "success_max": 140.0,
-          "recommended_min": 10.0,
-          "recommended_max": 127.0,
-          "samples": 403
-        },
-        "legacy_500_seed1337_retry2": {
-          "success_min": 10.0,
-          "success_max": 127.0,
-          "recommended_min": 17.48,
-          "recommended_max": 73.7304999999999,
-          "samples": 18
-        },
-        "legacy_500_seed1337_retry3": {
-          "success_min": 10.0,
-          "success_max": 127.0,
-          "recommended_min": 17.48,
-          "recommended_max": 73.7304999999999,
-          "samples": 18
-        },
-        "pp10k_2026": {
-          "success_min": 10.0,
-          "success_max": 140.0,
-          "recommended_min": 20.0,
-          "recommended_max": 101.1245,
-          "samples": 1760
-        },
-        "pp10k_2027": {
-          "success_min": 10.0,
-          "success_max": 140.0,
-          "recommended_min": 21.086,
-          "recommended_max": 127.0,
-          "samples": 1765
-        },
-        "pp10k_2028": {
-          "success_min": 10.0,
-          "success_max": 140.0,
-          "recommended_min": 21.044,
-          "recommended_max": 127.0,
-          "samples": 1795
-        },
-        "pp10k_2029": {
-          "success_min": 10.0,
-          "success_max": 140.0,
-          "recommended_min": 21.1175,
-          "recommended_max": 126.41,
-          "samples": 1780
-        },
-        "pp10k_2030": {
-          "success_min": 10.0,
-          "success_max": 140.0,
-          "recommended_min": 21.464,
-          "recommended_max": 127.0,
-          "samples": 1757
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 12.0,
+          "success_max": 115.0,
+          "recommended_min": 18.244,
+          "recommended_max": 95.48799999999999,
+          "samples": 175
+        }
+      }
+    },
+    "Throat.Ext.Angle": {
+      "success_min": 3.21,
+      "success_max": 24.9,
+      "fail_min": null,
+      "fail_max": null,
+      "suggested_safe_range": {
+        "min": 3.21,
+        "max": 24.9
+      },
+      "recommended_range_p05_p95": {
+        "min": 3.4270000000000005,
+        "max": 24.802999999999997
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 3.21,
+          "success_max": 24.9,
+          "recommended_min": 3.4270000000000005,
+          "recommended_max": 24.802999999999997,
+          "samples": 23
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 3.21,
+          "success_max": 24.9,
+          "recommended_min": 3.4270000000000005,
+          "recommended_max": 24.802999999999997,
+          "samples": 23
+        }
+      }
+    },
+    "Throat.Ext.Length": {
+      "success_min": 9.41,
+      "success_max": 197.49,
+      "fail_min": null,
+      "fail_max": null,
+      "suggested_safe_range": {
+        "min": 9.41,
+        "max": 197.49
+      },
+      "recommended_range_p05_p95": {
+        "min": 12.172,
+        "max": 95.489
+      },
+      "by_seed": {
+        "2402": {
+          "success_min": 9.41,
+          "success_max": 197.49,
+          "recommended_min": 12.172,
+          "recommended_max": 95.489,
+          "samples": 23
+        }
+      },
+      "by_run_group": {
+        "cmpfix2_smoke_20260214T1630Z": {
+          "success_min": 9.41,
+          "success_max": 197.49,
+          "recommended_min": 12.172,
+          "recommended_max": 95.489,
+          "samples": 23
         }
       }
     },
@@ -4191,119 +2804,21 @@
         "max": 3.0
       },
       "by_seed": {
-        "1337": {
+        "2402": {
           "success_min": 1.0,
           "success_max": 3.0,
           "recommended_min": 1.0,
           "recommended_max": 3.0,
-          "samples": 439
-        },
-        "2026": {
-          "success_min": 1.0,
-          "success_max": 3.0,
-          "recommended_min": 1.0,
-          "recommended_max": 3.0,
-          "samples": 6212
-        },
-        "2027": {
-          "success_min": 1.0,
-          "success_max": 3.0,
-          "recommended_min": 1.0,
-          "recommended_max": 3.0,
-          "samples": 1765
-        },
-        "2028": {
-          "success_min": 1.0,
-          "success_max": 3.0,
-          "recommended_min": 1.0,
-          "recommended_max": 3.0,
-          "samples": 1795
-        },
-        "2029": {
-          "success_min": 1.0,
-          "success_max": 3.0,
-          "recommended_min": 1.0,
-          "recommended_max": 3.0,
-          "samples": 1780
-        },
-        "2030": {
-          "success_min": 1.0,
-          "success_max": 3.0,
-          "recommended_min": 1.0,
-          "recommended_max": 3.0,
-          "samples": 1757
+          "samples": 175
         }
       },
       "by_run_group": {
-        "legacy_5000_seed2026": {
+        "cmpfix2_smoke_20260214T1630Z": {
           "success_min": 1.0,
           "success_max": 3.0,
           "recommended_min": 1.0,
           "recommended_max": 3.0,
-          "samples": 4408
-        },
-        "legacy_5000_seed2026_retry2": {
-          "success_min": 1.0,
-          "success_max": 3.0,
-          "recommended_min": 1.0,
-          "recommended_max": 3.0,
-          "samples": 44
-        },
-        "legacy_500_seed1337": {
-          "success_min": 1.0,
-          "success_max": 3.0,
-          "recommended_min": 1.0,
-          "recommended_max": 3.0,
-          "samples": 403
-        },
-        "legacy_500_seed1337_retry2": {
-          "success_min": 1.0,
-          "success_max": 3.0,
-          "recommended_min": 1.0,
-          "recommended_max": 3.0,
-          "samples": 18
-        },
-        "legacy_500_seed1337_retry3": {
-          "success_min": 1.0,
-          "success_max": 3.0,
-          "recommended_min": 1.0,
-          "recommended_max": 3.0,
-          "samples": 18
-        },
-        "pp10k_2026": {
-          "success_min": 1.0,
-          "success_max": 3.0,
-          "recommended_min": 1.0,
-          "recommended_max": 3.0,
-          "samples": 1760
-        },
-        "pp10k_2027": {
-          "success_min": 1.0,
-          "success_max": 3.0,
-          "recommended_min": 1.0,
-          "recommended_max": 3.0,
-          "samples": 1765
-        },
-        "pp10k_2028": {
-          "success_min": 1.0,
-          "success_max": 3.0,
-          "recommended_min": 1.0,
-          "recommended_max": 3.0,
-          "samples": 1795
-        },
-        "pp10k_2029": {
-          "success_min": 1.0,
-          "success_max": 3.0,
-          "recommended_min": 1.0,
-          "recommended_max": 3.0,
-          "samples": 1780
-        },
-        "pp10k_2030": {
-          "success_min": 1.0,
-          "success_max": 3.0,
-          "recommended_min": 1.0,
-          "recommended_max": 3.0,
-          "samples": 1757
+          "samples": 175
         }
       }
     }

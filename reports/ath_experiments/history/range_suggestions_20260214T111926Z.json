@@ -1,0 +1,545 @@
+{
+  "generated_at": "2026-02-14T11:18:36+00:00",
+  "analysis_run_groups": [],
+  "analysis_run_group_count": 0,
+  "per_key": {
+    "CircArc.Radius": {
+      "safe_min": 35.0,
+      "safe_max": 1799.6471,
+      "rec_p05": 35.2349,
+      "rec_p95": 1690.7344999999998,
+      "based_on_run_groups": [
+        "pp100k_2103"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "CircArc.TermAngle": {
+      "safe_min": 3.0065,
+      "safe_max": 59.9639,
+      "rec_p05": 5.55534,
+      "rec_p95": 55.625399999999985,
+      "based_on_run_groups": [
+        "pp100k_2103"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Coverage.Angle": {
+      "safe_min": 10.2334,
+      "safe_max": 94.8575,
+      "rec_p05": 21.65219,
+      "rec_p95": 68.97361000000001,
+      "based_on_run_groups": [
+        "pp100k_2103"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "GCurve.AspectRatio": {
+      "safe_min": 0.31,
+      "safe_max": 2.6,
+      "rec_p05": 0.59,
+      "rec_p95": 1.79,
+      "based_on_run_groups": [
+        "pp100k_2103"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "GCurve.Dist": {
+      "safe_min": 0.1047,
+      "safe_max": 926.025,
+      "rec_p05": 0.23362499999999997,
+      "rec_p95": 559.0629,
+      "based_on_run_groups": [
+        "pp100k_2103"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "GCurve.Rot": {
+      "safe_min": -19.84,
+      "safe_max": 19.98,
+      "rec_p05": -11.3,
+      "rec_p95": 11.5675,
+      "based_on_run_groups": [
+        "pp100k_2103"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "GCurve.SE.n": {
+      "safe_min": 2.0,
+      "safe_max": 7.0,
+      "rec_p05": 2.14,
+      "rec_p95": 6.201999999999998,
+      "based_on_run_groups": [
+        "pp100k_2103"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "GCurve.SF.a": {
+      "safe_min": 0.36,
+      "safe_max": 1.44,
+      "rec_p05": 0.57,
+      "rec_p95": 1.23,
+      "based_on_run_groups": [
+        "pp100k_2103"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "GCurve.SF.b": {
+      "safe_min": 0.36,
+      "safe_max": 1.45,
+      "rec_p05": 0.57,
+      "rec_p95": 1.24,
+      "based_on_run_groups": [
+        "pp100k_2103"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "GCurve.SF.m1": {
+      "safe_min": 1.25,
+      "safe_max": 10.47,
+      "rec_p05": 2.27,
+      "rec_p95": 7.93,
+      "based_on_run_groups": [
+        "pp100k_2103"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "GCurve.SF.m2": {
+      "safe_min": 1.22,
+      "safe_max": 10.48,
+      "rec_p05": 2.26,
+      "rec_p95": 7.970000000000001,
+      "based_on_run_groups": [
+        "pp100k_2103"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "GCurve.SF.n1": {
+      "safe_min": 0.08,
+      "safe_max": 1.69,
+      "rec_p05": 0.16,
+      "rec_p95": 1.28,
+      "based_on_run_groups": [
+        "pp100k_2103"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "GCurve.SF.n2": {
+      "safe_min": 0.3,
+      "safe_max": 2.1,
+      "rec_p05": 0.41400000000000003,
+      "rec_p95": 1.91,
+      "based_on_run_groups": [
+        "pp100k_2103"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "GCurve.SF.n3": {
+      "safe_min": 0.3,
+      "safe_max": 2.1,
+      "rec_p05": 0.43,
+      "rec_p95": 1.91,
+      "based_on_run_groups": [
+        "pp100k_2103"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "GCurve.Type": {
+      "safe_min": 1.0,
+      "safe_max": 2.0,
+      "rec_p05": 1.0,
+      "rec_p95": 2.0,
+      "based_on_run_groups": [
+        "pp100k_2103"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "GCurve.Width": {
+      "safe_min": 80.02,
+      "safe_max": 1797.26,
+      "rec_p05": 130.0675,
+      "rec_p95": 897.9224999999999,
+      "based_on_run_groups": [
+        "pp100k_2103"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Length": {
+      "safe_min": 102.4,
+      "safe_max": 2632.345,
+      "rec_p05": 165.40300000000002,
+      "rec_p95": 977.8986500000001,
+      "based_on_run_groups": [
+        "pp100k_2103"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Mesh.AngularSegments": {
+      "safe_min": 32.0,
+      "safe_max": 160.0,
+      "rec_p05": 64.0,
+      "rec_p95": 132.0,
+      "based_on_run_groups": [
+        "pp100k_2103"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Mesh.CornerSegments": {
+      "safe_min": 1.0,
+      "safe_max": 14.0,
+      "rec_p05": 2.0,
+      "rec_p95": 10.0,
+      "based_on_run_groups": [
+        "pp100k_2103"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Mesh.InterfaceResolution": {
+      "safe_min": null,
+      "safe_max": null,
+      "rec_p05": null,
+      "rec_p95": null,
+      "based_on_run_groups": [],
+      "consistent_across_groups": false,
+      "consistency_score": null,
+      "notes": "insufficient_group_coverage"
+    },
+    "Mesh.LengthSegments": {
+      "safe_min": 8.0,
+      "safe_max": 80.0,
+      "rec_p05": 14.0,
+      "rec_p95": 61.0,
+      "based_on_run_groups": [
+        "pp100k_2103"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Mesh.MouthResolution": {
+      "safe_min": 3.01,
+      "safe_max": 19.99,
+      "rec_p05": 5.25,
+      "rec_p95": 18.637999999999995,
+      "based_on_run_groups": [
+        "pp100k_2103"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Mesh.Quadrants": {
+      "safe_min": 1.0,
+      "safe_max": 1234.0,
+      "rec_p05": 1.0,
+      "rec_p95": 1234.0,
+      "based_on_run_groups": [
+        "pp100k_2103"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Mesh.RearResolution": {
+      "safe_min": 4.0,
+      "safe_max": 24.96,
+      "rec_p05": 4.81,
+      "rec_p95": 22.555999999999983,
+      "based_on_run_groups": [
+        "pp100k_2103"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Mesh.RearShape": {
+      "safe_min": 1.0,
+      "safe_max": 2.0,
+      "rec_p05": 1.0,
+      "rec_p95": 2.0,
+      "based_on_run_groups": [
+        "pp100k_2103"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Mesh.ThroatResolution": {
+      "safe_min": 2.0,
+      "safe_max": 11.99,
+      "rec_p05": 2.47,
+      "rec_p95": 10.65,
+      "based_on_run_groups": [
+        "pp100k_2103"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Mesh.ThroatSegments": {
+      "safe_min": 1.0,
+      "safe_max": 24.0,
+      "rec_p05": 4.0,
+      "rec_p95": 17.0,
+      "based_on_run_groups": [
+        "pp100k_2103"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Mesh.WallThickness": {
+      "safe_min": 2.0,
+      "safe_max": 11.99,
+      "rec_p05": 2.42,
+      "rec_p95": 11.03,
+      "based_on_run_groups": [
+        "pp100k_2103"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Morph.CornerRadius": {
+      "safe_min": 0.0,
+      "safe_max": 59.94,
+      "rec_p05": 1.4415,
+      "rec_p95": 48.608999999999966,
+      "based_on_run_groups": [
+        "pp100k_2103"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Morph.FixedPart": {
+      "safe_min": 0.0002,
+      "safe_max": 0.9993,
+      "rec_p05": 0.020255000000000002,
+      "rec_p95": 0.9077499999999998,
+      "based_on_run_groups": [
+        "pp100k_2103"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Morph.Rate": {
+      "safe_min": 1.0087,
+      "safe_max": 11.5908,
+      "rec_p05": 1.298375,
+      "rec_p95": 8.983464999999997,
+      "based_on_run_groups": [
+        "pp100k_2103"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Morph.TargetHeight": {
+      "safe_min": 45.0,
+      "safe_max": 1900.0,
+      "rec_p05": 109.5575,
+      "rec_p95": 1465.3225,
+      "based_on_run_groups": [
+        "pp100k_2103"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Morph.TargetShape": {
+      "safe_min": 1.0,
+      "safe_max": 2.0,
+      "rec_p05": 1.0,
+      "rec_p95": 2.0,
+      "based_on_run_groups": [
+        "pp100k_2103"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Morph.TargetWidth": {
+      "safe_min": 45.0,
+      "safe_max": 1900.0,
+      "rec_p05": 127.32499999999999,
+      "rec_p95": 1480.2024999999999,
+      "based_on_run_groups": [
+        "pp100k_2103"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "OS.k": {
+      "safe_min": 0.20037,
+      "safe_max": 1.58835,
+      "rec_p05": 0.6512855,
+      "rec_p95": 1.239103,
+      "based_on_run_groups": [
+        "pp100k_2103"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Rot": {
+      "safe_min": -11.14,
+      "safe_max": 19.793,
+      "rec_p05": -8.592685,
+      "rec_p95": 9.63301,
+      "based_on_run_groups": [
+        "pp100k_2103"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Slot.Length": {
+      "safe_min": 0.0065,
+      "safe_max": 243.8608,
+      "rec_p05": 5.958,
+      "rec_p95": 161.6534,
+      "based_on_run_groups": [
+        "pp100k_2103"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Term.n": {
+      "safe_min": 2.00032,
+      "safe_max": 7.98259,
+      "rec_p05": 2.184759,
+      "rec_p95": 7.100706,
+      "based_on_run_groups": [
+        "pp100k_2103"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Term.q": {
+      "safe_min": 0.82037,
+      "safe_max": 0.99976,
+      "rec_p05": 0.8592855,
+      "rec_p95": 0.9938555,
+      "based_on_run_groups": [
+        "pp100k_2103"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Term.s": {
+      "safe_min": 0.5036,
+      "safe_max": 1.0478,
+      "rec_p05": 0.5634745,
+      "rec_p95": 0.9384625,
+      "based_on_run_groups": [
+        "pp100k_2103"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Throat.Angle": {
+      "safe_min": 0.008,
+      "safe_max": 24.996,
+      "rec_p05": 2.6142000000000003,
+      "rec_p95": 22.31,
+      "based_on_run_groups": [
+        "pp100k_2103"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Throat.Diameter": {
+      "safe_min": 12.0,
+      "safe_max": 115.0,
+      "rec_p05": 19.514000000000003,
+      "rec_p95": 103.89599999999999,
+      "based_on_run_groups": [
+        "pp100k_2103"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Throat.Ext.Angle": {
+      "safe_min": 0.01,
+      "safe_max": 24.91,
+      "rec_p05": 2.45,
+      "rec_p95": 22.299999999999997,
+      "based_on_run_groups": [
+        "pp100k_2103"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Throat.Ext.Length": {
+      "safe_min": 3.23,
+      "safe_max": 199.34,
+      "rec_p05": 7.648,
+      "rec_p95": 140.19999999999993,
+      "based_on_run_groups": [
+        "pp100k_2103"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Throat.Profile": {
+      "safe_min": 1.0,
+      "safe_max": 3.0,
+      "rec_p05": 1.0,
+      "rec_p95": 3.0,
+      "based_on_run_groups": [
+        "pp100k_2103"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    }
+  }
+}

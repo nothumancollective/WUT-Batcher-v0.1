@@ -1,0 +1,66 @@
+{
+  "generated_at": "2026-02-14T15:46:48+00:00",
+  "summary_refined_path": "reports\\ath_experiments\\summary_refined_20260214T154648Z.json",
+  "mode_error_matrix_refined_path": "reports\\ath_experiments\\mode_error_matrix_refined_20260214T154648Z.json",
+  "post100k_refined_md_path": "reports\\ath_experiments\\post100k_executive_summary_refined_20260214T154648Z.md",
+  "top_error_patterns_refined": [
+    {
+      "kind": "hard_cap_exceeded",
+      "count": 10196,
+      "example_run_ids": [
+        "ath_exp_1337_0005_ed3639ff54",
+        "ath_exp_1337_0015_8ad44576ef",
+        "ath_exp_1337_0005_5576d3f3a8",
+        "ath_exp_1337_0015_6cd37bcea5",
+        "ath_exp_1337_0005_23fff8b3a5"
+      ]
+    },
+    {
+      "kind": "compare_mismatch_exit0",
+      "count": 8050,
+      "example_run_ids": [
+        "ath_exp_2100_0030_051ffef755",
+        "ath_exp_2100_0059_bdde3cab5a",
+        "ath_exp_2100_0070_ef81899e44",
+        "ath_exp_2100_0082_6f29cc6de8",
+        "ath_exp_2100_0106_0342f85f57"
+      ]
+    },
+    {
+      "kind": "diameter_over_100m",
+      "count": 1802,
+      "example_run_ids": [
+        "ath_exp_1337_0025_bd94261911",
+        "ath_exp_1337_0049_3076cdc7d0",
+        "ath_exp_1337_0082_3e0ba2303f",
+        "ath_exp_1337_0094_b8bab71b6e",
+        "ath_exp_1337_0188_700b0dd5f8"
+      ]
+    },
+    {
+      "kind": "ath_nonzero_exit",
+      "count": 31,
+      "example_run_ids": [
+        "ath_exp_2026_0628_d9b91e3099",
+        "ath_exp_2026_2311_93cda55d91",
+        "ath_exp_2026_2321_b547ad7e19",
+        "ath_exp_2026_3652_bbacc0427f",
+        "ath_exp_2026_4910_703b9065df"
+      ]
+    },
+    {
+      "kind": "numeric_overflow",
+      "count": 7,
+      "example_run_ids": [
+        "ath_exp_2026_2913_9757248023",
+        "ath_exp_2026_4056_a6c06def2b",
+        "ath_exp_2027_0150_bde64f72ab",
+        "ath_exp_2029_1252_940a2e6e84",
+        "ath_exp_2100_0792_d8774bb5f4"
+      ]
+    }
+  ],
+  "unknown_legacy_count": 8050,
+  "compare_mismatch_exit0_count": 8050,
+  "ath_runtime_unknown_count": 0
+}

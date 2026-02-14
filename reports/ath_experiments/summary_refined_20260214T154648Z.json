@@ -1,0 +1,696 @@
+{
+  "generated_at": "2026-02-14T15:46:48+00:00",
+  "db_path": "reports\\ath_experiments\\ath_experiments.sqlite",
+  "run_group_selector": "all",
+  "analysis_run_groups": [
+    "legacy_5000_seed2026",
+    "legacy_5000_seed2026_retry2",
+    "legacy_500_seed1337",
+    "legacy_500_seed1337_retry2",
+    "legacy_500_seed1337_retry3",
+    "pp100k_2100",
+    "pp100k_2101",
+    "pp100k_2102",
+    "pp100k_2103",
+    "pp100k_2104",
+    "pp100k_2105",
+    "pp100k_2106",
+    "pp100k_2107",
+    "pp100k_2108",
+    "pp100k_2109",
+    "pp10k_2026",
+    "pp10k_2027",
+    "pp10k_2028",
+    "pp10k_2029",
+    "pp10k_2030",
+    "pp10k_smoke_2026"
+  ],
+  "analysis_run_count": 115640,
+  "status_counts": {
+    "ok": 92694,
+    "ath_error": 20086,
+    "pipeline_error": 0,
+    "skipped": 2860
+  },
+  "top_error_patterns_refined": [
+    {
+      "kind": "hard_cap_exceeded",
+      "count": 10196,
+      "example_run_ids": [
+        "ath_exp_1337_0005_ed3639ff54",
+        "ath_exp_1337_0015_8ad44576ef",
+        "ath_exp_1337_0005_5576d3f3a8",
+        "ath_exp_1337_0015_6cd37bcea5",
+        "ath_exp_1337_0005_23fff8b3a5"
+      ]
+    },
+    {
+      "kind": "compare_mismatch_exit0",
+      "count": 8050,
+      "example_run_ids": [
+        "ath_exp_2100_0030_051ffef755",
+        "ath_exp_2100_0059_bdde3cab5a",
+        "ath_exp_2100_0070_ef81899e44",
+        "ath_exp_2100_0082_6f29cc6de8",
+        "ath_exp_2100_0106_0342f85f57"
+      ]
+    },
+    {
+      "kind": "diameter_over_100m",
+      "count": 1802,
+      "example_run_ids": [
+        "ath_exp_1337_0025_bd94261911",
+        "ath_exp_1337_0049_3076cdc7d0",
+        "ath_exp_1337_0082_3e0ba2303f",
+        "ath_exp_1337_0094_b8bab71b6e",
+        "ath_exp_1337_0188_700b0dd5f8"
+      ]
+    },
+    {
+      "kind": "ath_nonzero_exit",
+      "count": 31,
+      "example_run_ids": [
+        "ath_exp_2026_0628_d9b91e3099",
+        "ath_exp_2026_2311_93cda55d91",
+        "ath_exp_2026_2321_b547ad7e19",
+        "ath_exp_2026_3652_bbacc0427f",
+        "ath_exp_2026_4910_703b9065df"
+      ]
+    },
+    {
+      "kind": "numeric_overflow",
+      "count": 7,
+      "example_run_ids": [
+        "ath_exp_2026_2913_9757248023",
+        "ath_exp_2026_4056_a6c06def2b",
+        "ath_exp_2027_0150_bde64f72ab",
+        "ath_exp_2029_1252_940a2e6e84",
+        "ath_exp_2100_0792_d8774bb5f4"
+      ]
+    }
+  ],
+  "unknown_legacy_count": 8050,
+  "compare_mismatch_exit0_count": 8050,
+  "ath_runtime_unknown_count": 0,
+  "coverage_by_key": [
+    {
+      "key": "CircArc.Radius",
+      "set_count": 38483,
+      "total": 115640,
+      "set_ratio": 0.3327827741265998
+    },
+    {
+      "key": "CircArc.TermAngle",
+      "set_count": 38483,
+      "total": 115640,
+      "set_ratio": 0.3327827741265998
+    },
+    {
+      "key": "Coverage.Angle",
+      "set_count": 39696,
+      "total": 115640,
+      "set_ratio": 0.34327222414389486
+    },
+    {
+      "key": "GCurve.AspectRatio",
+      "set_count": 75944,
+      "total": 115640,
+      "set_ratio": 0.6567277758561052
+    },
+    {
+      "key": "GCurve.Dist",
+      "set_count": 75944,
+      "total": 115640,
+      "set_ratio": 0.6567277758561052
+    },
+    {
+      "key": "GCurve.Rot",
+      "set_count": 75944,
+      "total": 115640,
+      "set_ratio": 0.6567277758561052
+    },
+    {
+      "key": "GCurve.SE.n",
+      "set_count": 40008,
+      "total": 115640,
+      "set_ratio": 0.3459702525077828
+    },
+    {
+      "key": "GCurve.SF",
+      "set_count": 1500,
+      "total": 115640,
+      "set_ratio": 0.012971290210999653
+    },
+    {
+      "key": "GCurve.SF.0",
+      "set_count": 1500,
+      "total": 1500,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "GCurve.SF.1",
+      "set_count": 1500,
+      "total": 1500,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "GCurve.SF.2",
+      "set_count": 1500,
+      "total": 1500,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "GCurve.SF.3",
+      "set_count": 1500,
+      "total": 1500,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "GCurve.SF.4",
+      "set_count": 1500,
+      "total": 1500,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "GCurve.SF.5",
+      "set_count": 1500,
+      "total": 1500,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "GCurve.SF.a",
+      "set_count": 34436,
+      "total": 115640,
+      "set_ratio": 0.2977862331373227
+    },
+    {
+      "key": "GCurve.SF.b",
+      "set_count": 34436,
+      "total": 115640,
+      "set_ratio": 0.2977862331373227
+    },
+    {
+      "key": "GCurve.SF.m1",
+      "set_count": 34436,
+      "total": 115640,
+      "set_ratio": 0.2977862331373227
+    },
+    {
+      "key": "GCurve.SF.m2",
+      "set_count": 34436,
+      "total": 115640,
+      "set_ratio": 0.2977862331373227
+    },
+    {
+      "key": "GCurve.SF.n1",
+      "set_count": 34436,
+      "total": 115640,
+      "set_ratio": 0.2977862331373227
+    },
+    {
+      "key": "GCurve.SF.n2",
+      "set_count": 34436,
+      "total": 115640,
+      "set_ratio": 0.2977862331373227
+    },
+    {
+      "key": "GCurve.SF.n3",
+      "set_count": 34436,
+      "total": 115640,
+      "set_ratio": 0.2977862331373227
+    },
+    {
+      "key": "GCurve.Type",
+      "set_count": 75944,
+      "total": 115640,
+      "set_ratio": 0.6567277758561052
+    },
+    {
+      "key": "GCurve.Width",
+      "set_count": 75944,
+      "total": 115640,
+      "set_ratio": 0.6567277758561052
+    },
+    {
+      "key": "Length",
+      "set_count": 105696,
+      "total": 115640,
+      "set_ratio": 0.9140089934278797
+    },
+    {
+      "key": "Mesh.AngularSegments",
+      "set_count": 115640,
+      "total": 115640,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "Mesh.CornerSegments",
+      "set_count": 41893,
+      "total": 115640,
+      "set_ratio": 0.3622708405396057
+    },
+    {
+      "key": "Mesh.Enclosure",
+      "set_count": 6893,
+      "total": 115640,
+      "set_ratio": 0.05960740228294708
+    },
+    {
+      "key": "Mesh.Enclosure.BackResolution",
+      "set_count": 6893,
+      "total": 6893,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "Mesh.Enclosure.BackResolution.0",
+      "set_count": 6893,
+      "total": 6893,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "Mesh.Enclosure.BackResolution.1",
+      "set_count": 6893,
+      "total": 6893,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "Mesh.Enclosure.BackResolution.2",
+      "set_count": 6893,
+      "total": 6893,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "Mesh.Enclosure.BackResolution.3",
+      "set_count": 6893,
+      "total": 6893,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "Mesh.Enclosure.Depth",
+      "set_count": 6893,
+      "total": 6893,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "Mesh.Enclosure.EdgeRadius",
+      "set_count": 6893,
+      "total": 6893,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "Mesh.Enclosure.FrontResolution",
+      "set_count": 6893,
+      "total": 6893,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "Mesh.Enclosure.FrontResolution.0",
+      "set_count": 6893,
+      "total": 6893,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "Mesh.Enclosure.FrontResolution.1",
+      "set_count": 6893,
+      "total": 6893,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "Mesh.Enclosure.FrontResolution.2",
+      "set_count": 6893,
+      "total": 6893,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "Mesh.Enclosure.FrontResolution.3",
+      "set_count": 6893,
+      "total": 6893,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "Mesh.Enclosure.Plan",
+      "set_count": 1353,
+      "total": 1353,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "Mesh.Enclosure.Spacing",
+      "set_count": 6893,
+      "total": 6893,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "Mesh.Enclosure.Spacing.0",
+      "set_count": 6893,
+      "total": 6893,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "Mesh.Enclosure.Spacing.1",
+      "set_count": 6893,
+      "total": 6893,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "Mesh.Enclosure.Spacing.2",
+      "set_count": 6893,
+      "total": 6893,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "Mesh.Enclosure.Spacing.3",
+      "set_count": 6893,
+      "total": 6893,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "Mesh.InterfaceDraw",
+      "set_count": 2500,
+      "total": 115640,
+      "set_ratio": 0.021618817018332757
+    },
+    {
+      "key": "Mesh.InterfaceDraw.0",
+      "set_count": 2500,
+      "total": 2500,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "Mesh.InterfaceDraw.1",
+      "set_count": 1751,
+      "total": 1751,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "Mesh.InterfaceDraw.2",
+      "set_count": 1089,
+      "total": 1089,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "Mesh.InterfaceDraw.3",
+      "set_count": 379,
+      "total": 379,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "Mesh.InterfaceDraw.4",
+      "set_count": 183,
+      "total": 183,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "Mesh.InterfaceOffset",
+      "set_count": 0,
+      "total": 115640,
+      "set_ratio": 0.0
+    },
+    {
+      "key": "Mesh.InterfaceResolution",
+      "set_count": 2500,
+      "total": 115640,
+      "set_ratio": 0.021618817018332757
+    },
+    {
+      "key": "Mesh.LengthSegments",
+      "set_count": 115640,
+      "total": 115640,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "Mesh.MouthResolution",
+      "set_count": 100000,
+      "total": 115640,
+      "set_ratio": 0.8647526807333102
+    },
+    {
+      "key": "Mesh.Quadrants",
+      "set_count": 115640,
+      "total": 115640,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "Mesh.RearResolution",
+      "set_count": 100000,
+      "total": 115640,
+      "set_ratio": 0.8647526807333102
+    },
+    {
+      "key": "Mesh.RearShape",
+      "set_count": 6893,
+      "total": 115640,
+      "set_ratio": 0.05960740228294708
+    },
+    {
+      "key": "Mesh.SubdomainSlices",
+      "set_count": 2500,
+      "total": 115640,
+      "set_ratio": 0.021618817018332757
+    },
+    {
+      "key": "Mesh.SubdomainSlices.0",
+      "set_count": 2500,
+      "total": 2500,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "Mesh.SubdomainSlices.1",
+      "set_count": 1751,
+      "total": 1751,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "Mesh.SubdomainSlices.2",
+      "set_count": 1089,
+      "total": 1089,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "Mesh.SubdomainSlices.3",
+      "set_count": 379,
+      "total": 379,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "Mesh.SubdomainSlices.4",
+      "set_count": 183,
+      "total": 183,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "Mesh.ThroatResolution",
+      "set_count": 100000,
+      "total": 115640,
+      "set_ratio": 0.8647526807333102
+    },
+    {
+      "key": "Mesh.ThroatSegments",
+      "set_count": 17231,
+      "total": 115640,
+      "set_ratio": 0.1490055344171567
+    },
+    {
+      "key": "Mesh.WallThickness",
+      "set_count": 100000,
+      "total": 115640,
+      "set_ratio": 0.8647526807333102
+    },
+    {
+      "key": "Mesh.ZMapPoints",
+      "set_count": 2500,
+      "total": 115640,
+      "set_ratio": 0.021618817018332757
+    },
+    {
+      "key": "Mesh.ZMapPoints.0",
+      "set_count": 2500,
+      "total": 2500,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "Mesh.ZMapPoints.1",
+      "set_count": 2500,
+      "total": 2500,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "Mesh.ZMapPoints.2",
+      "set_count": 2500,
+      "total": 2500,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "Morph.AllowShrinkage",
+      "set_count": 3000,
+      "total": 115640,
+      "set_ratio": 0.025942580421999307
+    },
+    {
+      "key": "Morph.CornerRadius",
+      "set_count": 42126,
+      "total": 115640,
+      "set_ratio": 0.36428571428571427
+    },
+    {
+      "key": "Morph.FixedPart",
+      "set_count": 3000,
+      "total": 115640,
+      "set_ratio": 0.025942580421999307
+    },
+    {
+      "key": "Morph.Rate",
+      "set_count": 3000,
+      "total": 115640,
+      "set_ratio": 0.025942580421999307
+    },
+    {
+      "key": "Morph.TargetHeight",
+      "set_count": 66114,
+      "total": 115640,
+      "set_ratio": 0.5717225873400208
+    },
+    {
+      "key": "Morph.TargetShape",
+      "set_count": 66114,
+      "total": 115640,
+      "set_ratio": 0.5717225873400208
+    },
+    {
+      "key": "Morph.TargetWidth",
+      "set_count": 66114,
+      "total": 115640,
+      "set_ratio": 0.5717225873400208
+    },
+    {
+      "key": "OS.k",
+      "set_count": 38504,
+      "total": 115640,
+      "set_ratio": 0.33296437218955377
+    },
+    {
+      "key": "R-OSSE",
+      "set_count": 38653,
+      "total": 115640,
+      "set_ratio": 0.33425285368384644
+    },
+    {
+      "key": "R-OSSE.R",
+      "set_count": 38653,
+      "total": 38653,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "R-OSSE.a",
+      "set_count": 38653,
+      "total": 38653,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "R-OSSE.a0",
+      "set_count": 38653,
+      "total": 38653,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "R-OSSE.b",
+      "set_count": 38653,
+      "total": 38653,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "R-OSSE.k",
+      "set_count": 38653,
+      "total": 38653,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "R-OSSE.m",
+      "set_count": 38653,
+      "total": 38653,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "R-OSSE.q",
+      "set_count": 38653,
+      "total": 38653,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "R-OSSE.r",
+      "set_count": 38653,
+      "total": 38653,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "R-OSSE.r0",
+      "set_count": 38653,
+      "total": 38653,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "Rot",
+      "set_count": 2000,
+      "total": 115640,
+      "set_ratio": 0.017295053614666205
+    },
+    {
+      "key": "Slot.Length",
+      "set_count": 9065,
+      "total": 115640,
+      "set_ratio": 0.07838983050847458
+    },
+    {
+      "key": "Term.n",
+      "set_count": 38504,
+      "total": 115640,
+      "set_ratio": 0.33296437218955377
+    },
+    {
+      "key": "Term.q",
+      "set_count": 38504,
+      "total": 115640,
+      "set_ratio": 0.33296437218955377
+    },
+    {
+      "key": "Term.s",
+      "set_count": 38504,
+      "total": 115640,
+      "set_ratio": 0.33296437218955377
+    },
+    {
+      "key": "Throat.Angle",
+      "set_count": 115640,
+      "total": 115640,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "Throat.Diameter",
+      "set_count": 115640,
+      "total": 115640,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "Throat.Ext.Angle",
+      "set_count": 12120,
+      "total": 115640,
+      "set_ratio": 0.1048080249048772
+    },
+    {
+      "key": "Throat.Ext.Length",
+      "set_count": 12120,
+      "total": 115640,
+      "set_ratio": 0.1048080249048772
+    },
+    {
+      "key": "Throat.Profile",
+      "set_count": 115640,
+      "total": 115640,
+      "set_ratio": 1.0
+    }
+  ],
+  "performance_ms": {
+    "coverage_by_key": 744.03
+  },
+  "mode_error_matrix_refined_path": "reports\\ath_experiments\\mode_error_matrix_refined_20260214T154648Z.json",
+  "history_snapshot_path": "reports\\ath_experiments\\history\\summary_refined_20260214T154648Z.json"
+}

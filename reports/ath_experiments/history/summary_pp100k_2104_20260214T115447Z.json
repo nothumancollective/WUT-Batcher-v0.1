@@ -1,0 +1,2941 @@
+{
+  "generated_at": "2026-02-14T11:54:47+00:00",
+  "ath_executable": "C:\\Tools\\ATH\\ath.exe",
+  "template_cfg": null,
+  "cfg_dir": "C:\\Tools\\ATH",
+  "export_root": "C:\\Horns",
+  "reports_root": "reports\\ath_experiments",
+  "cases_requested": 10000,
+  "seed": 2104,
+  "run_group_id": "pp100k_2104",
+  "analysis_run_groups": [],
+  "analysis_run_count": 10000,
+  "cleanup_files": true,
+  "preclean_files": false,
+  "cleanup_cases_mode": "end",
+  "cleanup_log_mode": "end",
+  "max_dim_mm": 2000.0,
+  "hard_cap_mm": 5000.0,
+  "priors_path": "reports\\ath_experiments\\range_suggestions.v1.json",
+  "database_path": "reports\\ath_experiments\\ath_experiments.sqlite",
+  "status_counts": {
+    "ok": 7914,
+    "ath_error": 1799,
+    "pipeline_error": 0,
+    "skipped": 287
+  },
+  "run_status_counts": {
+    "ok": 7914,
+    "ath_error": 1799,
+    "pipeline_error": 0,
+    "skipped": 287
+  },
+  "reports_preview": [
+    {
+      "run_id": "ath_exp_2104_0001_df6445f8dc",
+      "run_group_id": "pp100k_2104",
+      "run_name": "run_0001",
+      "case_index": 1,
+      "case_type": "exploratory",
+      "test_id": "PP_ATH_EXP_0001",
+      "project_name": "PP_ATH_EXP_0001",
+      "started_at": "2026-02-14T11:19:28+00:00",
+      "finished_at": "2026-02-14T11:19:28+00:00",
+      "status": "ok",
+      "notes": "",
+      "cfg_path": "C:\\Tools\\ATH\\ProjectPageATHTest23.cfg",
+      "horns_export_dir": "C:\\Horns\\ProjectPageATHTest23",
+      "config_path": "C:\\Horns\\ProjectPageATHTest23\\config.txt",
+      "stdout_path": "reports\\ath_experiments\\log\\run_0001_stdout.txt",
+      "stderr_path": "reports\\ath_experiments\\log\\run_0001_stderr.txt",
+      "success_flags": {
+        "cfg_written": true,
+        "ath_ok": true,
+        "config_ok": true,
+        "no_ghosts": true
+      },
+      "ath_result": {
+        "ok": true,
+        "exit_code": 0,
+        "timed_out": false,
+        "stdout_log": "reports\\ath_experiments\\cases\\run_0001\\runner_logs\\ath.stdout.log",
+        "stderr_log": "reports\\ath_experiments\\cases\\run_0001\\runner_logs\\ath.stderr.log",
+        "summary_log": "reports\\ath_experiments\\cases\\run_0001\\runner_logs\\ath.runner.log"
+      },
+      "compare": {
+        "expected_values": {
+          "Throat.Diameter": 115.0,
+          "Throat.Profile": 1,
+          "Throat.Angle": "7.223",
+          "Length": "159.335",
+          "OS.k": "1.21302",
+          "Term.s": "0.82393",
+          "Term.n": "2.74425",
+          "Term.q": "0.98857",
+          "GCurve.Type": 1,
+          "GCurve.Dist": "63.5255",
+          "GCurve.Width": 849.67,
+          "GCurve.AspectRatio": 0.73,
+          "GCurve.SE.n": 4.26,
+          "GCurve.Rot": -3.35,
+          "Mesh.Quadrants": 1,
+          "Mesh.AngularSegments": 100,
+          "Mesh.LengthSegments": 8,
+          "Mesh.ThroatResolution": 7.76,
+          "Mesh.MouthResolution": 18.38,
+          "Mesh.RearShape": 1,
+          "Mesh.WallThickness": 8.19,
+          "Mesh.RearResolution": 14.36,
+          "Mesh.Enclosure": {
+            "Spacing": [
+              67.664,
+              119.523,
+              60.613,
+              112.356
+            ],
+            "Depth": 561.56,
+            "EdgeRadius": 18.37,
+            "FrontResolution": [
+              9.426,
+              3.009,
+              2.372,
+              2.835
+            ],
+            "BackResolution": [
+              7.369,
+              2.879,
+              9.282,
+              11.041
+            ]
+          }
+        },
+        "cfg": {
+          "missing_keys_required": [],
+          "missing_keys_optional": [],
+          "missing_keys": [],
+          "extra_keys_defaulted": [],
+          "extra_keys_ghost": [],
+          "extra_keys": [],
+          "value_mismatches": [],
+          "ok": true
+        },
+        "config": {
+          "missing_keys_required": [],
+          "missing_keys_optional": [],
+          "missing_keys": [],
+          "extra_keys_defaulted": [],
+          "extra_keys_ghost": [],
+          "extra_keys": [],
+          "value_mismatches": [],
+          "ok": true
+        }
+      },
+      "input_summary": {
+        "field_values": [
+          [
+            "Throat.Profile",
+            1
+          ],
+          [
+            "Throat.Diameter",
+            115.0
+          ],
+          [
+            "Throat.Angle",
+            7.223
+          ],
+          [
+            "Morph.TargetShape",
+            0
+          ],
+          [
+            "Length",
+            159.335
+          ],
+          [
+            "Term.s",
+            0.82393
+          ],
+          [
+            "Term.q",
+            0.98857
+          ],
+          [
+            "Term.n",
+            2.74425
+          ],
+          [
+            "OS.k",
+            1.21302
+          ],
+          [
+            "GCurve.Type",
+            1
+          ],
+          [
+            "GCurve.Dist",
+            63.5255
+          ],
+          [
+            "GCurve.Width",
+            849.6748
+          ],
+          [
+            "GCurve.Rot",
+            -3.349
+          ],
+          [
+            "GCurve.AspectRatio",
+            0.7299
+          ],
+          [
+            "GCurve.SE.n",
+            4.2568
+          ],
+          [
+            "Mesh.Quadrants",
+            1
+          ],
+          [
+            "Mesh.AngularSegments",
+            100
+          ],
+          [
+            "Mesh.LengthSegments",
+            8
+          ],
+          [
+            "Mesh.ThroatResolution",
+            7.7561
+          ],
+          [
+            "Mesh.MouthResolution",
+            18.3755
+          ],
+          [
+            "Mesh.WallThickness",
+            8.1936
+          ],
+          [
+            "Mesh.RearResolution",
+            14.3577
+          ],
+          [
+            "Mesh.Enclosure",
+            1
+          ],
+          [
+            "Mesh.Enclosure.Spacing",
+            [
+              67.664,
+              119.523,
+              60.613,
+              112.356
+            ]
+          ],
+          [
+            "Mesh.Enclosure.Depth",
+            561.5646
+          ],
+          [
+            "Mesh.Enclosure.EdgeRadius",
+            18.3689
+          ],
+          [
+            "Mesh.Enclosure.EdgeType",
+            2
+          ],
+          [
+            "Mesh.Enclosure.FrontResolution",
+            [
+              9.426,
+              3.009,
+              2.372,
+              2.835
+            ]
+          ],
+          [
+            "Mesh.Enclosure.BackResolution",
+            [
+              7.369,
+              2.879,
+              9.282,
+              11.041
+            ]
+          ],
+          [
+            "Mesh.RearShape",
+            1
+          ]
+        ],
+        "runner_mode": "AkabakImportFixedSource",
+        "compat_issues": [],
+        "missing_editors": [],
+        "payload_fixed_params": {
+          "Throat.Diameter": 115.0,
+          "Throat.Profile": 1,
+          "Throat.Angle": "7.223",
+          "Length": "159.335",
+          "OS.k": "1.21302",
+          "Term.s": "0.82393",
+          "Term.n": "2.74425",
+          "Term.q": "0.98857",
+          "GCurve.Type": 1,
+          "GCurve.Dist": "63.5255",
+          "GCurve.Width": 849.67,
+          "GCurve.AspectRatio": 0.73,
+          "GCurve.SE.n": 4.26,
+          "GCurve.Rot": -3.35
+        },
+        "payload_limits": {
+          "Mesh.Quadrants": 1,
+          "Mesh.AngularSegments": 100,
+          "Mesh.LengthSegments": 8,
+          "Mesh.ThroatResolution": 7.76,
+          "Mesh.MouthResolution": 18.38,
+          "Mesh.RearShape": 1,
+          "Mesh.WallThickness": 8.19,
+          "Mesh.RearResolution": 14.36,
+          "Mesh.Enclosure": {
+            "Spacing": [
+              67.664,
+              119.523,
+              60.613,
+              112.356
+            ],
+            "Depth": 561.56,
+            "EdgeRadius": 18.37,
+            "FrontResolution": [
+              9.426,
+              3.009,
+              2.372,
+              2.835
+            ],
+            "BackResolution": [
+              7.369,
+              2.879,
+              9.282,
+              11.041
+            ]
+          }
+        }
+      },
+      "errors": {
+        "cfg_error": null,
+        "ath_error": null,
+        "ath_error_kind": null,
+        "ath_error_message": null,
+        "ath_warning_count": 2
+      },
+      "metrics": {
+        "final_width_mm": 2311.62,
+        "final_height_mm": 1726.0,
+        "final_length_mm": 159.34,
+        "avg_throat_angle_deg": 7.223,
+        "derived_volume_m3": 0.6357436741608,
+        "flags": {
+          "max_dim_warn": true,
+          "hard_cap_exceeded": false,
+          "throat_angle_missing": false,
+          "max_observed_dim_mm": 2311.62
+        }
+      },
+      "cleanup": {
+        "cfg": {
+          "target": "C:\\Tools\\ATH\\ProjectPageATHTest23.cfg",
+          "deleted": true,
+          "reason": "deleted"
+        },
+        "export_dir": {
+          "target": "C:\\Horns\\ProjectPageATHTest23",
+          "deleted": true,
+          "reason": "deleted"
+        }
+      }
+    },
+    {
+      "run_id": "ath_exp_2104_0002_9b4c47567f",
+      "run_group_id": "pp100k_2104",
+      "run_name": "run_0002",
+      "case_index": 2,
+      "case_type": "exploratory",
+      "test_id": "PP_ATH_EXP_0002",
+      "project_name": "PP_ATH_EXP_0002",
+      "started_at": "2026-02-14T11:19:28+00:00",
+      "finished_at": "2026-02-14T11:19:28+00:00",
+      "status": "ok",
+      "notes": "",
+      "cfg_path": "C:\\Tools\\ATH\\ProjectPageATHTest24.cfg",
+      "horns_export_dir": "C:\\Horns\\ProjectPageATHTest24",
+      "config_path": "C:\\Horns\\ProjectPageATHTest24\\config.txt",
+      "stdout_path": "reports\\ath_experiments\\log\\run_0002_stdout.txt",
+      "stderr_path": "reports\\ath_experiments\\log\\run_0002_stderr.txt",
+      "success_flags": {
+        "cfg_written": true,
+        "ath_ok": true,
+        "config_ok": true,
+        "no_ghosts": true
+      },
+      "ath_result": {
+        "ok": true,
+        "exit_code": 0,
+        "timed_out": false,
+        "stdout_log": "reports\\ath_experiments\\cases\\run_0002\\runner_logs\\ath.stdout.log",
+        "stderr_log": "reports\\ath_experiments\\cases\\run_0002\\runner_logs\\ath.stderr.log",
+        "summary_log": "reports\\ath_experiments\\cases\\run_0002\\runner_logs\\ath.runner.log"
+      },
+      "compare": {
+        "expected_values": {
+          "Throat.Diameter": 82.69,
+          "Throat.Profile": 1,
+          "Throat.Angle": "8.007",
+          "Length": "723.723",
+          "OS.k": "0.83117",
+          "Term.s": "0.6831",
+          "Term.n": "4.10733",
+          "Term.q": "0.96056",
+          "GCurve.Type": 1,
+          "GCurve.Dist": "0.6193",
+          "GCurve.Width": 585.19,
+          "GCurve.AspectRatio": 1.22,
+          "GCurve.SE.n": 4.24,
+          "GCurve.Rot": 7.85,
+          "Mesh.Quadrants": 1,
+          "Mesh.AngularSegments": 116,
+          "Mesh.LengthSegments": 33,
+          "Mesh.ThroatResolution": 7.26,
+          "Mesh.MouthResolution": 9.04,
+          "Mesh.WallThickness": 3.0,
+          "Mesh.RearResolution": 19.58
+        },
+        "cfg": {
+          "missing_keys_required": [],
+          "missing_keys_optional": [],
+          "missing_keys": [],
+          "extra_keys_defaulted": [],
+          "extra_keys_ghost": [],
+          "extra_keys": [],
+          "value_mismatches": [],
+          "ok": true
+        },
+        "config": {
+          "missing_keys_required": [],
+          "missing_keys_optional": [],
+          "missing_keys": [],
+          "extra_keys_defaulted": [],
+          "extra_keys_ghost": [],
+          "extra_keys": [],
+          "value_mismatches": [],
+          "ok": true
+        }
+      },
+      "input_summary": {
+        "field_values": [
+          [
+            "Throat.Profile",
+            1
+          ],
+          [
+            "Throat.Diameter",
+            82.687
+          ],
+          [
+            "Throat.Angle",
+            8.007
+          ],
+          [
+            "Morph.TargetShape",
+            0
+          ],
+          [
+            "Length",
+            723.723
+          ],
+          [
+            "Term.s",
+            0.6831
+          ],
+          [
+            "Term.q",
+            0.96056
+          ],
+          [
+            "Term.n",
+            4.10733
+          ],
+          [
+            "OS.k",
+            0.83117
+          ],
+          [
+            "GCurve.Type",
+            1
+          ],
+          [
+            "GCurve.Dist",
+            0.6193
+          ],
+          [
+            "GCurve.Width",
+            585.1937
+          ],
+          [
+            "GCurve.Rot",
+            7.8487
+          ],
+          [
+            "GCurve.AspectRatio",
+            1.2234
+          ],
+          [
+            "GCurve.SE.n",
+            4.2383
+          ],
+          [
+            "Mesh.Quadrants",
+            1
+          ],
+          [
+            "Mesh.AngularSegments",
+            116
+          ],
+          [
+            "Mesh.LengthSegments",
+            33
+          ],
+          [
+            "Mesh.ThroatResolution",
+            7.2587
+          ],
+          [
+            "Mesh.MouthResolution",
+            9.0361
+          ],
+          [
+            "Mesh.WallThickness",
+            2.9996
+          ],
+          [
+            "Mesh.RearResolution",
+            19.5773
+          ]
+        ],
+        "runner_mode": "AkabakImportFixedSource",
+        "compat_issues": [],
+        "missing_editors": [],
+        "payload_fixed_params": {
+          "Throat.Diameter": 82.69,
+          "Throat.Profile": 1,
+          "Throat.Angle": "8.007",
+          "Length": "723.723",
+          "OS.k": "0.83117",
+          "Term.s": "0.6831",
+          "Term.n": "4.10733",
+          "Term.q": "0.96056",
+          "GCurve.Type": 1,
+          "GCurve.Dist": "0.6193",
+          "GCurve.Width": 585.19,
+          "GCurve.AspectRatio": 1.22,
+          "GCurve.SE.n": 4.24,
+          "GCurve.Rot": 7.85
+        },
+        "payload_limits": {
+          "Mesh.Quadrants": 1,
+          "Mesh.AngularSegments": 116,
+          "Mesh.LengthSegments": 33,
+          "Mesh.ThroatResolution": 7.26,
+          "Mesh.MouthResolution": 9.04,
+          "Mesh.WallThickness": 3.0,
+          "Mesh.RearResolution": 19.58
+        }
+      },
+      "errors": {
+        "cfg_error": null,
+        "ath_error": null,
+        "ath_error_kind": null,
+        "ath_error_message": null,
+        "ath_warning_count": 1
+      },
+      "metrics": {
+        "final_width_mm": 1285.77,
+        "final_height_mm": 1492.13,
+        "final_length_mm": 723.72,
+        "avg_throat_angle_deg": 8.007,
+        "derived_volume_m3": 1.388482866755172,
+        "flags": {
+          "max_dim_warn": false,
+          "hard_cap_exceeded": false,
+          "throat_angle_missing": false,
+          "max_observed_dim_mm": 1492.13
+        }
+      },
+      "cleanup": {
+        "cfg": {
+          "target": "C:\\Tools\\ATH\\ProjectPageATHTest24.cfg",
+          "deleted": true,
+          "reason": "deleted"
+        },
+        "export_dir": {
+          "target": "C:\\Horns\\ProjectPageATHTest24",
+          "deleted": true,
+          "reason": "deleted"
+        }
+      }
+    },
+    {
+      "run_id": "ath_exp_2104_0003_5fff0d431f",
+      "run_group_id": "pp100k_2104",
+      "run_name": "run_0003",
+      "case_index": 3,
+      "case_type": "safe",
+      "test_id": "PP_ATH_EXP_0003",
+      "project_name": "PP_ATH_EXP_0003",
+      "started_at": "2026-02-14T11:19:28+00:00",
+      "finished_at": "2026-02-14T11:19:28+00:00",
+      "status": "ok",
+      "notes": "",
+      "cfg_path": "C:\\Tools\\ATH\\ProjectPageATHTest25.cfg",
+      "horns_export_dir": "C:\\Horns\\ProjectPageATHTest25",
+      "config_path": "C:\\Horns\\ProjectPageATHTest25\\config.txt",
+      "stdout_path": "reports\\ath_experiments\\log\\run_0003_stdout.txt",
+      "stderr_path": "reports\\ath_experiments\\log\\run_0003_stderr.txt",
+      "success_flags": {
+        "cfg_written": true,
+        "ath_ok": true,
+        "config_ok": true,
+        "no_ghosts": true
+      },
+      "ath_result": {
+        "ok": true,
+        "exit_code": 0,
+        "timed_out": false,
+        "stdout_log": "reports\\ath_experiments\\cases\\run_0003\\runner_logs\\ath.stdout.log",
+        "stderr_log": "reports\\ath_experiments\\cases\\run_0003\\runner_logs\\ath.stderr.log",
+        "summary_log": "reports\\ath_experiments\\cases\\run_0003\\runner_logs\\ath.runner.log"
+      },
+      "compare": {
+        "expected_values": {
+          "Throat.Diameter": 63.86,
+          "Throat.Profile": 1,
+          "Throat.Angle": "22.486",
+          "Length": "673.857",
+          "Coverage.Angle": "36.4603",
+          "OS.k": "0.73626",
+          "Term.s": "0.57761",
+          "Term.n": "3.32965",
+          "Term.q": "0.97287",
+          "Morph.TargetShape": 1,
+          "Morph.TargetWidth": 794.98,
+          "Morph.TargetHeight": 975.08,
+          "Morph.CornerRadius": 14.61,
+          "Mesh.Quadrants": 14,
+          "Mesh.AngularSegments": 48,
+          "Mesh.LengthSegments": 21,
+          "Mesh.CornerSegments": 7,
+          "Mesh.ThroatResolution": 9.05,
+          "Mesh.MouthResolution": 11.16,
+          "Mesh.WallThickness": 3.67,
+          "Mesh.RearResolution": 17.13
+        },
+        "cfg": {
+          "missing_keys_required": [],
+          "missing_keys_optional": [],
+          "missing_keys": [],
+          "extra_keys_defaulted": [],
+          "extra_keys_ghost": [],
+          "extra_keys": [],
+          "value_mismatches": [],
+          "ok": true
+        },
+        "config": {
+          "missing_keys_required": [],
+          "missing_keys_optional": [],
+          "missing_keys": [],
+          "extra_keys_defaulted": [],
+          "extra_keys_ghost": [],
+          "extra_keys": [],
+          "value_mismatches": [],
+          "ok": true
+        }
+      },
+      "input_summary": {
+        "field_values": [
+          [
+            "Throat.Profile",
+            1
+          ],
+          [
+            "Throat.Diameter",
+            63.857
+          ],
+          [
+            "Throat.Angle",
+            22.486
+          ],
+          [
+            "Morph.TargetShape",
+            1
+          ],
+          [
+            "Length",
+            673.857
+          ],
+          [
+            "Term.s",
+            0.57761
+          ],
+          [
+            "Term.q",
+            0.97287
+          ],
+          [
+            "Term.n",
+            3.32965
+          ],
+          [
+            "OS.k",
+            0.73626
+          ],
+          [
+            "Coverage.Angle",
+            36.4603
+          ],
+          [
+            "Morph.TargetWidth",
+            794.9793
+          ],
+          [
+            "Morph.TargetHeight",
+            975.084
+          ],
+          [
+            "Morph.CornerRadius",
+            14.6051
+          ],
+          [
+            "Mesh.CornerSegments",
+            7
+          ],
+          [
+            "Mesh.Quadrants",
+            14
+          ],
+          [
+            "Mesh.AngularSegments",
+            48
+          ],
+          [
+            "Mesh.LengthSegments",
+            21
+          ],
+          [
+            "Mesh.ThroatResolution",
+            9.0482
+          ],
+          [
+            "Mesh.MouthResolution",
+            11.1645
+          ],
+          [
+            "Mesh.WallThickness",
+            3.6699
+          ],
+          [
+            "Mesh.RearResolution",
+            17.1321
+          ]
+        ],
+        "runner_mode": "AkabakImportFixedSource",
+        "compat_issues": [],
+        "missing_editors": [],
+        "payload_fixed_params": {
+          "Throat.Diameter": 63.86,
+          "Throat.Profile": 1,
+          "Throat.Angle": "22.486",
+          "Length": "673.857",
+          "Coverage.Angle": "36.4603",
+          "OS.k": "0.73626",
+          "Term.s": "0.57761",
+          "Term.n": "3.32965",
+          "Term.q": "0.97287",
+          "Morph.TargetShape": 1,
+          "Morph.TargetWidth": 794.98,
+          "Morph.TargetHeight": 975.08,
+          "Morph.CornerRadius": 14.61
+        },
+        "payload_limits": {
+          "Mesh.Quadrants": 14,
+          "Mesh.AngularSegments": 48,
+          "Mesh.LengthSegments": 21,
+          "Mesh.CornerSegments": 7,
+          "Mesh.ThroatResolution": 9.05,
+          "Mesh.MouthResolution": 11.16,
+          "Mesh.WallThickness": 3.67,
+          "Mesh.RearResolution": 17.13
+        }
+      },
+      "errors": {
+        "cfg_error": null,
+        "ath_error": null,
+        "ath_error_kind": null,
+        "ath_error_message": null,
+        "ath_warning_count": 1
+      },
+      "metrics": {
+        "final_width_mm": 2114.84,
+        "final_height_mm": 1934.74,
+        "final_length_mm": 673.86,
+        "avg_throat_angle_deg": 22.486,
+        "derived_volume_m3": 2.757209741862576,
+        "flags": {
+          "max_dim_warn": true,
+          "hard_cap_exceeded": false,
+          "throat_angle_missing": false,
+          "max_observed_dim_mm": 2114.84
+        }
+      },
+      "cleanup": {
+        "cfg": {
+          "target": "C:\\Tools\\ATH\\ProjectPageATHTest25.cfg",
+          "deleted": true,
+          "reason": "deleted"
+        },
+        "export_dir": {
+          "target": "C:\\Horns\\ProjectPageATHTest25",
+          "deleted": true,
+          "reason": "deleted"
+        }
+      }
+    },
+    {
+      "run_id": "ath_exp_2104_0004_88b1b9cf8e",
+      "run_group_id": "pp100k_2104",
+      "run_name": "run_0004",
+      "case_index": 4,
+      "case_type": "safe",
+      "test_id": "PP_ATH_EXP_0004",
+      "project_name": "PP_ATH_EXP_0004",
+      "started_at": "2026-02-14T11:19:28+00:00",
+      "finished_at": "2026-02-14T11:19:28+00:00",
+      "status": "ok",
+      "notes": "",
+      "cfg_path": "C:\\Tools\\ATH\\ProjectPageATHTest26.cfg",
+      "horns_export_dir": "C:\\Horns\\ProjectPageATHTest26",
+      "config_path": "C:\\Horns\\ProjectPageATHTest26\\config.txt",
+      "stdout_path": "reports\\ath_experiments\\log\\run_0004_stdout.txt",
+      "stderr_path": "reports\\ath_experiments\\log\\run_0004_stderr.txt",
+      "success_flags": {
+        "cfg_written": true,
+        "ath_ok": true,
+        "config_ok": true,
+        "no_ghosts": true
+      },
+      "ath_result": {
+        "ok": true,
+        "exit_code": 0,
+        "timed_out": false,
+        "stdout_log": "reports\\ath_experiments\\cases\\run_0004\\runner_logs\\ath.stdout.log",
+        "stderr_log": "reports\\ath_experiments\\cases\\run_0004\\runner_logs\\ath.stderr.log",
+        "summary_log": "reports\\ath_experiments\\cases\\run_0004\\runner_logs\\ath.runner.log"
+      },
+      "compare": {
+        "expected_values": {
+          "Throat.Diameter": 67.03,
+          "Throat.Profile": 1,
+          "Throat.Angle": "14.384",
+          "Length": "227.96",
+          "OS.k": "0.68213",
+          "Term.s": "0.71231",
+          "Term.n": "4.19489",
+          "Term.q": "0.9459",
+          "GCurve.Type": 1,
+          "GCurve.Dist": "0.365",
+          "GCurve.Width": 727.33,
+          "GCurve.AspectRatio": 1.29,
+          "GCurve.SE.n": 3.98,
+          "GCurve.Rot": -5.9,
+          "Mesh.Quadrants": 1,
+          "Mesh.AngularSegments": 128,
+          "Mesh.LengthSegments": 14,
+          "Mesh.ThroatResolution": 3.82,
+          "Mesh.MouthResolution": 8.78,
+          "Mesh.WallThickness": 2.65,
+          "Mesh.RearResolution": 12.81
+        },
+        "cfg": {
+          "missing_keys_required": [],
+          "missing_keys_optional": [],
+          "missing_keys": [],
+          "extra_keys_defaulted": [],
+          "extra_keys_ghost": [],
+          "extra_keys": [],
+          "value_mismatches": [],
+          "ok": true
+        },
+        "config": {
+          "missing_keys_required": [],
+          "missing_keys_optional": [],
+          "missing_keys": [],
+          "extra_keys_defaulted": [],
+          "extra_keys_ghost": [],
+          "extra_keys": [],
+          "value_mismatches": [],
+          "ok": true
+        }
+      },
+      "input_summary": {
+        "field_values": [
+          [
+            "Throat.Profile",
+            1
+          ],
+          [
+            "Throat.Diameter",
+            67.027
+          ],
+          [
+            "Throat.Angle",
+            14.384
+          ],
+          [
+            "Morph.TargetShape",
+            0
+          ],
+          [
+            "Length",
+            227.96
+          ],
+          [
+            "Term.s",
+            0.71231
+          ],
+          [
+            "Term.q",
+            0.9459
+          ],
+          [
+            "Term.n",
+            4.19489
+          ],
+          [
+            "OS.k",
+            0.68213
+          ],
+          [
+            "GCurve.Type",
+            1
+          ],
+          [
+            "GCurve.Dist",
+            0.365
+          ],
+          [
+            "GCurve.Width",
+            727.3326
+          ],
+          [
+            "GCurve.Rot",
+            -5.9005
+          ],
+          [
+            "GCurve.AspectRatio",
+            1.2877
+          ],
+          [
+            "GCurve.SE.n",
+            3.982
+          ],
+          [
+            "Mesh.Quadrants",
+            1
+          ],
+          [
+            "Mesh.AngularSegments",
+            128
+          ],
+          [
+            "Mesh.LengthSegments",
+            14
+          ],
+          [
+            "Mesh.ThroatResolution",
+            3.8158
+          ],
+          [
+            "Mesh.MouthResolution",
+            8.7784
+          ],
+          [
+            "Mesh.WallThickness",
+            2.6507
+          ],
+          [
+            "Mesh.RearResolution",
+            12.8114
+          ]
+        ],
+        "runner_mode": "AkabakImportFixedSource",
+        "compat_issues": [],
+        "missing_editors": [],
+        "payload_fixed_params": {
+          "Throat.Diameter": 67.03,
+          "Throat.Profile": 1,
+          "Throat.Angle": "14.384",
+          "Length": "227.96",
+          "OS.k": "0.68213",
+          "Term.s": "0.71231",
+          "Term.n": "4.19489",
+          "Term.q": "0.9459",
+          "GCurve.Type": 1,
+          "GCurve.Dist": "0.365",
+          "GCurve.Width": 727.33,
+          "GCurve.AspectRatio": 1.29,
+          "GCurve.SE.n": 3.98,
+          "GCurve.Rot": -5.9
+        },
+        "payload_limits": {
+          "Mesh.Quadrants": 1,
+          "Mesh.AngularSegments": 128,
+          "Mesh.LengthSegments": 14,
+          "Mesh.ThroatResolution": 3.82,
+          "Mesh.MouthResolution": 8.78,
+          "Mesh.WallThickness": 2.65,
+          "Mesh.RearResolution": 12.81
+        }
+      },
+      "errors": {
+        "cfg_error": null,
+        "ath_error": null,
+        "ath_error_kind": null,
+        "ath_error_message": null,
+        "ath_warning_count": 2
+      },
+      "metrics": {
+        "final_width_mm": 2051.84,
+        "final_height_mm": 2631.65,
+        "final_length_mm": 227.96,
+        "avg_throat_angle_deg": 14.384,
+        "derived_volume_m3": 1.23092125081856,
+        "flags": {
+          "max_dim_warn": true,
+          "hard_cap_exceeded": false,
+          "throat_angle_missing": false,
+          "max_observed_dim_mm": 2631.65
+        }
+      },
+      "cleanup": {
+        "cfg": {
+          "target": "C:\\Tools\\ATH\\ProjectPageATHTest26.cfg",
+          "deleted": true,
+          "reason": "deleted"
+        },
+        "export_dir": {
+          "target": "C:\\Horns\\ProjectPageATHTest26",
+          "deleted": true,
+          "reason": "deleted"
+        }
+      }
+    },
+    {
+      "run_id": "ath_exp_2104_0005_d7bb40eb2c",
+      "run_group_id": "pp100k_2104",
+      "run_name": "run_0005",
+      "case_index": 5,
+      "case_type": "safe",
+      "test_id": "PP_ATH_EXP_0005",
+      "project_name": "PP_ATH_EXP_0005",
+      "started_at": "2026-02-14T11:19:28+00:00",
+      "finished_at": "2026-02-14T11:19:29+00:00",
+      "status": "ok",
+      "notes": "",
+      "cfg_path": "C:\\Tools\\ATH\\ProjectPageATHTest27.cfg",
+      "horns_export_dir": "C:\\Horns\\ProjectPageATHTest27",
+      "config_path": "C:\\Horns\\ProjectPageATHTest27\\config.txt",
+      "stdout_path": "reports\\ath_experiments\\log\\run_0005_stdout.txt",
+      "stderr_path": "reports\\ath_experiments\\log\\run_0005_stderr.txt",
+      "success_flags": {
+        "cfg_written": true,
+        "ath_ok": true,
+        "config_ok": true,
+        "no_ghosts": true
+      },
+      "ath_result": {
+        "ok": true,
+        "exit_code": 0,
+        "timed_out": false,
+        "stdout_log": "reports\\ath_experiments\\cases\\run_0005\\runner_logs\\ath.stdout.log",
+        "stderr_log": "reports\\ath_experiments\\cases\\run_0005\\runner_logs\\ath.stderr.log",
+        "summary_log": "reports\\ath_experiments\\cases\\run_0005\\runner_logs\\ath.runner.log"
+      },
+      "compare": {
+        "expected_values": {
+          "Throat.Diameter": 30.87,
+          "Throat.Angle": "6.698",
+          "Length": "488.7",
+          "Coverage.Angle": "75.739",
+          "Morph.TargetShape": 1,
+          "Morph.TargetWidth": 999.9,
+          "Morph.TargetHeight": 964.37,
+          "Morph.CornerRadius": 1.14,
+          "R-OSSE": {
+            "R": 342.2,
+            "r0": 16.0,
+            "a0": 7.56,
+            "a": 42.67,
+            "k": 1.1,
+            "r": 1.1,
+            "m": 4.53,
+            "b": 0.66,
+            "q": 0.94
+          },
+          "Mesh.Quadrants": 12,
+          "Mesh.AngularSegments": 112,
+          "Mesh.LengthSegments": 20,
+          "Mesh.CornerSegments": 6,
+          "Mesh.ThroatResolution": 9.0,
+          "Mesh.MouthResolution": 11.42,
+          "Mesh.WallThickness": 7.09,
+          "Mesh.RearResolution": 15.4
+        },
+        "cfg": {
+          "missing_keys_required": [],
+          "missing_keys_optional": [],
+          "missing_keys": [],
+          "extra_keys_defaulted": [],
+          "extra_keys_ghost": [],
+          "extra_keys": [],
+          "value_mismatches": [],
+          "ok": true
+        },
+        "config": {
+          "missing_keys_required": [],
+          "missing_keys_optional": [],
+          "missing_keys": [],
+          "extra_keys_defaulted": [],
+          "extra_keys_ghost": [],
+          "extra_keys": [],
+          "value_mismatches": [],
+          "ok": true
+        }
+      },
+      "input_summary": {
+        "field_values": [
+          [
+            "Throat.Profile",
+            2
+          ],
+          [
+            "Throat.Diameter",
+            30.869
+          ],
+          [
+            "Throat.Angle",
+            6.698
+          ],
+          [
+            "Morph.TargetShape",
+            1
+          ],
+          [
+            "Length",
+            488.7
+          ],
+          [
+            "R-OSSE.R",
+            342.2016
+          ],
+          [
+            "R-OSSE.r0",
+            16.0007
+          ],
+          [
+            "R-OSSE.a0",
+            7.5586
+          ],
+          [
+            "R-OSSE.a",
+            42.6709
+          ],
+          [
+            "R-OSSE.k",
+            1.10274
+          ],
+          [
+            "R-OSSE.r",
+            1.09995
+          ],
+          [
+            "R-OSSE.m",
+            4.52997
+          ],
+          [
+            "R-OSSE.b",
+            0.66114
+          ],
+          [
+            "R-OSSE.q",
+            0.93599
+          ],
+          [
+            "Coverage.Angle",
+            75.739
+          ],
+          [
+            "Morph.TargetWidth",
+            999.9044
+          ],
+          [
+            "Morph.TargetHeight",
+            964.3688
+          ],
+          [
+            "Morph.CornerRadius",
+            1.139
+          ],
+          [
+            "Mesh.CornerSegments",
+            6
+          ],
+          [
+            "Mesh.Quadrants",
+            12
+          ],
+          [
+            "Mesh.AngularSegments",
+            112
+          ],
+          [
+            "Mesh.LengthSegments",
+            20
+          ],
+          [
+            "Mesh.ThroatResolution",
+            9.0011
+          ],
+          [
+            "Mesh.MouthResolution",
+            11.4247
+          ],
+          [
+            "Mesh.WallThickness",
+            7.0892
+          ],
+          [
+            "Mesh.RearResolution",
+            15.4001
+          ]
+        ],
+        "runner_mode": "AkabakImportFixedSource",
+        "compat_issues": [],
+        "missing_editors": [],
+        "payload_fixed_params": {
+          "Throat.Diameter": 30.87,
+          "Throat.Angle": "6.698",
+          "Length": "488.7",
+          "Coverage.Angle": "75.739",
+          "Morph.TargetShape": 1,
+          "Morph.TargetWidth": 999.9,
+          "Morph.TargetHeight": 964.37,
+          "Morph.CornerRadius": 1.14,
+          "R-OSSE": {
+            "R": 342.2,
+            "r0": 16.0,
+            "a0": 7.56,
+            "a": 42.67,
+            "k": 1.1,
+            "r": 1.1,
+            "m": 4.53,
+            "b": 0.66,
+            "q": 0.94
+          }
+        },
+        "payload_limits": {
+          "Mesh.Quadrants": 12,
+          "Mesh.AngularSegments": 112,
+          "Mesh.LengthSegments": 20,
+          "Mesh.CornerSegments": 6,
+          "Mesh.ThroatResolution": 9.0,
+          "Mesh.MouthResolution": 11.42,
+          "Mesh.WallThickness": 7.09,
+          "Mesh.RearResolution": 15.4
+        }
+      },
+      "errors": {
+        "cfg_error": null,
+        "ath_error": null,
+        "ath_error_kind": null,
+        "ath_error_message": null,
+        "ath_warning_count": 1
+      },
+      "metrics": {
+        "final_width_mm": 1269.26,
+        "final_height_mm": 1224.14,
+        "final_length_mm": 135.65,
+        "avg_throat_angle_deg": 7.56,
+        "derived_volume_m3": 0.21076645017266002,
+        "flags": {
+          "max_dim_warn": false,
+          "hard_cap_exceeded": false,
+          "throat_angle_missing": false,
+          "max_observed_dim_mm": 1269.26
+        }
+      },
+      "cleanup": {
+        "cfg": {
+          "target": "C:\\Tools\\ATH\\ProjectPageATHTest27.cfg",
+          "deleted": true,
+          "reason": "deleted"
+        },
+        "export_dir": {
+          "target": "C:\\Horns\\ProjectPageATHTest27",
+          "deleted": true,
+          "reason": "deleted"
+        }
+      }
+    }
+  ],
+  "total_runs_persisted": 10000,
+  "top_error_patterns": [
+    {
+      "kind": "hard_cap_exceeded",
+      "count": 841,
+      "example_run_ids": [
+        "ath_exp_2104_0007_efd120b2d4",
+        "ath_exp_2104_0012_749fef4b66",
+        "ath_exp_2104_0030_7a957f1f0e",
+        "ath_exp_2104_0043_c8d9919743",
+        "ath_exp_2104_0049_015b0a655c"
+      ]
+    },
+    {
+      "kind": "unknown",
+      "count": 799,
+      "example_run_ids": [
+        "ath_exp_2104_0006_5515647204",
+        "ath_exp_2104_0023_72221e8971",
+        "ath_exp_2104_0027_077fc84b4d",
+        "ath_exp_2104_0034_2630dc31e0",
+        "ath_exp_2104_0036_75adf794ef"
+      ]
+    },
+    {
+      "kind": "diameter_over_100m",
+      "count": 155,
+      "example_run_ids": [
+        "ath_exp_2104_0075_b1a498107d",
+        "ath_exp_2104_0153_4a47883901",
+        "ath_exp_2104_0238_668b154152",
+        "ath_exp_2104_0286_a575ea5167",
+        "ath_exp_2104_0510_9c35ead924"
+      ]
+    },
+    {
+      "kind": "ath_nonzero_exit",
+      "count": 4,
+      "example_run_ids": [
+        "ath_exp_2104_1112_ae4e6bcdf2",
+        "ath_exp_2104_2379_a462c495f5",
+        "ath_exp_2104_6313_b0c89b49b3",
+        "ath_exp_2104_8932_b4e4f80cd2"
+      ]
+    }
+  ],
+  "error_class_mode_breakdown": {
+    "hard_cap_exceeded": {
+      "count": 841,
+      "example_run_ids": [
+        "ath_exp_2104_0007_efd120b2d4",
+        "ath_exp_2104_0012_749fef4b66",
+        "ath_exp_2104_0030_7a957f1f0e",
+        "ath_exp_2104_0043_c8d9919743",
+        "ath_exp_2104_0049_015b0a655c"
+      ],
+      "mode_counts": {
+        "gcurve": {
+          "superformula": 485,
+          "no_gcurve": 133,
+          "superellipse": 223
+        },
+        "throat_profile": {
+          "OS-SE": 709,
+          "R-OSSE": 126,
+          "Circular Arc": 6
+        },
+        "morph": {
+          "morph_on": 590,
+          "morph_off": 251
+        },
+        "enclosure": {
+          "enclosure_off": 774,
+          "enclosure_on": 67
+        }
+      }
+    },
+    "unknown": {
+      "count": 799,
+      "example_run_ids": [
+        "ath_exp_2104_0006_5515647204",
+        "ath_exp_2104_0023_72221e8971",
+        "ath_exp_2104_0027_077fc84b4d",
+        "ath_exp_2104_0034_2630dc31e0",
+        "ath_exp_2104_0036_75adf794ef"
+      ],
+      "mode_counts": {
+        "gcurve": {
+          "superformula": 316,
+          "superellipse": 230,
+          "no_gcurve": 253
+        },
+        "throat_profile": {
+          "R-OSSE": 291,
+          "OS-SE": 226,
+          "Circular Arc": 282
+        },
+        "morph": {
+          "morph_on": 567,
+          "morph_off": 232
+        },
+        "enclosure": {
+          "enclosure_off": 746,
+          "enclosure_on": 53
+        }
+      }
+    },
+    "diameter_over_100m": {
+      "count": 155,
+      "example_run_ids": [
+        "ath_exp_2104_0075_b1a498107d",
+        "ath_exp_2104_0153_4a47883901",
+        "ath_exp_2104_0238_668b154152",
+        "ath_exp_2104_0286_a575ea5167",
+        "ath_exp_2104_0510_9c35ead924"
+      ],
+      "mode_counts": {
+        "gcurve": {
+          "superformula": 155
+        },
+        "throat_profile": {
+          "OS-SE": 155
+        },
+        "morph": {
+          "morph_on": 87,
+          "morph_off": 68
+        },
+        "enclosure": {
+          "enclosure_off": 145,
+          "enclosure_on": 10
+        }
+      }
+    },
+    "ath_nonzero_exit": {
+      "count": 4,
+      "example_run_ids": [
+        "ath_exp_2104_1112_ae4e6bcdf2",
+        "ath_exp_2104_2379_a462c495f5",
+        "ath_exp_2104_6313_b0c89b49b3",
+        "ath_exp_2104_8932_b4e4f80cd2"
+      ],
+      "mode_counts": {
+        "gcurve": {
+          "no_gcurve": 1,
+          "superformula": 2,
+          "superellipse": 1
+        },
+        "throat_profile": {
+          "Circular Arc": 2,
+          "OS-SE": 1,
+          "R-OSSE": 1
+        },
+        "morph": {
+          "morph_on": 3,
+          "morph_off": 1
+        },
+        "enclosure": {
+          "enclosure_off": 4
+        }
+      }
+    }
+  },
+  "dimension_threshold_hits": {
+    "max_dim_warn_hits": 3063,
+    "hard_cap_hits": 841
+  },
+  "mode_error_rates": {
+    "gcurve": {
+      "no_gcurve": {
+        "total": 3453,
+        "ath_error": 387,
+        "non_ok": 475,
+        "ath_error_rate": 0.11207645525629888,
+        "non_ok_rate": 0.13756154068925572
+      },
+      "superellipse": {
+        "total": 3451,
+        "ath_error": 454,
+        "non_ok": 567,
+        "ath_error_rate": 0.1315560707041437,
+        "non_ok_rate": 0.1643002028397566
+      },
+      "superformula": {
+        "total": 3096,
+        "ath_error": 958,
+        "non_ok": 1044,
+        "ath_error_rate": 0.3094315245478036,
+        "non_ok_rate": 0.3372093023255814
+      }
+    },
+    "throat_profile": {
+      "Circular Arc": {
+        "total": 3335,
+        "ath_error": 290,
+        "non_ok": 379,
+        "ath_error_rate": 0.08695652173913043,
+        "non_ok_rate": 0.1136431784107946
+      },
+      "OS-SE": {
+        "total": 3279,
+        "ath_error": 1091,
+        "non_ok": 1188,
+        "ath_error_rate": 0.33272339127782863,
+        "non_ok_rate": 0.36230558096980786
+      },
+      "R-OSSE": {
+        "total": 3386,
+        "ath_error": 418,
+        "non_ok": 519,
+        "ath_error_rate": 0.12344949793266391,
+        "non_ok_rate": 0.15327820437093917
+      }
+    },
+    "morph": {
+      "morph_off": {
+        "total": 4222,
+        "ath_error": 552,
+        "non_ok": 552,
+        "ath_error_rate": 0.13074372335386072,
+        "non_ok_rate": 0.13074372335386072
+      },
+      "morph_on": {
+        "total": 5778,
+        "ath_error": 1247,
+        "non_ok": 1534,
+        "ath_error_rate": 0.21581862236067845,
+        "non_ok_rate": 0.2654897888542748
+      }
+    },
+    "enclosure": {
+      "enclosure_off": {
+        "total": 9335,
+        "ath_error": 1669,
+        "non_ok": 1939,
+        "ath_error_rate": 0.17878950187466525,
+        "non_ok_rate": 0.20771290840921264
+      },
+      "enclosure_on": {
+        "total": 665,
+        "ath_error": 130,
+        "non_ok": 147,
+        "ath_error_rate": 0.19548872180451127,
+        "non_ok_rate": 0.22105263157894736
+      }
+    }
+  },
+  "mode_error_matrix_path": "reports\\ath_experiments\\mode_error_matrix.json",
+  "dimension_distribution": {
+    "final_length_mm": {
+      "count": 9554,
+      "p50": 527.16,
+      "p90": 974.9570000000001,
+      "p99": 2487.5496999999978,
+      "min": 0.0,
+      "max": 60843.34
+    },
+    "final_width_mm": {
+      "count": 9554,
+      "p50": 1223.3049999999998,
+      "p90": 4041.1100000000015,
+      "p99": 45925.29659999921,
+      "min": 0.0,
+      "max": 130689910.58
+    },
+    "final_height_mm": {
+      "count": 9554,
+      "p50": 1240.7150000000001,
+      "p90": 4183.145000000009,
+      "p99": 50797.014699999934,
+      "min": 0.0,
+      "max": 216867262.3
+    }
+  },
+  "hard_cap_key_correlations_top10": [
+    {
+      "key": "GCurve.Rot",
+      "hard_cap_samples": 708,
+      "ok_samples": 4936,
+      "hard_cap_mean": 0.5584887005649718,
+      "ok_mean": -0.05254051863857375,
+      "delta": 0.6110292192035456,
+      "delta_ratio": 11.629675979735559
+    },
+    {
+      "key": "Throat.Profile",
+      "hard_cap_samples": 841,
+      "ok_samples": 7914,
+      "hard_cap_mean": 1.164090368608799,
+      "ok_mean": 2.1092999747283296,
+      "delta": -0.9452096061195305,
+      "delta_ratio": -0.44811530697199903
+    },
+    {
+      "key": "Rot",
+      "hard_cap_samples": 17,
+      "ok_samples": 153,
+      "hard_cap_mean": 0.4367294117647059,
+      "ok_mean": 0.742818954248366,
+      "delta": -0.30608954248366005,
+      "delta_ratio": -0.412064797648193
+    },
+    {
+      "key": "Coverage.Angle",
+      "hard_cap_samples": 133,
+      "ok_samples": 2978,
+      "hard_cap_mean": 62.313169172932334,
+      "ok_mean": 45.67567175957018,
+      "delta": 16.637497413362155,
+      "delta_ratio": 0.36425293317140844
+    },
+    {
+      "key": "GCurve.Width",
+      "hard_cap_samples": 708,
+      "ok_samples": 4936,
+      "hard_cap_mean": 656.1686581920903,
+      "ok_mean": 532.3679436790924,
+      "delta": 123.80071451299796,
+      "delta_ratio": 0.23254727483627677
+    },
+    {
+      "key": "GCurve.Dist",
+      "hard_cap_samples": 708,
+      "ok_samples": 4936,
+      "hard_cap_mean": 104.03221822033899,
+      "ok_mean": 128.9478656401945,
+      "delta": -24.915647419855503,
+      "delta_ratio": -0.19322264308883447
+    },
+    {
+      "key": "GCurve.Type",
+      "hard_cap_samples": 708,
+      "ok_samples": 4936,
+      "hard_cap_mean": 1.6850282485875707,
+      "ok_mean": 1.4157212317666126,
+      "delta": 0.26930701682095814,
+      "delta_ratio": 0.1902260209057375
+    },
+    {
+      "key": "Morph.TargetShape",
+      "hard_cap_samples": 590,
+      "ok_samples": 4244,
+      "hard_cap_mean": 1.2152542372881356,
+      "ok_mean": 1.3786522148916116,
+      "delta": -0.16339797760347596,
+      "delta_ratio": -0.11852008484808627
+    },
+    {
+      "key": "Length",
+      "hard_cap_samples": 820,
+      "ok_samples": 7366,
+      "hard_cap_mean": 634.44615,
+      "ok_mean": 578.106315938094,
+      "delta": 56.339834061906004,
+      "delta_ratio": 0.09745583555921858
+    },
+    {
+      "key": "Throat.Ext.Length",
+      "hard_cap_samples": 121,
+      "ok_samples": 973,
+      "hard_cap_mean": 46.04322314049586,
+      "ok_mean": 50.86637204522097,
+      "delta": -4.823148904725109,
+      "delta_ratio": -0.09481999031388433
+    }
+  ],
+  "largest_safe_range_tightenings": [
+    {
+      "key": "GCurve.Dist",
+      "old_range": {
+        "min": 0.1047,
+        "max": 926.025
+      },
+      "new_range": {
+        "min": 0.1054,
+        "max": 878.1383
+      },
+      "shrink_abs": 47.88740000000007,
+      "shrink_ratio": 0.05171870624285921
+    },
+    {
+      "key": "Length",
+      "old_range": {
+        "min": 102.4,
+        "max": 2632.345
+      },
+      "new_range": {
+        "min": 103.35,
+        "max": 2563.798
+      },
+      "shrink_abs": 69.49699999999984,
+      "shrink_ratio": 0.027469767129324887
+    },
+    {
+      "key": "GCurve.SF.n3",
+      "old_range": {
+        "min": 0.3,
+        "max": 2.1
+      },
+      "new_range": {
+        "min": 0.31,
+        "max": 2.09
+      },
+      "shrink_abs": 0.02000000000000024,
+      "shrink_ratio": 0.011111111111111243
+    },
+    {
+      "key": "Morph.FixedPart",
+      "old_range": {
+        "min": 0.0002,
+        "max": 0.9993
+      },
+      "new_range": {
+        "min": 0.0046,
+        "max": 0.9934
+      },
+      "shrink_abs": 0.010300000000000087,
+      "shrink_ratio": 0.01030927835051555
+    },
+    {
+      "key": "Throat.Ext.Length",
+      "old_range": {
+        "min": 3.23,
+        "max": 199.34
+      },
+      "new_range": {
+        "min": 3.11,
+        "max": 197.55
+      },
+      "shrink_abs": 1.670000000000016,
+      "shrink_ratio": 0.0085156289837337
+    },
+    {
+      "key": "GCurve.Width",
+      "old_range": {
+        "min": 80.02,
+        "max": 1797.26
+      },
+      "new_range": {
+        "min": 80.31,
+        "max": 1785.73
+      },
+      "shrink_abs": 11.819999999999936,
+      "shrink_ratio": 0.006883138058745392
+    },
+    {
+      "key": "Throat.Ext.Angle",
+      "old_range": {
+        "min": 0.01,
+        "max": 24.91
+      },
+      "new_range": {
+        "min": 0.22,
+        "max": 24.97
+      },
+      "shrink_abs": 0.14999999999999858,
+      "shrink_ratio": 0.006024096385542112
+    },
+    {
+      "key": "GCurve.SF.n2",
+      "old_range": {
+        "min": 0.3,
+        "max": 2.1
+      },
+      "new_range": {
+        "min": 0.31,
+        "max": 2.1
+      },
+      "shrink_abs": 0.010000000000000009,
+      "shrink_ratio": 0.00555555555555556
+    },
+    {
+      "key": "GCurve.SF.m2",
+      "old_range": {
+        "min": 1.22,
+        "max": 10.48
+      },
+      "new_range": {
+        "min": 1.25,
+        "max": 10.48
+      },
+      "shrink_abs": 0.02999999999999936,
+      "shrink_ratio": 0.0032397408207342723
+    },
+    {
+      "key": "OS.k",
+      "old_range": {
+        "min": 0.20037,
+        "max": 1.58835
+      },
+      "new_range": {
+        "min": 0.20092,
+        "max": 1.58788
+      },
+      "shrink_abs": 0.0010200000000000209,
+      "shrink_ratio": 0.0007348809060649439
+    }
+  ],
+  "range_suggestions_path": "reports\\ath_experiments\\range_suggestions.v1.json",
+  "range_suggestions_v11_path": "reports\\ath_experiments\\range_suggestions.v1.1.json",
+  "range_suggestions_v12_path": "reports\\ath_experiments\\range_suggestions.v1.2.json",
+  "summary_markdown_path": "reports\\ath_experiments\\summary.md",
+  "data_inventory_path": "reports\\ath_experiments\\data_inventory.md",
+  "precision_plan_path": "reports\\ath_experiments\\precision_plan.md",
+  "compat_rule_candidates_path": "reports\\ath_experiments\\compat_rule_candidates.v1.json",
+  "legacy_backfill_result": null,
+  "precision_analysis": {
+    "condition_stats": {
+      "superformula_osse": {
+        "label": "GCurve=superformula and Throat.Profile=OS-SE",
+        "total": 1060,
+        "ath_error": 675,
+        "ath_error_rate": 0.6367924528301887,
+        "sample_run_ids": [
+          "ath_exp_2104_0007_efd120b2d4",
+          "ath_exp_2104_0051_0e66e99014",
+          "ath_exp_2104_0054_e4d01b743b",
+          "ath_exp_2104_0056_151bdf9ca4",
+          "ath_exp_2104_0073_9b57d3fe48"
+        ],
+        "by_run_group": {
+          "pp100k_2104": {
+            "total": 1060,
+            "ath_error": 675,
+            "ath_error_rate": 0.6367924528301887,
+            "uplift_vs_group_baseline": 0.4568924528301887
+          }
+        },
+        "consistent_multi_group": false
+      },
+      "coverage_gt_75_osse": {
+        "label": "Coverage.Angle > 75 and Throat.Profile=OS-SE",
+        "total": 32,
+        "ath_error": 25,
+        "ath_error_rate": 0.78125,
+        "sample_run_ids": [
+          "ath_exp_2104_0104_4fbf4e9400",
+          "ath_exp_2104_0532_e306a024b6",
+          "ath_exp_2104_0767_d05c9a6a9b",
+          "ath_exp_2104_1162_c1c05b4119",
+          "ath_exp_2104_1228_f9f932c222"
+        ],
+        "by_run_group": {
+          "pp100k_2104": {
+            "total": 32,
+            "ath_error": 25,
+            "ath_error_rate": 0.78125,
+            "uplift_vs_group_baseline": 0.60135
+          }
+        },
+        "consistent_multi_group": false
+      },
+      "length_gt_1000": {
+        "label": "Length > 1000 mm",
+        "total": 254,
+        "ath_error": 63,
+        "ath_error_rate": 0.24803149606299213,
+        "sample_run_ids": [
+          "ath_exp_2104_0085_42315db43f",
+          "ath_exp_2104_0364_95d25d4620",
+          "ath_exp_2104_0431_822639e13b",
+          "ath_exp_2104_0513_f0fdefaefa",
+          "ath_exp_2104_0712_f8b4b9c189"
+        ],
+        "by_run_group": {
+          "pp100k_2104": {
+            "total": 254,
+            "ath_error": 63,
+            "ath_error_rate": 0.24803149606299213,
+            "uplift_vs_group_baseline": 0.06813149606299213
+          }
+        },
+        "consistent_multi_group": false
+      },
+      "observed_dim_gt_2000": {
+        "label": "observed final width/height/length > 2000 mm",
+        "total": 3063,
+        "ath_error": 1020,
+        "ath_error_rate": 0.3330068560235064,
+        "sample_run_ids": [
+          "ath_exp_2104_0007_efd120b2d4",
+          "ath_exp_2104_0012_749fef4b66",
+          "ath_exp_2104_0030_7a957f1f0e",
+          "ath_exp_2104_0036_75adf794ef",
+          "ath_exp_2104_0043_c8d9919743"
+        ],
+        "by_run_group": {
+          "pp100k_2104": {
+            "total": 3063,
+            "ath_error": 1020,
+            "ath_error_rate": 0.3330068560235064,
+            "uplift_vs_group_baseline": 0.15310685602350638
+          }
+        },
+        "consistent_multi_group": false
+      }
+    },
+    "baseline_rate": 0.1799,
+    "range_v12": {
+      "generated_at": "2026-02-14T11:53:57+00:00",
+      "analysis_run_groups": [],
+      "analysis_run_group_count": 0,
+      "per_key": {
+        "CircArc.Radius": {
+          "safe_min": 35.0063,
+          "safe_max": 1800.0,
+          "rec_p05": 153.2849,
+          "rec_p95": 1799.9647,
+          "based_on_run_groups": [
+            "pp100k_2104"
+          ],
+          "consistent_across_groups": false,
+          "consistency_score": 1.0,
+          "notes": "group_ranges_partially_overlapping"
+        },
+        "CircArc.TermAngle": {
+          "safe_min": 3.0426,
+          "safe_max": 59.9885,
+          "rec_p05": 5.3067,
+          "rec_p95": 55.065375,
+          "based_on_run_groups": [
+            "pp100k_2104"
+          ],
+          "consistent_across_groups": false,
+          "consistency_score": 1.0,
+          "notes": "group_ranges_partially_overlapping"
+        },
+        "Coverage.Angle": {
+          "safe_min": 10.0293,
+          "safe_max": 94.9387,
+          "rec_p05": 21.485325,
+          "rec_p95": 68.94114,
+          "based_on_run_groups": [
+            "pp100k_2104"
+          ],
+          "consistent_across_groups": false,
+          "consistency_score": 1.0,
+          "notes": "group_ranges_partially_overlapping"
+        },
+        "GCurve.AspectRatio": {
+          "safe_min": 0.3,
+          "safe_max": 2.59,
+          "rec_p05": 0.59,
+          "rec_p95": 1.8,
+          "based_on_run_groups": [
+            "pp100k_2104"
+          ],
+          "consistent_across_groups": false,
+          "consistency_score": 1.0,
+          "notes": "group_ranges_partially_overlapping"
+        },
+        "GCurve.Dist": {
+          "safe_min": 0.1054,
+          "safe_max": 878.1383,
+          "rec_p05": 0.22165,
+          "rec_p95": 551.982625,
+          "based_on_run_groups": [
+            "pp100k_2104"
+          ],
+          "consistent_across_groups": false,
+          "consistency_score": 1.0,
+          "notes": "group_ranges_partially_overlapping"
+        },
+        "GCurve.Rot": {
+          "safe_min": -20.0,
+          "safe_max": 19.98,
+          "rec_p05": -11.55,
+          "rec_p95": 11.37,
+          "based_on_run_groups": [
+            "pp100k_2104"
+          ],
+          "consistent_across_groups": false,
+          "consistency_score": 1.0,
+          "notes": "group_ranges_partially_overlapping"
+        },
+        "GCurve.SE.n": {
+          "safe_min": 2.0,
+          "safe_max": 7.0,
+          "rec_p05": 2.15,
+          "rec_p95": 6.238499999999999,
+          "based_on_run_groups": [
+            "pp100k_2104"
+          ],
+          "consistent_across_groups": false,
+          "consistency_score": 1.0,
+          "notes": "group_ranges_partially_overlapping"
+        },
+        "GCurve.SF.a": {
+          "safe_min": 0.36,
+          "safe_max": 1.44,
+          "rec_p05": 0.56,
+          "rec_p95": 1.23,
+          "based_on_run_groups": [
+            "pp100k_2104"
+          ],
+          "consistent_across_groups": false,
+          "consistency_score": 1.0,
+          "notes": "group_ranges_partially_overlapping"
+        },
+        "GCurve.SF.b": {
+          "safe_min": 0.36,
+          "safe_max": 1.45,
+          "rec_p05": 0.57,
+          "rec_p95": 1.23,
+          "based_on_run_groups": [
+            "pp100k_2104"
+          ],
+          "consistent_across_groups": false,
+          "consistency_score": 1.0,
+          "notes": "group_ranges_partially_overlapping"
+        },
+        "GCurve.SF.m1": {
+          "safe_min": 1.25,
+          "safe_max": 10.49,
+          "rec_p05": 2.2455000000000003,
+          "rec_p95": 7.93,
+          "based_on_run_groups": [
+            "pp100k_2104"
+          ],
+          "consistent_across_groups": false,
+          "consistency_score": 1.0,
+          "notes": "group_ranges_partially_overlapping"
+        },
+        "GCurve.SF.m2": {
+          "safe_min": 1.25,
+          "safe_max": 10.48,
+          "rec_p05": 2.17,
+          "rec_p95": 7.93,
+          "based_on_run_groups": [
+            "pp100k_2104"
+          ],
+          "consistent_across_groups": false,
+          "consistency_score": 1.0,
+          "notes": "group_ranges_partially_overlapping"
+        },
+        "GCurve.SF.n1": {
+          "safe_min": 0.09,
+          "safe_max": 1.7,
+          "rec_p05": 0.18,
+          "rec_p95": 1.29,
+          "based_on_run_groups": [
+            "pp100k_2104"
+          ],
+          "consistent_across_groups": false,
+          "consistency_score": 1.0,
+          "notes": "group_ranges_partially_overlapping"
+        },
+        "GCurve.SF.n2": {
+          "safe_min": 0.31,
+          "safe_max": 2.1,
+          "rec_p05": 0.42,
+          "rec_p95": 1.92,
+          "based_on_run_groups": [
+            "pp100k_2104"
+          ],
+          "consistent_across_groups": false,
+          "consistency_score": 1.0,
+          "notes": "group_ranges_partially_overlapping"
+        },
+        "GCurve.SF.n3": {
+          "safe_min": 0.31,
+          "safe_max": 2.09,
+          "rec_p05": 0.43,
+          "rec_p95": 1.9100000000000001,
+          "based_on_run_groups": [
+            "pp100k_2104"
+          ],
+          "consistent_across_groups": false,
+          "consistency_score": 1.0,
+          "notes": "group_ranges_partially_overlapping"
+        },
+        "GCurve.Type": {
+          "safe_min": 1.0,
+          "safe_max": 2.0,
+          "rec_p05": 1.0,
+          "rec_p95": 2.0,
+          "based_on_run_groups": [
+            "pp100k_2104"
+          ],
+          "consistent_across_groups": false,
+          "consistency_score": 1.0,
+          "notes": "group_ranges_partially_overlapping"
+        },
+        "GCurve.Width": {
+          "safe_min": 80.31,
+          "safe_max": 1785.73,
+          "rec_p05": 124.92250000000001,
+          "rec_p95": 888.84,
+          "based_on_run_groups": [
+            "pp100k_2104"
+          ],
+          "consistent_across_groups": false,
+          "consistency_score": 1.0,
+          "notes": "group_ranges_partially_overlapping"
+        },
+        "Length": {
+          "safe_min": 103.35,
+          "safe_max": 2563.798,
+          "rec_p05": 166.2385,
+          "rec_p95": 966.70335,
+          "based_on_run_groups": [
+            "pp100k_2104"
+          ],
+          "consistent_across_groups": false,
+          "consistency_score": 1.0,
+          "notes": "group_ranges_partially_overlapping"
+        },
+        "Mesh.AngularSegments": {
+          "safe_min": 32.0,
+          "safe_max": 160.0,
+          "rec_p05": 64.0,
+          "rec_p95": 132.0,
+          "based_on_run_groups": [
+            "pp100k_2104"
+          ],
+          "consistent_across_groups": false,
+          "consistency_score": 1.0,
+          "notes": "group_ranges_partially_overlapping"
+        },
+        "Mesh.CornerSegments": {
+          "safe_min": 1.0,
+          "safe_max": 14.0,
+          "rec_p05": 2.0,
+          "rec_p95": 10.0,
+          "based_on_run_groups": [
+            "pp100k_2104"
+          ],
+          "consistent_across_groups": false,
+          "consistency_score": 1.0,
+          "notes": "group_ranges_partially_overlapping"
+        },
+        "Mesh.InterfaceResolution": {
+          "safe_min": null,
+          "safe_max": null,
+          "rec_p05": null,
+          "rec_p95": null,
+          "based_on_run_groups": [],
+          "consistent_across_groups": false,
+          "consistency_score": null,
+          "notes": "insufficient_group_coverage"
+        },
+        "Mesh.LengthSegments": {
+          "safe_min": 8.0,
+          "safe_max": 80.0,
+          "rec_p05": 14.0,
+          "rec_p95": 60.0,
+          "based_on_run_groups": [
+            "pp100k_2104"
+          ],
+          "consistent_across_groups": false,
+          "consistency_score": 1.0,
+          "notes": "group_ranges_partially_overlapping"
+        },
+        "Mesh.MouthResolution": {
+          "safe_min": 3.01,
+          "safe_max": 20.0,
+          "rec_p05": 5.07,
+          "rec_p95": 18.74,
+          "based_on_run_groups": [
+            "pp100k_2104"
+          ],
+          "consistent_across_groups": false,
+          "consistency_score": 1.0,
+          "notes": "group_ranges_partially_overlapping"
+        },
+        "Mesh.Quadrants": {
+          "safe_min": 1.0,
+          "safe_max": 1234.0,
+          "rec_p05": 1.0,
+          "rec_p95": 1234.0,
+          "based_on_run_groups": [
+            "pp100k_2104"
+          ],
+          "consistent_across_groups": false,
+          "consistency_score": 1.0,
+          "notes": "group_ranges_partially_overlapping"
+        },
+        "Mesh.RearResolution": {
+          "safe_min": 4.0,
+          "safe_max": 25.0,
+          "rec_p05": 4.85,
+          "rec_p95": 22.603499999999997,
+          "based_on_run_groups": [
+            "pp100k_2104"
+          ],
+          "consistent_across_groups": false,
+          "consistency_score": 1.0,
+          "notes": "group_ranges_partially_overlapping"
+        },
+        "Mesh.RearShape": {
+          "safe_min": 1.0,
+          "safe_max": 2.0,
+          "rec_p05": 1.0,
+          "rec_p95": 2.0,
+          "based_on_run_groups": [
+            "pp100k_2104"
+          ],
+          "consistent_across_groups": false,
+          "consistency_score": 1.0,
+          "notes": "group_ranges_partially_overlapping"
+        },
+        "Mesh.ThroatResolution": {
+          "safe_min": 2.0,
+          "safe_max": 11.99,
+          "rec_p05": 2.47,
+          "rec_p95": 10.653499999999994,
+          "based_on_run_groups": [
+            "pp100k_2104"
+          ],
+          "consistent_across_groups": false,
+          "consistency_score": 1.0,
+          "notes": "group_ranges_partially_overlapping"
+        },
+        "Mesh.ThroatSegments": {
+          "safe_min": 1.0,
+          "safe_max": 24.0,
+          "rec_p05": 4.0,
+          "rec_p95": 17.0,
+          "based_on_run_groups": [
+            "pp100k_2104"
+          ],
+          "consistent_across_groups": false,
+          "consistency_score": 1.0,
+          "notes": "group_ranges_partially_overlapping"
+        },
+        "Mesh.WallThickness": {
+          "safe_min": 2.0,
+          "safe_max": 12.0,
+          "rec_p05": 2.44,
+          "rec_p95": 11.03,
+          "based_on_run_groups": [
+            "pp100k_2104"
+          ],
+          "consistent_across_groups": false,
+          "consistency_score": 1.0,
+          "notes": "group_ranges_partially_overlapping"
+        },
+        "Morph.CornerRadius": {
+          "safe_min": 0.01,
+          "safe_max": 59.93,
+          "rec_p05": 1.428,
+          "rec_p95": 48.12599999999999,
+          "based_on_run_groups": [
+            "pp100k_2104"
+          ],
+          "consistent_across_groups": false,
+          "consistency_score": 1.0,
+          "notes": "group_ranges_partially_overlapping"
+        },
+        "Morph.FixedPart": {
+          "safe_min": 0.0046,
+          "safe_max": 0.9934,
+          "rec_p05": 0.0459,
+          "rec_p95": 0.9044,
+          "based_on_run_groups": [
+            "pp100k_2104"
+          ],
+          "consistent_across_groups": false,
+          "consistency_score": 1.0,
+          "notes": "group_ranges_partially_overlapping"
+        },
+        "Morph.Rate": {
+          "safe_min": 1.03,
+          "safe_max": 11.9789,
+          "rec_p05": 1.231,
+          "rec_p95": 10.6702,
+          "based_on_run_groups": [
+            "pp100k_2104"
+          ],
+          "consistent_across_groups": false,
+          "consistency_score": 1.0,
+          "notes": "group_ranges_partially_overlapping"
+        },
+        "Morph.TargetHeight": {
+          "safe_min": 45.0,
+          "safe_max": 1900.0,
+          "rec_p05": 125.8335,
+          "rec_p95": 1494.1639999999998,
+          "based_on_run_groups": [
+            "pp100k_2104"
+          ],
+          "consistent_across_groups": false,
+          "consistency_score": 1.0,
+          "notes": "group_ranges_partially_overlapping"
+        },
+        "Morph.TargetShape": {
+          "safe_min": 1.0,
+          "safe_max": 2.0,
+          "rec_p05": 1.0,
+          "rec_p95": 2.0,
+          "based_on_run_groups": [
+            "pp100k_2104"
+          ],
+          "consistent_across_groups": false,
+          "consistency_score": 1.0,
+          "notes": "group_ranges_partially_overlapping"
+        },
+        "Morph.TargetWidth": {
+          "safe_min": 45.0,
+          "safe_max": 1900.0,
+          "rec_p05": 117.98850000000002,
+          "rec_p95": 1451.5379999999998,
+          "based_on_run_groups": [
+            "pp100k_2104"
+          ],
+          "consistent_across_groups": false,
+          "consistency_score": 1.0,
+          "notes": "group_ranges_partially_overlapping"
+        },
+        "OS.k": {
+          "safe_min": 0.20092,
+          "safe_max": 1.58788,
+          "rec_p05": 0.6049599999999999,
+          "rec_p95": 1.23817,
+          "based_on_run_groups": [
+            "pp100k_2104"
+          ],
+          "consistent_across_groups": false,
+          "consistency_score": 1.0,
+          "notes": "group_ranges_partially_overlapping"
+        },
+        "Rot": {
+          "safe_min": -15.0909,
+          "safe_max": 18.8801,
+          "rec_p05": -8.81908,
+          "rec_p95": 9.484200000000001,
+          "based_on_run_groups": [
+            "pp100k_2104"
+          ],
+          "consistent_across_groups": false,
+          "consistency_score": 1.0,
+          "notes": "group_ranges_partially_overlapping"
+        },
+        "Slot.Length": {
+          "safe_min": 0.0955,
+          "safe_max": 246.582,
+          "rec_p05": 4.976980000000004,
+          "rec_p95": 181.07417499999994,
+          "based_on_run_groups": [
+            "pp100k_2104"
+          ],
+          "consistent_across_groups": false,
+          "consistency_score": 1.0,
+          "notes": "group_ranges_partially_overlapping"
+        },
+        "Term.n": {
+          "safe_min": 2.00289,
+          "safe_max": 7.99698,
+          "rec_p05": 2.1817450000000003,
+          "rec_p95": 6.84943,
+          "based_on_run_groups": [
+            "pp100k_2104"
+          ],
+          "consistent_across_groups": false,
+          "consistency_score": 1.0,
+          "notes": "group_ranges_partially_overlapping"
+        },
+        "Term.q": {
+          "safe_min": 0.82017,
+          "safe_max": 0.99999,
+          "rec_p05": 0.86378,
+          "rec_p95": 0.99425,
+          "based_on_run_groups": [
+            "pp100k_2104"
+          ],
+          "consistent_across_groups": false,
+          "consistency_score": 1.0,
+          "notes": "group_ranges_partially_overlapping"
+        },
+        "Term.s": {
+          "safe_min": 0.50292,
+          "safe_max": 1.04993,
+          "rec_p05": 0.57057,
+          "rec_p95": 0.9334549999999999,
+          "based_on_run_groups": [
+            "pp100k_2104"
+          ],
+          "consistent_across_groups": false,
+          "consistency_score": 1.0,
+          "notes": "group_ranges_partially_overlapping"
+        },
+        "Throat.Angle": {
+          "safe_min": 0.027,
+          "safe_max": 24.998,
+          "rec_p05": 2.5736499999999998,
+          "rec_p95": 22.53775,
+          "based_on_run_groups": [
+            "pp100k_2104"
+          ],
+          "consistent_across_groups": false,
+          "consistency_score": 1.0,
+          "notes": "group_ranges_partially_overlapping"
+        },
+        "Throat.Diameter": {
+          "safe_min": 12.0,
+          "safe_max": 115.0,
+          "rec_p05": 19.4865,
+          "rec_p95": 103.3735,
+          "based_on_run_groups": [
+            "pp100k_2104"
+          ],
+          "consistent_across_groups": false,
+          "consistency_score": 1.0,
+          "notes": "group_ranges_partially_overlapping"
+        },
+        "Throat.Ext.Angle": {
+          "safe_min": 0.22,
+          "safe_max": 24.97,
+          "rec_p05": 2.46,
+          "rec_p95": 21.928000000000004,
+          "based_on_run_groups": [
+            "pp100k_2104"
+          ],
+          "consistent_across_groups": false,
+          "consistency_score": 1.0,
+          "notes": "group_ranges_partially_overlapping"
+        },
+        "Throat.Ext.Length": {
+          "safe_min": 3.11,
+          "safe_max": 197.55,
+          "rec_p05": 6.41,
+          "rec_p95": 139.27599999999998,
+          "based_on_run_groups": [
+            "pp100k_2104"
+          ],
+          "consistent_across_groups": false,
+          "consistency_score": 1.0,
+          "notes": "group_ranges_partially_overlapping"
+        },
+        "Throat.Profile": {
+          "safe_min": 1.0,
+          "safe_max": 3.0,
+          "rec_p05": 1.0,
+          "rec_p95": 3.0,
+          "based_on_run_groups": [
+            "pp100k_2104"
+          ],
+          "consistent_across_groups": false,
+          "consistency_score": 1.0,
+          "notes": "group_ranges_partially_overlapping"
+        }
+      }
+    }
+  },
+  "data_inventory": {
+    "tables": [
+      {
+        "name": "experiment_compare",
+        "row_count": 65640,
+        "columns": [
+          "run_id",
+          "config_ok",
+          "no_ghosts",
+          "missing_keys_required_json",
+          "missing_keys_optional_json",
+          "extra_keys_defaulted_json",
+          "extra_keys_ghost_json",
+          "mismatch_json"
+        ]
+      },
+      {
+        "name": "experiment_metrics",
+        "row_count": 65640,
+        "columns": [
+          "run_id",
+          "final_width_mm",
+          "final_height_mm",
+          "final_length_mm",
+          "avg_throat_angle_deg",
+          "derived_volume_m3",
+          "flags_json"
+        ]
+      },
+      {
+        "name": "experiment_params",
+        "row_count": 3478920,
+        "columns": [
+          "run_id",
+          "key",
+          "value_text",
+          "value_num",
+          "is_set"
+        ]
+      },
+      {
+        "name": "experiment_runs",
+        "row_count": 65640,
+        "columns": [
+          "run_id",
+          "created_at",
+          "seed",
+          "case_index",
+          "status",
+          "ath_exit_code",
+          "ath_error_kind",
+          "ath_error_message",
+          "ath_warning_count",
+          "cfg_path",
+          "horns_export_dir",
+          "stdout_path",
+          "stderr_path",
+          "notes",
+          "run_group_id"
+        ]
+      }
+    ],
+    "run_group_counts": [
+      {
+        "run_group": "legacy_5000_seed2026",
+        "seed": 2026,
+        "total": 5000,
+        "ok": 4408,
+        "ath_error": 586,
+        "pipeline_error": 0,
+        "skipped": 6,
+        "min_case_index": 1,
+        "max_case_index": 5000
+      },
+      {
+        "run_group": "legacy_5000_seed2026_retry2",
+        "seed": 2026,
+        "total": 50,
+        "ok": 44,
+        "ath_error": 6,
+        "pipeline_error": 0,
+        "skipped": 0,
+        "min_case_index": 1,
+        "max_case_index": 50
+      },
+      {
+        "run_group": "legacy_500_seed1337",
+        "seed": 1337,
+        "total": 500,
+        "ok": 403,
+        "ath_error": 75,
+        "pipeline_error": 0,
+        "skipped": 22,
+        "min_case_index": 1,
+        "max_case_index": 500
+      },
+      {
+        "run_group": "legacy_500_seed1337_retry2",
+        "seed": 1337,
+        "total": 20,
+        "ok": 18,
+        "ath_error": 2,
+        "pipeline_error": 0,
+        "skipped": 0,
+        "min_case_index": 1,
+        "max_case_index": 20
+      },
+      {
+        "run_group": "legacy_500_seed1337_retry3",
+        "seed": 1337,
+        "total": 20,
+        "ok": 18,
+        "ath_error": 2,
+        "pipeline_error": 0,
+        "skipped": 0,
+        "min_case_index": 1,
+        "max_case_index": 20
+      },
+      {
+        "run_group": "pp100k_2100",
+        "seed": 2100,
+        "total": 10000,
+        "ok": 7860,
+        "ath_error": 1842,
+        "pipeline_error": 0,
+        "skipped": 298,
+        "min_case_index": 1,
+        "max_case_index": 10000
+      },
+      {
+        "run_group": "pp100k_2101",
+        "seed": 2101,
+        "total": 10000,
+        "ok": 7880,
+        "ath_error": 1834,
+        "pipeline_error": 0,
+        "skipped": 286,
+        "min_case_index": 1,
+        "max_case_index": 10000
+      },
+      {
+        "run_group": "pp100k_2102",
+        "seed": 2102,
+        "total": 10000,
+        "ok": 7882,
+        "ath_error": 1844,
+        "pipeline_error": 0,
+        "skipped": 274,
+        "min_case_index": 1,
+        "max_case_index": 10000
+      },
+      {
+        "run_group": "pp100k_2103",
+        "seed": 2103,
+        "total": 10000,
+        "ok": 7885,
+        "ath_error": 1847,
+        "pipeline_error": 0,
+        "skipped": 268,
+        "min_case_index": 1,
+        "max_case_index": 10000
+      },
+      {
+        "run_group": "pp100k_2104",
+        "seed": 2104,
+        "total": 10000,
+        "ok": 7914,
+        "ath_error": 1799,
+        "pipeline_error": 0,
+        "skipped": 287,
+        "min_case_index": 1,
+        "max_case_index": 10000
+      },
+      {
+        "run_group": "pp10k_2026",
+        "seed": 2026,
+        "total": 2000,
+        "ok": 1760,
+        "ath_error": 237,
+        "pipeline_error": 0,
+        "skipped": 3,
+        "min_case_index": 1,
+        "max_case_index": 2000
+      },
+      {
+        "run_group": "pp10k_2027",
+        "seed": 2027,
+        "total": 2000,
+        "ok": 1765,
+        "ath_error": 226,
+        "pipeline_error": 0,
+        "skipped": 9,
+        "min_case_index": 1,
+        "max_case_index": 2000
+      },
+      {
+        "run_group": "pp10k_2028",
+        "seed": 2028,
+        "total": 2000,
+        "ok": 1795,
+        "ath_error": 203,
+        "pipeline_error": 0,
+        "skipped": 2,
+        "min_case_index": 1,
+        "max_case_index": 2000
+      },
+      {
+        "run_group": "pp10k_2029",
+        "seed": 2029,
+        "total": 2000,
+        "ok": 1780,
+        "ath_error": 216,
+        "pipeline_error": 0,
+        "skipped": 4,
+        "min_case_index": 1,
+        "max_case_index": 2000
+      },
+      {
+        "run_group": "pp10k_2030",
+        "seed": 2030,
+        "total": 2000,
+        "ok": 1757,
+        "ath_error": 237,
+        "pipeline_error": 0,
+        "skipped": 6,
+        "min_case_index": 1,
+        "max_case_index": 2000
+      },
+      {
+        "run_group": "pp10k_smoke_2026",
+        "seed": 2026,
+        "total": 50,
+        "ok": 43,
+        "ath_error": 7,
+        "pipeline_error": 0,
+        "skipped": 0,
+        "min_case_index": 1,
+        "max_case_index": 50
+      }
+    ],
+    "top_errors_by_group": {
+      "legacy_5000_seed2026": [
+        {
+          "kind": "hard_cap_exceeded",
+          "count": 501
+        },
+        {
+          "kind": "diameter_over_100m",
+          "count": 78
+        },
+        {
+          "kind": "ath_nonzero_exit",
+          "count": 5
+        }
+      ],
+      "legacy_5000_seed2026_retry2": [
+        {
+          "kind": "hard_cap_exceeded",
+          "count": 5
+        },
+        {
+          "kind": "diameter_over_100m",
+          "count": 1
+        }
+      ],
+      "legacy_500_seed1337": [
+        {
+          "kind": "hard_cap_exceeded",
+          "count": 61
+        },
+        {
+          "kind": "diameter_over_100m",
+          "count": 14
+        }
+      ],
+      "legacy_500_seed1337_retry2": [
+        {
+          "kind": "hard_cap_exceeded",
+          "count": 2
+        }
+      ],
+      "legacy_500_seed1337_retry3": [
+        {
+          "kind": "hard_cap_exceeded",
+          "count": 2
+        }
+      ],
+      "pp100k_2100": [
+        {
+          "kind": "hard_cap_exceeded",
+          "count": 905
+        },
+        {
+          "kind": "unknown",
+          "count": 790
+        },
+        {
+          "kind": "diameter_over_100m",
+          "count": 145
+        }
+      ],
+      "pp100k_2101": [
+        {
+          "kind": "hard_cap_exceeded",
+          "count": 859
+        },
+        {
+          "kind": "unknown",
+          "count": 807
+        },
+        {
+          "kind": "diameter_over_100m",
+          "count": 166
+        }
+      ],
+      "pp100k_2102": [
+        {
+          "kind": "hard_cap_exceeded",
+          "count": 863
+        },
+        {
+          "kind": "unknown",
+          "count": 814
+        },
+        {
+          "kind": "diameter_over_100m",
+          "count": 164
+        }
+      ],
+      "pp100k_2103": [
+        {
+          "kind": "hard_cap_exceeded",
+          "count": 894
+        },
+        {
+          "kind": "unknown",
+          "count": 794
+        },
+        {
+          "kind": "diameter_over_100m",
+          "count": 156
+        }
+      ],
+      "pp100k_2104": [
+        {
+          "kind": "hard_cap_exceeded",
+          "count": 841
+        },
+        {
+          "kind": "unknown",
+          "count": 799
+        },
+        {
+          "kind": "diameter_over_100m",
+          "count": 155
+        }
+      ],
+      "pp10k_2026": [
+        {
+          "kind": "hard_cap_exceeded",
+          "count": 203
+        },
+        {
+          "kind": "diameter_over_100m",
+          "count": 33
+        },
+        {
+          "kind": "ath_nonzero_exit",
+          "count": 1
+        }
+      ],
+      "pp10k_2027": [
+        {
+          "kind": "hard_cap_exceeded",
+          "count": 184
+        },
+        {
+          "kind": "diameter_over_100m",
+          "count": 40
+        },
+        {
+          "kind": "ath_nonzero_exit",
+          "count": 1
+        }
+      ],
+      "pp10k_2028": [
+        {
+          "kind": "hard_cap_exceeded",
+          "count": 167
+        },
+        {
+          "kind": "diameter_over_100m",
+          "count": 34
+        },
+        {
+          "kind": "ath_nonzero_exit",
+          "count": 2
+        }
+      ],
+      "pp10k_2029": [
+        {
+          "kind": "hard_cap_exceeded",
+          "count": 180
+        },
+        {
+          "kind": "diameter_over_100m",
+          "count": 34
+        },
+        {
+          "kind": "ath_nonzero_exit",
+          "count": 1
+        }
+      ],
+      "pp10k_2030": [
+        {
+          "kind": "hard_cap_exceeded",
+          "count": 208
+        },
+        {
+          "kind": "diameter_over_100m",
+          "count": 28
+        },
+        {
+          "kind": "ath_nonzero_exit",
+          "count": 1
+        }
+      ],
+      "pp10k_smoke_2026": [
+        {
+          "kind": "hard_cap_exceeded",
+          "count": 6
+        },
+        {
+          "kind": "diameter_over_100m",
+          "count": 1
+        }
+      ]
+    },
+    "null_run_group_rows": 0
+  },
+  "preclean_result": null,
+  "end_cleanup_result": {
+    "phase": "end",
+    "actions": {
+      "cases": {
+        "phase": "end",
+        "kind": "cases",
+        "base": "C:\\Users\\maximilianheinze\\Desktop\\WUT Batcher v0.1\\reports\\ath_experiments\\cases",
+        "base_path_verified": true,
+        "created_missing_base": false,
+        "file_count_before": 48852,
+        "deleted_count": 48852,
+        "bytes_freed": 93238976
+      },
+      "log": {
+        "phase": "end",
+        "kind": "log",
+        "base": "C:\\Users\\maximilianheinze\\Desktop\\WUT Batcher v0.1\\reports\\ath_experiments\\log",
+        "base_path_verified": true,
+        "created_missing_base": false,
+        "file_count_before": 19426,
+        "deleted_count": 19426,
+        "bytes_freed": 30339482
+      }
+    },
+    "verify": {
+      "ath_experiments_sqlite_exists": true,
+      "summary_json_exists": true,
+      "summary_md_exists": true,
+      "range_suggestions_v1_exists": true,
+      "range_suggestions_v11_exists": true
+    }
+  },
+  "report_files_count": 10000,
+  "report_files_preview": [
+    "reports\\ath_experiments\\cases\\run_0001\\report.json",
+    "reports\\ath_experiments\\cases\\run_0002\\report.json",
+    "reports\\ath_experiments\\cases\\run_0003\\report.json",
+    "reports\\ath_experiments\\cases\\run_0004\\report.json",
+    "reports\\ath_experiments\\cases\\run_0005\\report.json",
+    "reports\\ath_experiments\\cases\\run_0006\\report.json",
+    "reports\\ath_experiments\\cases\\run_0007\\report.json",
+    "reports\\ath_experiments\\cases\\run_0008\\report.json",
+    "reports\\ath_experiments\\cases\\run_0009\\report.json",
+    "reports\\ath_experiments\\cases\\run_0010\\report.json",
+    "reports\\ath_experiments\\cases\\run_0011\\report.json",
+    "reports\\ath_experiments\\cases\\run_0012\\report.json",
+    "reports\\ath_experiments\\cases\\run_0013\\report.json",
+    "reports\\ath_experiments\\cases\\run_0014\\report.json",
+    "reports\\ath_experiments\\cases\\run_0015\\report.json",
+    "reports\\ath_experiments\\cases\\run_0016\\report.json",
+    "reports\\ath_experiments\\cases\\run_0017\\report.json",
+    "reports\\ath_experiments\\cases\\run_0018\\report.json",
+    "reports\\ath_experiments\\cases\\run_0019\\report.json",
+    "reports\\ath_experiments\\cases\\run_0020\\report.json",
+    "reports\\ath_experiments\\cases\\run_0021\\report.json",
+    "reports\\ath_experiments\\cases\\run_0022\\report.json",
+    "reports\\ath_experiments\\cases\\run_0023\\report.json",
+    "reports\\ath_experiments\\cases\\run_0024\\report.json",
+    "reports\\ath_experiments\\cases\\run_0025\\report.json"
+  ]
+}

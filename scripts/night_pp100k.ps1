@@ -47,10 +47,10 @@ function Invoke-ExperimentBlock {
     )
 
     Write-RunLog "START block seed=$Seed run_group=$RunGroup preclean=$PrecleanFiles"
-    & python @args
+    & python @args | Out-Host
     $exitCode = $LASTEXITCODE
     Write-RunLog "END   block seed=$Seed run_group=$RunGroup exit_code=$exitCode"
-    return $exitCode
+    return [int]$exitCode
 }
 
 try {

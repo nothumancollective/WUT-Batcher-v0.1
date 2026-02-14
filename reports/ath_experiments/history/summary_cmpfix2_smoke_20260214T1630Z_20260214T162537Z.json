@@ -3718,9 +3718,5 @@
     "reports\\ath_experiments\\cases\\run_0023\\report.json",
     "reports\\ath_experiments\\cases\\run_0024\\report.json",
     "reports\\ath_experiments\\cases\\run_0025\\report.json"
-  ],
-  "history_snapshot_paths": {
-    "summary_snapshot_path": "reports\\ath_experiments\\history\\summary_cmpfix2_smoke_20260214T1630Z_20260214T162537Z.json",
-    "range_snapshot_path": "reports\\ath_experiments\\history\\range_suggestions_20260214T162537Z.json"
-  }
+  ]
 }

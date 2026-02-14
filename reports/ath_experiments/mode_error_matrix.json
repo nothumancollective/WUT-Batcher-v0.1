@@ -1,73 +1,63 @@
 {
   "gcurve": {
     "superformula": {
-      "ok": 3747,
-      "hard_cap_exceeded": 565,
-      "diameter_over_100m": 246,
-      "skipped": 18,
-      "ath_nonzero_exit": 3,
-      "numeric_overflow": 1
+      "ok": 44,
+      "hard_cap_exceeded": 7,
+      "unknown": 2,
+      "diameter_over_100m": 3
     },
     "superellipse": {
-      "ok": 5139,
-      "skipped": 18,
-      "hard_cap_exceeded": 387,
-      "ath_nonzero_exit": 4,
-      "diameter_over_100m": 4,
-      "numeric_overflow": 2
+      "hard_cap_exceeded": 5,
+      "ok": 66,
+      "unknown": 2
     },
     "no_gcurve": {
-      "ok": 4862,
-      "skipped": 16,
-      "hard_cap_exceeded": 561,
-      "ath_nonzero_exit": 4,
-      "diameter_over_100m": 12,
-      "numeric_overflow": 1
+      "ok": 65,
+      "unknown": 4,
+      "hard_cap_exceeded": 2
     }
   },
   "throat_profile": {
     "Circular Arc": {
-      "ok": 5290,
-      "skipped": 25
-    },
-    "OS-SE": {
-      "ok": 3494,
-      "hard_cap_exceeded": 1392,
-      "diameter_over_100m": 262,
-      "skipped": 21
+      "ok": 69,
+      "unknown": 1
     },
     "R-OSSE": {
-      "ok": 4964,
-      "skipped": 6,
-      "hard_cap_exceeded": 121,
-      "ath_nonzero_exit": 11,
-      "numeric_overflow": 4
+      "ok": 57,
+      "unknown": 4,
+      "hard_cap_exceeded": 1
+    },
+    "OS-SE": {
+      "hard_cap_exceeded": 13,
+      "ok": 49,
+      "unknown": 3,
+      "diameter_over_100m": 3
     }
   },
   "morph": {
     "morph_on": {
-      "ok": 7473,
-      "hard_cap_exceeded": 981,
-      "diameter_over_100m": 145,
-      "skipped": 30,
-      "ath_nonzero_exit": 11,
-      "numeric_overflow": 4
+      "ok": 94,
+      "hard_cap_exceeded": 9,
+      "unknown": 8,
+      "diameter_over_100m": 2
     },
     "morph_off": {
-      "ok": 6275,
-      "diameter_over_100m": 117,
-      "skipped": 22,
-      "hard_cap_exceeded": 532
+      "hard_cap_exceeded": 5,
+      "ok": 81,
+      "diameter_over_100m": 1
     }
   },
   "enclosure": {
     "enclosure_off": {
-      "ok": 13748,
-      "hard_cap_exceeded": 1513,
-      "diameter_over_100m": 262,
-      "skipped": 52,
-      "ath_nonzero_exit": 11,
-      "numeric_overflow": 4
+      "ok": 164,
+      "hard_cap_exceeded": 11,
+      "unknown": 7,
+      "diameter_over_100m": 3
+    },
+    "enclosure_on": {
+      "hard_cap_exceeded": 3,
+      "ok": 11,
+      "unknown": 1
     }
   }
 }

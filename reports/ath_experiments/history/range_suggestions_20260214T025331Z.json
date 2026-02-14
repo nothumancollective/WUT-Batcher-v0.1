@@ -1,0 +1,545 @@
+{
+  "generated_at": "2026-02-14T02:52:51+00:00",
+  "analysis_run_groups": [],
+  "analysis_run_group_count": 0,
+  "per_key": {
+    "CircArc.Radius": {
+      "safe_min": 35.1728,
+      "safe_max": 1800.0,
+      "rec_p05": 139.53197000000003,
+      "rec_p95": 1770.0,
+      "based_on_run_groups": [
+        "pp100k_2100"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "CircArc.TermAngle": {
+      "safe_min": 3.0041,
+      "safe_max": 59.9627,
+      "rec_p05": 5.33445,
+      "rec_p95": 55.16251,
+      "based_on_run_groups": [
+        "pp100k_2100"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Coverage.Angle": {
+      "safe_min": 10.2639,
+      "safe_max": 94.6265,
+      "rec_p05": 21.4186,
+      "rec_p95": 69.3129,
+      "based_on_run_groups": [
+        "pp100k_2100"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "GCurve.AspectRatio": {
+      "safe_min": 0.31,
+      "safe_max": 2.59,
+      "rec_p05": 0.6,
+      "rec_p95": 1.79,
+      "based_on_run_groups": [
+        "pp100k_2100"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "GCurve.Dist": {
+      "safe_min": 0.1042,
+      "safe_max": 991.7018,
+      "rec_p05": 0.22079000000000001,
+      "rec_p95": 557.16522,
+      "based_on_run_groups": [
+        "pp100k_2100"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "GCurve.Rot": {
+      "safe_min": -19.99,
+      "safe_max": 19.98,
+      "rec_p05": -11.31,
+      "rec_p95": 11.55,
+      "based_on_run_groups": [
+        "pp100k_2100"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "GCurve.SE.n": {
+      "safe_min": 2.0,
+      "safe_max": 6.96,
+      "rec_p05": 2.15,
+      "rec_p95": 6.1825,
+      "based_on_run_groups": [
+        "pp100k_2100"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "GCurve.SF.a": {
+      "safe_min": 0.35,
+      "safe_max": 1.44,
+      "rec_p05": 0.57,
+      "rec_p95": 1.22,
+      "based_on_run_groups": [
+        "pp100k_2100"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "GCurve.SF.b": {
+      "safe_min": 0.35,
+      "safe_max": 1.45,
+      "rec_p05": 0.57,
+      "rec_p95": 1.23,
+      "based_on_run_groups": [
+        "pp100k_2100"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "GCurve.SF.m1": {
+      "safe_min": 1.25,
+      "safe_max": 10.44,
+      "rec_p05": 2.26,
+      "rec_p95": 7.907999999999997,
+      "based_on_run_groups": [
+        "pp100k_2100"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "GCurve.SF.m2": {
+      "safe_min": 1.25,
+      "safe_max": 10.47,
+      "rec_p05": 2.21,
+      "rec_p95": 7.92,
+      "based_on_run_groups": [
+        "pp100k_2100"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "GCurve.SF.n1": {
+      "safe_min": 0.08,
+      "safe_max": 1.69,
+      "rec_p05": 0.17,
+      "rec_p95": 1.3,
+      "based_on_run_groups": [
+        "pp100k_2100"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "GCurve.SF.n2": {
+      "safe_min": 0.3,
+      "safe_max": 2.1,
+      "rec_p05": 0.42,
+      "rec_p95": 1.91,
+      "based_on_run_groups": [
+        "pp100k_2100"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "GCurve.SF.n3": {
+      "safe_min": 0.3,
+      "safe_max": 2.1,
+      "rec_p05": 0.42,
+      "rec_p95": 1.9,
+      "based_on_run_groups": [
+        "pp100k_2100"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "GCurve.Type": {
+      "safe_min": 1.0,
+      "safe_max": 2.0,
+      "rec_p05": 1.0,
+      "rec_p95": 2.0,
+      "based_on_run_groups": [
+        "pp100k_2100"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "GCurve.Width": {
+      "safe_min": 80.08,
+      "safe_max": 1775.47,
+      "rec_p05": 131.284,
+      "rec_p95": 893.6579999999997,
+      "based_on_run_groups": [
+        "pp100k_2100"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Length": {
+      "safe_min": 104.104,
+      "safe_max": 2839.757,
+      "rec_p05": 162.519,
+      "rec_p95": 973.531375,
+      "based_on_run_groups": [
+        "pp100k_2100"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Mesh.AngularSegments": {
+      "safe_min": 32.0,
+      "safe_max": 160.0,
+      "rec_p05": 64.0,
+      "rec_p95": 128.0,
+      "based_on_run_groups": [
+        "pp100k_2100"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Mesh.CornerSegments": {
+      "safe_min": 1.0,
+      "safe_max": 14.0,
+      "rec_p05": 2.0,
+      "rec_p95": 10.0,
+      "based_on_run_groups": [
+        "pp100k_2100"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Mesh.InterfaceResolution": {
+      "safe_min": null,
+      "safe_max": null,
+      "rec_p05": null,
+      "rec_p95": null,
+      "based_on_run_groups": [],
+      "consistent_across_groups": false,
+      "consistency_score": null,
+      "notes": "insufficient_group_coverage"
+    },
+    "Mesh.LengthSegments": {
+      "safe_min": 8.0,
+      "safe_max": 80.0,
+      "rec_p05": 14.0,
+      "rec_p95": 60.0,
+      "based_on_run_groups": [
+        "pp100k_2100"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Mesh.MouthResolution": {
+      "safe_min": 3.04,
+      "safe_max": 20.0,
+      "rec_p05": 5.23,
+      "rec_p95": 18.49,
+      "based_on_run_groups": [
+        "pp100k_2100"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Mesh.Quadrants": {
+      "safe_min": 1.0,
+      "safe_max": 1234.0,
+      "rec_p05": 1.0,
+      "rec_p95": 1234.0,
+      "based_on_run_groups": [
+        "pp100k_2100"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Mesh.RearResolution": {
+      "safe_min": 4.01,
+      "safe_max": 24.99,
+      "rec_p05": 4.84,
+      "rec_p95": 22.64,
+      "based_on_run_groups": [
+        "pp100k_2100"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Mesh.RearShape": {
+      "safe_min": 1.0,
+      "safe_max": 2.0,
+      "rec_p05": 1.0,
+      "rec_p95": 2.0,
+      "based_on_run_groups": [
+        "pp100k_2100"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Mesh.ThroatResolution": {
+      "safe_min": 2.0,
+      "safe_max": 12.0,
+      "rec_p05": 2.47,
+      "rec_p95": 10.66,
+      "based_on_run_groups": [
+        "pp100k_2100"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Mesh.ThroatSegments": {
+      "safe_min": 1.0,
+      "safe_max": 24.0,
+      "rec_p05": 4.0,
+      "rec_p95": 16.0,
+      "based_on_run_groups": [
+        "pp100k_2100"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Mesh.WallThickness": {
+      "safe_min": 2.0,
+      "safe_max": 12.0,
+      "rec_p05": 2.46,
+      "rec_p95": 10.970999999999986,
+      "based_on_run_groups": [
+        "pp100k_2100"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Morph.CornerRadius": {
+      "safe_min": 0.02,
+      "safe_max": 59.93,
+      "rec_p05": 1.576,
+      "rec_p95": 47.687999999999995,
+      "based_on_run_groups": [
+        "pp100k_2100"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Morph.FixedPart": {
+      "safe_min": 0.0018,
+      "safe_max": 0.9819,
+      "rec_p05": 0.04080500000000001,
+      "rec_p95": 0.87066,
+      "based_on_run_groups": [
+        "pp100k_2100"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Morph.Rate": {
+      "safe_min": 1.0254,
+      "safe_max": 11.8013,
+      "rec_p05": 1.2354200000000002,
+      "rec_p95": 9.443349999999999,
+      "based_on_run_groups": [
+        "pp100k_2100"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Morph.TargetHeight": {
+      "safe_min": 45.0,
+      "safe_max": 1900.0,
+      "rec_p05": 113.5275,
+      "rec_p95": 1506.2429999999995,
+      "based_on_run_groups": [
+        "pp100k_2100"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Morph.TargetShape": {
+      "safe_min": 1.0,
+      "safe_max": 2.0,
+      "rec_p05": 1.0,
+      "rec_p95": 2.0,
+      "based_on_run_groups": [
+        "pp100k_2100"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Morph.TargetWidth": {
+      "safe_min": 45.0,
+      "safe_max": 1900.0,
+      "rec_p05": 132.41000000000003,
+      "rec_p95": 1429.9454999999994,
+      "based_on_run_groups": [
+        "pp100k_2100"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "OS.k": {
+      "safe_min": 0.20302,
+      "safe_max": 1.59962,
+      "rec_p05": 0.61496,
+      "rec_p95": 1.24409,
+      "based_on_run_groups": [
+        "pp100k_2100"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Rot": {
+      "safe_min": -19.0046,
+      "safe_max": 18.713,
+      "rec_p05": -9.74906,
+      "rec_p95": 9.603289999999998,
+      "based_on_run_groups": [
+        "pp100k_2100"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Slot.Length": {
+      "safe_min": 0.0648,
+      "safe_max": 249.4047,
+      "rec_p05": 4.63556,
+      "rec_p95": 141.98035999999996,
+      "based_on_run_groups": [
+        "pp100k_2100"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Term.n": {
+      "safe_min": 2.00097,
+      "safe_max": 7.97669,
+      "rec_p05": 2.16878,
+      "rec_p95": 7.02164,
+      "based_on_run_groups": [
+        "pp100k_2100"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Term.q": {
+      "safe_min": 0.82023,
+      "safe_max": 0.99998,
+      "rec_p05": 0.85565,
+      "rec_p95": 0.99497,
+      "based_on_run_groups": [
+        "pp100k_2100"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Term.s": {
+      "safe_min": 0.50653,
+      "safe_max": 1.04934,
+      "rec_p05": 0.56901,
+      "rec_p95": 0.93828,
+      "based_on_run_groups": [
+        "pp100k_2100"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Throat.Angle": {
+      "safe_min": 0.0,
+      "safe_max": 24.994,
+      "rec_p05": 2.542,
+      "rec_p95": 22.5681,
+      "based_on_run_groups": [
+        "pp100k_2100"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Throat.Diameter": {
+      "safe_min": 12.0,
+      "safe_max": 115.0,
+      "rec_p05": 19.769000000000002,
+      "rec_p95": 104.7,
+      "based_on_run_groups": [
+        "pp100k_2100"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Throat.Ext.Angle": {
+      "safe_min": 0.03,
+      "safe_max": 24.93,
+      "rec_p05": 2.6620000000000004,
+      "rec_p95": 22.315999999999995,
+      "based_on_run_groups": [
+        "pp100k_2100"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Throat.Ext.Length": {
+      "safe_min": 3.01,
+      "safe_max": 199.16,
+      "rec_p05": 6.73,
+      "rec_p95": 136.128,
+      "based_on_run_groups": [
+        "pp100k_2100"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    },
+    "Throat.Profile": {
+      "safe_min": 1.0,
+      "safe_max": 3.0,
+      "rec_p05": 1.0,
+      "rec_p95": 3.0,
+      "based_on_run_groups": [
+        "pp100k_2100"
+      ],
+      "consistent_across_groups": false,
+      "consistency_score": 1.0,
+      "notes": "group_ranges_partially_overlapping"
+    }
+  }
+}

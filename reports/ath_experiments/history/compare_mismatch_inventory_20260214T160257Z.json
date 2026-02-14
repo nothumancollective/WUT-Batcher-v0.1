@@ -1,0 +1,487 @@
+{
+  "generated_at": "2026-02-14T16:02:57+00:00",
+  "db_path": "reports\\ath_experiments\\ath_experiments.sqlite",
+  "selector": "cmpfix_smoke_20260214T1602Z",
+  "classification_backfill": {
+    "applied": true,
+    "runs_processed": 10,
+    "rows_updated": 0,
+    "idempotent_noop": true,
+    "class_counts": {
+      "cmp_unknown": 10
+    },
+    "sample_run_ids": {
+      "cmp_unknown": [
+        "ath_exp_2401_0013_bd7be7728b",
+        "ath_exp_2401_0021_d474b1b2be",
+        "ath_exp_2401_0024_aa6ae81013"
+      ]
+    },
+    "top_keys_overall": [
+      {
+        "key": "Mesh.InterfaceDraw",
+        "count": 5
+      },
+      {
+        "key": "Mesh.SubdomainSlices",
+        "count": 5
+      },
+      {
+        "key": "Mesh.ZMapPoints",
+        "count": 4
+      },
+      {
+        "key": "GCurve.SF",
+        "count": 3
+      }
+    ],
+    "top_keys_by_class": {
+      "cmp_unknown": [
+        {
+          "key": "Mesh.InterfaceDraw",
+          "count": 5
+        },
+        {
+          "key": "Mesh.SubdomainSlices",
+          "count": 5
+        },
+        {
+          "key": "Mesh.ZMapPoints",
+          "count": 4
+        },
+        {
+          "key": "GCurve.SF",
+          "count": 3
+        }
+      ]
+    }
+  },
+  "sample_size": 200,
+  "sample": [
+    {
+      "run_id": "ath_exp_2401_0013_bd7be7728b",
+      "run_group_id": "cmpfix_smoke_20260214T1602Z",
+      "compare_class_primary": "cmp_unknown",
+      "compare_classes": [
+        "structure_mismatch_object"
+      ],
+      "excerpt": {
+        "missing_required": [],
+        "extra_ghost": [],
+        "mismatch_excerpt": [
+          {
+            "key": "Mesh.InterfaceDraw",
+            "expected": [
+              22.279,
+              3.204,
+              11.359
+            ],
+            "actual": "",
+            "mismatch_kind": "structure_mismatch_object"
+          },
+          {
+            "key": "Mesh.SubdomainSlices",
+            "expected": [
+              35,
+              36,
+              47
+            ],
+            "actual": "",
+            "mismatch_kind": "structure_mismatch_object"
+          }
+        ]
+      },
+      "counts": {
+        "missing_required": 0,
+        "missing_optional": 0,
+        "extra_defaulted": 0,
+        "extra_ghost": 0,
+        "mismatch": 2
+      }
+    },
+    {
+      "run_id": "ath_exp_2401_0021_d474b1b2be",
+      "run_group_id": "cmpfix_smoke_20260214T1602Z",
+      "compare_class_primary": "cmp_unknown",
+      "compare_classes": [
+        "structure_mismatch_object"
+      ],
+      "excerpt": {
+        "missing_required": [],
+        "extra_ghost": [],
+        "mismatch_excerpt": [
+          {
+            "key": "GCurve.SF",
+            "expected": [
+              1.0778,
+              0.9462,
+              7.1218,
+              0.1571,
+              1.8437,
+              0.9908
+            ],
+            "actual": "",
+            "mismatch_kind": "structure_mismatch_object"
+          }
+        ]
+      },
+      "counts": {
+        "missing_required": 0,
+        "missing_optional": 0,
+        "extra_defaulted": 0,
+        "extra_ghost": 0,
+        "mismatch": 1
+      }
+    },
+    {
+      "run_id": "ath_exp_2401_0024_aa6ae81013",
+      "run_group_id": "cmpfix_smoke_20260214T1602Z",
+      "compare_class_primary": "cmp_unknown",
+      "compare_classes": [
+        "structure_mismatch_object"
+      ],
+      "excerpt": {
+        "missing_required": [],
+        "extra_ghost": [],
+        "mismatch_excerpt": [
+          {
+            "key": "Mesh.InterfaceDraw",
+            "expected": [
+              20.212,
+              3.064,
+              3.973
+            ],
+            "actual": "",
+            "mismatch_kind": "structure_mismatch_object"
+          },
+          {
+            "key": "Mesh.SubdomainSlices",
+            "expected": [
+              5,
+              10,
+              14
+            ],
+            "actual": "",
+            "mismatch_kind": "structure_mismatch_object"
+          }
+        ]
+      },
+      "counts": {
+        "missing_required": 0,
+        "missing_optional": 0,
+        "extra_defaulted": 0,
+        "extra_ghost": 0,
+        "mismatch": 2
+      }
+    },
+    {
+      "run_id": "ath_exp_2401_0049_2dc45e573e",
+      "run_group_id": "cmpfix_smoke_20260214T1602Z",
+      "compare_class_primary": "cmp_unknown",
+      "compare_classes": [
+        "structure_mismatch_object"
+      ],
+      "excerpt": {
+        "missing_required": [],
+        "extra_ghost": [],
+        "mismatch_excerpt": [
+          {
+            "key": "Mesh.ZMapPoints",
+            "expected": [
+              0.2513,
+              0.7182,
+              0.8693
+            ],
+            "actual": "",
+            "mismatch_kind": "structure_mismatch_object"
+          }
+        ]
+      },
+      "counts": {
+        "missing_required": 0,
+        "missing_optional": 0,
+        "extra_defaulted": 0,
+        "extra_ghost": 0,
+        "mismatch": 1
+      }
+    },
+    {
+      "run_id": "ath_exp_2401_0058_9c854b372b",
+      "run_group_id": "cmpfix_smoke_20260214T1602Z",
+      "compare_class_primary": "cmp_unknown",
+      "compare_classes": [
+        "structure_mismatch_object"
+      ],
+      "excerpt": {
+        "missing_required": [],
+        "extra_ghost": [],
+        "mismatch_excerpt": [
+          {
+            "key": "Mesh.InterfaceDraw",
+            "expected": [
+              11.635
+            ],
+            "actual": "",
+            "mismatch_kind": "structure_mismatch_object"
+          },
+          {
+            "key": "Mesh.SubdomainSlices",
+            "expected": [
+              15
+            ],
+            "actual": "",
+            "mismatch_kind": "structure_mismatch_object"
+          }
+        ]
+      },
+      "counts": {
+        "missing_required": 0,
+        "missing_optional": 0,
+        "extra_defaulted": 0,
+        "extra_ghost": 0,
+        "mismatch": 2
+      }
+    },
+    {
+      "run_id": "ath_exp_2401_0059_5ec2727b87",
+      "run_group_id": "cmpfix_smoke_20260214T1602Z",
+      "compare_class_primary": "cmp_unknown",
+      "compare_classes": [
+        "structure_mismatch_object"
+      ],
+      "excerpt": {
+        "missing_required": [],
+        "extra_ghost": [],
+        "mismatch_excerpt": [
+          {
+            "key": "GCurve.SF",
+            "expected": [
+              0.9636,
+              1.1089,
+              2.5229,
+              0.9705,
+              0.6458,
+              1.5115
+            ],
+            "actual": "",
+            "mismatch_kind": "structure_mismatch_object"
+          }
+        ]
+      },
+      "counts": {
+        "missing_required": 0,
+        "missing_optional": 0,
+        "extra_defaulted": 0,
+        "extra_ghost": 0,
+        "mismatch": 1
+      }
+    },
+    {
+      "run_id": "ath_exp_2401_0150_9c783c492e",
+      "run_group_id": "cmpfix_smoke_20260214T1602Z",
+      "compare_class_primary": "cmp_unknown",
+      "compare_classes": [
+        "structure_mismatch_object"
+      ],
+      "excerpt": {
+        "missing_required": [],
+        "extra_ghost": [],
+        "mismatch_excerpt": [
+          {
+            "key": "Mesh.ZMapPoints",
+            "expected": [
+              0.1401,
+              0.6947,
+              0.793
+            ],
+            "actual": "",
+            "mismatch_kind": "structure_mismatch_object"
+          }
+        ]
+      },
+      "counts": {
+        "missing_required": 0,
+        "missing_optional": 0,
+        "extra_defaulted": 0,
+        "extra_ghost": 0,
+        "mismatch": 1
+      }
+    },
+    {
+      "run_id": "ath_exp_2401_0151_33a52a36ce",
+      "run_group_id": "cmpfix_smoke_20260214T1602Z",
+      "compare_class_primary": "cmp_unknown",
+      "compare_classes": [
+        "structure_mismatch_object"
+      ],
+      "excerpt": {
+        "missing_required": [],
+        "extra_ghost": [],
+        "mismatch_excerpt": [
+          {
+            "key": "GCurve.SF",
+            "expected": [
+              0.6877,
+              0.7915,
+              2.1333,
+              0.6313,
+              1.4821,
+              1.1883
+            ],
+            "actual": "",
+            "mismatch_kind": "structure_mismatch_object"
+          },
+          {
+            "key": "Mesh.InterfaceDraw",
+            "expected": [
+              10.947,
+              8.116,
+              22.745
+            ],
+            "actual": "",
+            "mismatch_kind": "structure_mismatch_object"
+          },
+          {
+            "key": "Mesh.SubdomainSlices",
+            "expected": [
+              3,
+              43,
+              71
+            ],
+            "actual": "",
+            "mismatch_kind": "structure_mismatch_object"
+          }
+        ]
+      },
+      "counts": {
+        "missing_required": 0,
+        "missing_optional": 0,
+        "extra_defaulted": 0,
+        "extra_ghost": 0,
+        "mismatch": 3
+      }
+    },
+    {
+      "run_id": "ath_exp_2401_0180_4ee581c7af",
+      "run_group_id": "cmpfix_smoke_20260214T1602Z",
+      "compare_class_primary": "cmp_unknown",
+      "compare_classes": [
+        "structure_mismatch_object"
+      ],
+      "excerpt": {
+        "missing_required": [],
+        "extra_ghost": [],
+        "mismatch_excerpt": [
+          {
+            "key": "Mesh.InterfaceDraw",
+            "expected": [
+              6.238,
+              4.956
+            ],
+            "actual": "",
+            "mismatch_kind": "structure_mismatch_object"
+          },
+          {
+            "key": "Mesh.SubdomainSlices",
+            "expected": [
+              3,
+              12
+            ],
+            "actual": "",
+            "mismatch_kind": "structure_mismatch_object"
+          },
+          {
+            "key": "Mesh.ZMapPoints",
+            "expected": [
+              0.4358,
+              0.8616,
+              0.9284
+            ],
+            "actual": "",
+            "mismatch_kind": "structure_mismatch_object"
+          }
+        ]
+      },
+      "counts": {
+        "missing_required": 0,
+        "missing_optional": 0,
+        "extra_defaulted": 0,
+        "extra_ghost": 0,
+        "mismatch": 3
+      }
+    },
+    {
+      "run_id": "ath_exp_2401_0190_89b9607f65",
+      "run_group_id": "cmpfix_smoke_20260214T1602Z",
+      "compare_class_primary": "cmp_unknown",
+      "compare_classes": [
+        "structure_mismatch_object"
+      ],
+      "excerpt": {
+        "missing_required": [],
+        "extra_ghost": [],
+        "mismatch_excerpt": [
+          {
+            "key": "Mesh.ZMapPoints",
+            "expected": [
+              0.1019,
+              0.4608,
+              0.4627
+            ],
+            "actual": "",
+            "mismatch_kind": "structure_mismatch_object"
+          }
+        ]
+      },
+      "counts": {
+        "missing_required": 0,
+        "missing_optional": 0,
+        "extra_defaulted": 0,
+        "extra_ghost": 0,
+        "mismatch": 1
+      }
+    }
+  ],
+  "class_counts": {
+    "cmp_unknown": 10
+  },
+  "top_keys_overall": [
+    {
+      "key": "Mesh.InterfaceDraw",
+      "count": 5
+    },
+    {
+      "key": "Mesh.SubdomainSlices",
+      "count": 5
+    },
+    {
+      "key": "Mesh.ZMapPoints",
+      "count": 4
+    },
+    {
+      "key": "GCurve.SF",
+      "count": 3
+    }
+  ],
+  "top_keys_by_class": {
+    "cmp_unknown": [
+      {
+        "key": "Mesh.InterfaceDraw",
+        "count": 5
+      },
+      {
+        "key": "Mesh.SubdomainSlices",
+        "count": 5
+      },
+      {
+        "key": "Mesh.ZMapPoints",
+        "count": 4
+      },
+      {
+        "key": "GCurve.SF",
+        "count": 3
+      }
+    ]
+  },
+  "keymap_path": "reports\\ath_experiments\\compare_mismatch_keymap_20260214T160257Z.json"
+}
