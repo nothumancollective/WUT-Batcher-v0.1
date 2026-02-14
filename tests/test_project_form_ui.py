@@ -177,6 +177,54 @@ class ProjectFormUiTests(unittest.TestCase):
         ]
         self.assertEqual(titles, ["Core", "Enclosure"])
 
+    def test_accordion_collapses_other_blocks_and_keeps_values(self) -> None:
+        length_editor = self.form.editor_for_key("Length")
+        self.assertIsNotNone(length_editor)
+        assert length_editor is not None
+        length_editor.set_is_set(True)  # type: ignore[attr-defined]
+        length_editor.set_value(450.0)  # type: ignore[attr-defined]
+        self.form._on_any_field_changed()  # type: ignore[attr-defined]
+
+        basics_box = self.form._field_group_boxes.get("Length")  # type: ignore[attr-defined]
+        throat_box = self.form._field_group_boxes.get("Throat.Profile")  # type: ignore[attr-defined]
+        self.assertIsNotNone(basics_box)
+        self.assertIsNotNone(throat_box)
+        assert basics_box is not None
+        assert throat_box is not None
+
+        basics_box.set_collapsed(False)
+        throat_box.set_collapsed(False)
+        self.assertTrue(basics_box.is_collapsed())
+        self.assertFalse(throat_box.is_collapsed())
+
+        payload = self.form.payload()
+        state = next(item for item in payload["param_states"] if item.get("param_name") == "Length")
+        self.assertEqual(state["is_set"], 1)
+        self.assertEqual(float(state["value"]), 450.0)
+
+    def test_group_box_warn_state_when_child_has_warning(self) -> None:
+        length_editor = self.form.editor_for_key("Length")
+        self.assertIsNotNone(length_editor)
+        assert length_editor is not None
+        length_editor.set_is_set(True)  # type: ignore[attr-defined]
+        length_editor.set_value(1200.0)  # type: ignore[attr-defined]
+        self.form._on_any_field_changed()  # type: ignore[attr-defined]
+
+        self.form.apply_ui_risks(
+            [
+                {
+                    "field_key": "Length",
+                    "severity": "warn",
+                    "message": "Length is outside the safe range [120.00, 900.00].",
+                    "source": "experiment",
+                }
+            ]
+        )
+        box = self.form._field_group_boxes.get("Length")  # type: ignore[attr-defined]
+        self.assertIsNotNone(box)
+        assert box is not None
+        self.assertEqual(box.property("blockState"), "warn")
+
     def test_source_is_removed_and_rosse_not_duplicated(self) -> None:
         self.assertIsNone(self.form.editor_for_key("Source.Shape"))
         self.assertIsNone(self.form.editor_for_key("Source.Radius"))
@@ -344,8 +392,14 @@ class ProjectFormUiTests(unittest.TestCase):
         box_layout = core_box.layout()
         self.assertIsNotNone(box_layout)
         assert box_layout is not None
-        selection_grid = box_layout.itemAt(0).layout()
-        form_grid = box_layout.itemAt(1).layout()
+        body_widget = box_layout.itemAt(0).widget()
+        self.assertIsNotNone(body_widget)
+        assert body_widget is not None
+        body_layout = body_widget.layout()
+        self.assertIsNotNone(body_layout)
+        assert body_layout is not None
+        selection_grid = body_layout.itemAt(0).layout()
+        form_grid = body_layout.itemAt(1).layout()
         self.assertIsInstance(selection_grid, QGridLayout)
         self.assertIsInstance(form_grid, QGridLayout)
         assert isinstance(selection_grid, QGridLayout) and isinstance(form_grid, QGridLayout)

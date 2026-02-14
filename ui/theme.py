@@ -141,6 +141,12 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         background-color: transparent;
         font-weight: 700;
     }}
+    QGroupBox[blockState="warn"] {{
+        border: 1px solid {c['warning_border']};
+    }}
+    QGroupBox[blockState="fatal"] {{
+        border: 1px solid {c['danger_border']};
+    }}
     QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox {{
         background-color: {c['surface2']};
         color: {c['text']};

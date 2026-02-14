@@ -178,6 +178,53 @@ class CollapsibleSection(QWidget):
         self.content.setVisible(checked)
 
 
+class AccordionGroupBox(QGroupBox):
+    toggled = Signal(bool)
+
+    def __init__(self, title: str, parent: QWidget | None = None) -> None:
+        super().__init__(title, parent)
+        self._collapsed = False
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        self._body = QWidget(self)
+        self._body_layout = QVBoxLayout(self._body)
+        self._body_layout.setContentsMargins(10, 10, 10, 10)
+        self._body_layout.setSpacing(8)
+        root.addWidget(self._body)
+        self.setProperty("blockState", "neutral")
+        self.setProperty("collapsed", "false")
+
+    def body_layout(self) -> QVBoxLayout:
+        return self._body_layout
+
+    def is_collapsed(self) -> bool:
+        return bool(self._collapsed)
+
+    def set_collapsed(self, collapsed: bool) -> None:
+        state = bool(collapsed)
+        if state == self._collapsed:
+            return
+        self._collapsed = state
+        self._body.setVisible(not state)
+        self.setProperty("collapsed", "true" if state else "false")
+        self.style().unpolish(self)
+        self.style().polish(self)
+        self.updateGeometry()
+        self.toggled.emit(not state)
+
+    def _title_hit_height(self) -> int:
+        return max(28, int(self.fontMetrics().height() + 14))
+
+    def mousePressEvent(self, event) -> None:  # type: ignore[override]
+        if event.button() == Qt.LeftButton and int(event.position().y()) <= self._title_hit_height():
+            self.set_collapsed(not self._collapsed)
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+
 class NullableNumericInput(QWidget):
     changed = Signal()
 
@@ -910,6 +957,9 @@ class ParameterForm(QWidget):
         self._mode_common_frames: Dict[str, Tuple[ContextFrame, Tuple[str, ...]]] = {}
         self._compat_state: Dict[str, Any] = {"visible_keys": [], "locked_keys": [], "issues": []}
         self._compat_visible_keys: set[str] = set()
+        self._field_group_boxes: Dict[str, AccordionGroupBox] = {}
+        self._accordion_groups_by_column: Dict[str, List[AccordionGroupBox]] = {"Geometry": [], "Mesh": []}
+        self._accordion_sync_active = False
         self._morph_detail_frame: Optional[ContextFrame] = None
         self._rollback_detail_frame: Optional[ContextFrame] = None
         self._morph_detail_keys: Tuple[str, ...] = ()
@@ -1007,14 +1057,39 @@ class ParameterForm(QWidget):
         grouped_geometry = self._fields_by_group(geometry_regular)
         grouped_mesh = self._fields_by_group(mesh_fields)
 
-        self._add_group_by_name(self.geometry_section.content_layout, grouped_geometry, "Basics")
-        self._add_mode_group(self.geometry_section.content_layout, stacks_by_controller.get("Throat.Profile"))
-        self._add_morph_group(self.geometry_section.content_layout, grouped_geometry)
-        self._add_mode_group(self.geometry_section.content_layout, stacks_by_controller.get("GCurve.Type"))
-        self._add_rollback_group(self.geometry_section.content_layout, grouped_geometry)
+        self._add_group_by_name(self.geometry_section.content_layout, grouped_geometry, "Basics", column_key="Geometry")
+        self._add_mode_group(self.geometry_section.content_layout, stacks_by_controller.get("Throat.Profile"), column_key="Geometry")
+        self._add_morph_group(self.geometry_section.content_layout, grouped_geometry, column_key="Geometry")
+        self._add_mode_group(self.geometry_section.content_layout, stacks_by_controller.get("GCurve.Type"), column_key="Geometry")
+        self._add_rollback_group(self.geometry_section.content_layout, grouped_geometry, column_key="Geometry")
 
-        self._add_mesh_core_group(self.mesh_section.content_layout, grouped_mesh)
-        self._add_group_by_name(self.mesh_section.content_layout, grouped_mesh, "Enclosure")
+        self._add_mesh_core_group(self.mesh_section.content_layout, grouped_mesh, column_key="Mesh")
+        self._add_group_by_name(self.mesh_section.content_layout, grouped_mesh, "Enclosure", column_key="Mesh")
+        self._initialize_accordion_defaults()
+
+    def _register_group_box(self, box: AccordionGroupBox, *, column_key: str) -> None:
+        groups = self._accordion_groups_by_column.setdefault(column_key, [])
+        groups.append(box)
+        box.toggled.connect(lambda expanded, current=box, column=column_key: self._on_group_toggled(column, current, expanded))
+
+    def _on_group_toggled(self, column_key: str, current: AccordionGroupBox, expanded: bool) -> None:
+        if self._accordion_sync_active:
+            return
+        if not expanded:
+            return
+        self._accordion_sync_active = True
+        try:
+            for box in self._accordion_groups_by_column.get(column_key, []):
+                if box is current:
+                    continue
+                box.set_collapsed(True)
+        finally:
+            self._accordion_sync_active = False
+
+    def _initialize_accordion_defaults(self) -> None:
+        for column_key, boxes in self._accordion_groups_by_column.items():
+            for index, box in enumerate(boxes):
+                box.set_collapsed(index != 0)
 
     def _fields_by_group(self, fields: Iterable[FieldSpec]) -> Dict[str, List[FieldSpec]]:
         grouped: Dict[str, List[FieldSpec]] = {}
@@ -1028,13 +1103,21 @@ class ParameterForm(QWidget):
         parent_layout: QVBoxLayout,
         grouped_fields: Dict[str, List[FieldSpec]],
         group_name: str,
+        *,
+        column_key: str,
     ) -> None:
         fields = list(grouped_fields.get(group_name, []))
         if not fields:
             return
-        self._add_grouped_fields(parent_layout, fields, forced_group_name=group_name)
+        self._add_grouped_fields(parent_layout, fields, forced_group_name=group_name, column_key=column_key)
 
-    def _add_mesh_core_group(self, parent_layout: QVBoxLayout, grouped_fields: Dict[str, List[FieldSpec]]) -> None:
+    def _add_mesh_core_group(
+        self,
+        parent_layout: QVBoxLayout,
+        grouped_fields: Dict[str, List[FieldSpec]],
+        *,
+        column_key: str,
+    ) -> None:
         fields = list(grouped_fields.get("Core", []))
         if not fields:
             return
@@ -1042,11 +1125,10 @@ class ParameterForm(QWidget):
         selection_priority = {"Mesh.Quadrants": 0, "Mesh.RearShape": 1}
         ordered = sorted(fields, key=lambda field: (selection_priority.get(field.key, 9), field.order))
 
-        box = QGroupBox("Core")
+        box = AccordionGroupBox("Core")
         _finalize_group_box(box)
-        box_layout = QVBoxLayout(box)
-        box_layout.setContentsMargins(0, 0, 0, 0)
-        box_layout.setSpacing(0)
+        self._register_group_box(box, column_key=column_key)
+        box_layout = box.body_layout()
 
         selection_grid = QGridLayout()
         configure_single_column_grid(selection_grid)
@@ -1082,6 +1164,7 @@ class ParameterForm(QWidget):
             selection_grid.addWidget(label, row, 0)
             selection_grid.addWidget(editor, row, 1, 1, 1, alignment=Qt.AlignLeft)
             self._field_labels[field.key] = label
+            self._field_group_boxes[field.key] = box
 
         left_fields = other_fields[:6]
         right_fields = other_fields[6:]
@@ -1094,6 +1177,7 @@ class ParameterForm(QWidget):
             form_grid.addWidget(label, row, 0)
             form_grid.addWidget(editor, row, 1, 1, 1, alignment=Qt.AlignLeft)
             self._field_labels[field.key] = label
+            self._field_group_boxes[field.key] = box
 
         for row, field in enumerate(right_fields):
             label = QLabel(field.label)
@@ -1103,32 +1187,46 @@ class ParameterForm(QWidget):
             form_grid.addWidget(label, row, 3)
             form_grid.addWidget(editor, row, 4, 1, 1, alignment=Qt.AlignLeft)
             self._field_labels[field.key] = label
+            self._field_group_boxes[field.key] = box
 
         box_layout.addLayout(selection_grid)
         box_layout.addLayout(form_grid)
         parent_layout.addWidget(box, 0, Qt.AlignTop | Qt.AlignLeft)
 
-    def _add_mode_group(self, parent_layout: QVBoxLayout, stack: Optional[ModeStackSpec]) -> None:
+    def _add_mode_group(
+        self,
+        parent_layout: QVBoxLayout,
+        stack: Optional[ModeStackSpec],
+        *,
+        column_key: str,
+    ) -> None:
         if stack is None:
             return
-        self._add_mode_groups(parent_layout, [stack])
+        self._add_mode_groups(parent_layout, [stack], column_key=column_key)
 
-    def _add_morph_group(self, parent_layout: QVBoxLayout, grouped_fields: Dict[str, List[FieldSpec]]) -> None:
+    def _add_morph_group(
+        self,
+        parent_layout: QVBoxLayout,
+        grouped_fields: Dict[str, List[FieldSpec]],
+        *,
+        column_key: str,
+    ) -> None:
         fields = sorted(grouped_fields.get("Morph", []), key=lambda field: field.order)
         if not fields:
             return
 
         controller = next((field for field in fields if field.key == "Morph.TargetShape"), None)
         if controller is None:
-            self._add_grouped_fields(parent_layout, fields, forced_group_name="Morph")
+            self._add_grouped_fields(parent_layout, fields, forced_group_name="Morph", column_key=column_key)
             return
 
         detail_fields = [field for field in fields if field.key != controller.key]
         self._morph_detail_keys = tuple(field.key for field in detail_fields)
 
-        box = QGroupBox("Morph")
+        box = AccordionGroupBox("Morph")
         _finalize_group_box(box)
-        box_layout = QVBoxLayout(box)
+        self._register_group_box(box, column_key=column_key)
+        box_layout = box.body_layout()
         box_layout.setAlignment(Qt.AlignTop)
 
         controller_grid = QGridLayout()
@@ -1140,6 +1238,7 @@ class ParameterForm(QWidget):
         controller_grid.addWidget(controller_label, 0, 0)
         controller_grid.addWidget(controller_editor, 0, 1)
         self._field_labels[controller.key] = controller_label
+        self._field_group_boxes[controller.key] = box
         box_layout.addLayout(controller_grid)
 
         if detail_fields:
@@ -1157,28 +1256,36 @@ class ParameterForm(QWidget):
                 detail_grid.addWidget(label, row, label_col)
                 detail_grid.addWidget(editor, row, input_col, 1, 1, alignment=Qt.AlignLeft)
                 self._field_labels[field.key] = label
+                self._field_group_boxes[field.key] = box
             detail_frame.content_layout.addWidget(detail_widget)
             self._morph_detail_frame = detail_frame
             box_layout.addWidget(detail_frame)
 
         parent_layout.addWidget(box, 0, Qt.AlignTop | Qt.AlignLeft)
 
-    def _add_rollback_group(self, parent_layout: QVBoxLayout, grouped_fields: Dict[str, List[FieldSpec]]) -> None:
+    def _add_rollback_group(
+        self,
+        parent_layout: QVBoxLayout,
+        grouped_fields: Dict[str, List[FieldSpec]],
+        *,
+        column_key: str,
+    ) -> None:
         fields = sorted(grouped_fields.get("Rollback", []), key=lambda field: field.order)
         if not fields:
             return
 
         controller = next((field for field in fields if field.key == "Rollback"), None)
         if controller is None:
-            self._add_grouped_fields(parent_layout, fields, forced_group_name="Rollback")
+            self._add_grouped_fields(parent_layout, fields, forced_group_name="Rollback", column_key=column_key)
             return
 
         detail_fields = [field for field in fields if field.key != controller.key]
         self._rollback_detail_keys = tuple(field.key for field in detail_fields)
 
-        box = QGroupBox("Rollback")
+        box = AccordionGroupBox("Rollback")
         _finalize_group_box(box)
-        box_layout = QVBoxLayout(box)
+        self._register_group_box(box, column_key=column_key)
+        box_layout = box.body_layout()
         box_layout.setAlignment(Qt.AlignTop)
 
         controller_grid = QGridLayout()
@@ -1190,6 +1297,7 @@ class ParameterForm(QWidget):
         controller_grid.addWidget(controller_label, 0, 0)
         controller_grid.addWidget(controller_editor, 0, 1)
         self._field_labels[controller.key] = controller_label
+        self._field_group_boxes[controller.key] = box
         box_layout.addLayout(controller_grid)
 
         if detail_fields:
@@ -1207,6 +1315,7 @@ class ParameterForm(QWidget):
                 detail_grid.addWidget(label, row, label_col)
                 detail_grid.addWidget(editor, row, input_col, 1, 1, alignment=Qt.AlignLeft)
                 self._field_labels[field.key] = label
+                self._field_group_boxes[field.key] = box
             detail_frame.content_layout.addWidget(detail_widget)
             self._rollback_detail_frame = detail_frame
             box_layout.addWidget(detail_frame)
@@ -1219,6 +1328,7 @@ class ParameterForm(QWidget):
         fields: Iterable[FieldSpec],
         *,
         forced_group_name: Optional[str] = None,
+        column_key: str,
     ) -> None:
         grouped: Dict[str, List[FieldSpec]] = {}
         if forced_group_name is not None:
@@ -1227,9 +1337,11 @@ class ParameterForm(QWidget):
             grouped = self._fields_by_group(fields)
 
         for group_name, group_fields in grouped.items():
-            box = QGroupBox(group_name)
+            box = AccordionGroupBox(group_name)
             _finalize_group_box(box)
-            grid = QGridLayout(box)
+            self._register_group_box(box, column_key=column_key)
+            grid_holder = QWidget()
+            grid = QGridLayout(grid_holder)
             configure_two_column_grid(grid)
             ordered = sorted(group_fields, key=lambda field: field.order)
             scalar_index = 0
@@ -1238,6 +1350,7 @@ class ParameterForm(QWidget):
                 editor = self._ensure_editor(field)
                 if field.widget_kind == "object":
                     grid.addWidget(editor, object_row, 0, 1, 5, alignment=Qt.AlignLeft)
+                    self._field_group_boxes[field.key] = box
                     object_row += 1
                     continue
                 label = QLabel(field.label)
@@ -1248,18 +1361,27 @@ class ParameterForm(QWidget):
                 grid.addWidget(label, row, label_col)
                 grid.addWidget(editor, row, input_col, 1, 1, alignment=Qt.AlignLeft)
                 self._field_labels[field.key] = label
+                self._field_group_boxes[field.key] = box
                 scalar_index += 1
+            box.body_layout().addWidget(grid_holder)
             parent_layout.addWidget(box, 0, Qt.AlignTop | Qt.AlignLeft)
 
-    def _add_mode_groups(self, parent_layout: QVBoxLayout, stacks: Iterable[ModeStackSpec]) -> None:
+    def _add_mode_groups(
+        self,
+        parent_layout: QVBoxLayout,
+        stacks: Iterable[ModeStackSpec],
+        *,
+        column_key: str,
+    ) -> None:
         for stack in stacks:
             controller = self._field_specs.get(stack.controller_key)
             if controller is None:
                 continue
 
-            box = QGroupBox(stack.label)
+            box = AccordionGroupBox(stack.label)
             _finalize_group_box(box)
-            box_layout = QVBoxLayout(box)
+            self._register_group_box(box, column_key=column_key)
+            box_layout = box.body_layout()
             box_layout.setAlignment(Qt.AlignTop)
 
             controller_grid = QGridLayout()
@@ -1271,6 +1393,7 @@ class ParameterForm(QWidget):
             controller_grid.addWidget(controller_label, 0, 0)
             controller_grid.addWidget(controller_editor, 0, 1)
             self._field_labels[controller.key] = controller_label
+            self._field_group_boxes[controller.key] = box
             box_layout.addLayout(controller_grid)
 
             keyed_pages = [page for page in stack.pages if page.value is not None]
@@ -1298,6 +1421,7 @@ class ParameterForm(QWidget):
                     common_grid.addWidget(label, row, label_col)
                     common_grid.addWidget(editor, row, input_col, 1, 1, alignment=Qt.AlignLeft)
                     self._field_labels[key] = label
+                    self._field_group_boxes[key] = box
                 common_box.content_layout.addWidget(common_widget)
                 box_layout.addWidget(common_box)
 
@@ -1329,6 +1453,7 @@ class ParameterForm(QWidget):
                     if field is not None:
                         editor = self._ensure_editor(field)
                         page_layout.addWidget(editor, 0, Qt.AlignLeft)
+                        self._field_group_boxes[field.key] = box
                     page_index = pages.addWidget(page_widget)
                     index_by_value[page.value] = page_index
                     continue
@@ -1351,6 +1476,7 @@ class ParameterForm(QWidget):
                     page_grid.addWidget(label, row, label_col)
                     page_grid.addWidget(editor, row, input_col, 1, 1, alignment=Qt.AlignLeft)
                     self._field_labels[key] = label
+                    self._field_group_boxes[key] = box
                 page_widget.content_layout.addWidget(page_grid_widget)
                 page_index = pages.addWidget(page_widget)
                 index_by_value[page.value] = page_index
@@ -1626,6 +1752,10 @@ class ParameterForm(QWidget):
         QToolTip.hideText()
         self._risk_widgets.clear()
         self._risk_original_tooltips.clear()
+        for boxes in self._accordion_groups_by_column.values():
+            for box in boxes:
+                box.setProperty("blockState", "neutral")
+                self._repolish(box)
         for editor in self._field_editors.values():
             if hasattr(editor, "set_field_state_visual"):
                 editor.set_field_state_visual("neutral")  # type: ignore[attr-defined]
@@ -1688,6 +1818,7 @@ class ParameterForm(QWidget):
     def apply_ui_risks(self, issues: List[Dict[str, Any]]) -> None:
         self._clear_risk_highlights()
         grouped: Dict[str, List[Dict[str, Any]]] = {}
+        block_levels: Dict[int, str] = {}
         for issue in issues:
             if not isinstance(issue, dict):
                 continue
@@ -1719,6 +1850,11 @@ class ParameterForm(QWidget):
                 severity = "warn"
             else:
                 severity = "ok"
+            box = self._field_group_boxes.get(key)
+            if box is not None:
+                existing = block_levels.get(id(box), "neutral")
+                if severity == "fatal" or (severity == "warn" and existing != "fatal"):
+                    block_levels[id(box)] = severity
             editor = self._field_editors.get(key)
             if editor is not None and hasattr(editor, "set_field_state_visual"):
                 editor.set_field_state_visual(severity)  # type: ignore[attr-defined]
@@ -1739,6 +1875,12 @@ class ParameterForm(QWidget):
                 target.setProperty("riskTooltipText", "")
                 target.setProperty("riskTooltipSeverity", "")
             self._repolish(target)
+
+        for boxes in self._accordion_groups_by_column.values():
+            for box in boxes:
+                level = block_levels.get(id(box), "neutral")
+                box.setProperty("blockState", level)
+                self._repolish(box)
 
     def apply_compatibility(self, state: Dict[str, Any]) -> None:
         self._compat_state = dict(state)
