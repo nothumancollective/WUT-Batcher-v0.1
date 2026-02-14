@@ -45,6 +45,23 @@ class ProjectPageAthTestParsingTests(unittest.TestCase):
         self.assertEqual(parsed["R-OSSE.a0"], "4.5")
         self.assertEqual(parsed["Coverage.Angle"], "52")
 
+    def test_parse_empty_list_assignment_with_braces(self) -> None:
+        text = (
+            "Mesh.SubdomainSlices = \n"
+            "{\n"
+            "12, 14, 18\n"
+            "}\n"
+            "Length = 120\n"
+        )
+        parsed = parse_key_value_text(text)
+        self.assertEqual(parsed["Mesh.SubdomainSlices"], [12, 14, 18])
+        self.assertEqual(parsed["Length"], "120")
+
+    def test_parse_inline_list_assignment(self) -> None:
+        text = "GCurve.SF = 1.0, 1.0, 5.0, 0.3, 1.1, 1.1\n"
+        parsed = parse_key_value_text(text)
+        self.assertEqual(parsed["GCurve.SF"], [1, 1, 5, 0.3, 1.1, 1.1])
+
     def test_compare_expected_detects_missing_extra_and_mismatch(self) -> None:
         expected = {"Length": 130.0, "Coverage.Angle": "48.5"}
         observed = {
@@ -89,6 +106,26 @@ class ProjectPageAthTestParsingTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertEqual(result["missing_keys_required"], [])
         self.assertEqual(result["missing_keys_optional"], ["Mesh.AngularSegments"])
+
+    def test_compare_expected_treats_bool_and_numeric_true_equal(self) -> None:
+        expected = {"Morph.AllowShrinkage": True}
+        observed = {"Morph.AllowShrinkage": "1"}
+        result = compare_expected(
+            expected=expected,
+            observed=observed,
+            allowed_global_keys={"ABEC.AkabakMode", "LE", "LE.Voltage"},
+        )
+        self.assertTrue(result["ok"])
+
+    def test_compare_expected_treats_list_string_and_list_equal(self) -> None:
+        expected = {"Mesh.SubdomainSlices": [12, 14, 18]}
+        observed = {"Mesh.SubdomainSlices": "12,14,18"}
+        result = compare_expected(
+            expected=expected,
+            observed=observed,
+            allowed_global_keys={"ABEC.AkabakMode", "LE", "LE.Voltage"},
+        )
+        self.assertTrue(result["ok"])
 
 
 if __name__ == "__main__":

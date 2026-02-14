@@ -11,6 +11,7 @@ from app.projectpage_ath_experiment import (
     _backfill_legacy_null_run_groups,
     _backfill_param_subkeys,
     _backfill_unknown_split,
+    _classify_compare_payload,
     _ensure_db_schema,
     _param_rows_from_payload,
     _refine_error_pattern,
@@ -275,6 +276,24 @@ class ProjectPageAthExperimentTests(unittest.TestCase):
             no_ghosts=True,
         )
         self.assertEqual(refined, "ath_runtime_unknown")
+
+    def test_classify_compare_payload_maps_legacy_mismatch_kind(self) -> None:
+        classification = _classify_compare_payload(
+            missing_required=[],
+            missing_optional=[],
+            extra_defaulted=[],
+            extra_ghost=[],
+            mismatches=[
+                {
+                    "key": "Mesh.SubdomainSlices",
+                    "expected": [4, 8, 16],
+                    "actual": "",
+                    "mismatch_kind": "structure_mismatch_object",
+                }
+            ],
+        )
+        self.assertEqual(classification.get("compare_class_primary"), "cmp_structure_mismatch_object")
+        self.assertIn("cmp_structure_mismatch_object", list(classification.get("compare_classes", [])))
 
     def test_backfill_unknown_split_sets_refined(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

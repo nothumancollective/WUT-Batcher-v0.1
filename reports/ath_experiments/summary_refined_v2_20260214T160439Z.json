@@ -1,0 +1,796 @@
+{
+  "generated_at": "2026-02-14T16:04:39+00:00",
+  "db_path": "reports\\ath_experiments\\ath_experiments.sqlite",
+  "run_group_selector": "all",
+  "analysis_run_groups": [
+    "cmpfix_smoke_20260214T1602Z",
+    "legacy_5000_seed2026",
+    "legacy_5000_seed2026_retry2",
+    "legacy_500_seed1337",
+    "legacy_500_seed1337_retry2",
+    "legacy_500_seed1337_retry3",
+    "pp100k_2100",
+    "pp100k_2101",
+    "pp100k_2102",
+    "pp100k_2103",
+    "pp100k_2104",
+    "pp100k_2105",
+    "pp100k_2106",
+    "pp100k_2107",
+    "pp100k_2108",
+    "pp100k_2109",
+    "pp10k_2026",
+    "pp10k_2027",
+    "pp10k_2028",
+    "pp10k_2029",
+    "pp10k_2030",
+    "pp10k_smoke_2026"
+  ],
+  "analysis_run_count": 115840,
+  "status_counts": {
+    "ok": 92854,
+    "ath_error": 20115,
+    "pipeline_error": 0,
+    "skipped": 2871
+  },
+  "top_error_patterns_refined": [
+    {
+      "kind": "hard_cap_exceeded",
+      "count": 10208,
+      "example_run_ids": [
+        "ath_exp_1337_0005_ed3639ff54",
+        "ath_exp_1337_0015_8ad44576ef",
+        "ath_exp_1337_0005_5576d3f3a8",
+        "ath_exp_1337_0015_6cd37bcea5",
+        "ath_exp_1337_0005_23fff8b3a5"
+      ]
+    },
+    {
+      "kind": "compare_mismatch_exit0",
+      "count": 8060,
+      "example_run_ids": [
+        "ath_exp_2100_0030_051ffef755",
+        "ath_exp_2100_0059_bdde3cab5a",
+        "ath_exp_2100_0070_ef81899e44",
+        "ath_exp_2100_0082_6f29cc6de8",
+        "ath_exp_2100_0106_0342f85f57"
+      ]
+    },
+    {
+      "kind": "diameter_over_100m",
+      "count": 1809,
+      "example_run_ids": [
+        "ath_exp_1337_0025_bd94261911",
+        "ath_exp_1337_0049_3076cdc7d0",
+        "ath_exp_1337_0082_3e0ba2303f",
+        "ath_exp_1337_0094_b8bab71b6e",
+        "ath_exp_1337_0188_700b0dd5f8"
+      ]
+    },
+    {
+      "kind": "ath_nonzero_exit",
+      "count": 31,
+      "example_run_ids": [
+        "ath_exp_2026_0628_d9b91e3099",
+        "ath_exp_2026_2311_93cda55d91",
+        "ath_exp_2026_2321_b547ad7e19",
+        "ath_exp_2026_3652_bbacc0427f",
+        "ath_exp_2026_4910_703b9065df"
+      ]
+    },
+    {
+      "kind": "numeric_overflow",
+      "count": 7,
+      "example_run_ids": [
+        "ath_exp_2026_2913_9757248023",
+        "ath_exp_2026_4056_a6c06def2b",
+        "ath_exp_2027_0150_bde64f72ab",
+        "ath_exp_2029_1252_940a2e6e84",
+        "ath_exp_2100_0792_d8774bb5f4"
+      ]
+    }
+  ],
+  "unknown_legacy_count": 8050,
+  "compare_mismatch_exit0_count": 8060,
+  "ath_runtime_unknown_count": 0,
+  "coverage_by_key": [
+    {
+      "key": "CircArc.Radius",
+      "set_count": 38548,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.3327693370165746
+    },
+    {
+      "key": "CircArc.TermAngle",
+      "set_count": 38548,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.3327693370165746
+    },
+    {
+      "key": "Coverage.Angle",
+      "set_count": 39765,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.34327520718232046
+    },
+    {
+      "key": "GCurve.AspectRatio",
+      "set_count": 76075,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.6567247928176796
+    },
+    {
+      "key": "GCurve.Dist",
+      "set_count": 76075,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.6567247928176796
+    },
+    {
+      "key": "GCurve.Rot",
+      "set_count": 76075,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.6567247928176796
+    },
+    {
+      "key": "GCurve.SE.n",
+      "set_count": 40064,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.34585635359116024
+    },
+    {
+      "key": "GCurve.SF",
+      "set_count": 1503,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.012974792817679558
+    },
+    {
+      "key": "GCurve.SF.0",
+      "set_count": 1503,
+      "row_count": 1503,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.012974792817679558
+    },
+    {
+      "key": "GCurve.SF.1",
+      "set_count": 1503,
+      "row_count": 1503,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.012974792817679558
+    },
+    {
+      "key": "GCurve.SF.2",
+      "set_count": 1503,
+      "row_count": 1503,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.012974792817679558
+    },
+    {
+      "key": "GCurve.SF.3",
+      "set_count": 1503,
+      "row_count": 1503,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.012974792817679558
+    },
+    {
+      "key": "GCurve.SF.4",
+      "set_count": 1503,
+      "row_count": 1503,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.012974792817679558
+    },
+    {
+      "key": "GCurve.SF.5",
+      "set_count": 1503,
+      "row_count": 1503,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.012974792817679558
+    },
+    {
+      "key": "GCurve.SF.a",
+      "set_count": 34508,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.29789364640883975
+    },
+    {
+      "key": "GCurve.SF.b",
+      "set_count": 34508,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.29789364640883975
+    },
+    {
+      "key": "GCurve.SF.m1",
+      "set_count": 34508,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.29789364640883975
+    },
+    {
+      "key": "GCurve.SF.m2",
+      "set_count": 34508,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.29789364640883975
+    },
+    {
+      "key": "GCurve.SF.n1",
+      "set_count": 34508,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.29789364640883975
+    },
+    {
+      "key": "GCurve.SF.n2",
+      "set_count": 34508,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.29789364640883975
+    },
+    {
+      "key": "GCurve.SF.n3",
+      "set_count": 34508,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.29789364640883975
+    },
+    {
+      "key": "GCurve.Type",
+      "set_count": 76075,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.6567247928176796
+    },
+    {
+      "key": "GCurve.Width",
+      "set_count": 76075,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.6567247928176796
+    },
+    {
+      "key": "Length",
+      "set_count": 105884,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.914053867403315
+    },
+    {
+      "key": "Mesh.AngularSegments",
+      "set_count": 115840,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "Mesh.CornerSegments",
+      "set_count": 41954,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.36217196132596685
+    },
+    {
+      "key": "Mesh.Enclosure",
+      "set_count": 6909,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.05964261049723757
+    },
+    {
+      "key": "Mesh.Enclosure.BackResolution",
+      "set_count": 6909,
+      "row_count": 6909,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.05964261049723757
+    },
+    {
+      "key": "Mesh.Enclosure.BackResolution.0",
+      "set_count": 6909,
+      "row_count": 6909,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.05964261049723757
+    },
+    {
+      "key": "Mesh.Enclosure.BackResolution.1",
+      "set_count": 6909,
+      "row_count": 6909,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.05964261049723757
+    },
+    {
+      "key": "Mesh.Enclosure.BackResolution.2",
+      "set_count": 6909,
+      "row_count": 6909,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.05964261049723757
+    },
+    {
+      "key": "Mesh.Enclosure.BackResolution.3",
+      "set_count": 6909,
+      "row_count": 6909,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.05964261049723757
+    },
+    {
+      "key": "Mesh.Enclosure.Depth",
+      "set_count": 6909,
+      "row_count": 6909,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.05964261049723757
+    },
+    {
+      "key": "Mesh.Enclosure.EdgeRadius",
+      "set_count": 6909,
+      "row_count": 6909,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.05964261049723757
+    },
+    {
+      "key": "Mesh.Enclosure.FrontResolution",
+      "set_count": 6909,
+      "row_count": 6909,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.05964261049723757
+    },
+    {
+      "key": "Mesh.Enclosure.FrontResolution.0",
+      "set_count": 6909,
+      "row_count": 6909,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.05964261049723757
+    },
+    {
+      "key": "Mesh.Enclosure.FrontResolution.1",
+      "set_count": 6909,
+      "row_count": 6909,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.05964261049723757
+    },
+    {
+      "key": "Mesh.Enclosure.FrontResolution.2",
+      "set_count": 6909,
+      "row_count": 6909,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.05964261049723757
+    },
+    {
+      "key": "Mesh.Enclosure.FrontResolution.3",
+      "set_count": 6909,
+      "row_count": 6909,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.05964261049723757
+    },
+    {
+      "key": "Mesh.Enclosure.Plan",
+      "set_count": 1357,
+      "row_count": 1357,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.01171443370165746
+    },
+    {
+      "key": "Mesh.Enclosure.Spacing",
+      "set_count": 6909,
+      "row_count": 6909,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.05964261049723757
+    },
+    {
+      "key": "Mesh.Enclosure.Spacing.0",
+      "set_count": 6909,
+      "row_count": 6909,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.05964261049723757
+    },
+    {
+      "key": "Mesh.Enclosure.Spacing.1",
+      "set_count": 6909,
+      "row_count": 6909,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.05964261049723757
+    },
+    {
+      "key": "Mesh.Enclosure.Spacing.2",
+      "set_count": 6909,
+      "row_count": 6909,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.05964261049723757
+    },
+    {
+      "key": "Mesh.Enclosure.Spacing.3",
+      "set_count": 6909,
+      "row_count": 6909,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.05964261049723757
+    },
+    {
+      "key": "Mesh.InterfaceDraw",
+      "set_count": 2505,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.021624654696132596
+    },
+    {
+      "key": "Mesh.InterfaceDraw.0",
+      "set_count": 2505,
+      "row_count": 2505,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.021624654696132596
+    },
+    {
+      "key": "Mesh.InterfaceDraw.1",
+      "set_count": 1755,
+      "row_count": 1755,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.015150207182320442
+    },
+    {
+      "key": "Mesh.InterfaceDraw.2",
+      "set_count": 1092,
+      "row_count": 1092,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.009426795580110498
+    },
+    {
+      "key": "Mesh.InterfaceDraw.3",
+      "set_count": 379,
+      "row_count": 379,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.003271754143646409
+    },
+    {
+      "key": "Mesh.InterfaceDraw.4",
+      "set_count": 183,
+      "row_count": 183,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.0015797651933701657
+    },
+    {
+      "key": "Mesh.InterfaceOffset",
+      "set_count": 0,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.0
+    },
+    {
+      "key": "Mesh.InterfaceResolution",
+      "set_count": 2505,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.021624654696132596
+    },
+    {
+      "key": "Mesh.LengthSegments",
+      "set_count": 115840,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "Mesh.MouthResolution",
+      "set_count": 100200,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.8649861878453039
+    },
+    {
+      "key": "Mesh.Quadrants",
+      "set_count": 115840,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "Mesh.RearResolution",
+      "set_count": 100200,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.8649861878453039
+    },
+    {
+      "key": "Mesh.RearShape",
+      "set_count": 6909,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.05964261049723757
+    },
+    {
+      "key": "Mesh.SubdomainSlices",
+      "set_count": 2505,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.021624654696132596
+    },
+    {
+      "key": "Mesh.SubdomainSlices.0",
+      "set_count": 2505,
+      "row_count": 2505,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.021624654696132596
+    },
+    {
+      "key": "Mesh.SubdomainSlices.1",
+      "set_count": 1755,
+      "row_count": 1755,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.015150207182320442
+    },
+    {
+      "key": "Mesh.SubdomainSlices.2",
+      "set_count": 1092,
+      "row_count": 1092,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.009426795580110498
+    },
+    {
+      "key": "Mesh.SubdomainSlices.3",
+      "set_count": 379,
+      "row_count": 379,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.003271754143646409
+    },
+    {
+      "key": "Mesh.SubdomainSlices.4",
+      "set_count": 183,
+      "row_count": 183,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.0015797651933701657
+    },
+    {
+      "key": "Mesh.ThroatResolution",
+      "set_count": 100200,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.8649861878453039
+    },
+    {
+      "key": "Mesh.ThroatSegments",
+      "set_count": 17259,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.1489899861878453
+    },
+    {
+      "key": "Mesh.WallThickness",
+      "set_count": 100200,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.8649861878453039
+    },
+    {
+      "key": "Mesh.ZMapPoints",
+      "set_count": 2505,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.021624654696132596
+    },
+    {
+      "key": "Mesh.ZMapPoints.0",
+      "set_count": 2505,
+      "row_count": 2505,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.021624654696132596
+    },
+    {
+      "key": "Mesh.ZMapPoints.1",
+      "set_count": 2505,
+      "row_count": 2505,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.021624654696132596
+    },
+    {
+      "key": "Mesh.ZMapPoints.2",
+      "set_count": 2505,
+      "row_count": 2505,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.021624654696132596
+    },
+    {
+      "key": "Morph.AllowShrinkage",
+      "set_count": 3006,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.025949585635359117
+    },
+    {
+      "key": "Morph.CornerRadius",
+      "set_count": 42187,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.36418335635359117
+    },
+    {
+      "key": "Morph.FixedPart",
+      "set_count": 3006,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.025949585635359117
+    },
+    {
+      "key": "Morph.Rate",
+      "set_count": 3006,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.025949585635359117
+    },
+    {
+      "key": "Morph.TargetHeight",
+      "set_count": 66232,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.5717541436464089
+    },
+    {
+      "key": "Morph.TargetShape",
+      "set_count": 66232,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.5717541436464089
+    },
+    {
+      "key": "Morph.TargetWidth",
+      "set_count": 66232,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.5717541436464089
+    },
+    {
+      "key": "OS.k",
+      "set_count": 38587,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.3331060082872928
+    },
+    {
+      "key": "R-OSSE",
+      "set_count": 38705,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.3341246546961326
+    },
+    {
+      "key": "R-OSSE.R",
+      "set_count": 38705,
+      "row_count": 38705,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.3341246546961326
+    },
+    {
+      "key": "R-OSSE.a",
+      "set_count": 38705,
+      "row_count": 38705,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.3341246546961326
+    },
+    {
+      "key": "R-OSSE.a0",
+      "set_count": 38705,
+      "row_count": 38705,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.3341246546961326
+    },
+    {
+      "key": "R-OSSE.b",
+      "set_count": 38705,
+      "row_count": 38705,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.3341246546961326
+    },
+    {
+      "key": "R-OSSE.k",
+      "set_count": 38705,
+      "row_count": 38705,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.3341246546961326
+    },
+    {
+      "key": "R-OSSE.m",
+      "set_count": 38705,
+      "row_count": 38705,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.3341246546961326
+    },
+    {
+      "key": "R-OSSE.q",
+      "set_count": 38705,
+      "row_count": 38705,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.3341246546961326
+    },
+    {
+      "key": "R-OSSE.r",
+      "set_count": 38705,
+      "row_count": 38705,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.3341246546961326
+    },
+    {
+      "key": "R-OSSE.r0",
+      "set_count": 38705,
+      "row_count": 38705,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.3341246546961326
+    },
+    {
+      "key": "Rot",
+      "set_count": 2004,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.01729972375690608
+    },
+    {
+      "key": "Slot.Length",
+      "set_count": 9084,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.07841850828729281
+    },
+    {
+      "key": "Term.n",
+      "set_count": 38587,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.3331060082872928
+    },
+    {
+      "key": "Term.q",
+      "set_count": 38587,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.3331060082872928
+    },
+    {
+      "key": "Term.s",
+      "set_count": 38587,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.3331060082872928
+    },
+    {
+      "key": "Throat.Angle",
+      "set_count": 115840,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "Throat.Diameter",
+      "set_count": 115840,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 1.0
+    },
+    {
+      "key": "Throat.Ext.Angle",
+      "set_count": 12148,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.10486878453038674
+    },
+    {
+      "key": "Throat.Ext.Length",
+      "set_count": 12148,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 0.10486878453038674
+    },
+    {
+      "key": "Throat.Profile",
+      "set_count": 115840,
+      "row_count": 115840,
+      "analysis_run_count": 115840,
+      "set_ratio": 1.0
+    }
+  ],
+  "performance_ms": {
+    "coverage_by_key": 631.01
+  },
+  "mode_error_matrix_refined_path": "reports\\ath_experiments\\mode_error_matrix_refined_v2_20260214T160439Z.json",
+  "history_snapshot_path": "reports\\ath_experiments\\history\\summary_refined_v2_20260214T160439Z.json"
+}
