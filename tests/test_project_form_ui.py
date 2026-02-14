@@ -162,6 +162,58 @@ class ProjectFormUiTests(unittest.TestCase):
         self.assertFalse(page.create_btn.isEnabled())
         self.assertFalse(page.view_issues_btn.isHidden())
 
+    def test_required_missing_is_presented_as_incomplete_not_error(self) -> None:
+        page = ProjectPage()
+        page.apply_ui_risks(
+            [
+                {
+                    "field_key": "Length",
+                    "severity": "fatal",
+                    "rule_id": "validity_length_required",
+                    "message": "Length is required.",
+                    "source": "normative",
+                }
+            ]
+        )
+        self.assertIn("Complete required fields", page.action_status_pill.text())
+        self.assertEqual(str(page.action_status_pill.property("severity")), "neutral")
+        self.assertFalse(page.create_btn.isEnabled())
+        self.assertFalse(page.view_issues_btn.isHidden())
+
+    def test_view_issues_panel_lists_all_and_orders_by_severity(self) -> None:
+        page = ProjectPage()
+        length_editor = page.constraints_form.editor_for_key("Length")
+        throat_editor = page.constraints_form.editor_for_key("Throat.Diameter")
+        self.assertIsNotNone(length_editor)
+        self.assertIsNotNone(throat_editor)
+        assert length_editor is not None and throat_editor is not None
+        length_editor.set_is_set(True)  # type: ignore[attr-defined]
+        length_editor.set_value(1200.0)  # type: ignore[attr-defined]
+        throat_editor.set_is_set(True)  # type: ignore[attr-defined]
+        throat_editor.set_value(0.1)  # type: ignore[attr-defined]
+        page.constraints_form._on_any_field_changed()  # type: ignore[attr-defined]
+        page.apply_ui_risks(
+            [
+                {
+                    "field_key": "Throat.Diameter",
+                    "severity": "warn",
+                    "rule_id": "warn_low_diameter",
+                    "message": "Diameter is near lower threshold.",
+                },
+                {
+                    "field_key": "Length",
+                    "severity": "fatal",
+                    "rule_id": "fatal_hard_limit",
+                    "message": "Length exceeds hard limit.",
+                },
+            ]
+        )
+        page._toggle_issues_panel()  # type: ignore[attr-defined]
+        self.assertFalse(page.issues_panel.isHidden())
+        self.assertGreaterEqual(len(page._ui_issues), 2)  # type: ignore[attr-defined]
+        self.assertEqual(page._ui_issues[0].severity, "error")  # type: ignore[attr-defined]
+        self.assertEqual(page._ui_issues[0].key, "Length")  # type: ignore[attr-defined]
+
     def test_numeric_input_normalizes_decimal_comma_to_dot(self) -> None:
         editor = self.form.editor_for_key("Throat.Diameter")
         self.assertIsNotNone(editor)
