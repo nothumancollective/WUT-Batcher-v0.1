@@ -61,7 +61,28 @@ class ExperimentCase:
     case: ProjectPageAthCase
 
 
+@dataclass
+class SamplingDirective:
+    forced_throat_profile: Optional[int] = None
+    forced_gcurve_mode: Optional[str] = None  # no_gcurve | superellipse | superformula
+    forced_morph_shape: Optional[int] = None  # 0 | 1 | 2
+    force_enclosure: Optional[bool] = None
+    enable_subdomain_bundle: bool = False
+    enable_zmap_points: bool = False
+    enable_allow_shrinkage: bool = False
+    enable_morph_curve_params: bool = False
+    enable_rot: bool = False
+    enable_slot_length: bool = False
+    enable_throat_extension: bool = False
+    use_sf_list_syntax: bool = False
+    combo_locked: bool = False
+
+
 PriorRanges = Dict[str, Tuple[float, float]]
+_NIGHT_BASE_CASES = 100_000
+_THROAT_MODES: Tuple[int, ...] = (1, 2, 3)
+_GCURVE_MODES: Tuple[str, ...] = ("no_gcurve", "superellipse", "superformula")
+_MORPH_MODES: Tuple[int, ...] = (0, 1)
 
 
 def _now_iso() -> str:
@@ -84,6 +105,223 @@ def _sample_int(rng: random.Random, low: int, high: int, *, exploratory: bool) -
     if exploratory and rng.random() < 0.25:
         return int(rng.choice([low, high]))
     return int(rng.randint(low, high))
+
+
+def _clamp(value: float, low: float, high: float) -> float:
+    if low > high:
+        low, high = high, low
+    return max(low, min(high, float(value)))
+
+
+def _weighted_float(rng: random.Random, bands: Sequence[Tuple[float, float, float]]) -> float:
+    valid = [(float(w), float(lo), float(hi)) for w, lo, hi in bands if float(w) > 0.0 and float(hi) > float(lo)]
+    if not valid:
+        return 0.0
+    total = sum(item[0] for item in valid)
+    pick = rng.random() * total
+    cursor = 0.0
+    for weight, low, high in valid:
+        cursor += weight
+        if pick <= cursor:
+            return low + (high - low) * rng.random()
+    _, low, high = valid[-1]
+    return low + (high - low) * rng.random()
+
+
+def _weighted_int(rng: random.Random, bands: Sequence[Tuple[float, int, int]]) -> int:
+    value = _weighted_float(
+        rng,
+        [(weight, float(low), float(high + 1)) for weight, low, high in bands],
+    )
+    return int(math.floor(value))
+
+
+def _round_to_multiple(value: int, multiple: int, *, minimum: int, maximum: int) -> int:
+    if multiple <= 0:
+        return int(_clamp(value, minimum, maximum))
+    rounded = int(round(float(value) / float(multiple)) * multiple)
+    return int(_clamp(rounded, minimum, maximum))
+
+
+def _scaled_quota(cases: int, base_target: int) -> int:
+    if int(cases) <= 0 or int(base_target) <= 0:
+        return 0
+    scaled = int(round(float(base_target) * float(cases) / float(_NIGHT_BASE_CASES)))
+    if cases >= 10_000:
+        return max(1, scaled)
+    return max(0, scaled)
+
+
+def _sanitize_list_floats(values: Sequence[float], *, decimals: int = 4) -> List[float]:
+    result: List[float] = []
+    for item in values:
+        result.append(round(float(item), int(max(0, decimals))))
+    return result
+
+
+def _sample_superformula_list(rng: random.Random) -> List[float]:
+    values = [
+        _weighted_float(rng, [(0.85, 0.55, 1.25), (0.15, 0.35, 1.45)]),  # a
+        _weighted_float(rng, [(0.85, 0.55, 1.25), (0.15, 0.35, 1.45)]),  # b
+        _weighted_float(rng, [(0.85, 2.0, 8.0), (0.15, 1.2, 10.5)]),  # m
+        _weighted_float(rng, [(0.85, 0.10, 1.30), (0.15, 0.08, 1.70)]),  # n1
+        _weighted_float(rng, [(0.85, 0.35, 1.95), (0.15, 0.30, 2.30)]),  # n2
+        _weighted_float(rng, [(0.85, 0.35, 1.95), (0.15, 0.30, 2.30)]),  # n3
+    ]
+    return _sanitize_list_floats(values, decimals=4)
+
+
+def _enable_extension_pair(rng: random.Random, *, length_reference_mm: float) -> Tuple[float, float]:
+    max_len = max(0.0, min(0.25 * float(length_reference_mm), 200.0))
+    ext_length = _weighted_float(
+        rng,
+        [
+            (0.82, 3.0, max(8.0, min(80.0, max_len))),
+            (0.16, max(5.0, min(80.0, max_len * 0.5)), max(10.0, max_len)),
+            (0.02, max(0.0, max_len - 8.0), max_len),
+        ],
+    )
+    ext_length = _clamp(ext_length, 0.0, max_len)
+    ext_angle = _weighted_float(rng, [(0.85, 2.0, 18.0), (0.13, 18.0, 25.0), (0.02, 0.0, 2.0)])
+    return (round(ext_angle, 4), round(ext_length, 4))
+
+
+def _target_length_mm(rng: random.Random) -> float:
+    return _weighted_float(
+        rng,
+        [
+            (0.82, 120.0, 900.0),
+            (0.15, 900.0, 1400.0),
+            (0.03, 1400.0, 2500.0),
+        ],
+    )
+
+
+def _target_width_like_mm(rng: random.Random, *, low: float = 80.0, high: float = 1800.0) -> float:
+    high = max(low + 1.0, float(high))
+    return _weighted_float(
+        rng,
+        [
+            (0.80, max(low, 80.0), min(high, 900.0)),
+            (0.17, max(low, 900.0), min(high, 1300.0)),
+            (0.03, max(low, 1300.0), min(high, 1800.0)),
+        ],
+    )
+
+
+def _directive_for_index(directives: Sequence[SamplingDirective], idx: int) -> SamplingDirective:
+    if 0 <= int(idx) < len(directives):
+        return directives[int(idx)]
+    return SamplingDirective()
+
+
+def _build_sampling_directives(*, cases: int, seed: int) -> List[SamplingDirective]:
+    directives: List[SamplingDirective] = [SamplingDirective() for _ in range(max(0, int(cases)))]
+    if not directives:
+        return directives
+
+    rng = random.Random(int(seed) ^ 0xA71F_9C13)
+    all_indices = list(range(len(directives)))
+    rng.shuffle(all_indices)
+
+    combo_total_target = _scaled_quota(cases, 4_500)  # 18 combos * 250 @ 100k
+    per_combo = int(combo_total_target / 18) if combo_total_target > 0 else 0
+    remainder = int(combo_total_target % 18) if combo_total_target > 0 else 0
+    pool = list(all_indices)
+    combo_indices: set[int] = set()
+    for combo_idx, throat_mode in enumerate(_THROAT_MODES):
+        for gcurve_mode in _GCURVE_MODES:
+            for morph_mode in _MORPH_MODES:
+                target = per_combo + (1 if remainder > 0 else 0)
+                remainder = max(0, remainder - 1)
+                for _ in range(target):
+                    if not pool:
+                        break
+                    idx = pool.pop()
+                    directive = directives[idx]
+                    directive.forced_throat_profile = int(throat_mode)
+                    directive.forced_gcurve_mode = str(gcurve_mode)
+                    directive.forced_morph_shape = int(morph_mode)
+                    directive.force_enclosure = True
+                    directive.combo_locked = True
+                    combo_indices.add(int(idx))
+
+    def _apply_quota(
+        target: int,
+        *,
+        predicate,
+        apply,
+    ) -> int:
+        if target <= 0:
+            return 0
+        candidates = [idx for idx in all_indices if predicate(directives[idx])]
+        rng.shuffle(candidates)
+        hit = 0
+        for idx in candidates:
+            apply(directives[idx])
+            hit += 1
+            if hit >= target:
+                break
+        return hit
+
+    enclosure_target = _scaled_quota(cases, 5_000)
+    already_enclosure = sum(1 for item in directives if item.force_enclosure is True)
+    _apply_quota(
+        max(0, enclosure_target - already_enclosure),
+        predicate=lambda d: d.force_enclosure is not True,
+        apply=lambda d: setattr(d, "force_enclosure", True),
+    )
+
+    _apply_quota(
+        _scaled_quota(cases, 2_500),
+        predicate=lambda _d: True,
+        apply=lambda d: setattr(d, "enable_subdomain_bundle", True),
+    )
+    _apply_quota(
+        _scaled_quota(cases, 2_500),
+        predicate=lambda _d: True,
+        apply=lambda d: setattr(d, "enable_zmap_points", True),
+    )
+    _apply_quota(
+        _scaled_quota(cases, 3_000),
+        predicate=lambda _d: True,
+        apply=lambda d: (
+            setattr(d, "enable_allow_shrinkage", True),
+            setattr(d, "forced_morph_shape", int(d.forced_morph_shape if d.forced_morph_shape not in {None, 0} else rng.choice([1, 2]))),
+        ),
+    )
+    _apply_quota(
+        _scaled_quota(cases, 3_000),
+        predicate=lambda _d: True,
+        apply=lambda d: (
+            setattr(d, "enable_morph_curve_params", True),
+            setattr(d, "forced_morph_shape", int(d.forced_morph_shape if d.forced_morph_shape not in {None, 0} else rng.choice([1, 2]))),
+        ),
+    )
+    _apply_quota(
+        _scaled_quota(cases, 2_000),
+        predicate=lambda _d: True,
+        apply=lambda d: setattr(d, "enable_rot", True),
+    )
+    _apply_quota(
+        _scaled_quota(cases, 2_000),
+        predicate=lambda _d: True,
+        apply=lambda d: setattr(d, "enable_slot_length", True),
+    )
+    _apply_quota(
+        _scaled_quota(cases, 2_000),
+        predicate=lambda _d: True,
+        apply=lambda d: setattr(d, "enable_throat_extension", True),
+    )
+    _apply_quota(
+        _scaled_quota(cases, 1_500),
+        predicate=lambda d: (not d.combo_locked) or d.forced_gcurve_mode in {None, "superformula"},
+        apply=lambda d: (
+            setattr(d, "use_sf_list_syntax", True),
+            setattr(d, "forced_gcurve_mode", "superformula"),
+        ),
+    )
+    return directives
 
 
 def _load_prior_ranges(priors_path: Path) -> PriorRanges:
@@ -201,53 +439,52 @@ def _case_fields(
     max_dim_mm: float,
     hard_cap_mm: float,
     prior_ranges: PriorRanges,
+    directive: Optional[SamplingDirective] = None,
 ) -> List[Tuple[str, Any]]:
+    directive = directive or SamplingDirective()
     fields: List[Tuple[str, Any]] = []
 
-    throat_profile = int(rng.choice([1, 2, 3]))
-    gcurve_type = rng.choices([None, 1, 2], weights=[0.35, 0.35, 0.30], k=1)[0]
-    morph_target_shape = int(rng.choices([0, 1, 2], weights=[0.45, 0.35, 0.20], k=1)[0])
+    throat_profile = int(directive.forced_throat_profile if directive.forced_throat_profile in {1, 2, 3} else rng.choice([1, 2, 3]))
+    gcurve_mode = directive.forced_gcurve_mode or rng.choices(list(_GCURVE_MODES), weights=[0.35, 0.35, 0.30], k=1)[0]
+    gcurve_mode = str(gcurve_mode)
+    morph_target_shape = int(
+        directive.forced_morph_shape
+        if directive.forced_morph_shape in {0, 1, 2}
+        else rng.choices([0, 1, 2], weights=[0.45, 0.35, 0.20], k=1)[0]
+    )
+    enclosure_enabled = bool(
+        directive.force_enclosure
+        if directive.force_enclosure is not None
+        else (rng.random() < (0.03 if exploratory else 0.015))
+    )
 
-    length_high = min(max_dim_mm * 0.9, max(200.0, hard_cap_mm * 0.75))
-    if exploratory:
-        length_low = 15.0
-        length_high = min(hard_cap_mm * 1.05, hard_cap_mm + 250.0)
-    else:
-        length_low = 90.0
+    length_seed = _target_length_mm(rng)
     length = round(
         _sample_with_priors(
             rng,
             key="Length",
-            low=length_low,
-            high=max(length_low + 1.0, length_high),
+            low=max(35.0, min(length_seed * 0.85, 2400.0)),
+            high=min(max(90.0, length_seed * 1.15), float(hard_cap_mm)),
             exploratory=exploratory,
             prior_ranges=prior_ranges,
+            use_safe_prob=0.85,
         ),
         3,
     )
+    length = _clamp(length, 30.0, float(hard_cap_mm))
 
     throat_diameter = round(
         _sample_with_priors(
             rng,
             key="Throat.Diameter",
-            low=10.0 if exploratory else 20.0,
-            high=140.0 if exploratory else 65.0,
+            low=12.0 if exploratory else 18.0,
+            high=115.0 if exploratory else 72.0,
             exploratory=exploratory,
             prior_ranges=prior_ranges,
         ),
         3,
     )
-    throat_angle = round(
-        _sample_with_priors(
-            rng,
-            key="Throat.Angle",
-            low=0.0 if exploratory else 2.0,
-            high=28.0 if exploratory else 9.5,
-            exploratory=exploratory,
-            prior_ranges=prior_ranges,
-        ),
-        3,
-    )
+    throat_angle = round(_weighted_float(rng, [(0.84, 2.0, 18.0), (0.14, 18.0, 25.0), (0.02, 0.0, 2.0)]), 3)
 
     fields.extend(
         [
@@ -258,50 +495,53 @@ def _case_fields(
         ]
     )
 
-    # Length is intentionally omitted for R-OSSE-only branches in a subset of cases.
-    if throat_profile != 2 or rng.random() < 0.35:
+    # Length may be omitted on a small subset of R-OSSE-only branches.
+    length_is_set = False
+    if throat_profile != 2 or rng.random() < 0.80:
         fields.append(("Length", length))
+        length_is_set = True
+    length_reference = float(length)
 
     if throat_profile == 1:
         fields.extend(
             [
-                ("Term.s", round(_sample_float(rng, 0.50, 1.05 if exploratory else 0.86, exploratory=exploratory), 5)),
-                ("Term.q", round(_sample_float(rng, 0.82, 1.0, exploratory=exploratory), 5)),
-                ("Term.n", round(_sample_float(rng, 2.0, 8.0 if exploratory else 4.6, exploratory=exploratory), 5)),
-                ("OS.k", round(_sample_float(rng, 0.2 if exploratory else 0.75, 1.6 if exploratory else 1.20, exploratory=exploratory), 5)),
+                ("Term.s", round(_weighted_float(rng, [(0.88, 0.55, 0.95), (0.12, 0.50, 1.05)]), 5)),
+                ("Term.q", round(_weighted_float(rng, [(0.90, 0.90, 1.0), (0.10, 0.82, 0.90)]), 5)),
+                ("Term.n", round(_weighted_float(rng, [(0.85, 2.0, 5.2), (0.15, 5.2, 8.0)]), 5)),
+                ("OS.k", round(_weighted_float(rng, [(0.85, 0.65, 1.25), (0.15, 0.2, 1.6)]), 5)),
             ]
         )
     elif throat_profile == 2:
         fields.extend(
             [
-                ("R-OSSE.R", round(_sample_float(rng, 35.0, hard_cap_mm * (0.25 if exploratory else 0.12), exploratory=exploratory), 4)),
+                ("R-OSSE.R", round(_target_width_like_mm(rng, low=60.0, high=min(float(hard_cap_mm), 1800.0)), 4)),
                 (
                     "R-OSSE.r0",
                     round(
                         _sample_with_priors(
                             rng,
                             key="R-OSSE.r0",
-                            low=3.0,
-                            high=48.0 if exploratory else 28.0,
+                            low=6.0,
+                            high=42.0 if exploratory else 26.0,
                             exploratory=exploratory,
                             prior_ranges=prior_ranges,
                         ),
                         4,
                     ),
                 ),
-                ("R-OSSE.a0", round(_sample_float(rng, 0.0, 18.0 if exploratory else 10.0, exploratory=exploratory), 4)),
-                ("R-OSSE.a", round(_sample_float(rng, 8.0, 85.0 if exploratory else 60.0, exploratory=exploratory), 4)),
-                ("R-OSSE.k", round(_sample_float(rng, 0.15, 1.9 if exploratory else 1.25, exploratory=exploratory), 5)),
-                ("R-OSSE.r", round(_sample_float(rng, 0.15, 1.8 if exploratory else 1.15, exploratory=exploratory), 5)),
-                ("R-OSSE.m", round(_sample_float(rng, 1.2, 9.0 if exploratory else 5.5, exploratory=exploratory), 5)),
-                ("R-OSSE.b", round(_sample_float(rng, 0.0, 1.2 if exploratory else 0.6, exploratory=exploratory), 5)),
-                ("R-OSSE.q", round(_sample_float(rng, 0.75, 1.0, exploratory=exploratory), 5)),
+                ("R-OSSE.a0", round(_weighted_float(rng, [(0.85, 2.0, 18.0), (0.15, 0.5, 25.0)]), 4)),
+                ("R-OSSE.a", round(_weighted_float(rng, [(0.80, 10.0, 55.0), (0.20, 55.0, 80.0)]), 4)),
+                ("R-OSSE.k", round(_weighted_float(rng, [(0.85, 0.55, 1.35), (0.15, 0.2, 1.8)]), 5)),
+                ("R-OSSE.r", round(_weighted_float(rng, [(0.85, 0.45, 1.25), (0.15, 0.15, 1.6)]), 5)),
+                ("R-OSSE.m", round(_weighted_float(rng, [(0.85, 1.5, 5.5), (0.15, 5.5, 8.5)]), 5)),
+                ("R-OSSE.b", round(_weighted_float(rng, [(0.85, 0.0, 0.6), (0.15, 0.6, 1.0)]), 5)),
+                ("R-OSSE.q", round(_weighted_float(rng, [(0.90, 0.90, 1.0), (0.10, 0.75, 0.90)]), 5)),
             ]
         )
     elif throat_profile == 3:
         fields.extend(
             [
-                ("CircArc.TermAngle", round(_sample_float(rng, 3.0, 72.0 if exploratory else 44.0, exploratory=exploratory), 4)),
+                ("CircArc.TermAngle", round(_weighted_float(rng, [(0.85, 3.0, 45.0), (0.15, 45.0, 60.0)]), 4)),
                 (
                     "CircArc.Radius",
                     round(
@@ -309,7 +549,7 @@ def _case_fields(
                             rng,
                             key="CircArc.Radius",
                             low=35.0,
-                            high=hard_cap_mm * (0.3 if exploratory else 0.18),
+                            high=min(float(hard_cap_mm), 1800.0),
                             exploratory=exploratory,
                             prior_ranges=prior_ranges,
                         ),
@@ -319,107 +559,187 @@ def _case_fields(
             ]
         )
 
-    if gcurve_type is None:
-        fields.append(("Coverage.Angle", round(_sample_float(rng, 12.0, 130.0 if exploratory else 95.0, exploratory=exploratory), 4)))
+    if gcurve_mode == "no_gcurve":
+        fields.append(("Coverage.Angle", round(_weighted_float(rng, [(0.85, 20.0, 70.0), (0.15, 10.0, 95.0)]), 4)))
     else:
+        if gcurve_mode not in {"superellipse", "superformula"}:
+            gcurve_mode = "superellipse"
+        gcurve_type = 1 if gcurve_mode == "superellipse" else 2
+        use_fractional_dist = bool(rng.random() < 0.55 and length_is_set)
+        if use_fractional_dist:
+            gcurve_dist = round(_weighted_float(rng, [(0.90, 0.15, 0.85), (0.10, 0.10, 0.95)]), 4)
+        else:
+            gcurve_dist = round(_weighted_float(rng, [(0.85, 20.0, min(0.85 * length_reference, 800.0)), (0.15, 20.0, min(1_000.0, 0.90 * max(length_reference, 250.0)))]), 4)
+            gcurve_dist = max(5.0, gcurve_dist)
+        gcurve_width = round(_target_width_like_mm(rng, low=60.0, high=min(1800.0, float(hard_cap_mm))), 4)
         fields.extend(
             [
                 ("GCurve.Type", int(gcurve_type)),
-                (
-                    "GCurve.Dist",
-                    round(
-                        _sample_with_priors(
-                            rng,
-                            key="GCurve.Dist",
-                            low=8.0,
-                            high=max_dim_mm * (0.9 if exploratory else 0.35),
-                            exploratory=exploratory,
-                            prior_ranges=prior_ranges,
-                        ),
-                        4,
-                    ),
-                ),
-                (
-                    "GCurve.Width",
-                    round(
-                        _sample_with_priors(
-                            rng,
-                            key="GCurve.Width",
-                            low=18.0,
-                            high=max_dim_mm * (0.85 if exploratory else 0.32),
-                            exploratory=exploratory,
-                            prior_ranges=prior_ranges,
-                        ),
-                        4,
-                    ),
-                ),
-                ("GCurve.Rot", round(_sample_float(rng, -20.0 if exploratory else -8.0, 20.0 if exploratory else 8.0, exploratory=exploratory), 4)),
-                ("GCurve.AspectRatio", round(_sample_float(rng, 0.3 if exploratory else 0.7, 2.6 if exploratory else 1.6, exploratory=exploratory), 4)),
+                ("GCurve.Dist", gcurve_dist),
+                ("GCurve.Width", gcurve_width),
+                ("GCurve.Rot", round(_weighted_float(rng, [(0.85, -12.0, 12.0), (0.15, -20.0, 20.0)]), 4)),
+                ("GCurve.AspectRatio", round(_weighted_float(rng, [(0.85, 0.55, 1.8), (0.15, 0.3, 2.6)]), 4)),
             ]
         )
         if int(gcurve_type) == 1:
-            fields.append(("GCurve.SE.n", round(_sample_float(rng, 2.0, 7.0 if exploratory else 4.2, exploratory=exploratory), 4)))
+            fields.append(("GCurve.SE.n", round(_weighted_float(rng, [(0.85, 2.0, 4.6), (0.15, 4.6, 7.0)]), 4)))
         elif int(gcurve_type) == 2:
-            fields.extend(
-                [
-                    ("GCurve.SF.a", round(_sample_float(rng, 0.5 if exploratory else 0.7, 1.6 if exploratory else 1.25, exploratory=exploratory), 4)),
-                    ("GCurve.SF.b", round(_sample_float(rng, 0.5 if exploratory else 0.7, 1.6 if exploratory else 1.25, exploratory=exploratory), 4)),
-                    ("GCurve.SF.m1", round(_sample_float(rng, 1.5 if exploratory else 2.0, 10.0 if exploratory else 7.5, exploratory=exploratory), 4)),
-                    ("GCurve.SF.m2", round(_sample_float(rng, 1.5 if exploratory else 2.0, 10.0 if exploratory else 7.5, exploratory=exploratory), 4)),
-                    ("GCurve.SF.n1", round(_sample_float(rng, 0.1 if exploratory else 0.2, 1.4 if exploratory else 0.95, exploratory=exploratory), 4)),
-                    ("GCurve.SF.n2", round(_sample_float(rng, 0.3 if exploratory else 0.5, 2.4 if exploratory else 1.8, exploratory=exploratory), 4)),
-                    ("GCurve.SF.n3", round(_sample_float(rng, 0.3 if exploratory else 0.5, 2.4 if exploratory else 1.8, exploratory=exploratory), 4)),
-                ]
-            )
+            if directive.use_sf_list_syntax:
+                fields.append(("GCurve.SF", _sample_superformula_list(rng)))
+            else:
+                fields.extend(
+                    [
+                        ("GCurve.SF.a", round(_weighted_float(rng, [(0.85, 0.55, 1.25), (0.15, 0.35, 1.45)]), 4)),
+                        ("GCurve.SF.b", round(_weighted_float(rng, [(0.85, 0.55, 1.25), (0.15, 0.35, 1.45)]), 4)),
+                        ("GCurve.SF.m1", round(_weighted_float(rng, [(0.85, 2.0, 8.0), (0.15, 1.2, 10.5)]), 4)),
+                        ("GCurve.SF.m2", round(_weighted_float(rng, [(0.85, 2.0, 8.0), (0.15, 1.2, 10.5)]), 4)),
+                        ("GCurve.SF.n1", round(_weighted_float(rng, [(0.85, 0.10, 1.30), (0.15, 0.08, 1.70)]), 4)),
+                        ("GCurve.SF.n2", round(_weighted_float(rng, [(0.85, 0.35, 1.95), (0.15, 0.30, 2.30)]), 4)),
+                        ("GCurve.SF.n3", round(_weighted_float(rng, [(0.85, 0.35, 1.95), (0.15, 0.30, 2.30)]), 4)),
+                    ]
+                )
 
     if morph_target_shape != 0:
-        tgt_max = max_dim_mm * (0.95 if exploratory else 0.45)
+        width = round(
+            _sample_with_priors(
+                rng,
+                key="Morph.TargetWidth",
+                low=45.0,
+                high=min(float(hard_cap_mm), 1900.0),
+                exploratory=exploratory,
+                prior_ranges=prior_ranges,
+            ),
+            4,
+        )
+        height = round(
+            _sample_with_priors(
+                rng,
+                key="Morph.TargetHeight",
+                low=45.0,
+                high=min(float(hard_cap_mm), 1900.0),
+                exploratory=exploratory,
+                prior_ranges=prior_ranges,
+            ),
+            4,
+        )
+        if not directive.enable_morph_curve_params and rng.random() < 0.05:
+            # Edge-case coverage: keep raw side on one axis.
+            if rng.random() < 0.5:
+                width = 0.0
+            else:
+                height = 0.0
         fields.extend(
             [
-                (
-                    "Morph.TargetWidth",
-                    round(
-                        _sample_with_priors(
-                            rng,
-                            key="Morph.TargetWidth",
-                            low=45.0,
-                            high=max(60.0, tgt_max),
-                            exploratory=exploratory,
-                            prior_ranges=prior_ranges,
-                        ),
-                        4,
-                    ),
-                ),
-                (
-                    "Morph.TargetHeight",
-                    round(
-                        _sample_with_priors(
-                            rng,
-                            key="Morph.TargetHeight",
-                            low=45.0,
-                            high=max(60.0, tgt_max),
-                            exploratory=exploratory,
-                            prior_ranges=prior_ranges,
-                        ),
-                        4,
-                    ),
-                ),
+                ("Morph.TargetWidth", width),
+                ("Morph.TargetHeight", height),
             ]
         )
         if morph_target_shape == 1:
-            fields.append(("Morph.CornerRadius", round(_sample_float(rng, 0.0, 60.0 if exploratory else 28.0, exploratory=exploratory), 4)))
+            fields.append(("Morph.CornerRadius", round(_weighted_float(rng, [(0.85, 0.0, 25.0), (0.15, 25.0, 60.0)]), 4)))
+            fields.append(("Mesh.CornerSegments", _weighted_int(rng, [(0.85, 2, 10), (0.15, 1, 14)])))
+        if directive.enable_allow_shrinkage:
+            fields.append(("Morph.AllowShrinkage", True))
+        if directive.enable_morph_curve_params:
+            fields.append(("Morph.FixedPart", round(_weighted_float(rng, [(0.85, 0.0, 0.65), (0.15, 0.65, 1.0)]), 4)))
+            fields.append(("Morph.Rate", round(_weighted_float(rng, [(0.85, 1.0, 6.0), (0.15, 6.0, 12.0)]), 4)))
 
+    mesh_angular = _weighted_int(rng, [(0.80, 64, 128), (0.20, 32, 160)])
+    mesh_angular = _round_to_multiple(mesh_angular, 4, minimum=32, maximum=160)
+    mesh_length = _weighted_int(rng, [(0.82, 12, 60), (0.18, 8, 80)])
+    mesh_length = int(_clamp(mesh_length, 8, 80))
     fields.extend(
         [
-            ("Mesh.Quadrants", int(rng.choice([1, 12, 14] if exploratory else [1, 12]))),
-            ("Mesh.AngularSegments", _sample_int(rng, 24 if exploratory else 44, 160 if exploratory else 96, exploratory=exploratory)),
-            ("Mesh.LengthSegments", _sample_int(rng, 8 if exploratory else 12, 58 if exploratory else 30, exploratory=exploratory)),
+            ("Mesh.Quadrants", int(rng.choice([1, 12, 14, 1234] if exploratory else [1, 12, 14]))),
+            ("Mesh.AngularSegments", mesh_angular),
+            ("Mesh.LengthSegments", mesh_length),
         ]
     )
-    if rng.random() < (0.45 if exploratory else 0.28):
-        fields.append(("Mesh.ThroatSegments", _sample_int(rng, 1, 24 if exploratory else 12, exploratory=exploratory)))
-    if rng.random() < (0.45 if exploratory else 0.28):
-        fields.append(("Mesh.CornerSegments", _sample_int(rng, 1, 14 if exploratory else 8, exploratory=exploratory)))
+
+    throat_resolution = round(_weighted_float(rng, [(0.85, 2.0, 10.0), (0.15, 10.0, 12.0)]), 4)
+    mouth_resolution = round(_weighted_float(rng, [(0.85, 3.0, 16.0), (0.15, 16.0, 20.0)]), 4)
+    if mouth_resolution < throat_resolution:
+        throat_resolution, mouth_resolution = mouth_resolution, throat_resolution
+    fields.extend(
+        [
+            ("Mesh.ThroatResolution", throat_resolution),
+            ("Mesh.MouthResolution", mouth_resolution),
+            ("Mesh.WallThickness", round(_weighted_float(rng, [(0.85, 2.0, 9.0), (0.15, 9.0, 12.0)]), 4)),
+            ("Mesh.RearResolution", round(_weighted_float(rng, [(0.85, 4.0, 18.0), (0.15, 18.0, 25.0)]), 4)),
+        ]
+    )
+
+    extension_enabled = bool(directive.enable_throat_extension or (rng.random() < (0.16 if exploratory else 0.08)))
+    if extension_enabled:
+        ext_angle, ext_length = _enable_extension_pair(rng, length_reference_mm=length_reference)
+        if ext_angle > 0.0 and ext_length > 0.0:
+            fields.extend(
+                [
+                    ("Throat.Ext.Angle", ext_angle),
+                    ("Throat.Ext.Length", ext_length),
+                    ("Mesh.ThroatSegments", _weighted_int(rng, [(0.85, 4, 16), (0.15, 1, 24)])),
+                ]
+            )
+    if directive.enable_slot_length or rng.random() < (0.12 if exploratory else 0.05):
+        max_slot = max(0.0, min(0.35 * length_reference, 250.0))
+        if max_slot > 0.0:
+            slot_length = _weighted_float(rng, [(0.85, 0.0, min(120.0, max_slot)), (0.15, min(120.0, max_slot), max_slot)])
+            fields.append(("Slot.Length", round(_clamp(slot_length, 0.0, max_slot), 4)))
+    if directive.enable_rot:
+        fields.append(("Rot", round(_weighted_float(rng, [(0.85, -10.0, 10.0), (0.15, -20.0, 20.0)]), 4)))
+
+    if directive.enable_subdomain_bundle:
+        max_slice = max(2, int(mesh_length - 1))
+        count = int(_weighted_int(rng, [(0.85, 1, 3), (0.15, 4, 5)]))
+        raw_candidates = list(range(2, max_slice + 1))
+        rng.shuffle(raw_candidates)
+        selected = sorted(raw_candidates[: max(1, min(count, len(raw_candidates)))])
+        offsets = _sanitize_list_floats([_weighted_float(rng, [(0.85, 0.0, 12.0), (0.15, 12.0, 25.0)]) for _ in selected], decimals=3)
+        draws = _sanitize_list_floats([_weighted_float(rng, [(0.85, 0.0, 12.0), (0.15, 12.0, 25.0)]) for _ in selected], decimals=3)
+        fields.extend(
+            [
+                ("Mesh.SubdomainSlices", selected),
+                ("Mesh.InterfaceOffset", offsets),
+                ("Mesh.InterfaceDraw", draws),
+                ("Mesh.InterfaceResolution", round(_weighted_float(rng, [(0.85, 2.0, 18.0), (0.15, 18.0, 25.0)]), 4)),
+            ]
+        )
+
+    if directive.enable_zmap_points:
+        z_points = sorted(
+            [
+                round(_weighted_float(rng, [(0.85, 0.08, 0.95), (0.15, 0.02, 0.99)]), 4),
+                round(_weighted_float(rng, [(0.85, 0.08, 0.95), (0.15, 0.02, 0.99)]), 4),
+                round(_weighted_float(rng, [(0.85, 0.08, 0.95), (0.15, 0.02, 0.99)]), 4),
+            ]
+        )
+        fields.append(("Mesh.ZMapPoints", z_points))
+
+    if enclosure_enabled:
+        spacing = _sanitize_list_floats(
+            [
+                _weighted_float(rng, [(0.85, 15.0, 120.0), (0.15, 120.0, 260.0)]),
+                _weighted_float(rng, [(0.85, 15.0, 120.0), (0.15, 120.0, 260.0)]),
+                _weighted_float(rng, [(0.85, 15.0, 120.0), (0.15, 120.0, 260.0)]),
+                _weighted_float(rng, [(0.85, 15.0, 120.0), (0.15, 120.0, 260.0)]),
+            ],
+            decimals=3,
+        )
+        front_res = _sanitize_list_floats([_weighted_float(rng, [(0.85, 2.0, 10.0), (0.15, 10.0, 20.0)]) for _ in range(4)], decimals=3)
+        back_res = _sanitize_list_floats([_weighted_float(rng, [(0.85, 2.0, 10.0), (0.15, 10.0, 20.0)]) for _ in range(4)], decimals=3)
+        fields.extend(
+            [
+                ("Mesh.Enclosure", 1),
+                ("Mesh.Enclosure.Spacing", spacing),
+                ("Mesh.Enclosure.Depth", round(_weighted_float(rng, [(0.85, 80.0, 600.0), (0.15, 600.0, 900.0)]), 4)),
+                ("Mesh.Enclosure.EdgeRadius", round(_weighted_float(rng, [(0.85, 4.0, 40.0), (0.15, 40.0, 120.0)]), 4)),
+                ("Mesh.Enclosure.EdgeType", int(rng.choice([1, 2]))),
+                ("Mesh.Enclosure.FrontResolution", front_res),
+                ("Mesh.Enclosure.BackResolution", back_res),
+                ("Mesh.RearShape", int(rng.choice([1, 2]))),
+            ]
+        )
+        if rng.random() < 0.20:
+            fields.append(("Mesh.Enclosure.Plan", "my_plan"))
 
     return _apply_extreme_downweight(rng=rng, fields=fields, max_dim_mm=max_dim_mm)
 
@@ -433,6 +753,7 @@ def generate_experiment_cases(
     prior_ranges: PriorRanges,
 ) -> List[ExperimentCase]:
     rng = random.Random(int(seed))
+    directives = _build_sampling_directives(cases=int(cases), seed=int(seed))
     generated: List[ExperimentCase] = []
     for case_index in range(1, int(cases) + 1):
         case_seed = int(rng.getrandbits(63)) ^ int(case_index * 7919)
@@ -447,6 +768,7 @@ def generate_experiment_cases(
                 max_dim_mm=max_dim_mm,
                 hard_cap_mm=hard_cap_mm,
                 prior_ranges=prior_ranges,
+                directive=_directive_for_index(directives, case_index - 1),
             ),
         )
         generated.append(
@@ -523,13 +845,18 @@ def _append_cleanup_log(
     reports_root: Path,
     phase: str,
     payload: Mapping[str, Any],
+    run_group_id: Optional[str] = None,
 ) -> None:
     log_name = "cleanup_pre_run.log" if phase == "pre" else "cleanup_end.log"
-    log_path = reports_root / log_name
     record = {"timestamp": _now_iso(), **dict(payload)}
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    with log_path.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+    report_paths = [reports_root / log_name]
+    if phase == "end" and str(run_group_id or "").strip():
+        safe_group = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(run_group_id).strip())
+        report_paths.append(reports_root / f"cleanup_end_{safe_group}.log")
+    for log_path in report_paths:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with log_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
 def _cleanup_report_files_base(
@@ -537,6 +864,7 @@ def _cleanup_report_files_base(
     kind: str,
     phase: str,
     reports_root: Path,
+    run_group_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     base = _cleanup_expected_base(kind=kind)
     base_path_verified = _validate_cleanup_base(base, kind=kind)
@@ -559,7 +887,7 @@ def _cleanup_report_files_base(
             "bytes_freed": 0,
             "error": "base_not_directory",
         }
-        _append_cleanup_log(reports_root=reports_root, phase=phase, payload=result)
+        _append_cleanup_log(reports_root=reports_root, phase=phase, payload=result, run_group_id=run_group_id)
         return result
 
     if base_path_verified:
@@ -600,7 +928,7 @@ def _cleanup_report_files_base(
         "deleted_count": int(deleted_count),
         "bytes_freed": int(bytes_freed),
     }
-    _append_cleanup_log(reports_root=reports_root, phase=phase, payload=result)
+    _append_cleanup_log(reports_root=reports_root, phase=phase, payload=result, run_group_id=run_group_id)
     return result
 
 
@@ -610,12 +938,23 @@ def _cleanup_report_files(
     phase: str,
     cleanup_cases: bool,
     cleanup_log: bool,
+    run_group_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     results: Dict[str, Any] = {"phase": phase, "actions": {}}
     if cleanup_cases:
-        results["actions"]["cases"] = _cleanup_report_files_base(kind="cases", phase=phase, reports_root=reports_root)
+        results["actions"]["cases"] = _cleanup_report_files_base(
+            kind="cases",
+            phase=phase,
+            reports_root=reports_root,
+            run_group_id=run_group_id,
+        )
     if cleanup_log:
-        results["actions"]["log"] = _cleanup_report_files_base(kind="log", phase=phase, reports_root=reports_root)
+        results["actions"]["log"] = _cleanup_report_files_base(
+            kind="log",
+            phase=phase,
+            reports_root=reports_root,
+            run_group_id=run_group_id,
+        )
 
     sqlite_path = (reports_root / "ath_experiments.sqlite").resolve()
     summary_path = (reports_root / "summary.json").resolve()
@@ -2265,6 +2604,7 @@ def run_projectpage_ath_experiment(
 
     cleanup_cases_mode = str(cleanup_cases or "never").strip().lower()
     cleanup_log_mode = str(cleanup_log or "never").strip().lower()
+    run_group_id = str(run_group).strip() if run_group else f"pp_ath_exp_seed_{int(seed)}"
     if cleanup_cases_mode not in {"end", "always", "never"}:
         raise ValueError(f"Unsupported cleanup-cases mode: {cleanup_cases}")
     if cleanup_log_mode not in {"end", "always", "never"}:
@@ -2277,6 +2617,7 @@ def run_projectpage_ath_experiment(
             phase="pre",
             cleanup_cases=True,
             cleanup_log=True,
+            run_group_id=run_group_id,
         )
 
     template_text = _load_template_text(template_cfg or settings.template_cfg)
@@ -2295,7 +2636,6 @@ def run_projectpage_ath_experiment(
 
     reports: List[Dict[str, Any]] = []
     status_counts = {"ok": 0, "ath_error": 0, "pipeline_error": 0, "skipped": 0}
-    run_group_id = str(run_group).strip() if run_group else f"pp_ath_exp_seed_{int(seed)}"
     legacy_backfill_result: Optional[Dict[str, Any]] = None
     data_inventory_path: Optional[Path] = None
     data_inventory_payload: Dict[str, Any] = {}
@@ -2604,6 +2944,7 @@ def run_projectpage_ath_experiment(
                     phase="end",
                     cleanup_cases=True,
                     cleanup_log=False,
+                    run_group_id=run_group_id,
                 )
             if cleanup_log_mode == "always":
                 _cleanup_report_files(
@@ -2611,6 +2952,7 @@ def run_projectpage_ath_experiment(
                     phase="end",
                     cleanup_cases=False,
                     cleanup_log=True,
+                    run_group_id=run_group_id,
                 )
             if (offset + 1) % max(1, int(commit_every)) == 0:
                 conn.commit()
@@ -2718,6 +3060,7 @@ def run_projectpage_ath_experiment(
             phase="end",
             cleanup_cases=(cleanup_cases_mode == "end"),
             cleanup_log=(cleanup_log_mode == "end"),
+            run_group_id=run_group_id,
         )
 
     summary = {

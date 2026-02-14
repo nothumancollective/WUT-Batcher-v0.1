@@ -401,7 +401,8 @@ def cmd_projectpage_ath_experiment(args: argparse.Namespace) -> int:
         write_history_snapshots=bool(args.write_history_snapshots),
     )
     print(json.dumps(summary, indent=2, ensure_ascii=False, default=_json_default))
-    return 0
+    pipeline_errors = int(summary.get("status_counts", {}).get("pipeline_error", 0))
+    return 0 if pipeline_errors == 0 else 3
 
 
 def _inspect_ui_tool(
