@@ -1,0 +1,22 @@
+{
+  "Morph.AllowShrinkage": {
+    "rule": "treat bool and numeric 1/0 as equivalent",
+    "expected_effect": "reduce cmp_value_mismatch_numeric noise"
+  },
+  "Mesh.SubdomainSlices": {
+    "rule": "parse multiline list assignments (`key =` + brace block) as list values",
+    "expected_effect": "reduce cmp_structure_mismatch_object from empty-list parsing"
+  },
+  "Mesh.InterfaceDraw": {
+    "rule": "normalize list delimiters and numeric formatting for list compare",
+    "expected_effect": "reduce formatting-only and structure list mismatches"
+  },
+  "Mesh.ZMapPoints": {
+    "rule": "avoid empty-assignment object bleed into following top-level keys",
+    "expected_effect": "remove false `Mesh.ZMapPoints.*` ghost keys"
+  },
+  "GCurve.SF": {
+    "rule": "parse inline and multiline list syntax consistently",
+    "expected_effect": "reduce list-vs-empty value mismatches"
+  }
+}

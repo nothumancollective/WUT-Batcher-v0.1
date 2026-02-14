@@ -433,6 +433,19 @@ def cmd_ath_experiments_refined_reports(args: argparse.Namespace) -> int:
     summary = run_ath_experiments_refined_reports(
         reports_root=args.reports_root,
         run_group=args.run_group,
+        version_tag=getattr(args, "version_tag", None),
+    )
+    print(json.dumps(summary, indent=2, ensure_ascii=False, default=_json_default))
+    return 0
+
+
+def cmd_ath_experiments_analyze_compare_mismatch(args: argparse.Namespace) -> int:
+    from app.projectpage_ath_experiment import run_ath_experiments_analyze_compare_mismatch
+
+    summary = run_ath_experiments_analyze_compare_mismatch(
+        reports_root=args.reports_root,
+        run_group=args.run_group,
+        limit=args.limit,
     )
     print(json.dumps(summary, indent=2, ensure_ascii=False, default=_json_default))
     return 0
@@ -908,7 +921,33 @@ def build_parser() -> argparse.ArgumentParser:
         default="all",
         help="Run-group selector (single, comma-separated, or 'all').",
     )
+    p_refined_reports.add_argument(
+        "--version-tag",
+        help="Optional tag inserted into filenames (e.g. v2).",
+    )
     p_refined_reports.set_defaults(func=cmd_ath_experiments_refined_reports)
+
+    p_analyze_compare = sub_ath_exp_admin.add_parser(
+        "analyze-compare-mismatch",
+        help="Classify and inventory compare_mismatch_exit0 rows with key-level breakdown.",
+    )
+    p_analyze_compare.add_argument(
+        "--reports-root",
+        default="reports/ath_experiments",
+        help="ATH experiment reports root containing ath_experiments.sqlite",
+    )
+    p_analyze_compare.add_argument(
+        "--run-group",
+        default="all",
+        help="Run-group selector (single, comma-separated, or 'all').",
+    )
+    p_analyze_compare.add_argument(
+        "--limit",
+        type=int,
+        default=200,
+        help="Sample size for run-level excerpts.",
+    )
+    p_analyze_compare.set_defaults(func=cmd_ath_experiments_analyze_compare_mismatch)
 
     p_ui = sub.add_parser("ui", help="UI automation inspection utilities.")
     sub_ui = p_ui.add_subparsers(dest="ui_cmd", required=True)

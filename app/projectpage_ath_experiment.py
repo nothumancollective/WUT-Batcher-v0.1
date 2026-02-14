@@ -1144,6 +1144,8 @@ def _ensure_db_schema(conn: sqlite3.Connection) -> None:
             ath_exit_code INTEGER,
             ath_error_kind TEXT,
             error_pattern_refined TEXT,
+            compare_class_primary TEXT,
+            compare_classes_json TEXT,
             ath_error_message TEXT,
             ath_warning_count INTEGER NOT NULL DEFAULT 0,
             cfg_path TEXT,
@@ -1202,11 +1204,16 @@ def _ensure_db_schema(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE experiment_runs ADD COLUMN run_group_id TEXT")
     if "error_pattern_refined" not in columns:
         conn.execute("ALTER TABLE experiment_runs ADD COLUMN error_pattern_refined TEXT")
+    if "compare_class_primary" not in columns:
+        conn.execute("ALTER TABLE experiment_runs ADD COLUMN compare_class_primary TEXT")
+    if "compare_classes_json" not in columns:
+        conn.execute("ALTER TABLE experiment_runs ADD COLUMN compare_classes_json TEXT")
 
     conn.execute("CREATE INDEX IF NOT EXISTS ix_experiment_runs_status ON experiment_runs(status)")
     conn.execute("CREATE INDEX IF NOT EXISTS ix_experiment_runs_case_index ON experiment_runs(case_index)")
     conn.execute("CREATE INDEX IF NOT EXISTS ix_experiment_runs_error_kind ON experiment_runs(ath_error_kind)")
     conn.execute("CREATE INDEX IF NOT EXISTS ix_experiment_runs_error_pattern_refined ON experiment_runs(error_pattern_refined)")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_experiment_runs_compare_class_primary ON experiment_runs(compare_class_primary)")
     conn.execute("CREATE INDEX IF NOT EXISTS ix_experiment_runs_group ON experiment_runs(run_group_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS ix_experiment_runs_group_run_id ON experiment_runs(run_group_id, run_id)")
     conn.execute(
@@ -1315,6 +1322,8 @@ def _persist_experiment_row(
     ath_exit_code: Optional[int],
     ath_error_kind: Optional[str],
     error_pattern_refined: Optional[str],
+    compare_class_primary: Optional[str],
+    compare_classes: Sequence[str],
     ath_error_message: Optional[str],
     ath_warning_count: int,
     cfg_path: Optional[str],
@@ -1335,9 +1344,9 @@ def _persist_experiment_row(
     conn.execute(
         """
         INSERT OR REPLACE INTO experiment_runs(
-            run_id, run_group_id, created_at, seed, case_index, status, ath_exit_code, ath_error_kind, error_pattern_refined,
+            run_id, run_group_id, created_at, seed, case_index, status, ath_exit_code, ath_error_kind, error_pattern_refined, compare_class_primary, compare_classes_json,
             ath_error_message, ath_warning_count, cfg_path, horns_export_dir, stdout_path, stderr_path, notes
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             run_id,
@@ -1349,6 +1358,8 @@ def _persist_experiment_row(
             ath_exit_code,
             ath_error_kind,
             error_pattern_refined,
+            compare_class_primary,
+            json.dumps(list(compare_classes), ensure_ascii=False),
             ath_error_message,
             int(ath_warning_count),
             cfg_path,
@@ -1478,6 +1489,109 @@ def _refine_error_pattern(
     if ath_exit_code is not None and int(ath_exit_code) != 0:
         return "ath_runtime_unknown"
     return "compare_mismatch_exit0"
+
+
+def _classify_value_mismatch_kind(*, key: str, expected: Any, actual: Any) -> str:
+    structure_prefixes = (
+        "R-OSSE.",
+        "Mesh.Enclosure.",
+        "Mesh.SubdomainSlices",
+        "Mesh.InterfaceOffset",
+        "Mesh.InterfaceDraw",
+        "Mesh.ZMapPoints",
+        "GCurve.SF",
+    )
+    if any(str(key).startswith(prefix) for prefix in structure_prefixes):
+        return "cmp_structure_mismatch_object"
+    if _parse_value_num(expected) is not None and _parse_value_num(actual) is not None:
+        return "cmp_value_mismatch_numeric"
+    exp_text = str(expected or "").strip().replace(" ", "")
+    act_text = str(actual or "").strip().replace(" ", "")
+    if exp_text == act_text:
+        return "cmp_formatting_only"
+    return "cmp_value_mismatch_expr"
+
+
+def _normalize_compare_class(name: Any) -> str:
+    raw = str(name or "").strip()
+    if not raw:
+        return "cmp_unknown"
+    if raw.startswith("cmp_"):
+        return raw
+    legacy_map = {
+        "missing_required": "cmp_missing_required",
+        "extra_ghost": "cmp_extra_ghost",
+        "missing_optional_only": "cmp_missing_optional_only",
+        "extra_defaulted_only": "cmp_extra_defaulted_only",
+        "value_mismatch_numeric": "cmp_value_mismatch_numeric",
+        "value_mismatch_expr": "cmp_value_mismatch_expr",
+        "structure_mismatch_object": "cmp_structure_mismatch_object",
+        "formatting_only": "cmp_formatting_only",
+        "unknown": "cmp_unknown",
+    }
+    return legacy_map.get(raw, f"cmp_{raw}")
+
+
+def _classify_compare_payload(
+    *,
+    missing_required: Sequence[str],
+    missing_optional: Sequence[str],
+    extra_defaulted: Sequence[str],
+    extra_ghost: Sequence[str],
+    mismatches: Sequence[Mapping[str, Any]],
+) -> Dict[str, Any]:
+    classes: set[str] = set()
+    if list(missing_required):
+        classes.add("cmp_missing_required")
+    if list(extra_ghost):
+        classes.add("cmp_extra_ghost")
+    if (not list(missing_required)) and list(missing_optional) and not list(extra_ghost) and not list(mismatches):
+        classes.add("cmp_missing_optional_only")
+    if (not list(missing_required)) and (not list(extra_ghost)) and list(extra_defaulted) and not list(mismatches):
+        classes.add("cmp_extra_defaulted_only")
+
+    mismatch_kinds: Dict[str, int] = {}
+    for mismatch in list(mismatches or []):
+        if not isinstance(mismatch, Mapping):
+            continue
+        key = str(mismatch.get("key", "")).strip()
+        mismatch_kind = str(mismatch.get("mismatch_kind", "")).strip()
+        if not mismatch_kind:
+            mismatch_kind = _classify_value_mismatch_kind(
+                key=key,
+                expected=mismatch.get("expected"),
+                actual=mismatch.get("actual"),
+            )
+        mismatch_kind = _normalize_compare_class(mismatch_kind)
+        mismatch_kinds[mismatch_kind] = int(mismatch_kinds.get(mismatch_kind, 0)) + 1
+        classes.add(mismatch_kind)
+
+    if not classes and list(mismatches):
+        classes.add("cmp_value_mismatch_expr")
+
+    priority = [
+        "cmp_missing_required",
+        "cmp_extra_ghost",
+        "cmp_structure_mismatch_object",
+        "cmp_value_mismatch_numeric",
+        "cmp_value_mismatch_expr",
+        "cmp_missing_optional_only",
+        "cmp_extra_defaulted_only",
+        "cmp_formatting_only",
+    ]
+    primary = "cmp_unknown"
+    for candidate in priority:
+        if candidate in classes:
+            primary = candidate
+            break
+    if not classes:
+        classes.add("cmp_unknown")
+
+    return {
+        "compare_class_primary": primary,
+        "compare_classes": sorted(classes),
+        "mismatch_kind_counts": mismatch_kinds,
+    }
 
 
 def _backfill_param_subkeys(
@@ -1677,6 +1791,124 @@ def _backfill_unknown_split(
         "unknown_to_compare_mismatch_exit0": int(compare_count),
         "unknown_to_ath_runtime_unknown": int(runtime_count),
         "idempotent_noop": rows_updated == 0,
+    }
+
+
+def _json_list(raw: Any) -> List[Any]:
+    if raw is None:
+        return []
+    text = str(raw).strip()
+    if not text:
+        return []
+    try:
+        loaded = json.loads(text)
+    except Exception:
+        return []
+    if isinstance(loaded, list):
+        return loaded
+    return []
+
+
+def _backfill_compare_classification(
+    conn: sqlite3.Connection,
+    *,
+    run_groups: Optional[Sequence[str]] = None,
+) -> Dict[str, Any]:
+    groups = [str(item).strip() for item in list(run_groups or []) if str(item).strip()]
+    params: List[Any] = []
+    where = "WHERE r.error_pattern_refined='compare_mismatch_exit0'"
+    if groups:
+        placeholders = ", ".join("?" for _ in groups)
+        where += f" AND r.run_group_id IN ({placeholders})"
+        params.extend(groups)
+
+    rows = conn.execute(
+        f"""
+        SELECT
+            r.run_id,
+            r.compare_class_primary,
+            r.compare_classes_json,
+            c.missing_keys_required_json,
+            c.missing_keys_optional_json,
+            c.extra_keys_defaulted_json,
+            c.extra_keys_ghost_json,
+            c.mismatch_json
+        FROM experiment_runs r
+        JOIN experiment_compare c ON c.run_id = r.run_id
+        {where}
+        ORDER BY r.created_at, r.run_id
+        """,
+        tuple(params),
+    ).fetchall()
+
+    updates: List[Tuple[str, str, str]] = []
+    class_counts: Dict[str, int] = {}
+    mismatch_key_counts: Dict[str, int] = {}
+    mismatch_key_counts_by_class: Dict[str, Dict[str, int]] = {}
+    sample_run_ids: Dict[str, List[str]] = {}
+
+    for row in rows:
+        run_id = str(row[0])
+        current_primary = str(row[1] or "").strip()
+        current_classes = sorted(_normalize_compare_class(item) for item in _json_list(row[2]))
+        classification = _classify_compare_payload(
+            missing_required=[str(item) for item in _json_list(row[3])],
+            missing_optional=[str(item) for item in _json_list(row[4])],
+            extra_defaulted=[str(item) for item in _json_list(row[5])],
+            extra_ghost=[str(item) for item in _json_list(row[6])],
+            mismatches=[item for item in _json_list(row[7]) if isinstance(item, Mapping)],
+        )
+        primary = _normalize_compare_class(classification.get("compare_class_primary"))
+        classes = sorted(_normalize_compare_class(item) for item in list(classification.get("compare_classes", []) or []))
+        if current_primary != primary or current_classes != classes:
+            updates.append((primary, json.dumps(classes, ensure_ascii=False), run_id))
+
+        class_counts[primary] = int(class_counts.get(primary, 0)) + 1
+        if len(sample_run_ids.setdefault(primary, [])) < 3:
+            sample_run_ids[primary].append(run_id)
+
+        for mismatch in [item for item in _json_list(row[7]) if isinstance(item, Mapping)]:
+            key = str(mismatch.get("key", "")).strip()
+            if not key:
+                continue
+            mismatch_key_counts[key] = int(mismatch_key_counts.get(key, 0)) + 1
+            cls_counts = mismatch_key_counts_by_class.setdefault(primary, {})
+            cls_counts[key] = int(cls_counts.get(key, 0)) + 1
+
+    rows_updated = 0
+    if updates:
+        before = int(conn.total_changes)
+        conn.executemany(
+            """
+            UPDATE experiment_runs
+            SET compare_class_primary = ?, compare_classes_json = ?
+            WHERE run_id = ?
+            """,
+            updates,
+        )
+        rows_updated = int(conn.total_changes) - before
+        conn.commit()
+
+    return {
+        "applied": True,
+        "runs_processed": len(rows),
+        "rows_updated": rows_updated,
+        "idempotent_noop": rows_updated == 0,
+        "class_counts": class_counts,
+        "sample_run_ids": sample_run_ids,
+        "top_keys_overall": sorted(
+            [{"key": key, "count": count} for key, count in mismatch_key_counts.items()],
+            key=lambda item: int(item["count"]),
+            reverse=True,
+        )[:30],
+        "top_keys_by_class": {
+            cls: sorted(
+                [{"key": key, "count": count} for key, count in counts.items()],
+                key=lambda item: int(item["count"]),
+                reverse=True,
+            )[:30]
+            for cls, counts in mismatch_key_counts_by_class.items()
+        },
     }
 
 
@@ -2426,6 +2658,7 @@ def run_ath_experiments_refined_reports(
     *,
     reports_root: str | Path = "reports/ath_experiments",
     run_group: Optional[str] = None,
+    version_tag: Optional[str] = None,
 ) -> Dict[str, Any]:
     reports_root_path = Path(reports_root)
     reports_root_path.mkdir(parents=True, exist_ok=True)
@@ -2498,9 +2731,11 @@ def run_ath_experiments_refined_reports(
                 refined_runtime += 1
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    summary_refined_path = reports_root_path / f"summary_refined_{timestamp}.json"
-    matrix_refined_path = reports_root_path / f"mode_error_matrix_refined_{timestamp}.json"
-    md_refined_path = reports_root_path / f"post100k_executive_summary_refined_{timestamp}.md"
+    tag = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(version_tag or "").strip()).strip("_")
+    suffix = f"_{tag}" if tag else ""
+    summary_refined_path = reports_root_path / f"summary_refined{suffix}_{timestamp}.json"
+    matrix_refined_path = reports_root_path / f"mode_error_matrix_refined{suffix}_{timestamp}.json"
+    md_refined_path = reports_root_path / f"post100k_executive_summary_refined{suffix}_{timestamp}.md"
 
     coverage_payload = [
         {
@@ -2567,7 +2802,7 @@ def run_ath_experiments_refined_reports(
         "compare_mismatch_exit0_count": int(refined_compare),
         "ath_runtime_unknown_count": int(refined_runtime),
     }
-    history_path = history_root / f"summary_refined_{timestamp}.json"
+    history_path = history_root / f"summary_refined{suffix}_{timestamp}.json"
     history_path.write_text(json.dumps(history_payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     refined_summary["history_snapshot_path"] = str(history_path)
     summary_refined_path.write_text(json.dumps(refined_summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -2582,6 +2817,186 @@ def run_ath_experiments_refined_reports(
         "performance_ms": {
             "coverage_by_key": round(float(coverage_ms), 2),
         },
+    }
+
+
+def run_ath_experiments_analyze_compare_mismatch(
+    *,
+    reports_root: str | Path = "reports/ath_experiments",
+    run_group: Optional[str] = None,
+    limit: int = 200,
+) -> Dict[str, Any]:
+    reports_root_path = Path(reports_root)
+    reports_root_path.mkdir(parents=True, exist_ok=True)
+    history_root = reports_root_path / "history"
+    history_root.mkdir(parents=True, exist_ok=True)
+    db_path = reports_root_path / "ath_experiments.sqlite"
+    run_groups = _parse_run_group_selector(run_group)
+
+    with sqlite3.connect(str(db_path)) as conn:
+        conn.row_factory = sqlite3.Row
+        _ensure_db_schema(conn)
+        backfill = _backfill_compare_classification(conn, run_groups=run_groups)
+
+        params: List[Any] = []
+        where = "WHERE r.error_pattern_refined='compare_mismatch_exit0'"
+        if run_groups:
+            placeholders = ", ".join("?" for _ in run_groups)
+            where += f" AND r.run_group_id IN ({placeholders})"
+            params.extend(run_groups)
+
+        sample_rows = conn.execute(
+            f"""
+            SELECT
+                r.run_id,
+                COALESCE(r.run_group_id, '<null>') AS run_group_id,
+                r.compare_class_primary,
+                r.compare_classes_json,
+                c.missing_keys_required_json,
+                c.missing_keys_optional_json,
+                c.extra_keys_defaulted_json,
+                c.extra_keys_ghost_json,
+                c.mismatch_json
+            FROM experiment_runs r
+            JOIN experiment_compare c ON c.run_id = r.run_id
+            {where}
+            ORDER BY r.run_id
+            LIMIT ?
+            """,
+            tuple(params + [max(1, int(limit))]),
+        ).fetchall()
+
+        sample_payload: List[Dict[str, Any]] = []
+        for row in sample_rows:
+            missing_required = [str(item) for item in _json_list(row[4])]
+            missing_optional = [str(item) for item in _json_list(row[5])]
+            extra_defaulted = [str(item) for item in _json_list(row[6])]
+            extra_ghost = [str(item) for item in _json_list(row[7])]
+            mismatches = [item for item in _json_list(row[8]) if isinstance(item, Mapping)]
+            excerpt = {
+                "missing_required": missing_required[:5],
+                "extra_ghost": extra_ghost[:5],
+                "mismatch_excerpt": [
+                    {
+                        "key": str(item.get("key", "")),
+                        "expected": item.get("expected"),
+                        "actual": item.get("actual"),
+                        "mismatch_kind": str(item.get("mismatch_kind", "")),
+                    }
+                    for item in mismatches[:5]
+                ],
+            }
+            sample_payload.append(
+                {
+                    "run_id": str(row[0]),
+                    "run_group_id": str(row[1]),
+                    "compare_class_primary": str(row[2] or "cmp_unknown"),
+                    "compare_classes": [str(item) for item in _json_list(row[3])],
+                    "excerpt": excerpt,
+                    "counts": {
+                        "missing_required": len(missing_required),
+                        "missing_optional": len(missing_optional),
+                        "extra_defaulted": len(extra_defaulted),
+                        "extra_ghost": len(extra_ghost),
+                        "mismatch": len(mismatches),
+                    },
+                }
+            )
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    md_path = reports_root_path / f"compare_mismatch_inventory_{timestamp}.md"
+    json_path = history_root / f"compare_mismatch_inventory_{timestamp}.json"
+    keymap_path = reports_root_path / f"compare_mismatch_keymap_{timestamp}.json"
+
+    keymap = {
+        "Morph.AllowShrinkage": {
+            "rule": "treat bool and numeric 1/0 as equivalent",
+            "expected_effect": "reduce cmp_value_mismatch_numeric noise",
+        },
+        "Mesh.SubdomainSlices": {
+            "rule": "parse multiline list assignments (`key =` + brace block) as list values",
+            "expected_effect": "reduce cmp_structure_mismatch_object from empty-list parsing",
+        },
+        "Mesh.InterfaceDraw": {
+            "rule": "normalize list delimiters and numeric formatting for list compare",
+            "expected_effect": "reduce formatting-only and structure list mismatches",
+        },
+        "Mesh.ZMapPoints": {
+            "rule": "avoid empty-assignment object bleed into following top-level keys",
+            "expected_effect": "remove false `Mesh.ZMapPoints.*` ghost keys",
+        },
+        "GCurve.SF": {
+            "rule": "parse inline and multiline list syntax consistently",
+            "expected_effect": "reduce list-vs-empty value mismatches",
+        },
+    }
+    keymap_path.write_text(json.dumps(keymap, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+    class_counts = dict(backfill.get("class_counts", {}) or {})
+    top_overall = list(backfill.get("top_keys_overall", []) or [])
+    top_by_class = dict(backfill.get("top_keys_by_class", {}) or {})
+    sample_by_class: Dict[str, List[Dict[str, Any]]] = {}
+    for item in sample_payload:
+        cls = str(item.get("compare_class_primary", "cmp_unknown"))
+        bucket = sample_by_class.setdefault(cls, [])
+        if len(bucket) < 3:
+            bucket.append(item)
+
+    md_lines = [
+        "# Compare Mismatch Inventory",
+        "",
+        f"- Generated: {_now_iso()}",
+        f"- Selector: `{run_group if run_group else 'all'}`",
+        f"- Runs processed: {int(backfill.get('runs_processed', 0))}",
+        f"- Rows updated (classification backfill): {int(backfill.get('rows_updated', 0))}",
+        "",
+        "## Subclass Counts",
+    ]
+    for cls, count in sorted(class_counts.items(), key=lambda item: int(item[1]), reverse=True):
+        md_lines.append(f"- {cls}: {count}")
+    md_lines.extend(["", "## Top Keys Overall (Top 30)"])
+    for item in top_overall[:30]:
+        md_lines.append(f"- {item['key']}: {item['count']}")
+    md_lines.extend(["", "## Top Keys by Subclass"])
+    for cls, items in sorted(top_by_class.items()):
+        compact = ", ".join(f"{entry['key']}={entry['count']}" for entry in list(items)[:10]) or "<none>"
+        md_lines.append(f"- {cls}: {compact}")
+    md_lines.extend(["", "## Example Runs (3 per class)"])
+    for cls, items in sorted(sample_by_class.items()):
+        md_lines.append(f"- {cls}:")
+        for entry in items:
+            excerpt = dict(entry.get("excerpt", {}) or {})
+            mismatch_excerpt = list(excerpt.get("mismatch_excerpt", []) or [])
+            first_mismatch = mismatch_excerpt[0] if mismatch_excerpt else {}
+            md_lines.append(
+                f"  - run_id={entry.get('run_id')} group={entry.get('run_group_id')} "
+                f"missing_required={entry.get('counts', {}).get('missing_required')} "
+                f"extra_ghost={entry.get('counts', {}).get('extra_ghost')} "
+                f"first_mismatch={first_mismatch.get('key')}"
+            )
+    md_lines.append("")
+    md_path.write_text("\n".join(md_lines), encoding="utf-8")
+
+    payload = {
+        "generated_at": _now_iso(),
+        "db_path": str(db_path),
+        "selector": run_group if run_group else "all",
+        "classification_backfill": backfill,
+        "sample_size": max(1, int(limit)),
+        "sample": sample_payload,
+        "class_counts": class_counts,
+        "top_keys_overall": top_overall,
+        "top_keys_by_class": top_by_class,
+        "keymap_path": str(keymap_path),
+    }
+    json_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return {
+        "inventory_markdown_path": str(md_path),
+        "inventory_json_path": str(json_path),
+        "keymap_path": str(keymap_path),
+        "class_counts": class_counts,
+        "top_keys_overall": top_overall[:10],
+        "rows_updated": int(backfill.get("rows_updated", 0)),
     }
 
 
@@ -3365,6 +3780,13 @@ def run_projectpage_ath_experiment(
             ath_ok = bool(ath_result and ath_result.ok)
             config_ok = bool(config_file is not None and config_compare["ok"])
             no_ghosts = bool((not cfg_compare["extra_keys_ghost"]) and (not config_compare["extra_keys_ghost"]))
+            compare_classification = _classify_compare_payload(
+                missing_required=list(config_compare.get("missing_keys_required", []) or []),
+                missing_optional=list(config_compare.get("missing_keys_optional", []) or []),
+                extra_defaulted=list(config_compare.get("extra_keys_defaulted", []) or []),
+                extra_ghost=list(config_compare.get("extra_keys_ghost", []) or []),
+                mismatches=list(config_compare.get("value_mismatches", []) or []),
+            )
 
             if status == "ok" and not (cfg_ok and ath_ok and config_ok and no_ghosts):
                 status = "pipeline_error" if not ath_ok else "ath_error"
@@ -3489,6 +3911,7 @@ def run_projectpage_ath_experiment(
                     "expected_values": expected_values,
                     "cfg": cfg_compare,
                     "config": config_compare,
+                    "classification": compare_classification,
                 },
                 "input_summary": {
                     "field_values": list(case.field_values),
@@ -3523,6 +3946,8 @@ def run_projectpage_ath_experiment(
                 ath_exit_code=(ath_result.exit_code if ath_result else None),
                 ath_error_kind=ath_error_kind,
                 error_pattern_refined=error_pattern_refined,
+                compare_class_primary=str(compare_classification.get("compare_class_primary") or ""),
+                compare_classes=list(compare_classification.get("compare_classes", []) or []),
                 ath_error_message=ath_error_message or ath_error,
                 ath_warning_count=ath_warning_count,
                 cfg_path=str(cfg_path),
