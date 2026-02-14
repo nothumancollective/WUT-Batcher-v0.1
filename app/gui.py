@@ -824,9 +824,15 @@ class DashboardPage(QWidget):
 class ProjectIssuesPanel(QFrame):
     issue_selected = Signal(str)
 
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
+    def __init__(self, parent: QWidget | None = None, *, popup: bool = False) -> None:
+        flags = Qt.Popup | Qt.FramelessWindowHint if popup else Qt.Widget
+        super().__init__(parent, flags)
+        self._popup_mode = bool(popup)
         self.setObjectName("ProjectIssuesPanel")
+        if self._popup_mode:
+            self.setAttribute(Qt.WA_ShowWithoutActivating, True)
+            self.setMinimumWidth(520)
+            self.setMinimumHeight(280)
         root = QVBoxLayout(self)
         root.setContentsMargins(10, 10, 10, 10)
         root.setSpacing(8)
@@ -904,6 +910,30 @@ class ProjectIssuesPanel(QFrame):
             self._rows.addWidget(empty)
         self._rows.addStretch(1)
 
+    def show_for(self, anchor: QWidget) -> None:
+        if not self._popup_mode:
+            self.setVisible(True)
+            return
+        if anchor is None:
+            self.show()
+            return
+        self.adjustSize()
+        size = self.sizeHint()
+        width = max(size.width(), 520)
+        height = max(min(size.height(), 420), 280)
+        self.resize(width, height)
+        anchor_pos = anchor.mapToGlobal(QPoint(0, anchor.height() + 6))
+        x = anchor_pos.x() - max(0, width - anchor.width())
+        y = anchor_pos.y()
+        screen = anchor.screen() or QApplication.primaryScreen()
+        if screen is not None:
+            available = screen.availableGeometry()
+            x = max(available.left() + 4, min(x, available.right() - width - 4))
+            y = max(available.top() + 4, min(y, available.bottom() - height - 4))
+        self.move(x, y)
+        self.show()
+        self.raise_()
+
 
 class ProjectPage(QWidget):
     submit_project = Signal(str, dict)
@@ -949,9 +979,18 @@ class ProjectPage(QWidget):
         summary_layout = QVBoxLayout(self.summary_panel)
         summary_layout.setContentsMargins(12, 10, 12, 10)
         summary_layout.setSpacing(4)
+        summary_head = QHBoxLayout()
+        summary_head.setContentsMargins(0, 0, 0, 0)
+        summary_head.setSpacing(8)
         summary_title = QLabel("Project constraints (locked after creation)")
         summary_title.setObjectName("SummaryTitle")
-        summary_layout.addWidget(summary_title)
+        summary_head.addWidget(summary_title)
+        summary_head.addStretch(1)
+        self.view_issues_btn = QPushButton("View issues")
+        self.view_issues_btn.setObjectName("ProjectViewIssuesButton")
+        self.view_issues_btn.setVisible(False)
+        summary_head.addWidget(self.view_issues_btn, 0, Qt.AlignRight | Qt.AlignVCenter)
+        summary_layout.addLayout(summary_head)
         self.summary_line_1 = QLabel(
             "Everything you set here becomes fixed for the project and cannot be changed in Batch runs."
         )
@@ -972,10 +1011,8 @@ class ProjectPage(QWidget):
         summary_layout.addWidget(self.summary_chips_wrap)
         root.addWidget(self.summary_panel)
         root.addSpacing(2)
-
-        self.issues_panel = ProjectIssuesPanel()
+        self.issues_panel = ProjectIssuesPanel(self, popup=True)
         self.issues_panel.setVisible(False)
-        root.addWidget(self.issues_panel)
 
         self.constraints_form = ParameterForm(build_project_form_schema())
         root.addWidget(self.constraints_form, 1)
@@ -1001,11 +1038,6 @@ class ProjectPage(QWidget):
         action_layout.addWidget(self.action_status_hint, 0, Qt.AlignVCenter)
 
         action_layout.addStretch(1)
-
-        self.view_issues_btn = QPushButton("View issues")
-        self.view_issues_btn.setObjectName("ProjectViewIssuesButton")
-        self.view_issues_btn.setVisible(False)
-        action_layout.addWidget(self.view_issues_btn, 0, Qt.AlignVCenter)
 
         self.create_btn = QPushButton("Create Project")
         self.create_btn.setObjectName("PrimaryButton")
@@ -1203,8 +1235,10 @@ class ProjectPage(QWidget):
         self.action_counts.setText(f"{fatal} errors · {warn} warnings · {incomplete} incomplete")
 
         has_issues = fatal > 0 or warn > 0 or incomplete > 0
+        if not has_issues and self.issues_panel.isVisible():
+            self.issues_panel.hide()
         self.view_issues_btn.setVisible(has_issues)
-        self.view_issues_btn.setText("Hide issues" if self.issues_panel.isVisible() and has_issues else "View issues")
+        self.view_issues_btn.setText("View issues")
 
         enabled = (fatal == 0) and (incomplete == 0) and (not self._creating_project)
         self.create_btn.setEnabled(enabled)
@@ -1220,7 +1254,10 @@ class ProjectPage(QWidget):
             self.issues_panel.setVisible(False)
             self._update_action_state()
             return
-        self.issues_panel.setVisible(not self.issues_panel.isVisible())
+        if self.issues_panel.isVisible():
+            self.issues_panel.hide()
+        else:
+            self.issues_panel.show_for(self.view_issues_btn)
         self._update_action_state()
 
     def _focus_issue_key(self, key: str) -> None:
@@ -1481,7 +1518,7 @@ class MainWindow(QMainWindow):
         self._project_validation_timer.timeout.connect(self._flush_project_draft_validation)
 
         self.setWindowTitle("WUT Batcher")
-        self.setMinimumSize(1120, 760)
+        self.setMinimumSize(1280, 800)
         self.resize(1280, 860)
 
         self.stack = QStackedWidget()
