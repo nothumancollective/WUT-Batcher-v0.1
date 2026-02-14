@@ -109,11 +109,12 @@ class ProjectPageAthTestParsingTests(unittest.TestCase):
 
     def test_compare_expected_treats_bool_and_numeric_true_equal(self) -> None:
         expected = {"Morph.AllowShrinkage": True}
-        observed = {"Morph.AllowShrinkage": "1"}
+        observed = {"Morph.AllowShrinkage": "1.0"}
         result = compare_expected(
             expected=expected,
             observed=observed,
             allowed_global_keys={"ABEC.AkabakMode", "LE", "LE.Voltage"},
+            comparison_target="ath_config",
         )
         self.assertTrue(result["ok"])
 
@@ -124,8 +125,49 @@ class ProjectPageAthTestParsingTests(unittest.TestCase):
             expected=expected,
             observed=observed,
             allowed_global_keys={"ABEC.AkabakMode", "LE", "LE.Voltage"},
+            comparison_target="ath_config",
         )
         self.assertTrue(result["ok"])
+
+    def test_compare_expected_treats_empty_optional_lists_as_config_equivalent(self) -> None:
+        expected = {
+            "Mesh.SubdomainSlices": [12, 14, 18],
+            "Mesh.InterfaceDraw": [8.1, 2.3, 4.4],
+            "Mesh.ZMapPoints": [0.2, 0.5, 0.9],
+        }
+        observed = {
+            "Mesh.SubdomainSlices": "",
+            "Mesh.InterfaceDraw": "",
+            "Mesh.ZMapPoints": "",
+        }
+        result = compare_expected(
+            expected=expected,
+            observed=observed,
+            allowed_global_keys={"ABEC.AkabakMode", "LE", "LE.Voltage"},
+            comparison_target="ath_config",
+        )
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["value_mismatches"], [])
+
+    def test_compare_expected_supports_gcurve_sf_alias_subkeys(self) -> None:
+        expected = {"GCurve.SF": [1.0, 1.0, 5.0, 0.3, 1.1, 1.1]}
+        observed = {
+            "GCurve.SF.a": "1",
+            "GCurve.SF.b": "1",
+            "GCurve.SF.m1": "5",
+            "GCurve.SF.m2": "5",
+            "GCurve.SF.n1": "0.3",
+            "GCurve.SF.n2": "1.1",
+            "GCurve.SF.n3": "1.1",
+        }
+        result = compare_expected(
+            expected=expected,
+            observed=observed,
+            allowed_global_keys={"ABEC.AkabakMode", "LE", "LE.Voltage"},
+            comparison_target="ath_config",
+        )
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["extra_keys_ghost"], [])
 
 
 if __name__ == "__main__":

@@ -1,0 +1,21 @@
+{
+  "generated_at": "2026-02-14T16:25:56+00:00",
+  "db_path": "reports\\ath_experiments\\ath_experiments.sqlite",
+  "selector": "cmpfix2_smoke_20260214T1630Z",
+  "classification_backfill": {
+    "applied": true,
+    "runs_processed": 0,
+    "rows_updated": 0,
+    "idempotent_noop": true,
+    "class_counts": {},
+    "sample_run_ids": {},
+    "top_keys_overall": [],
+    "top_keys_by_class": {}
+  },
+  "sample_size": 200,
+  "sample": [],
+  "class_counts": {},
+  "top_keys_overall": [],
+  "top_keys_by_class": {},
+  "keymap_path": "reports\\ath_experiments\\compare_mismatch_keymap_v2_smoke_20260214T162556Z.json"
+}
