@@ -1123,9 +1123,9 @@ class ProjectPage(QWidget):
 
         self.summary_panel = QFrame()
         self.summary_panel.setObjectName("ProjectSummaryPanel")
-        self.summary_panel.setFixedHeight(104)
+        self.summary_panel.setFixedHeight(152)
         summary_layout = QHBoxLayout(self.summary_panel)
-        summary_layout.setContentsMargins(12, 6, 12, 6)
+        summary_layout.setContentsMargins(12, 8, 12, 8)
         summary_layout.setSpacing(10)
         self.summary_left = QWidget()
         summary_left_layout = QVBoxLayout(self.summary_left)
@@ -1156,13 +1156,13 @@ class ProjectPage(QWidget):
 
         self.summary_right = QWidget()
         self.summary_right.setObjectName("SummaryIssuesDock")
-        self.summary_right.setMinimumWidth(210)
-        self.summary_right.setMaximumWidth(210)
+        self.summary_right.setMinimumWidth(300)
+        self.summary_right.setMaximumWidth(300)
         summary_right_layout = QVBoxLayout(self.summary_right)
         summary_right_layout.setContentsMargins(0, 0, 0, 0)
         summary_right_layout.setSpacing(0)
         self.issues_section = SummaryIssuesSection(self.summary_right)
-        self.issues_section.set_body_target_height(58)
+        self.issues_section.set_body_target_height(104)
         summary_right_layout.addWidget(self.issues_section, 1)
         summary_layout.addWidget(self.summary_right, 0)
         root.addWidget(self.summary_panel)
@@ -1424,11 +1424,11 @@ class ProjectPage(QWidget):
     def _set_issues_open(self, open_state: bool, *, animated: bool) -> None:
         target_open = bool(open_state)
         self._issues_open = target_open
-        collapsed_width = 210
-        expanded_width = 560
-        self.summary_right.setMinimumWidth(collapsed_width if not target_open else min(280, expanded_width))
+        collapsed_width = 300
+        expanded_width = 760
+        self.summary_right.setMinimumWidth(collapsed_width if not target_open else min(360, expanded_width))
         self.summary_right.setMaximumWidth(expanded_width if target_open else collapsed_width)
-        self.issues_section.set_body_target_height(58)
+        self.issues_section.set_body_target_height(104)
         self.issues_section.set_expanded(target_open, animated=animated)
 
     def _submit(self) -> None:

@@ -241,7 +241,7 @@ class ProjectFormUiTests(unittest.TestCase):
         self.assertFalse(page.issues_section.is_expanded())
         page._toggle_issues_panel()  # type: ignore[attr-defined]
         self.assertTrue(page.issues_section.is_expanded())
-        self.assertGreater(page.summary_right.maximumWidth(), 210)
+        self.assertGreater(page.summary_right.maximumWidth(), 300)
 
     def test_numeric_input_normalizes_decimal_comma_to_dot(self) -> None:
         editor = self.form.editor_for_key("Throat.Diameter")

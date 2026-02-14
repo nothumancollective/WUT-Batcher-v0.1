@@ -169,7 +169,7 @@ class ResponsiveCompactGrid(QWidget):
         self._grid.setContentsMargins(0, 0, 0, 0)
         self._grid.setHorizontalSpacing(8)
         self._grid.setVerticalSpacing(4)
-        self._min_three_width = 780
+        self._min_three_width = 560
 
     def add_cell(self, label: QLabel, editor: QWidget) -> None:
         cell = QWidget(self)
@@ -1394,7 +1394,7 @@ class ParameterForm(QWidget):
 
     def _build_geometry_dense_grid(self) -> ResponsiveCompactGrid:
         grid = ResponsiveCompactGrid()
-        grid._min_three_width = 10_000 if self._is_geometry_compact() else 780
+        grid._min_three_width = 10_000 if self._is_geometry_compact() else 560
         self._geometry_dense_grids.append(grid)
         return grid
 
@@ -1635,7 +1635,7 @@ class ParameterForm(QWidget):
 
         box_layout.addLayout(selection_grid)
         box_layout.addLayout(form_grid)
-        parent_layout.addWidget(box, 0, Qt.AlignTop | Qt.AlignLeft)
+        parent_layout.addWidget(box)
 
     def _add_mode_group(
         self,
@@ -1708,7 +1708,7 @@ class ParameterForm(QWidget):
             self._morph_detail_frame = detail_frame
             box_layout.addWidget(detail_frame)
 
-        parent_layout.addWidget(box, 0, Qt.AlignTop | Qt.AlignLeft)
+        parent_layout.addWidget(box)
 
     def _add_rollback_group(
         self,
@@ -1770,7 +1770,7 @@ class ParameterForm(QWidget):
             self._rollback_detail_frame = detail_frame
             box_layout.addWidget(detail_frame)
 
-        parent_layout.addWidget(box, 0, Qt.AlignTop | Qt.AlignLeft)
+        parent_layout.addWidget(box)
 
     def _add_grouped_fields(
         self,
@@ -1824,7 +1824,7 @@ class ParameterForm(QWidget):
                     self._record_field_metadata(field.key, box, column_key, label)
                     scalar_index += 1
                 box.body_layout().addWidget(grid_holder)
-            parent_layout.addWidget(box, 0, Qt.AlignTop | Qt.AlignLeft)
+            parent_layout.addWidget(box)
 
     def _add_mode_groups(
         self,
@@ -1961,7 +1961,7 @@ class ParameterForm(QWidget):
             self._mode_widgets[stack.controller_key] = (pages, index_by_value)
             if common_keys:
                 self._mode_common_frames[stack.controller_key] = (common_box, tuple(sorted(common_keys)))
-            parent_layout.addWidget(box, 0, Qt.AlignTop | Qt.AlignLeft)
+            parent_layout.addWidget(box)
 
     def _ensure_editor(self, field: FieldSpec) -> QWidget:
         existing = self._field_editors.get(field.key)
