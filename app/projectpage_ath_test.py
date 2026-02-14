@@ -32,6 +32,7 @@ _CFG_BASENAME_RE = re.compile(r"^ProjectPageATHTest(\d+)\.cfg$", re.IGNORECASE)
 _ASSIGN_RE = re.compile(r"^\s*([A-Za-z0-9_.-]+)\s*=\s*(.*?)\s*$")
 _SPACE_ASSIGN_RE = re.compile(r"^\s*([A-Za-z0-9_.-]+)\s+(.+?)\s*$")
 _NUMERIC_RE = re.compile(r"^[+-]?\d+(?:[.,]\d+)?$")
+_NUMERIC_SCI_RE = re.compile(r"^[+-]?\d+(?:[.,]\d+)?(?:[eE][+-]?\d+)?$")
 _KNOWN_ATH_DEFAULT_KEYS = {
     "Source.Shape",
     "Source.Radius",
@@ -44,6 +45,17 @@ _KNOWN_ATH_DEFAULT_KEYS = {
 }
 _KNOWN_ATH_DEFAULT_PREFIXES = ("Source.",)
 _ATH_CONFIG_OPTIONAL_MISSING_PREFIXES = ("Mesh.",)
+_EMPTY_ASSIGN_OBJECT_KEYS = {"R-OSSE", "Mesh.Enclosure"}
+_LIST_STYLE_KEYS = {
+    "GCurve.SF",
+    "Mesh.SubdomainSlices",
+    "Mesh.InterfaceOffset",
+    "Mesh.InterfaceDraw",
+    "Mesh.ZMapPoints",
+    "Mesh.Enclosure.Spacing",
+    "Mesh.Enclosure.FrontResolution",
+    "Mesh.Enclosure.BackResolution",
+}
 
 
 @dataclass(frozen=True)
@@ -83,7 +95,7 @@ def _normalize_expression(value: Any) -> str:
 
 def _parse_numeric(value: Any) -> Optional[float]:
     text = str(value).strip()
-    if not _NUMERIC_RE.match(text):
+    if not _NUMERIC_SCI_RE.match(text):
         return None
     try:
         return float(text.replace(",", "."))
@@ -91,7 +103,128 @@ def _parse_numeric(value: Any) -> Optional[float]:
         return None
 
 
+def _parse_bool(value: Any) -> Optional[bool]:
+    if isinstance(value, bool):
+        return bool(value)
+    text = str(value).strip().lower()
+    if not text:
+        return None
+    if text in {"1", "true", "yes", "on"}:
+        return True
+    if text in {"0", "false", "no", "off"}:
+        return False
+    return None
+
+
+def _parse_list_scalar(value: str) -> Any:
+    token = str(value).strip()
+    if not token:
+        return ""
+    number = _parse_numeric(token)
+    if number is not None:
+        if abs(number - round(number)) <= 1e-9:
+            return int(round(number))
+        return float(number)
+    return token
+
+
+def _parse_list_like(value: Any) -> Optional[List[Any]]:
+    if isinstance(value, list):
+        return list(value)
+    text = str(value).strip()
+    if not text:
+        return None
+    had_list_marker = False
+    if text.startswith("{") and text.endswith("}"):
+        had_list_marker = True
+        text = text[1:-1].strip()
+    if text.startswith("[") and text.endswith("]"):
+        had_list_marker = True
+        text = text[1:-1].strip()
+    if not text:
+        return []
+    if "," in text:
+        raw_tokens = [item.strip() for item in text.split(",") if item.strip()]
+    else:
+        raw_tokens = [item.strip() for item in re.split(r"\s+", text) if item.strip()]
+        # Treat plain scalars as scalars (not 1-item list), otherwise equality
+        # checks can recurse indefinitely on ordinary string values.
+        if len(raw_tokens) <= 1 and not had_list_marker:
+            return None
+    if not raw_tokens:
+        return []
+    return [_parse_list_scalar(token) for token in raw_tokens]
+
+
+def _list_values_equal(expected_list: Sequence[Any], actual_list: Sequence[Any], *, tol: float = 1e-6) -> bool:
+    if len(expected_list) != len(actual_list):
+        return False
+    for expected_item, actual_item in zip(expected_list, actual_list):
+        if not _values_equal(expected_item, actual_item, tol=tol):
+            return False
+    return True
+
+
+def _is_expression_like(value: Any) -> bool:
+    text = str(value).strip()
+    if not text:
+        return False
+    if _parse_numeric(text) is not None:
+        return False
+    return bool(re.search(r"[A-Za-z_()+\-*/^]", text))
+
+
+def _mismatch_kind_for_pair(key: str, expected: Any, actual: Any) -> str:
+    structure_prefixes = (
+        "R-OSSE.",
+        "Mesh.Enclosure.",
+        "Mesh.SubdomainSlices",
+        "Mesh.InterfaceOffset",
+        "Mesh.InterfaceDraw",
+        "Mesh.ZMapPoints",
+        "GCurve.SF",
+    )
+    if any(str(key).startswith(prefix) for prefix in structure_prefixes):
+        return "structure_mismatch_object"
+
+    exp_list = _parse_list_like(expected)
+    act_list = _parse_list_like(actual)
+    if (exp_list is not None and len(exp_list) > 0) or (act_list is not None and len(act_list) > 0):
+        return "structure_mismatch_object"
+
+    exp_num = _parse_numeric(expected)
+    act_num = _parse_numeric(actual)
+    if exp_num is not None and act_num is not None:
+        return "value_mismatch_numeric"
+
+    if _normalize_expression(expected) == _normalize_expression(actual):
+        return "formatting_only"
+
+    if _is_expression_like(expected) or _is_expression_like(actual):
+        return "value_mismatch_expr"
+    return "value_mismatch_expr"
+
+
 def _values_equal(expected: Any, actual: Any, *, tol: float = 1e-6) -> bool:
+    exp_bool = _parse_bool(expected)
+    act_bool = _parse_bool(actual)
+    if exp_bool is not None and act_bool is not None:
+        return bool(exp_bool) == bool(act_bool)
+
+    if isinstance(expected, list):
+        actual_list = _parse_list_like(actual)
+        if actual_list is not None:
+            return _list_values_equal(list(expected), actual_list, tol=tol)
+    if isinstance(actual, list):
+        expected_list = _parse_list_like(expected)
+        if expected_list is not None:
+            return _list_values_equal(expected_list, list(actual), tol=tol)
+
+    expected_list = _parse_list_like(expected)
+    actual_list = _parse_list_like(actual)
+    if expected_list is not None and actual_list is not None:
+        return _list_values_equal(expected_list, actual_list, tol=tol)
+
     exp_num = _parse_numeric(expected)
     act_num = _parse_numeric(actual)
     if exp_num is not None and act_num is not None:
@@ -127,6 +260,24 @@ def _flatten_values(prefix: str, value: Any) -> Dict[str, Any]:
     return {prefix: value}
 
 
+def _parse_block_values(block_lines: Sequence[str]) -> Tuple[Dict[str, Any], List[Any]]:
+    object_values: Dict[str, Any] = {}
+    list_values: List[Any] = []
+    for raw_line in block_lines:
+        clean_line = _strip_inline_comment(raw_line).strip().rstrip(",")
+        if not clean_line:
+            continue
+        sub_assign = _ASSIGN_RE.match(clean_line)
+        if sub_assign is not None:
+            sub_key = sub_assign.group(1).strip()
+            sub_value = _collapse_ws(sub_assign.group(2))
+            object_values[sub_key] = sub_value
+            continue
+        for token in [token.strip() for token in clean_line.split(",") if token.strip()]:
+            list_values.append(_parse_list_scalar(token))
+    return object_values, list_values
+
+
 def parse_key_value_text(text: str) -> Dict[str, Any]:
     parsed: Dict[str, Any] = {}
     lines = text.splitlines()
@@ -148,6 +299,7 @@ def parse_key_value_text(text: str) -> Dict[str, Any]:
         key = assign.group(1).strip()
         raw_value = assign.group(2).strip()
         if raw_value == "{":
+            block_lines: List[str] = []
             index += 1
             while index < len(lines):
                 block_line = _strip_inline_comment(lines[index]).strip()
@@ -156,11 +308,14 @@ def parse_key_value_text(text: str) -> Dict[str, Any]:
                     continue
                 if block_line.startswith("}"):
                     break
-                sub_assign = _ASSIGN_RE.match(block_line)
-                if sub_assign is not None:
-                    sub_key = sub_assign.group(1).strip()
-                    parsed[f"{key}.{sub_key}"] = _collapse_ws(sub_assign.group(2))
+                block_lines.append(block_line)
                 index += 1
+            object_values, list_values = _parse_block_values(block_lines)
+            if object_values:
+                for sub_key, sub_value in object_values.items():
+                    parsed[f"{key}.{sub_key}"] = sub_value
+            elif list_values:
+                parsed[key] = list_values
             index += 1
             continue
 
@@ -169,12 +324,15 @@ def parse_key_value_text(text: str) -> Dict[str, Any]:
             # and place object members on following lines without braces.
             lookahead = index + 1
             consumed_any = False
+            object_values: Dict[str, Any] = {}
+            list_values: List[Any] = []
             while lookahead < len(lines):
                 next_line = _strip_inline_comment(lines[lookahead]).strip()
                 if not next_line:
                     lookahead += 1
                     continue
                 if next_line.startswith("{"):
+                    block_lines: List[str] = []
                     lookahead += 1
                     while lookahead < len(lines):
                         nested_line = _strip_inline_comment(lines[lookahead]).strip()
@@ -183,25 +341,45 @@ def parse_key_value_text(text: str) -> Dict[str, Any]:
                             continue
                         if nested_line.startswith("}"):
                             break
-                        nested_assign = _ASSIGN_RE.match(nested_line)
-                        if nested_assign is None:
-                            break
-                        sub_key = nested_assign.group(1).strip()
-                        parsed[f"{key}.{sub_key}"] = _collapse_ws(nested_assign.group(2))
-                        consumed_any = True
+                        block_lines.append(nested_line)
                         lookahead += 1
+                    nested_object, nested_list = _parse_block_values(block_lines)
+                    if nested_object:
+                        object_values.update(nested_object)
+                        consumed_any = True
+                    elif nested_list:
+                        list_values.extend(nested_list)
+                        consumed_any = True
                     index = lookahead + 1
                     break
                 next_assign = _ASSIGN_RE.match(next_line)
-                if next_assign is None:
+                if next_assign is not None and key in _EMPTY_ASSIGN_OBJECT_KEYS:
+                    sub_key = next_assign.group(1).strip()
+                    if "." in sub_key or sub_key == key:
+                        break
+                    object_values[sub_key] = _collapse_ws(next_assign.group(2))
+                    consumed_any = True
+                    lookahead += 1
+                    continue
+                if key in _LIST_STYLE_KEYS:
+                    line_tokens = [token.strip() for token in re.split(r"[,\s]+", next_line) if token.strip()]
+                    if not line_tokens:
+                        lookahead += 1
+                        continue
+                    if _ASSIGN_RE.match(next_line) or _SPACE_ASSIGN_RE.match(next_line):
+                        break
+                    for token in line_tokens:
+                        list_values.append(_parse_list_scalar(token))
+                    consumed_any = True
+                    lookahead += 1
+                    continue
+                if next_assign is None or key not in _EMPTY_ASSIGN_OBJECT_KEYS:
                     break
-                sub_key = next_assign.group(1).strip()
-                # Stop when next line clearly starts a new top-level key.
-                if "." in sub_key or sub_key == key:
-                    break
-                parsed[f"{key}.{sub_key}"] = _collapse_ws(next_assign.group(2))
-                consumed_any = True
-                lookahead += 1
+            if object_values:
+                for sub_key, sub_value in object_values.items():
+                    parsed[f"{key}.{sub_key}"] = sub_value
+            elif list_values:
+                parsed[key] = list_values
             if consumed_any:
                 index = lookahead
                 continue
@@ -223,6 +401,10 @@ def parse_key_value_text(text: str) -> Dict[str, Any]:
             continue
 
         parsed[key] = _collapse_ws(raw_value)
+        if key in _LIST_STYLE_KEYS:
+            parsed_list = _parse_list_like(raw_value)
+            if parsed_list is not None:
+                parsed[key] = parsed_list
         index += 1
     return parsed
 
@@ -275,6 +457,7 @@ def compare_expected(
                     "key": key,
                     "expected": expected_value,
                     "actual": actual_value,
+                    "mismatch_kind": _mismatch_kind_for_pair(key, expected_value, actual_value),
                 }
             )
 
