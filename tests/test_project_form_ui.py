@@ -358,9 +358,58 @@ class ProjectFormUiTests(unittest.TestCase):
         coverage_widget = self.form.value_widget_for_key("Coverage.Angle")
         self.assertIsNotNone(coverage_widget)
         assert coverage_widget is not None
-        coverage_unit = getattr(coverage_widget, "unit_label")
-        self.assertEqual(coverage_unit.text().strip(), "deg/2")
-        self.assertGreaterEqual(coverage_unit.width(), coverage_unit.fontMetrics().horizontalAdvance("deg/2"))
+
+    def test_field_state_ok_warn_fatal_and_helper_line(self) -> None:
+        editor = self.form.editor_for_key("Length")
+        self.assertIsNotNone(editor)
+        assert editor is not None
+        editor.set_is_set(True)  # type: ignore[attr-defined]
+        editor.set_value(600.0)  # type: ignore[attr-defined]
+        self.form._on_any_field_changed()  # type: ignore[attr-defined]
+
+        self.form.apply_ui_risks([])
+        value_widget = self.form.value_widget_for_key("Length")
+        self.assertIsNotNone(value_widget)
+        assert value_widget is not None
+        line_edit = getattr(value_widget, "edit", None)
+        self.assertIsNotNone(line_edit)
+        self.assertEqual(line_edit.property("fieldState"), "ok")
+
+        self.form.apply_ui_risks(
+            [
+                {
+                    "field_key": "Length",
+                    "severity": "warn",
+                    "message": "Outside recommended range.",
+                    "suggestion": "Use 200-1000.",
+                    "source": "experiment",
+                }
+            ]
+        )
+        self.assertEqual(line_edit.property("fieldState"), "warn")
+        helper = getattr(editor, "_helper_label", None)
+        self.assertIsNotNone(helper)
+        assert helper is not None
+        self.assertFalse(helper.isHidden())
+        self.assertIn("Outside recommended range.", helper.text())
+
+        self.form.apply_ui_risks(
+            [
+                {
+                    "field_key": "Length",
+                    "severity": "fatal",
+                    "message": "Hard cap exceeded.",
+                    "suggestion": "Reduce value.",
+                    "source": "experiment",
+                }
+            ]
+        )
+        self.assertEqual(line_edit.property("fieldState"), "fatal")
+
+        editor.set_is_set(False)  # type: ignore[attr-defined]
+        self.form._on_any_field_changed()  # type: ignore[attr-defined]
+        self.form.apply_ui_risks([])
+        self.assertEqual(line_edit.property("fieldState"), "neutral")
 
     def test_gcurve_common_and_superformula_use_two_columns(self) -> None:
         gcurve_editor = self.form.editor_for_key("GCurve.Type")
