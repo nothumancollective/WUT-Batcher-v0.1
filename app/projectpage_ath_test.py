@@ -11,6 +11,12 @@ import re
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from app.cfg_renderer import render_cfg_text
+from app.compare_policy import (
+    alias_allowed_keys_for_expected,
+    has_alias_match,
+    is_optional_missing_for_target,
+    policy_values_equal,
+)
 from app.compatibility_service import CompatibilityService
 from app.constants import DEFAULT_RUNNER_MODE, MANDATORY_SOURCE_BLOCK
 from app.models import Batch, ProjectConstraints
@@ -45,7 +51,7 @@ _KNOWN_ATH_DEFAULT_KEYS = {
 }
 _KNOWN_ATH_DEFAULT_PREFIXES = ("Source.",)
 _ATH_CONFIG_OPTIONAL_MISSING_PREFIXES = ("Mesh.",)
-_EMPTY_ASSIGN_OBJECT_KEYS = {"R-OSSE", "Mesh.Enclosure"}
+_EMPTY_ASSIGN_OBJECT_KEYS = {"R-OSSE", "Mesh.Enclosure", "GCurve.SF"}
 _LIST_STYLE_KEYS = {
     "GCurve.SF",
     "Mesh.SubdomainSlices",
@@ -415,6 +421,7 @@ def compare_expected(
     observed: Mapping[str, Any],
     allowed_global_keys: Iterable[str],
     optional_missing_prefixes: Iterable[str] = (),
+    comparison_target: str = "generic",
 ) -> Dict[str, Any]:
     expected_flat: Dict[str, Any] = {}
     for key, value in expected.items():
@@ -422,7 +429,8 @@ def compare_expected(
 
     observed_map = {str(key): value for key, value in observed.items()}
     allowed = set(str(key) for key in allowed_global_keys)
-    allowed_keys = set(expected_flat.keys()) | allowed
+    alias_allow = set(alias_allowed_keys_for_expected(expected_flat.keys()))
+    allowed_keys = set(expected_flat.keys()) | allowed | alias_allow
 
     optional_prefixes = tuple(str(item) for item in optional_missing_prefixes)
 
@@ -430,6 +438,11 @@ def compare_expected(
     missing_optional: List[str] = []
     for key in expected_flat.keys():
         if key in observed_map:
+            continue
+        if has_alias_match(key, observed_map=observed_map):
+            continue
+        if is_optional_missing_for_target(key, target=comparison_target):
+            missing_optional.append(key)
             continue
         if any(key.startswith(prefix) for prefix in optional_prefixes):
             missing_optional.append(key)
@@ -451,6 +464,25 @@ def compare_expected(
         if key not in observed_map:
             continue
         actual_value = observed_map[key]
+        policy_equal = policy_values_equal(
+            key,
+            expected_value,
+            actual_value,
+            target=comparison_target,
+            observed_map=observed_map,
+        )
+        if policy_equal is True:
+            continue
+        if policy_equal is False:
+            mismatches.append(
+                {
+                    "key": key,
+                    "expected": expected_value,
+                    "actual": actual_value,
+                    "mismatch_kind": _mismatch_kind_for_pair(key, expected_value, actual_value),
+                }
+            )
+            continue
         if not _values_equal(expected_value, actual_value):
             mismatches.append(
                 {
@@ -861,12 +893,14 @@ def run_projectpage_ath_test_suite(
             expected=expected_values,
             observed=cfg_parsed,
             allowed_global_keys=allowed_global_keys,
+            comparison_target="cfg",
         )
         config_compare = compare_expected(
             expected=expected_values,
             observed=config_parsed,
             allowed_global_keys=allowed_global_keys,
             optional_missing_prefixes=_ATH_CONFIG_OPTIONAL_MISSING_PREFIXES,
+            comparison_target="ath_config",
         )
         ath_ok = bool(ath_result and ath_result.ok)
         config_ok = config_file is not None and config_compare["ok"]

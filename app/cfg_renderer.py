@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Tuple
 
 from app.ath_knowledge import AthKnowledgeBundle, load_ath_knowledge
+from app.compare_policy import canonicalize_cfg_value
 from app.constants import DEFAULT_RUNNER_MODE, MANDATORY_SOURCE_BLOCK
 
 
@@ -96,14 +97,39 @@ def build_cfg_updates(
     locked = _runner_locked_keys(bundle, runner_mode)
     mandatory_keys = {key for key, _ in MANDATORY_SOURCE_BLOCK}
 
+    raw_params = dict(parameters or {})
+    # Canonicalize UI convenience superformula list to stable subkeys before rendering.
+    sf_value = raw_params.get("GCurve.SF")
+    if isinstance(sf_value, list) and len(sf_value) >= 6 and all(
+        sf_key not in raw_params for sf_key in ("GCurve.SF.a", "GCurve.SF.b", "GCurve.SF.m1", "GCurve.SF.m2", "GCurve.SF.n1", "GCurve.SF.n2", "GCurve.SF.n3")
+    ):
+        try:
+            a = float(sf_value[0])
+            b = float(sf_value[1])
+            m = float(sf_value[2])
+            n1 = float(sf_value[3])
+            n2 = float(sf_value[4])
+            n3 = float(sf_value[5])
+        except Exception:
+            pass
+        else:
+            raw_params["GCurve.SF.a"] = a
+            raw_params["GCurve.SF.b"] = b
+            raw_params["GCurve.SF.m1"] = m
+            raw_params["GCurve.SF.m2"] = m
+            raw_params["GCurve.SF.n1"] = n1
+            raw_params["GCurve.SF.n2"] = n2
+            raw_params["GCurve.SF.n3"] = n3
+            raw_params.pop("GCurve.SF", None)
+
     updates: Dict[str, Any] = {}
-    for key, value in dict(parameters or {}).items():
+    for key, value in raw_params.items():
         if key in mandatory_keys:
             continue
         if key in locked:
             continue
         if key in allowed_keys:
-            updates[key] = value
+            updates[key] = canonicalize_cfg_value(key, value)
     return updates
 
 

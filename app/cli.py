@@ -446,6 +446,7 @@ def cmd_ath_experiments_analyze_compare_mismatch(args: argparse.Namespace) -> in
         reports_root=args.reports_root,
         run_group=args.run_group,
         limit=args.limit,
+        version_tag=getattr(args, "version_tag", None),
     )
     print(json.dumps(summary, indent=2, ensure_ascii=False, default=_json_default))
     return 0
@@ -946,6 +947,10 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=200,
         help="Sample size for run-level excerpts.",
+    )
+    p_analyze_compare.add_argument(
+        "--version-tag",
+        help="Optional tag inserted into filenames (e.g. v2).",
     )
     p_analyze_compare.set_defaults(func=cmd_ath_experiments_analyze_compare_mismatch)
 

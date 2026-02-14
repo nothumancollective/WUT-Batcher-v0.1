@@ -2825,6 +2825,7 @@ def run_ath_experiments_analyze_compare_mismatch(
     reports_root: str | Path = "reports/ath_experiments",
     run_group: Optional[str] = None,
     limit: int = 200,
+    version_tag: Optional[str] = None,
 ) -> Dict[str, Any]:
     reports_root_path = Path(reports_root)
     reports_root_path.mkdir(parents=True, exist_ok=True)
@@ -2904,9 +2905,11 @@ def run_ath_experiments_analyze_compare_mismatch(
             )
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    md_path = reports_root_path / f"compare_mismatch_inventory_{timestamp}.md"
-    json_path = history_root / f"compare_mismatch_inventory_{timestamp}.json"
-    keymap_path = reports_root_path / f"compare_mismatch_keymap_{timestamp}.json"
+    tag = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(version_tag or "").strip()).strip("_")
+    suffix = f"_{tag}" if tag else ""
+    md_path = reports_root_path / f"compare_mismatch_inventory{suffix}_{timestamp}.md"
+    json_path = history_root / f"compare_mismatch_inventory{suffix}_{timestamp}.json"
+    keymap_path = reports_root_path / f"compare_mismatch_keymap{suffix}_{timestamp}.json"
 
     keymap = {
         "Morph.AllowShrinkage": {
@@ -3769,12 +3772,14 @@ def run_projectpage_ath_experiment(
                 expected=expected_values,
                 observed=cfg_parsed,
                 allowed_global_keys=allowed_global_keys,
+                comparison_target="cfg",
             )
             config_compare = compare_expected(
                 expected=expected_values,
                 observed=config_parsed,
                 allowed_global_keys=allowed_global_keys,
                 optional_missing_prefixes=_ATH_CONFIG_OPTIONAL_MISSING_PREFIXES,
+                comparison_target="ath_config",
             )
             cfg_ok = bool(cfg_written and cfg_compare["ok"])
             ath_ok = bool(ath_result and ath_result.ok)
