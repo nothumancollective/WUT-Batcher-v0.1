@@ -11,7 +11,7 @@ from app.gui import ProjectPage
 
 try:
     from PySide6.QtCore import Qt
-    from PySide6.QtWidgets import QApplication, QFrame, QGridLayout, QGroupBox, QLabel, QPushButton, QToolButton
+    from PySide6.QtWidgets import QApplication, QFrame, QGridLayout, QGroupBox, QLabel, QPushButton, QToolButton, QSplitter
 except ImportError:  # pragma: no cover
     Qt = None  # type: ignore[assignment]
     QApplication = None  # type: ignore[assignment]
@@ -21,6 +21,7 @@ except ImportError:  # pragma: no cover
     QLabel = None  # type: ignore[assignment]
     QPushButton = None  # type: ignore[assignment]
     QToolButton = None  # type: ignore[assignment]
+    QSplitter = None  # type: ignore[assignment]
 
 from ui.form_builder import NullableBoolInput, NullableNumericInput, ParameterForm, SegmentedEnumInput
 from ui.form_schema import build_project_form_schema
@@ -229,6 +230,8 @@ class ProjectFormUiTests(unittest.TestCase):
     def test_form_layout_has_two_columns_geometry_and_mesh(self) -> None:
         self.assertTrue(hasattr(self.form, "geometry_scroll"))
         self.assertTrue(hasattr(self.form, "mesh_scroll"))
+        splitters = self.form.findChildren(QSplitter)
+        self.assertEqual(splitters, [])
 
     def test_geometry_order_matches_spec(self) -> None:
         section_layout = self.form.geometry_section.content_layout
@@ -352,6 +355,14 @@ class ProjectFormUiTests(unittest.TestCase):
         assert isinstance(segment, SegmentedEnumInput)
 
         checked_id = segment.group.checkedId()
+        if checked_id < 0:
+            for button_id, value in segment._values_by_id.items():  # type: ignore[attr-defined]
+                if value == 1:
+                    btn = segment.group.button(button_id)
+                    assert btn is not None
+                    btn.click()
+                    checked_id = button_id
+                    break
         self.assertGreaterEqual(checked_id, 0)
         checked_button = segment.group.button(checked_id)
         self.assertIsNotNone(checked_button)
@@ -364,27 +375,34 @@ class ProjectFormUiTests(unittest.TestCase):
         self.assertEqual(state["is_set"], 0)
 
     def test_mode_defaults_start_on_no_or_disabled_selection(self) -> None:
+        throat_editor = self.form.editor_for_key("Throat.Profile")
         gcurve_editor = self.form.editor_for_key("GCurve.Type")
         morph_editor = self.form.editor_for_key("Morph.TargetShape")
         enclosure_editor = self.form.editor_for_key("Mesh.Enclosure")
+        self.assertIsNotNone(throat_editor)
         self.assertIsNotNone(gcurve_editor)
         self.assertIsNotNone(morph_editor)
         self.assertIsNone(self.form.editor_for_key("Rollback"))
         self.assertIsNotNone(enclosure_editor)
+        assert throat_editor is not None
         assert gcurve_editor is not None
         assert morph_editor is not None
         assert enclosure_editor is not None
 
+        throat_segment = throat_editor.value_widget()  # type: ignore[attr-defined]
         gcurve_segment = gcurve_editor.value_widget()  # type: ignore[attr-defined]
         morph_segment = morph_editor.value_widget()  # type: ignore[attr-defined]
         enclosure_toggle = enclosure_editor.toggle  # type: ignore[attr-defined]
+        self.assertIsInstance(throat_segment, SegmentedEnumInput)
         self.assertIsInstance(gcurve_segment, SegmentedEnumInput)
         self.assertIsInstance(morph_segment, SegmentedEnumInput)
         self.assertIsInstance(enclosure_toggle, SegmentedEnumInput)
+        assert isinstance(throat_segment, SegmentedEnumInput)
         assert isinstance(gcurve_segment, SegmentedEnumInput)
         assert isinstance(morph_segment, SegmentedEnumInput)
         assert isinstance(enclosure_toggle, SegmentedEnumInput)
 
+        self.assertIsNone(throat_segment.value())
         self.assertIsNone(gcurve_segment.value())
         self.assertIsNone(morph_segment.value())
         self.assertEqual(enclosure_toggle.value(), 0)

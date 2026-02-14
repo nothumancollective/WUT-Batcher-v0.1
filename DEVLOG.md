@@ -956,3 +956,43 @@
 #### Tests
 - `python -m unittest tests.test_project_issue_model tests.test_project_form_ui tests.test_ui_validation_ranges tests.test_ui_validation_candidates -v`
 - `python -m py_compile app/gui.py ui/form_builder.py ui/theme.py app/project_issue_model.py`
+
+### Update 35 (PROJECT Layout Cleanup: No Splitter Handle + In-Card Issues Popover)
+#### Done
+- Removed draggable middle column splitter behavior on Project Page:
+  - replaced splitter-based column container with fixed-gap two-column `QHBoxLayout`
+  - both Geometry and Mesh columns are now `QSizePolicy.Expanding`
+  - fixed inter-column spacing keeps the center gap stable (no giant middle void).
+- Moved "View issues" into the top summary card (right side of card header):
+  - clicking opens an anchored popup issues viewer (`Qt.Popup`) instead of adding a new page area
+  - popup lists all issues grouped and ordered by severity (Errors, Warnings, Incomplete)
+  - selecting an issue expands the right accordion section, scrolls to the field, and focuses it.
+- Corrected fresh-start mode defaults:
+  - `Throat.Profile` now starts unset (no implicit OS-SE preselection).
+- Added smooth accordion expand/collapse animation:
+  - body height animation (`OutCubic`, ~180ms)
+  - subtle opacity fade for smoother perceived transitions.
+- Reduced expanded-section density without redesign:
+  - tighter inner margins/row spacing in section bodies
+  - non-wrapping labels with tooltip fallback to avoid multi-line label drift
+  - mesh core horizontal spacing tuned to avoid label/input crowding in right column.
+- Updated minimum baseline for no-scroll target:
+  - main window minimum size now `1280x800` for Project Page usability baseline.
+
+#### Manual QA Checklist
+- Fullscreen:
+  - no draggable handle between Geometry and Mesh columns
+  - top summary card keeps "View issues" button inline; opening issues does not change page height
+  - accordion transitions are smooth (no hard snap).
+- Restore-down:
+  - columns remain readable with fixed middle gap
+  - action bar remains visible and usable.
+- Issue navigation:
+  - popup shows deterministic grouped list (no random single issue)
+  - clicking issue opens section and focuses target field.
+- Defaults:
+  - fresh project starts with `Throat Profile = unset` (no OS-SE preselected).
+
+#### Tests
+- `python -m unittest tests.test_project_issue_model tests.test_project_form_ui tests.test_ui_validation_ranges tests.test_ui_validation_candidates -v`
+- `python -m py_compile app/gui.py ui/form_builder.py ui/form_metrics.py ui/theme.py app/project_issue_model.py`
