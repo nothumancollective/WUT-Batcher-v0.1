@@ -43,3 +43,20 @@ Set `WUT_NO_AUTO_PUSH=1` in your shell if you need to temporarily disable auto-p
 ## Notes
 - GUI requires `PySide6`.
 - If `python -m app gui` fails with missing Qt packages, reinstall from `requirements.txt`.
+
+## Unattended Night Run (PROJECT-only ATH, 100k)
+Start in a persistent PowerShell/Windows Terminal session from repo root:
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\night_pp100k.ps1
+```
+The script runs 10 blocks (`pp100k_2100`..`pp100k_2109`, 10k each), stops on non-zero exit, and logs to `reports/ath_experiments/night_pp100k.log`.
+
+Resume a single block after interruption:
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\night_pp100k_resume.ps1 -Seed 2104 -RunGroup pp100k_2104 -Cases 10000
+```
+
+Re-run only aggregation (after all blocks):
+```powershell
+python -m app projectpage-ath-experiment --cases 0 --seed 0 --run-group pp100k_aggregate_YYYYMMDD_HHMMSS --aggregate-run-groups pp100k_2100,pp100k_2101,pp100k_2102,pp100k_2103,pp100k_2104,pp100k_2105,pp100k_2106,pp100k_2107,pp100k_2108,pp100k_2109 --reports-root reports/ath_experiments --cleanup-files false --preclean-files false --cleanup-cases never --cleanup-log never --history-snapshots true
+```
