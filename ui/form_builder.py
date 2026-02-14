@@ -493,26 +493,23 @@ class ScalarFieldEditor(QWidget):
         super().__init__(parent)
         self.field = field
         self._value_widget: QWidget
-        self._helper_label: QLabel
+        self._state_badge: QLabel
 
-        root = QVBoxLayout(self)
+        root = QHBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
-        root.setSpacing(4)
-
-        row = QHBoxLayout()
-        row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(8)
+        root.setSpacing(8)
 
         self._value_widget = self._build_value_widget()
-        row.addWidget(self._value_widget, 1)
-        root.addLayout(row)
+        root.addWidget(self._value_widget, 1)
 
-        self._helper_label = QLabel("")
-        self._helper_label.setObjectName("FieldStateHint")
-        self._helper_label.setVisible(False)
-        self._helper_label.setWordWrap(False)
-        self._helper_label.setTextInteractionFlags(Qt.NoTextInteraction)
-        root.addWidget(self._helper_label, 0, Qt.AlignLeft)
+        # Fixed-width badge avoids layout shifts when state changes.
+        self._state_badge = QLabel("")
+        self._state_badge.setObjectName("FieldStateBadge")
+        self._state_badge.setFixedWidth(14)
+        self._state_badge.setAlignment(Qt.AlignCenter)
+        self._state_badge.setProperty("severity", "neutral")
+        self._state_badge.setVisible(True)
+        root.addWidget(self._state_badge, 0, Qt.AlignRight)
 
         if field.tooltip:
             self.setToolTip(field.tooltip)
@@ -645,26 +642,25 @@ class ScalarFieldEditor(QWidget):
             self._value_widget.setEnabled(not locked)
 
     def set_helper_message(self, message: str, severity: str) -> None:
-        text = str(message or "").strip()
-        if not text:
-            self.clear_helper_message()
-            return
-        self._helper_label.setProperty("severity", str(severity or "").lower())
-        self._helper_label.setText(text)
-        self._helper_label.setToolTip(text)
-        self._helper_label.setVisible(True)
-        self._helper_label.style().unpolish(self._helper_label)
-        self._helper_label.style().polish(self._helper_label)
-        self._helper_label.update()
+        # Legacy hook retained for compatibility; helper text is now shown in the
+        # fixed inspector area to avoid shifting field layout.
+        _ = (message, severity)
 
     def clear_helper_message(self) -> None:
-        self._helper_label.setVisible(False)
-        self._helper_label.setText("")
-        self._helper_label.setToolTip("")
-        self._helper_label.setProperty("severity", "")
-        self._helper_label.style().unpolish(self._helper_label)
-        self._helper_label.style().polish(self._helper_label)
-        self._helper_label.update()
+        return
+
+    def set_field_state_visual(self, severity: str) -> None:
+        level = str(severity or "neutral").lower()
+        symbol = ""
+        if level == "warn":
+            symbol = "!"
+        elif level == "fatal":
+            symbol = "x"
+        self._state_badge.setText(symbol)
+        self._state_badge.setProperty("severity", level)
+        self._state_badge.style().unpolish(self._state_badge)
+        self._state_badge.style().polish(self._state_badge)
+        self._state_badge.update()
 
 class ObjectFieldEditor(QWidget):
     changed = Signal()
@@ -674,11 +670,23 @@ class ObjectFieldEditor(QWidget):
         self.field = field
         self._use_toggle = use_toggle
         self.property_editors: Dict[str, ScalarFieldEditor] = {}
-        self._helper_label: QLabel
+        self._state_badge: QLabel
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(8)
+
+        badge_row = QHBoxLayout()
+        badge_row.setContentsMargins(0, 0, 0, 0)
+        badge_row.setSpacing(0)
+        badge_row.addStretch(1)
+        self._state_badge = QLabel("")
+        self._state_badge.setObjectName("FieldStateBadge")
+        self._state_badge.setFixedWidth(14)
+        self._state_badge.setAlignment(Qt.AlignCenter)
+        self._state_badge.setProperty("severity", "neutral")
+        badge_row.addWidget(self._state_badge, 0, Qt.AlignRight)
+        root.addLayout(badge_row)
 
         self.toggle: Optional[SegmentedEnumInput] = None
         if self._use_toggle:
@@ -709,13 +717,6 @@ class ObjectFieldEditor(QWidget):
 
         self.props_frame.content_layout.addWidget(props_widget)
         root.addWidget(self.props_frame)
-
-        self._helper_label = QLabel("")
-        self._helper_label.setObjectName("FieldStateHint")
-        self._helper_label.setVisible(False)
-        self._helper_label.setWordWrap(False)
-        self._helper_label.setTextInteractionFlags(Qt.NoTextInteraction)
-        root.addWidget(self._helper_label, 0, Qt.AlignLeft)
 
         if field.tooltip:
             self.setToolTip(field.tooltip)
@@ -795,26 +796,23 @@ class ObjectFieldEditor(QWidget):
             self.setToolTip("Locked by runner mode.")
 
     def set_helper_message(self, message: str, severity: str) -> None:
-        text = str(message or "").strip()
-        if not text:
-            self.clear_helper_message()
-            return
-        self._helper_label.setProperty("severity", str(severity or "").lower())
-        self._helper_label.setText(text)
-        self._helper_label.setToolTip(text)
-        self._helper_label.setVisible(True)
-        self._helper_label.style().unpolish(self._helper_label)
-        self._helper_label.style().polish(self._helper_label)
-        self._helper_label.update()
+        _ = (message, severity)
 
     def clear_helper_message(self) -> None:
-        self._helper_label.setVisible(False)
-        self._helper_label.setText("")
-        self._helper_label.setToolTip("")
-        self._helper_label.setProperty("severity", "")
-        self._helper_label.style().unpolish(self._helper_label)
-        self._helper_label.style().polish(self._helper_label)
-        self._helper_label.update()
+        return
+
+    def set_field_state_visual(self, severity: str) -> None:
+        level = str(severity or "neutral").lower()
+        symbol = ""
+        if level == "warn":
+            symbol = "!"
+        elif level == "fatal":
+            symbol = "x"
+        self._state_badge.setText(symbol)
+        self._state_badge.setProperty("severity", level)
+        self._state_badge.style().unpolish(self._state_badge)
+        self._state_badge.style().polish(self._state_badge)
+        self._state_badge.update()
 
 
 def _two_column_positions(form_column: int) -> Tuple[int, int]:
@@ -1491,6 +1489,8 @@ class ParameterForm(QWidget):
         self._risk_widgets.clear()
         self._risk_original_tooltips.clear()
         for editor in self._field_editors.values():
+            if hasattr(editor, "set_field_state_visual"):
+                editor.set_field_state_visual("neutral")  # type: ignore[attr-defined]
             if hasattr(editor, "clear_helper_message"):
                 editor.clear_helper_message()  # type: ignore[attr-defined]
 
@@ -1556,20 +1556,6 @@ class ParameterForm(QWidget):
                 lines.append(f"Hint: {suggestion}")
         return "\n".join(lines[:4])
 
-    def _risk_helper_text(self, issues: List[Dict[str, Any]]) -> str:
-        ranked = sorted(
-            [item for item in issues if isinstance(item, dict)],
-            key=lambda item: self._risk_rank(str(item.get("severity", "info"))),
-        )
-        if not ranked:
-            return ""
-        best = ranked[0]
-        message = str(best.get("message", "")).strip()
-        suggestion = str(best.get("suggestion", "")).strip()
-        if suggestion and message:
-            return f"{message} {suggestion}"
-        return message or suggestion
-
     def apply_ui_risks(self, issues: List[Dict[str, Any]]) -> None:
         self._clear_risk_highlights()
         grouped: Dict[str, List[Dict[str, Any]]] = {}
@@ -1604,6 +1590,9 @@ class ParameterForm(QWidget):
                 severity = "warn"
             else:
                 severity = "ok"
+            editor = self._field_editors.get(key)
+            if editor is not None and hasattr(editor, "set_field_state_visual"):
+                editor.set_field_state_visual(severity)  # type: ignore[attr-defined]
             target_id = id(target)
             self._risk_widgets[target_id] = target
             self._risk_original_tooltips[target_id] = target.toolTip()
@@ -1614,10 +1603,6 @@ class ParameterForm(QWidget):
                 if tooltip:
                     base_tooltip = self._risk_original_tooltips.get(target_id, "")
                     target.setToolTip(f"{base_tooltip}\n\n{tooltip}".strip() if base_tooltip else tooltip)
-                helper = self._risk_helper_text(key_issues)
-                editor = self._field_editors.get(key)
-                if helper and editor is not None and hasattr(editor, "set_helper_message"):
-                    editor.set_helper_message(helper, severity)  # type: ignore[attr-defined]
             self._repolish(target)
 
     def apply_compatibility(self, state: Dict[str, Any]) -> None:

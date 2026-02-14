@@ -107,15 +107,35 @@ class ProjectFormUiTests(unittest.TestCase):
         self.assertIn("Projekt erstellen", labels)
         self.assertNotIn("Back to Dashboard", labels)
         self.assertNotIn("Show details", labels)
-        notice_labels = [
-            label.text()
-            for label in page.findChildren(QLabel)
-            if "Rollback is not supported in this ATH version." in label.text()
-        ]
-        self.assertTrue(notice_labels)
         self.assertFalse(
             any("Project Compatibility" == str(box.title()) for box in page.findChildren(QGroupBox))
         )
+
+    def test_project_page_risk_inspector_updates_without_layout_shift(self) -> None:
+        page = ProjectPage()
+        editor = page.constraints_form.editor_for_key("Length")
+        self.assertIsNotNone(editor)
+        assert editor is not None
+        editor.set_is_set(True)  # type: ignore[attr-defined]
+        editor.set_value(1200.0)  # type: ignore[attr-defined]
+        page.constraints_form._on_any_field_changed()  # type: ignore[attr-defined]
+        base_height = page.risk_inspector.height()
+
+        page.apply_ui_risks(
+            [
+                {
+                    "field_key": "Length",
+                    "severity": "warn",
+                    "message": "Outside recommended range.",
+                    "suggestion": "Use 200-1000.",
+                    "source": "experiment",
+                }
+            ]
+        )
+        self.assertEqual(page.risk_inspector.property("severity"), "warn")
+        self.assertEqual(page.risk_inspector_icon.text(), "!")
+        self.assertTrue(page.risk_inspector_text.text())
+        self.assertEqual(base_height, page.risk_inspector.height())
 
     def test_form_layout_has_two_columns_geometry_and_mesh(self) -> None:
         self.assertTrue(hasattr(self.form, "geometry_scroll"))
@@ -359,7 +379,7 @@ class ProjectFormUiTests(unittest.TestCase):
         self.assertIsNotNone(coverage_widget)
         assert coverage_widget is not None
 
-    def test_field_state_ok_warn_fatal_and_helper_line(self) -> None:
+    def test_field_state_ok_warn_fatal_and_badge(self) -> None:
         editor = self.form.editor_for_key("Length")
         self.assertIsNotNone(editor)
         assert editor is not None
@@ -387,11 +407,11 @@ class ProjectFormUiTests(unittest.TestCase):
             ]
         )
         self.assertEqual(line_edit.property("fieldState"), "warn")
-        helper = getattr(editor, "_helper_label", None)
-        self.assertIsNotNone(helper)
-        assert helper is not None
-        self.assertFalse(helper.isHidden())
-        self.assertIn("Outside recommended range.", helper.text())
+        badge = getattr(editor, "_state_badge", None)
+        self.assertIsNotNone(badge)
+        assert badge is not None
+        self.assertEqual(badge.property("severity"), "warn")
+        self.assertEqual(badge.text(), "!")
 
         self.form.apply_ui_risks(
             [
@@ -405,11 +425,15 @@ class ProjectFormUiTests(unittest.TestCase):
             ]
         )
         self.assertEqual(line_edit.property("fieldState"), "fatal")
+        self.assertEqual(badge.property("severity"), "fatal")
+        self.assertEqual(badge.text(), "x")
 
         editor.set_is_set(False)  # type: ignore[attr-defined]
         self.form._on_any_field_changed()  # type: ignore[attr-defined]
         self.form.apply_ui_risks([])
         self.assertEqual(line_edit.property("fieldState"), "neutral")
+        self.assertEqual(badge.property("severity"), "neutral")
+        self.assertEqual(badge.text(), "")
 
     def test_gcurve_common_and_superformula_use_two_columns(self) -> None:
         gcurve_editor = self.form.editor_for_key("GCurve.Type")

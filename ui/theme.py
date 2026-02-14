@@ -217,6 +217,47 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     QLabel#FieldStateHint[severity="fatal"] {{
         color: {c['danger_text_muted']};
     }}
+    QLabel#FieldStateBadge {{
+        color: {c['muted']};
+        font-size: 10px;
+        font-weight: 700;
+        qproperty-alignment: AlignCenter;
+    }}
+    QLabel#FieldStateBadge[severity="warn"] {{
+        color: {c['warning_border']};
+    }}
+    QLabel#FieldStateBadge[severity="fatal"] {{
+        color: {c['danger_border']};
+    }}
+    QFrame#RiskInspectorBar {{
+        background-color: {c['surface']};
+        border: 1px solid {c['border']};
+        border-radius: {r['sm']}px;
+        min-height: 26px;
+    }}
+    QFrame#RiskInspectorBar[severity="warn"] {{
+        border: 1px solid {c['warning_border']};
+    }}
+    QFrame#RiskInspectorBar[severity="fatal"] {{
+        border: 1px solid {c['danger_border']};
+    }}
+    QLabel#RiskInspectorIcon {{
+        color: {c['muted']};
+        font-size: 10px;
+        font-weight: 700;
+    }}
+    QFrame#RiskInspectorBar[severity="warn"] QLabel#RiskInspectorIcon,
+    QFrame#RiskInspectorBar[severity="warn"] QLabel#RiskInspectorText {{
+        color: {c['warning_text_muted']};
+    }}
+    QFrame#RiskInspectorBar[severity="fatal"] QLabel#RiskInspectorIcon,
+    QFrame#RiskInspectorBar[severity="fatal"] QLabel#RiskInspectorText {{
+        color: {c['danger_text_muted']};
+    }}
+    QLabel#RiskInspectorText {{
+        color: {c['muted']};
+        font-size: 11px;
+    }}
     QListWidget, QTableView, QTreeView {{
         background-color: {c['surface']};
         border: 1px solid {c['border']};
