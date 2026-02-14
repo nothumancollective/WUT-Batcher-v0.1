@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import html
 import re
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
@@ -12,7 +11,7 @@ from ui.form_schema import FieldSpec, FormSchema, ModeStackSpec, build_project_f
 
 try:
     from PySide6.QtCore import QEvent, QObject, QPoint, QRegularExpression, QTimer, Qt, Signal
-    from PySide6.QtGui import QRegularExpressionValidator
+    from PySide6.QtGui import QGuiApplication, QRegularExpressionValidator
     from PySide6.QtWidgets import (
         QButtonGroup,
         QComboBox,
@@ -64,6 +63,50 @@ class ContextFrame(QFrame):
         self.content_layout.setContentsMargins(0, 0, 0, 0)
         self.content_layout.setSpacing(8)
         root.addLayout(self.content_layout)
+
+
+class RiskHelperPopup(QFrame):
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent, Qt.ToolTip | Qt.FramelessWindowHint)
+        self.setObjectName("RiskHelperPopup")
+        self.setAttribute(Qt.WA_ShowWithoutActivating, True)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(10, 8, 10, 8)
+        root.setSpacing(0)
+        self._label = QLabel("")
+        self._label.setObjectName("RiskHelperPopupText")
+        self._label.setWordWrap(True)
+        self._label.setTextInteractionFlags(Qt.NoTextInteraction)
+        root.addWidget(self._label)
+
+    def show_for(self, anchor: QWidget, text: str, severity: str, side: str) -> None:
+        level = str(severity or "").lower()
+        self.setProperty("severity", level)
+        self._label.setText(str(text or ""))
+        if level == "warn":
+            self.setMinimumWidth(360)
+            self.setMaximumWidth(460)
+        else:
+            self.setMinimumWidth(320)
+            self.setMaximumWidth(420)
+        self.adjustSize()
+        geo = self.frameGeometry()
+        anchor_pos = anchor.mapToGlobal(QPoint(0, 0))
+        if side == "left":
+            x = anchor_pos.x() - geo.width() - 10
+        else:
+            x = anchor_pos.x() + anchor.width() + 10
+        y = anchor_pos.y() + max(0, (anchor.height() - geo.height()) // 2)
+        screen = QGuiApplication.screenAt(anchor_pos) or QGuiApplication.primaryScreen()
+        if screen is not None:
+            available = screen.availableGeometry()
+            x = max(available.left() + 4, min(x, available.right() - geo.width() - 4))
+            y = max(available.top() + 4, min(y, available.bottom() - geo.height() - 4))
+        self.move(x, y)
+        self.style().unpolish(self)
+        self.style().polish(self)
+        self.show()
+        self.raise_()
 
 
 class SectionColumn(QWidget):
@@ -880,8 +923,9 @@ class ParameterForm(QWidget):
         self._pending_hover_widget: Optional[QWidget] = None
         self._hover_tooltip_timer = QTimer(self)
         self._hover_tooltip_timer.setSingleShot(True)
-        self._hover_tooltip_timer.setInterval(120)
+        self._hover_tooltip_timer.setInterval(90)
         self._hover_tooltip_timer.timeout.connect(self._show_pending_risk_tooltip)
+        self._risk_popup = RiskHelperPopup(self.window())
 
         root = QHBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -1523,14 +1567,10 @@ class ParameterForm(QWidget):
         widget.installEventFilter(self)
         self._risk_hover_installed[widget_id] = widget
 
-    def _build_risk_helper_html(self, text: str, severity: str) -> str:
-        level = str(severity or "").lower()
-        border = "#D6A84B" if level == "warn" else "#C86A6A"
-        content = html.escape(self._normalize_helper_decimals(text)).replace("\n", "<br/>")
-        return (
-            f"<div style='border:1px solid {border}; border-radius:6px; "
-            f"padding:6px 8px; background:#1f1f1f;'>{content}</div>"
-        )
+    def _popup_side_for_widget(self, widget: QWidget) -> str:
+        form_center_x = self.mapToGlobal(self.rect().center()).x()
+        widget_center_x = widget.mapToGlobal(widget.rect().center()).x()
+        return "right" if widget_center_x < form_center_x else "left"
 
     def _show_pending_risk_tooltip(self) -> None:
         target = self._pending_hover_widget
@@ -1541,9 +1581,9 @@ class ParameterForm(QWidget):
         severity = str(target.property("riskTooltipSeverity") or "warn").strip().lower()
         if not text or severity not in {"warn", "fatal"}:
             return
-        popup = self._build_risk_helper_html(text, severity)
-        pos = target.mapToGlobal(QPoint(0, target.height() + 4))
-        QToolTip.showText(pos, popup, target, target.rect(), 7000)
+        display = self._normalize_helper_decimals(text)
+        side = self._popup_side_for_widget(target)
+        self._risk_popup.show_for(target, display, severity, side)
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # type: ignore[override]
         if isinstance(watched, QWidget):
@@ -1558,14 +1598,14 @@ class ParameterForm(QWidget):
                 if self._pending_hover_widget is watched:
                     self._pending_hover_widget = None
                     self._hover_tooltip_timer.stop()
-                QToolTip.hideText()
+                self._risk_popup.hide()
             elif etype == QEvent.ToolTip:
                 text = str(watched.property("riskTooltipText") or "").strip()
                 severity = str(watched.property("riskTooltipSeverity") or "").strip().lower()
                 if text and severity in {"warn", "fatal"}:
-                    popup = self._build_risk_helper_html(text, severity)
-                    pos = watched.mapToGlobal(QPoint(0, watched.height() + 4))
-                    QToolTip.showText(pos, popup, watched, watched.rect(), 7000)
+                    display = self._normalize_helper_decimals(text)
+                    side = self._popup_side_for_widget(watched)
+                    self._risk_popup.show_for(watched, display, severity, side)
                     return True
         return super().eventFilter(watched, event)
 
@@ -1582,6 +1622,7 @@ class ParameterForm(QWidget):
             self._repolish(widget)
         self._pending_hover_widget = None
         self._hover_tooltip_timer.stop()
+        self._risk_popup.hide()
         QToolTip.hideText()
         self._risk_widgets.clear()
         self._risk_original_tooltips.clear()
@@ -1632,20 +1673,17 @@ class ParameterForm(QWidget):
             [item for item in issues if isinstance(item, dict)],
             key=lambda item: self._risk_rank(str(item.get("severity", "info"))),
         )
-        top = ranked[:3]
-        lines: List[str] = []
-        for issue in top:
-            key = str(issue.get("field_key") or issue.get("key") or "").strip()
-            message = self._normalize_helper_decimals(str(issue.get("message", "")).strip())
-            if message:
-                if key and not message.lower().startswith(key.lower()):
-                    lines.append(f"{key}: {message}")
-                else:
-                    lines.append(message)
-            suggestion = self._normalize_helper_decimals(str(issue.get("suggestion", "")).strip())
-            if suggestion:
-                lines.append(suggestion)
-        return "\n".join(lines[:4])
+        if not ranked:
+            return ""
+        issue = ranked[0]
+        key = str(issue.get("field_key") or issue.get("key") or "").strip()
+        message = self._normalize_helper_decimals(str(issue.get("message", "")).strip())
+        suggestion = self._normalize_helper_decimals(str(issue.get("suggestion", "")).strip())
+        if message and key and not message.lower().startswith(key.lower()):
+            message = f"{key}: {message}"
+        if message and suggestion:
+            return f"{message}\n\n{suggestion}"
+        return message or suggestion
 
     def apply_ui_risks(self, issues: List[Dict[str, Any]]) -> None:
         self._clear_risk_highlights()

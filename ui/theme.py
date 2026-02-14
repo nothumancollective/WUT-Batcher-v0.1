@@ -229,6 +229,27 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     QLabel#FieldStateBadge[severity="fatal"] {{
         color: {c['danger_border']};
     }}
+    QFrame#RiskHelperPopup {{
+        background-color: {c['surface2']};
+        border: 1px solid {c['border']};
+        border-radius: {r['sm']}px;
+    }}
+    QFrame#RiskHelperPopup[severity="warn"] {{
+        border: 1px solid {c['warning_border']};
+    }}
+    QFrame#RiskHelperPopup[severity="fatal"] {{
+        border: 1px solid {c['danger_border']};
+    }}
+    QLabel#RiskHelperPopupText {{
+        color: {c['text']};
+        font-size: 11px;
+    }}
+    QFrame#RiskHelperPopup[severity="warn"] QLabel#RiskHelperPopupText {{
+        color: {c['warning_text_muted']};
+    }}
+    QFrame#RiskHelperPopup[severity="fatal"] QLabel#RiskHelperPopupText {{
+        color: {c['danger_text_muted']};
+    }}
     QToolTip {{
         background-color: {c['surface2']};
         color: {c['text']};
