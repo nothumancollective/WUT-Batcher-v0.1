@@ -240,6 +240,84 @@ class AkabakDriver:
         }
         return bool(payload["ok"]), payload
 
+    def _find_interpreter_modal(self, *, interpreter_window: Any) -> Optional[Any]:
+        rows = self._child_windows(interpreter_window, class_name_regex=r"(#32770|Dialog)")
+        if rows:
+            return rows[0]
+        return None
+
+    def _modal_details(self, modal_window: Any) -> Dict[str, Any]:
+        details: Dict[str, Any] = {"title": self._window_title(modal_window), "class_name": "", "message": "", "buttons": []}
+        try:
+            info = modal_window.element_info
+            details["class_name"] = str(getattr(info, "class_name", "") or "")
+        except Exception:
+            pass
+        messages: List[str] = []
+        buttons: List[str] = []
+        try:
+            for control in modal_window.descendants():
+                text = self._window_title(control)
+                if not text:
+                    continue
+                control_type = ""
+                try:
+                    control_type = str(getattr(control.element_info, "control_type", "") or "")
+                except Exception:
+                    control_type = ""
+                if control_type == "Button":
+                    buttons.append(text)
+                elif control_type in {"Text", "Document"}:
+                    messages.append(text)
+        except Exception:
+            pass
+        details["buttons"] = buttons[:8]
+        details["message"] = " | ".join(messages[:4])
+        return details
+
+    def _invoke_modal_primary(self, *, modal_window: Any, step: str) -> bool:
+        # Deterministic non-visual modal handling: prefer explicit button invoke on OK/Yes.
+        target = self._find_first_control(
+            modal_window,
+            control_type="Button",
+            title_regex=r"(ok|yes|ja|continue|fortfahren|close|schliessen)",
+        )
+        if target is None:
+            target = self._find_first_control(modal_window, control_type="Button")
+        if target is None:
+            return False
+        handle = self._window_handle(target)
+        try:
+            if hasattr(target, "invoke"):
+                target.invoke()
+                return True
+        except Exception:
+            pass
+        if handle > 0:
+            self._user32().SendMessageW(handle, BM_CLICK, 0, 0)
+            return True
+        return False
+
+    def _import_transition_state(self, *, main_window: Any) -> Tuple[bool, Dict[str, Any]]:
+        interpreter = self._find_interpreter_window(main_window=main_window)
+        if interpreter is None:
+            return True, {"status": "interpreter_closed"}
+        modal = self._find_interpreter_modal(interpreter_window=interpreter)
+        if modal is not None:
+            return True, {"status": "modal_detected", "modal_window": modal}
+        start_button = self._find_first_control(
+            interpreter,
+            class_name_regex=r"TRzBitBtn",
+            title_regex=r"start\s+importing",
+        )
+        if start_button is not None:
+            try:
+                if not bool(start_button.is_enabled()):
+                    return True, {"status": "start_button_disabled"}
+            except Exception:
+                pass
+        return False, {"status": "waiting"}
+
     def _write_open_dialog_diagnostics(
         self,
         *,
@@ -352,6 +430,25 @@ class AkabakDriver:
             return matches[0]
         return None
 
+    def _open_dialog_via_main_menu(self, *, main_window: Any, step: str, timeout_s: float) -> Any:
+        hwnd = self._window_handle(main_window)
+        self._require(hwnd > 0, "AKABAK main window handle unavailable for menu-select path.", step)
+        try:
+            from pywinauto import Desktop
+        except Exception as exc:
+            raise RuntimeError(f"pywinauto Desktop unavailable for menu-select: {exc!r}") from exc
+        win32_main = Desktop(backend="win32").window(handle=hwnd)
+        win32_main.menu_select("File->Open project...")
+        file_dialog = wait_until(
+            predicate=lambda: (
+                self._find_open_file_dialog(main_window=main_window) is not None,
+                self._find_open_file_dialog(main_window=main_window),
+            ),
+            timeout_s=max(2.0, float(timeout_s)),
+        )
+        self._log(level="info", step=step, event="open_dialog_opened_via_main_menu", payload={"menu_path": "File->Open project..."})
+        return file_dialog
+
     def _send_import_command(self, *, main_window: Any, step: str) -> None:
         hwnd = self._window_handle(main_window)
         self._require(hwnd > 0, "AKABAK main window handle unavailable.", step)
@@ -374,7 +471,7 @@ class AkabakDriver:
             payload={"command_id": IMPORT_ABEC_COMMAND_ID, "result": int(result.value)},
         )
 
-    def _trigger_interpreter_open_button(self, *, interpreter_window: Any, step: str) -> None:
+    def _trigger_interpreter_open_button(self, *, main_window: Any, interpreter_window: Any, step: str) -> None:
         target = None
         try:
             for control in interpreter_window.descendants():
@@ -386,14 +483,61 @@ class AkabakDriver:
             target = None
         self._require(target is not None, "Interpreter button 'Open ABEC Project' not found.", step)
         handle = self._window_handle(target)
-        self._require(handle > 0, "Interpreter open button handle unavailable.", step)
-        self._send_key_space(handle)
-        self._log(
-            level="info",
-            step=step,
-            event="interpreter_open_button_triggered",
-            payload={"handle": handle},
-        )
+        attempts: List[Dict[str, Any]] = []
+
+        def _action(method_name: str, fn) -> bool:
+            try:
+                fn()
+            except Exception as exc:
+                attempts.append({"method": method_name, "result": "error", "error": repr(exc)})
+                return False
+            try:
+                dialog = wait_until(
+                    predicate=lambda: (
+                        self._find_open_file_dialog(main_window=main_window) is not None,
+                        self._find_open_file_dialog(main_window=main_window),
+                    ),
+                    timeout_s=2.5,
+                )
+                attempts.append({"method": method_name, "result": "ok", "dialog_visible": dialog is not None})
+                return True
+            except TimeoutError:
+                attempts.append({"method": method_name, "result": "timeout", "dialog_visible": False})
+                return False
+
+        try:
+            target.set_focus()
+        except Exception:
+            pass
+        if hasattr(target, "invoke") and _action("uia_invoke", lambda: target.invoke()):
+            self._log(level="info", step=step, event="interpreter_open_button_triggered", payload={"handle": handle, "attempts": attempts})
+            return
+        if hasattr(target, "click") and _action("uia_click", lambda: target.click()):
+            self._log(level="info", step=step, event="interpreter_open_button_triggered", payload={"handle": handle, "attempts": attempts})
+            return
+        if hasattr(target, "type_keys") and _action(
+            "scoped_type_space",
+            lambda: target.type_keys("{SPACE}", set_foreground=True),
+        ):
+            self._log(level="info", step=step, event="interpreter_open_button_triggered", payload={"handle": handle, "attempts": attempts})
+            return
+        if hasattr(target, "type_keys") and _action(
+            "scoped_type_enter",
+            lambda: target.type_keys("{ENTER}", set_foreground=True),
+        ):
+            self._log(level="info", step=step, event="interpreter_open_button_triggered", payload={"handle": handle, "attempts": attempts})
+            return
+        if handle > 0 and _action("key_space", lambda: self._send_key_space(handle)):
+            self._log(level="info", step=step, event="interpreter_open_button_triggered", payload={"handle": handle, "attempts": attempts})
+            return
+        if handle > 0 and _action("key_enter", lambda: self._send_key_enter(handle)):
+            self._log(level="info", step=step, event="interpreter_open_button_triggered", payload={"handle": handle, "attempts": attempts})
+            return
+        if handle > 0 and _action("bm_click", lambda: self._user32().SendMessageW(handle, BM_CLICK, 0, 0)):
+            self._log(level="info", step=step, event="interpreter_open_button_triggered", payload={"handle": handle, "attempts": attempts})
+            return
+        self._log(level="error", step=step, event="interpreter_open_button_failed", payload={"handle": handle, "attempts": attempts})
+        self._require(False, "Interpreter open button invocation failed.", step)
 
     def _submit_open_file_dialog(
         self,
@@ -609,22 +753,36 @@ class AkabakDriver:
         self._log(level="info", step=step, event="action_open_shortcut", payload={"project": project_path})
         try:
             main_window.set_focus()
-            self._send_import_command(main_window=main_window, step=step)
-            interpreter = wait_until(
-                predicate=lambda: (
-                    self._find_interpreter_window(main_window=main_window) is not None,
-                    self._find_interpreter_window(main_window=main_window),
-                ),
-                timeout_s=min(float(self.step_timeout_s), 8.0),
-            )
-            self._trigger_interpreter_open_button(interpreter_window=interpreter, step=step)
-            file_dialog = wait_until(
-                predicate=lambda: (
-                    self._find_open_file_dialog(main_window=main_window) is not None,
-                    self._find_open_file_dialog(main_window=main_window),
-                ),
-                timeout_s=min(float(self.step_timeout_s), 8.0),
-            )
+            open_dialog_timeout = min(float(self.step_timeout_s), 20.0)
+            try:
+                file_dialog = self._open_dialog_via_main_menu(
+                    main_window=main_window,
+                    step=step,
+                    timeout_s=open_dialog_timeout,
+                )
+            except Exception as exc:
+                self._log(
+                    level="info",
+                    step=step,
+                    event="open_dialog_main_menu_fallback",
+                    payload={"reason": repr(exc)},
+                )
+                self._send_import_command(main_window=main_window, step=step)
+                interpreter = wait_until(
+                    predicate=lambda: (
+                        self._find_interpreter_window(main_window=main_window) is not None,
+                        self._find_interpreter_window(main_window=main_window),
+                    ),
+                    timeout_s=min(float(self.step_timeout_s), 20.0),
+                )
+                self._trigger_interpreter_open_button(main_window=main_window, interpreter_window=interpreter, step=step)
+                file_dialog = wait_until(
+                    predicate=lambda: (
+                        self._find_open_file_dialog(main_window=main_window) is not None,
+                        self._find_open_file_dialog(main_window=main_window),
+                    ),
+                    timeout_s=open_dialog_timeout,
+                )
             self._submit_open_file_dialog(
                 main_window=main_window,
                 file_dialog=file_dialog,
@@ -669,15 +827,49 @@ class AkabakDriver:
         self._require(target is not None, "Interpreter 'Start Importing' button not found.", step)
         handle = self._window_handle(target)
         self._require(handle > 0, "Interpreter start-importing button handle unavailable.", step)
-        self._send_key_space(handle)
-        wait_until(
-            predicate=lambda: (
-                self._find_interpreter_window(main_window=main_window) is None,
-                None,
-            ),
+
+        invoke_method = ""
+        try:
+            if hasattr(target, "invoke"):
+                target.invoke()
+                invoke_method = "uia_invoke"
+        except Exception:
+            invoke_method = ""
+        if not invoke_method and hasattr(target, "click"):
+            try:
+                target.click()
+                invoke_method = "uia_click"
+            except Exception:
+                invoke_method = ""
+        if not invoke_method:
+            self._send_key_space(handle)
+            invoke_method = "key_space"
+
+        transition = wait_until(
+            predicate=lambda: self._import_transition_state(main_window=main_window),
             timeout_s=min(float(self.step_timeout_s), 20.0),
         )
-        self._log(level="info", step=step, event="import_triggered", payload={"button_handle": handle})
+        status = str(transition.get("status", "unknown"))
+        if status == "modal_detected":
+            modal = transition.get("modal_window")
+            details = self._modal_details(modal) if modal is not None else {"title": "unknown", "message": ""}
+            dismissed = False
+            if modal is not None:
+                dismissed = self._invoke_modal_primary(modal_window=modal, step=step)
+            self._log(
+                level="error",
+                step=step,
+                event="import_modal_detected",
+                payload={"modal": details, "dismissed": dismissed},
+            )
+            raise RuntimeError(f"AKABAK import modal detected: {details}")
+
+        self._log(
+            level="info",
+            step=step,
+            event="import_triggered",
+            payload={"button_handle": handle, "invoke_method": invoke_method, "transition": transition},
+        )
         return AkabakDriverResult(ok=True, status=self.state, details={"import_needed": False})
 
     def run_solve(self) -> AkabakDriverResult:
