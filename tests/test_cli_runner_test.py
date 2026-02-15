@@ -73,6 +73,43 @@ class CliRunnerTestTests(unittest.TestCase):
             self.assertEqual(payload["phase"], "phase2_commit5_e2e")
             self.assertEqual(len(payload["runs"]), 1)
 
+    def test_runner_test_open_dialog_only_command_executes_skeleton(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            workspace_root = root / "workspace"
+            abec_path = root / "sample.abec"
+            abec_path.write_text("ABEC_SAMPLE\n", encoding="utf-8")
+            akabak_path = root / "akabak.exe"
+            akabak_path.write_text("stub\n", encoding="utf-8")
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "app",
+                    "runner-test",
+                    "open-dialog-only",
+                    "--abec-path",
+                    str(abec_path),
+                    "--akabak-exe",
+                    str(akabak_path),
+                    "--workspace-root",
+                    str(workspace_root),
+                    "--dry-run",
+                ],
+                env=self._isolated_env(tmp_dir),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, msg=result.stdout + "\n" + result.stderr)
+            payload = json.loads(result.stdout)
+            self.assertTrue(payload["ok"])
+            self.assertEqual(payload["phase"], "phase_open_dialog_only")
+            self.assertEqual(payload["mode"], "open_dialog_only")
+            self.assertEqual(len(payload["runs"]), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

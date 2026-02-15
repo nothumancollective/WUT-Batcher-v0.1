@@ -585,6 +585,23 @@ def cmd_runner_test_run(args: argparse.Namespace) -> int:
     return 0 if summary.get("ok", False) else 4
 
 
+def cmd_runner_test_open_dialog_only(args: argparse.Namespace) -> int:
+    from app.runner_test_harness import run_runner_test_open_dialog_only
+
+    settings_store = SettingsStore()
+    settings = settings_store.load()
+    executable = args.akabak_exe or settings.akabak_exe
+    summary = run_runner_test_open_dialog_only(
+        akabak_executable=executable,
+        abec_path=args.abec_path,
+        repeats=args.repeats,
+        workspace_root=args.workspace_root,
+        dry_run=bool(args.dry_run),
+    )
+    print(json.dumps(summary, indent=2, ensure_ascii=False, default=_json_default))
+    return 0 if summary.get("ok", False) else 4
+
+
 def _resolve_run_project_id(service: OrchestratorService, run_id: str, project_id: Optional[str]) -> str:
     if project_id:
         return project_id
@@ -794,6 +811,30 @@ def build_parser() -> argparse.ArgumentParser:
         help="Stop before launching ATH/AKABAK/VACS (CFG+DB+cleanup wiring only).",
     )
     p_runner_test_run.set_defaults(func=cmd_runner_test_run)
+
+    p_runner_test_open_dialog_only = sub_runner_test.add_parser(
+        "open-dialog-only",
+        help="Micro-harness for AKABAK open-file dialog determinism (start -> open dialog -> set path -> confirm -> close).",
+    )
+    p_runner_test_open_dialog_only.add_argument("--abec-path", required=True, help="ABEC file to open in AKABAK.")
+    p_runner_test_open_dialog_only.add_argument("--akabak-exe", help="Override AKABAK executable path")
+    p_runner_test_open_dialog_only.add_argument(
+        "--repeats",
+        type=int,
+        default=1,
+        help="Sequential repetitions for dialog flake detection.",
+    )
+    p_runner_test_open_dialog_only.add_argument(
+        "--workspace-root",
+        default="runner_test_workspace",
+        help="Dedicated workspace root for harness artifacts.",
+    )
+    p_runner_test_open_dialog_only.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Write DB telemetry without launching AKABAK.",
+    )
+    p_runner_test_open_dialog_only.set_defaults(func=cmd_runner_test_open_dialog_only)
 
     p_theme = sub.add_parser("theme", help="Theme tooling.")
     sub_theme = p_theme.add_subparsers(dest="theme_cmd", required=True)
