@@ -67,6 +67,7 @@ class AkabakDriver:
         self.logger = StructuredStepLogger(self.log_dir / "akabak_driver.log.jsonl")
         self.watchdog: Optional[ModalDialogWatchdog] = None
         self.last_open_dialog_diagnostics_path: Optional[str] = None
+        self.last_import_diagnostics_path: Optional[str] = None
 
     def _log(self, *, level: str, step: str, event: str, payload: Dict[str, Any]) -> None:
         self.logger.write(level=level, step=step, event=event, payload=payload)
@@ -318,6 +319,78 @@ class AkabakDriver:
                 pass
         return False, {"status": "waiting"}
 
+    def _import_apply_ready_state(self, *, main_window: Any) -> Tuple[bool, Dict[str, Any]]:
+        interpreter = self._find_interpreter_window(main_window=main_window)
+        if interpreter is None:
+            return True, {"status": "interpreter_closed_before_apply"}
+        modal = self._find_interpreter_modal(interpreter_window=interpreter)
+        if modal is not None:
+            return True, {"status": "modal_detected", "modal_window": modal}
+        apply_button = self._find_first_control(
+            interpreter,
+            class_name_regex=r"TRzBitBtn",
+            title_regex=r"apply",
+        )
+        if apply_button is None:
+            return False, {"status": "waiting_apply_button"}
+        try:
+            if bool(apply_button.is_enabled()):
+                return True, {"status": "apply_ready", "apply_button": apply_button}
+        except Exception:
+            return True, {"status": "apply_ready", "apply_button": apply_button}
+        return False, {"status": "waiting_apply_button_enabled"}
+
+    def _import_post_apply_state(self, *, main_window: Any) -> Tuple[bool, Dict[str, Any]]:
+        interpreter = self._find_interpreter_window(main_window=main_window)
+        if interpreter is None:
+            return True, {"status": "interpreter_closed"}
+        modal = self._find_interpreter_modal(interpreter_window=interpreter)
+        if modal is not None:
+            return True, {"status": "modal_detected", "modal_window": modal}
+        start_button = self._find_first_control(
+            interpreter,
+            class_name_regex=r"TRzBitBtn",
+            title_regex=r"start\\s+importing",
+        )
+        if start_button is not None:
+            try:
+                if not bool(start_button.is_enabled()):
+                    return True, {"status": "start_button_disabled"}
+            except Exception:
+                pass
+        return False, {"status": "waiting_post_apply"}
+
+    def _invoke_interpreter_button(self, *, interpreter_window: Any, title_regex: str, step: str, action_name: str) -> Dict[str, Any]:
+        target = self._find_first_control(
+            interpreter_window,
+            class_name_regex=r"TRzBitBtn|TRzMenuButton",
+            title_regex=title_regex,
+        )
+        self._require(target is not None, f"Interpreter button for '{action_name}' not found.", step)
+        handle = self._window_handle(target)
+        invoke_method = ""
+        try:
+            target.set_focus()
+        except Exception:
+            pass
+        try:
+            if hasattr(target, "invoke"):
+                target.invoke()
+                invoke_method = "uia_invoke"
+        except Exception:
+            invoke_method = ""
+        if not invoke_method and hasattr(target, "click"):
+            try:
+                target.click()
+                invoke_method = "uia_click"
+            except Exception:
+                invoke_method = ""
+        if not invoke_method and handle > 0:
+            self._send_key_space(handle)
+            invoke_method = "key_space"
+        self._require(bool(invoke_method), f"Interpreter button invoke failed for '{action_name}'.", step)
+        return {"handle": handle, "invoke_method": invoke_method, "action_name": action_name}
+
     def _write_open_dialog_diagnostics(
         self,
         *,
@@ -376,6 +449,67 @@ class AkabakDriver:
             payload["control_dump_path"] = str(txt_path)
         except Exception as exc:
             payload["control_dump_error"] = repr(exc)
+
+        try:
+            json_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        except Exception:
+            return None
+        return json_path
+
+    def _write_interpreter_diagnostics(
+        self,
+        *,
+        step: str,
+        main_window: Any,
+        interpreter_window: Optional[Any],
+        reason: str,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> Optional[Path]:
+        self.log_dir.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        base = self.log_dir / f"import_failure_{stamp}"
+        json_path = base.with_suffix(".json")
+        txt_path = base.with_suffix(".txt")
+        payload: Dict[str, Any] = {
+            "step": step,
+            "reason": reason,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "context": dict(context or {}),
+        }
+        if interpreter_window is not None:
+            payload["interpreter_signature"] = {
+                "title": self._window_title(interpreter_window),
+                "class_name": str(getattr(interpreter_window.element_info, "class_name", "") or ""),
+                "control_type": str(getattr(interpreter_window.element_info, "control_type", "") or ""),
+                "native_handle": self._window_handle(interpreter_window),
+            }
+        else:
+            payload["interpreter_signature"] = {"missing": True}
+
+        for key, control in (("main_window", main_window), ("interpreter_window", interpreter_window)):
+            if control is None:
+                continue
+            lines: List[str] = []
+            try:
+                for child in list(control.descendants())[:400]:
+                    info = child.element_info
+                    lines.append(
+                        "\t".join(
+                            [
+                                str(getattr(info, "control_type", "") or ""),
+                                str(getattr(info, "automation_id", "") or ""),
+                                str(getattr(info, "class_name", "") or ""),
+                                self._window_title(child),
+                                str(int(getattr(info, "handle", 0) or 0)),
+                            ]
+                        )
+                    )
+            except Exception as exc:
+                lines.append(f"<dump_error>\t{repr(exc)}")
+            payload[f"{key}_control_count"] = len(lines)
+            payload[f"{key}_control_dump_path"] = str(txt_path.with_name(f"{txt_path.stem}_{key}{txt_path.suffix}"))
+            dump_path = Path(payload[f"{key}_control_dump_path"])
+            dump_path.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
 
         try:
             json_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -804,6 +938,7 @@ class AkabakDriver:
 
     def import_if_needed(self) -> AkabakDriverResult:
         step = "import_if_needed"
+        self.last_import_diagnostics_path = None
         self._connect()
         self._require(self.state in {"project_open", "running", "completed"}, "Project must be open first.", step)
         main_window = self.session.find_window(
@@ -813,64 +948,97 @@ class AkabakDriver:
         self._require(main_window is not None, "AKABAK main window is unavailable.", step)
         interpreter = self._find_interpreter_window(main_window=main_window)
         if interpreter is None:
-            self._log(level="info", step=step, event="idempotent_noop", payload={"state": self.state})
-            return AkabakDriverResult(ok=True, status=self.state, details={"import_needed": False})
-        target = None
-        try:
-            for control in interpreter.descendants():
-                title = str(control.window_text() or "").strip()
-                if re.search(r"start\s+importing", title, re.IGNORECASE):
-                    target = control
-                    break
-        except Exception:
-            target = None
-        self._require(target is not None, "Interpreter 'Start Importing' button not found.", step)
-        handle = self._window_handle(target)
-        self._require(handle > 0, "Interpreter start-importing button handle unavailable.", step)
+            diagnostics_path = self._write_interpreter_diagnostics(
+                step=step,
+                main_window=main_window,
+                interpreter_window=None,
+                reason="interpreter_window_missing",
+                context={"state": self.state},
+            )
+            self.last_import_diagnostics_path = str(diagnostics_path) if diagnostics_path is not None else None
+            raise RuntimeError(
+                "AKABAK interpreter window missing before import-start-apply flow."
+                + (f" diagnostics={self.last_import_diagnostics_path}" if self.last_import_diagnostics_path else "")
+            )
 
-        invoke_method = ""
+        attempt_trace: List[Dict[str, Any]] = []
         try:
-            if hasattr(target, "invoke"):
-                target.invoke()
-                invoke_method = "uia_invoke"
-        except Exception:
-            invoke_method = ""
-        if not invoke_method and hasattr(target, "click"):
-            try:
-                target.click()
-                invoke_method = "uia_click"
-            except Exception:
-                invoke_method = ""
-        if not invoke_method:
-            self._send_key_space(handle)
-            invoke_method = "key_space"
+            start_action = self._invoke_interpreter_button(
+                interpreter_window=interpreter,
+                title_regex=r"start\s+importing",
+                step=step,
+                action_name="start_importing",
+            )
+            attempt_trace.append({"phase": "start_importing", **start_action})
 
-        transition = wait_until(
-            predicate=lambda: self._import_transition_state(main_window=main_window),
-            timeout_s=min(float(self.step_timeout_s), 20.0),
-        )
-        status = str(transition.get("status", "unknown"))
-        if status == "modal_detected":
-            modal = transition.get("modal_window")
-            details = self._modal_details(modal) if modal is not None else {"title": "unknown", "message": ""}
-            dismissed = False
-            if modal is not None:
-                dismissed = self._invoke_modal_primary(modal_window=modal, step=step)
+            apply_ready = wait_until(
+                predicate=lambda: self._import_apply_ready_state(main_window=main_window),
+                timeout_s=min(float(self.step_timeout_s), 30.0),
+            )
+            apply_status = str(apply_ready.get("status", "unknown"))
+            attempt_trace.append({"phase": "wait_apply_ready", "status": apply_status})
+            if apply_status == "modal_detected":
+                modal = apply_ready.get("modal_window")
+                modal_details = self._modal_details(modal) if modal is not None else {"title": "unknown", "message": ""}
+                dismissed = bool(modal is not None and self._invoke_modal_primary(modal_window=modal, step=step))
+                attempt_trace.append({"phase": "modal_detected_before_apply", "modal": modal_details, "dismissed": dismissed})
+                raise RuntimeError(f"AKABAK import modal before apply: {modal_details}")
+
+            interpreter_for_apply = self._find_interpreter_window(main_window=main_window) or interpreter
+            apply_action = self._invoke_interpreter_button(
+                interpreter_window=interpreter_for_apply,
+                title_regex=r"apply",
+                step=step,
+                action_name="apply",
+            )
+            attempt_trace.append({"phase": "apply", **apply_action})
+
+            post_apply = wait_until(
+                predicate=lambda: self._import_post_apply_state(main_window=main_window),
+                timeout_s=min(float(self.step_timeout_s), 30.0),
+            )
+            post_status = str(post_apply.get("status", "unknown"))
+            attempt_trace.append({"phase": "post_apply", "status": post_status})
+            if post_status == "modal_detected":
+                modal = post_apply.get("modal_window")
+                modal_details = self._modal_details(modal) if modal is not None else {"title": "unknown", "message": ""}
+                dismissed = bool(modal is not None and self._invoke_modal_primary(modal_window=modal, step=step))
+                attempt_trace.append({"phase": "modal_detected_after_apply", "modal": modal_details, "dismissed": dismissed})
+                raise RuntimeError(f"AKABAK import modal after apply: {modal_details}")
+            if post_status not in {"start_button_disabled", "interpreter_closed"}:
+                raise RuntimeError(f"AKABAK import postcondition failed: {post_status}")
+        except Exception as exc:
+            interpreter_now = self._find_interpreter_window(main_window=main_window)
+            diagnostics_path = self._write_interpreter_diagnostics(
+                step=step,
+                main_window=main_window,
+                interpreter_window=interpreter_now,
+                reason="import_start_apply_failed",
+                context={"attempt_trace": attempt_trace, "error": str(exc)},
+            )
+            self.last_import_diagnostics_path = str(diagnostics_path) if diagnostics_path is not None else None
             self._log(
                 level="error",
                 step=step,
-                event="import_modal_detected",
-                payload={"modal": details, "dismissed": dismissed},
+                event="import_start_apply_failed",
+                payload={"error": str(exc), "attempt_trace": attempt_trace, "diagnostics_path": self.last_import_diagnostics_path},
             )
-            raise RuntimeError(f"AKABAK import modal detected: {details}")
+            raise RuntimeError(
+                str(exc)
+                + (f" diagnostics={self.last_import_diagnostics_path}" if self.last_import_diagnostics_path else "")
+            ) from exc
 
         self._log(
             level="info",
             step=step,
-            event="import_triggered",
-            payload={"button_handle": handle, "invoke_method": invoke_method, "transition": transition},
+            event="import_start_apply_ok",
+            payload={"attempt_trace": attempt_trace},
         )
-        return AkabakDriverResult(ok=True, status=self.state, details={"import_needed": False})
+        return AkabakDriverResult(
+            ok=True,
+            status=self.state,
+            details={"import_needed": True, "import_mode": "start_importing_apply", "attempt_trace": attempt_trace},
+        )
 
     def run_solve(self) -> AkabakDriverResult:
         step = "run_solve"

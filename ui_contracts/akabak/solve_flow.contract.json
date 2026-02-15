@@ -18,6 +18,22 @@
         "process_name": "akabak.exe",
         "class_name_regex": "(TForm_Interpreter)",
         "control_type": "Window"
+      },
+      "required_controls": [
+        {
+          "class_name_regex": "(TRzBitBtn|TRzMenuButton)",
+          "title_regex": "(Start Importing|Apply|Open ABEC Project)"
+        }
+      ]
+    },
+    {
+      "signature_id": "akabak_interpreter_error_modal",
+      "optional": true,
+      "match": {
+        "process_name": "akabak.exe",
+        "class_name_regex": "(#32770)",
+        "control_type": "Window",
+        "title_regex": "(Error|Fehler)"
       }
     },
     {
@@ -61,6 +77,12 @@
       "title_regex": "(warning|confirm|notice)",
       "message_regex": "(overwrite|continue|already exists)",
       "action": "ok"
+    },
+    {
+      "rule_id": "missing_mesh_file_error",
+      "title_regex": "(error|fehler)",
+      "message_regex": "(cannot\\s+find\\s+mesh-file|mesh-file)",
+      "action": "ok"
     }
   ],
   "actions": [
@@ -79,6 +101,23 @@
         "Tier C LAST_RESORT: scoped type_keys(path)+Enter only after verified keyboard focus on filename Edit"
       ],
       "postcondition": "open_file_dialog_absent AND project_loaded_signal_present"
+    },
+    {
+      "step": "import_start_apply",
+      "selector_priority": [
+        "automation_id",
+        "control_type",
+        "class_name",
+        "native_window_handle",
+        "title_regex"
+      ],
+      "action_sequence": [
+        "invoke Start Importing button",
+        "wait until Apply button is visible/enabled",
+        "invoke Apply button"
+      ],
+      "postcondition": "interpreter_closed OR start_importing_disabled",
+      "modal_handling": "known interpreter modal dialogs are captured and classified; unknown modals fail fast"
     },
     {
       "step": "run_solve",

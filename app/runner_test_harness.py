@@ -14,7 +14,7 @@ import time
 import uuid
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from app.akabak_driver import AkabakDriver
+from app.akabak_driver import AkabakDriver, AkabakDriverResult
 from app.cfg_renderer import render_cfg_text
 from app.export_specs import parse_export_specs
 from app.models import Batch, ParamSelection, Project, ProjectConstraints, SweepSpec
@@ -850,13 +850,16 @@ def run_runner_test_harness(
                 except Exception:
                     _register_akabak_pid()
                     pid = int(akabak_driver.session.process_id or 0)
-                    diagnostics_path = str(getattr(akabak_driver, "last_open_dialog_diagnostics_path", "") or "").strip()
-                    if diagnostics_path:
+                    diagnostics_paths = [
+                        str(getattr(akabak_driver, "last_open_dialog_diagnostics_path", "") or "").strip(),
+                        str(getattr(akabak_driver, "last_import_diagnostics_path", "") or "").strip(),
+                    ]
+                    for diagnostics_path in [item for item in diagnostics_paths if item]:
                         diag_file = Path(diagnostics_path)
                         if diag_file.exists() and diag_file.is_file():
                             db.add_artifact(
                                 test_run_id=test_run_id,
-                                kind="akabak_open_dialog_diagnostics",
+                                kind="akabak_failure_diagnostics",
                                 path=str(diag_file),
                                 sha256=_sha256_file(diag_file),
                                 bytes_size=diag_file.stat().st_size,
@@ -866,7 +869,7 @@ def run_runner_test_harness(
                                 app="akabak",
                                 window_signature={"diagnostics_path": str(diag_file)},
                                 control_dump_path=str(diag_file),
-                                notes="akabak_open_dialog_failure_dump",
+                                notes="akabak_failure_dump",
                             )
                     _capture_ui_observation(
                         db=db,
@@ -1493,6 +1496,403 @@ def run_runner_test_open_dialog_only(
         "ok": ok,
         "phase": "phase_open_dialog_only",
         "mode": "open_dialog_only",
+        "repeats": effective_repeats,
+        "workspace": workspace.to_dict(),
+        "db_path": str(workspace.db_path),
+        "dry_run": bool(dry_run),
+        "akabak_executable": str(akabak_input),
+        "abec_path": str(abec_input),
+        "runs": [run.to_dict() for run in runs],
+    }
+
+
+def run_runner_test_import_start_apply_only(
+    *,
+    akabak_executable: str | Path,
+    abec_path: str | Path,
+    repeats: int = 1,
+    workspace_root: str | Path = "runner_test_workspace",
+    dry_run: bool = False,
+) -> Dict[str, Any]:
+    workspace = resolve_runner_test_workspace(workspace_root)
+    db = RunnerTestDb(workspace.db_path)
+    tracker = HarnessProcessTracker(workspace.logs_dir / "process_ledger.json")
+
+    abec_input = Path(abec_path).expanduser().resolve()
+    akabak_input = Path(akabak_executable).expanduser().resolve()
+    effective_repeats = max(1, int(repeats))
+    runs: List[RunnerTestHarnessRun] = []
+
+    for _ in range(effective_repeats):
+        test_run_id = str(uuid.uuid4())
+        version_id = f"IMPORT_APPLY_{test_run_id[:8]}"
+        run_status = "failed"
+        notes = "import-start-apply-only failed"
+        started_pids: List[int] = []
+
+        db.create_test_run(
+            test_run_id=test_run_id,
+            status="running",
+            git_commit=_detect_git_commit(),
+            machine_info=_collect_machine_info(),
+            tool_versions={
+                "akabak_executable": str(akabak_input),
+                "abec_path": str(abec_input),
+                "mode": "import_start_apply_only",
+            },
+            notes=f"import_start_apply_only repeats={effective_repeats}",
+        )
+
+        try:
+            preflight_started = _now_iso()
+            stale_kill_results = tracker.kill_stale()
+            missing_inputs: List[str] = []
+            if not dry_run:
+                if not akabak_input.exists() or not akabak_input.is_file():
+                    missing_inputs.append(f"akabak_executable:not_found:{akabak_input}")
+                if not abec_input.exists() or not abec_input.is_file():
+                    missing_inputs.append(f"abec_path:not_found:{abec_input}")
+            db.add_test_run_step(
+                test_run_id=test_run_id,
+                step_name="preflight",
+                status="ok" if not missing_inputs else "failed",
+                started_at=preflight_started,
+                finished_at=_now_iso(),
+                details={
+                    "dry_run": bool(dry_run),
+                    "workspace": workspace.to_dict(),
+                    "stale_process_cleanup": stale_kill_results,
+                    "akabak_executable": str(akabak_input),
+                    "abec_path": str(abec_input),
+                },
+                error={"missing_inputs": missing_inputs} if missing_inputs else {},
+            )
+            if missing_inputs:
+                notes = "preflight missing inputs"
+                raise RuntimeError("missing inputs for import-start-apply-only harness")
+
+            db.upsert_run(
+                run_id=test_run_id,
+                project_id="P_RUNNER_TEST",
+                batch_id="B_RUNNER_TEST",
+                status="running",
+            )
+            db.upsert_version(
+                version_id=version_id,
+                project_id="P_RUNNER_TEST",
+                batch_id="B_RUNNER_TEST",
+                status="running",
+                finished_at=None,
+            )
+            db.upsert_run_version(
+                run_id=test_run_id,
+                version_id=version_id,
+                project_id="P_RUNNER_TEST",
+                batch_id="B_RUNNER_TEST",
+                status="running",
+                finished_at=None,
+            )
+
+            db.add_artifact(
+                test_run_id=test_run_id,
+                kind="abec_input",
+                path=str(abec_input),
+                sha256=_sha256_file(abec_input) if abec_input.exists() and abec_input.is_file() else None,
+                bytes_size=abec_input.stat().st_size if abec_input.exists() and abec_input.is_file() else None,
+            )
+
+            if dry_run:
+                db.add_test_run_step(
+                    test_run_id=test_run_id,
+                    step_name="import_start_apply_only",
+                    status="skipped",
+                    started_at=_now_iso(),
+                    finished_at=_now_iso(),
+                    details={"reason": "dry_run"},
+                )
+                db.add_validation(
+                    test_run_id=test_run_id,
+                    validation_name="import_start_apply_postcondition",
+                    status="skipped",
+                    metrics={"reason": "dry_run"},
+                    message="import start/apply flow skipped in dry-run mode",
+                )
+                run_status = "dry_run_completed"
+                notes = "import-start-apply-only dry run completed"
+            else:
+                akabak_driver = AkabakDriver(
+                    executable=str(akabak_input),
+                    log_dir=workspace.logs_dir / test_run_id / "akabak",
+                )
+                akabak_pid_registered = False
+
+                def _register_akabak_pid() -> None:
+                    nonlocal akabak_pid_registered
+                    if akabak_pid_registered:
+                        return
+                    pid_local = int(akabak_driver.session.process_id or 0)
+                    started_local = bool(getattr(akabak_driver.session, "started_process", False))
+                    if pid_local > 0 and started_local:
+                        tracker.register(
+                            run_id=test_run_id,
+                            app="akabak",
+                            pid=pid_local,
+                            started_by_harness=True,
+                        )
+                        started_pids.append(pid_local)
+                        akabak_pid_registered = True
+
+                def _persist_driver_diagnostics(step_note: str) -> List[str]:
+                    diagnostics_paths = [
+                        str(getattr(akabak_driver, "last_open_dialog_diagnostics_path", "") or "").strip(),
+                        str(getattr(akabak_driver, "last_import_diagnostics_path", "") or "").strip(),
+                    ]
+                    persisted: List[str] = []
+                    for diagnostics_path in [item for item in diagnostics_paths if item]:
+                        diag_file = Path(diagnostics_path)
+                        if not (diag_file.exists() and diag_file.is_file()):
+                            continue
+                        db.add_artifact(
+                            test_run_id=test_run_id,
+                            kind="akabak_failure_diagnostics",
+                            path=str(diag_file),
+                            sha256=_sha256_file(diag_file),
+                            bytes_size=diag_file.stat().st_size,
+                        )
+                        db.add_ui_observation(
+                            test_run_id=test_run_id,
+                            app="akabak",
+                            window_signature={"diagnostics_path": str(diag_file)},
+                            control_dump_path=str(diag_file),
+                            notes=step_note,
+                        )
+                        persisted.append(str(diag_file))
+                    return persisted
+
+                try:
+                    open_started = _now_iso()
+                    open_error: Optional[Exception] = None
+                    open_result: Optional[AkabakDriverResult] = None
+                    try:
+                        open_result = akabak_driver.open_project(str(abec_input))
+                        _register_akabak_pid()
+                    except Exception as exc:
+                        open_error = exc
+                        _register_akabak_pid()
+                        pid = int(akabak_driver.session.process_id or 0)
+                        persisted = _persist_driver_diagnostics("import_start_apply_open_failure_dump")
+                        _capture_ui_observation(
+                            db=db,
+                            test_run_id=test_run_id,
+                            app="akabak",
+                            workspace=workspace,
+                            notes="import_start_apply_open_exception",
+                            pid=pid if pid > 0 else None,
+                            executable=str(akabak_input),
+                        )
+                        db.add_validation(
+                            test_run_id=test_run_id,
+                            validation_name="import_start_apply_postcondition",
+                            status="failed",
+                            metrics={
+                                "phase": "open_project",
+                                "abec_path": str(abec_input),
+                                "diagnostics_paths": persisted,
+                            },
+                            message=str(exc),
+                        )
+                    finally:
+                        db.add_test_run_step(
+                            test_run_id=test_run_id,
+                            step_name="open_project",
+                            status="ok" if open_error is None else "failed",
+                            started_at=open_started,
+                            finished_at=_now_iso(),
+                            details={
+                                "abec_path": str(abec_input),
+                                "driver_status": open_result.status if open_result is not None else None,
+                            },
+                            error={"error": str(open_error)} if open_error is not None else {},
+                        )
+                    if open_error is not None:
+                        raise RuntimeError(str(open_error))
+
+                    import_started = _now_iso()
+                    import_error: Optional[Exception] = None
+                    import_result: Optional[AkabakDriverResult] = None
+                    persisted_paths: List[str] = []
+                    try:
+                        import_result = akabak_driver.import_if_needed()
+                        windows = [item.to_dict() for item in akabak_driver.session.list_top_windows()]
+                        db.add_ui_observation(
+                            test_run_id=test_run_id,
+                            app="akabak",
+                            window_signature={"windows": windows[:10], "window_count": len(windows)},
+                            control_dump_path=None,
+                            notes="import_start_apply_post_import",
+                        )
+                        db.add_validation(
+                            test_run_id=test_run_id,
+                            validation_name="import_start_apply_postcondition",
+                            status="ok",
+                            metrics={
+                                "driver_status": import_result.status,
+                                "details": import_result.details,
+                                "abec_path": str(abec_input),
+                                "diagnostics_path": str(
+                                    getattr(akabak_driver, "last_import_diagnostics_path", "") or ""
+                                ).strip()
+                                or None,
+                            },
+                            message="import start/apply completed with postcondition signal",
+                        )
+                        run_status = "succeeded"
+                        notes = "import-start-apply-only completed"
+                    except Exception as exc:
+                        import_error = exc
+                        _register_akabak_pid()
+                        pid = int(akabak_driver.session.process_id or 0)
+                        persisted_paths = _persist_driver_diagnostics("import_start_apply_failure_dump")
+                        _capture_ui_observation(
+                            db=db,
+                            test_run_id=test_run_id,
+                            app="akabak",
+                            workspace=workspace,
+                            notes="import_start_apply_exception",
+                            pid=pid if pid > 0 else None,
+                            executable=str(akabak_input),
+                        )
+                        db.add_validation(
+                            test_run_id=test_run_id,
+                            validation_name="import_start_apply_postcondition",
+                            status="failed",
+                            metrics={
+                                "phase": "import_start_apply",
+                                "abec_path": str(abec_input),
+                                "diagnostics_paths": persisted_paths,
+                            },
+                            message=str(exc),
+                        )
+                        run_status = "failed"
+                        notes = str(exc)
+                    finally:
+                        db.add_test_run_step(
+                            test_run_id=test_run_id,
+                            step_name="import_start_apply",
+                            status="ok" if import_error is None else "failed",
+                            started_at=import_started,
+                            finished_at=_now_iso(),
+                            details={
+                                "abec_path": str(abec_input),
+                                "driver_status": import_result.status if import_result is not None else None,
+                                "driver_details": import_result.details if import_result is not None else {},
+                                "diagnostics_paths": persisted_paths,
+                            },
+                            error={"error": str(import_error)} if import_error is not None else {},
+                        )
+                    if import_error is not None:
+                        raise RuntimeError(str(import_error))
+                finally:
+                    try:
+                        akabak_driver.close()
+                    except Exception:
+                        pass
+
+            db.upsert_run(
+                run_id=test_run_id,
+                project_id="P_RUNNER_TEST",
+                batch_id="B_RUNNER_TEST",
+                status=run_status,
+                finished_at=_now_iso(),
+                error_summary=None if run_status in {"succeeded", "dry_run_completed"} else notes,
+            )
+            db.upsert_run_version(
+                run_id=test_run_id,
+                version_id=version_id,
+                project_id="P_RUNNER_TEST",
+                batch_id="B_RUNNER_TEST",
+                status="success" if run_status == "succeeded" else run_status,
+                finished_at=_now_iso(),
+                error_summary=None if run_status in {"succeeded", "dry_run_completed"} else notes,
+            )
+            db.upsert_version(
+                version_id=version_id,
+                project_id="P_RUNNER_TEST",
+                batch_id="B_RUNNER_TEST",
+                status="success" if run_status == "succeeded" else run_status,
+                finished_at=_now_iso(),
+            )
+        except Exception as exc:
+            run_status = "failed"
+            notes = str(exc)
+            db.upsert_run(
+                run_id=test_run_id,
+                project_id="P_RUNNER_TEST",
+                batch_id="B_RUNNER_TEST",
+                status="failed",
+                finished_at=_now_iso(),
+                error_summary=str(exc),
+            )
+            db.upsert_run_version(
+                run_id=test_run_id,
+                version_id=version_id,
+                project_id="P_RUNNER_TEST",
+                batch_id="B_RUNNER_TEST",
+                status="failed",
+                finished_at=_now_iso(),
+                error_summary=str(exc),
+            )
+            db.upsert_version(
+                version_id=version_id,
+                project_id="P_RUNNER_TEST",
+                batch_id="B_RUNNER_TEST",
+                status="failed",
+                finished_at=_now_iso(),
+            )
+        finally:
+            cleanup_started = _now_iso()
+            process_cleanup_rows: List[Dict[str, Any]] = []
+            for pid in sorted(set(started_pids)):
+                alive = _is_pid_alive(pid)
+                killed = False
+                if alive:
+                    killed = _kill_pid(pid)
+                tracker.unregister(pid=pid)
+                process_cleanup_rows.append(
+                    {
+                        "pid": int(pid),
+                        "alive_before_cleanup": bool(alive),
+                        "killed": bool(killed),
+                    }
+                )
+            db.add_test_run_step(
+                test_run_id=test_run_id,
+                step_name="safe_clean",
+                status="ok",
+                started_at=cleanup_started,
+                finished_at=_now_iso(),
+                details={
+                    "cleanup_results": [],
+                    "process_cleanup": process_cleanup_rows,
+                },
+            )
+            db.finish_test_run(test_run_id=test_run_id, status=run_status, notes=notes)
+            runs.append(
+                RunnerTestHarnessRun(
+                    test_run_id=test_run_id,
+                    status=run_status,
+                    case_id="import_start_apply_only",
+                    version_id=version_id,
+                    cfg_path=None,
+                    notes=notes,
+                )
+            )
+
+    ok = all(run.status in {"succeeded", "dry_run_completed"} for run in runs)
+    return {
+        "ok": ok,
+        "phase": "phase_import_start_apply_only",
+        "mode": "import_start_apply_only",
         "repeats": effective_repeats,
         "workspace": workspace.to_dict(),
         "db_path": str(workspace.db_path),

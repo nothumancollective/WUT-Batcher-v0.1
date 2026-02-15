@@ -9,6 +9,7 @@ from app.runner_test_db import RunnerTestDb
 from app.runner_test_harness import (
     _parse_abec_mesh_requirements,
     run_runner_test_harness,
+    run_runner_test_import_start_apply_only,
     run_runner_test_open_dialog_only,
 )
 
@@ -114,6 +115,35 @@ class RunnerTestHarnessTests(unittest.TestCase):
             self.assertTrue(summary["ok"])
             self.assertTrue(summary["dry_run"])
             self.assertEqual(summary["phase"], "phase_open_dialog_only")
+            self.assertEqual(len(summary["runs"]), 1)
+            self.assertEqual(summary["runs"][0]["status"], "dry_run_completed")
+
+            db = RunnerTestDb(Path(summary["db_path"]))
+            self.assertEqual(db.count_rows("test_runs"), 1)
+            self.assertEqual(db.count_rows("test_run_steps"), 3)
+            self.assertEqual(db.count_rows("artifacts"), 1)
+            self.assertEqual(db.count_rows("validations"), 1)
+            self.assertEqual(db.count_rows("versions"), 1)
+            self.assertEqual(db.count_rows("run_versions"), 1)
+
+    def test_import_start_apply_only_dry_run_writes_db_records(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            workspace_root = root / "workspace"
+            abec_path = root / "sample.abec"
+            abec_path.write_text("ABEC_SAMPLE\n", encoding="utf-8")
+
+            summary = run_runner_test_import_start_apply_only(
+                akabak_executable=root / "akabak.exe",
+                abec_path=abec_path,
+                repeats=1,
+                workspace_root=workspace_root,
+                dry_run=True,
+            )
+            self.assertTrue(summary["ok"])
+            self.assertTrue(summary["dry_run"])
+            self.assertEqual(summary["phase"], "phase_import_start_apply_only")
+            self.assertEqual(summary["mode"], "import_start_apply_only")
             self.assertEqual(len(summary["runs"]), 1)
             self.assertEqual(summary["runs"][0]["status"], "dry_run_completed")
 
