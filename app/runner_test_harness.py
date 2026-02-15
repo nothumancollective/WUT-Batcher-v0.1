@@ -354,6 +354,44 @@ def _locate_abec_file(ath_run_dir: Path) -> Optional[Path]:
     return candidates[0]
 
 
+def _parse_abec_mesh_requirements(abec_path: Path) -> Dict[str, Any]:
+    section = ""
+    mesh_refs: List[str] = []
+    for raw_line in abec_path.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = str(raw_line).strip()
+        if not line or line.startswith(";") or line.startswith("#"):
+            continue
+        if line.startswith("[") and line.endswith("]"):
+            section = line[1:-1].strip().lower()
+            continue
+        if section != "meshfiles":
+            continue
+        if "=" not in line:
+            continue
+        _, rhs = line.split("=", 1)
+        rhs_clean = rhs.strip()
+        if not rhs_clean:
+            continue
+        mesh_ref = rhs_clean.split(",", 1)[0].strip()
+        if mesh_ref:
+            mesh_refs.append(mesh_ref)
+
+    required = []
+    missing = []
+    base = abec_path.parent
+    for ref in sorted(set(mesh_refs)):
+        target = (base / ref).resolve()
+        row = {"mesh_ref": ref, "path": str(target), "exists": bool(target.exists() and target.is_file())}
+        required.append(row)
+        if not row["exists"]:
+            missing.append(row)
+    return {
+        "section_present": bool(mesh_refs),
+        "required_mesh_files": required,
+        "missing_mesh_files": missing,
+    }
+
+
 def _is_pid_alive(pid: int) -> bool:
     try:
         proc = subprocess.run(
@@ -736,6 +774,38 @@ def run_runner_test_harness(
                     sha256=_sha256_file(abec_path),
                     bytes_size=abec_path.stat().st_size,
                 )
+
+                guard_started = _now_iso()
+                mesh_guard = _parse_abec_mesh_requirements(abec_path)
+                mesh_missing = list(mesh_guard.get("missing_mesh_files", []) or [])
+                gmsh_hint = {
+                    "ath_stdout_mentions_gmsh": "gmsh" in ath_stdout.lower(),
+                    "ath_stderr_log": ath_result.stderr_log,
+                    "ath_stdout_log": ath_result.stdout_log,
+                }
+                db.add_validation(
+                    test_run_id=test_run_id,
+                    validation_name="pre_akabak_mesh_artifacts",
+                    status="ok" if not mesh_missing else "failed",
+                    metrics={**mesh_guard, **gmsh_hint},
+                    message="mesh artifact precheck passed" if not mesh_missing else "required mesh artifact missing before AKABAK",
+                )
+                db.add_test_run_step(
+                    test_run_id=test_run_id,
+                    step_name="pre_akabak_guard",
+                    status="ok" if not mesh_missing else "failed",
+                    started_at=guard_started,
+                    finished_at=_now_iso(),
+                    details={**mesh_guard, **gmsh_hint},
+                    error={"missing_mesh_files": mesh_missing} if mesh_missing else {},
+                )
+                if mesh_missing:
+                    notes = "pre-akabak guard failed: mesh artifact missing"
+                    missing_str = ", ".join(str(item.get("path")) for item in mesh_missing)
+                    raise RuntimeError(
+                        "pre_akabak_guard_missing_mesh_artifact: "
+                        + missing_str
+                    )
 
                 akabak_step_started = _now_iso()
                 akabak_driver = AkabakDriver(
