@@ -1299,3 +1299,83 @@ Validation executed:
   - command: `python -m app runner-test run --case smoke_fast --repeats 1 --keep-exports true --test-profile fast --ath-exe "C:\Tools\ATH\ath.exe" --akabak-exe "C:\Program Files (x86)\RDTeam\AKABAK\AKABAK.exe" --vacs-exe "C:\Program Files (x86)\RDTeam\VACSVIEWER_32\VACSVIEWER_32.exe"`
   - run_id: `9bdda5f1-904e-4d71-acee-77eb96107aa5`
   - result: failed fast at `pre_akabak_guard_missing_mesh_artifact`
+
+### Update 47 (LE driving audit + post-ATH repair contract)
+#### What changed
+- Added focused audit note:
+  - `docs/LE_DRIVING_AUDIT.md`
+- Implemented centralized post-ATH LE repair helper:
+  - `app/ath_driver_assets.py`
+  - copy `generic25.txt` into ABEC folder (hash-aware)
+  - patch `Project.abec` idempotently to `Scriptname_LEScript=generic25.txt`
+  - fail-fast assertions and optional diagnostics snapshots
+- Wired repair into:
+  - `app/runner_test_harness.py`
+  - `app/runtime_orchestrator.py`
+  - `app/services.py`
+
+#### Validation
+- `python -m py_compile app\\ath_driver_assets.py app\\runner_test_harness.py app\\runtime_orchestrator.py app\\services.py app\\cli.py app\\akabak_driver.py`
+- `python -m unittest tests.test_m5_planner_renderer -q`
+
+### Update 48 (LE repair/import micro-harness + CLI)
+#### What changed
+- Added new micro-harness:
+  - `runner-test le-repair-import-only`
+  - optional ATH run (`--ath-cfg-path`) or reuse existing ABEC (`--abec-path` / `--reuse-export-dir`)
+  - persists LE repair artifacts + assertions + AKABAK import telemetry
+- Added CLI integration:
+  - `app/cli.py`
+- Added docs:
+  - `docs/LE_REPAIR_IMPORT_HARNESS.md`
+- Added tests:
+  - `tests/test_ath_driver_assets.py`
+  - extended `tests/test_runner_test_harness.py`
+  - extended `tests/test_cli_runner_test.py`
+
+#### Validation
+- `python -m py_compile app\\ath_driver_assets.py app\\runner_test_harness.py app\\cli.py`
+- `python -m unittest tests.test_ath_driver_assets tests.test_runner_test_harness tests.test_cli_runner_test -q`
+
+### Update 49 (RadImp diagnosis classification + AKABAK watchdog capture)
+#### What changed
+- Added AKABAK watchdog event capture for deterministic diagnosis:
+  - `app/akabak_driver.py` (`watchdog_events`)
+- Added E2E RadImp diagnosis stage in harness:
+  - validation row `radimp_diagnosis`
+  - classes:
+    - `sources_muted_dialog_seen`
+    - `solve_succeeded_radimp_all_zero`
+    - `observation_misconfigured_or_wrong_export`
+    - `radimp_nonzero_or_not_flagged`
+    - `radimp_not_requested`
+- Increased import wait ceilings from 30s to 60s in `import_if_needed` to reduce late-dialog timeouts without fixed sleeps.
+
+#### Real VM run
+- command:
+  - `python -m app runner-test le-repair-import-only --repeats 5 --abec-path "C:\\Horns\\test\\ABEC_FreeStanding\\Project.abec" --akabak-exe "C:\\Program Files (x86)\\RDTeam\\AKABAK\\AKABAK.exe" --ath-exe "C:\\Tools\\ATH\\ATH.exe"`
+- result:
+  - LE repair assertions passed
+  - failures were in AKABAK import postcondition path (intermittent apply-timeout / no explicit LE text in UI tree)
+  - run_ids:
+    - `0bfde103-6a72-49f7-922b-20ec65c19396`
+    - `a16e4051-bbb4-4cfa-8f57-b10c5827bf19`
+    - `0a496085-c365-4120-8930-253fcbd778cd`
+    - `4a92e571-222c-4188-b669-57ae4beda83b`
+    - `33a7dc2c-2018-42bf-bfec-844230fd2f88`
+
+### Update 50 (Recovery: manual interrupt classified as aborted)
+#### What changed
+- Manual-interrupt recovery applied for run:
+  - `f5688841-63bb-40dd-85e0-d2b78d97ba2e`
+- Updated Runner_Test DB state:
+  - `test_runs.status = aborted`
+  - `test_runs.notes += manual_interrupt_user_error`
+  - added `test_run_steps.step_name = manual_recovery_mark`
+- Added recovery documentation:
+  - `docs/RUNNER_RECOVERY_NOTE.md`
+
+#### Validation
+- Verified run status is `aborted` in `runner_test_workspace/db/runner_test.sqlite`.
+- Verified process ledger is empty at recovery time (`runner_test_workspace/logs/process_ledger.json`).
+- Verified no non-ledger AKABAK process was force-terminated by recovery logic.
