@@ -1,66 +1,41 @@
-# Runner E2E Failure Report
+﻿# Runner E2E Failure Report
 
 Date: 2026-02-15
 
-## Run Context
+## Latest Full E2E Run Context
 - Command:
   - `python -m app runner-test run --case smoke_fast --repeats 1 --keep-exports true --test-profile fast --ath-exe "C:\Tools\ATH\ath.exe" --akabak-exe "C:\Program Files (x86)\RDTeam\AKABAK\AKABAK.exe" --vacs-exe "C:\Program Files (x86)\RDTeam\VACSVIEWER_32\VACSVIEWER_32.exe"`
-- `test_run_id`: `6bcfdb6e-916d-4762-8791-725c1d81c887`
+- `test_run_id`: `b0bdcff9-ae45-4915-84ac-48862af5a058`
 - Result: `failed`
 
 ## Failing Step
-- Step: `akabak` (fails in `open_project`)
+- Stage: AKABAK import transition (`import_if_needed`)
 - Error summary:
-  - `Failed to open project in AKABAK: RuntimeError('ABEC open-file dialog did not close after non-visual confirmation attempts.')`
-- Stage telemetry from `akabak_driver.log.jsonl` confirms deterministic flow up to the blocking point:
-  - startup modal `TForm_ExampleFiles` closed
-  - import command `WM_COMMAND 113` sent
-  - interpreter button `Open ABEC Project` triggered
-  - filename path written into open dialog (`SetDlgItemTextW` readback correct)
-  - then timeout waiting for open dialog close
+  - `AKABAK import modal detected: {'title': 'Error', 'class_name': '#32770', 'message': 'Cannot find Mesh-File at ...\\ath\\ath.msh', 'buttons': ['OK', 'Schliessen']}`
+- Runner behavior:
+  - Open-file dialog handling is now deterministic and succeeds.
+  - Runner fails fast when import modal indicates missing mesh file.
 
-## UI Observations (last 2-3)
-- Observation 1:
-  - `test_run_id`: `6bcfdb6e-916d-4762-8791-725c1d81c887`
-  - `window_signature_json`: `{"pid":11568,"window_count":1,"windows":[{"class_name":"TForm_Main","control_type":"Window","title":"Akabak-Demo - (new)","handle":3212132}]}`
-  - `control_dump_path`: `runner_test_workspace/logs/6bcfdb6e-916d-4762-8791-725c1d81c887/ui_discover/akabak_discover_tree_20260215_034947.json`
-  - `notes`: `akabak_stage_exception`
-- Observation 2:
-  - `test_run_id`: `5f28a0e7-8727-447c-b886-bc52a3c47a8b`
-  - `window_signature_json`: `{"pid":5480,"window_count":1,"windows":[{"class_name":"TForm_Main","control_type":"Window","title":"Akabak-Demo - (new)","handle":3409246}]}`
-  - `control_dump_path`: `runner_test_workspace/logs/5f28a0e7-8727-447c-b886-bc52a3c47a8b/ui_discover/akabak_discover_tree_20260215_025505.json`
-  - `notes`: `akabak_stage_exception`
+## Evidence
+- AKABAK driver log:
+  - `runner_test_workspace/logs/b0bdcff9-ae45-4915-84ac-48862af5a058/akabak/akabak_driver.log.jsonl`
+- UI observation dump:
+  - `runner_test_workspace/logs/b0bdcff9-ae45-4915-84ac-48862af5a058/ui_discover/akabak_discover_tree_20260215_045444.json`
+- `ui_discover` shows `TForm_Interpreter` with child modal `#32770` (`title`: `Error`) and `OK` button.
 
-## Control Dump Evidence
-- In `runner_test_workspace/logs/6bcfdb6e-916d-4762-8791-725c1d81c887/ui_discover/akabak_discover_tree_20260215_034947.json`:
-  - `#32770` open dialog is present (`title`: `Öffnen`)
-  - `TForm_Interpreter` is present
-  - `Open ABEC Project` control exists in interpreter tree
-- This matches the failure mode: open dialog remains active and blocks progress.
+## Root Cause Classification
+- Class: toolchain/data dependency, not visual/UI selector instability.
+- The ABEC import references `ath.msh`, but that file is missing in the generated ATH output directory for this run.
 
-## Process Safety Observation
-- This run tracks the AKABAK PID as harness-owned and executes cleanup in `safe_clean`.
-- `test_run_steps.safe_clean.details_json.process_cleanup` records that the PID was alive during cleanup and was targeted for teardown.
+## Status Of Previous Blocker
+- Previous blocker (`ABEC open-file dialog did not close`) is resolved for micro-harness:
+  - `runner-test open-dialog-only --repeats 5` succeeded on run_ids:
+    - `b052b8fd-bdc7-410d-b860-dab479ae55ce`
+    - `8780c294-1ccb-49ea-b1e2-65eb7ee294fb`
+    - `875bcd90-2248-42d2-b5aa-9cb2c7685bc6`
+    - `35afe2b6-ddf2-4b09-aadc-7a1645000058`
+    - `accdf7e0-9960-406f-b9b7-bbf83fba9d57`
 
-## Modal Dialog Assessment
-- Detected and handled:
-  - `TForm_ExampleFiles` startup window (closed via handle-based `WM_CLOSE`)
-- Detected but not fully handled:
-  - ABEC open-file dialog (`#32770` / `Öffnen`) did not close via non-visual confirmation attempts (`InvokePattern`/keyboard/`WM_COMMAND` path)
-- Unknown modal dialogs:
-  - none in this run
-
-## Recommended Contract Changes
-1. Extend AKABAK contract with explicit interpreter subflow:
-   - `akabak_interpreter_window` (`TForm_Interpreter`)
-   - required controls: `Open ABEC Project`, `Start Importing`
-2. Treat `akabak_open_file_dialog` as hard gate:
-   - if still present after submit attempts -> fail immediately with dump path and dialog metadata
-3. Add explicit dialog-action strategy in contract metadata:
-   - allowed actions order (invoke, keyboard activation, message-based command)
-   - expected close signal (`dialog disappeared within timeout`)
-
-## Current Status
-- ATH stage is fixed and stable.
-- AKABAK now reaches the correct interpreter/open-dialog state deterministically.
-- Remaining blocker is a non-visual confirmation path for the ABEC open-file dialog on this VM/build.
+## Recommended Next Action
+1. Ensure ATH stage produces/places referenced mesh file (`ath.msh`) in the ABEC-relative location before AKABAK import.
+2. Re-run full E2E smoke immediately after mesh artifact issue is resolved.

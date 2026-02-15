@@ -137,3 +137,16 @@ SELECT run_id, version_id, status FROM run_versions ORDER BY created_at DESC;
 - Keine visuelle Automation im Runner-Flow: kein OCR, kein Pixel-Matching, keine Screenshot-Entscheidungen.
 - UIA-basierte Steuerung bleibt process-aware.
 - Bei fehlenden/inkonsistenten UI-Vertraegen wird fail-fast mit Diagnostik in `logs/` und DB-Events ausgefuehrt.
+
+## AKABAK Open-Dialog Micro-Harness
+
+```powershell
+python -m app runner-test open-dialog-only --akabak-exe "C:\Tools\AKABAK\AKABAK.exe" --abec-path "C:\path\to\Project.abec" --repeats 5
+```
+
+Der Micro-Harness testet nur:
+- AKABAK Start
+- Open-Dialog oeffnen
+- Pfad setzen + bestaetigen (Tier A/B/C non-visual)
+- Dialog schliesst + project-loaded signal
+- AKABAK sauber beenden

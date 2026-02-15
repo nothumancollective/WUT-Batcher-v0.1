@@ -1186,3 +1186,76 @@ Validation executed:
   - `docs/Runner_E2E_Failure_Report.md`
 - UI dump evidence:
   - `runner_test_workspace/logs/6bcfdb6e-916d-4762-8791-725c1d81c887/ui_discover/akabak_discover_tree_20260215_034947.json`
+
+## 2026-02-15 - Runner hardening pass (legacy evidence + open-dialog micro-harness)
+
+### Update 41 (Legacy evidence extraction)
+#### What changed
+- Added semantic legacy behavior extraction (read-only source analysis):
+  - `docs/LEGACY_RUNNER_BEHAVIOR.md`
+  - `docs/legacy_runner_actions.json`
+- Captured AKABAK/VACS semantic sequences, modal/dialog inventory, success signals, and known failure classes.
+- Explicitly documented prohibited legacy mechanisms (visual automation, tab-count macros) as non-adopted evidence only.
+
+#### Validation
+- JSON validity check:
+  - `python -m json.tool docs/legacy_runner_actions.json`
+
+### Update 42 (Open-dialog-only harness + CLI)
+#### What changed
+- Added micro-harness mode for AKABAK open dialog only:
+  - `app/runner_test_harness.py`: `run_runner_test_open_dialog_only(...)`
+  - `app/cli.py`: `runner-test open-dialog-only` command
+- Added persistent DB telemetry for micro-harness runs:
+  - `test_runs`, `test_run_steps`, `ui_observations`, `artifacts`, `validations`
+- Added tests:
+  - `tests/test_runner_test_harness.py`
+  - `tests/test_cli_runner_test.py`
+
+#### Validation
+- `python -m unittest tests.test_runner_test_harness tests.test_cli_runner_test`
+
+### Update 43 (AKABAK open-dialog contract/handler hardening)
+#### What changed
+- Updated AKABAK open-file contract and selector requirements:
+  - `ui_contracts/akabak/solve_flow.contract.json`
+  - `app/ui_contracts/window_signatures.py`
+- Implemented deterministic tier ladder in AKABAK open-file submit:
+  - Tier A UIA value/invoke
+  - Tier B Win32 message path
+  - Tier C scoped keys with focus verification
+- Added hard postcondition:
+  - dialog closed AND project-loaded signal present
+
+#### Validation
+- `python -m py_compile app/akabak_driver.py app/ui_contracts/window_signatures.py`
+- `python -m unittest tests.test_runner_test_harness tests.test_cli_runner_test tests.test_ui_automation_contracts`
+
+### Update 44 (Failure diagnostics + persistence)
+#### What changed
+- Added open-dialog failure diagnostics dump files (`json` + `txt`) in AKABAK log dir.
+- Persisted diagnostics into `runner_test.sqlite` as artifacts + UI observations.
+- Added docs:
+  - `docs/AKABAK_OPEN_DIALOG.md`
+
+#### Validation
+- `python -m py_compile app/akabak_driver.py app/runner_test_harness.py`
+- `python -m unittest tests.test_runner_test_harness tests.test_cli_runner_test tests.test_ui_automation_contracts`
+
+### Update 45 (Real VM stabilization results)
+#### What changed
+- Stabilized AKABAK open-dialog trigger path by adding main-menu deterministic open fallback (`File->Open project...`) before interpreter fallback.
+- Added fail-fast import modal detection in `import_if_needed` with modal detail capture and deterministic primary-button invoke.
+- Updated run result docs:
+  - `docs/Runner_E2E_Results.md`
+  - `docs/Runner_E2E_Failure_Report.md`
+
+#### Real VM runs
+- Open-dialog micro-harness, repeats=5:
+  - command: `python -m app runner-test open-dialog-only --akabak-exe "C:\Program Files (x86)\RDTeam\AKABAK\AKABAK.exe" --abec-path "runner_test_workspace\\tmp\\real_abec\\ath\\Project.abec" --repeats 5 --workspace-root "runner_test_workspace"`
+  - run_ids: `b052b8fd-bdc7-410d-b860-dab479ae55ce`, `8780c294-1ccb-49ea-b1e2-65eb7ee294fb`, `875bcd90-2248-42d2-b5aa-9cb2c7685bc6`, `35afe2b6-ddf2-4b09-aadc-7a1645000058`, `accdf7e0-9960-406f-b9b7-bbf83fba9d57`
+  - result: 5/5 succeeded
+- Full E2E smoke, repeats=1:
+  - command: `python -m app runner-test run --case smoke_fast --repeats 1 --keep-exports true --test-profile fast --ath-exe "C:\Tools\ATH\ath.exe" --akabak-exe "C:\Program Files (x86)\RDTeam\AKABAK\AKABAK.exe" --vacs-exe "C:\Program Files (x86)\RDTeam\VACSVIEWER_32\VACSVIEWER_32.exe"`
+  - run_id: `b0bdcff9-ae45-4915-84ac-48862af5a058`
+  - result: failed fast with import modal `Cannot find Mesh-File ...\ath\ath.msh`
