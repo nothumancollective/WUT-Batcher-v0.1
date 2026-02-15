@@ -139,6 +139,33 @@ class RiskHelperPopup(QFrame):
         self.raise_()
 
 
+class ElidedFixedLabel(QLabel):
+    def __init__(self, text: str, width: int, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._raw_text = str(text or "")
+        self._fixed_width = max(int(width), 72)
+        self.setWordWrap(False)
+        self.setFixedWidth(self._fixed_width)
+        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
+        self.setToolTip(self._raw_text)
+        self._apply_elide()
+
+    def set_raw_text(self, text: str) -> None:
+        self._raw_text = str(text or "")
+        self.setToolTip(self._raw_text)
+        self._apply_elide()
+
+    def _apply_elide(self) -> None:
+        metrics = self.fontMetrics()
+        available = max(int(self.width()) - 2, 8)
+        elided = metrics.elidedText(self._raw_text, Qt.ElideRight, available)
+        super().setText(elided)
+
+    def resizeEvent(self, event) -> None:  # type: ignore[override]
+        super().resizeEvent(event)
+        self._apply_elide()
+
+
 class SectionColumn(QWidget):
     def __init__(self, title: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -1413,11 +1440,9 @@ class ParameterForm(QWidget):
         self._geometry_dense_grids.append(grid)
         return grid
 
-    def _make_field_label(self, text: str, *, compact: bool = False) -> QLabel:
-        label = QLabel(text)
-        label.setWordWrap(False)
-        label.setFixedWidth(max(122, LABEL_COLUMN_WIDTH - 20) if compact else LABEL_COLUMN_WIDTH)
-        label.setToolTip(str(text or ""))
+    def _make_field_label(self, text: str, *, compact: bool = False, width: Optional[int] = None) -> QLabel:
+        label_width = int(width) if width is not None else (max(122, LABEL_COLUMN_WIDTH - 20) if compact else LABEL_COLUMN_WIDTH)
+        label = ElidedFixedLabel(str(text or ""), label_width)
         return label
 
     def _record_field_metadata(
@@ -1606,10 +1631,12 @@ class ParameterForm(QWidget):
         )
         form_grid.setHorizontalSpacing(0)
         form_grid.setVerticalSpacing(FORM_METRICS.row_gap)
-        # Columns: label1, gap1, input1, mid-gap, label2, stretch, input2
-        form_grid.setColumnMinimumWidth(1, FORM_METRICS.label_to_input_gap + 8)
-        form_grid.setColumnMinimumWidth(3, FORM_METRICS.column_gap // 2)
-        form_grid.setColumnStretch(5, 1)
+        # Columns: label1, gap1, input1, mid-gap, label2, gap2, input2, tail-stretch
+        mesh_core_label_width = max(LABEL_COLUMN_WIDTH + 34, 186)
+        form_grid.setColumnMinimumWidth(1, FORM_METRICS.label_to_input_gap + 10)
+        form_grid.setColumnMinimumWidth(3, max(FORM_METRICS.column_gap - 2, 24))
+        form_grid.setColumnMinimumWidth(5, FORM_METRICS.label_to_input_gap + 10)
+        form_grid.setColumnStretch(7, 1)
 
         selection_keys = {"Mesh.Quadrants", "Mesh.RearShape"}
         selection_fields = [field for field in ordered if field.key in selection_keys]
@@ -1643,17 +1670,17 @@ class ParameterForm(QWidget):
         right_fields = other_fields[6:]
 
         for row, field in enumerate(left_fields):
-            label = self._make_field_label(field.label)
+            label = self._make_field_label(field.label, width=mesh_core_label_width)
             editor = self._ensure_editor(field)
             form_grid.addWidget(label, row, 0)
             form_grid.addWidget(editor, row, 2, 1, 1, alignment=Qt.AlignLeft)
             self._record_field_metadata(field.key, box, column_key, label)
 
         for row, field in enumerate(right_fields):
-            label = self._make_field_label(field.label)
+            label = self._make_field_label(field.label, width=mesh_core_label_width)
             editor = self._ensure_editor(field)
             form_grid.addWidget(label, row, 4)
-            form_grid.addWidget(editor, row, 6, 1, 1, alignment=Qt.AlignRight)
+            form_grid.addWidget(editor, row, 6, 1, 1, alignment=Qt.AlignLeft)
             self._record_field_metadata(field.key, box, column_key, label)
 
         box_layout.addLayout(selection_grid)

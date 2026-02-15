@@ -1073,3 +1073,31 @@
 - Issue navigation:
   - trigger multiple severities
   - open Issues subsection, click a row, verify focus jumps to the target field and correct accordion opens.
+
+### Update 39 (InfoBar Issues Anchoring + Mesh Core Label Contract)
+#### What was wrong
+- Top InfoBar issues area could clip rows when warnings were present and the toggle looked too heavy.
+- Issues width did not reliably expand left up to the Mesh column boundary on resize.
+- In `Mesh -> Core`, right-column labels/inputs were not following the same spacing contract as left column, causing cramped label rendering (e.g. `Mesh InterfaceResolution`).
+
+#### What changed
+- `app/gui.py`
+  - Reworked the issues toggle into a compact `QToolButton`-style header (`Issues` / `Issues (N)`), replacing the oversized framed look.
+  - Kept issues embedded inside the InfoBar (no overlay), with left-expanding body animation (`maximumWidth`, `InOutCubic`).
+  - Added deterministic width calculation against Mesh column boundary:
+    - computes target expanded width from right issues anchor to Mesh column left edge on resize.
+  - Increased internal panel resilience:
+    - scroll area keeps rows visible (no clipping)
+    - issue rows use elided text with full tooltip.
+- `ui/form_builder.py`
+  - Added `ElidedFixedLabel` for non-wrapping, elided labels with tooltips.
+  - Updated `Mesh -> Core` grid to a strict two-column row contract for both sides:
+    - fixed label width
+    - fixed label-to-input gap
+    - matched spacing left/right so labels no longer wrap under inputs.
+- `ui/theme.py`
+  - Styled compact issues toggle (`QToolButton`) and adjusted embedded issues panel text emphasis for readability.
+
+#### Verification
+- `python -m py_compile app/gui.py ui/form_builder.py ui/theme.py`
+- `python -m unittest tests.test_project_form_ui -v`

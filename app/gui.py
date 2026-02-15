@@ -51,6 +51,7 @@ try:
         QStackedWidget,
         QStatusBar,
         QTextEdit,
+        QToolButton,
         QVBoxLayout,
         QWidget,
     )
@@ -65,6 +66,28 @@ class ClickableLabel(QLabel):
         super().mousePressEvent(event)
         if event.button() == Qt.LeftButton:
             self.clicked.emit()
+
+
+class IssueRowButton(QPushButton):
+    def __init__(self, full_text: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._full_text = str(full_text or "")
+        self.setText(self._full_text)
+        self.setToolTip(self._full_text)
+
+    def set_full_text(self, text: str) -> None:
+        self._full_text = str(text or "")
+        self.setToolTip(self._full_text)
+        self._apply_elide()
+
+    def _apply_elide(self) -> None:
+        available = max(int(self.width()) - 14, 24)
+        elided = self.fontMetrics().elidedText(self._full_text, Qt.ElideRight, available)
+        self.setText(elided)
+
+    def resizeEvent(self, event) -> None:  # type: ignore[override]
+        super().resizeEvent(event)
+        self._apply_elide()
 
 
 def _parse_json_object(text: str) -> Dict[str, Any]:
@@ -842,19 +865,16 @@ class ProjectIssuesPanel(QFrame):
         self._compact_counts = "E0 W0 I0"
         root = QVBoxLayout(self)
         root.setContentsMargins(6, 6, 6, 6)
-        root.setSpacing(8)
+        root.setSpacing(6)
 
         if self._show_header:
             header = QHBoxLayout()
             header.setContentsMargins(0, 0, 0, 0)
-            header.setSpacing(8)
-            title = QLabel("Issues")
-            title.setObjectName("IssuesPanelTitle")
-            header.addWidget(title)
-            header.addStretch(1)
+            header.setSpacing(6)
             self.counts = QLabel("Errors: 0 · Warnings: 0 · Incomplete: 0")
             self.counts.setObjectName("IssuesPanelCounts")
-            header.addWidget(self.counts)
+            header.addWidget(self.counts, 0, Qt.AlignLeft | Qt.AlignVCenter)
+            header.addStretch(1)
             root.addLayout(header)
         else:
             self.counts = QLabel("")
@@ -864,10 +884,11 @@ class ProjectIssuesPanel(QFrame):
         self._scroll.setWidgetResizable(True)
         self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self._scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self._scroll.setMinimumHeight(66)
         self._container = QWidget()
         self._rows = QVBoxLayout(self._container)
         self._rows.setContentsMargins(0, 0, 0, 0)
-        self._rows.setSpacing(6)
+        self._rows.setSpacing(5)
         self._scroll.setWidget(self._container)
         root.addWidget(self._scroll)
 
@@ -911,14 +932,14 @@ class ProjectIssuesPanel(QFrame):
             self._rows.addWidget(section_label)
             for issue in rows:
                 badge = {"error": "[E]", "warn": "[W]", "incomplete": "[I]"}.get(severity, "[I]")
-                button = QPushButton(
+                button = IssueRowButton(
                     f"{badge}  {issue.field_label}: {issue.message}  [{issue.section}]"
                 )
                 button.setObjectName("IssueRowButton")
                 button.setProperty("severity", severity)
                 button.setCursor(Qt.PointingHandCursor)
                 button.setFlat(True)
-                button.setToolTip(issue.message)
+                button.setToolTip(f"{issue.field_label}: {issue.message}")
                 button.clicked.connect(lambda _checked=False, key=issue.key: self.issue_selected.emit(str(key)))
                 self._rows.addWidget(button)
         if self._rows.count() == 0:
@@ -935,28 +956,34 @@ class ProjectIssuesPanel(QFrame):
         return self._compact_counts
 
 
-class IssuesSubsectionHeader(QFrame):
-    clicked = Signal()
+class IssuesSubsectionHeader(QToolButton):
+    toggled_request = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setObjectName("SummaryIssuesHeader")
+        self.setObjectName("SummaryIssuesHeaderButton")
         self.setFocusPolicy(Qt.StrongFocus)
         self.setProperty("severity", "ok")
-        self.setMinimumHeight(34)
-        root = QHBoxLayout(self)
-        root.setContentsMargins(10, 6, 10, 6)
-        root.setSpacing(8)
-        self._title = QLabel("Issues")
-        self._title.setObjectName("SummaryIssuesHeaderTitle")
-        root.addWidget(self._title, 0, Qt.AlignVCenter)
-        root.addStretch(1)
+        self.setMinimumHeight(30)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.setArrowType(Qt.LeftArrow)
+        self.setText("Issues")
+        self.setEnabled(False)
+        self.clicked.connect(lambda _checked=False: self.toggled_request.emit())
+        self._issue_total = 0
 
-    def set_counts(self, text: str) -> None:
-        _ = text
+    def set_issue_total(self, total: int) -> None:
+        self._issue_total = max(int(total), 0)
+        if self._issue_total > 0:
+            self.setText(f"Issues ({self._issue_total})")
+            self.setEnabled(True)
+        else:
+            self.setText("Issues")
+            self.setEnabled(False)
 
     def set_expanded(self, expanded: bool) -> None:
-        _ = expanded
+        self.setArrowType(Qt.RightArrow if expanded else Qt.LeftArrow)
         self.setProperty("expanded", "true" if expanded else "false")
         self.style().unpolish(self)
         self.style().polish(self)
@@ -965,21 +992,6 @@ class IssuesSubsectionHeader(QFrame):
         self.setProperty("severity", str(level or "ok"))
         self.style().unpolish(self)
         self.style().polish(self)
-
-    def mousePressEvent(self, event) -> None:  # type: ignore[override]
-        if event.button() == Qt.LeftButton:
-            self.clicked.emit()
-            event.accept()
-            return
-        super().mousePressEvent(event)
-
-    def keyPressEvent(self, event) -> None:  # type: ignore[override]
-        if event.key() in {Qt.Key_Return, Qt.Key_Enter, Qt.Key_Space}:
-            self.clicked.emit()
-            event.accept()
-            return
-        super().keyPressEvent(event)
-
 
 class SummaryIssuesSection(QFrame):
     issue_selected = Signal(str)
@@ -991,10 +1003,11 @@ class SummaryIssuesSection(QFrame):
         self._expanded = False
         self._target_body_width = 320
         self._target_body_height = 84
+        self._collapsed_width = 96
 
         root = QHBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
-        root.setSpacing(6)
+        root.setSpacing(8)
 
         self.body = QFrame(self)
         self.body.setObjectName("SummaryIssuesBody")
@@ -1006,7 +1019,7 @@ class SummaryIssuesSection(QFrame):
         body_layout = QVBoxLayout(self.body)
         body_layout.setContentsMargins(0, 0, 0, 0)
         body_layout.setSpacing(0)
-        self.panel = ProjectIssuesPanel(self, popup=False, show_header=False)
+        self.panel = ProjectIssuesPanel(self, popup=False, show_header=True)
         self.panel.setVisible(False)
         self.panel_effect = QGraphicsOpacityEffect(self.panel)
         self.panel_effect.setOpacity(0.0)
@@ -1015,18 +1028,25 @@ class SummaryIssuesSection(QFrame):
         root.addWidget(self.body, 1)
 
         self.header = IssuesSubsectionHeader(self)
-        self.header.setFixedWidth(86)
         self.header.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
         root.addWidget(self.header, 0)
+        self._refresh_collapsed_width()
 
         self._width_anim = QPropertyAnimation(self.body, b"maximumWidth", self)
-        self._width_anim.setDuration(190)
-        self._width_anim.setEasingCurve(QEasingCurve.OutCubic)
+        self._width_anim.setDuration(200)
+        self._width_anim.setEasingCurve(QEasingCurve.InOutCubic)
         self._opacity_anim = QPropertyAnimation(self.panel_effect, b"opacity", self)
         self._opacity_anim.setDuration(180)
-        self._opacity_anim.setEasingCurve(QEasingCurve.OutCubic)
+        self._opacity_anim.setEasingCurve(QEasingCurve.InOutCubic)
 
         self.panel.issue_selected.connect(self.issue_selected.emit)
+
+    def _refresh_collapsed_width(self) -> None:
+        self._collapsed_width = max(int(self.header.sizeHint().width()) + 4, 78)
+        self.header.setFixedWidth(self._collapsed_width)
+
+    def collapsed_width(self) -> int:
+        return self._collapsed_width
 
     def set_issues(self, issues: List[UiProjectIssue]) -> None:
         self.panel.set_issues(issues)
@@ -1034,7 +1054,8 @@ class SummaryIssuesSection(QFrame):
         fatal_count = int(counts.get("error", 0))
         warn_count = int(counts.get("warn", 0))
         incomplete_count = int(counts.get("incomplete", 0))
-        self.header.set_counts(self.panel.compact_counts())
+        self.header.set_issue_total(fatal_count + warn_count + incomplete_count)
+        self._refresh_collapsed_width()
         if fatal_count > 0:
             self.header.set_severity("fatal")
         elif warn_count > 0:
@@ -1045,7 +1066,7 @@ class SummaryIssuesSection(QFrame):
             self.header.set_severity("ok")
 
     def set_body_target_size(self, width: int, height: int) -> None:
-        self._target_body_width = max(int(width), 160)
+        self._target_body_width = max(int(width), 220)
         self._target_body_height = max(int(height), 36)
         self.body.setMinimumHeight(self._target_body_height)
         self.body.setMaximumHeight(self._target_body_height)
@@ -1174,14 +1195,15 @@ class ProjectPage(QWidget):
 
         self.summary_right = QWidget()
         self.summary_right.setObjectName("SummaryIssuesDock")
-        self.summary_right.setMinimumWidth(86)
-        self.summary_right.setMaximumWidth(86)
         summary_right_layout = QVBoxLayout(self.summary_right)
         summary_right_layout.setContentsMargins(0, 0, 0, 0)
         summary_right_layout.setSpacing(0)
         self.issues_section = SummaryIssuesSection(self.summary_right)
         self.issues_section.set_body_target_size(320, 74)
         summary_right_layout.addWidget(self.issues_section, 1)
+        collapsed_width = self.issues_section.collapsed_width()
+        self.summary_right.setMinimumWidth(collapsed_width)
+        self.summary_right.setMaximumWidth(collapsed_width)
         summary_layout.addWidget(self.summary_right, 0)
         root.addWidget(self.summary_panel)
         root.addSpacing(2)
@@ -1218,7 +1240,7 @@ class ProjectPage(QWidget):
         root.addWidget(self.action_bar)
 
         self.create_btn.clicked.connect(self._submit)
-        self.issues_section.header.clicked.connect(self._toggle_issues_panel)
+        self.issues_section.header.toggled_request.connect(self._toggle_issues_panel)
         self.issues_section.issue_selected.connect(self._focus_issue_key)
         self.constraints_form.changed.connect(self._emit_draft_changed)
 
@@ -1444,32 +1466,52 @@ class ProjectPage(QWidget):
         target_open = bool(open_state)
         self._issues_open = target_open
         collapsed_width, expanded_width, body_height = self._summary_issues_dimensions()
-        body_width = max(expanded_width - collapsed_width - 6, 160)
-        self.summary_right.setMinimumWidth(collapsed_width if not target_open else min(300, expanded_width))
-        self.summary_right.setMaximumWidth(expanded_width if target_open else collapsed_width)
+        body_width = max(expanded_width - collapsed_width - 8, 220)
         self.issues_section.set_body_target_size(body_width, body_height)
-        self.issues_section.set_expanded(target_open, animated=animated)
+        if target_open:
+            self.summary_right.setMinimumWidth(collapsed_width)
+            self.summary_right.setMaximumWidth(expanded_width)
+            self.issues_section.set_expanded(True, animated=animated)
+        else:
+            self.issues_section.set_expanded(False, animated=animated)
+            if animated:
+                QTimer.singleShot(
+                    210,
+                    lambda: (not self._issues_open)
+                    and self.summary_right.setMaximumWidth(collapsed_width),
+                )
+            else:
+                self.summary_right.setMaximumWidth(collapsed_width)
+            self.summary_right.setMinimumWidth(collapsed_width)
 
     def _summary_issues_dimensions(self) -> tuple[int, int, int]:
-        collapsed_width = 86
-        mesh_width = int(self.constraints_form.mesh_scroll.width()) if hasattr(self, "constraints_form") else 0
+        collapsed_width = max(self.issues_section.collapsed_width(), 78)
+        body_height = max(int(self.summary_panel.height()) - 16, 72)
+        expanded_width = collapsed_width + 240
+
+        mesh_widget = getattr(self.constraints_form, "mesh_scroll", None)
+        if mesh_widget is not None:
+            mesh_ref = mesh_widget.viewport()
+            mesh_left_global = int(mesh_ref.mapToGlobal(QPoint(0, 0)).x())
+            anchor_right_global = int(
+                self.summary_right.mapToGlobal(QPoint(max(int(self.summary_right.width()), collapsed_width), 0)).x()
+            )
+            target_width = max(anchor_right_global - mesh_left_global - 10, collapsed_width + 220)
+            expanded_width = max(expanded_width, target_width)
+
         panel_width = int(self.summary_panel.width()) if self.summary_panel is not None else 0
-        if mesh_width <= 0:
-            expanded_width = 620
-        else:
-            expanded_width = mesh_width
         if panel_width > 0:
-            expanded_width = min(expanded_width, max(panel_width - 12, collapsed_width + 220))
-        expanded_width = max(expanded_width, 420)
-        body_height = max(int(self.summary_panel.height()) - 34, 60)
+            expanded_width = min(expanded_width, max(panel_width - 8, collapsed_width + 220))
+
+        expanded_width = max(expanded_width, collapsed_width + 220)
         return collapsed_width, expanded_width, body_height
 
     def _sync_summary_issues_geometry(self) -> None:
         collapsed_width, expanded_width, body_height = self._summary_issues_dimensions()
-        body_width = max(expanded_width - collapsed_width - 6, 160)
+        body_width = max(expanded_width - collapsed_width - 8, 220)
         self.issues_section.set_body_target_size(body_width, body_height)
         if self._issues_open:
-            self.summary_right.setMinimumWidth(min(360, expanded_width))
+            self.summary_right.setMinimumWidth(collapsed_width)
             self.summary_right.setMaximumWidth(expanded_width)
         else:
             self.summary_right.setMinimumWidth(collapsed_width)

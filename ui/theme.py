@@ -352,38 +352,35 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         background-color: transparent;
         border: none;
     }}
-    QFrame#SummaryIssuesHeader {{
-        background-color: #232323;
+    QToolButton#SummaryIssuesHeaderButton {{
+        background-color: #242424;
         border: 1px solid {c['border']};
         border-radius: {r['sm']}px;
-        min-height: 34px;
-    }}
-    QFrame#SummaryIssuesHeader[severity="warn"] {{
-        border-color: {c['warning_border']};
-    }}
-    QFrame#SummaryIssuesHeader[severity="fatal"] {{
-        border-color: {c['danger_border']};
-    }}
-    QFrame#SummaryIssuesHeader[severity="incomplete"] {{
-        border-color: {c['accent']};
-    }}
-    QLabel#SummaryIssuesHeaderTitle {{
+        min-height: 30px;
+        padding: 2px 10px 2px 8px;
         color: {c['text']};
-        font-size: 12px;
-        font-weight: 700;
-    }}
-    QLabel#SummaryIssuesHeaderCounts {{
-        color: {c['muted']};
         font-size: 11px;
         font-weight: 600;
+        text-align: left;
     }}
-    QLabel#SummaryIssuesChevron {{
+    QToolButton#SummaryIssuesHeaderButton:hover {{
+        border-color: {c['accent']};
+    }}
+    QToolButton#SummaryIssuesHeaderButton:disabled {{
         color: {c['muted']};
-        font-size: 11px;
-        font-weight: 700;
+        border-color: {c['border']};
+    }}
+    QToolButton#SummaryIssuesHeaderButton[severity="warn"] {{
+        border-color: {c['warning_border']};
+    }}
+    QToolButton#SummaryIssuesHeaderButton[severity="fatal"] {{
+        border-color: {c['danger_border']};
+    }}
+    QToolButton#SummaryIssuesHeaderButton[severity="incomplete"] {{
+        border-color: {c['accent']};
     }}
     QFrame#SummaryIssuesBody {{
-        background-color: #202020;
+        background-color: #1f1f1f;
         border: 1px solid {c['border']};
         border-radius: {r['sm']}px;
     }}
@@ -458,8 +455,9 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         font-weight: 700;
     }}
     QLabel#IssuesPanelCounts {{
-        color: {c['muted']};
+        color: {c['text']};
         font-size: 11px;
+        font-weight: 600;
     }}
     QLabel#IssuesPanelGroupTitle {{
         color: {c['text']};
