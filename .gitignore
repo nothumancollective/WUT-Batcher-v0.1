@@ -32,3 +32,12 @@ tools/sysinternals/
 tools/procmon_*.csv
 tools/procmon_*.CSV
 %TEMP%/
+
+# Runner test workspace artifacts (keep only committed layout markers)
+runner_test_workspace/**
+!runner_test_workspace/.gitkeep
+!runner_test_workspace/cfg/.gitkeep
+!runner_test_workspace/ath_out/.gitkeep
+!runner_test_workspace/exports/.gitkeep
+!runner_test_workspace/logs/.gitkeep
+!runner_test_workspace/db/.gitkeep
