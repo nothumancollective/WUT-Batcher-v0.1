@@ -1,0 +1,45 @@
+{
+  "case_id": "smoke_fast",
+  "name": "Runner Smoke Fast",
+  "description": "Minimal isolated harness case using fast test profile and deterministic VACS export specs.",
+  "project_id": "P_RUNNER_TEST",
+  "batch_id": "B_RUNNER_TEST",
+  "project_name": "Runner Test Project",
+  "constraints": {
+    "runner_mode": "AkabakImportFixedSource",
+    "fixed_params": {
+      "Length": 120
+    },
+    "limits": {}
+  },
+  "batch_settings": {
+    "selected_params": {
+      "Throat.Diameter": 30.0,
+      "Coverage.Angle": 45.0
+    },
+    "sweeps": {},
+    "sweep_mode": "single",
+    "sim_export_settings": {
+      "vacs_version": "default",
+      "freq_start_hz": 500.0,
+      "freq_end_hz": 15000.0,
+      "num_points": 16,
+      "export_specs": [
+        {
+          "id": "spl_main",
+          "tool": "vacs",
+          "graph_kind": "spl",
+          "format": "txt",
+          "output_name_template": "{version_id}_{graph_kind}.txt"
+        },
+        {
+          "id": "imp_main",
+          "tool": "vacs",
+          "graph_kind": "impedance",
+          "format": "txt",
+          "output_name_template": "{version_id}_{graph_kind}.txt"
+        }
+      ]
+    }
+  }
+}

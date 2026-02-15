@@ -5,7 +5,7 @@
 - Primary backend: `pywinauto` with `backend="uia"`.
 - Optional fallback: `uiautomation` module when specific controls are inaccessible.
 - Pixel/template/image matching is forbidden.
-- Screenshots are allowed only as debug artifacts for unknown modal dialogs.
+- Screenshot capture is disabled in runner control flow; diagnostics are UIA/control-dump based.
 
 ## Discovery Commands
 - `python -m app ui inspect-akabak`
@@ -48,7 +48,6 @@ Each method enforces:
 - Whitelisted dialogs are auto-handled via rule actions.
 - Unknown dialogs trigger:
   - signature debug dump
-  - optional screenshot
   - safe abort
 
 ## Updating After Tool Upgrades

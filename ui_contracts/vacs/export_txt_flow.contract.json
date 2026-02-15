@@ -1,0 +1,53 @@
+{
+  "contract_id": "vacs_export_txt_flow_v1",
+  "app": "vacs",
+  "description": "UIA contract stub for graph-open and TXT export flow.",
+  "required_windows": [
+    {
+      "signature_id": "vacs_main_window",
+      "match": {
+        "process_names": ["vacsviewer_32.exe", "vacsviewer.exe"],
+        "class_name_regex": "(Qt|QWidget|VACS|MainWindow)",
+        "control_type": "Window"
+      }
+    },
+    {
+      "signature_id": "vacs_export_dialog",
+      "optional": true,
+      "match": {
+        "process_names": ["vacsviewer_32.exe", "vacsviewer.exe"],
+        "class_name_regex": "(#32770|Dialog)",
+        "control_type": "Window"
+      }
+    }
+  ],
+  "known_modal_dialogs": [
+    {
+      "rule_id": "overwrite_confirm",
+      "title_regex": "(save|export|overwrite|confirm)",
+      "message_regex": "(overwrite|already exists)",
+      "action": "ok"
+    }
+  ],
+  "actions": [
+    {
+      "step": "open_results",
+      "trigger": "Ctrl+O",
+      "expected_dialog": "common_file_dialog"
+    },
+    {
+      "step": "open_graph",
+      "selector_priority": [
+        "automation_id",
+        "control_type",
+        "class_name",
+        "title_regex"
+      ]
+    },
+    {
+      "step": "export_txt",
+      "trigger": "Ctrl+S",
+      "expected_output": "txt_file_created"
+    }
+  ]
+}

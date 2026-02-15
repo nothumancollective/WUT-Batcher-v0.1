@@ -1101,3 +1101,27 @@
 #### Verification
 - `python -m py_compile app/gui.py ui/form_builder.py ui/theme.py`
 - `python -m unittest tests.test_project_form_ui -v`
+
+## 2026-02-15 - Runner Harness hardening pass (Phase 1+2 and Phase 3 kickoff)
+
+Commits:
+- `55a338c` docs: add runner status audit and capability matrix
+- `c18f63b` runner-test: add isolated workspace layout and strict cleanup guards
+- `cbafcb5` runner-test: add persistent runner_test.sqlite schema and store
+- `a2e2266` runner-test: add harness skeleton and CLI run entry
+- `f89601f` runner-test: implement full E2E harness with fast profile and hard validations
+
+Highlights:
+- Added isolated `runner_test_workspace` with strict guarded cleanup (absolute path + workspace boundary checks).
+- Added dedicated `runner_test.sqlite` with test-run telemetry (`test_runs`, `test_run_steps`, `ui_observations`, `artifacts`, `validations`) plus project-compatible run/graph tables.
+- Added `runner-test run` CLI command and sample case model wiring.
+- Upgraded harness from dry skeleton to full ATH -> AKABAK(UIA) -> VACS(UIA) -> ingest -> validate -> safe clean pipeline.
+- Added `runner_test_profile=fast` overrides for low-resolution/quick test execution and persisted effective overrides in DB records.
+- Added hard export/data validation checks (size, point thresholds, monotonic x, finite values, zero-series, graph-kind mismatch).
+- Added central state-based `wait_until` backoff utility and replaced key fixed sleeps in AKABAK/VACS flows.
+- Removed screenshot capture from runner watchdog flow; diagnostics remain UIA/control-dump based.
+- Added UI contract stubs under `ui_contracts/akabak` and `ui_contracts/vacs`.
+
+Validation executed:
+- `python -m py_compile app/runner_test_harness.py app/runner_test_profiles.py app/ui_automation/waits.py`
+- `python -m unittest tests.test_runner_test_workspace tests.test_runner_test_db tests.test_runner_test_profiles tests.test_runner_test_harness tests.test_cli_runner_test tests.test_ui_waits tests.test_vacs_export_pipeline tests.test_runtime_orchestrator tests.test_cli_run_sample tests.test_cli_runs_tools tests.test_ui_automation_contracts -v`

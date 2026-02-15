@@ -1,0 +1,57 @@
+{
+  "contract_id": "akabak_solve_flow_v1",
+  "app": "akabak",
+  "description": "UIA contract stub for open/import/solve completion flow.",
+  "required_windows": [
+    {
+      "signature_id": "akabak_main_window",
+      "match": {
+        "process_name": "akabak.exe",
+        "class_name_regex": "(Qt|QWidget|AKABAK|MainWindow)",
+        "control_type": "Window"
+      }
+    },
+    {
+      "signature_id": "akabak_import_dialog",
+      "optional": true,
+      "match": {
+        "process_name": "akabak.exe",
+        "class_name_regex": "(#32770|Dialog)",
+        "control_type": "Window"
+      }
+    },
+    {
+      "signature_id": "akabak_solve_progress",
+      "optional": true,
+      "match": {
+        "process_name": "akabak.exe",
+        "class_name_regex": "(#32770|Dialog|Qt)",
+        "control_type": "Window"
+      }
+    }
+  ],
+  "known_modal_dialogs": [
+    {
+      "rule_id": "overwrite_confirm",
+      "title_regex": "(warning|confirm|notice)",
+      "message_regex": "(overwrite|continue|already exists)",
+      "action": "ok"
+    }
+  ],
+  "actions": [
+    {
+      "step": "open_project",
+      "selector_priority": [
+        "automation_id",
+        "control_type",
+        "class_name",
+        "title_regex"
+      ]
+    },
+    {
+      "step": "run_solve",
+      "trigger": "F5",
+      "completion_signal": "solve_progress_window_disappeared"
+    }
+  ]
+}
