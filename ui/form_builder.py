@@ -1600,6 +1600,7 @@ class ParameterForm(QWidget):
         form_grid.setHorizontalSpacing(FORM_METRICS.label_to_input_gap)
         form_grid.setVerticalSpacing(FORM_METRICS.row_gap)
         form_grid.setColumnMinimumWidth(2, max(FORM_METRICS.column_gap - (2 * FORM_METRICS.label_to_input_gap), 0))
+        form_grid.setColumnStretch(2, 1)
 
         selection_keys = {"Mesh.Quadrants", "Mesh.RearShape"}
         selection_fields = [field for field in ordered if field.key in selection_keys]
@@ -1643,7 +1644,7 @@ class ParameterForm(QWidget):
             label = self._make_field_label(field.label)
             editor = self._ensure_editor(field)
             form_grid.addWidget(label, row, 3)
-            form_grid.addWidget(editor, row, 4, 1, 1, alignment=Qt.AlignLeft)
+            form_grid.addWidget(editor, row, 4, 1, 1, alignment=Qt.AlignRight)
             self._record_field_metadata(field.key, box, column_key, label)
 
         box_layout.addLayout(selection_grid)
