@@ -584,7 +584,7 @@ class ProjectFormUiTests(unittest.TestCase):
                 continue
             if col == 0:
                 left_label_count += 1
-            if col == 3:
+            if col == 4:
                 right_label_count += 1
         self.assertGreater(right_label_count, 0)
         self.assertLessEqual(abs(left_label_count - right_label_count), 1)

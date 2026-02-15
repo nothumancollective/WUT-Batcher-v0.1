@@ -951,19 +951,12 @@ class IssuesSubsectionHeader(QFrame):
         self._title.setObjectName("SummaryIssuesHeaderTitle")
         root.addWidget(self._title, 0, Qt.AlignVCenter)
         root.addStretch(1)
-        self._counts = QLabel("E0 W0 I0")
-        self._counts.setObjectName("SummaryIssuesHeaderCounts")
-        root.addWidget(self._counts, 0, Qt.AlignVCenter)
-        self._chevron = QLabel(">")
-        self._chevron.setObjectName("SummaryIssuesChevron")
-        root.addWidget(self._chevron, 0, Qt.AlignVCenter)
 
     def set_counts(self, text: str) -> None:
-        self._counts.setText(str(text or "E0 W0 I0"))
+        _ = text
 
     def set_expanded(self, expanded: bool) -> None:
-        self._chevron.setText("v" if expanded else ">")
-        self._counts.setVisible(bool(expanded))
+        _ = expanded
         self.setProperty("expanded", "true" if expanded else "false")
         self.style().unpolish(self)
         self.style().polish(self)

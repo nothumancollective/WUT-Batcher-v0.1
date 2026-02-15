@@ -1596,11 +1596,18 @@ class ParameterForm(QWidget):
         selection_grid = QGridLayout()
         configure_single_column_grid(selection_grid)
         form_grid = QGridLayout()
-        configure_two_column_grid(form_grid)
-        form_grid.setHorizontalSpacing(FORM_METRICS.label_to_input_gap)
+        form_grid.setContentsMargins(
+            FORM_METRICS.margin_left,
+            FORM_METRICS.margin_top,
+            FORM_METRICS.margin_right,
+            FORM_METRICS.margin_bottom,
+        )
+        form_grid.setHorizontalSpacing(0)
         form_grid.setVerticalSpacing(FORM_METRICS.row_gap)
-        form_grid.setColumnMinimumWidth(2, max(FORM_METRICS.column_gap - (2 * FORM_METRICS.label_to_input_gap), 0))
-        form_grid.setColumnStretch(2, 1)
+        # Columns: label1, gap1, input1, mid-gap, label2, stretch, input2
+        form_grid.setColumnMinimumWidth(1, FORM_METRICS.label_to_input_gap + 8)
+        form_grid.setColumnMinimumWidth(3, FORM_METRICS.column_gap // 2)
+        form_grid.setColumnStretch(5, 1)
 
         selection_keys = {"Mesh.Quadrants", "Mesh.RearShape"}
         selection_fields = [field for field in ordered if field.key in selection_keys]
@@ -1637,14 +1644,14 @@ class ParameterForm(QWidget):
             label = self._make_field_label(field.label)
             editor = self._ensure_editor(field)
             form_grid.addWidget(label, row, 0)
-            form_grid.addWidget(editor, row, 1, 1, 1, alignment=Qt.AlignLeft)
+            form_grid.addWidget(editor, row, 2, 1, 1, alignment=Qt.AlignLeft)
             self._record_field_metadata(field.key, box, column_key, label)
 
         for row, field in enumerate(right_fields):
             label = self._make_field_label(field.label)
             editor = self._ensure_editor(field)
-            form_grid.addWidget(label, row, 3)
-            form_grid.addWidget(editor, row, 4, 1, 1, alignment=Qt.AlignRight)
+            form_grid.addWidget(label, row, 4)
+            form_grid.addWidget(editor, row, 6, 1, 1, alignment=Qt.AlignRight)
             self._record_field_metadata(field.key, box, column_key, label)
 
         box_layout.addLayout(selection_grid)
@@ -1703,7 +1710,17 @@ class ParameterForm(QWidget):
                 for field in detail_fields:
                     label = self._make_field_label(field.label, compact=True)
                     editor = self._ensure_editor(field)
-                    detail_grid.add_cell(label, editor)
+                    editor_widget = editor
+                    if field.key == "Morph.AllowShrinkage":
+                        label.setFixedWidth(LABEL_COLUMN_WIDTH)
+                        shifted = QWidget()
+                        shifted_row = QHBoxLayout(shifted)
+                        shifted_row.setContentsMargins(10, 0, 0, 0)
+                        shifted_row.setSpacing(0)
+                        shifted_row.addWidget(editor, 0, Qt.AlignLeft)
+                        shifted_row.addStretch(1)
+                        editor_widget = shifted
+                    detail_grid.add_cell(label, editor_widget)
                     self._record_field_metadata(field.key, box, column_key, label)
                 detail_frame.content_layout.addWidget(detail_grid)
             else:
