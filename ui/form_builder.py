@@ -1003,6 +1003,8 @@ class ScalarFieldEditor(QWidget):
             return NullableBoolInput()
         if self.field.widget_kind == "enum":
             options = [(option.label, option.value) for option in list(self.field.enum_options)]
+            if self.field.key == "Mesh.Enclosure.EdgeType":
+                return NullableEnumComboInput(options=options)
             if 1 < len(options) <= 4:
                 if self.field.key == "GCurve.Type":
                     return SegmentedEnumInput(options=options, fallback_value=None, enforce_fallback=True)
@@ -1711,7 +1713,7 @@ class ParameterForm(QWidget):
                     label = self._make_field_label(field.label, compact=True)
                     editor = self._ensure_editor(field)
                     editor_widget = editor
-                    if field.key == "Morph.AllowShrinkage":
+                    if field.key in {"Morph.AllowShrinkage", "Morph.CornerRadius"}:
                         label.setFixedWidth(LABEL_COLUMN_WIDTH)
                         shifted = QWidget()
                         shifted_row = QHBoxLayout(shifted)

@@ -123,12 +123,12 @@ def _numeric_limits(param: Mapping[str, Any]) -> Tuple[Optional[float], Optional
 
 def _enum_options(param: Mapping[str, Any]) -> Tuple[EnumSpec, ...]:
     domain = param.get("domain")
-    if not isinstance(domain, dict):
-        return ()
-    values = domain.get("enum")
+    # Object properties in catalog can provide enum/meaning directly without nested domain.
+    source = domain if isinstance(domain, dict) else param
+    values = source.get("enum")
     if not isinstance(values, list):
         return ()
-    meaning = domain.get("meaning")
+    meaning = source.get("meaning")
     meaning_map = meaning if isinstance(meaning, dict) else {}
     options: List[EnumSpec] = []
     for raw in values:

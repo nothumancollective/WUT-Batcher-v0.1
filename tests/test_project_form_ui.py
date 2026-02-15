@@ -25,6 +25,7 @@ except ImportError:  # pragma: no cover
 
 from ui.form_builder import (
     NullableBoolInput,
+    NullableEnumComboInput,
     NullableNumericInput,
     ParameterForm,
     ResponsiveCompactGrid,
@@ -593,6 +594,19 @@ class ProjectFormUiTests(unittest.TestCase):
     def test_enclosure_group_has_no_redundant_mesh_enclosure_label(self) -> None:
         labels = [label.text().strip() for label in self.form.findChildren(QLabel)]
         self.assertNotIn("Mesh Enclosure", labels)
+
+    def test_enclosure_edge_type_has_enum_options(self) -> None:
+        enclosure_editor = self.form.editor_for_key("Mesh.Enclosure")
+        self.assertIsNotNone(enclosure_editor)
+        assert enclosure_editor is not None
+        property_editors = getattr(enclosure_editor, "property_editors", {})
+        editor = property_editors.get("Mesh.Enclosure.EdgeType")
+        self.assertIsNotNone(editor)
+        assert editor is not None
+        widget = editor.value_widget()
+        self.assertIsInstance(widget, NullableEnumComboInput)
+        assert isinstance(widget, NullableEnumComboInput)
+        self.assertGreaterEqual(widget.combo.count(), 3)  # '-' + at least two enum choices
 
     def test_slot_length_expression_shows_unit_mm(self) -> None:
         widget = self.form.value_widget_for_key("Slot.Length")

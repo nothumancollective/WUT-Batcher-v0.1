@@ -836,12 +836,12 @@ class ProjectIssuesPanel(QFrame):
         _ = popup
         super().__init__(parent)
         self.setObjectName("ProjectIssuesPanel")
-        self.setMinimumWidth(360)
+        self.setMinimumWidth(0)
         self.setMinimumHeight(96)
         self._show_header = bool(show_header)
         self._compact_counts = "E0 W0 I0"
         root = QVBoxLayout(self)
-        root.setContentsMargins(10, 10, 10, 10)
+        root.setContentsMargins(6, 6, 6, 6)
         root.setSpacing(8)
 
         if self._show_header:
@@ -1015,7 +1015,7 @@ class SummaryIssuesSection(QFrame):
         root.addWidget(self.body, 1)
 
         self.header = IssuesSubsectionHeader(self)
-        self.header.setFixedWidth(124)
+        self.header.setFixedWidth(86)
         self.header.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
         root.addWidget(self.header, 0)
 
@@ -1174,8 +1174,8 @@ class ProjectPage(QWidget):
 
         self.summary_right = QWidget()
         self.summary_right.setObjectName("SummaryIssuesDock")
-        self.summary_right.setMinimumWidth(124)
-        self.summary_right.setMaximumWidth(124)
+        self.summary_right.setMinimumWidth(86)
+        self.summary_right.setMaximumWidth(86)
         summary_right_layout = QVBoxLayout(self.summary_right)
         summary_right_layout.setContentsMargins(0, 0, 0, 0)
         summary_right_layout.setSpacing(0)
@@ -1451,7 +1451,7 @@ class ProjectPage(QWidget):
         self.issues_section.set_expanded(target_open, animated=animated)
 
     def _summary_issues_dimensions(self) -> tuple[int, int, int]:
-        collapsed_width = 124
+        collapsed_width = 86
         mesh_width = int(self.constraints_form.mesh_scroll.width()) if hasattr(self, "constraints_form") else 0
         panel_width = int(self.summary_panel.width()) if self.summary_panel is not None else 0
         if mesh_width <= 0:
@@ -1459,7 +1459,7 @@ class ProjectPage(QWidget):
         else:
             expanded_width = mesh_width
         if panel_width > 0:
-            expanded_width = min(expanded_width, max(panel_width - 40, collapsed_width + 180))
+            expanded_width = min(expanded_width, max(panel_width - 12, collapsed_width + 220))
         expanded_width = max(expanded_width, 420)
         body_height = max(int(self.summary_panel.height()) - 34, 60)
         return collapsed_width, expanded_width, body_height
