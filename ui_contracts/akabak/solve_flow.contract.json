@@ -1,5 +1,5 @@
 {
-  "contract_id": "akabak_solve_flow_v1",
+  "contract_id": "akabak_solve_flow_v2",
   "app": "akabak",
   "description": "UIA contract for ABEC import + solve flow (no visual automation).",
   "required_windows": [
@@ -27,7 +27,18 @@
         "process_name": "akabak.exe",
         "class_name_regex": "(#32770)",
         "control_type": "Window"
-      }
+      },
+      "required_controls": [
+        {
+          "control_type": "Edit",
+          "automation_id": "1148",
+          "class_name_regex": "(Edit|ComboBox)"
+        },
+        {
+          "control_type": "Button",
+          "automation_id": "1"
+        }
+      ]
     },
     {
       "signature_id": "akabak_solve_progress",
@@ -59,8 +70,15 @@
         "automation_id",
         "control_type",
         "class_name",
+        "native_window_handle",
         "title_regex"
-      ]
+      ],
+      "open_dialog_submission_ladder": [
+        "Tier A: UIA ValuePattern/set_edit_text on filename Edit + UIA InvokePattern/click on Open button",
+        "Tier B: Win32 SetDlgItemText/WM_SETTEXT on Edit + WM_COMMAND(IDOK)/BM_CLICK",
+        "Tier C LAST_RESORT: scoped type_keys(path)+Enter only after verified keyboard focus on filename Edit"
+      ],
+      "postcondition": "open_file_dialog_absent AND project_loaded_signal_present"
     },
     {
       "step": "run_solve",

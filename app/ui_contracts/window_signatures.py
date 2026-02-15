@@ -102,10 +102,10 @@ AKABAK_OPEN_FILE_DIALOG = WindowSignature(
     signature_id="akabak_open_file_dialog",
     process_names=("akabak.exe",),
     class_name_regex=r"(#32770)",
-    title_regex=r"(Open|Opening|Oeffnen|Öffnen)",
+    title_regex=r"(Open|Opening|Oeffnen)",
     required_controls=(
-        ControlSelector(control_type="Edit", automation_id="1148"),
-        ControlSelector(control_type="Button", automation_id="1"),
+        ControlSelector(control_type="Edit", automation_id="1148", class_name_regex=r"(Edit|ComboBox)"),
+        ControlSelector(control_type="Button", automation_id="1", class_name_regex=r"(Button)"),
     ),
     notes="Windows common open-file dialog used by the ABEC interpreter.",
 )

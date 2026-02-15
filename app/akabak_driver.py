@@ -6,7 +6,7 @@ import ctypes
 from dataclasses import dataclass
 from pathlib import Path
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from app.ui_automation.session import UiaSession, UiaSessionError
 from app.ui_automation.step_logger import StructuredStepLogger
@@ -24,8 +24,11 @@ WM_CLOSE = 0x0010
 WM_COMMAND = 0x0111
 WM_KEYDOWN = 0x0100
 WM_KEYUP = 0x0101
+WM_SETTEXT = 0x000C
+BM_CLICK = 0x00F5
 SMTO_ABORTIFHUNG = 0x0002
 VK_SPACE = 0x20
+VK_RETURN = 0x0D
 IDOK = 1
 OPEN_FILE_NAME_CONTROL_ID = 1148
 IMPORT_ABEC_COMMAND_ID = 113
@@ -112,6 +115,127 @@ class AkabakDriver:
         user32 = self._user32()
         user32.PostMessageW(hwnd, WM_KEYDOWN, VK_SPACE, 0)
         user32.PostMessageW(hwnd, WM_KEYUP, VK_SPACE, 0)
+
+    def _send_key_enter(self, hwnd: int) -> None:
+        if hwnd <= 0:
+            return
+        user32 = self._user32()
+        user32.PostMessageW(hwnd, WM_KEYDOWN, VK_RETURN, 0)
+        user32.PostMessageW(hwnd, WM_KEYUP, VK_RETURN, 0)
+
+    def _window_title(self, control: Any) -> str:
+        try:
+            return str(control.window_text() or "").strip()
+        except Exception:
+            try:
+                return str(getattr(control.element_info, "name", "") or "").strip()
+            except Exception:
+                return ""
+
+    def _find_first_control(
+        self,
+        root: Any,
+        *,
+        control_type: Optional[str] = None,
+        automation_id: Optional[str] = None,
+        class_name_regex: Optional[str] = None,
+        title_regex: Optional[str] = None,
+    ) -> Optional[Any]:
+        controls: List[Any] = []
+        try:
+            controls = list(root.descendants())
+        except Exception:
+            controls = []
+        for control in controls:
+            try:
+                info = control.element_info
+            except Exception:
+                continue
+            info_control_type = str(getattr(info, "control_type", "") or "")
+            info_automation_id = str(getattr(info, "automation_id", "") or "")
+            info_class_name = str(getattr(info, "class_name", "") or "")
+            info_title = self._window_title(control)
+            if control_type and info_control_type != control_type:
+                continue
+            if automation_id and info_automation_id != automation_id:
+                continue
+            if class_name_regex and not re.search(class_name_regex, info_class_name, re.IGNORECASE):
+                continue
+            if title_regex and not re.search(title_regex, info_title, re.IGNORECASE):
+                continue
+            return control
+        return None
+
+    def _find_open_dialog_controls(self, file_dialog: Any) -> Tuple[Optional[Any], Optional[Any]]:
+        edit = self._find_first_control(
+            file_dialog,
+            control_type="Edit",
+            automation_id=str(OPEN_FILE_NAME_CONTROL_ID),
+        )
+        if edit is None:
+            edit = self._find_first_control(
+                file_dialog,
+                control_type="Edit",
+                class_name_regex=r"(Edit|ComboBox)",
+            )
+        open_button = self._find_first_control(
+            file_dialog,
+            control_type="Button",
+            automation_id=str(IDOK),
+        )
+        if open_button is None:
+            open_button = self._find_first_control(
+                file_dialog,
+                control_type="Button",
+                title_regex=r"(open|oeffnen)",
+            )
+        return edit, open_button
+
+    def _dialog_filename_readback(self, dialog_handle: int) -> str:
+        if dialog_handle <= 0:
+            return ""
+        readback = ctypes.create_unicode_buffer(2048)
+        self._user32().GetDlgItemTextW(dialog_handle, OPEN_FILE_NAME_CONTROL_ID, readback, 2047)
+        return str(readback.value or "")
+
+    def _project_loaded_signal(self, *, main_window: Any, project_path: str) -> Tuple[bool, str]:
+        interpreter = self._find_interpreter_window(main_window=main_window)
+        if interpreter is not None:
+            start_button = self._find_first_control(
+                interpreter,
+                class_name_regex=r"TRzBitBtn",
+                title_regex=r"start\s+importing",
+            )
+            if start_button is not None:
+                return True, "interpreter_start_importing_visible"
+
+        project_stem = str(Path(project_path).stem or "").strip().lower()
+        if project_stem:
+            try:
+                main_title = self._window_title(main_window).lower()
+                if project_stem in main_title:
+                    return True, "main_title_contains_project_stem"
+            except Exception:
+                pass
+            try:
+                for control in main_window.descendants():
+                    if project_stem in self._window_title(control).lower():
+                        return True, "child_title_contains_project_stem"
+            except Exception:
+                pass
+        return False, "project_loaded_signal_missing"
+
+    def _open_dialog_postcondition(self, *, main_window: Any, project_path: str) -> Tuple[bool, Dict[str, Any]]:
+        dialog = self._find_open_file_dialog(main_window=main_window)
+        dialog_closed = dialog is None
+        project_loaded, project_signal = self._project_loaded_signal(main_window=main_window, project_path=project_path)
+        payload = {
+            "ok": bool(dialog_closed and project_loaded),
+            "dialog_closed": bool(dialog_closed),
+            "project_loaded": bool(project_loaded),
+            "project_signal": str(project_signal),
+        }
+        return bool(payload["ok"]), payload
 
     def _dismiss_startup_windows(self, *, main_window: Any, step: str) -> None:
         startup_windows = self._child_windows(
@@ -214,33 +338,149 @@ class AkabakDriver:
         user32 = self._user32()
         dialog_handle = self._window_handle(file_dialog)
         self._require(dialog_handle > 0, "Open-file dialog handle unavailable.", step)
-
-        set_ok = bool(user32.SetDlgItemTextW(dialog_handle, OPEN_FILE_NAME_CONTROL_ID, str(project_path)))
-        self._require(set_ok, "Unable to write project path into open-file dialog.", step)
-        readback = ctypes.create_unicode_buffer(2048)
-        user32.GetDlgItemTextW(dialog_handle, OPEN_FILE_NAME_CONTROL_ID, readback, 2047)
-        self._log(
-            level="info",
-            step=step,
-            event="dialog_filename_set",
-            payload={"path": project_path, "readback": readback.value},
+        filename_edit, open_button = self._find_open_dialog_controls(file_dialog)
+        open_button_handle = self._window_handle(open_button) if open_button is not None else int(
+            user32.GetDlgItem(dialog_handle, IDOK) or 0
         )
+        attempts: List[Dict[str, Any]] = []
 
-        open_button_handle = int(user32.GetDlgItem(dialog_handle, IDOK) or 0)
-        if open_button_handle > 0:
-            self._send_key_space(open_button_handle)
-        user32.PostMessageW(dialog_handle, WM_COMMAND, IDOK, open_button_handle)
+        def _wait_for_postcondition(timeout_s: float) -> Tuple[bool, str]:
+            state = wait_until(
+                predicate=lambda: self._open_dialog_postcondition(main_window=main_window, project_path=project_path),
+                timeout_s=timeout_s,
+            )
+            return bool(state.get("ok", False)), str(state.get("project_signal", ""))
 
-        def _dialog_closed():
-            dialog = self._find_open_file_dialog(main_window=main_window)
-            return (dialog is None, None)
-
+        # Tier A: UIA value/invoke.
         try:
-            wait_until(predicate=_dialog_closed, timeout_s=6.0)
-        except TimeoutError as exc:
-            raise RuntimeError(
-                "ABEC open-file dialog did not close after non-visual confirmation attempts."
-            ) from exc
+            set_method = ""
+            if filename_edit is not None:
+                if hasattr(filename_edit, "set_edit_text"):
+                    filename_edit.set_edit_text(str(project_path))
+                    set_method = "uia_set_edit_text"
+                elif hasattr(filename_edit, "set_text"):
+                    filename_edit.set_text(str(project_path))
+                    set_method = "uia_set_text"
+                else:
+                    iface_value = getattr(filename_edit, "iface_value", None)
+                    if iface_value is not None and hasattr(iface_value, "SetValue"):
+                        iface_value.SetValue(str(project_path))
+                        set_method = "uia_value_pattern"
+            self._require(bool(set_method), "Open dialog filename edit control unavailable for Tier A.", step)
+            invoked = ""
+            if open_button is not None:
+                if hasattr(open_button, "invoke"):
+                    open_button.invoke()
+                    invoked = "uia_invoke"
+                elif hasattr(open_button, "click"):
+                    open_button.click()
+                    invoked = "uia_click"
+                elif open_button_handle > 0:
+                    user32.SendMessageW(open_button_handle, BM_CLICK, 0, 0)
+                    invoked = "bm_click"
+            elif open_button_handle > 0:
+                user32.SendMessageW(open_button_handle, BM_CLICK, 0, 0)
+                invoked = "bm_click"
+            self._require(bool(invoked), "Open dialog Open button unavailable for Tier A.", step)
+            ok, signal = _wait_for_postcondition(timeout_s=4.0)
+            attempts.append(
+                {
+                    "tier": "A_UIA",
+                    "set_method": set_method,
+                    "invoke_method": invoked,
+                    "readback": self._dialog_filename_readback(dialog_handle),
+                    "result": "ok" if ok else "postcondition_failed",
+                    "project_signal": signal,
+                }
+            )
+            if ok:
+                self._log(level="info", step=step, event="open_dialog_submit", payload={"attempts": attempts})
+                return
+        except Exception as exc:
+            attempts.append(
+                {
+                    "tier": "A_UIA",
+                    "result": "error",
+                    "error": repr(exc),
+                    "readback": self._dialog_filename_readback(dialog_handle),
+                }
+            )
+
+        # Tier B: Win32 handle/message path.
+        try:
+            set_ok = bool(user32.SetDlgItemTextW(dialog_handle, OPEN_FILE_NAME_CONTROL_ID, str(project_path)))
+            self._require(set_ok, "Unable to write project path into open-file dialog (Tier B).", step)
+            confirm_sent = False
+            if open_button_handle > 0:
+                user32.SendMessageW(open_button_handle, BM_CLICK, 0, 0)
+                confirm_sent = True
+            user32.PostMessageW(dialog_handle, WM_COMMAND, IDOK, open_button_handle)
+            confirm_sent = True
+            self._require(confirm_sent, "Unable to confirm open dialog (Tier B).", step)
+            ok, signal = _wait_for_postcondition(timeout_s=4.0)
+            attempts.append(
+                {
+                    "tier": "B_WIN32",
+                    "set_method": "SetDlgItemTextW",
+                    "invoke_method": "WM_COMMAND_IDOK",
+                    "readback": self._dialog_filename_readback(dialog_handle),
+                    "result": "ok" if ok else "postcondition_failed",
+                    "project_signal": signal,
+                }
+            )
+            if ok:
+                self._log(level="info", step=step, event="open_dialog_submit", payload={"attempts": attempts})
+                return
+        except Exception as exc:
+            attempts.append(
+                {
+                    "tier": "B_WIN32",
+                    "result": "error",
+                    "error": repr(exc),
+                    "readback": self._dialog_filename_readback(dialog_handle),
+                }
+            )
+
+        # Tier C: controlled keystrokes only with verified focus on filename edit.
+        try:
+            self._require(filename_edit is not None, "Filename edit control unavailable for Tier C.", step)
+            filename_edit.set_focus()
+            has_focus = False
+            if hasattr(filename_edit, "has_keyboard_focus"):
+                has_focus = bool(filename_edit.has_keyboard_focus())
+            self._require(has_focus, "Filename edit does not have keyboard focus for Tier C.", step)
+            filename_edit.type_keys("^a{BACKSPACE}", set_foreground=True)
+            filename_edit.type_keys(str(project_path), with_spaces=True, set_foreground=True)
+            self._send_key_enter(dialog_handle)
+            ok, signal = _wait_for_postcondition(timeout_s=4.0)
+            attempts.append(
+                {
+                    "tier": "C_SCOPED_KEYS",
+                    "set_method": "type_keys_on_focused_edit",
+                    "invoke_method": "enter_key",
+                    "readback": self._dialog_filename_readback(dialog_handle),
+                    "focus_verified": has_focus,
+                    "result": "ok" if ok else "postcondition_failed",
+                    "project_signal": signal,
+                }
+            )
+            if ok:
+                self._log(level="info", step=step, event="open_dialog_submit", payload={"attempts": attempts})
+                return
+        except Exception as exc:
+            attempts.append(
+                {
+                    "tier": "C_SCOPED_KEYS",
+                    "result": "error",
+                    "error": repr(exc),
+                    "readback": self._dialog_filename_readback(dialog_handle),
+                }
+            )
+
+        self._log(level="error", step=step, event="open_dialog_submit_failed", payload={"attempts": attempts})
+        raise RuntimeError(
+            "ABEC open-file dialog did not close with loaded-project signal after Tier A/B/C non-visual submission."
+        )
 
     def _connect(self) -> None:
         if self.state != "init":
