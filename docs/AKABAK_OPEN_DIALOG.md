@@ -91,3 +91,17 @@ Import-only micro-harness:
 ```bash
 python -m app runner-test import-start-apply-only --akabak-exe "<AKABAK>" --abec-path "<ABEC>" --repeats 5
 ```
+
+## Current Real-VM Observation (latest pass)
+- The strict postcondition currently fails in real runs:
+  - dialog (`#32770`, title `Open File`) remains open after submit attempts.
+- Evidence:
+  - `runner_test_workspace/logs/15aaccb8-6120-49ed-8b71-74b65c90a3dd/akabak/open_dialog_failure_20260215_172445.json`
+  - `runner_test_workspace/logs/1f623ea8-6aa7-4950-a42f-bc8f8861454f/akabak/open_dialog_failure_20260215_172314.json`
+- What is confirmed:
+  - file path write/readback works (`C:\Horns\test\ABEC_FreeStanding\Project.abec`)
+  - open dialog control tree is captured (includes `Edit automation_id=1148`, `Button automation_id=1`)
+  - close signal is not observed (`dialog_closed=false`)
+
+Current blocker class:
+- `akabak_open_dialog_not_closing_after_setpath`

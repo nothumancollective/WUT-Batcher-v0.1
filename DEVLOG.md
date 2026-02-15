@@ -1379,3 +1379,43 @@ Validation executed:
 - Verified run status is `aborted` in `runner_test_workspace/db/runner_test.sqlite`.
 - Verified process ledger is empty at recovery time (`runner_test_workspace/logs/process_ledger.json`).
 - Verified no non-ledger AKABAK process was force-terminated by recovery logic.
+
+### Update 51 (Baseline case + ATH runtime cfg + AKABAK open-dialog diagnostics hardening)
+#### What changed
+- Added baseline runner-test case:
+  - `runner_test_cases/test_cfg_baseline.json`
+  - uses `C:\Tools\ATH\test.cfg` + `ath_export_root` hint `C:\Horns`
+- Hardened harness preflight telemetry:
+  - executable probes (exists/executable/size/mtime)
+  - export-root probe (exists/writable)
+  - persisted into `test_runs.tool_versions`
+- Hardened ATH stage in harness:
+  - writes local `input.cfg` and local runtime `ath.cfg` per run
+  - persists `ath_runtime_cfg` artifact
+  - creates output root folder deterministically so ATH mesh generation works
+- Added mesh-missing classification in pre-AKABAK guard:
+  - `mesher_missing_meshcmd`
+  - `mesher_executable_missing`
+  - `mesher_execution_failed`
+  - `ath_output_mesh_artifact_missing`
+- Tightened AKABAK open/import diagnostics:
+  - interpreter button states + report text readback in import failure dumps
+  - open-dialog attempts now log postcondition snapshot (`dialog_closed`, titles, signal, methods)
+  - open dialog control dump now captures real `#32770` tree with controls
+
+#### Real VM runs in this pass
+- Full baseline run (latest): `15aaccb8-6120-49ed-8b71-74b65c90a3dd`
+  - ATH + LE repair + mesh guard are green
+  - blocked at AKABAK open dialog close postcondition
+- Open-dialog micro runs (strict contract) still red:
+  - `6adf03a6-8a20-439d-9958-d854d9872c9e`
+  - `1f623ea8-6aa7-4950-a42f-bc8f8861454f`
+- Import-start-apply micro run still red:
+  - `ea0d03e1-6e1e-4536-b4cb-ceef63c08328`
+
+#### Validation
+- `python -m unittest tests.test_ath_driver_assets tests.test_runner_test_harness tests.test_cli_runner_test`
+- repeated targeted real VM runs via:
+  - `runner-test run --case test_cfg_baseline ...`
+  - `runner-test open-dialog-only ...`
+  - `runner-test import-start-apply-only ...`
