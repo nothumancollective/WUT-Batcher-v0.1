@@ -40,6 +40,7 @@ class VacsDriver:
             app_name="vacs",
             startup_timeout_s=startup_timeout_s,
             allow_fallback=True,
+            prefer_start=True,
         )
         self.logger = StructuredStepLogger(self.log_dir / "vacs_driver.log.jsonl")
         recipes = load_vacs_export_recipes()

@@ -141,11 +141,13 @@ class UiaSession:
         app_name: str,
         startup_timeout_s: int = 20,
         allow_fallback: bool = True,
+        prefer_start: bool = False,
     ) -> None:
         self.executable = str(executable)
         self.app_name = app_name
         self.startup_timeout_s = max(1, int(startup_timeout_s))
         self.allow_fallback = allow_fallback
+        self.prefer_start = bool(prefer_start)
         self.process_id: Optional[int] = None
         self._app = None
         self.backend = "none"
@@ -174,10 +176,18 @@ class UiaSession:
         app = Application(backend="uia")
         exe_path = Path(self.executable)
         connected = False
-        if exe_path.exists():
+        if self.prefer_start:
+            try:
+                app = Application(backend="uia").start(str(exe_path), timeout=self.startup_timeout_s)
+                connected = True
+                self.started_process = True
+            except Exception:
+                connected = False
+        if not connected and exe_path.exists():
             try:
                 app.connect(path=str(exe_path))
                 connected = True
+                self.started_process = False
             except Exception:
                 connected = False
         if not connected:
@@ -188,7 +198,8 @@ class UiaSession:
             except Exception as exc:
                 raise UiaSessionError(f"Unable to start {self.app_name}: {exc}") from exc
         else:
-            self.started_process = False
+            if not self.prefer_start:
+                self.started_process = False
         if not connected:
             return False
         self._app = app
@@ -392,7 +403,17 @@ class UiaSession:
                 text_chunks.append(header)
                 capture = io.StringIO()
                 with redirect_stdout(capture):
-                    window.print_control_identifiers()
+                    if hasattr(window, "print_control_identifiers"):
+                        window.print_control_identifiers()
+                    elif hasattr(window, "PrintControlIdentifiers"):
+                        window.PrintControlIdentifiers()
+                    else:
+                        info = window.element_info
+                        print(
+                            f"title={getattr(info, 'name', '')} "
+                            f"class={getattr(info, 'class_name', '')} "
+                            f"type={getattr(info, 'control_type', '')}"
+                        )
                 text_chunks.append(capture.getvalue())
                 payload["windows"].append(self._walk_tree_dict(window, max_depth=max_depth))
             output_txt_path.write_text("\n".join(text_chunks), encoding="utf-8")
@@ -431,6 +452,22 @@ class UiaSession:
         return None
 
     def close(self) -> None:
+        if self.backend == "pywinauto-uia" and self._app is not None and bool(self.started_process):
+            try:
+                self._app.kill(soft=True)  # type: ignore[attr-defined]
+                return
+            except Exception:
+                pass
+            try:
+                if self.process_id:
+                    subprocess.run(
+                        ["taskkill", "/PID", str(int(self.process_id)), "/T", "/F"],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+            except Exception:
+                pass
         if self.backend == "uiautomation" and self._app is not None:
             try:
                 self._app.terminate()  # type: ignore[attr-defined]

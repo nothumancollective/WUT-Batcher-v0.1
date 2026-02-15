@@ -26,6 +26,7 @@ from app.safe_cleanup import (
     guarded_delete_file_in_workspace,
     guarded_delete_tree_in_workspace,
 )
+from app.ui_automation.discover import discover_app_ui
 from app.vacs_export_pipeline import VacsExportPipelineError, run_vacs_export_specs
 from app.vacs_txt_parser import VacsGraph, parse_vacs_txt_file
 from app.version_resolver import resolve_versions
@@ -143,6 +144,49 @@ def _detect_git_commit() -> Optional[str]:
         return None
     commit = value.strip()
     return commit or None
+
+
+def _capture_ui_observation(
+    *,
+    db: RunnerTestDb,
+    test_run_id: str,
+    app: str,
+    workspace: RunnerTestWorkspace,
+    notes: str,
+    pid: Optional[int],
+    executable: Optional[str],
+) -> Optional[Dict[str, Any]]:
+    try:
+        payload = discover_app_ui(
+            app=app,
+            executable=executable,
+            pid=pid,
+            output_root=workspace.logs_dir / test_run_id / "ui_discover",
+            startup_timeout_s=10,
+            max_depth=2,
+        )
+    except Exception as exc:
+        db.add_ui_observation(
+            test_run_id=test_run_id,
+            app=app,
+            window_signature={"error": str(exc), "pid": pid},
+            control_dump_path=None,
+            notes=f"{notes}; ui_discover_failed",
+        )
+        return None
+
+    db.add_ui_observation(
+        test_run_id=test_run_id,
+        app=app,
+        window_signature={
+            "pid": payload.get("pid"),
+            "window_count": payload.get("window_count"),
+            "windows": list(payload.get("windows", []) or [])[:10],
+        },
+        control_dump_path=str(payload.get("tree_path") or ""),
+        notes=notes,
+    )
+    return payload
 
 
 def _normalize_token(value: str) -> str:
@@ -617,10 +661,12 @@ def run_runner_test_harness(
                 ath_step_started = _now_iso()
                 ath_run_dir = workspace.ath_out_dir / f"{test_run_id}_{version.version_id}"
                 ath_run_dir.mkdir(parents=True, exist_ok=True)
+                ath_work_cfg = ath_run_dir / "ath.cfg"
+                ath_work_cfg.write_text(cfg_text, encoding="utf-8")
                 ath_logs_dir = workspace.logs_dir / test_run_id / "ath"
                 ath_runner = AthRunner(str(ath_executable))
                 ath_result = ath_runner.run_cfg(
-                    cfg_path,
+                    ath_work_cfg,
                     version_logs_dir=ath_logs_dir,
                     workdir=ath_run_dir,
                 )
@@ -636,6 +682,7 @@ def run_runner_test_harness(
                         "summary_log": ath_result.summary_log,
                         "stdout_log": ath_result.stdout_log,
                         "stderr_log": ath_result.stderr_log,
+                        "work_cfg_path": str(ath_work_cfg),
                     },
                 )
                 if not ath_result.ok:
@@ -674,20 +721,30 @@ def run_runner_test_harness(
                     executable=str(akabak_executable),
                     log_dir=workspace.logs_dir / test_run_id / "akabak",
                 )
-                try:
-                    akabak_driver.open_project(abec_path)
-                    akabak_driver.import_if_needed()
-                    akabak_driver.run_solve()
-                    akabak_driver.wait_for_completion(timeout_s=600)
-                    pid = int(akabak_driver.session.process_id or 0)
-                    if pid > 0 and bool(getattr(akabak_driver.session, "started_process", False)):
+                akabak_pid_registered = False
+
+                def _register_akabak_pid() -> None:
+                    nonlocal akabak_pid_registered
+                    if akabak_pid_registered:
+                        return
+                    pid_local = int(akabak_driver.session.process_id or 0)
+                    started_local = bool(getattr(akabak_driver.session, "started_process", False))
+                    if pid_local > 0 and started_local:
                         tracker.register(
                             run_id=test_run_id,
                             app="akabak",
-                            pid=pid,
+                            pid=pid_local,
                             started_by_harness=True,
                         )
-                        started_pids.append(pid)
+                        started_pids.append(pid_local)
+                        akabak_pid_registered = True
+
+                try:
+                    akabak_driver.open_project(abec_path)
+                    _register_akabak_pid()
+                    akabak_driver.import_if_needed()
+                    akabak_driver.run_solve()
+                    akabak_driver.wait_for_completion(timeout_s=600)
                     windows = [item.to_dict() for item in akabak_driver.session.list_top_windows()]
                     db.add_ui_observation(
                         test_run_id=test_run_id,
@@ -699,6 +756,19 @@ def run_runner_test_harness(
                         control_dump_path=None,
                         notes="post_solve_window_snapshot",
                     )
+                except Exception:
+                    _register_akabak_pid()
+                    pid = int(akabak_driver.session.process_id or 0)
+                    _capture_ui_observation(
+                        db=db,
+                        test_run_id=test_run_id,
+                        app="akabak",
+                        workspace=workspace,
+                        notes="akabak_stage_exception",
+                        pid=pid if pid > 0 else None,
+                        executable=str(akabak_executable) if akabak_executable else None,
+                    )
+                    raise
                 finally:
                     try:
                         akabak_driver.close()
@@ -724,19 +794,31 @@ def run_runner_test_harness(
 
                 exports_run_dir = workspace.exports_dir / test_run_id
                 exports_run_dir.mkdir(parents=True, exist_ok=True)
-                vacs_summary = run_vacs_export_specs(
-                    executable=str(vacs_executable),
-                    vacs_version=str(
-                        effective_batch.sim_export_settings.to_dict().get("vacs_version", "default") or "default"
-                    ),
-                    project_id=project.project_id,
-                    batch_id=batch.batch_id,
-                    version_id=version.version_id,
-                    abec_path=abec_path,
-                    export_specs=export_specs,
-                    export_dir=exports_run_dir,
-                    log_dir=workspace.logs_dir / test_run_id / "vacs",
-                )
+                try:
+                    vacs_summary = run_vacs_export_specs(
+                        executable=str(vacs_executable),
+                        vacs_version=str(
+                            effective_batch.sim_export_settings.to_dict().get("vacs_version", "default") or "default"
+                        ),
+                        project_id=project.project_id,
+                        batch_id=batch.batch_id,
+                        version_id=version.version_id,
+                        abec_path=abec_path,
+                        export_specs=export_specs,
+                        export_dir=exports_run_dir,
+                        log_dir=workspace.logs_dir / test_run_id / "vacs",
+                    )
+                except Exception:
+                    _capture_ui_observation(
+                        db=db,
+                        test_run_id=test_run_id,
+                        app="vacs",
+                        workspace=workspace,
+                        notes="vacs_stage_exception",
+                        pid=None,
+                        executable=str(vacs_executable) if vacs_executable else None,
+                    )
+                    raise
                 driver_info = dict(vacs_summary.get("driver", {}) or {})
                 pid = int(driver_info.get("process_id") or 0)
                 started = bool(driver_info.get("started_process", False))
@@ -933,15 +1015,31 @@ def run_runner_test_harness(
                     deny_paths=(workspace.root.parent, Path.home()),
                 )
                 cleanup_rows.append({"kind": "exports", "result": result.__dict__})
-            for pid in started_pids:
+            process_cleanup_rows: List[Dict[str, Any]] = []
+            for pid in sorted(set(started_pids)):
+                alive = _is_pid_alive(pid)
+                killed = False
+                if alive:
+                    killed = _kill_pid(pid)
                 tracker.unregister(pid=pid)
+                process_cleanup_rows.append(
+                    {
+                        "pid": int(pid),
+                        "alive_before_cleanup": bool(alive),
+                        "killed": bool(killed),
+                    }
+                )
             db.add_test_run_step(
                 test_run_id=test_run_id,
                 step_name="safe_clean",
                 status="ok",
                 started_at=cleanup_started,
                 finished_at=_now_iso(),
-                details={"cleanup_results": cleanup_rows, "keep_exports": bool(keep_exports)},
+                details={
+                    "cleanup_results": cleanup_rows,
+                    "keep_exports": bool(keep_exports),
+                    "process_cleanup": process_cleanup_rows,
+                },
             )
             db.finish_test_run(test_run_id=test_run_id, status=run_status, notes=notes)
             runs.append(

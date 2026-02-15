@@ -66,8 +66,8 @@ class WindowSignature:
 AKABAK_MAIN_WINDOW = WindowSignature(
     signature_id="akabak_main_window",
     process_names=("akabak.exe",),
-    class_name_regex=r"(Qt|QWidget|AKABAK|MainWindow)",
-    title_regex=r"AKABAK",
+    class_name_regex=r"(TForm_Main|Qt|QWidget|AKABAK|MainWindow)",
+    title_regex=r"(Akabak|AKABAK)",
     required_controls=(
         ControlSelector(control_type="MenuBar"),
     ),
@@ -86,10 +86,34 @@ AKABAK_IMPORT_DIALOG = WindowSignature(
     notes="File/import dialog used for ABEC project loading.",
 )
 
+AKABAK_INTERPRETER_WINDOW = WindowSignature(
+    signature_id="akabak_interpreter_window",
+    process_names=("akabak.exe",),
+    class_name_regex=r"(TForm_Interpreter)",
+    title_regex=r"(Importing Scripts|ABEC Projects)",
+    required_controls=(
+        ControlSelector(class_name_regex=r"TRzMenuButton", title_regex=r"(Open ABEC Project)"),
+        ControlSelector(class_name_regex=r"TRzBitBtn", title_regex=r"(Start Importing)"),
+    ),
+    notes="ABEC interpreter window shown after Tools -> Import ABEC project command.",
+)
+
+AKABAK_OPEN_FILE_DIALOG = WindowSignature(
+    signature_id="akabak_open_file_dialog",
+    process_names=("akabak.exe",),
+    class_name_regex=r"(#32770)",
+    title_regex=r"(Open|Opening|Oeffnen|Öffnen)",
+    required_controls=(
+        ControlSelector(control_type="Edit", automation_id="1148"),
+        ControlSelector(control_type="Button", automation_id="1"),
+    ),
+    notes="Windows common open-file dialog used by the ABEC interpreter.",
+)
+
 AKABAK_SOLVE_PROGRESS = WindowSignature(
     signature_id="akabak_solve_progress",
     process_names=("akabak.exe",),
-    class_name_regex=r"(#32770|Dialog|Qt)",
+    class_name_regex=r"(#32770|Dialog|Qt|TForm_.*)",
     title_regex=r"(Solve|Calculation|Progress|Running)",
     required_controls=(ControlSelector(control_type="ProgressBar"),),
     notes="Solve/progress window shown while AKABAK runs the simulation.",
@@ -98,8 +122,8 @@ AKABAK_SOLVE_PROGRESS = WindowSignature(
 VACS_MAIN_WINDOW = WindowSignature(
     signature_id="vacs_main_window",
     process_names=("vacsviewer_32.exe", "vacsviewer.exe"),
-    class_name_regex=r"(Qt|QWidget|VACS|MainWindow)",
-    title_regex=r"(VACS|Viewer)",
+    class_name_regex=r"(TForm_DatMain|Qt|QWidget|VACS|MainWindow)",
+    title_regex=r"(VacsViewer|VACS|Viewer)",
     required_controls=(
         ControlSelector(control_type="MenuBar"),
     ),
@@ -109,7 +133,7 @@ VACS_MAIN_WINDOW = WindowSignature(
 VACS_EXPORT_DIALOG = WindowSignature(
     signature_id="vacs_export_dialog",
     process_names=("vacsviewer_32.exe", "vacsviewer.exe"),
-    class_name_regex=r"(#32770|Dialog)",
+    class_name_regex=r"(#32770|Dialog|TForm_Export|TForm_Edit|TForm_Picture)",
     title_regex=r"(Export|Save|ASCII|TXT)",
     required_controls=(
         ControlSelector(control_type="Edit"),
@@ -134,6 +158,8 @@ COMMON_FILE_DIALOG = WindowSignature(
 WINDOW_SIGNATURES: Dict[str, WindowSignature] = {
     AKABAK_MAIN_WINDOW.signature_id: AKABAK_MAIN_WINDOW,
     AKABAK_IMPORT_DIALOG.signature_id: AKABAK_IMPORT_DIALOG,
+    AKABAK_INTERPRETER_WINDOW.signature_id: AKABAK_INTERPRETER_WINDOW,
+    AKABAK_OPEN_FILE_DIALOG.signature_id: AKABAK_OPEN_FILE_DIALOG,
     AKABAK_SOLVE_PROGRESS.signature_id: AKABAK_SOLVE_PROGRESS,
     VACS_MAIN_WINDOW.signature_id: VACS_MAIN_WINDOW,
     VACS_EXPORT_DIALOG.signature_id: VACS_EXPORT_DIALOG,

@@ -1125,3 +1125,64 @@ Highlights:
 Validation executed:
 - `python -m py_compile app/runner_test_harness.py app/runner_test_profiles.py app/ui_automation/waits.py`
 - `python -m unittest tests.test_runner_test_workspace tests.test_runner_test_db tests.test_runner_test_profiles tests.test_runner_test_harness tests.test_cli_runner_test tests.test_ui_waits tests.test_vacs_export_pipeline tests.test_runtime_orchestrator tests.test_cli_run_sample tests.test_cli_runs_tools tests.test_ui_automation_contracts -v`
+
+## 2026-02-15 - Runner real VM pass (contract-first AKABAK stabilization)
+
+### Update 40 (Real E2E run + deterministic AKABAK open/import hardening)
+#### Why
+- Real VM E2E failed in AKABAK project-open stage with incomplete diagnostics.
+- AKABAK had a startup blocker window (`TForm_ExampleFiles`) and a modal interpreter/open-file chain that needed strict non-visual contracts.
+
+#### What changed
+- `app/akabak_driver.py`
+  - Switched AKABAK session startup to `prefer_start=True` to avoid attaching stale external processes.
+  - Added deterministic startup modal handling:
+    - detect `TForm_ExampleFiles` child window
+    - close via handle-based `WM_CLOSE`
+    - wait for disappearance (no blind sleeps).
+  - Replaced fragile `Ctrl+O` open attempt with command-driven ABEC import flow:
+    - send `WM_COMMAND` (`Import ABEC project`, id `113`)
+    - wait for interpreter (`TForm_Interpreter`)
+    - trigger `Open ABEC Project` control using non-visual keyboard message path
+    - wait for open-file dialog (`#32770`) and set filename (`SetDlgItemTextW` id `1148`)
+    - hard-fail if open dialog does not close after non-visual confirmation attempts.
+  - `import_if_needed()` now handles interpreter state:
+    - detects `Start Importing`
+    - triggers via non-visual key message and waits for interpreter closure.
+  - Error messages now include actionable detail (`repr`) instead of empty exceptions.
+- `app/ui_contracts/window_signatures.py`
+  - Added AKABAK signatures:
+    - `akabak_interpreter_window` (`TForm_Interpreter`)
+    - `akabak_open_file_dialog` (`#32770`, `Edit(1148)`, `Button(1)`)
+  - Updated main/successor class regexes to real VM classes (`TForm_Main`, `TForm_DatMain`, broader progress/export dialog classes).
+- `ui_contracts/akabak/solve_flow.contract.json`
+  - Added interpreter + open-file required window contracts.
+  - Added startup modal rule for `TForm_ExampleFiles`.
+- `app/ui_automation/session.py`
+  - Added `prefer_start` option for deterministic session ownership.
+- `app/vacs_driver.py`
+  - Enabled `prefer_start=True` for isolation parity with AKABAK.
+
+#### Validation
+- Unit tests:
+  - `python -m unittest tests.test_runner_test_harness tests.test_cli_runner_test tests.test_ui_automation_contracts -v`
+- Syntax checks:
+  - `python -m py_compile app/akabak_driver.py app/ui_automation/session.py app/ui_contracts/window_signatures.py app/vacs_driver.py app/cli.py app/runner_test_harness.py app/ui_automation/discover.py app/ui_automation/watchdog.py`
+- Real VM E2E:
+  - `python -m app runner-test run --case smoke_fast --repeats 1 --keep-exports true --test-profile fast --ath-exe "C:\Tools\ATH\ath.exe" --akabak-exe "C:\Program Files (x86)\RDTeam\AKABAK\AKABAK.exe" --vacs-exe "C:\Program Files (x86)\RDTeam\VACSVIEWER_32\VACSVIEWER_32.exe"`
+  - `test_run_id`: `6bcfdb6e-916d-4762-8791-725c1d81c887`
+  - Result: `failed` at AKABAK open-project with explicit non-visual dialog-close blocker:
+    - `ABEC open-file dialog did not close after non-visual confirmation attempts.`
+
+#### Additional hardening in same pass
+- `app/runner_test_harness.py`
+  - Register AKABAK started PID immediately after open/connect (not only after solve completion), so failing open/import runs are still process-tracked.
+  - `safe_clean` now executes explicit started-PID teardown attempts and logs `process_cleanup` telemetry per PID.
+- `app/ui_automation/session.py`
+  - `close()` now force-terminates only harness-started pywinauto processes when graceful closure is insufficient.
+
+#### Artifacts
+- Failure report updated:
+  - `docs/Runner_E2E_Failure_Report.md`
+- UI dump evidence:
+  - `runner_test_workspace/logs/6bcfdb6e-916d-4762-8791-725c1d81c887/ui_discover/akabak_discover_tree_20260215_034947.json`
