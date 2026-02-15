@@ -619,6 +619,26 @@ def cmd_runner_test_import_start_apply_only(args: argparse.Namespace) -> int:
     return 0 if summary.get("ok", False) else 4
 
 
+def cmd_runner_test_le_repair_import_only(args: argparse.Namespace) -> int:
+    from app.runner_test_harness import run_runner_test_le_repair_import_only
+
+    settings_store = SettingsStore()
+    settings = settings_store.load()
+    executable = args.akabak_exe or settings.akabak_exe
+    summary = run_runner_test_le_repair_import_only(
+        akabak_executable=executable,
+        repeats=args.repeats,
+        workspace_root=args.workspace_root,
+        dry_run=bool(args.dry_run),
+        ath_executable=args.ath_exe or settings.ath_exe,
+        ath_cfg_path=args.ath_cfg_path,
+        abec_path=args.abec_path,
+        reuse_export_dir=args.reuse_export_dir,
+    )
+    print(json.dumps(summary, indent=2, ensure_ascii=False, default=_json_default))
+    return 0 if summary.get("ok", False) else 4
+
+
 def _resolve_run_project_id(service: OrchestratorService, run_id: str, project_id: Optional[str]) -> str:
     if project_id:
         return project_id
@@ -876,6 +896,45 @@ def build_parser() -> argparse.ArgumentParser:
         help="Write DB telemetry without launching AKABAK.",
     )
     p_runner_test_import_apply_only.set_defaults(func=cmd_runner_test_import_start_apply_only)
+
+    p_runner_test_le_repair_import_only = sub_runner_test.add_parser(
+        "le-repair-import-only",
+        help=(
+            "Micro-harness for post-ATH LE repair + AKABAK import flow "
+            "(copy generic25, patch Project.abec LESCript, Start Importing -> Apply)."
+        ),
+    )
+    p_runner_test_le_repair_import_only.add_argument("--akabak-exe", help="Override AKABAK executable path")
+    p_runner_test_le_repair_import_only.add_argument("--ath-exe", help="Optional ATH executable path")
+    p_runner_test_le_repair_import_only.add_argument(
+        "--ath-cfg-path",
+        help="Optional ATH cfg to run before repair/import. If omitted, --abec-path or --reuse-export-dir is used.",
+    )
+    p_runner_test_le_repair_import_only.add_argument(
+        "--abec-path",
+        help="Optional existing ABEC project file to repair/import (used when --ath-cfg-path is omitted).",
+    )
+    p_runner_test_le_repair_import_only.add_argument(
+        "--reuse-export-dir",
+        help="Optional existing ATH export root to scan for Project.abec (alternative to --abec-path).",
+    )
+    p_runner_test_le_repair_import_only.add_argument(
+        "--repeats",
+        type=int,
+        default=1,
+        help="Sequential repetitions for flake detection.",
+    )
+    p_runner_test_le_repair_import_only.add_argument(
+        "--workspace-root",
+        default="runner_test_workspace",
+        help="Dedicated workspace root for harness artifacts.",
+    )
+    p_runner_test_le_repair_import_only.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Write DB telemetry without launching ATH/AKABAK.",
+    )
+    p_runner_test_le_repair_import_only.set_defaults(func=cmd_runner_test_le_repair_import_only)
 
     p_theme = sub.add_parser("theme", help="Theme tooling.")
     sub_theme = p_theme.add_subparsers(dest="theme_cmd", required=True)

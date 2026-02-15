@@ -14,6 +14,7 @@ import subprocess
 from typing import Any, Dict, List, Optional
 
 from app.batch_orchestrator import PlanningSummary, materialize_batch_plan
+from app.ath_driver_assets import repair_post_ath_le_binding
 from app.compatibility_service import CompatibilityService
 from app.cfg_renderer import render_cfg_text
 from app.models import Batch, ParamSelection, Project, ProjectConstraints, SweepSpec
@@ -451,6 +452,7 @@ class OrchestratorService:
 
         exported_abec: Optional[str] = None
         abec_source: Optional[str] = None
+        le_driver_sync: Optional[Dict[str, Any]] = None
         if export_abec:
             target_abec = export_dir / "Project.abec"
             generated = _select_generated_abec(export_dir)
@@ -462,6 +464,16 @@ class OrchestratorService:
                 shutil.copy2(generated, target_abec)
             abec_source = str(generated)
             exported_abec = str(target_abec)
+            sync_result = repair_post_ath_le_binding(
+                abec_path=target_abec,
+                ath_executable=self.settings.ath_exe,
+            )
+            le_driver_sync = sync_result.to_dict()
+            if not sync_result.ok:
+                raise RuntimeError(
+                    "Failed post-ATH LE repair in ABEC export folder: "
+                    f"status={sync_result.status} error={sync_result.error or 'n/a'}"
+                )
 
         exported_stl: List[str] = []
         if export_stl:
@@ -480,6 +492,7 @@ class OrchestratorService:
             "ath_result": ath_result,
             "exported_abec": exported_abec,
             "exported_abec_source": abec_source,
+            "le_driver_sync": le_driver_sync,
             "exported_stl": exported_stl,
             "stl_export_todo": stl_todo_added,
             "stl_directive": ATH_STL_EXPORT_DIRECTIVE,

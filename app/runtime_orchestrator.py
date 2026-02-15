@@ -11,6 +11,7 @@ import uuid
 from typing import Any, Dict, List, Optional, Sequence
 
 from app.batch_orchestrator import materialize_batch_plan
+from app.ath_driver_assets import repair_post_ath_le_binding
 from app.cfg_renderer import render_cfg_text
 from app.export_specs import parse_export_specs
 from app.models import Batch, Project
@@ -378,6 +379,49 @@ def run_batch_pipeline(
                     )
                     run_status = "failed"
                     continue
+
+                if akabak_runner is not None or vacs_required:
+                    driver_sync = repair_post_ath_le_binding(
+                        abec_path=_version_abec_path(project_root, version_id),
+                        ath_executable=ath_executable,
+                    )
+                    stage_results.append(
+                        StageExecution(
+                            version_id=version_id,
+                            stage="post_ath_le_repair",
+                            status="ok" if driver_sync.ok else "failed",
+                            exit_code=0 if driver_sync.ok else 1,
+                            timed_out=False,
+                            summary_log=driver_sync.diagnostics_path or driver_sync.abec_path,
+                        )
+                    )
+                    _update_version_state(
+                        project_root,
+                        version_id,
+                        {
+                            "le_driver_sync": driver_sync.to_dict(),
+                        },
+                    )
+                    if not driver_sync.ok:
+                        elapsed = time.perf_counter() - version_started
+                        writer.update_version_status(
+                            version_id,
+                            status="failed",
+                            run_id=effective_run_id,
+                            duration_seconds=elapsed,
+                            finished_at=_now_iso(),
+                            error_summary="post_ath_le_repair_failed",
+                        )
+                        cleanup_results.append(
+                            {
+                                "version_id": version_id,
+                                "target": str(_version_ath_work_path(project_root, version_id)),
+                                "deleted": False,
+                                "reason": "skipped_due_to_failure",
+                            }
+                        )
+                        run_status = "failed"
+                        continue
 
             if akabak_runner is not None:
                 akabak_result = akabak_runner.run_project(
