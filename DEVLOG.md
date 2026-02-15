@@ -1419,3 +1419,29 @@ Validation executed:
   - `runner-test run --case test_cfg_baseline ...`
   - `runner-test open-dialog-only ...`
   - `runner-test import-start-apply-only ...`
+
+### Update 52 (VACS child-window discovery, 3-round probe)
+#### Done
+- Executed 3-round VACS discovery pass focused on child windows and context dialogs.
+- Captured stable UI signatures and menu taxonomy from real imported-graph state.
+- Added documentation:
+  - `docs/VACS_WINDOW_DISCOVERY.md`
+- Key observed classes/signatures:
+  - main: `TForm_DatMain`
+  - workspace: `MDIClient` (`Arbeitsbereich`)
+  - child graph windows: `TForm_DatGraph`, `TForm_DatContour`
+  - editor windows: `TForm_Editor`
+  - context/modals: `TForm_Confirm`, `#32770` (`Warning`, Save project prompt with `Yes/No/Cancel`)
+
+#### Real VM evidence
+- Reimport runs used for starting state:
+  - `runner_test_workspace/logs/interim_reimport/vacs_interim_reimport_20260215_214604.json`
+  - `runner_test_workspace/logs/interim_reimport/vacs_interim_reimport_20260215_215451.json`
+- UI-discover artifacts:
+  - `runner_test_workspace/logs/vacs_probe/round1/...`
+  - `runner_test_workspace/logs/vacs_probe/round2/...`
+  - `runner_test_workspace/logs/vacs_probe/round3/ui_final/vacs_discover_tree_20260215_220355.json`
+
+#### Known instability
+- Deep interactive probe paths (child activation + immediate export-dialog interaction) timed out in rounds 1/2.
+- This is logged as a probe robustness issue; next pass should isolate it in a dedicated `vacs-export-only` micro-harness with strict per-step timeout contracts.
