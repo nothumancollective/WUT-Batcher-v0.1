@@ -356,6 +356,7 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         background-color: #232323;
         border: 1px solid {c['border']};
         border-radius: {r['sm']}px;
+        min-height: 34px;
     }}
     QFrame#SummaryIssuesHeader[severity="warn"] {{
         border-color: {c['warning_border']};
@@ -368,12 +369,12 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     }}
     QLabel#SummaryIssuesHeaderTitle {{
         color: {c['text']};
-        font-size: 11px;
+        font-size: 12px;
         font-weight: 700;
     }}
     QLabel#SummaryIssuesHeaderCounts {{
         color: {c['muted']};
-        font-size: 10px;
+        font-size: 11px;
         font-weight: 600;
     }}
     QLabel#SummaryIssuesChevron {{
@@ -389,11 +390,12 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     QLabel#SummaryTitle {{
         color: {c['text']};
         font-weight: 700;
+        font-size: 15px;
     }}
     QLabel#SummaryText {{
         color: {c['muted']};
-        font-size: 11px;
-        min-height: 16px;
+        font-size: 12px;
+        min-height: 18px;
     }}
     QLabel#SummaryMeta {{
         color: {c['text']};
@@ -405,8 +407,8 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         color: {c['muted']};
         border: 1px solid {c['border']};
         border-radius: {r['sm']}px;
-        padding: 2px 6px;
-        font-size: 10px;
+        padding: 3px 8px;
+        font-size: 11px;
     }}
     QFrame#ProjectActionBar {{
         background-color: #1a1a1a;

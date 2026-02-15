@@ -1112,6 +1112,7 @@ class ObjectFieldEditor(QWidget):
         self._use_toggle = use_toggle
         self.property_editors: Dict[str, ScalarFieldEditor] = {}
         self._state_badge: QLabel
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -1139,24 +1140,38 @@ class ObjectFieldEditor(QWidget):
             root.addWidget(self.toggle, alignment=Qt.AlignLeft)
 
         self.props_frame = ContextFrame("Details")
+        self.props_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
         props_widget = QWidget()
         props_grid = QGridLayout(props_widget)
-        configure_two_column_grid(props_grid)
+        use_rosse_three_column = str(field.key).strip() == "R-OSSE"
+        compact_grid: Optional[ResponsiveCompactGrid] = None
+        if use_rosse_three_column:
+            compact_grid = ResponsiveCompactGrid()
+            compact_grid._min_three_width = 560
+        else:
+            configure_two_column_grid(props_grid)
 
         for index, property_field in enumerate(field.object_properties):
             label = QLabel(property_field.label)
-            label.setWordWrap(True)
-            label.setFixedWidth(LABEL_COLUMN_WIDTH)
+            label.setWordWrap(False)
+            label.setToolTip(str(property_field.label or ""))
+            label.setFixedWidth(max(122, LABEL_COLUMN_WIDTH - 16) if use_rosse_three_column else LABEL_COLUMN_WIDTH)
             editor = ScalarFieldEditor(property_field)
             editor.changed.connect(self._on_child_changed)
             editor.set_is_set(False)
-            row = index // 2
-            label_col, input_col = _two_column_positions(index % 2)
-            props_grid.addWidget(label, row, label_col)
-            props_grid.addWidget(editor, row, input_col, 1, 1, alignment=Qt.AlignLeft)
+            if use_rosse_three_column and compact_grid is not None:
+                compact_grid.add_cell(label, editor)
+            else:
+                row = index // 2
+                label_col, input_col = _two_column_positions(index % 2)
+                props_grid.addWidget(label, row, label_col)
+                props_grid.addWidget(editor, row, input_col, 1, 1, alignment=Qt.AlignLeft)
             self.property_editors[property_field.key] = editor
 
-        self.props_frame.content_layout.addWidget(props_widget)
+        if use_rosse_three_column and compact_grid is not None:
+            self.props_frame.content_layout.addWidget(compact_grid)
+        else:
+            self.props_frame.content_layout.addWidget(props_widget)
         root.addWidget(self.props_frame)
 
         if field.tooltip:
@@ -1582,9 +1597,9 @@ class ParameterForm(QWidget):
         configure_single_column_grid(selection_grid)
         form_grid = QGridLayout()
         configure_two_column_grid(form_grid)
-        form_grid.setHorizontalSpacing(FORM_METRICS.label_to_input_gap + 4)
+        form_grid.setHorizontalSpacing(FORM_METRICS.label_to_input_gap + 10)
         form_grid.setVerticalSpacing(FORM_METRICS.row_gap)
-        form_grid.setColumnMinimumWidth(2, FORM_METRICS.column_gap + 18)
+        form_grid.setColumnMinimumWidth(2, FORM_METRICS.column_gap + 64)
 
         selection_keys = {"Mesh.Quadrants", "Mesh.RearShape"}
         selection_fields = [field for field in ordered if field.key in selection_keys]
@@ -1619,6 +1634,7 @@ class ParameterForm(QWidget):
 
         for row, field in enumerate(left_fields):
             label = self._make_field_label(field.label)
+            label.setFixedWidth(LABEL_COLUMN_WIDTH + 18)
             editor = self._ensure_editor(field)
             form_grid.addWidget(label, row, 0)
             form_grid.addWidget(editor, row, 1, 1, 1, alignment=Qt.AlignLeft)
@@ -1626,6 +1642,7 @@ class ParameterForm(QWidget):
 
         for row, field in enumerate(right_fields):
             label = self._make_field_label(field.label)
+            label.setFixedWidth(LABEL_COLUMN_WIDTH + 18)
             editor = self._ensure_editor(field)
             form_grid.addWidget(label, row, 3)
             form_grid.addWidget(editor, row, 4, 1, 1, alignment=Qt.AlignLeft)
@@ -1916,7 +1933,7 @@ class ParameterForm(QWidget):
                     field = page_single_field
                     if field is not None:
                         editor = self._ensure_editor(field)
-                        page_layout.addWidget(editor, 0, Qt.AlignLeft)
+                        page_layout.addWidget(editor)
                         self._record_field_metadata(field.key, box, column_key)
                     page_index = pages.addWidget(page_widget)
                     index_by_value[page.value] = page_index
