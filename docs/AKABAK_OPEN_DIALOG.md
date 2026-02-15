@@ -1,7 +1,7 @@
 # AKABAK Open Dialog Hardening
 
 Date: 2026-02-15
-Scope: runner-test/open-dialog-only + AKABAK driver dialog submit path
+Scope: runner-test/open-dialog-only + runner-test/import-start-apply-only + AKABAK driver import path
 
 ## Goal
 Make AKABAK ABEC open-file dialog closure deterministic without visual automation.
@@ -56,6 +56,27 @@ Harness persistence:
 - Adds matching `ui_observations` entry with dump path.
 - Validation `open_dialog_close` stores diagnostics path on failure.
 
+## Import Start/Apply Path (Primary Mesh Import Flow)
+- Primary interpreter action sequence is now:
+  1. `Start Importing`
+  2. wait for `Apply` readiness
+  3. `Apply`
+- `Open ABEC project` inside interpreter is no longer used as the import success path.
+- Postcondition for successful import:
+  - interpreter closed, or
+  - `Start Importing` is disabled after Apply.
+- Known modal handling:
+  - Missing mesh modal (`Error` / `Cannot find Mesh-File ...`) is detected deterministically, logged, and fails fast.
+
+Failure diagnostics for import flow:
+- `import_failure_<timestamp>.json`
+- `import_failure_<timestamp>_main_window.txt`
+- `import_failure_<timestamp>_interpreter_window.txt`
+
+Harness persistence:
+- Artifacts stored as `akabak_failure_diagnostics`.
+- Validation: `import_start_apply_postcondition`.
+
 ## Repro Command
 ```bash
 python -m app runner-test open-dialog-only --akabak-exe "<AKABAK>" --abec-path "<ABEC>" --repeats 5
@@ -64,4 +85,9 @@ python -m app runner-test open-dialog-only --akabak-exe "<AKABAK>" --abec-path "
 Optional dry run:
 ```bash
 python -m app runner-test open-dialog-only --akabak-exe "<AKABAK>" --abec-path "<ABEC>" --repeats 1 --dry-run
+```
+
+Import-only micro-harness:
+```bash
+python -m app runner-test import-start-apply-only --akabak-exe "<AKABAK>" --abec-path "<ABEC>" --repeats 5
 ```

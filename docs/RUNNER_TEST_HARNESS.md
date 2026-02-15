@@ -150,3 +150,21 @@ Der Micro-Harness testet nur:
 - Pfad setzen + bestaetigen (Tier A/B/C non-visual)
 - Dialog schliesst + project-loaded signal
 - AKABAK sauber beenden
+## AKABAK Import-Start-Apply Micro-Harness
+
+```powershell
+python -m app runner-test import-start-apply-only --akabak-exe "C:\Tools\AKABAK\AKABAK.exe" --abec-path "C:\path\to\Project.abec" --repeats 5
+```
+
+Der Micro-Harness testet nur:
+- AKABAK Start + Projekt oeffnen
+- Interpreter-Flow: `Start Importing` -> `Apply`
+- Postcondition: Interpreter geschlossen ODER `Start Importing` deaktiviert
+- deterministische Modal-Erkennung (z. B. missing mesh) mit Fail-Fast
+- AKABAK sauber beenden
+
+Diagnostik bei Fehler:
+- Import-Dumps unter `runner_test_workspace/logs/<test_run_id>/akabak/import_failure_*.json`
+- Persistenz in DB:
+- `artifacts.kind = akabak_failure_diagnostics`
+- `validations.validation_name = import_start_apply_postcondition`

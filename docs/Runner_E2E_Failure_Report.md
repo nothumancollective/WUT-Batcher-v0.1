@@ -5,27 +5,44 @@ Date: 2026-02-15
 ## Latest Full E2E Run Context
 - Command:
   - `python -m app runner-test run --case smoke_fast --repeats 1 --keep-exports true --test-profile fast --ath-exe "C:\Tools\ATH\ath.exe" --akabak-exe "C:\Program Files (x86)\RDTeam\AKABAK\AKABAK.exe" --vacs-exe "C:\Program Files (x86)\RDTeam\VACSVIEWER_32\VACSVIEWER_32.exe"`
-- `test_run_id`: `b0bdcff9-ae45-4915-84ac-48862af5a058`
+- `test_run_id`: `9bdda5f1-904e-4d71-acee-77eb96107aa5`
 - Result: `failed`
 
 ## Failing Step
-- Stage: AKABAK import transition (`import_if_needed`)
+- Stage: `pre_akabak_guard` (between ATH and AKABAK)
 - Error summary:
-  - `AKABAK import modal detected: {'title': 'Error', 'class_name': '#32770', 'message': 'Cannot find Mesh-File at ...\\ath\\ath.msh', 'buttons': ['OK', 'Schliessen']}`
+  - `pre_akabak_guard_missing_mesh_artifact: ...\\ath\\ath.msh`
 - Runner behavior:
-  - Open-file dialog handling is now deterministic and succeeds.
-  - Runner fails fast when import modal indicates missing mesh file.
+  - Open-file dialog handling remains deterministic and stable.
+  - Runner now fails earlier (before AKABAK start) when ABEC references missing mesh artifacts.
 
 ## Evidence
-- AKABAK driver log:
-  - `runner_test_workspace/logs/b0bdcff9-ae45-4915-84ac-48862af5a058/akabak/akabak_driver.log.jsonl`
-- UI observation dump:
-  - `runner_test_workspace/logs/b0bdcff9-ae45-4915-84ac-48862af5a058/ui_discover/akabak_discover_tree_20260215_045444.json`
-- `ui_discover` shows `TForm_Interpreter` with child modal `#32770` (`title`: `Error`) and `OK` button.
+- Guard step details persisted in `runner_test.sqlite`:
+  - validation: `pre_akabak_mesh_artifacts=failed`
+  - step: `pre_akabak_guard=failed`
+- ATH outputs for the run show ABEC references to `ath.msh`, but file absent in run output directory.
+
+## Import Micro-Harness Evidence (AKABAK-only)
+- Command:
+  - `python -m app runner-test import-start-apply-only --akabak-exe "C:\Program Files (x86)\RDTeam\AKABAK\AKABAK.exe" --abec-path "runner_test_workspace\\tmp\\real_abec\\ath\\Project.abec" --repeats 5 --workspace-root "runner_test_workspace"`
+- Run IDs:
+  - `4aa8f411-0769-4939-b4ac-b789452d275a`
+  - `75c0323f-c1a8-44f5-b305-bf8114bcef76`
+  - `7821d89f-f445-4da1-9c97-33ffa505b49a`
+  - `63ec0d8e-3723-49a3-852e-f5b6b25fe4d3`
+  - `6f0568ce-139b-4ac7-ad15-bb1b0d69eef7`
+- Consistent result:
+  - `open_project` succeeded in all runs.
+  - `import_start_apply` failed deterministically with modal:
+    - `Cannot find Mesh-File at ...\\ath\\ath.msh`
+- Diagnostics persisted per run:
+  - `runner_test_workspace/logs/<run_id>/akabak/import_failure_*.json`
 
 ## Root Cause Classification
 - Class: toolchain/data dependency, not visual/UI selector instability.
-- The ABEC import references `ath.msh`, but that file is missing in the generated ATH output directory for this run.
+- The ABEC import references `ath.msh`, but that file is missing in both:
+  - full E2E ATH output for the run
+  - micro-harness ABEC fixture path used for import-only testing
 
 ## Status Of Previous Blocker
 - Previous blocker (`ABEC open-file dialog did not close`) is resolved for micro-harness:
@@ -37,5 +54,6 @@ Date: 2026-02-15
     - `accdf7e0-9960-406f-b9b7-bbf83fba9d57`
 
 ## Recommended Next Action
-1. Ensure ATH stage produces/places referenced mesh file (`ath.msh`) in the ABEC-relative location before AKABAK import.
-2. Re-run full E2E smoke immediately after mesh artifact issue is resolved.
+1. Fix ATH/Gmsh mesh generation path so referenced `ath.msh` exists before AKABAK import.
+2. Re-run `import-start-apply-only --repeats 5` and require 5/5 green.
+3. Re-run full E2E smoke immediately after mesh artifact issue is resolved.

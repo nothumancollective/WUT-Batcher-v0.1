@@ -31,8 +31,30 @@ Command:
 
 Outcome:
 - `ok=false`
-- `test_run_id`: `b0bdcff9-ae45-4915-84ac-48862af5a058`
-- failure reason: AKABAK import modal reports missing mesh file (`ath.msh`)
+- latest `test_run_id`: `9bdda5f1-904e-4d71-acee-77eb96107aa5`
+- failure reason: `pre_akabak_guard_missing_mesh_artifact` (`ath.msh`)
+
+## AKABAK Import-Start-Apply Micro-Harness (Real VM)
+Command:
+- `python -m app runner-test import-start-apply-only --akabak-exe "C:\Program Files (x86)\RDTeam\AKABAK\AKABAK.exe" --abec-path "runner_test_workspace\tmp\real_abec\ath\Project.abec" --repeats 5 --workspace-root "runner_test_workspace"`
+
+Outcome:
+- `ok=false`
+- 5/5 consistent failure classification (`missing mesh modal before apply`)
+
+Run IDs:
+- `4aa8f411-0769-4939-b4ac-b789452d275a`
+- `75c0323f-c1a8-44f5-b305-bf8114bcef76`
+- `7821d89f-f445-4da1-9c97-33ffa505b49a`
+- `63ec0d8e-3723-49a3-852e-f5b6b25fe4d3`
+- `6f0568ce-139b-4ac7-ad15-bb1b0d69eef7`
+
+Observation:
+- `open_project` step is stable in all 5 runs.
+- `import_start_apply` fails deterministically with AKABAK modal:
+  - `Cannot find Mesh-File ...\ath\ath.msh`
+- Failure diagnostics now persisted per run:
+  - `runner_test_workspace/logs/<run_id>/akabak/import_failure_*.json`
 
 Reference:
 - Detailed failure analysis: `docs/Runner_E2E_Failure_Report.md`

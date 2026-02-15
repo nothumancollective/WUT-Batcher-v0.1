@@ -1259,3 +1259,43 @@ Validation executed:
   - command: `python -m app runner-test run --case smoke_fast --repeats 1 --keep-exports true --test-profile fast --ath-exe "C:\Tools\ATH\ath.exe" --akabak-exe "C:\Program Files (x86)\RDTeam\AKABAK\AKABAK.exe" --vacs-exe "C:\Program Files (x86)\RDTeam\VACSVIEWER_32\VACSVIEWER_32.exe"`
   - run_id: `b0bdcff9-ae45-4915-84ac-48862af5a058`
   - result: failed fast with import modal `Cannot find Mesh-File ...\ath\ath.msh`
+
+### Update 46 (Import Start/Apply micro-harness + deterministic postcondition)
+#### What changed
+- AKABAK import flow hardened to contract-first primary path:
+  - `Start Importing` -> wait Apply ready -> `Apply`
+  - hard postcondition: `interpreter_closed` OR `start_button_disabled`
+  - deterministic modal classification and fail-fast on missing mesh modal
+- Added import failure diagnostics dump in AKABAK driver:
+  - `import_failure_<timestamp>.json`
+  - `import_failure_<timestamp>_main_window.txt`
+  - `import_failure_<timestamp>_interpreter_window.txt`
+- Added new micro-harness + CLI:
+  - `runner-test import-start-apply-only`
+  - DB persistence for steps/validations/artifacts/ui observations
+- Extended full E2E AKABAK exception persistence to include both open-dialog and import diagnostics.
+- Updated docs/contracts:
+  - `ui_contracts/akabak/solve_flow.contract.json`
+  - `docs/AKABAK_OPEN_DIALOG.md`
+  - `docs/RUNNER_TEST_HARNESS.md`
+  - `docs/RUNNER_STATUS.md`
+  - `docs/Runner_E2E_Results.md`
+  - `docs/Runner_E2E_Failure_Report.md`
+
+#### Validation
+- Static/tests:
+  - `python -m py_compile app\\akabak_driver.py app\\runner_test_harness.py app\\cli.py tests\\test_runner_test_harness.py tests\\test_cli_runner_test.py`
+  - `python -m unittest tests.test_runner_test_harness tests.test_cli_runner_test`
+- Real VM run (`import-start-apply-only`, repeats=5):
+  - command: `python -m app runner-test import-start-apply-only --abec-path "runner_test_workspace\\tmp\\real_abec\\ath\\Project.abec" --akabak-exe "C:\Program Files (x86)\RDTeam\AKABAK\AKABAK.exe" --repeats 5 --workspace-root "runner_test_workspace"`
+  - run_ids:
+    - `4aa8f411-0769-4939-b4ac-b789452d275a`
+    - `75c0323f-c1a8-44f5-b305-bf8114bcef76`
+    - `7821d89f-f445-4da1-9c97-33ffa505b49a`
+    - `63ec0d8e-3723-49a3-852e-f5b6b25fe4d3`
+    - `6f0568ce-139b-4ac7-ad15-bb1b0d69eef7`
+  - result: 0/5 success, but deterministic classification in all 5 runs (`Cannot find Mesh-File ...\\ath\\ath.msh`)
+- Real VM full E2E smoke (latest guard check):
+  - command: `python -m app runner-test run --case smoke_fast --repeats 1 --keep-exports true --test-profile fast --ath-exe "C:\Tools\ATH\ath.exe" --akabak-exe "C:\Program Files (x86)\RDTeam\AKABAK\AKABAK.exe" --vacs-exe "C:\Program Files (x86)\RDTeam\VACSVIEWER_32\VACSVIEWER_32.exe"`
+  - run_id: `9bdda5f1-904e-4d71-acee-77eb96107aa5`
+  - result: failed fast at `pre_akabak_guard_missing_mesh_artifact`
