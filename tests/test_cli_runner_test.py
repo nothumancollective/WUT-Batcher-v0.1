@@ -1,0 +1,77 @@
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import unittest
+
+
+def _write_case(path: Path) -> None:
+    payload = {
+        "case_id": "smoke_fast",
+        "name": "Smoke Fast",
+        "project_id": "PTEST",
+        "batch_id": "BTEST",
+        "constraints": {
+            "runner_mode": "AkabakImportFixedSource",
+            "fixed_params": {"Length": 120},
+            "limits": {},
+        },
+        "batch_settings": {
+            "selected_params": {"Throat.Diameter": 30.0},
+            "sweeps": {},
+            "sweep_mode": "single",
+            "sim_export_settings": {"export_specs": []},
+        },
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
+class CliRunnerTestTests(unittest.TestCase):
+    @staticmethod
+    def _isolated_env(tmp_dir: str) -> dict[str, str]:
+        env = dict(os.environ)
+        env["USERPROFILE"] = tmp_dir
+        env["HOME"] = tmp_dir
+        return env
+
+    def test_runner_test_run_command_executes_skeleton(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            cases_root = root / "cases"
+            workspace_root = root / "workspace"
+            _write_case(cases_root / "smoke_fast.json")
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "app",
+                    "runner-test",
+                    "run",
+                    "--case",
+                    "smoke_fast",
+                    "--cases-root",
+                    str(cases_root),
+                    "--workspace-root",
+                    str(workspace_root),
+                ],
+                env=self._isolated_env(tmp_dir),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, msg=result.stdout + "\n" + result.stderr)
+            payload = json.loads(result.stdout)
+            self.assertTrue(payload["ok"])
+            self.assertEqual(payload["phase"], "phase2_commit4_skeleton")
+            self.assertEqual(len(payload["runs"]), 1)
+
+
+if __name__ == "__main__":
+    unittest.main()

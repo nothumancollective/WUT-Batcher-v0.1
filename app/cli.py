@@ -539,6 +539,25 @@ def cmd_vacs_discover_graphs(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_runner_test_run(args: argparse.Namespace) -> int:
+    from app.runner_test_harness import run_runner_test_harness
+
+    settings_store = SettingsStore()
+    settings = settings_store.load()
+    summary = run_runner_test_harness(
+        case_id=args.case_id,
+        repeats=args.repeats,
+        keep_exports=str(args.keep_exports).strip().lower() == "true",
+        test_profile=args.test_profile,
+        workspace_root=args.workspace_root,
+        cases_root=args.cases_root,
+        template_cfg_path=args.template_cfg or settings.template_cfg,
+        dry_run=True,  # Commit #4 skeleton: stop before launching external tools.
+    )
+    print(json.dumps(summary, indent=2, ensure_ascii=False, default=_json_default))
+    return 0 if summary.get("ok", False) else 4
+
+
 def _resolve_run_project_id(service: OrchestratorService, run_id: str, project_id: Optional[str]) -> str:
     if project_id:
         return project_id
@@ -702,6 +721,44 @@ def build_parser() -> argparse.ArgumentParser:
     mode_group.add_argument("--real", action="store_true", help="Require real ATH/AKABAK/VACS execution")
     mode_group.add_argument("--dry-run", action="store_true", help="Force deterministic dry-run")
     p_sample.set_defaults(func=cmd_run_sample)
+
+    p_runner_test = sub.add_parser("runner-test", help="Isolated runner test harness.")
+    sub_runner_test = p_runner_test.add_subparsers(dest="runner_test_cmd", required=True)
+
+    p_runner_test_run = sub_runner_test.add_parser(
+        "run",
+        help="Run isolated harness case (skeleton mode currently stops before tool launches).",
+    )
+    p_runner_test_run.add_argument("--case", dest="case_id", required=True, help="Runner test case id")
+    p_runner_test_run.add_argument(
+        "--repeats",
+        type=int,
+        default=1,
+        help="Sequential repetitions for flake detection",
+    )
+    p_runner_test_run.add_argument(
+        "--keep-exports",
+        default="true",
+        choices=["true", "false"],
+        help="Retain exported TXT artifacts (reserved for full E2E mode).",
+    )
+    p_runner_test_run.add_argument(
+        "--test-profile",
+        default="fast",
+        help="Test profile id (reserved for full E2E mode).",
+    )
+    p_runner_test_run.add_argument(
+        "--workspace-root",
+        default="runner_test_workspace",
+        help="Dedicated workspace root for harness artifacts.",
+    )
+    p_runner_test_run.add_argument(
+        "--cases-root",
+        default="runner_test_cases",
+        help="Directory containing runner test case JSON files.",
+    )
+    p_runner_test_run.add_argument("--template-cfg", help="Override template CFG path used for case rendering.")
+    p_runner_test_run.set_defaults(func=cmd_runner_test_run)
 
     p_theme = sub.add_parser("theme", help="Theme tooling.")
     sub_theme = p_theme.add_subparsers(dest="theme_cmd", required=True)
