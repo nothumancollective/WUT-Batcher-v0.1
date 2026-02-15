@@ -1,0 +1,275 @@
+{
+  "schema_version": "1.0",
+  "source": {
+    "legacy_root": "R:/Batch-Software Lokal Backup/Runner",
+    "generated_at": "2026-02-15",
+    "notes": "Semantic-only extraction from legacy behavior; no visual/tab-macro adoption."
+  },
+  "steps": [
+    {
+      "step_id": "akabak_01_main_ready",
+      "app": "akabak",
+      "intent": "ensure_main_window_ready",
+      "required_window_signature": {
+        "process_name": "akabak.exe",
+        "class_name_regex": "TForm_Main",
+        "control_type": "Window"
+      },
+      "required_controls": [],
+      "action": {
+        "type": "focus_window",
+        "method": "uia_set_focus"
+      },
+      "postcondition": "akabak_main_window_focused",
+      "timeout_s": 20
+    },
+    {
+      "step_id": "akabak_02_dismiss_example_popup",
+      "app": "akabak",
+      "intent": "dismiss_startup_modal",
+      "required_window_signature": {
+        "process_name": "akabak.exe",
+        "class_name_regex": "TForm_ExampleFiles",
+        "control_type": "Window"
+      },
+      "required_controls": [
+        {
+          "control_type": "Button",
+          "title_regex": "(Close|OK|Cancel|X)"
+        }
+      ],
+      "action": {
+        "type": "close_modal",
+        "method": "uia_invoke_or_wm_close"
+      },
+      "postcondition": "startup_modal_absent",
+      "timeout_s": 6
+    },
+    {
+      "step_id": "akabak_03_open_import_interpreter",
+      "app": "akabak",
+      "intent": "open_import_abec_interpreter",
+      "required_window_signature": {
+        "process_name": "akabak.exe",
+        "class_name_regex": "TForm_Main",
+        "control_type": "Window"
+      },
+      "required_controls": [
+        {
+          "control_type": "MenuItem",
+          "title_regex": "(Import ABEC|Import)"
+        }
+      ],
+      "action": {
+        "type": "trigger_import_command",
+        "method": "uia_menu_or_wm_command"
+      },
+      "postcondition": "interpreter_window_visible",
+      "timeout_s": 12
+    },
+    {
+      "step_id": "akabak_04_open_file_dialog",
+      "app": "akabak",
+      "intent": "open_abec_file_dialog",
+      "required_window_signature": {
+        "process_name": "akabak.exe",
+        "class_name_regex": "TForm_Interpreter",
+        "control_type": "Window"
+      },
+      "required_controls": [
+        {
+          "class_name_regex": "TRzMenuButton",
+          "title_regex": "Open ABEC Project"
+        }
+      ],
+      "action": {
+        "type": "invoke_control",
+        "method": "uia_invoke"
+      },
+      "postcondition": "open_file_dialog_visible",
+      "timeout_s": 10
+    },
+    {
+      "step_id": "akabak_05_set_abec_path_and_confirm",
+      "app": "akabak",
+      "intent": "set_abec_path_and_open",
+      "required_window_signature": {
+        "process_name": "akabak.exe",
+        "class_name_regex": "#32770",
+        "control_type": "Window",
+        "title_regex": "(Open|Oeffnen)"
+      },
+      "required_controls": [
+        {
+          "control_type": "Edit",
+          "automation_id": "1148"
+        },
+        {
+          "control_type": "Button",
+          "automation_id": "1",
+          "title_regex": "(Open|Oeffnen)"
+        }
+      ],
+      "action": {
+        "type": "set_path_and_confirm",
+        "method": "tiered_uia_then_win32_then_scoped_keys",
+        "tiers": [
+          "Tier A: ValuePattern set value + InvokePattern on Open",
+          "Tier B: WM_SETTEXT/SetDlgItemText + WM_COMMAND(IDOK)",
+          "Tier C (LAST_RESORT): type_keys(path)+Enter only with verified focus on filename Edit"
+        ]
+      },
+      "postcondition": "open_dialog_absent_and_project_loaded_signal_present",
+      "timeout_s": 12
+    },
+    {
+      "step_id": "akabak_06_start_import",
+      "app": "akabak",
+      "intent": "start_abec_import",
+      "required_window_signature": {
+        "process_name": "akabak.exe",
+        "class_name_regex": "TForm_Interpreter",
+        "control_type": "Window"
+      },
+      "required_controls": [
+        {
+          "class_name_regex": "TRzBitBtn",
+          "title_regex": "Start Importing"
+        }
+      ],
+      "action": {
+        "type": "invoke_control",
+        "method": "uia_invoke"
+      },
+      "postcondition": "interpreter_closed_or_main_state_updated",
+      "timeout_s": 20
+    },
+    {
+      "step_id": "akabak_07_trigger_solve",
+      "app": "akabak",
+      "intent": "run_solver",
+      "required_window_signature": {
+        "process_name": "akabak.exe",
+        "class_name_regex": "TForm_Main",
+        "control_type": "Window"
+      },
+      "required_controls": [
+        {
+          "control_type": "MenuItem",
+          "title_regex": "(Solve|Run)"
+        }
+      ],
+      "action": {
+        "type": "trigger_solve",
+        "method": "uia_command_or_scoped_f5"
+      },
+      "postcondition": "solve_running_state_detected",
+      "timeout_s": 10
+    },
+    {
+      "step_id": "akabak_08_wait_solve_complete",
+      "app": "akabak",
+      "intent": "wait_solver_completion",
+      "required_window_signature": {
+        "process_name": "akabak.exe",
+        "class_name_regex": "(TForm_Main|#32770|Dialog)",
+        "control_type": "Window"
+      },
+      "required_controls": [],
+      "action": {
+        "type": "wait_state",
+        "method": "wait_until_with_backoff"
+      },
+      "postcondition": "solver_finished_and_results_available",
+      "timeout_s": 600
+    },
+    {
+      "step_id": "vacs_01_main_ready",
+      "app": "vacs",
+      "intent": "ensure_main_window_ready",
+      "required_window_signature": {
+        "process_name": "vacsviewer_32.exe",
+        "class_name_regex": "(TForm_DatMain|VACS|MainWindow)",
+        "control_type": "Window"
+      },
+      "required_controls": [],
+      "action": {
+        "type": "focus_window",
+        "method": "uia_set_focus"
+      },
+      "postcondition": "vacs_main_window_focused",
+      "timeout_s": 30
+    },
+    {
+      "step_id": "vacs_02_open_export",
+      "app": "vacs",
+      "intent": "open_data_export_dialog",
+      "required_window_signature": {
+        "process_name": "vacsviewer_32.exe",
+        "class_name_regex": "(TForm_DatMain|VACS|MainWindow)",
+        "control_type": "Window"
+      },
+      "required_controls": [
+        {
+          "control_type": "MenuItem",
+          "title_regex": "(Data Export|Daten Export|Export)"
+        }
+      ],
+      "action": {
+        "type": "trigger_export",
+        "method": "uia_command_or_scoped_f7"
+      },
+      "postcondition": "export_dialog_visible",
+      "timeout_s": 10
+    },
+    {
+      "step_id": "vacs_03_save_txt",
+      "app": "vacs",
+      "intent": "save_current_graph_txt",
+      "required_window_signature": {
+        "process_name": "vacsviewer_32.exe",
+        "class_name_regex": "(TForm_Export|#32770|TForm_Edit)",
+        "control_type": "Window"
+      },
+      "required_controls": [
+        {
+          "control_type": "Button",
+          "title_regex": "(Save|Speichern|OK)"
+        },
+        {
+          "control_type": "Edit"
+        }
+      ],
+      "action": {
+        "type": "save_to_path",
+        "method": "uia_edit_set_value_and_button_invoke",
+        "fallback": "LAST_RESORT scoped keys only after edit focus verification"
+      },
+      "postcondition": "txt_file_written_and_dialog_closed",
+      "timeout_s": 15
+    },
+    {
+      "step_id": "vacs_04_handle_modals",
+      "app": "vacs",
+      "intent": "resolve_confirm_overwrite_modals",
+      "required_window_signature": {
+        "process_name": "vacsviewer_32.exe",
+        "class_name_regex": "#32770",
+        "control_type": "Window",
+        "title_regex": "(Confirm|Bestaetigen|Replace|Overwrite|Ersetzen|ueberschreiben)"
+      },
+      "required_controls": [
+        {
+          "control_type": "Button",
+          "title_regex": "(Yes|Ja|OK|Replace|Ersetzen)"
+        }
+      ],
+      "action": {
+        "type": "invoke_modal_primary_action",
+        "method": "uia_invoke"
+      },
+      "postcondition": "modal_absent",
+      "timeout_s": 8
+    }
+  ]
+}
