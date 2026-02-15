@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import ctypes
+from datetime import datetime, timezone
 from dataclasses import dataclass
+import json
 from pathlib import Path
 import re
 from typing import Any, Dict, List, Optional, Tuple
@@ -64,6 +66,7 @@ class AkabakDriver:
         )
         self.logger = StructuredStepLogger(self.log_dir / "akabak_driver.log.jsonl")
         self.watchdog: Optional[ModalDialogWatchdog] = None
+        self.last_open_dialog_diagnostics_path: Optional[str] = None
 
     def _log(self, *, level: str, step: str, event: str, payload: Dict[str, Any]) -> None:
         self.logger.write(level=level, step=step, event=event, payload=payload)
@@ -237,6 +240,71 @@ class AkabakDriver:
         }
         return bool(payload["ok"]), payload
 
+    def _write_open_dialog_diagnostics(
+        self,
+        *,
+        step: str,
+        file_dialog: Any,
+        dialog_handle: int,
+        project_path: str,
+        attempts: List[Dict[str, Any]],
+    ) -> Optional[Path]:
+        self.log_dir.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        base = self.log_dir / f"open_dialog_failure_{stamp}"
+        json_path = base.with_suffix(".json")
+        txt_path = base.with_suffix(".txt")
+        readback = self._dialog_filename_readback(dialog_handle)
+        payload: Dict[str, Any] = {
+            "step": step,
+            "project_path": project_path,
+            "dialog_handle": int(dialog_handle),
+            "filename_readback": readback,
+            "attempts": list(attempts),
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        try:
+            info = file_dialog.element_info
+            payload["dialog_signature"] = {
+                "title": str(getattr(info, "name", "") or ""),
+                "class_name": str(getattr(info, "class_name", "") or ""),
+                "control_type": str(getattr(info, "control_type", "") or ""),
+                "automation_id": str(getattr(info, "automation_id", "") or ""),
+                "handle": int(getattr(info, "handle", dialog_handle) or dialog_handle),
+            }
+        except Exception:
+            payload["dialog_signature"] = {"handle": int(dialog_handle)}
+
+        try:
+            lines: List[str] = []
+            capture_controls = list(file_dialog.descendants())
+            for control in capture_controls[:400]:
+                try:
+                    info = control.element_info
+                    lines.append(
+                        "\t".join(
+                            [
+                                str(getattr(info, "name", "") or ""),
+                                str(getattr(info, "class_name", "") or ""),
+                                str(getattr(info, "control_type", "") or ""),
+                                str(getattr(info, "automation_id", "") or ""),
+                                str(int(getattr(info, "handle", 0) or 0)),
+                            ]
+                        )
+                    )
+                except Exception:
+                    continue
+            txt_path.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
+            payload["control_dump_path"] = str(txt_path)
+        except Exception as exc:
+            payload["control_dump_error"] = repr(exc)
+
+        try:
+            json_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        except Exception:
+            return None
+        return json_path
+
     def _dismiss_startup_windows(self, *, main_window: Any, step: str) -> None:
         startup_windows = self._child_windows(
             main_window,
@@ -335,6 +403,7 @@ class AkabakDriver:
         project_path: str,
         step: str,
     ) -> None:
+        self.last_open_dialog_diagnostics_path = None
         user32 = self._user32()
         dialog_handle = self._window_handle(file_dialog)
         self._require(dialog_handle > 0, "Open-file dialog handle unavailable.", step)
@@ -477,9 +546,23 @@ class AkabakDriver:
                 }
             )
 
-        self._log(level="error", step=step, event="open_dialog_submit_failed", payload={"attempts": attempts})
+        diagnostics_path = self._write_open_dialog_diagnostics(
+            step=step,
+            file_dialog=file_dialog,
+            dialog_handle=dialog_handle,
+            project_path=project_path,
+            attempts=attempts,
+        )
+        self.last_open_dialog_diagnostics_path = str(diagnostics_path) if diagnostics_path is not None else None
+        self._log(
+            level="error",
+            step=step,
+            event="open_dialog_submit_failed",
+            payload={"attempts": attempts, "diagnostics_path": self.last_open_dialog_diagnostics_path},
+        )
         raise RuntimeError(
             "ABEC open-file dialog did not close with loaded-project signal after Tier A/B/C non-visual submission."
+            + (f" diagnostics={self.last_open_dialog_diagnostics_path}" if self.last_open_dialog_diagnostics_path else "")
         )
 
     def _connect(self) -> None:

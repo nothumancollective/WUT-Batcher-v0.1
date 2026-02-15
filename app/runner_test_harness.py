@@ -759,6 +759,24 @@ def run_runner_test_harness(
                 except Exception:
                     _register_akabak_pid()
                     pid = int(akabak_driver.session.process_id or 0)
+                    diagnostics_path = str(getattr(akabak_driver, "last_open_dialog_diagnostics_path", "") or "").strip()
+                    if diagnostics_path:
+                        diag_file = Path(diagnostics_path)
+                        if diag_file.exists() and diag_file.is_file():
+                            db.add_artifact(
+                                test_run_id=test_run_id,
+                                kind="akabak_open_dialog_diagnostics",
+                                path=str(diag_file),
+                                sha256=_sha256_file(diag_file),
+                                bytes_size=diag_file.stat().st_size,
+                            )
+                            db.add_ui_observation(
+                                test_run_id=test_run_id,
+                                app="akabak",
+                                window_signature={"diagnostics_path": str(diag_file)},
+                                control_dump_path=str(diag_file),
+                                notes="akabak_open_dialog_failure_dump",
+                            )
                     _capture_ui_observation(
                         db=db,
                         test_run_id=test_run_id,
@@ -1234,6 +1252,24 @@ def run_runner_test_open_dialog_only(
                     step_error = exc
                     _register_akabak_pid()
                     pid = int(akabak_driver.session.process_id or 0)
+                    diagnostics_path = str(getattr(akabak_driver, "last_open_dialog_diagnostics_path", "") or "").strip()
+                    if diagnostics_path:
+                        diag_file = Path(diagnostics_path)
+                        if diag_file.exists() and diag_file.is_file():
+                            db.add_artifact(
+                                test_run_id=test_run_id,
+                                kind="akabak_open_dialog_diagnostics",
+                                path=str(diag_file),
+                                sha256=_sha256_file(diag_file),
+                                bytes_size=diag_file.stat().st_size,
+                            )
+                            db.add_ui_observation(
+                                test_run_id=test_run_id,
+                                app="akabak",
+                                window_signature={"diagnostics_path": str(diag_file)},
+                                control_dump_path=str(diag_file),
+                                notes="open_dialog_only_failure_dump",
+                            )
                     _capture_ui_observation(
                         db=db,
                         test_run_id=test_run_id,
@@ -1247,7 +1283,7 @@ def run_runner_test_open_dialog_only(
                         test_run_id=test_run_id,
                         validation_name="open_dialog_close",
                         status="failed",
-                        metrics={"abec_path": str(abec_input)},
+                        metrics={"abec_path": str(abec_input), "diagnostics_path": diagnostics_path or None},
                         message=str(exc),
                     )
                     run_status = "failed"
@@ -1258,13 +1294,14 @@ def run_runner_test_open_dialog_only(
                     except Exception:
                         pass
 
+                diagnostics_path = str(getattr(akabak_driver, "last_open_dialog_diagnostics_path", "") or "").strip()
                 db.add_test_run_step(
                     test_run_id=test_run_id,
                     step_name="open_dialog_only",
                     status="ok" if step_error is None else "failed",
                     started_at=open_started,
                     finished_at=_now_iso(),
-                    details={"abec_path": str(abec_input)},
+                    details={"abec_path": str(abec_input), "diagnostics_path": diagnostics_path or None},
                     error={"error": str(step_error)} if step_error is not None else {},
                 )
                 if step_error is not None:
