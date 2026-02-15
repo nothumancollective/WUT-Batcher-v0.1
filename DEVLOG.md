@@ -1445,3 +1445,29 @@ Validation executed:
 #### Known instability
 - Deep interactive probe paths (child activation + immediate export-dialog interaction) timed out in rounds 1/2.
 - This is logged as a probe robustness issue; next pass should isolate it in a dedicated `vacs-export-only` micro-harness with strict per-step timeout contracts.
+
+### Update 53 (VACS Data Export discovery, 5 rounds)
+#### Done
+- Added standalone diagnostics runner:
+  - `scripts/vacs_export_dialog_rounds.py`
+- Executed full 5-round export discovery run:
+  - `runner_test_workspace/logs/vacs_export_rounds/run_20260215_232004/summary.json`
+- Added detailed report:
+  - `docs/VACS_EXPORT_DIALOG_DISCOVERY.md`
+
+#### Key findings
+- `Data Export` is stable as:
+  - title: `Data Export`
+  - class: `TForm_Export`
+- Export trigger robust path:
+  - child `F7` / main `F7` / `WM_COMMAND id=52`
+- Menu path `IO->Export data...` can be disabled while hotkey/command still works.
+- Save control is custom control (not plain UIA Button):
+  - class: `TRzBitBtn`
+  - text: `Save...` (`&Save...` in win32 text)
+- Pitfall dialog reproduced:
+  - `Graph range` (`TForm_CurvesRange`) via `Graph->Range` and graph double-click.
+
+#### Caveats
+- Graceful VACS shutdown remained flaky in probe context; force-kill fallback used in diagnostics path.
+- Contour double-click did not create a separate modal in this session (possible in-place child state change only).
