@@ -190,6 +190,8 @@ def _open_vacs_via_akabak_menu(akabak_main: Any, timeout_s: int) -> Dict[str, An
         raise RuntimeError(f"Unable to bind AKABAK main window via win32 backend: {exc!r}") from exc
 
     menu_paths = [
+        "Options->Open &VACS...",
+        "Options->Open &VACS",
         "Options->Open VACS...",
         "Options->Open VACS",
         "Options->Open Vacs...",
@@ -236,6 +238,7 @@ def _connect_vacs_via_akabak(
     timeout_s: int,
     force_open: bool,
     require_akabak_launch: bool,
+    allow_existing_on_com_error: bool,
 ) -> Tuple[int, bool, Dict[str, Any]]:
     # Try attach first unless forced open is requested.
     if not force_open:
@@ -259,6 +262,8 @@ def _connect_vacs_via_akabak(
                 )
                 time.sleep(0.2)
                 continue
+            if int(pid) in baseline_vacs_pids:
+                return pid, False, {**open_meta, "status": "attached_existing_after_menu_attempt"}
             return pid, True, {**open_meta, "status": "opened_via_akabak"}
         except Exception as exc:
             last_error = repr(exc)
@@ -269,6 +274,16 @@ def _connect_vacs_via_akabak(
             if akabak_pid > 0:
                 modal = _find_any_akabak_dialog(akabak_pid, akabak_main=akabak_main)
                 if modal is not None and _is_vacs_com_missing_dialog(str(modal.get("message", ""))):
+                    if allow_existing_on_com_error:
+                        try:
+                            _, pid = _connect_existing_vacs(vacs_executable, timeout_s=max(3, int(timeout_s / 2)))
+                            return pid, False, {
+                                **open_meta,
+                                "status": "attached_existing_after_com_error",
+                                "com_error_message": str(modal.get("message", "")),
+                            }
+                        except Exception:
+                            pass
                     raise RuntimeError(
                         "vacs_com_registration_missing: "
                         + str(modal.get("message", "")).strip().replace("\r\n", " ")
@@ -568,13 +583,19 @@ def run_interim(args: argparse.Namespace) -> Dict[str, Any]:
 
     force_open_initial = not bool(args.allow_existing_vacs)
     try:
-        vacs_pid, vacs_started, vacs_open_meta = _connect_vacs_via_akabak(
-            vacs_executable=vacs_exe,
-            akabak_main=akabak_main,
-            timeout_s=args.startup_timeout_s,
-            force_open=force_open_initial,
-            require_akabak_launch=force_open_initial,
-        )
+        if bool(args.open_vacs_via_akabak):
+            vacs_pid, vacs_started, vacs_open_meta = _connect_vacs_via_akabak(
+                vacs_executable=vacs_exe,
+                akabak_main=akabak_main,
+                timeout_s=args.startup_timeout_s,
+                force_open=True,
+                require_akabak_launch=False,
+                allow_existing_on_com_error=bool(args.allow_existing_vacs),
+            )
+        else:
+            _, vacs_pid = _connect_existing_vacs(vacs_exe, timeout_s=args.startup_timeout_s)
+            vacs_started = False
+            vacs_open_meta = {"status": "attached_existing_only"}
     except Exception as exc:
         summary = {
             "ok": False,
@@ -582,7 +603,12 @@ def run_interim(args: argparse.Namespace) -> Dict[str, Any]:
             "akabak_pid": akabak_pid,
             "timeline": timeline,
         }
-        log("vacs_connect_failed", error=repr(exc), force_open_initial=force_open_initial)
+        log(
+            "vacs_connect_failed",
+            error=repr(exc),
+            force_open_initial=force_open_initial,
+            open_vacs_via_akabak=bool(args.open_vacs_via_akabak),
+        )
         log_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
         return summary
     log("vacs_connected_or_started", pid=vacs_pid, started=vacs_started, exe=vacs_exe, open_meta=vacs_open_meta)
@@ -602,7 +628,8 @@ def run_interim(args: argparse.Namespace) -> Dict[str, Any]:
             akabak_main=akabak_main,
             timeout_s=args.startup_timeout_s,
             force_open=True,
-            require_akabak_launch=True,
+            require_akabak_launch=False,
+            allow_existing_on_com_error=bool(args.allow_existing_vacs),
         )
         log("vacs_reopened_for_fresh_state", pid=vacs_pid, started=vacs_started, open_meta=vacs_open_meta)
         baseline = _vacs_metrics(vacs_pid)
@@ -680,6 +707,19 @@ def run_interim(args: argparse.Namespace) -> Dict[str, Any]:
                 log("akabak_dialog_handled", message=generic_dialog.get("message", ""), action=action)
                 if "rpc" in message_lower and "server" in message_lower:
                     rpc_retry_count += 1
+                    if not bool(args.recover_rpc_by_restart):
+                        summary = {
+                            "ok": False,
+                            "error": "AKABAK RPC server unavailable while triggering F7 transfer.",
+                            "akabak_pid": akabak_pid,
+                            "vacs_pid": vacs_pid,
+                            "baseline_metrics": baseline,
+                            "current_metrics": _vacs_metrics(vacs_pid),
+                            "edge_confirmations": edge_confirmations,
+                            "timeline": timeline,
+                        }
+                        log_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+                        return summary
                     if rpc_retry_count > 2:
                         summary = {
                             "ok": False,
@@ -701,7 +741,8 @@ def run_interim(args: argparse.Namespace) -> Dict[str, Any]:
                             akabak_main=akabak_main,
                             timeout_s=args.startup_timeout_s,
                             force_open=True,
-                            require_akabak_launch=True,
+                            require_akabak_launch=False,
+                            allow_existing_on_com_error=bool(args.allow_existing_vacs),
                         )
                         log("vacs_restarted_after_rpc", pid=vacs_pid, started=vacs_started, open_meta=vacs_open_meta)
                     except Exception as exc:
@@ -817,22 +858,39 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--force-fresh-vacs",
         action="store_true",
-        default=True,
+        default=False,
         help="If VACS already has imported graphs, close/reopen it first to get a fresh baseline.",
     )
-    parser.add_argument(
-        "--no-force-fresh-vacs",
-        action="store_false",
-        dest="force_fresh_vacs",
-        help="Keep current VACS state even if graphs are already loaded.",
-    )
+    parser.set_defaults(allow_existing_vacs=True)
     parser.add_argument(
         "--allow-existing-vacs",
         action="store_true",
         help=(
-            "Attach an already running VACS instance instead of forcing AKABAK menu start. "
-            "Default is false to avoid RPC handshake mismatch with externally launched VACS."
+            "Allow attaching an already running VACS instance if AKABAK menu open path returns COM error."
         ),
+    )
+    parser.add_argument(
+        "--disallow-existing-vacs",
+        action="store_false",
+        dest="allow_existing_vacs",
+        help="Disallow fallback attach to existing VACS instances.",
+    )
+    parser.set_defaults(open_vacs_via_akabak=True)
+    parser.add_argument(
+        "--open-vacs-via-akabak",
+        action="store_true",
+        help="Open/activate VACS via AKABAK menu (default).",
+    )
+    parser.add_argument(
+        "--skip-open-vacs-via-akabak",
+        action="store_false",
+        dest="open_vacs_via_akabak",
+        help="Skip AKABAK menu and only attach to an existing VACS instance.",
+    )
+    parser.add_argument(
+        "--recover-rpc-by-restart",
+        action="store_true",
+        help="If RPC error appears after F7, attempt legacy restart/retry flow.",
     )
     parser.add_argument(
         "--output-dir",

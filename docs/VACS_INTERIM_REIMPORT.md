@@ -16,7 +16,8 @@ Skript:
 
 CLI-Hinweis:
 - Standard ist jetzt `AKABAK-started VACS` (kein Attach an extern gestartete VACS-Instanz).
-- Altes Verhalten nur optional mit `--allow-existing-vacs`.
+- Wenn VACS bereits offen ist, darf der Skriptlauf diese bestehende Instanz nutzen (Fallback).
+- Kein erzwungenes Frisch-Starten von VACS im Default (`--force-fresh-vacs` ist optional).
 
 ## Wichtiger Hinweis fuer spaetere Integration
 - Datei-/Namenskonventionen der Import-/Export-Artefakte muessen vor Produktivschritt noch finalisiert werden (TODO).
@@ -35,7 +36,12 @@ Bekannter Zusammenhang:
 - Extern gestartetes VACS (Desktop/Terminal) kann den RPC-Fehler triggern.
 - Ueber AKABAK gestartetes VACS vermeidet den Fehler in den beobachteten Faellen.
 
+Aktueller reproduzierbarer Workaround im Skript:
+- Wenn AKABAK beim `Open VACS...` den COM-Dialog meldet, aber eine VACS-Instanz bereits laeuft,
+  wird diese Instanz angebunden und der F7-Reimport dennoch erfolgreich durchgefuehrt.
+
 Referenz-Logs:
+- `runner_test_workspace/logs/interim_reimport/vacs_interim_reimport_20260215_213645.json`
 - `runner_test_workspace/logs/interim_reimport/vacs_interim_reimport_20260215_212433.json`
 - `runner_test_workspace/logs/interim_reimport/vacs_interim_reimport_20260215_210437.json`
 - `runner_test_workspace/logs/interim_reimport/vacs_interim_reimport_20260215_210351.json`
