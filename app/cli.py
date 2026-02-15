@@ -539,6 +539,30 @@ def cmd_vacs_discover_graphs(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_ui_discover(args: argparse.Namespace) -> int:
+    from app.ui_automation.discover import discover_app_ui
+
+    settings = SettingsStore().load()
+    app_name = str(args.app).strip().lower()
+    executable = args.exe
+    if not executable:
+        if app_name == "akabak":
+            executable = settings.akabak_exe
+        elif app_name == "vacs":
+            executable = settings.vacs_exe
+
+    payload = discover_app_ui(
+        app=app_name,
+        executable=executable,
+        pid=args.pid,
+        output_root=args.output_dir,
+        startup_timeout_s=args.timeout_s,
+        max_depth=args.max_depth,
+    )
+    print(json.dumps(payload, indent=2, ensure_ascii=False, default=_json_default))
+    return 0 if "error" not in payload else 3
+
+
 def cmd_runner_test_run(args: argparse.Namespace) -> int:
     from app.runner_test_harness import run_runner_test_harness
 
@@ -1071,6 +1095,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="Generate catalog skeleton from recipes without launching VACS.",
     )
     p_vacs_discover.set_defaults(func=cmd_vacs_discover_graphs)
+
+    p_ui_discover = sub.add_parser("ui-discover", help="PID-scoped UIA discovery dump (top windows + shallow tree).")
+    p_ui_discover.add_argument("--app", required=True, choices=["akabak", "vacs"], help="Target application")
+    p_ui_discover.add_argument("--pid", type=int, help="Existing process id. If omitted, connect/start by executable.")
+    p_ui_discover.add_argument("--exe", help="Executable path when no --pid is supplied")
+    p_ui_discover.add_argument(
+        "--output-dir",
+        default="runner_test_workspace/logs/ui_discover",
+        help="Output directory for discovery artifacts",
+    )
+    p_ui_discover.add_argument("--timeout-s", type=int, default=20, help="Startup/connect timeout when launching")
+    p_ui_discover.add_argument("--max-depth", type=int, default=2, help="Control tree depth for dumps")
+    p_ui_discover.set_defaults(func=cmd_ui_discover)
 
     p_runs = sub.add_parser("runs", help="Run pinning and cleanup utilities.")
     sub_runs = p_runs.add_subparsers(dest="runs_cmd", required=True)

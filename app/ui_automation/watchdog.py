@@ -151,7 +151,10 @@ class ModalDialogWatchdog:
             try:
                 button = window.child_window(title=caption, control_type="Button")
                 if button.exists(timeout=0.2):
-                    button.click_input()
+                    try:
+                        button.invoke()
+                    except Exception:
+                        button.type_keys("{ENTER}")
                     return True
             except Exception:
                 continue
