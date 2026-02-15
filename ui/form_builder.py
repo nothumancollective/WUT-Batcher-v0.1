@@ -1375,15 +1375,13 @@ class ParameterForm(QWidget):
         compact_window = self._is_geometry_compact()
         self._root_layout.setSpacing(24 if compact else 28)
 
-        hint = _group_width_hint()
         block_spacing = 9 + min(extra // 260, 8)
         for section in (self.geometry_section, self.mesh_section):
-            available = max(section.width(), hint)
-            margin = max((available - hint) // 6, 0)
-            section.set_horizontal_inset(margin)
+            # Keep symmetric outer spacing against both window sides.
+            section.set_horizontal_inset(0)
             section.content_layout.setSpacing(block_spacing)
         for grid in self._geometry_dense_grids:
-            grid._min_three_width = 10_000 if compact_window else 780
+            grid._min_three_width = 10_000 if compact_window else 560
             grid._relayout()
 
     def _is_geometry_compact(self) -> bool:
@@ -1401,7 +1399,7 @@ class ParameterForm(QWidget):
     def _make_field_label(self, text: str, *, compact: bool = False) -> QLabel:
         label = QLabel(text)
         label.setWordWrap(False)
-        label.setFixedWidth(max(92, LABEL_COLUMN_WIDTH - 52) if compact else LABEL_COLUMN_WIDTH)
+        label.setFixedWidth(max(122, LABEL_COLUMN_WIDTH - 20) if compact else LABEL_COLUMN_WIDTH)
         label.setToolTip(str(text or ""))
         return label
 

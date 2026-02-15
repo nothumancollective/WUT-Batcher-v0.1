@@ -1123,9 +1123,9 @@ class ProjectPage(QWidget):
 
         self.summary_panel = QFrame()
         self.summary_panel.setObjectName("ProjectSummaryPanel")
-        self.summary_panel.setFixedHeight(152)
+        self.summary_panel.setFixedHeight(118)
         summary_layout = QHBoxLayout(self.summary_panel)
-        summary_layout.setContentsMargins(12, 8, 12, 8)
+        summary_layout.setContentsMargins(12, 6, 12, 6)
         summary_layout.setSpacing(10)
         self.summary_left = QWidget()
         summary_left_layout = QVBoxLayout(self.summary_left)
@@ -1156,13 +1156,13 @@ class ProjectPage(QWidget):
 
         self.summary_right = QWidget()
         self.summary_right.setObjectName("SummaryIssuesDock")
-        self.summary_right.setMinimumWidth(300)
-        self.summary_right.setMaximumWidth(300)
+        self.summary_right.setMinimumWidth(260)
+        self.summary_right.setMaximumWidth(260)
         summary_right_layout = QVBoxLayout(self.summary_right)
         summary_right_layout.setContentsMargins(0, 0, 0, 0)
         summary_right_layout.setSpacing(0)
         self.issues_section = SummaryIssuesSection(self.summary_right)
-        self.issues_section.set_body_target_height(104)
+        self.issues_section.set_body_target_height(66)
         summary_right_layout.addWidget(self.issues_section, 1)
         summary_layout.addWidget(self.summary_right, 0)
         root.addWidget(self.summary_panel)
@@ -1213,6 +1213,7 @@ class ProjectPage(QWidget):
         self._update_action_state()
         self._update_summary_panel()
         self._update_issues_panel()
+        QTimer.singleShot(0, self._sync_summary_issues_geometry)
 
     def _emit_draft_changed(self, payload: Dict[str, Any] | None = None) -> None:
         self.draft_changed.emit(payload or self._raw_constraints_payload())
@@ -1424,12 +1425,39 @@ class ProjectPage(QWidget):
     def _set_issues_open(self, open_state: bool, *, animated: bool) -> None:
         target_open = bool(open_state)
         self._issues_open = target_open
-        collapsed_width = 300
-        expanded_width = 760
+        collapsed_width, expanded_width, body_height = self._summary_issues_dimensions()
         self.summary_right.setMinimumWidth(collapsed_width if not target_open else min(360, expanded_width))
         self.summary_right.setMaximumWidth(expanded_width if target_open else collapsed_width)
-        self.issues_section.set_body_target_height(104)
+        self.issues_section.set_body_target_height(body_height)
         self.issues_section.set_expanded(target_open, animated=animated)
+
+    def _summary_issues_dimensions(self) -> tuple[int, int, int]:
+        collapsed_width = 260
+        mesh_width = int(self.constraints_form.mesh_scroll.width()) if hasattr(self, "constraints_form") else 0
+        panel_width = int(self.summary_panel.width()) if self.summary_panel is not None else 0
+        if mesh_width <= 0:
+            expanded_width = 680
+        else:
+            expanded_width = mesh_width
+        if panel_width > 0:
+            expanded_width = min(expanded_width, max(panel_width - 220, collapsed_width + 80))
+        expanded_width = max(expanded_width, 420)
+        body_height = max(int(self.summary_panel.height()) - 48, 52)
+        return collapsed_width, expanded_width, body_height
+
+    def _sync_summary_issues_geometry(self) -> None:
+        collapsed_width, expanded_width, body_height = self._summary_issues_dimensions()
+        self.issues_section.set_body_target_height(body_height)
+        if self._issues_open:
+            self.summary_right.setMinimumWidth(min(360, expanded_width))
+            self.summary_right.setMaximumWidth(expanded_width)
+        else:
+            self.summary_right.setMinimumWidth(collapsed_width)
+            self.summary_right.setMaximumWidth(collapsed_width)
+
+    def resizeEvent(self, event) -> None:  # type: ignore[override]
+        super().resizeEvent(event)
+        self._sync_summary_issues_geometry()
 
     def _submit(self) -> None:
         if not self.create_btn.isEnabled():
