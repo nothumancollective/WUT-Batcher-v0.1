@@ -22,7 +22,7 @@ from ui.form_schema import build_project_form_schema
 from ui.theme import apply_theme, apply_windows_dark_titlebar, configure_windows_qt_darkmode_env
 
 try:
-    from PySide6.QtCore import QEasingCurve, QPoint, QPropertyAnimation, QEvent, Qt, QTimer, Signal
+    from PySide6.QtCore import QEasingCurve, QPoint, QPropertyAnimation, QEvent, QObject, Qt, QTimer, Signal
     from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPixmap
     from PySide6.QtWidgets import (
         QAbstractItemView,
@@ -962,6 +962,7 @@ class IssuesSubsectionHeader(QFrame):
 
     def set_expanded(self, expanded: bool) -> None:
         self._chevron.setText("v" if expanded else ">")
+        self._counts.setVisible(bool(expanded))
         self.setProperty("expanded", "true" if expanded else "false")
         self.style().unpolish(self)
         self.style().polish(self)
@@ -1007,8 +1008,8 @@ class SummaryIssuesSection(QFrame):
         self.body.setObjectName("SummaryIssuesBody")
         self.body.installEventFilter(self)
         self.body.setMinimumHeight(self._target_body_height)
-        self.body.setMaximumHeight(self._target_body_height)
-        self.body.setVisible(True)
+        self.body.setMaximumHeight(0)
+        self.body.setVisible(False)
         body_layout = QVBoxLayout(self.body)
         body_layout.setContentsMargins(0, 0, 0, 0)
         body_layout.setSpacing(0)
@@ -1048,7 +1049,10 @@ class SummaryIssuesSection(QFrame):
     def set_body_target_height(self, height: int) -> None:
         self._target_body_height = max(int(height), 36)
         self.body.setMinimumHeight(self._target_body_height)
-        self.body.setMaximumHeight(self._target_body_height)
+        if self._expanded:
+            self.body.setMaximumHeight(self._target_body_height)
+        else:
+            self.body.setMaximumHeight(0)
 
     def toggle(self) -> None:
         self.set_expanded(not self._expanded, animated=True)
@@ -1066,10 +1070,11 @@ class SummaryIssuesSection(QFrame):
         self._height_anim.stop()
         self._opacity_anim.stop()
         if target:
+            self.body.setVisible(True)
             self.panel.setVisible(True)
 
         start_height = int(self.body.maximumHeight())
-        end_height = self._target_body_height
+        end_height = self._target_body_height if target else 0
         start_opacity = float(self.panel_effect.opacity())
         end_opacity = 1.0 if target else 0.0
 
@@ -1082,10 +1087,12 @@ class SummaryIssuesSection(QFrame):
             self._opacity_anim.start()
             if not target:
                 QTimer.singleShot(200, lambda: self.panel.setVisible(False))
+                QTimer.singleShot(200, lambda: self.body.setVisible(False))
         else:
             self.body.setMaximumHeight(end_height)
             self.panel_effect.setOpacity(end_opacity)
             self.panel.setVisible(target)
+            self.body.setVisible(target)
 
     def eventFilter(self, watched: QObject, event) -> bool:  # type: ignore[override]
         if watched is self.body and self._expanded and event.type() == QEvent.MouseButtonPress:
@@ -1167,13 +1174,13 @@ class ProjectPage(QWidget):
 
         self.summary_right = QWidget()
         self.summary_right.setObjectName("SummaryIssuesDock")
-        self.summary_right.setMinimumWidth(250)
-        self.summary_right.setMaximumWidth(250)
+        self.summary_right.setMinimumWidth(124)
+        self.summary_right.setMaximumWidth(124)
         summary_right_layout = QVBoxLayout(self.summary_right)
         summary_right_layout.setContentsMargins(0, 0, 0, 0)
         summary_right_layout.setSpacing(0)
         self.issues_section = SummaryIssuesSection(self.summary_right)
-        self.issues_section.set_body_target_height(70)
+        self.issues_section.set_body_target_height(74)
         summary_right_layout.addWidget(self.issues_section, 1)
         summary_layout.addWidget(self.summary_right, 0)
         root.addWidget(self.summary_panel)
@@ -1437,13 +1444,13 @@ class ProjectPage(QWidget):
         target_open = bool(open_state)
         self._issues_open = target_open
         collapsed_width, expanded_width, body_height = self._summary_issues_dimensions()
-        self.summary_right.setMinimumWidth(collapsed_width if not target_open else min(340, expanded_width))
+        self.summary_right.setMinimumWidth(collapsed_width if not target_open else min(300, expanded_width))
         self.summary_right.setMaximumWidth(expanded_width if target_open else collapsed_width)
         self.issues_section.set_body_target_height(body_height)
         self.issues_section.set_expanded(target_open, animated=animated)
 
     def _summary_issues_dimensions(self) -> tuple[int, int, int]:
-        collapsed_width = 250
+        collapsed_width = 124
         mesh_width = int(self.constraints_form.mesh_scroll.width()) if hasattr(self, "constraints_form") else 0
         panel_width = int(self.summary_panel.width()) if self.summary_panel is not None else 0
         if mesh_width <= 0:
@@ -1451,9 +1458,9 @@ class ProjectPage(QWidget):
         else:
             expanded_width = mesh_width
         if panel_width > 0:
-            expanded_width = min(expanded_width, max(panel_width - 180, collapsed_width + 120))
+            expanded_width = min(expanded_width, max(panel_width - 40, collapsed_width + 180))
         expanded_width = max(expanded_width, 420)
-        body_height = max(int(self.summary_panel.height()) - 40, 56)
+        body_height = max(int(self.summary_panel.height()) - 34, 60)
         return collapsed_width, expanded_width, body_height
 
     def _sync_summary_issues_geometry(self) -> None:

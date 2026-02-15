@@ -1597,9 +1597,9 @@ class ParameterForm(QWidget):
         configure_single_column_grid(selection_grid)
         form_grid = QGridLayout()
         configure_two_column_grid(form_grid)
-        form_grid.setHorizontalSpacing(FORM_METRICS.label_to_input_gap + 10)
+        form_grid.setHorizontalSpacing(FORM_METRICS.label_to_input_gap)
         form_grid.setVerticalSpacing(FORM_METRICS.row_gap)
-        form_grid.setColumnMinimumWidth(2, FORM_METRICS.column_gap + 64)
+        form_grid.setColumnMinimumWidth(2, max(FORM_METRICS.column_gap - (2 * FORM_METRICS.label_to_input_gap), 0))
 
         selection_keys = {"Mesh.Quadrants", "Mesh.RearShape"}
         selection_fields = [field for field in ordered if field.key in selection_keys]
@@ -1634,7 +1634,6 @@ class ParameterForm(QWidget):
 
         for row, field in enumerate(left_fields):
             label = self._make_field_label(field.label)
-            label.setFixedWidth(LABEL_COLUMN_WIDTH + 18)
             editor = self._ensure_editor(field)
             form_grid.addWidget(label, row, 0)
             form_grid.addWidget(editor, row, 1, 1, 1, alignment=Qt.AlignLeft)
@@ -1642,7 +1641,6 @@ class ParameterForm(QWidget):
 
         for row, field in enumerate(right_fields):
             label = self._make_field_label(field.label)
-            label.setFixedWidth(LABEL_COLUMN_WIDTH + 18)
             editor = self._ensure_editor(field)
             form_grid.addWidget(label, row, 3)
             form_grid.addWidget(editor, row, 4, 1, 1, alignment=Qt.AlignLeft)
