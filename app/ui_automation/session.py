@@ -10,8 +10,9 @@ from contextlib import redirect_stdout
 from pathlib import Path
 import re
 import subprocess
-import time
 from typing import Any, Dict, List, Optional
+
+from app.ui_automation.waits import wait_until
 
 
 def _now_iso() -> str:
@@ -148,6 +149,7 @@ class UiaSession:
         self.process_id: Optional[int] = None
         self._app = None
         self.backend = "none"
+        self.started_process = False
 
     def _import_pywinauto(self):
         try:
@@ -182,8 +184,11 @@ class UiaSession:
             try:
                 app = Application(backend="uia").start(str(exe_path), timeout=self.startup_timeout_s)
                 connected = True
+                self.started_process = True
             except Exception as exc:
                 raise UiaSessionError(f"Unable to start {self.app_name}: {exc}") from exc
+        else:
+            self.started_process = False
         if not connected:
             return False
         self._app = app
@@ -204,11 +209,33 @@ class UiaSession:
         self.process_id = int(process.pid)
         self._app = process
         self.backend = "uiautomation"
-        # Give the process a short startup window.
-        time.sleep(1.0)
+        self.started_process = True
+        process_id = int(self.process_id or 0)
+
+        def _window_ready():
+            root = auto.GetRootControl()
+            for control in root.GetChildren():
+                try:
+                    pid = int(getattr(control, "ProcessId", 0) or 0)
+                except Exception:
+                    continue
+                if process_id and pid == process_id:
+                    return True, None
+            return False, None
+
+        try:
+            wait_until(
+                predicate=_window_ready,
+                timeout_s=min(float(self.startup_timeout_s), 10.0),
+                initial_interval_s=0.1,
+                max_interval_s=0.5,
+            )
+        except TimeoutError:
+            pass
         return True
 
     def connect_or_start(self) -> None:
+        self.started_process = False
         if self._connect_or_start_pywinauto():
             return
         if self.allow_fallback and self._connect_or_start_uiautomation():

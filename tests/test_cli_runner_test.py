@@ -59,6 +59,7 @@ class CliRunnerTestTests(unittest.TestCase):
                     str(cases_root),
                     "--workspace-root",
                     str(workspace_root),
+                    "--dry-run",
                 ],
                 env=self._isolated_env(tmp_dir),
                 capture_output=True,
@@ -69,7 +70,7 @@ class CliRunnerTestTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, msg=result.stdout + "\n" + result.stderr)
             payload = json.loads(result.stdout)
             self.assertTrue(payload["ok"])
-            self.assertEqual(payload["phase"], "phase2_commit4_skeleton")
+            self.assertEqual(payload["phase"], "phase2_commit5_e2e")
             self.assertEqual(len(payload["runs"]), 1)
 
 

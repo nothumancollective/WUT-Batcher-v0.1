@@ -528,6 +528,46 @@ class RunnerTestDb:
                 ),
             )
 
+    def upsert_ath_dimensions(
+        self,
+        *,
+        run_id: str,
+        version_id: str,
+        project_id: str,
+        batch_id: str,
+        length_mm: Optional[float],
+        width_mm: Optional[float],
+        height_mm: Optional[float],
+        raw_line: str,
+        source_file: str,
+    ) -> None:
+        with self._open_conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO ath_dimensions (
+                    run_id, version_id, project_id, batch_id, length_mm, width_mm, height_mm, raw_line, source_file, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(run_id, version_id) DO UPDATE SET
+                    length_mm=excluded.length_mm,
+                    width_mm=excluded.width_mm,
+                    height_mm=excluded.height_mm,
+                    raw_line=excluded.raw_line,
+                    source_file=excluded.source_file
+                """,
+                (
+                    str(run_id),
+                    str(version_id),
+                    str(project_id),
+                    str(batch_id),
+                    length_mm,
+                    width_mm,
+                    height_mm,
+                    str(raw_line),
+                    str(source_file),
+                    _now_iso(),
+                ),
+            )
+
     def write_measurements(self, rows: Sequence[Dict[str, Any]]) -> Dict[str, int]:
         if not rows:
             return {"graphs_written": 0, "series_written": 0, "points_written": 0}

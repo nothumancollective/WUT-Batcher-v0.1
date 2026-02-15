@@ -138,3 +138,43 @@ def guarded_delete_tree_in_workspace(
 
     shutil.rmtree(target)
     return CleanupResult(target=str(target), deleted=True, reason="deleted")
+
+
+def guarded_delete_file_in_workspace(
+    target_path: str | Path,
+    *,
+    workspace_root: str | Path,
+    expected_parent_name: str | None = None,
+    perform_delete: bool = True,
+    deny_paths: Iterable[str | Path] = (),
+) -> CleanupResult:
+    target_raw = Path(target_path).expanduser()
+    workspace_raw = Path(workspace_root).expanduser()
+    if not target_raw.is_absolute():
+        return CleanupResult(target=str(target_raw), deleted=False, reason="target_not_absolute")
+    if not workspace_raw.is_absolute():
+        return CleanupResult(target=str(workspace_raw), deleted=False, reason="workspace_root_not_absolute")
+
+    target = target_raw.resolve()
+    workspace = workspace_raw.resolve()
+    if not workspace.exists() or not workspace.is_dir():
+        return CleanupResult(target=str(target), deleted=False, reason="workspace_root_missing")
+    if not target.exists():
+        return CleanupResult(target=str(target), deleted=False, reason="target_missing")
+    if not target.is_file():
+        return CleanupResult(target=str(target), deleted=False, reason="target_not_file")
+    if not target.is_relative_to(workspace):
+        return CleanupResult(target=str(target), deleted=False, reason="outside_workspace_root")
+    if expected_parent_name and target.parent.name != expected_parent_name:
+        return CleanupResult(target=str(target), deleted=False, reason="unexpected_parent_name")
+
+    denied = _default_workspace_deny_paths(workspace)
+    denied.extend(_normalize(value) for value in deny_paths)
+    if any(target == denied_path for denied_path in denied):
+        return CleanupResult(target=str(target), deleted=False, reason="target_in_deny_paths")
+
+    if not perform_delete:
+        return CleanupResult(target=str(target), deleted=False, reason="dry_run_no_delete")
+
+    target.unlink()
+    return CleanupResult(target=str(target), deleted=True, reason="deleted")

@@ -5,12 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import re
-import time
 from typing import Any, Dict, List, Optional
 
 from app.ui_automation.recipes import load_vacs_export_recipes, recipe_index_by_id
 from app.ui_automation.session import UiaSession
 from app.ui_automation.step_logger import StructuredStepLogger
+from app.ui_automation.waits import wait_until
 from app.ui_automation.watchdog import ModalDialogWatchdog
 from app.ui_contracts.window_signatures import VACS_EXPORT_DIALOG, VACS_MAIN_WINDOW
 
@@ -63,7 +63,7 @@ class VacsDriver:
         self.watchdog = ModalDialogWatchdog(
             process_id=self.session.process_id,
             output_dir=self.log_dir / "watchdog",
-            capture_screenshot=True,
+            capture_screenshot=False,
             global_timeout_s=300,
         )
         window = self.session.find_window(
@@ -96,11 +96,22 @@ class VacsDriver:
         try:
             window.set_focus()
             window.type_keys("^o")
-            time.sleep(0.5)
-            dialog = self.session.find_window(
-                title_regex=r"(Open|Import|Project|ABEC)",
-                class_name_regex=r"(#32770|Dialog)",
-            )
+            dialog = None
+
+            def _dialog_ready():
+                candidate = self.session.find_window(
+                    title_regex=r"(Open|Import|Project|ABEC)",
+                    class_name_regex=r"(#32770|Dialog)",
+                )
+                return (candidate is not None, candidate)
+
+            try:
+                dialog = wait_until(
+                    predicate=_dialog_ready,
+                    timeout_s=5.0,
+                )
+            except TimeoutError:
+                dialog = None
             if dialog is not None:
                 dialog.type_keys(target, with_spaces=True, set_foreground=True)
                 dialog.type_keys("{ENTER}")
@@ -190,7 +201,20 @@ class VacsDriver:
         try:
             window.set_focus()
             window.type_keys("^s")
-            time.sleep(0.5)
+            def _export_dialog_ready():
+                candidate = self.session.find_window(
+                    title_regex=VACS_EXPORT_DIALOG.title_regex,
+                    class_name_regex=VACS_EXPORT_DIALOG.class_name_regex,
+                )
+                return (candidate is not None, candidate)
+
+            try:
+                wait_until(
+                    predicate=_export_dialog_ready,
+                    timeout_s=5.0,
+                )
+            except TimeoutError:
+                pass
             self._apply_recipe_settings(recipe, export_profile=export_profile)
             dialog = self.session.find_window(
                 title_regex=VACS_EXPORT_DIALOG.title_regex,

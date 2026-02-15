@@ -552,7 +552,10 @@ def cmd_runner_test_run(args: argparse.Namespace) -> int:
         workspace_root=args.workspace_root,
         cases_root=args.cases_root,
         template_cfg_path=args.template_cfg or settings.template_cfg,
-        dry_run=True,  # Commit #4 skeleton: stop before launching external tools.
+        ath_executable=args.ath_exe or settings.ath_exe,
+        akabak_executable=args.akabak_exe or settings.akabak_exe,
+        vacs_executable=args.vacs_exe or settings.vacs_exe,
+        dry_run=bool(args.dry_run),
     )
     print(json.dumps(summary, indent=2, ensure_ascii=False, default=_json_default))
     return 0 if summary.get("ok", False) else 4
@@ -727,7 +730,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_runner_test_run = sub_runner_test.add_parser(
         "run",
-        help="Run isolated harness case (skeleton mode currently stops before tool launches).",
+        help="Run isolated harness case (ATH -> AKABAK -> VACS) with persistent Runner_Test DB logging.",
     )
     p_runner_test_run.add_argument("--case", dest="case_id", required=True, help="Runner test case id")
     p_runner_test_run.add_argument(
@@ -758,6 +761,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Directory containing runner test case JSON files.",
     )
     p_runner_test_run.add_argument("--template-cfg", help="Override template CFG path used for case rendering.")
+    p_runner_test_run.add_argument("--ath-exe", help="Override ATH executable path")
+    p_runner_test_run.add_argument("--akabak-exe", help="Override AKABAK executable path")
+    p_runner_test_run.add_argument("--vacs-exe", help="Override VACS executable path")
+    p_runner_test_run.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Stop before launching ATH/AKABAK/VACS (CFG+DB+cleanup wiring only).",
+    )
     p_runner_test_run.set_defaults(func=cmd_runner_test_run)
 
     p_theme = sub.add_parser("theme", help="Theme tooling.")

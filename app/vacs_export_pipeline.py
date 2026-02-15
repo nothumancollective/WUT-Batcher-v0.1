@@ -57,8 +57,15 @@ def run_vacs_export_specs(
         log_dir=log_root,
     )
     exports: List[Dict[str, Any]] = []
+    driver_meta: Dict[str, Any] = {}
     try:
         driver.open_results(abec_path)
+        session = getattr(driver, "session", None)
+        driver_meta = {
+            "process_id": getattr(session, "process_id", None),
+            "backend": getattr(session, "backend", None),
+            "started_process": bool(getattr(session, "started_process", False)),
+        }
         for spec in specs:
             entry = resolve_catalog_entry(index, spec)
             if entry is None:
@@ -101,6 +108,7 @@ def run_vacs_export_specs(
     return {
         "executed": True,
         "catalog_path": payload.get("_path"),
+        "driver": driver_meta,
         "export_count": len(exports),
         "exports": exports,
     }

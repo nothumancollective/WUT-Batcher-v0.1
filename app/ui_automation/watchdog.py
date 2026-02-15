@@ -40,7 +40,7 @@ class ModalDialogWatchdog:
         process_id: Optional[int],
         output_dir: str | Path,
         whitelist_rules: Sequence[DialogRule] | None = None,
-        capture_screenshot: bool = True,
+        capture_screenshot: bool = False,
         poll_interval_s: float = 0.5,
         global_timeout_s: int = 180,
     ) -> None:
@@ -137,22 +137,7 @@ class ModalDialogWatchdog:
         debug_path = self.output_dir / f"unknown_dialog_{stamp}.json"
         debug_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
         screenshot_path = None
-        if self.capture_screenshot:
-            screenshot_path = self._try_capture_screenshot(stamp)
         return {"debug_path": str(debug_path), "screenshot_path": screenshot_path, "payload": payload}
-
-    def _try_capture_screenshot(self, stamp: str) -> Optional[str]:
-        try:
-            from PIL import ImageGrab  # type: ignore
-        except Exception:
-            return None
-        try:
-            image = ImageGrab.grab()
-            path = self.output_dir / f"unknown_dialog_{stamp}.png"
-            image.save(path)
-            return str(path)
-        except Exception:
-            return None
 
     def _click_action(self, *, window, action: str) -> bool:
         normalized = str(action).lower().strip()

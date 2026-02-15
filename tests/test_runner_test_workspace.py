@@ -5,7 +5,7 @@ import tempfile
 import unittest
 
 from app.runner_test_workspace import resolve_runner_test_workspace
-from app.safe_cleanup import guarded_delete_tree_in_workspace
+from app.safe_cleanup import guarded_delete_file_in_workspace, guarded_delete_tree_in_workspace
 
 
 class RunnerTestWorkspaceTests(unittest.TestCase):
@@ -73,6 +73,20 @@ class RunnerTestWorkspaceTests(unittest.TestCase):
             )
             self.assertFalse(result.deleted)
             self.assertEqual(result.reason, "unexpected_parent_name")
+
+    def test_workspace_file_guard_deletes_cfg_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            workspace = resolve_runner_test_workspace(Path(tmp_dir) / "runner_test_workspace")
+            cfg_file = workspace.cfg_dir / "case.cfg"
+            cfg_file.write_text("Length = 120\n", encoding="utf-8")
+
+            result = guarded_delete_file_in_workspace(
+                cfg_file.resolve(),
+                workspace_root=workspace.root,
+                expected_parent_name="cfg",
+            )
+            self.assertTrue(result.deleted)
+            self.assertFalse(cfg_file.exists())
 
 
 if __name__ == "__main__":

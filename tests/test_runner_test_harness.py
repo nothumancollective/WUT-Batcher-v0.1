@@ -64,13 +64,14 @@ class RunnerTestHarnessTests(unittest.TestCase):
             run = summary["runs"][0]
             self.assertEqual(run["status"], "dry_run_completed")
             cfg_path = Path(str(run["cfg_path"]))
-            self.assertTrue(cfg_path.exists())
+            self.assertFalse(cfg_path.exists())
 
             db = RunnerTestDb(Path(summary["db_path"]))
             self.assertEqual(db.count_rows("test_runs"), 1)
             self.assertEqual(db.count_rows("test_cases"), 1)
-            self.assertEqual(db.count_rows("test_run_steps"), 3)
+            self.assertEqual(db.count_rows("test_run_steps"), 5)
             self.assertEqual(db.count_rows("artifacts"), 1)
+            self.assertEqual(db.count_rows("validations"), 1)
             self.assertEqual(db.count_rows("versions"), 1)
             self.assertEqual(db.count_rows("run_versions"), 1)
 

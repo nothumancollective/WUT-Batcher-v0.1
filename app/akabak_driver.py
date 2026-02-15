@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-import time
 from typing import Any, Dict, Optional
 
 from app.ui_automation.session import UiaSession, UiaSessionError
 from app.ui_automation.step_logger import StructuredStepLogger
+from app.ui_automation.waits import wait_until
 from app.ui_automation.watchdog import ModalDialogWatchdog
 from app.ui_contracts.window_signatures import AKABAK_MAIN_WINDOW, AKABAK_SOLVE_PROGRESS
 
@@ -61,7 +61,7 @@ class AkabakDriver:
         self.watchdog = ModalDialogWatchdog(
             process_id=self.session.process_id,
             output_dir=self.log_dir / "watchdog",
-            capture_screenshot=True,
+            capture_screenshot=False,
             global_timeout_s=300,
         )
         main_window = self.session.find_window(
@@ -96,8 +96,22 @@ class AkabakDriver:
         try:
             main_window.set_focus()
             main_window.type_keys("^o")
-            time.sleep(0.5)
-            file_dialog = self.session.find_window(title_regex=r"(Open|Import|ABEC)", class_name_regex=r"(#32770|Dialog)")
+            file_dialog = None
+
+            def _dialog_ready():
+                dialog = self.session.find_window(
+                    title_regex=r"(Open|Import|ABEC)",
+                    class_name_regex=r"(#32770|Dialog)",
+                )
+                return (dialog is not None, dialog)
+
+            try:
+                file_dialog = wait_until(
+                    predicate=_dialog_ready,
+                    timeout_s=min(float(self.step_timeout_s), 5.0),
+                )
+            except TimeoutError:
+                file_dialog = None
             if file_dialog is not None:
                 file_dialog.type_keys(project_path, with_spaces=True, set_foreground=True)
                 file_dialog.type_keys("{ENTER}")
@@ -150,8 +164,8 @@ class AkabakDriver:
         step = "wait_for_completion"
         self._connect()
         self._require(self.state == "running", "AKABAK solve is not running.", step)
-        deadline = time.perf_counter() + max(1, int(timeout_s))
-        while time.perf_counter() < deadline:
+
+        def _completed():
             progress = self.session.find_window(
                 title_regex=AKABAK_SOLVE_PROGRESS.title_regex,
                 class_name_regex=AKABAK_SOLVE_PROGRESS.class_name_regex,
@@ -161,12 +175,17 @@ class AkabakDriver:
                 if handled:
                     self._log(level="info", step=step, event="watchdog_handled", payload={"count": len(handled)})
             if progress is None:
-                self.state = "completed"
-                self._log(level="info", step=step, event="completed", payload={"state": self.state})
-                return AkabakDriverResult(ok=True, status=self.state, details={})
-            time.sleep(0.5)
-        self._log(level="error", step=step, event="timeout", payload={"timeout_s": timeout_s})
-        raise TimeoutError(f"AKABAK solve did not complete within {timeout_s}s.")
+                return True, {"status": "completed"}
+            return False, {"status": "running"}
+
+        try:
+            wait_until(predicate=_completed, timeout_s=max(1.0, float(timeout_s)))
+        except TimeoutError:
+            self._log(level="error", step=step, event="timeout", payload={"timeout_s": timeout_s})
+            raise TimeoutError(f"AKABAK solve did not complete within {timeout_s}s.")
+        self.state = "completed"
+        self._log(level="info", step=step, event="completed", payload={"state": self.state})
+        return AkabakDriverResult(ok=True, status=self.state, details={})
 
     def close(self) -> AkabakDriverResult:
         step = "close"
