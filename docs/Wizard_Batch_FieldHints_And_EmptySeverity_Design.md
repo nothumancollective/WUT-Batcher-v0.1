@@ -147,3 +147,16 @@ No collision with RunnerMode fixed source block:
 - Empty warning/fatal fields are visibly distinguishable (yellow/red border), without full fill.
 - Logic is context-aware (e.g., `Coverage.Angle` warning disappears when `GCurve.Type` is set).
 - No change to parameter keys, rule IDs, or runner restrictions.
+
+## Implementation Status (2026-02-16)
+
+Implemented from this design in current Batch UI:
+- Batch page moved from JSON textareas to structured inputs.
+- Per-field sweep UI implemented (`base`, `start`, `end`, `steps`) with inline reveal via sweep checkbox.
+- Preview placeholder panel added (`Coming soon`, disabled actions).
+- Summary + action-bar severity states aligned with PROJECT page style.
+- Compatibility state now directly gates field visibility/locking/sweepability.
+
+Not implemented yet from this design note:
+- Dedicated contextual placeholder enrichment from catalog semantics for every batch field.
+- Empty-field warn/fatal border accents in batch form (rule-derived visual state layer).

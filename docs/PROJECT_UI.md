@@ -48,3 +48,18 @@
 - `GCurve.Type` uses explicit UI modes: `no GCurve` (`unset`), `Superellipse` (`1`), `Superformula` (`2`).
 - TODO verification hook:
   - Confirm final production mapping strategy for R-OSSE mode against ATH export behavior (UI mode value vs. pure object-block mapping).
+
+## Batch UI Companion
+
+The Batch page is now implemented as a companion to the PROJECT form design.
+
+- Detailed spec and implementation map: `docs/BATCH_UI.md`
+- Reused style primitives:
+  - `ProjectSummaryPanel`
+  - `ProjectActionBar`
+  - severity pill semantics (`ok|warn|fatal`)
+- Batch-specific UX:
+  - per-parameter base value + sweep toggle (start/end/steps)
+  - export presets + advanced export-spec editor
+  - preview placeholder panel for future STL viewer integration
+  - SQL-history based ETA estimate in summary

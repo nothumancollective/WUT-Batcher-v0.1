@@ -43,3 +43,16 @@ Stand: 2026-02-10
 - CFGs werden durch den Orchestrator gerendert; Pflicht-Source-Block gewinnt immer.
 - Pro Version wird ein vollständiger Snapshot gespeichert:
   - Geometrie + Sim/Export Settings + RunnerMode.
+
+## 2026-02-16 Consistency Update
+
+M4 status text was historically marked done while the GUI still used JSON textareas.
+This mismatch is now resolved by the Batch UI rework:
+- `app/gui.py`: project-style Batch layout, structured parameter/sweep/edit/clone flow
+- `ui/batch_parameter_form.py`: per-parameter base+sweep controls
+- `ui/batch_export_panel.py`: presets + advanced export specs
+- `ui/batch_preview_placeholder.py`: STL preview placeholder
+- `app/services.py` + `app/sql_dataset_store.py`: SQL-history ETA estimator
+- `app/compatibility_service.py`: invalid sweep parsing now surfaces `sweep_parse_failed`
+
+See `docs/BATCH_UI.md` for the final implemented state.

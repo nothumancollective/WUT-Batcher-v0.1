@@ -2076,3 +2076,43 @@ Validation executed:
   - ETA estimation from SQL history
   - compatibility sweep parse issue reporting
   - docs + tests
+
+### Update 8 (Batch UI Rework)
+#### Done
+- Batch page reworked from JSON textareas to structured project-style UI.
+  - Added `ui/batch_parameter_form.py` with per-field base input + sweep toggle (`start/end/steps`).
+  - Added `ui/batch_export_panel.py` with presets (`SPL/Impedance/Polar`) and advanced export-spec table.
+  - Added `ui/batch_preview_placeholder.py` (`Preview (.stl)` coming-soon card).
+- Batch page layout now mirrors project visual language:
+  - summary panel + severity hint
+  - two-column body (parameters left, preview/export right)
+  - action bar with save/run gating and status pill
+- Batch runtime ETA added to summary:
+  - SQL helper `list_recent_success_durations()`
+  - service API `estimate_batch_runtime()` using median history durations
+  - debounced draft re-evaluation wiring in GUI
+- Compatibility hardening:
+  - invalid sweep definitions now emit `sweep_parse_failed`
+  - sweep parse failures force `version_count_preview=0` (no silent ignore)
+- Dashboard actions:
+  - `Edit Batch` and `Clone Batch` now load real drafts into Batch page.
+- New tests:
+  - `tests/test_batch_page_ui.py`
+  - `tests/test_compatibility_service_batch_sweep_validation.py`
+  - `tests/test_eta_estimator.py`
+
+#### Validation
+- Targeted regression run:
+  - `tests/test_runtime_orchestrator.py`
+  - `tests/test_service_export.py`
+  - `tests/test_cli_run_sample.py`
+  - plus new Batch/ETA/compat tests
+- Result: passing (`20 passed` on focused run).
+
+#### Docs
+- Added `docs/BATCH_UI.md`.
+- Updated:
+  - `docs/PROJECT_UI.md`
+  - `docs/Wizard_Batch_FieldHints_And_EmptySeverity_Design.md`
+  - `docs/ath_update_todo_log.md`
+- Replaced unreadable `docs/Wizard_Batch_Optionality_Analysis.md` with valid Markdown pointer.
