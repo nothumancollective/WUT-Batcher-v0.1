@@ -96,6 +96,16 @@ python -m app runner-test radimp-3scope-matrix \
   - `available_graphs=[{title,data_level_type,data_legend,suggested_score}, ...]`
   - all discovered exports are `Data_LevelType=SoundPressure`, `suggested_score=0` for expected `impedance`.
 
+Representative run IDs:
+- default/default/default: `3c95f214-9b68-41d5-ab95-21daa2dcac4f`, `fc0c1822-c357-4532-9d09-33dca2d99b30`
+- default/default/accel_2p83: `5f5a74e0-0310-41b5-9d24-96344f610035`, `999a1e3e-0cfd-46b7-99df-180a3e4a5ae0`
+- default/force_absolute/default: `1ab7e3f3-1222-4029-b62f-7cf4c328823f`, `45b69aae-0543-4a96-85ab-10d0dff79a91`
+- default/force_absolute/accel_2p83: `92a62b22-ea6f-496f-9899-7f0df200310f`, `60ac21f5-b6b6-4185-8bcb-947eeef1acb0`
+- le_voltage_2p83/default/default: `62753b29-ecaf-4dcd-9dd3-f942543dc5bb`, `0fd05d92-d430-45da-8075-0461b61cc611`
+- le_voltage_2p83/default/accel_2p83: `ad681acf-076b-4cae-a579-bb784d39f264`, `593392df-693e-4ded-9dd7-fd97346a87cd`
+- le_voltage_2p83/force_absolute/default: `02587b45-26a6-43cb-995b-9f3f3e4ca980`, `6c596419-1626-4ee3-8294-71ffc395ed4b`
+- le_voltage_2p83/force_absolute/accel_2p83: `1a4b0e5f-81e5-414a-b4ed-380f576aebe5`, `840fa8e8-eab1-4bfd-905a-e2f21d831d72`
+
 ### Command D (cfg profile extension, repeats-per-combo=2)
 ```powershell
 python -m app runner-test radimp-3scope-matrix \
@@ -115,3 +125,7 @@ python -m app runner-test radimp-3scope-matrix \
 ### Pattern
 - `le_voltage_10 + default`: stable success (2/2).
 - `le_voltage_10 + force_absolute`: stable deterministic failure (2/2) with identical `SoundPressure`-only evidence.
+
+Run IDs:
+- le_voltage_10/default/default: `56cb7f3b-ae35-4c5a-aef4-f18c7fa62687`, `9c9ef072-47c8-4319-989a-284f29dc2292`
+- le_voltage_10/force_absolute/default: `feb18fc9-703c-4cbf-a026-ac51834ef678`, `dbec610d-e2f7-44ac-ae01-e83f837913ad`
