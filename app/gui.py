@@ -16,6 +16,7 @@ from app.project_issue_model import UiProjectIssue, classify_ui_severity, issue_
 from app.services import OrchestratorService
 from app.settings_store import UserSettings
 from app.ui_validation import UiValidationEngine
+from ui.batch_parameter_form import BatchParameterForm
 from ui.form_builder import ParameterForm
 from ui.form_metrics import FORM_METRICS
 from ui.form_schema import build_project_form_schema
@@ -1537,17 +1538,20 @@ class BatchPage(QWidget):
     def __init__(self) -> None:
         super().__init__()
         root = QVBoxLayout(self)
+        root.setContentsMargins(20, 12, 20, 14)
+        root.setSpacing(10)
         title = QLabel("BATCH")
         title.setObjectName("PageTitle")
         root.addWidget(title)
 
         grid = QGridLayout()
+        grid.setHorizontalSpacing(10)
+        grid.setVerticalSpacing(8)
         self.batch_name = QLineEdit()
         self.batch_name.setPlaceholderText("Batch Name")
         self.sweep_mode = QComboBox()
         self.sweep_mode.addItems(["single", "combined"])
-        self.selected_json = QTextEdit()
-        self.selected_json.setPlaceholderText('Variable params JSON, e.g. {"Throat.Diameter": 25}')
+        self.parameter_form = BatchParameterForm(build_project_form_schema())
         self.sweeps_json = QTextEdit()
         self.sweeps_json.setPlaceholderText('Sweeps JSON, e.g. {"Length":{"start":80,"end":120,"steps":3}}')
         self.sim_export_json = QTextEdit()
@@ -1558,11 +1562,12 @@ class BatchPage(QWidget):
         grid.addWidget(QLabel("Sweep mode"), 1, 0)
         grid.addWidget(self.sweep_mode, 1, 1)
         grid.addWidget(QLabel("Variable Parameters"), 2, 0)
-        grid.addWidget(self.selected_json, 2, 1)
+        grid.addWidget(self.parameter_form, 2, 1)
         grid.addWidget(QLabel("Sweep Definitions"), 3, 0)
         grid.addWidget(self.sweeps_json, 3, 1)
         grid.addWidget(QLabel("Sim/Export Params"), 4, 0)
         grid.addWidget(self.sim_export_json, 4, 1)
+        grid.setRowStretch(2, 1)
         root.addLayout(grid, 1)
         self.compat_panel = CompatibilityPanel("Batch Compatibility")
         root.addWidget(self.compat_panel)
@@ -1582,43 +1587,52 @@ class BatchPage(QWidget):
         run_btn.clicked.connect(lambda: self.run_batch.emit(self._payload()))
         back_btn.clicked.connect(self.back_to_dashboard.emit)
 
-        self.selected_json.textChanged.connect(self._emit_draft_changed)
+        self.parameter_form.changed.connect(self._emit_draft_changed)
         self.sweeps_json.textChanged.connect(self._emit_draft_changed)
         self.sim_export_json.textChanged.connect(self._emit_draft_changed)
         self.sweep_mode.currentTextChanged.connect(lambda _: self._emit_draft_changed())
+        self.batch_name.textChanged.connect(self._emit_draft_changed)
 
         self._compat_state: Dict[str, Any] = {"visible_keys": [], "locked_keys": [], "sweepable_keys": [], "issues": []}
+        self._project_fixed_keys: set[str] = set()
 
     def _emit_draft_changed(self) -> None:
         self.draft_changed.emit(self._payload(include_name=False))
 
+    def set_project_fixed_keys(self, keys: List[str]) -> None:
+        self._project_fixed_keys = {str(item) for item in list(keys or []) if str(item).strip()}
+        self.parameter_form.set_project_fixed_keys(sorted(self._project_fixed_keys))
+
     def apply_compatibility(self, state: Dict[str, Any]) -> None:
         self._compat_state = dict(state)
+        self.parameter_form.apply_compatibility(state)
         self.compat_panel.update_state(state)
         severity = _highest_issue_severity(self.compat_panel.issues())
-        for widget in (self.selected_json, self.sweeps_json):
+        for widget in (self.sweeps_json,):
             widget.setProperty("severity", severity)
             widget.style().unpolish(widget)
             widget.style().polish(widget)
 
     def _payload(self, *, include_name: bool = True) -> Dict[str, object]:
-        selected = _parse_json_object(self.selected_json.toPlainText())
+        selected = self.parameter_form.selected_params_payload()
         sweeps = _parse_json_object(self.sweeps_json.toPlainText())
 
         visible = set(str(item) for item in list(self._compat_state.get("visible_keys", []) or []))
         locked = set(str(item) for item in list(self._compat_state.get("locked_keys", []) or []))
         sweepable = set(str(item) for item in list(self._compat_state.get("sweepable_keys", []) or []))
-        if visible:
+        if visible or self._project_fixed_keys:
             selected = {
                 key: value
                 for key, value in selected.items()
-                if str(key) in visible and str(key) not in locked
+                if (not visible or str(key) in visible)
+                and str(key) not in locked
+                and str(key) not in self._project_fixed_keys
             }
         if sweepable:
             sweeps = {
                 key: value
                 for key, value in sweeps.items()
-                if str(key) in sweepable and str(key) not in locked
+                if str(key) in sweepable and str(key) not in locked and str(key) not in self._project_fixed_keys
             }
 
         payload: Dict[str, object] = {
@@ -1899,6 +1913,13 @@ class MainWindow(QMainWindow):
     def load_project(self, project: Project) -> None:
         self.current_project = project
         self.project_page.set_constraints_locked(True)
+        fixed_keys = sorted(
+            {
+                *(str(key) for key in project.constraints.fixed_params.keys()),
+                *(str(key) for key in project.constraints.limits.keys()),
+            }
+        )
+        self.batch_page.set_project_fixed_keys(fixed_keys)
         self.refresh_dashboard()
         self._on_project_draft_changed(self.project_page._raw_constraints_payload())
         self._on_batch_draft_changed(self.batch_page._payload(include_name=False))
@@ -2103,6 +2124,7 @@ class MainWindow(QMainWindow):
 
     def _on_batch_draft_changed(self, payload: Dict[str, object]) -> None:
         if self.current_project is None:
+            self.batch_page.set_project_fixed_keys([])
             self.batch_page.apply_compatibility(
                 {
                     "visible_keys": [],
