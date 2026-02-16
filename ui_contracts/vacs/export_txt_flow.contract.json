@@ -1,53 +1,86 @@
 {
-  "contract_id": "vacs_export_txt_flow_v1",
+  "contract_id": "vacs_export_txt_flow_v2",
   "app": "vacs",
-  "description": "UIA contract stub for graph-open and TXT export flow.",
+  "description": "Contract for non-visual export flow used by harness and VACS export scripts.",
   "required_windows": [
     {
       "signature_id": "vacs_main_window",
       "match": {
         "process_names": ["vacsviewer_32.exe", "vacsviewer.exe"],
-        "class_name_regex": "(Qt|QWidget|VACS|MainWindow)",
+        "class_name_regex": "^TForm_DatMain$",
         "control_type": "Window"
       }
     },
     {
-      "signature_id": "vacs_export_dialog",
+      "signature_id": "vacs_graph_window",
       "optional": true,
       "match": {
         "process_names": ["vacsviewer_32.exe", "vacsviewer.exe"],
-        "class_name_regex": "(#32770|Dialog)",
+        "class_name_regex": "^TForm_Dat(Graph|Contour)$",
         "control_type": "Window"
+      }
+    },
+    {
+      "signature_id": "vacs_data_export_dialog",
+      "optional": true,
+      "match": {
+        "process_names": ["vacsviewer_32.exe", "vacsviewer.exe"],
+        "class_name_regex": "^TForm_Export$"
+      }
+    },
+    {
+      "signature_id": "save_as_dialog",
+      "optional": true,
+      "match": {
+        "process_names": ["vacsviewer_32.exe", "vacsviewer.exe"],
+        "class_name_regex": "^#32770$"
       }
     }
   ],
+  "graph_kind_hints": {
+    "impedance": {
+      "title_tokens": ["radiation impedance", "radiation_impedance", "impedance"],
+      "metadata_keys": {
+        "Data_LevelType": ["Impedance", "Impedance10"],
+        "Data_Legend": ["Radiation_Impedance", "Radiation Impedance"]
+      }
+    },
+    "spl": {
+      "title_tokens": ["spl", "spectrum", "polar", "mic polar"],
+      "metadata_keys": {
+        "Data_LevelType": ["SoundPressure"],
+        "Data_Legend": ["Sound pressure"]
+      }
+    }
+  },
   "known_modal_dialogs": [
     {
       "rule_id": "overwrite_confirm",
-      "title_regex": "(save|export|overwrite|confirm)",
-      "message_regex": "(overwrite|already exists)",
+      "class_name_regex": "^#32770$",
+      "message_regex": "(overwrite|already exists|ersetzen|überschreiben)",
+      "action": "yes_or_ok"
+    },
+    {
+      "rule_id": "close_child_confirm",
+      "class_name_regex": "^#32770$",
+      "message_regex": "(please confirm|confirm|bestätigen)",
       "action": "ok"
     }
   ],
   "actions": [
     {
-      "step": "open_results",
-      "trigger": "Ctrl+O",
-      "expected_dialog": "common_file_dialog"
+      "step": "select_graph_child",
+      "selector_priority": ["process_id", "class_name", "native_handle", "automation_id"]
     },
     {
-      "step": "open_graph",
-      "selector_priority": [
-        "automation_id",
-        "control_type",
-        "class_name",
-        "title_regex"
-      ]
+      "step": "open_data_export",
+      "trigger": "WM_COMMAND:52",
+      "postcondition": "data_export_dialog_visible"
     },
     {
-      "step": "export_txt",
-      "trigger": "Ctrl+S",
-      "expected_output": "txt_file_created"
+      "step": "save_txt",
+      "save_dialog_class": "#32770",
+      "postcondition": "output_file_exists_non_empty"
     }
   ]
 }

@@ -8,7 +8,11 @@ import unittest
 from unittest.mock import patch
 
 from app.export_specs import ExportSpec
-from app.vacs_export_pipeline import VacsExportPipelineError, run_vacs_export_specs
+from app.vacs_export_pipeline import (
+    VacsExportPipelineError,
+    _graph_kind_match_score,
+    run_vacs_export_specs,
+)
 
 
 @dataclass
@@ -124,6 +128,120 @@ class VacsExportPipelineTests(unittest.TestCase):
             self.assertEqual(result["export_count"], 1)
             output_path = Path(result["exports"][0]["output_path"])
             self.assertTrue(output_path.exists())
+
+    def test_graph_kind_match_score_uses_metadata(self) -> None:
+        score = _graph_kind_match_score(
+            graph_kind="impedance",
+            title="Graph #1",
+            path="C:\\tmp\\g1.txt",
+            metadata={"Data_LevelType": "Impedance10", "Data_Legend": "Radiation_Impedance #5"},
+        )
+        self.assertGreater(score, 0)
+
+    def test_external_mapping_uses_data_level_type_for_impedance(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            source = root / "raw_graph.txt"
+            source.write_text(
+                "\n".join(
+                    [
+                        "SourceDesc=VACS_Data_Text",
+                        "Data_LevelType=Impedance10",
+                        "Data_Legend='Radiation_Impedance #5'",
+                        "StartString_Data=Data",
+                        "EndString_Data=Data_End",
+                        "Data",
+                        "1000 0.0 0.0",
+                        "Data_End",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            spec = ExportSpec(id="radimp_main", tool="vacs", graph_kind="impedance", format="txt")
+            with patch(
+                "app.vacs_export_pipeline._run_external_vacs_export_save_all",
+                return_value={
+                    "ok": True,
+                    "run_id": "run_x",
+                    "exported_files": [
+                        {
+                            "graph": {"title": "Graph #1"},
+                            "path": str(source),
+                        }
+                    ],
+                    "summary_file": str(root / "summary.json"),
+                },
+            ):
+                result = run_vacs_export_specs(
+                    executable="C:\\Tools\\VACS\\vacsviewer_32.exe",
+                    vacs_version="default",
+                    project_id="P001",
+                    batch_id="B001",
+                    version_id="V001",
+                    abec_path=root / "Project.abec",
+                    export_specs=[spec],
+                    export_dir=root / "exports",
+                    log_dir=root / "logs",
+                    akabak_executable="C:\\Tools\\AKABAK\\AKABAK.exe",
+                )
+            self.assertTrue(result["executed"])
+            self.assertEqual(result["export_count"], 1)
+            details = result["exports"][0]["details"]
+            self.assertEqual(details["source_data_level_type"], "Impedance10")
+            self.assertGreaterEqual(int(details["mapping_score"]), 1)
+
+    def test_external_mapping_failure_lists_available_graph_signatures(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            source = root / "raw_graph.txt"
+            source.write_text(
+                "\n".join(
+                    [
+                        "SourceDesc=VACS_Data_Text",
+                        "Data_LevelType=SoundPressure",
+                        "Data_Legend='Sound pressure'",
+                        "StartString_Data=Data",
+                        "EndString_Data=Data_End",
+                        "Data",
+                        "1000 1.0 0.0",
+                        "Data_End",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            spec = ExportSpec(id="radimp_main", tool="vacs", graph_kind="impedance", format="txt")
+            with patch(
+                "app.vacs_export_pipeline._run_external_vacs_export_save_all",
+                return_value={
+                    "ok": True,
+                    "run_id": "run_x",
+                    "exported_files": [
+                        {
+                            "graph": {"title": "Mic Polar - BE_Spectrum #2"},
+                            "path": str(source),
+                        }
+                    ],
+                    "summary_file": str(root / "summary.json"),
+                },
+            ):
+                with self.assertRaises(VacsExportPipelineError) as ctx:
+                    run_vacs_export_specs(
+                        executable="C:\\Tools\\VACS\\vacsviewer_32.exe",
+                        vacs_version="default",
+                        project_id="P001",
+                        batch_id="B001",
+                        version_id="V001",
+                        abec_path=root / "Project.abec",
+                        export_specs=[spec],
+                        export_dir=root / "exports",
+                        log_dir=root / "logs",
+                        akabak_executable="C:\\Tools\\AKABAK\\AKABAK.exe",
+                    )
+            text = str(ctx.exception)
+            self.assertIn("available_graphs=", text)
+            self.assertIn("SoundPressure", text)
 
 
 if __name__ == "__main__":

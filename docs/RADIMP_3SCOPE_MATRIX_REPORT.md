@@ -72,3 +72,46 @@ python -m app runner-test radimp-3scope-matrix \
 - CFG LE voltage variation is active and verified in artifacts.
 - Current blocker for non-zero RadImp is not solved by cfg voltage/driving variation alone in this setup.
 - `force_absolute` observation path remains a separate mapping issue (VACS graph type availability/selection).
+
+## Repeats Validation (2026-02-16, post-mapping hardening)
+### Command C (2x2x2, repeats-per-combo=2)
+```powershell
+python -m app runner-test radimp-3scope-matrix \
+  --case test_cfg_baseline \
+  --cfg-profiles "default,le_voltage_2p83" \
+  --radimp-profiles "default,force_absolute" \
+  --driving-profiles "default,accel_2p83" \
+  --repeats-per-combo 2 \
+  --keep-exports false \
+  --test-profile fast \
+  --le-repair-profile driver_drvgroup_def_driving_resistor \
+  --ath-exe "C:\Tools\ATH\ath.exe" \
+  --akabak-exe "C:\Program Files (x86)\RDTeam\AKABAK\AKABAK.exe" \
+  --vacs-exe "C:\Program Files (x86)\RDTeam\VACSVIEWER_32\VACSVIEWER_32.exe"
+```
+
+### Pattern
+- All `radimp_observation_profile=default` combinations: stable success (2/2 each).
+- All `radimp_observation_profile=force_absolute` combinations: stable deterministic failure (2/2 each), now with explicit evidence payload:
+  - `available_graphs=[{title,data_level_type,data_legend,suggested_score}, ...]`
+  - all discovered exports are `Data_LevelType=SoundPressure`, `suggested_score=0` for expected `impedance`.
+
+### Command D (cfg profile extension, repeats-per-combo=2)
+```powershell
+python -m app runner-test radimp-3scope-matrix \
+  --case test_cfg_baseline \
+  --cfg-profiles "le_voltage_10" \
+  --radimp-profiles "default,force_absolute" \
+  --driving-profiles "default" \
+  --repeats-per-combo 2 \
+  --keep-exports false \
+  --test-profile fast \
+  --le-repair-profile driver_drvgroup_def_driving_resistor \
+  --ath-exe "C:\Tools\ATH\ath.exe" \
+  --akabak-exe "C:\Program Files (x86)\RDTeam\AKABAK\AKABAK.exe" \
+  --vacs-exe "C:\Program Files (x86)\RDTeam\VACSVIEWER_32\VACSVIEWER_32.exe"
+```
+
+### Pattern
+- `le_voltage_10 + default`: stable success (2/2).
+- `le_voltage_10 + force_absolute`: stable deterministic failure (2/2) with identical `SoundPressure`-only evidence.

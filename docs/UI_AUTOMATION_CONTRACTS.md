@@ -23,6 +23,7 @@ Use `--dry-run` to validate command wiring without launching tools.
 - Signatures must combine process/class/control selectors; title regex alone is not allowed.
 - Export recipes live in `ui_recipes/vacs/*.json`.
 - Recipes are versioned and validated by `app/ui_automation/recipes.py`.
+- VACS flow contract reference: `ui_contracts/vacs/export_txt_flow.contract.json` (v2, `TForm_DatMain` / `TForm_DatGraph|Contour` / `TForm_Export` signatures + metadata hints for impedance vs SPL).
 
 ## Driver State Machines
 - `app/akabak_driver.py`:

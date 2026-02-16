@@ -7,6 +7,7 @@ import unittest
 
 from app.runner_test_db import RunnerTestDb
 from app.runner_test_harness import (
+    _assess_pre_akabak_le_driving_contract,
     _collect_validation_metrics,
     _diagnose_radimp,
     _patch_cfg_le_profile,
@@ -55,6 +56,45 @@ def _write_case(path: Path) -> None:
 
 
 class RunnerTestHarnessTests(unittest.TestCase):
+    def test_assess_pre_akabak_le_driving_contract_detects_expected_drvgroup(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            abec = root / "Project.abec"
+            solving = root / "solving.txt"
+            observation = root / "observation.txt"
+            abec.write_text(
+                "[Project]\nScriptname_Solving=solving.txt\n[Observation]\nC0=observation.txt\n",
+                encoding="utf-8",
+            )
+            solving.write_text("Driving \"S1001\"\n  RefElements=\"A\"; DrvGroup=1001;\n", encoding="utf-8")
+            observation.write_text(
+                "Driving_Values\n  DrvType=Acceleration; Value=1.0\n  401 DrvGroup=1001 Weight=1\n\n"
+                "Radiation_Impedance\n  RadImpType=Normalized\n  402 1001 1001 ID=8001\n",
+                encoding="utf-8",
+            )
+            result = _assess_pre_akabak_le_driving_contract(abec_path=abec, expected_drvgroup="1001")
+            self.assertTrue(result["ok"])
+            self.assertIn("1001", result["solving_drvgroups"])
+
+    def test_assess_pre_akabak_le_driving_contract_flags_missing_radimp(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            abec = root / "Project.abec"
+            solving = root / "solving.txt"
+            observation = root / "observation.txt"
+            abec.write_text(
+                "[Project]\nScriptname_Solving=solving.txt\n[Observation]\nC0=observation.txt\n",
+                encoding="utf-8",
+            )
+            solving.write_text("Driving \"S1001\"\n  RefElements=\"A\"; DrvGroup=1001;\n", encoding="utf-8")
+            observation.write_text(
+                "Driving_Values\n  DrvType=Acceleration; Value=1.0\n  401 DrvGroup=1001 Weight=1\n",
+                encoding="utf-8",
+            )
+            result = _assess_pre_akabak_le_driving_contract(abec_path=abec, expected_drvgroup="1001")
+            self.assertFalse(result["ok"])
+            self.assertIn("radimp_section_missing", result["violations"])
+
     def test_patch_cfg_le_profile_updates_le_voltage(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)

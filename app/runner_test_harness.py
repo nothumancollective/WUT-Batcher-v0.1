@@ -804,6 +804,146 @@ def _resolve_observation_files(abec_path: Path) -> List[Path]:
     return files
 
 
+def _resolve_solving_files(abec_path: Path) -> List[Path]:
+    section = ""
+    solving_refs: List[str] = []
+    for raw_line in abec_path.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = str(raw_line).strip()
+        if not line or line.startswith(";") or line.startswith("#"):
+            continue
+        if line.startswith("[") and line.endswith("]"):
+            section = line[1:-1].strip().lower()
+            continue
+        if section != "project" or "=" not in line:
+            continue
+        lhs, rhs = line.split("=", 1)
+        if str(lhs).strip().lower() != "scriptname_solving":
+            continue
+        ref = str(rhs).strip()
+        if ref:
+            solving_refs.append(ref.split(",", 1)[0].strip())
+    files: List[Path] = []
+    base = abec_path.parent
+    for item in solving_refs:
+        path = (base / item).resolve()
+        if path.exists() and path.is_file():
+            files.append(path)
+    fallback = (base / "solving.txt").resolve()
+    if fallback.exists() and fallback.is_file() and all(fallback != item for item in files):
+        files.append(fallback)
+    return files
+
+
+def _extract_drvgroups_from_text(content: str) -> List[str]:
+    groups = re.findall(r"\bDrvGroup\s*=\s*([0-9]+)\b", str(content), flags=re.IGNORECASE)
+    ordered: List[str] = []
+    seen: set[str] = set()
+    for item in groups:
+        token = str(item).strip()
+        if token and token not in seen:
+            seen.add(token)
+            ordered.append(token)
+    return ordered
+
+
+def _extract_radimp_groups_from_observation(content: str) -> Dict[str, Any]:
+    in_radimp = False
+    pairs: List[List[str]] = []
+    flat_groups: List[str] = []
+    for raw_line in str(content).splitlines():
+        line = str(raw_line).strip()
+        if not line or line.startswith(";") or line.startswith("#"):
+            continue
+        if re.match(r"^\s*Radiation_Impedance\s*$", line, flags=re.IGNORECASE):
+            in_radimp = True
+            continue
+        if in_radimp and re.match(r"^[A-Za-z_]+\s*$", line):
+            in_radimp = False
+        if not in_radimp:
+            continue
+        match = re.match(r"^\s*\d+\s+([0-9]+)\s+([0-9]+)\b", line)
+        if not match:
+            continue
+        g1 = str(match.group(1))
+        g2 = str(match.group(2))
+        pairs.append([g1, g2])
+        flat_groups.append(g1)
+        flat_groups.append(g2)
+    unique_groups: List[str] = []
+    seen: set[str] = set()
+    for item in flat_groups:
+        if item not in seen:
+            seen.add(item)
+            unique_groups.append(item)
+    return {"pairs": pairs, "groups": unique_groups}
+
+
+def _assess_pre_akabak_le_driving_contract(
+    *,
+    abec_path: Path,
+    expected_drvgroup: Optional[str],
+) -> Dict[str, Any]:
+    solving_files = _resolve_solving_files(abec_path)
+    observation_files = _resolve_observation_files(abec_path)
+    solving_groups: List[str] = []
+    observation_driving_groups: List[str] = []
+    observation_radimp_pairs: List[List[str]] = []
+    observation_radimp_groups: List[str] = []
+    observation_has_radimp_section = False
+
+    for path in solving_files:
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for token in _extract_drvgroups_from_text(text):
+            if token not in solving_groups:
+                solving_groups.append(token)
+
+    for path in observation_files:
+        text = path.read_text(encoding="utf-8", errors="replace")
+        if re.search(r"^\s*Radiation_Impedance\s*$", text, flags=re.IGNORECASE | re.MULTILINE):
+            observation_has_radimp_section = True
+        for token in _extract_drvgroups_from_text(text):
+            if token not in observation_driving_groups:
+                observation_driving_groups.append(token)
+        radimp_info = _extract_radimp_groups_from_observation(text)
+        for pair in list(radimp_info.get("pairs", []) or []):
+            if pair not in observation_radimp_pairs:
+                observation_radimp_pairs.append(pair)
+        for token in list(radimp_info.get("groups", []) or []):
+            if token not in observation_radimp_groups:
+                observation_radimp_groups.append(token)
+
+    expected = str(expected_drvgroup or "").strip()
+    violations: List[str] = []
+    if not solving_files:
+        violations.append("solving_file_missing")
+    if not observation_files:
+        violations.append("observation_file_missing")
+    if not observation_has_radimp_section:
+        violations.append("radimp_section_missing")
+    if observation_has_radimp_section and not observation_radimp_pairs:
+        violations.append("radimp_entries_missing")
+    if expected:
+        if expected not in solving_groups:
+            violations.append("expected_drvgroup_missing_in_solving")
+        if expected not in observation_driving_groups:
+            violations.append("expected_drvgroup_missing_in_observation_driving")
+        if expected not in observation_radimp_groups:
+            violations.append("expected_drvgroup_missing_in_radimp_entries")
+
+    return {
+        "ok": not violations,
+        "violations": violations,
+        "expected_drvgroup": expected or None,
+        "solving_files": [str(path) for path in solving_files],
+        "observation_files": [str(path) for path in observation_files],
+        "solving_drvgroups": solving_groups,
+        "observation_driving_drvgroups": observation_driving_groups,
+        "observation_radimp_pairs": observation_radimp_pairs,
+        "observation_radimp_groups": observation_radimp_groups,
+        "observation_has_radimp_section": observation_has_radimp_section,
+    }
+
+
 def _patch_cfg_le_profile(
     *,
     cfg_path: Path,
@@ -2054,6 +2194,37 @@ def run_runner_test_harness(
                     raise RuntimeError(
                         "post_ath_driving_patch_failed: "
                         f"status={driving_patch.status} error={driving_patch.error or 'n/a'}"
+                    )
+                le_guard_started = _now_iso()
+                le_contract = _assess_pre_akabak_le_driving_contract(
+                    abec_path=abec_path,
+                    expected_drvgroup=effective_le_drvgroup,
+                )
+                db.add_validation(
+                    test_run_id=test_run_id,
+                    validation_name="pre_akabak_le_driving_contract",
+                    status="ok" if bool(le_contract.get("ok")) else "failed",
+                    metrics=le_contract,
+                    message="pre-AKABAK LE/Driving contract passed"
+                    if bool(le_contract.get("ok"))
+                    else "pre-AKABAK LE/Driving contract failed",
+                )
+                db.add_test_run_step(
+                    test_run_id=test_run_id,
+                    step_name="pre_akabak_le_driving_guard",
+                    status="ok" if bool(le_contract.get("ok")) else "failed",
+                    started_at=le_guard_started,
+                    finished_at=_now_iso(),
+                    details=le_contract,
+                    error={}
+                    if bool(le_contract.get("ok"))
+                    else {"violations": list(le_contract.get("violations", []) or [])},
+                )
+                if not bool(le_contract.get("ok")):
+                    notes = "pre-akabak LE/Driving contract failed"
+                    raise RuntimeError(
+                        "pre_akabak_le_driving_contract_failed: "
+                        + ",".join(str(item) for item in list(le_contract.get("violations", []) or []))
                     )
 
                 ath_input_dir = abec_path.parent

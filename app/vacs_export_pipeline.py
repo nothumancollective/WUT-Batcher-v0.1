@@ -30,12 +30,62 @@ def _graph_kind_tokens(kind: str) -> List[str]:
     return aliases.get(key, [key] if key else [])
 
 
-def _matches_graph_kind(*, graph_kind: str, title: str, path: str) -> bool:
+def _read_vacs_export_metadata(path: Path) -> Dict[str, str]:
+    metadata: Dict[str, str] = {}
+    if not path.exists() or not path.is_file():
+        return metadata
+    try:
+        lines = path.read_text(encoding="utf-8-sig", errors="replace").splitlines()
+    except Exception:
+        return metadata
+    for line in lines[:80]:
+        stripped = str(line).strip()
+        if not stripped or "=" not in stripped:
+            continue
+        key, value = stripped.split("=", 1)
+        key_norm = str(key).strip()
+        if not key_norm:
+            continue
+        value_norm = str(value).strip().strip('"').strip("'")
+        metadata[key_norm] = value_norm
+        if key_norm == "Data":
+            break
+    return metadata
+
+
+def _graph_kind_match_score(
+    *,
+    graph_kind: str,
+    title: str,
+    path: str,
+    metadata: Dict[str, str] | None = None,
+) -> int:
+    key = str(graph_kind or "").strip().lower()
+    if not key:
+        return 0
     haystack = f"{title} {path}".lower()
     tokens = _graph_kind_tokens(graph_kind)
-    if not tokens:
-        return False
-    return any(token in haystack for token in tokens)
+    score = 0
+    for token in tokens:
+        if token and token in haystack:
+            score = max(score, 4)
+    meta = {str(k).lower(): str(v).lower() for k, v in dict(metadata or {}).items()}
+    level_type = str(meta.get("data_leveltype", "") or "")
+    legend = str(meta.get("data_legend", "") or "")
+    if key in {"impedance", "imp"}:
+        if "impedance" in level_type or "radiation_impedance" in legend or "radiation impedance" in legend:
+            score = max(score, 8)
+        elif "soundpressure" in level_type:
+            score = max(score, 0)
+    elif key == "spl":
+        if "soundpressure" in level_type:
+            score = max(score, 8)
+        elif "spl" in legend or "spectrum" in legend:
+            score = max(score, 6)
+    elif key == "polar":
+        if "polar" in title.lower() or "polar" in legend:
+            score = max(score, 6)
+    return score
 
 
 def _run_external_vacs_export_save_all(
@@ -132,6 +182,21 @@ def run_vacs_export_specs(
         exported_files = list(external.get("exported_files", []) or [])
         used_indices = set()
         exports: List[Dict[str, Any]] = []
+        metadata_cache: Dict[int, Dict[str, str]] = {}
+        signatures: List[Dict[str, Any]] = []
+        for index, row in enumerate(exported_files):
+            source = Path(str(row.get("path", "") or "")).resolve()
+            metadata = _read_vacs_export_metadata(source)
+            metadata_cache[index] = metadata
+            signatures.append(
+                {
+                    "index": int(index),
+                    "title": str((row.get("graph", {}) or {}).get("title", "") or ""),
+                    "path": str(source),
+                    "data_level_type": str(metadata.get("Data_LevelType", "") or ""),
+                    "data_legend": str(metadata.get("Data_Legend", "") or ""),
+                }
+            )
         for spec in specs:
             output_path = _render_output_path(
                 export_dir=export_root,
@@ -142,17 +207,41 @@ def run_vacs_export_specs(
             )
             output_path.parent.mkdir(parents=True, exist_ok=True)
             match_index = None
+            best_score = -1
             for index, row in enumerate(exported_files):
                 if index in used_indices:
                     continue
                 title = str((row.get("graph", {}) or {}).get("title", "") or "")
                 source_path = str(row.get("path", "") or "")
-                if _matches_graph_kind(graph_kind=spec.graph_kind, title=title, path=source_path):
+                score = _graph_kind_match_score(
+                    graph_kind=spec.graph_kind,
+                    title=title,
+                    path=source_path,
+                    metadata=metadata_cache.get(index),
+                )
+                if score > best_score:
+                    best_score = score
                     match_index = index
-                    break
-            if match_index is None:
+            if match_index is None or best_score <= 0:
+                available = [
+                    {
+                        **row,
+                        "suggested_score": _graph_kind_match_score(
+                            graph_kind=spec.graph_kind,
+                            title=str(row.get("title", "") or ""),
+                            path=str(row.get("path", "") or ""),
+                            metadata={
+                                "Data_LevelType": str(row.get("data_level_type", "") or ""),
+                                "Data_Legend": str(row.get("data_legend", "") or ""),
+                            },
+                        ),
+                    }
+                    for row in signatures
+                ]
                 raise VacsExportPipelineError(
-                    f"external vacs export could not map graph_kind='{spec.graph_kind}' for spec '{spec.id}'"
+                    "external vacs export could not map "
+                    f"graph_kind='{spec.graph_kind}' for spec '{spec.id}'. "
+                    f"available_graphs={json.dumps(available, ensure_ascii=False)}"
                 )
             used_indices.add(match_index)
             row = exported_files[match_index]
@@ -169,6 +258,13 @@ def run_vacs_export_specs(
                     "details": {
                         "source_file": str(source),
                         "source_title": str((row.get("graph", {}) or {}).get("title", "") or ""),
+                        "source_data_level_type": str(
+                            metadata_cache.get(match_index, {}).get("Data_LevelType", "") or ""
+                        ),
+                        "source_data_legend": str(
+                            metadata_cache.get(match_index, {}).get("Data_Legend", "") or ""
+                        ),
+                        "mapping_score": int(best_score),
                         "bytes": int(Path(source).stat().st_size),
                     },
                 }

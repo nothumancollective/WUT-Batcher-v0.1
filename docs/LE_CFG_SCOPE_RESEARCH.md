@@ -50,11 +50,19 @@ Check whether missing/incorrect cfg-level LE parameters could explain persistent
   - `le_voltage_10`
   - `le_voltage_0p1`
 - Added combined matrix runner to test cfg + observation + driving scopes together.
+- Added pre-AKABAK LE/Driving fail-fast contract guard:
+  - verifies solving/observation files exist
+  - verifies expected `DrvGroup` presence in solving + observation `Driving_Values`
+  - verifies `Radiation_Impedance` section and group entries exist
+  - persists validation `pre_akabak_le_driving_contract`
 
 ## Current Factual Outcome
 - CFG LE voltage changes are applied and verified in run artifacts.
 - RadImp remains normalized/all-zero in successful default observation runs.
-- `force_absolute` observation profile currently fails due VACS graph mapping (`impedance` graph not resolved), independent of cfg LE voltage.
+- `force_absolute` observation profile now fails with deterministic mapping evidence:
+  - only `SoundPressure` exports are present (`Mic Polar - BE_Spectrum #*`)
+  - no impedance-level export candidate (`suggested_score=0` for all available graphs)
+  - behavior is independent of cfg LE voltage profile.
 
 ## Next Verification Focus
 - Keep cfg scope fixed to known-good (`default` or `le_voltage_2p83`) and isolate VACS graph mapping under non-normalized RadImp observation.

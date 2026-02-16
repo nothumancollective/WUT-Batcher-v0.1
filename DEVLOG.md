@@ -1825,3 +1825,42 @@ Validation executed:
 #### Docs
 - Added: `docs/RADIMP_3SCOPE_MATRIX_REPORT.md`
 - Added: `docs/LE_CFG_SCOPE_RESEARCH.md`
+
+### Update 65 (force_absolute mapping hardening + pre-AKABAK LE/Driving contract guard)
+#### Done
+- Hardened external VACS mapping in `app/vacs_export_pipeline.py`:
+  - mapping now scores candidates by title/path and exported TXT metadata (`Data_LevelType`, `Data_Legend`)
+  - added deterministic error payload with `available_graphs` evidence when mapping fails
+  - exported mapping details now persist source metadata (`source_data_level_type`, `source_data_legend`, `mapping_score`)
+- Added fail-fast LE/Driving contract guard before AKABAK start in `app/runner_test_harness.py`:
+  - validation + step: `pre_akabak_le_driving_contract` / `pre_akabak_le_driving_guard`
+  - checks solving/observation presence, expected `DrvGroup`, and `Radiation_Impedance` entries
+- Updated VACS contract file to concrete signatures (`ui_contracts/vacs/export_txt_flow.contract.json` v2).
+- Added/updated tests:
+  - `tests/test_vacs_export_pipeline.py` (metadata-based mapping + deterministic failure evidence)
+  - `tests/test_runner_test_harness.py` (pre-AKABAK LE/Driving contract guard parsing)
+
+#### Why
+- `force_absolute` runs failed with ambiguous `graph_kind` mapping errors.
+- We needed deterministic evidence for root cause classification and stricter preconditions before AKABAK/VACS stages.
+
+#### Validation
+- Tests:
+  - `python -m pytest tests/test_vacs_export_pipeline.py tests/test_runner_test_harness.py tests/test_cli_runner_test.py -q`
+  - `26 passed`
+- Real runs:
+  - `runner-test run --radimp-observation-profile force_absolute --repeats 3`
+    - run_ids: `92e5c3a5-22a6-418f-b02e-0a11af0abfdd`, `82e14f06-36d8-49f9-b6cb-6ef064bbbc2e`, `b10d2224-d7e9-4ded-97b6-b2ac8d418122`
+    - deterministic failure signature: only `SoundPressure` candidate graphs available for impedance mapping.
+  - `runner-test radimp-3scope-matrix` repeats-per-combo=2:
+    - cfg `default|le_voltage_2p83`, radimp `default|force_absolute`, driving `default|accel_2p83`
+    - default profile combos stable success; force_absolute combos stable deterministic failure with identical evidence pattern.
+  - cfg extension repeats-per-combo=2:
+    - cfg `le_voltage_10`, radimp `default|force_absolute`, driving `default`
+    - default stable success; force_absolute stable deterministic failure.
+
+#### Docs
+- Updated: `docs/RADIMP_3SCOPE_MATRIX_REPORT.md`
+- Updated: `docs/LE_CFG_SCOPE_RESEARCH.md`
+- Updated: `docs/UI_AUTOMATION_CONTRACTS.md`
+- Added: `docs/RADIMP_3SCOPE_RUNBOOK.md`
