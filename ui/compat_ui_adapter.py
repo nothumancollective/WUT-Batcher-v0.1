@@ -185,15 +185,17 @@ class CompatUiAdapter:
         sweeps: Mapping[str, Any],
         sweep_mode: str,
         compat_state: Mapping[str, Any],
+        project_constraints: Optional[Mapping[str, Any]] = None,
         evaluate_batch: Callable[[Dict[str, Any], Dict[str, Any], str], Dict[str, Any]],
         last_changed_key: Optional[str] = None,
     ) -> Dict[str, Any]:
+        project_values, project_set_keys = self._extract_project_set_values(project_constraints or {})
         selected = {
             str(key): value
             for key, value in dict(selected_params or {}).items()
             if value is not None and str(key).strip()
         }
-        set_keys = set(selected.keys())
+        set_keys = set(selected.keys()) | set(project_set_keys)
         visible_now = {str(item) for item in list(compat_state.get("visible_keys", []) or []) if str(item).strip()}
         blocked_options: Dict[str, Dict[str, Dict[str, Any]]] = {}
         cause_map: Dict[str, str] = {}
@@ -201,7 +203,9 @@ class CompatUiAdapter:
 
         for controller_key, options in self.controller_options.items():
             current_set = controller_key in selected
-            current_value = selected.get(controller_key)
+            if not current_set and controller_key in project_values:
+                current_set = True
+            current_value = selected.get(controller_key, project_values.get(controller_key))
             for option_value in options:
                 if current_set and option_value == current_value:
                     continue

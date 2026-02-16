@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional
 
 from app.doctor_service import run_doctor_checks
 from app.constants import DEFAULT_RUNNER_MODE
-from app.models import AppConfig, Batch, Project
+from app.models import AppConfig, Batch, Project, ProjectConstraints
 from app.project_issue_model import UiProjectIssue, classify_ui_severity, issue_counts, normalize_project_issues
 from app.services import OrchestratorService
 from app.settings_store import UserSettings
@@ -2095,6 +2095,22 @@ class MainWindow(QMainWindow):
             lambda: self._show_validation_details(self.batch_page.compat_panel.issues(), "Batch Validation Details")
         )
 
+    @staticmethod
+    def _project_fixed_keys_from_constraints(constraints: ProjectConstraints) -> List[str]:
+        keys = {
+            *(str(key) for key in dict(getattr(constraints, "fixed_params", {}) or {}).keys()),
+            *(str(key) for key in dict(getattr(constraints, "limits", {}) or {}).keys()),
+        }
+        for row in list(getattr(constraints, "param_states", []) or []):
+            if not isinstance(row, dict):
+                continue
+            if not bool(row.get("is_set")):
+                continue
+            key = str(row.get("param_name", "")).strip()
+            if key:
+                keys.add(key)
+        return sorted(keys)
+
     def set_status(self, text: str, detail: Optional[str] = None) -> None:
         self.status_message.setText(text)
         self.last_status_detail = detail or text
@@ -2210,12 +2226,7 @@ class MainWindow(QMainWindow):
     def load_project(self, project: Project) -> None:
         self.current_project = project
         self.project_page.set_constraints_locked(True)
-        fixed_keys = sorted(
-            {
-                *(str(key) for key in project.constraints.fixed_params.keys()),
-                *(str(key) for key in project.constraints.limits.keys()),
-            }
-        )
+        fixed_keys = self._project_fixed_keys_from_constraints(project.constraints)
         self.batch_page.set_project_fixed_keys(fixed_keys)
         self.refresh_dashboard()
         self._on_project_draft_changed(self.project_page._raw_constraints_payload())
@@ -2495,6 +2506,7 @@ class MainWindow(QMainWindow):
             sweeps=sweeps,
             sweep_mode=sweep_mode,
             compat_state=state_raw,
+            project_constraints=self.current_project.constraints.to_dict(),
             evaluate_batch=lambda sel, sw, mode: self.service.evaluate_batch_definition(
                 project_id=self.current_project.project_id,
                 selected_params=sel,
