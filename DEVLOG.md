@@ -2035,3 +2035,25 @@ Validation executed:
   - `app/ui_automation/watchdog.py`
   - `ui_contracts/akabak/solve_flow.contract.json`
   - `docs/AKABAK_IMPORT_SOLVE.md`
+
+### Update (Dataset Federation Readiness Prep)
+#### Done
+- SQL schema bumped to `2.4` and extended for future server federation:
+  - `federation_profile`
+  - `federation_sync_state`
+  - `federation_export_jobs`
+  - `federation_tombstones`
+- Added automatic federation identity bootstrap on DB init (`installation_id`, anonymized user id, namespace).
+- Added tombstone generation when unpinned runs are deleted (`cleanup_unpinned_runs`).
+- Added new store APIs:
+  - `load_federation_profile()`
+  - `update_federation_profile(...)`
+  - `update_federation_sync_state(...)`
+  - `record_federation_export_job(...)`
+- Added documentation:
+  - `docs/DATASET_FEDERATION_READINESS.md`
+
+#### Tests
+- Extended `tests/test_sql_dataset_store.py`:
+  - federation profile bootstrap + consent update
+  - tombstone write on run cleanup
