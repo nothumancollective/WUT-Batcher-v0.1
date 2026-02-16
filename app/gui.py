@@ -18,6 +18,7 @@ from app.settings_store import UserSettings
 from app.ui_validation import UiValidationEngine
 from ui.batch_export_panel import BatchExportPanel
 from ui.batch_parameter_form import BatchParameterForm
+from ui.batch_preview_placeholder import BatchPreviewPlaceholder
 from ui.form_builder import ParameterForm
 from ui.form_metrics import FORM_METRICS
 from ui.form_schema import build_project_form_schema
@@ -1530,47 +1531,121 @@ class BatchPage(QWidget):
         root = QVBoxLayout(self)
         root.setContentsMargins(20, 12, 20, 14)
         root.setSpacing(10)
+
         title = QLabel("BATCH")
         title.setObjectName("PageTitle")
         root.addWidget(title)
 
-        grid = QGridLayout()
-        grid.setHorizontalSpacing(10)
-        grid.setVerticalSpacing(8)
+        name_row = QWidget()
+        name_layout = QHBoxLayout(name_row)
+        name_layout.setContentsMargins(0, 0, 0, 0)
+        name_layout.setSpacing(10)
         self.batch_name = QLineEdit()
         self.batch_name.setPlaceholderText("Batch Name")
+        self.batch_name.setMinimumWidth(420)
         self.sweep_mode = QComboBox()
         self.sweep_mode.addItems(["single", "combined"])
+        self.sweep_mode.setMaximumWidth(220)
+        name_layout.addWidget(self.batch_name, 0, Qt.AlignLeft)
+        name_layout.addWidget(self.sweep_mode, 0, Qt.AlignLeft)
+        name_layout.addStretch(1)
+        root.addWidget(name_row)
+
+        self.summary_panel = QFrame()
+        self.summary_panel.setObjectName("ProjectSummaryPanel")
+        self.summary_panel.setFixedHeight(118)
+        summary_layout = QHBoxLayout(self.summary_panel)
+        summary_layout.setContentsMargins(12, 8, 12, 8)
+        summary_layout.setSpacing(10)
+
+        summary_left = QWidget()
+        summary_left_layout = QVBoxLayout(summary_left)
+        summary_left_layout.setContentsMargins(0, 0, 0, 0)
+        summary_left_layout.setSpacing(2)
+        summary_title = QLabel("Batch draft summary")
+        summary_title.setObjectName("SummaryTitle")
+        summary_left_layout.addWidget(summary_title)
+        self.summary_line_1 = QLabel("Define base values, activate sweeps, and configure exports.")
+        self.summary_line_1.setObjectName("SummaryText")
+        self.summary_line_1.setWordWrap(False)
+        summary_left_layout.addWidget(self.summary_line_1)
+        self.summary_meta_counts = QLabel("Visible variable params: 0 · Active sweeps: 0")
+        self.summary_meta_counts.setObjectName("SummaryMeta")
+        summary_left_layout.addWidget(self.summary_meta_counts)
+        self.summary_meta_versions = QLabel("Version preview: 0 · Export specs: 0")
+        self.summary_meta_versions.setObjectName("SummaryMeta")
+        summary_left_layout.addWidget(self.summary_meta_versions)
+        self.summary_eta_label = QLabel("ETA: unknown")
+        self.summary_eta_label.setObjectName("SummaryMeta")
+        summary_left_layout.addWidget(self.summary_eta_label)
+        summary_left_layout.addStretch(1)
+        summary_layout.addWidget(summary_left, 1)
+
+        self.summary_issue_hint = QLabel("No validation issues.")
+        self.summary_issue_hint.setObjectName("IssueHint")
+        self.summary_issue_hint.setWordWrap(True)
+        self.summary_issue_hint.setMinimumWidth(340)
+        summary_layout.addWidget(self.summary_issue_hint, 0, Qt.AlignRight | Qt.AlignVCenter)
+        root.addWidget(self.summary_panel)
+
         self.parameter_form = BatchParameterForm(build_project_form_schema())
         self.export_panel = BatchExportPanel()
+        self.preview_panel = BatchPreviewPlaceholder()
 
-        grid.addWidget(QLabel("Batch Name"), 0, 0)
-        grid.addWidget(self.batch_name, 0, 1)
-        grid.addWidget(QLabel("Sweep mode"), 1, 0)
-        grid.addWidget(self.sweep_mode, 1, 1)
-        grid.addWidget(QLabel("Variable Parameters"), 2, 0)
-        grid.addWidget(self.parameter_form, 2, 1)
-        grid.addWidget(QLabel("Export Settings"), 3, 0)
-        grid.addWidget(self.export_panel, 3, 1)
-        grid.setRowStretch(2, 1)
-        root.addLayout(grid, 1)
+        body = QHBoxLayout()
+        body.setContentsMargins(0, 0, 0, 0)
+        body.setSpacing(10)
+
+        left_panel = QFrame()
+        left_panel.setObjectName("ProjectIssuesPanel")
+        left_layout = QVBoxLayout(left_panel)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(6)
+        params_title = QLabel("Variable Parameters")
+        params_title.setObjectName("IssuesPanelTitle")
+        left_layout.addWidget(params_title)
+        left_layout.addWidget(self.parameter_form, 1)
+        body.addWidget(left_panel, 2)
+
+        right_panel = QWidget()
+        right_layout = QVBoxLayout(right_panel)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(10)
+        right_layout.addWidget(self.preview_panel, 1)
+        right_layout.addWidget(self.export_panel, 2)
+        body.addWidget(right_panel, 1)
+        root.addLayout(body, 1)
+
         self.compat_panel = CompatibilityPanel("Batch Compatibility")
         root.addWidget(self.compat_panel)
 
-        buttons = QHBoxLayout()
-        save_btn = QPushButton("Save Batch")
-        save_btn.setObjectName("PrimaryButton")
-        run_btn = QPushButton("Run Batch")
-        back_btn = QPushButton("Back to Dashboard")
-        buttons.addWidget(save_btn)
-        buttons.addWidget(run_btn)
-        buttons.addWidget(back_btn)
-        buttons.addStretch(1)
-        root.addLayout(buttons)
+        self.action_bar = QFrame()
+        self.action_bar.setObjectName("ProjectActionBar")
+        self.action_bar.setFixedHeight(58)
+        action_layout = QHBoxLayout(self.action_bar)
+        action_layout.setContentsMargins(10, 8, 10, 8)
+        action_layout.setSpacing(10)
+        self.action_status_pill = QLabel("Ready to save batch.")
+        self.action_status_pill.setObjectName("ProjectStatusPill")
+        self.action_status_pill.setProperty("severity", "ok")
+        action_layout.addWidget(self.action_status_pill, 0, Qt.AlignVCenter)
+        self.action_hint = QLabel("0 errors · 0 warnings")
+        self.action_hint.setObjectName("ProjectStatusHint")
+        action_layout.addWidget(self.action_hint, 0, Qt.AlignVCenter)
+        action_layout.addStretch(1)
 
-        save_btn.clicked.connect(lambda: self.save_batch.emit(self._payload()))
-        run_btn.clicked.connect(lambda: self.run_batch.emit(self._payload()))
-        back_btn.clicked.connect(self.back_to_dashboard.emit)
+        self.save_btn = QPushButton("Save Batch")
+        self.save_btn.setObjectName("PrimaryButton")
+        self.run_btn = QPushButton("Run Batch")
+        self.back_btn = QPushButton("Back to Dashboard")
+        action_layout.addWidget(self.save_btn)
+        action_layout.addWidget(self.run_btn)
+        action_layout.addWidget(self.back_btn)
+        root.addWidget(self.action_bar)
+
+        self.save_btn.clicked.connect(lambda: self.save_batch.emit(self._payload()))
+        self.run_btn.clicked.connect(lambda: self.run_batch.emit(self._payload()))
+        self.back_btn.clicked.connect(self.back_to_dashboard.emit)
 
         self.parameter_form.changed.connect(self._emit_draft_changed)
         self.export_panel.changed.connect(self._emit_draft_changed)
@@ -1579,23 +1654,44 @@ class BatchPage(QWidget):
 
         self._compat_state: Dict[str, Any] = {"visible_keys": [], "locked_keys": [], "sweepable_keys": [], "issues": []}
         self._project_fixed_keys: set[str] = set()
+        self._eta_seconds: Optional[float] = None
+        self._eta_sample_count: int = 0
+        self._update_summary_widgets()
 
     def _emit_draft_changed(self) -> None:
+        self._update_summary_widgets()
         self.draft_changed.emit(self._payload(include_name=False))
 
     def set_project_fixed_keys(self, keys: List[str]) -> None:
         self._project_fixed_keys = {str(item) for item in list(keys or []) if str(item).strip()}
         self.parameter_form.set_project_fixed_keys(sorted(self._project_fixed_keys))
+        self._update_summary_widgets()
+
+    def set_eta(self, eta_seconds: Optional[float], *, sample_count: int, median_seconds: Optional[float]) -> None:
+        self._eta_seconds = eta_seconds
+        self._eta_sample_count = max(int(sample_count), 0)
+        if eta_seconds is None:
+            self.summary_eta_label.setText("ETA: unknown")
+            self.summary_eta_label.setToolTip("No historical duration data available yet.")
+        else:
+            total = max(float(eta_seconds), 0.0)
+            minutes = int(total // 60)
+            seconds = int(round(total - (minutes * 60)))
+            if minutes > 0:
+                text = f"ETA: ~{minutes}m {seconds:02d}s"
+            else:
+                text = f"ETA: ~{seconds}s"
+            self.summary_eta_label.setText(text)
+            median_hint = "unknown" if median_seconds is None else f"{float(median_seconds):.1f}s/version"
+            self.summary_eta_label.setToolTip(
+                f"Estimated from historical median ({median_hint}) across {self._eta_sample_count} successful versions."
+            )
 
     def apply_compatibility(self, state: Dict[str, Any]) -> None:
         self._compat_state = dict(state)
         self.parameter_form.apply_compatibility(state)
         self.compat_panel.update_state(state)
-        severity = _highest_issue_severity(self.compat_panel.issues())
-        for widget in (self.export_panel,):
-            widget.setProperty("severity", severity)
-            widget.style().unpolish(widget)
-            widget.style().polish(widget)
+        self._update_summary_widgets()
 
     def _payload(self, *, include_name: bool = True) -> Dict[str, object]:
         selected = self.parameter_form.selected_params_payload()
@@ -1628,6 +1724,50 @@ class BatchPage(QWidget):
         if include_name:
             payload["batch_name"] = self.batch_name.text().strip()
         return payload
+
+    def _update_summary_widgets(self) -> None:
+        visible_count = len(self.parameter_form.visible_field_keys())
+        active_sweeps = int(self.parameter_form.active_sweep_count())
+        version_preview = int(self._compat_state.get("version_count_preview", 0) or 0)
+        export_specs = int(self.export_panel.export_spec_count())
+        self.summary_meta_counts.setText(
+            f"Visible variable params: {visible_count} · Active sweeps: {active_sweeps}"
+        )
+        mode = self.sweep_mode.currentText().strip() or "single"
+        self.summary_meta_versions.setText(
+            f"Version preview: {version_preview} · Export specs: {export_specs} · Mode: {mode}"
+        )
+
+        issues = self.compat_panel.issues()
+        fatal_count = sum(1 for issue in issues if str(issue.get("severity", "")).lower() == "fatal")
+        warn_count = sum(1 for issue in issues if str(issue.get("severity", "")).lower() == "warn")
+        if fatal_count > 0:
+            severity = "fatal"
+            self.action_status_pill.setText("Fix validation errors before save/run.")
+            self.summary_issue_hint.setText(
+                f"{fatal_count} fatal issue(s), {warn_count} warning(s). Use compatibility details below."
+            )
+        elif warn_count > 0:
+            severity = "warn"
+            self.action_status_pill.setText("Warnings present. Review before save/run.")
+            self.summary_issue_hint.setText(
+                f"{warn_count} warning(s). Use compatibility details below for full context."
+            )
+        else:
+            severity = "ok"
+            self.action_status_pill.setText("Ready to save batch.")
+            self.summary_issue_hint.setText("No validation issues.")
+        self.summary_issue_hint.setProperty("severity", severity if severity in {"fatal", "warn"} else "")
+        self.summary_issue_hint.style().unpolish(self.summary_issue_hint)
+        self.summary_issue_hint.style().polish(self.summary_issue_hint)
+
+        self.action_hint.setText(f"{fatal_count} errors · {warn_count} warnings")
+        self.action_status_pill.setProperty("severity", severity)
+        self.action_status_pill.style().unpolish(self.action_status_pill)
+        self.action_status_pill.style().polish(self.action_status_pill)
+        can_submit = fatal_count == 0 and bool(self.batch_name.text().strip())
+        self.save_btn.setEnabled(can_submit)
+        self.run_btn.setEnabled(can_submit)
 
 
 class RunPage(QWidget):
