@@ -37,6 +37,13 @@ WM_KEYDOWN = 0x0100
 WM_KEYUP = 0x0101
 VK_F7 = 0x76
 VACS_EXPORT_COMMAND_ID = 52
+GWL_STYLE = -16
+BS_DEFPUSHBUTTON = 0x00000001
+IDOK = 1
+IDCANCEL = 2
+IDYES = 6
+IDNO = 7
+IDCLOSE = 8
 
 GRAPH_CLASSES = {"TForm_DatGraph", "TForm_DatContour"}
 CHILD_CLASSES = {"TForm_DatGraph", "TForm_DatContour", "TForm_Editor"}
@@ -223,6 +230,8 @@ def _win32_children(hwnd: int) -> List[Dict[str, Any]]:
     get_class = user32.GetClassNameW
     get_text = user32.GetWindowTextW
     get_id = user32.GetDlgCtrlID
+    get_style = user32.GetWindowLongW
+    get_rect = user32.GetWindowRect
     rows: List[Dict[str, Any]] = []
     enum_child_proc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
 
@@ -238,11 +247,86 @@ def _win32_children(hwnd: int) -> List[Dict[str, Any]]:
 
     def cb(chwnd, _lparam):
         h = int(chwnd)
-        rows.append({"handle": h, "class_name": cls(h), "text": txt(h), "ctrl_id": int(get_id(h))})
+        rect = ctypes.wintypes.RECT()
+        has_rect = bool(get_rect(int(h), ctypes.byref(rect)))
+        rows.append(
+            {
+                "handle": h,
+                "class_name": cls(h),
+                "text": txt(h),
+                "ctrl_id": int(get_id(h)),
+                "style": int(get_style(int(h), int(GWL_STYLE))),
+                "rect": {
+                    "left": int(rect.left) if has_rect else 0,
+                    "top": int(rect.top) if has_rect else 0,
+                    "right": int(rect.right) if has_rect else 0,
+                    "bottom": int(rect.bottom) if has_rect else 0,
+                },
+            }
+        )
         return True
 
     user32.EnumChildWindows(int(hwnd), enum_child_proc(cb), 0)
     return rows
+
+
+def _is_default_pushbutton(style: int) -> bool:
+    try:
+        return bool(int(style) & int(BS_DEFPUSHBUTTON))
+    except Exception:
+        return False
+
+
+def _sorted_button_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    buttons: List[Dict[str, Any]] = []
+    for r in rows:
+        cls = str(r.get("class_name", "") or "")
+        if cls.lower() == "trzdialogbuttons":
+            continue
+        if not re.search(r"(button|bitbtn)", cls, re.IGNORECASE):
+            continue
+        buttons.append(r)
+
+    def _key(row: Dict[str, Any]) -> tuple:
+        rect = row.get("rect") or {}
+        return (
+            0 if _is_default_pushbutton(int(row.get("style", 0) or 0)) else 1,
+            int(rect.get("top", 0) or 0),
+            int(rect.get("left", 0) or 0),
+        )
+
+    return sorted(buttons, key=_key)
+
+
+def _bitbtn_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    for r in _sorted_button_rows(rows):
+        cls = str(r.get("class_name", "") or "")
+        if re.search(r"(rzbitbtn)", cls, re.IGNORECASE):
+            out.append(r)
+    return out
+
+
+def _press_dialog_button_handle(dialog_handle: int, button_row: Dict[str, Any]) -> Dict[str, Any]:
+    user32 = ctypes.windll.user32
+    bh = int(button_row.get("handle", 0) or 0)
+    ctrl_id = int(button_row.get("ctrl_id", 0) or 0)
+    if bh <= 0:
+        return {"status": "error", "error": "invalid_button_handle"}
+    attempts: List[Dict[str, Any]] = []
+    try:
+        user32.SendMessageW(int(bh), BM_CLICK, 0, 0)
+        attempts.append({"method": "bm_click", "status": "ok", "button_handle": bh, "ctrl_id": ctrl_id})
+    except Exception as exc:
+        attempts.append({"method": "bm_click", "status": "error", "error": repr(exc), "button_handle": bh, "ctrl_id": ctrl_id})
+    if int(dialog_handle) > 0 and ctrl_id > 0:
+        try:
+            wparam = (int(ctrl_id) & 0xFFFF) | ((int(BN_CLICKED) & 0xFFFF) << 16)
+            user32.SendMessageW(int(dialog_handle), WM_COMMAND, int(wparam), int(bh))
+            attempts.append({"method": "wm_command_bn_clicked", "status": "ok", "button_handle": bh, "ctrl_id": ctrl_id})
+        except Exception as exc:
+            attempts.append({"method": "wm_command_bn_clicked", "status": "error", "error": repr(exc), "button_handle": bh, "ctrl_id": ctrl_id})
+    return {"status": "ok", "attempts": attempts, "button": button_row}
 
 
 def _find_mdi_client_handle(main_handle: int) -> int:
@@ -435,6 +519,39 @@ def _resolve_confirm_dialog(dialog: Any) -> Dict[str, Any]:
     msg = _dialog_message_text(dialog)
     labels = [x.strip().lower() for x in _dialog_button_labels(dialog)]
     attempts: List[Dict[str, Any]] = []
+
+    # Primary: locale-agnostic Win32 button handling.
+    if dialog_handle > 0:
+        rows = _bitbtn_rows(_win32_children(dialog_handle))
+        if not rows:
+            rows = _sorted_button_rows(_win32_children(dialog_handle))
+        by_id: Dict[int, Dict[str, Any]] = {}
+        for r in rows:
+            cid = int(r.get("ctrl_id", 0) or 0)
+            if cid > 0 and cid not in by_id:
+                by_id[cid] = r
+        ordered: List[Dict[str, Any]] = []
+        for cid in (IDCLOSE, IDOK, IDYES, IDNO, IDCANCEL):
+            if cid in by_id:
+                ordered.append(by_id[cid])
+        for r in rows:
+            if r not in ordered:
+                ordered.append(r)
+        for r in ordered[:6]:
+            action = _press_dialog_button_handle(dialog_handle, r)
+            attempts.append({"method": "win32_handle", "action": action})
+            time.sleep(0.06)
+            if not _is_window_alive(dialog_handle):
+                return {"status": "ok", "closed": True, "attempts": attempts}
+            try:
+                ctypes.windll.user32.PostMessageW(int(dialog_handle), WM_CLOSE, 0, 0)
+                attempts.append({"method": "win32_handle_post_wm_close", "status": "ok"})
+                time.sleep(0.05)
+            except Exception as exc:
+                attempts.append({"method": "win32_handle_post_wm_close", "status": "error", "error": repr(exc)})
+            if not _is_window_alive(dialog_handle):
+                return {"status": "ok", "closed": True, "attempts": attempts}
+
     if "schließen" in labels:
         preferred = ("Schließen", "Close", "OK", "Ok", "Yes", "Ja")
     elif re.search(r"(overwrite|replace|ersetzen|save|speicher)", f"{title} {msg}", re.IGNORECASE):
@@ -607,7 +724,6 @@ def _find_save_as_dialog(target_pid: int, main_handle: int, timeout_s: float) ->
     while time.perf_counter() < deadline:
         for w in _windows_for_pid(int(target_pid)):
             s = _sig(w)
-            title = str(s.get("title", ""))
             class_name = str(s.get("class_name", ""))
             handle = int(s.get("handle", 0) or 0)
             if handle <= 0 or handle == int(main_handle):
@@ -615,12 +731,6 @@ def _find_save_as_dialog(target_pid: int, main_handle: int, timeout_s: float) ->
             if class_name == "TForm_Confirm":
                 _resolve_intermediate_confirm(w)
                 continue
-            if re.search(r"(save\s*as|speichern\s*unter|speichern unter|save|file)", title, re.IGNORECASE) and re.search(
-                r"(#32770|Dialog|TForm_.*)", class_name, re.IGNORECASE
-            ):
-                if _has_filename_edit(w):
-                    return w
-            # Common file dialog can have generic title but still #32770 with file-name edit.
             if re.search(r"(#32770|TForm_.*)", class_name, re.IGNORECASE):
                 if _has_filename_edit(w):
                     return w
@@ -693,9 +803,20 @@ def _set_save_path(dialog: Any, full_target_path: Path) -> Dict[str, Any]:
         else:
             result["filename_uia"] = "missing_edit"
 
-    # click Save button
+    # click Save button (primary: common dialog command id 1, locale-agnostic)
     save_clicked = False
+    save_row = None
+    for r in rows:
+        if int(r.get("ctrl_id", -1)) == 1:
+            save_row = r
+            break
+    if save_row is not None and _click_handle(int(save_row.get("handle", 0) or 0)):
+        save_clicked = True
+        result["save_action"] = {"method": "bm_click_id1", "handle": int(save_row.get("handle", 0) or 0)}
+
     for caption in ("Save", "Speichern", "&Save", "&Speichern"):
+        if save_clicked:
+            break
         try:
             btn = dialog.child_window(title=caption, control_type="Button")
             if btn.exists(timeout=0.2):
@@ -711,16 +832,6 @@ def _set_save_path(dialog: Any, full_target_path: Path) -> Dict[str, Any]:
                     break
         except Exception:
             continue
-    if not save_clicked and filename_row is not None:
-        # common save button often id 1
-        save_row = None
-        for r in rows:
-            if int(r.get("ctrl_id", -1)) == 1:
-                save_row = r
-                break
-        if save_row is not None and _click_handle(int(save_row.get("handle", 0) or 0)):
-            save_clicked = True
-            result["save_action"] = {"method": "bm_click_id1", "handle": int(save_row.get("handle", 0) or 0)}
     if not save_clicked:
         try:
             dialog.type_keys("{ENTER}")
@@ -731,18 +842,66 @@ def _set_save_path(dialog: Any, full_target_path: Path) -> Dict[str, Any]:
     return result
 
 
-def _activate_save_ladder(export_dialog: Any, save_handle: int) -> List[Dict[str, Any]]:
+def _activate_save_ladder(export_dialog: Any, save_handle: int, vacs_pid: int, main_handle: int) -> List[Dict[str, Any]]:
     attempts: List[Dict[str, Any]] = []
     dialog_handle = int(_sig(export_dialog).get("handle", 0) or 0)
     user32 = ctypes.windll.user32
 
-    def _save_as_now_visible() -> bool:
+    def _save_as_now_visible(wait_s: float = 0.4) -> bool:
         t0 = time.perf_counter()
-        while time.perf_counter() - t0 < 0.4:
-            if _find_save_as_dialog(int(_sig(export_dialog).get("process_id", 0) or 0), 0, timeout_s=0.05) is not None:
+        while time.perf_counter() - t0 < float(wait_s):
+            if _find_save_as_dialog(int(vacs_pid), int(main_handle), timeout_s=0.05) is not None:
                 return True
             time.sleep(0.04)
         return False
+
+    if dialog_handle > 0 and int(save_handle) > 0:
+        primary = None
+        rows_for_primary = _win32_children(dialog_handle)
+        for row in rows_for_primary:
+            if int(row.get("handle", 0) or 0) == int(save_handle):
+                primary = row
+                break
+        if primary is None:
+            primary = {"handle": int(save_handle), "ctrl_id": 0, "class_name": "unknown", "text": ""}
+        try:
+            w = Desktop(backend="win32").window(handle=int(save_handle))
+            w.click()
+            attempts.append({"method": "primary_save_handle_win32_click", "status": "ok", "button_handle": int(save_handle)})
+        except Exception as exc:
+            attempts.append({"method": "primary_save_handle_win32_click", "status": "error", "error": repr(exc), "button_handle": int(save_handle)})
+        action = _press_dialog_button_handle(dialog_handle, primary)
+        attempts.append({"method": "primary_save_handle_post", "action": action})
+        if _save_as_now_visible(wait_s=2.0):
+            attempts.append(
+                {
+                    "method": "primary_save_handle",
+                    "postcheck": "save_as_visible",
+                    "button_handle": int(primary.get("handle", 0) or 0),
+                    "ctrl_id": int(primary.get("ctrl_id", 0) or 0),
+                }
+            )
+            return attempts
+
+    if dialog_handle > 0:
+        candidate_rows = _bitbtn_rows(_win32_children(dialog_handle))
+        if not candidate_rows:
+            candidate_rows = _sorted_button_rows(_win32_children(dialog_handle))
+        for row in candidate_rows[:8]:
+            if int(row.get("handle", 0) or 0) == int(save_handle):
+                continue
+            action = _press_dialog_button_handle(dialog_handle, row)
+            attempts.append({"method": "win32_candidate", "action": action})
+            if _save_as_now_visible(wait_s=0.35):
+                attempts.append(
+                    {
+                        "method": "win32_candidate",
+                        "postcheck": "save_as_visible",
+                        "button_handle": int(row.get("handle", 0) or 0),
+                        "ctrl_id": int(row.get("ctrl_id", 0) or 0),
+                    }
+                )
+                return attempts
 
     def _run_one(method: str) -> bool:
         try:
@@ -847,19 +1006,31 @@ def _unique_export_path(export_root: Path, run_id: str, loop_idx: int, safe_name
 
 
 def _find_save_bitbtn(export_dialog: Any) -> Optional[Dict[str, Any]]:
+    # Primary: non-text win32 button ordering (default style, then top/left).
+    win32_rows = _win32_children(int(_sig(export_dialog).get("handle", 0) or 0))
+    sorted_buttons = _bitbtn_rows(win32_rows)
+    if not sorted_buttons:
+        sorted_buttons = _sorted_button_rows(win32_rows)
+    if sorted_buttons:
+        r = sorted_buttons[0]
+        return {
+            "handle": int(r.get("handle", 0) or 0),
+            "title": r.get("text", ""),
+            "class_name": r.get("class_name", ""),
+            "ctrl_id": int(r.get("ctrl_id", 0) or 0),
+            "style": int(r.get("style", 0) or 0),
+        }
     controls = _dialog_controls(export_dialog)
+    for c in controls:
+        class_name = str(c.get("class_name", "") or "")
+        if re.search(r"(trzbitbtn|button)", class_name, re.IGNORECASE):
+            return c
+    # Last resort (kept for compatibility)
     for c in controls:
         label = (str(c.get("title", "")) + " " + str(c.get("text", ""))).strip().lower()
         class_name = str(c.get("class_name", "") or "")
         if re.search(r"(save|speicher)", label) and re.search(r"(trzbitbtn|button)", class_name, re.IGNORECASE):
             return c
-    # Win32 fallback
-    win32_rows = _win32_children(int(_sig(export_dialog).get("handle", 0) or 0))
-    for r in win32_rows:
-        text = str(r.get("text", "") or "").lower()
-        cls = str(r.get("class_name", "") or "")
-        if re.search(r"(save|speicher)", text) and re.search(r"(bitbtn|button)", cls, re.IGNORECASE):
-            return {"handle": int(r.get("handle", 0) or 0), "title": r.get("text", ""), "class_name": r.get("class_name", "")}
     return None
 
 
@@ -1162,7 +1333,7 @@ def run_once(args: argparse.Namespace) -> Dict[str, Any]:
             break
 
         save_handle = int(save_ctrl.get("handle", 0) or 0)
-        save_attempts = _activate_save_ladder(export_dialog, save_handle)
+        save_attempts = _activate_save_ladder(export_dialog, save_handle, vacs_pid=vacs_pid, main_handle=int(main_handle))
         row["save_click"] = {"handle": save_handle, "attempts": save_attempts}
         step("graph_save_invoked", loop=loop_idx, save_handle=save_handle, attempts=save_attempts)
 
