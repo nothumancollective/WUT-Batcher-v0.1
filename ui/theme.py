@@ -284,6 +284,10 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     QTextEdit[fieldState="ok"], QPlainTextEdit[fieldState="ok"] {{
         border: 1px solid {c['risk_ok']};
     }}
+    QLineEdit[disclosureHint="true"], QComboBox[disclosureHint="true"],
+    QTextEdit[disclosureHint="true"], QPlainTextEdit[disclosureHint="true"] {{
+        border: 1px solid {c['accent']};
+    }}
     QLineEdit[issueFlash="true"], QComboBox[issueFlash="true"],
     QTextEdit[issueFlash="true"], QPlainTextEdit[issueFlash="true"] {{
         border: 1px solid {c['accent']};
@@ -301,6 +305,12 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     SegmentedEnumInput[fieldState="ok"], ScalarFieldEditor[fieldState="ok"],
     ObjectFieldEditor[fieldState="ok"], ContextFrame[fieldState="ok"] {{
         border: 1px solid {c['risk_ok']};
+        border-radius: {r['sm']}px;
+    }}
+    SegmentedEnumInput[disclosureHint="true"], ScalarFieldEditor[disclosureHint="true"],
+    ObjectFieldEditor[disclosureHint="true"], ContextFrame[disclosureHint="true"],
+    QWidget[disclosureHint="true"] {{
+        border: 1px solid {c['accent']};
         border-radius: {r['sm']}px;
     }}
     /* Backward compatibility for legacy riskLevel property. */
@@ -327,6 +337,9 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     }}
     QLabel#FieldStateHint[severity="fatal"] {{
         color: {c['danger_text_muted']};
+    }}
+    QLabel#FieldStateHint[severity="info"] {{
+        color: {c['accent']};
     }}
     QLabel#FieldStateBadge {{
         color: {c['muted']};
@@ -604,6 +617,9 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         background-color: #2a2a2a;
         border: 1px solid #a9a9a9;
         color: #ffffff;
+    }}
+    QPushButton[segment=\"true\"][disclosureHint="true"] {{
+        border: 1px solid {c['accent']};
     }}
     QToolButton#ClearValueButton {{
         background-color: {c['surface2']};

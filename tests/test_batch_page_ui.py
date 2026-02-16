@@ -102,6 +102,7 @@ class BatchPageUiTests(unittest.TestCase):
         if toggle is None:
             self.skipTest("Throat.Profile not available.")
         self.assertFalse(toggle.isVisible())
+        self.assertEqual(page.parameter_form.group_name_for_key("Throat.Profile"), "Throat Profile")
 
     def test_only_one_accordion_group_is_expanded(self) -> None:
         page = BatchPage()
