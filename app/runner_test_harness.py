@@ -389,7 +389,7 @@ def _graph_kind_matches(expected_kind: str, parsed_type: str) -> bool:
     if not expected or not observed:
         return False
     aliases = {
-        "spl": {"spl"},
+        "spl": {"spl", "soundpressure", "soundpressurelevel", "sound"},
         "impedance": {"impedance", "imp"},
         "imp": {"impedance", "imp"},
         "polar": {"polar", "polarspl", "polarpressurecomplex"},
@@ -1451,6 +1451,7 @@ def run_runner_test_harness(
                         export_specs=export_specs,
                         export_dir=exports_run_dir,
                         log_dir=workspace.logs_dir / test_run_id / "vacs",
+                        akabak_executable=str(akabak_executable) if akabak_executable else None,
                     )
                 except Exception:
                     vacs_pids_after = set(_list_running_vacs_pids())

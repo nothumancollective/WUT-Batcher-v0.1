@@ -8,6 +8,7 @@ Non-visual automation only:
 from __future__ import annotations
 
 import argparse
+import csv
 import ctypes
 from datetime import datetime, timezone
 import json
@@ -155,6 +156,66 @@ def _dialog_candidates(pid: int, main_handle: int) -> List[Any]:
 def _kill_vacs() -> None:
     for image in ("VACSVIEWER_32.exe", "vacsviewer.exe"):
         subprocess.run(["taskkill", "/IM", image, "/T", "/F"], capture_output=True, text=True, check=False)
+
+
+def _list_pids_by_image(image_name: str) -> List[int]:
+    image = str(image_name or "").strip()
+    if not image:
+        return []
+    try:
+        proc = subprocess.run(
+            ["tasklist", "/FI", f"IMAGENAME eq {image}", "/FO", "CSV", "/NH"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+    except Exception:
+        return []
+    rows: List[int] = []
+    for row in csv.reader((proc.stdout or "").splitlines()):
+        if len(row) < 2:
+            continue
+        image_cell = str(row[0] or "").strip().strip('"').lower()
+        pid_cell = str(row[1] or "").strip().strip('"')
+        if image_cell != image.lower():
+            continue
+        if not pid_cell.isdigit():
+            continue
+        rows.append(int(pid_cell))
+    return sorted(set(rows))
+
+
+def _running_vacs_pids() -> List[int]:
+    rows: List[int] = []
+    rows.extend(_list_pids_by_image("VACSVIEWER_32.exe"))
+    rows.extend(_list_pids_by_image("vacsviewer.exe"))
+    return sorted(set(rows))
+
+
+def _select_ready_vacs_pid() -> Dict[str, Any]:
+    candidates: List[Dict[str, Any]] = []
+    for pid in _running_vacs_pids():
+        main = _find_main(int(pid))
+        if main is None:
+            candidates.append({"pid": int(pid), "main_present": False, "graph_count": 0})
+            continue
+        graphs = _graph_children(main)
+        candidates.append(
+            {
+                "pid": int(pid),
+                "main_present": True,
+                "graph_count": int(len(graphs)),
+                "main_signature": _sig(main),
+            }
+        )
+    ready = [row for row in candidates if bool(row.get("main_present")) and int(row.get("graph_count", 0)) > 0]
+    selected = sorted(ready, key=lambda row: int(row.get("graph_count", 0)), reverse=True)[:1]
+    return {
+        "candidates": candidates,
+        "selected": selected[0] if selected else None,
+    }
 
 
 def _run_interim(args: argparse.Namespace) -> Dict[str, Any]:
@@ -1273,24 +1334,35 @@ def run_once_safe(args: argparse.Namespace) -> Dict[str, Any]:
         except Exception:
             pass
 
-    _kill_vacs()
-    proc = subprocess.Popen([str(args.vacs_exe)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    step("start_vacs_mode", mode="prestart_vacs_primary", prestart=True, pid=int(proc.pid), vacs_exe=str(args.vacs_exe))
-    time.sleep(0.6)
+    vacs_pid = 0
+    if bool(getattr(args, "assume_vacs_ready", False)):
+        ready = _select_ready_vacs_pid()
+        step("assume_vacs_ready_scan", **ready)
+        selected = dict(ready.get("selected") or {})
+        vacs_pid = int(selected.get("pid", 0) or 0)
+        if vacs_pid <= 0:
+            log["ok"] = False
+            log["error"] = "vacs_not_ready_after_f4"
+            return log
+    else:
+        _kill_vacs()
+        proc = subprocess.Popen([str(args.vacs_exe)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        step("start_vacs_mode", mode="prestart_vacs_primary", prestart=True, pid=int(proc.pid), vacs_exe=str(args.vacs_exe))
+        time.sleep(0.6)
 
-    interim = _run_interim_with_mode(args, skip_open_via_akabak=False)
-    step("interim_reimport_primary", **interim)
-    parsed = dict(interim.get("parsed") or {})
-    if not bool(parsed.get("ok")):
-        interim = _run_interim_with_mode(args, skip_open_via_akabak=True)
-        step("interim_reimport_fallback", **interim)
+        interim = _run_interim_with_mode(args, skip_open_via_akabak=False)
+        step("interim_reimport_primary", **interim)
         parsed = dict(interim.get("parsed") or {})
         if not bool(parsed.get("ok")):
-            log["ok"] = False
-            log["error"] = "interim_reimport_failed"
-            return log
+            interim = _run_interim_with_mode(args, skip_open_via_akabak=True)
+            step("interim_reimport_fallback", **interim)
+            parsed = dict(interim.get("parsed") or {})
+            if not bool(parsed.get("ok")):
+                log["ok"] = False
+                log["error"] = "interim_reimport_failed"
+                return log
 
-    vacs_pid = int(parsed.get("vacs_pid", 0) or 0)
+        vacs_pid = int(parsed.get("vacs_pid", 0) or 0)
     main = _find_main(vacs_pid)
     if main is None:
         log["ok"] = False
@@ -1595,11 +1667,25 @@ def run_once_fast(args: argparse.Namespace) -> Dict[str, Any]:
         except Exception:
             pass
 
-    _kill_vacs()
-    step("kill_vacs_prestart")
-    proc = subprocess.Popen([str(args.vacs_exe)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    step("start_vacs_mode", mode="fast_prestart_vacs_primary", prestart=True, pid=int(proc.pid), vacs_exe=str(args.vacs_exe))
-    time.sleep(0.08)
+    vacs_pid = 0
+    if bool(getattr(args, "assume_vacs_ready", False)):
+        ready = _select_ready_vacs_pid()
+        step("assume_vacs_ready_scan", **ready)
+        selected = dict(ready.get("selected") or {})
+        vacs_pid = int(selected.get("pid", 0) or 0)
+        if vacs_pid <= 0:
+            log["ok"] = False
+            log["error"] = "vacs_not_ready_after_f4"
+            out_file = out_dir / "summary.json"
+            out_file.write_text(json.dumps(log, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+            log["summary_file"] = str(out_file)
+            return log
+    else:
+        _kill_vacs()
+        step("kill_vacs_prestart")
+        proc = subprocess.Popen([str(args.vacs_exe)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        step("start_vacs_mode", mode="fast_prestart_vacs_primary", prestart=True, pid=int(proc.pid), vacs_exe=str(args.vacs_exe))
+        time.sleep(0.08)
 
     fast_interim_args = _copy_args_with(
         args,
@@ -1620,74 +1706,75 @@ def run_once_fast(args: argparse.Namespace) -> Dict[str, Any]:
         interim_startup_timeout_s=min(int(getattr(args, "interim_startup_timeout_s", 25) or 25), 12),
     )
 
-    # Fast primary: AKABAK menu handshake path (observed as most stable on this VM).
-    interim = _run_interim_with_mode(fast_interim_args, skip_open_via_akabak=False)
-    step("interim_reimport_primary", **interim)
-    parsed = dict(interim.get("parsed") or {})
-    if not bool(parsed.get("ok")):
-        # Fast accept path: if graphs are already present in VACS, skip second interim run.
-        vacs_pid_hint = int(parsed.get("vacs_pid", 0) or 0)
-        graph_count_hint = 0
-        if vacs_pid_hint > 0:
-            main_hint = _find_main(vacs_pid_hint)
-            if main_hint is not None:
-                try:
-                    graph_count_hint = len(_graph_children(main_hint))
-                except Exception:
-                    graph_count_hint = 0
-        if graph_count_hint > 0:
-            parsed["ok"] = True
-            parsed["accepted_existing_graphs"] = True
-            parsed["accepted_graph_count"] = int(graph_count_hint)
-            step(
-                "interim_reimport_primary_accepted_existing_graphs",
-                vacs_pid=vacs_pid_hint,
-                graph_count=graph_count_hint,
-                reason=str(parsed.get("error", "")),
-            )
-
-    if not bool(parsed.get("ok")):
-        # Reentry point: attach-only retry against existing VACS instance.
-        interim = _run_interim_with_mode(reentry_interim_args, skip_open_via_akabak=True)
-        step("interim_reimport_reentry_attach_only", **interim)
+    if not bool(getattr(args, "assume_vacs_ready", False)):
+        # Fast primary: AKABAK menu handshake path (observed as most stable on this VM).
+        interim = _run_interim_with_mode(fast_interim_args, skip_open_via_akabak=False)
+        step("interim_reimport_primary", **interim)
         parsed = dict(interim.get("parsed") or {})
         if not bool(parsed.get("ok")):
-            # Final fallback: menu handshake with relaxed timeout budget.
-            interim = _run_interim_with_mode(relaxed_interim_args, skip_open_via_akabak=False)
-            step("interim_reimport_fallback_open_via_akabak", **interim)
+            # Fast accept path: if graphs are already present in VACS, skip second interim run.
+            vacs_pid_hint = int(parsed.get("vacs_pid", 0) or 0)
+            graph_count_hint = 0
+            if vacs_pid_hint > 0:
+                main_hint = _find_main(vacs_pid_hint)
+                if main_hint is not None:
+                    try:
+                        graph_count_hint = len(_graph_children(main_hint))
+                    except Exception:
+                        graph_count_hint = 0
+            if graph_count_hint > 0:
+                parsed["ok"] = True
+                parsed["accepted_existing_graphs"] = True
+                parsed["accepted_graph_count"] = int(graph_count_hint)
+                step(
+                    "interim_reimport_primary_accepted_existing_graphs",
+                    vacs_pid=vacs_pid_hint,
+                    graph_count=graph_count_hint,
+                    reason=str(parsed.get("error", "")),
+                )
+
+        if not bool(parsed.get("ok")):
+            # Reentry point: attach-only retry against existing VACS instance.
+            interim = _run_interim_with_mode(reentry_interim_args, skip_open_via_akabak=True)
+            step("interim_reimport_reentry_attach_only", **interim)
             parsed = dict(interim.get("parsed") or {})
+            if not bool(parsed.get("ok")):
+                # Final fallback: menu handshake with relaxed timeout budget.
+                interim = _run_interim_with_mode(relaxed_interim_args, skip_open_via_akabak=False)
+                step("interim_reimport_fallback_open_via_akabak", **interim)
+                parsed = dict(interim.get("parsed") or {})
 
-    if not bool(parsed.get("ok")):
-        # Late accept path: attach fallback may have produced visible graph windows despite timeout text.
-        vacs_pid_hint = int(parsed.get("vacs_pid", 0) or 0)
-        graph_count_hint = 0
-        if vacs_pid_hint > 0:
-            main_hint = _find_main(vacs_pid_hint)
-            if main_hint is not None:
-                try:
-                    graph_count_hint = len(_graph_children(main_hint))
-                except Exception:
-                    graph_count_hint = 0
-        if graph_count_hint > 0:
-            parsed["ok"] = True
-            parsed["accepted_existing_graphs"] = True
-            parsed["accepted_graph_count"] = int(graph_count_hint)
-            step(
-                "interim_reimport_fallback_accepted_existing_graphs",
-                vacs_pid=vacs_pid_hint,
-                graph_count=graph_count_hint,
-                reason=str(parsed.get("error", "")),
-            )
+        if not bool(parsed.get("ok")):
+            # Late accept path: attach fallback may have produced visible graph windows despite timeout text.
+            vacs_pid_hint = int(parsed.get("vacs_pid", 0) or 0)
+            graph_count_hint = 0
+            if vacs_pid_hint > 0:
+                main_hint = _find_main(vacs_pid_hint)
+                if main_hint is not None:
+                    try:
+                        graph_count_hint = len(_graph_children(main_hint))
+                    except Exception:
+                        graph_count_hint = 0
+            if graph_count_hint > 0:
+                parsed["ok"] = True
+                parsed["accepted_existing_graphs"] = True
+                parsed["accepted_graph_count"] = int(graph_count_hint)
+                step(
+                    "interim_reimport_fallback_accepted_existing_graphs",
+                    vacs_pid=vacs_pid_hint,
+                    graph_count=graph_count_hint,
+                    reason=str(parsed.get("error", "")),
+                )
 
-    if not bool(parsed.get("ok")):
-        log["ok"] = False
-        log["error"] = "interim_reimport_failed"
-        out_file = out_dir / "summary.json"
-        out_file.write_text(json.dumps(log, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-        log["summary_file"] = str(out_file)
-        return log
+        if not bool(parsed.get("ok")):
+            log["ok"] = False
+            log["error"] = "interim_reimport_failed"
+            out_file = out_dir / "summary.json"
+            out_file.write_text(json.dumps(log, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+            log["summary_file"] = str(out_file)
+            return log
 
-    vacs_pid = int(parsed.get("vacs_pid", 0) or 0)
+        vacs_pid = int(parsed.get("vacs_pid", 0) or 0)
     main = _find_main(vacs_pid)
     if main is None:
         log["ok"] = False
@@ -1915,6 +2002,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--mode", choices=("auto", "fast", "safe"), default="auto", help="auto=fast-first then safe fallback")
     p.add_argument("--akabak-exe", required=True)
     p.add_argument("--vacs-exe", required=True)
+    p.add_argument(
+        "--assume-vacs-ready",
+        action="store_true",
+        help="Assume VACS is already opened by AKABAK F4 and skip interim reimport/open flow.",
+    )
     p.add_argument("--export-dir", required=True, help="Target folder under C:\\Horns\\... for this version")
     p.add_argument("--output-dir", default="runner_test_workspace/logs/vacs_export_save_all")
     p.add_argument("--dialog-timeout-s", type=float, default=5.0)

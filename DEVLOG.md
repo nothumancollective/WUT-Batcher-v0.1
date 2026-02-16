@@ -1638,3 +1638,27 @@ Validation executed:
   - all passed.
 - Observed unmanaged legacy blocker still present from pre-fix run:
   - `VACSVIEWER_32.exe` pid `996` (must be closed once manually before next clean baseline run).
+
+### Update 60 (Final-run handoff: use F4-opened VACS directly, no second open/reimport)
+#### Done
+- Implemented `--assume-vacs-ready` path in `scripts/vacs_export_save_all.py`:
+  - scans existing VACS processes
+  - selects ready VACS main window with graph child windows
+  - skips interim reimport (`Open VACS`/`F7`) and starts export loop immediately.
+- Wired runner export pipeline to use this mode:
+  - `app/vacs_export_pipeline.py` now calls external exporter with `--assume-vacs-ready` in harness flow.
+- Kept non-visual control flow and deterministic fallbacks; no pixel/OCR/coordinate logic added.
+- Extended graph-kind alias mapping in harness validation:
+  - `Sound pressure` now accepted as SPL (`app/runner_test_harness.py`).
+
+#### Why
+- In final runner path, AKABAK `F4` already opens and populates VACS; reopening/reimporting introduced unnecessary instability and latency.
+- Baseline evidence showed false SPL mismatch because parsed graph type was `Sound pressure`.
+
+#### Validation
+- `python -m py_compile scripts/vacs_export_save_all.py app/vacs_export_pipeline.py app/runner_test_harness.py`
+- `python -m pytest tests/test_vacs_export_pipeline.py tests/test_runner_test_harness.py tests/test_cli_runner_test.py tests/test_cli_vacs_tools.py -q`
+  - all passed.
+- Real baseline runs:
+  - `b02388cc-54cb-49bb-a2f4-0a44c8947825`: AKABAK+VACS export path successful; remaining failures were validation-only.
+  - `404bfb68-40e2-4dbe-857c-90f82f9d7780`: `export_quality:spl=ok`; remaining blocker is `impedance` all-zero + `radimp_diagnosis` failed.

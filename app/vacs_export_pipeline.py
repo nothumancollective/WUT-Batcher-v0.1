@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+import shutil
+import subprocess
+import sys
 from typing import Any, Dict, Iterable, List
 
 from app.export_specs import ExportSpec
@@ -13,6 +17,71 @@ from app.vacs_graph_catalog import build_catalog_index, load_graph_catalog, reso
 
 class VacsExportPipelineError(RuntimeError):
     pass
+
+
+def _graph_kind_tokens(kind: str) -> List[str]:
+    key = str(kind or "").strip().lower()
+    aliases = {
+        "spl": ["spl", "spectrum", "polar"],
+        "impedance": ["impedance", "radiation"],
+        "imp": ["impedance", "radiation"],
+        "polar": ["polar", "directivity"],
+    }
+    return aliases.get(key, [key] if key else [])
+
+
+def _matches_graph_kind(*, graph_kind: str, title: str, path: str) -> bool:
+    haystack = f"{title} {path}".lower()
+    tokens = _graph_kind_tokens(graph_kind)
+    if not tokens:
+        return False
+    return any(token in haystack for token in tokens)
+
+
+def _run_external_vacs_export_save_all(
+    *,
+    executable: str | Path,
+    akabak_executable: str | Path,
+    export_dir: Path,
+    log_dir: Path,
+) -> Dict[str, Any]:
+    repo_root = Path(__file__).resolve().parents[1]
+    script_path = repo_root / "scripts" / "vacs_export_save_all.py"
+    if not script_path.exists() or not script_path.is_file():
+        raise VacsExportPipelineError(f"Missing script: {script_path}")
+    output_dir = log_dir / "external_vacs_export_save_all"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    cmd = [
+        sys.executable,
+        str(script_path),
+        "--mode",
+        "fast",
+        "--assume-vacs-ready",
+        "--akabak-exe",
+        str(akabak_executable),
+        "--vacs-exe",
+        str(executable),
+        "--export-dir",
+        str(export_dir),
+        "--output-dir",
+        str(output_dir),
+        "--max-runtime-s",
+        "240",
+    ]
+    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    stdout = str(proc.stdout or "").strip()
+    stderr = str(proc.stderr or "").strip()
+    if proc.returncode != 0:
+        raise VacsExportPipelineError(
+            f"external vacs export failed (rc={proc.returncode}): {stderr or stdout or 'no output'}"
+        )
+    try:
+        payload = json.loads(stdout)
+    except json.JSONDecodeError as exc:
+        raise VacsExportPipelineError(f"external vacs export returned invalid json: {exc}") from exc
+    if not bool(payload.get("ok")):
+        raise VacsExportPipelineError(f"external vacs export reported failure: {payload}")
+    return payload
 
 
 def _render_output_path(
@@ -39,6 +108,7 @@ def run_vacs_export_specs(
     export_dir: str | Path,
     log_dir: str | Path,
     catalog_root: str | Path = "ui_maps/vacs",
+    akabak_executable: str | Path | None = None,
 ) -> Dict[str, Any]:
     specs = [spec for spec in list(export_specs) if str(spec.tool).lower() == "vacs"]
     if not specs:
@@ -51,6 +121,71 @@ def run_vacs_export_specs(
     export_root.mkdir(parents=True, exist_ok=True)
     log_root = Path(log_dir)
     log_root.mkdir(parents=True, exist_ok=True)
+
+    if akabak_executable:
+        external = _run_external_vacs_export_save_all(
+            executable=executable,
+            akabak_executable=akabak_executable,
+            export_dir=export_root,
+            log_dir=log_root,
+        )
+        exported_files = list(external.get("exported_files", []) or [])
+        used_indices = set()
+        exports: List[Dict[str, Any]] = []
+        for spec in specs:
+            output_path = _render_output_path(
+                export_dir=export_root,
+                project_id=project_id,
+                batch_id=batch_id,
+                version_id=version_id,
+                spec=spec,
+            )
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            match_index = None
+            for index, row in enumerate(exported_files):
+                if index in used_indices:
+                    continue
+                title = str((row.get("graph", {}) or {}).get("title", "") or "")
+                source_path = str(row.get("path", "") or "")
+                if _matches_graph_kind(graph_kind=spec.graph_kind, title=title, path=source_path):
+                    match_index = index
+                    break
+            if match_index is None:
+                raise VacsExportPipelineError(
+                    f"external vacs export could not map graph_kind='{spec.graph_kind}' for spec '{spec.id}'"
+                )
+            used_indices.add(match_index)
+            row = exported_files[match_index]
+            source = Path(str(row.get("path", "") or "")).resolve()
+            if not source.exists() or not source.is_file():
+                raise VacsExportPipelineError(f"external vacs export missing source file: {source}")
+            shutil.copy2(source, output_path)
+            exports.append(
+                {
+                    "spec": spec.to_dict(),
+                    "entry": {"graph_kind": spec.graph_kind, "graph_variant": spec.variant, "format": spec.format},
+                    "plugin_id": "external_vacs_export_save_all",
+                    "output_path": str(output_path),
+                    "details": {
+                        "source_file": str(source),
+                        "source_title": str((row.get("graph", {}) or {}).get("title", "") or ""),
+                        "bytes": int(Path(source).stat().st_size),
+                    },
+                }
+            )
+        return {
+            "executed": True,
+            "catalog_path": None,
+            "driver": {
+                "process_id": None,
+                "backend": "external_script",
+                "started_process": False,
+                "external_run_id": external.get("run_id"),
+            },
+            "export_count": len(exports),
+            "exports": exports,
+            "external_export_summary_file": external.get("summary_file"),
+        }
 
     driver = VacsDriver(
         executable=executable,
