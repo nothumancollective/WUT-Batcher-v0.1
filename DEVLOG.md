@@ -2057,3 +2057,22 @@ Validation executed:
 - Extended `tests/test_sql_dataset_store.py`:
   - federation profile bootstrap + consent update
   - tombstone write on run cleanup
+
+## 2026-02-16
+### Baseline (Batch UI Rework Start)
+#### Done
+- Confirmed clean repository baseline after separate AKABAK contract commit.
+- Re-ran critical regression subset before Batch-UI work:
+  - `tests/test_runtime_orchestrator.py`
+  - `tests/test_service_export.py`
+  - `tests/test_cli_run_sample.py`
+- Result: `16 passed` (no failures).
+
+#### Next
+- Implement Batch-UI rework in scoped commits:
+  - parameter form scaffold
+  - sweep controls and payload mapping
+  - export presets + advanced panel
+  - ETA estimation from SQL history
+  - compatibility sweep parse issue reporting
+  - docs + tests
