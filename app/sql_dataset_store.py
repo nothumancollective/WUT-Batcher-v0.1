@@ -1896,6 +1896,49 @@ class SqlDatasetStore:
             for row in rows
         ]
 
+    def list_recent_success_durations(
+        self,
+        *,
+        limit: int = 200,
+        batch_id: Optional[str] = None,
+    ) -> List[float]:
+        max_rows = max(int(limit), 1)
+        where = [
+            "rv.project_id = ?",
+            "r.project_id = ?",
+            "r.status = 'succeeded'",
+            "rv.status = 'success'",
+            "rv.duration_seconds IS NOT NULL",
+        ]
+        values: List[Any] = [self.project_root.name, self.project_root.name]
+        if batch_id:
+            where.append("rv.batch_id = ?")
+            values.append(str(batch_id))
+        with self._open_conn(self.project_db_path) as conn:
+            rows = conn.execute(
+                f"""
+                SELECT rv.duration_seconds
+                FROM run_versions rv
+                JOIN runs r ON r.run_id = rv.run_id
+                WHERE {' AND '.join(where)}
+                ORDER BY COALESCE(rv.finished_at, r.finished_at, r.started_at) DESC
+                LIMIT ?
+                """,
+                tuple(values + [max_rows]),
+            ).fetchall()
+        durations: List[float] = []
+        for row in rows:
+            value = row["duration_seconds"]
+            if value is None:
+                continue
+            try:
+                duration = float(value)
+            except Exception:
+                continue
+            if duration >= 0.0:
+                durations.append(duration)
+        return durations
+
     def latest_successful_run_per_version(self, batch_id: str) -> List[Dict[str, Any]]:
         with self._open_conn(self.project_db_path) as conn:
             rows = conn.execute(

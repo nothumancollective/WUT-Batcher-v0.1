@@ -1909,6 +1909,12 @@ class MainWindow(QMainWindow):
         self._project_validation_timer.setSingleShot(True)
         self._project_validation_timer.setInterval(self._project_validation_debounce_ms)
         self._project_validation_timer.timeout.connect(self._flush_project_draft_validation)
+        self._batch_validation_debounce_ms = 220
+        self._pending_batch_payload: Optional[Dict[str, object]] = None
+        self._batch_validation_timer = QTimer(self)
+        self._batch_validation_timer.setSingleShot(True)
+        self._batch_validation_timer.setInterval(self._batch_validation_debounce_ms)
+        self._batch_validation_timer.timeout.connect(self._flush_batch_draft_validation)
 
         self.setWindowTitle("WUT Batcher")
         self.setMinimumSize(1280, 800)
@@ -1960,7 +1966,7 @@ class MainWindow(QMainWindow):
         self.batch_page.save_batch.connect(self._save_batch)
         self.batch_page.run_batch.connect(self._run_batch)
         self.batch_page.back_to_dashboard.connect(self.show_dashboard)
-        self.batch_page.draft_changed.connect(self._on_batch_draft_changed)
+        self.batch_page.draft_changed.connect(self._queue_batch_draft_changed)
         self.batch_page.compat_panel.request_show_details.connect(
             lambda: self._show_validation_details(self.batch_page.compat_panel.issues(), "Batch Validation Details")
         )
@@ -2224,6 +2230,17 @@ class MainWindow(QMainWindow):
             payload = self.project_page._raw_constraints_payload()
         self._on_project_draft_changed(payload)
 
+    def _queue_batch_draft_changed(self, payload: Dict[str, object]) -> None:
+        self._pending_batch_payload = dict(payload)
+        self._batch_validation_timer.start()
+
+    def _flush_batch_draft_validation(self) -> None:
+        payload = self._pending_batch_payload
+        self._pending_batch_payload = None
+        if payload is None:
+            payload = self.batch_page._payload(include_name=False)
+        self._on_batch_draft_changed(payload)
+
     def _on_project_draft_changed(self, payload: Dict[str, object]) -> None:
         runner_mode = DEFAULT_RUNNER_MODE
         if self.current_project is not None:
@@ -2257,6 +2274,7 @@ class MainWindow(QMainWindow):
                     "issues": [],
                 }
             )
+            self.batch_page.set_eta(None, sample_count=0, median_seconds=None)
             return
         state = self.service.evaluate_batch_definition(
             project_id=self.current_project.project_id,
@@ -2265,6 +2283,18 @@ class MainWindow(QMainWindow):
             sweep_mode=str(payload.get("sweep_mode", "single")),
         )
         self.batch_page.apply_compatibility(state)
+        estimate = self.service.estimate_batch_runtime(
+            project_id=self.current_project.project_id,
+            selected_params=dict(payload.get("selected_params", {}) or {}),
+            sweeps=dict(payload.get("sweeps", {}) or {}),
+            sweep_mode=str(payload.get("sweep_mode", "single")),
+            validation_state=state,
+        )
+        self.batch_page.set_eta(
+            estimate.get("eta_seconds"),
+            sample_count=int(estimate.get("sample_count", 0) or 0),
+            median_seconds=estimate.get("median_seconds_per_version"),
+        )
 
 
 class GuiController:

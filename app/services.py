@@ -6,6 +6,7 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 import json
 import hashlib
+import statistics
 from contextlib import closing
 from pathlib import Path
 import sqlite3
@@ -108,6 +109,20 @@ def _detect_git_commit() -> Optional[str]:
     return value or None
 
 
+def _percentile(sorted_values: List[float], p: float) -> Optional[float]:
+    if not sorted_values:
+        return None
+    if len(sorted_values) == 1:
+        return float(sorted_values[0])
+    rank = max(0.0, min(1.0, float(p))) * float(len(sorted_values) - 1)
+    lower = int(rank)
+    upper = min(lower + 1, len(sorted_values) - 1)
+    fraction = rank - lower
+    if lower == upper:
+        return float(sorted_values[lower])
+    return float(sorted_values[lower] + ((sorted_values[upper] - sorted_values[lower]) * fraction))
+
+
 class OrchestratorService:
     def __init__(self, settings_store: SettingsStore | None = None) -> None:
         self.settings_store = settings_store or SettingsStore()
@@ -157,6 +172,46 @@ class OrchestratorService:
             sweeps=sweeps,
             sweep_mode=sweep_mode,
         )
+
+    def estimate_batch_runtime(
+        self,
+        *,
+        project_id: str,
+        selected_params: Dict[str, Any],
+        sweeps: Dict[str, Dict[str, Any]],
+        sweep_mode: str,
+        batch_id: Optional[str] = None,
+        validation_state: Optional[Dict[str, Any]] = None,
+        sample_limit: int = 200,
+    ) -> Dict[str, Any]:
+        state = dict(validation_state or {})
+        if not state:
+            state = self.evaluate_batch_definition(
+                project_id=project_id,
+                selected_params=selected_params,
+                sweeps=sweeps,
+                sweep_mode=sweep_mode,
+            )
+        version_count_preview = int(state.get("version_count_preview", 0) or 0)
+        project_paths = self.repo.project_paths(project_id, ensure=True)
+        dataset = TidyDatasetWriter(project_paths.project_dir, library_root=self.settings.library_root)
+        durations = dataset.list_recent_success_durations(limit=sample_limit, batch_id=batch_id)
+        sample_count = len(durations)
+        sorted_durations = sorted(float(item) for item in durations)
+        median_seconds = float(statistics.median(sorted_durations)) if sorted_durations else None
+        eta_seconds = None if median_seconds is None else float(max(version_count_preview, 0) * median_seconds)
+        return {
+            "version_count_preview": version_count_preview,
+            "eta_seconds": eta_seconds,
+            "median_seconds_per_version": median_seconds,
+            "sample_count": sample_count,
+            "basis_stats": {
+                "sample_count": sample_count,
+                "median_seconds": median_seconds,
+                "p25_seconds": _percentile(sorted_durations, 0.25),
+                "p75_seconds": _percentile(sorted_durations, 0.75),
+            },
+        }
 
     def list_versions(self, project_id: str, batch_id: Optional[str] = None) -> List[Dict[str, Any]]:
         project_paths = self.repo.project_paths(project_id, ensure=True)
