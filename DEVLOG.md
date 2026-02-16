@@ -2005,3 +2005,33 @@ Validation executed:
 
 #### Docs
 - Added: `docs/LE_PROOF_MATRIX_REPORT.md`
+
+## 2026-02-16
+### Update (Dataset Pipeline Hardening: Post-VACS Ingest)
+#### Done
+- Reviewed runtime dataset flow and confirmed staged persistence model:
+  - plan/versions at materialization
+  - ATH dimensions after ATH
+  - graph ingest after VACS export
+- Hardened `app/runtime_orchestrator.py` VACS ingest to be contract-first:
+  - consumes `run_vacs_export_specs` export mapping (`spec/entry/output_path`)
+  - assigns `graph_kind` from ExportSpec mapping (authoritative), not only parser inference
+  - carries mapping context into stored metadata (`spec_id`, entry/details/plugin)
+- Added deterministic integrity checks before SQL write acceptance:
+  - `missing_contract_files`
+  - `mapping_errors` on confident graph-kind conflicts
+  - stage fails on parse errors/mapping errors/missing contract files/zero rows
+- Added documentation:
+  - `docs/DATASET_PIPELINE_STATUS.md` (status, architecture decision, method, implementation)
+
+#### Tests
+- Extended `tests/test_runtime_orchestrator.py` with:
+  - `test_pipeline_prefers_export_spec_mapping_for_graph_kind`
+  - `test_pipeline_marks_vacs_failed_on_graph_kind_mismatch`
+
+#### Notes
+- Legacy `app/dataset_pipeline.py` remains untouched in this pass.
+- Existing unrelated local changes were not modified by this pass:
+  - `app/ui_automation/watchdog.py`
+  - `ui_contracts/akabak/solve_flow.contract.json`
+  - `docs/AKABAK_IMPORT_SOLVE.md`
