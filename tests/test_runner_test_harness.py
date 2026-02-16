@@ -7,12 +7,15 @@ import unittest
 
 from app.runner_test_db import RunnerTestDb
 from app.runner_test_harness import (
+    _collect_validation_metrics,
+    _diagnose_radimp,
     _parse_abec_mesh_requirements,
     run_runner_test_harness,
     run_runner_test_import_start_apply_only,
     run_runner_test_le_repair_import_only,
     run_runner_test_open_dialog_only,
 )
+from app.vacs_txt_parser import VacsGraph, VacsSeries, VacsSeriesPoint
 
 
 def _write_case(path: Path) -> None:
@@ -48,6 +51,65 @@ def _write_case(path: Path) -> None:
 
 
 class RunnerTestHarnessTests(unittest.TestCase):
+    def test_collect_validation_metrics_accepts_normalized_radimp_zero_baseline(self) -> None:
+        parsed = VacsGraph(
+            graph_type="impedance",
+            x_name="f",
+            y_name="z",
+            x_unit="Hz",
+            y_unit="",
+            series=[
+                VacsSeries(
+                    series_kind="curve",
+                    angle_deg=None,
+                    label="default",
+                    points=[
+                        VacsSeriesPoint(x_value=1000.0, y_value=0.0, y_imag=0.0),
+                        VacsSeriesPoint(x_value=2000.0, y_value=0.0, y_imag=0.0),
+                    ],
+                    meta={},
+                )
+            ],
+            export_meta={
+                "metadata": {
+                    "Data_LevelType": "Impedance10",
+                    "Data_Legend": "Radiation_Impedance #5; ; Normalized",
+                }
+            },
+        )
+        validation = _collect_validation_metrics(parsed=parsed, expected_kind="impedance", file_size_bytes=512)
+        self.assertEqual(validation["status"], "ok")
+        self.assertTrue(validation["metrics"]["all_zero_allowed"])
+
+    def test_diagnose_radimp_normalized_zero_baseline_classification(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            abec = root / "Project.abec"
+            obs = root / "observation.txt"
+            abec.write_text("[Observation]\nC0=observation.txt\n", encoding="utf-8")
+            obs.write_text(
+                "Radiation_Impedance\n"
+                "  RadImpType=Normalized\n"
+                "  101 1001 1001 ID=101\n",
+                encoding="utf-8",
+            )
+            diagnosis = _diagnose_radimp(
+                abec_path=abec,
+                export_diagnostics=[
+                    {
+                        "expected_kind": "impedance",
+                        "parsed_graph_type": "impedance",
+                        "series_count": 1,
+                        "all_zero_series": 1,
+                        "all_zero_allowed": True,
+                        "graph_kind_match": True,
+                    }
+                ],
+                watchdog_events=[],
+            )
+            self.assertEqual(diagnosis["status"], "ok")
+            self.assertEqual(diagnosis["classification"], "radimp_normalized_zero_baseline")
+
     def test_harness_skeleton_writes_cfg_and_db_records(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)

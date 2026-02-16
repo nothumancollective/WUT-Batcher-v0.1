@@ -73,6 +73,98 @@ class AthDriverAssetsTests(unittest.TestCase):
             self.assertIn(second.copy.status, {"already_present", "copied"})
             self.assertEqual(second.patch.status, "already_set")
 
+    def test_repair_post_ath_le_binding_driver_drvgroup_profile_patches_driver_line(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            ath_root = root / "ATH"
+            driver_dir = ath_root / "lib" / "drivers"
+            driver_dir.mkdir(parents=True, exist_ok=True)
+            (driver_dir / "generic25.txt").write_text(
+                "System 'S1'\n"
+                "  Driver 'D1' Def='Drv1' Node=1=0=10=20\n"
+                "  RadImp 'Throat' Node=400 DrvGroup=1001\n",
+                encoding="utf-8",
+            )
+            ath_exe = ath_root / "ath.exe"
+            ath_exe.write_text("stub\n", encoding="utf-8")
+
+            abec_dir = root / "export" / "ABEC_FreeStanding"
+            abec_dir.mkdir(parents=True, exist_ok=True)
+            abec = abec_dir / "Project.abec"
+            abec.write_text("[LEScript]\nScriptname_LEScript=\n", encoding="utf-8")
+
+            result = repair_post_ath_le_binding(
+                abec_path=abec,
+                ath_executable=ath_exe,
+                le_patch_profile="driver_drvgroup",
+            )
+            self.assertTrue(result.ok)
+            self.assertIn(result.driver_patch.status, {"patched", "already_conformant"})
+            patched_driver = Path(result.script_path).read_text(encoding="utf-8")
+            self.assertIn("Driver 'D1' Def='Drv1' Node=1=0=10=20 DrvGroup=1001", patched_driver)
+
+    def test_repair_post_ath_le_binding_driver_drvgroup_defdriving_profile_adds_def_driving(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            ath_root = root / "ATH"
+            driver_dir = ath_root / "lib" / "drivers"
+            driver_dir.mkdir(parents=True, exist_ok=True)
+            (driver_dir / "generic25.txt").write_text(
+                "Def_Driver 'Drv1'\n"
+                "  Re=6.3ohm\n"
+                "\n"
+                "System 'S1'\n"
+                "  Driver 'D1' Def='Drv1' Node=1=0=10=20\n",
+                encoding="utf-8",
+            )
+            ath_exe = ath_root / "ath.exe"
+            ath_exe.write_text("stub\n", encoding="utf-8")
+
+            abec_dir = root / "export" / "ABEC_FreeStanding"
+            abec_dir.mkdir(parents=True, exist_ok=True)
+            abec = abec_dir / "Project.abec"
+            abec.write_text("[LEScript]\nScriptname_LEScript=\n", encoding="utf-8")
+
+            result = repair_post_ath_le_binding(
+                abec_path=abec,
+                ath_executable=ath_exe,
+                le_patch_profile="driver_drvgroup_def_driving",
+                le_voltage_vrms=2.83,
+            )
+            self.assertTrue(result.ok)
+            patched_driver = Path(result.script_path).read_text(encoding="utf-8")
+            self.assertIn('Def_Driving "Voltage source" Value=2.83V IsRms', patched_driver)
+            self.assertIn("DrvGroup=1001", patched_driver)
+
+    def test_repair_post_ath_le_binding_doc_example_profile_inserts_resistor_and_node_shift(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            ath_root = root / "ATH"
+            driver_dir = ath_root / "lib" / "drivers"
+            driver_dir.mkdir(parents=True, exist_ok=True)
+            (driver_dir / "generic25.txt").write_text(
+                "System 'S1'\n"
+                "  Driver 'D1' Def='Drv1' Node=1=0=10=20\n",
+                encoding="utf-8",
+            )
+            ath_exe = ath_root / "ath.exe"
+            ath_exe.write_text("stub\n", encoding="utf-8")
+            abec_dir = root / "export" / "ABEC_FreeStanding"
+            abec_dir.mkdir(parents=True, exist_ok=True)
+            abec = abec_dir / "Project.abec"
+            abec.write_text("[LEScript]\nScriptname_LEScript=\n", encoding="utf-8")
+
+            result = repair_post_ath_le_binding(
+                abec_path=abec,
+                ath_executable=ath_exe,
+                le_patch_profile="driver_drvgroup_def_driving_resistor",
+            )
+            self.assertTrue(result.ok)
+            patched_driver = Path(result.script_path).read_text(encoding="utf-8")
+            self.assertIn("Resistor 'Rg' Node=1=2 R=1ohm", patched_driver)
+            self.assertIn("Driver 'D1' Def='Drv1' Node=2=0=10=20 DrvGroup=1001", patched_driver)
+            self.assertIn('Def_Driving "Voltage source" Value=1V IsRms', patched_driver)
+
 
 if __name__ == "__main__":
     unittest.main()

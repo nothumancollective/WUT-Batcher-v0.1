@@ -579,6 +579,7 @@ def cmd_runner_test_run(args: argparse.Namespace) -> int:
         ath_executable=args.ath_exe or settings.ath_exe,
         akabak_executable=args.akabak_exe or settings.akabak_exe,
         vacs_executable=args.vacs_exe or settings.vacs_exe,
+        le_repair_profile=str(args.le_repair_profile or "").strip() or None,
         dry_run=bool(args.dry_run),
     )
     print(json.dumps(summary, indent=2, ensure_ascii=False, default=_json_default))
@@ -634,6 +635,10 @@ def cmd_runner_test_le_repair_import_only(args: argparse.Namespace) -> int:
         ath_cfg_path=args.ath_cfg_path,
         abec_path=args.abec_path,
         reuse_export_dir=args.reuse_export_dir,
+        le_repair_profile=str(args.le_repair_profile or "").strip() or None,
+        le_driver_tag=str(args.le_driver_tag or "D1"),
+        le_drvgroup=str(args.le_drvgroup or "1001"),
+        le_voltage_vrms=float(args.le_voltage_vrms),
     )
     print(json.dumps(summary, indent=2, ensure_ascii=False, default=_json_default))
     return 0 if summary.get("ok", False) else 4
@@ -829,6 +834,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Test profile id (reserved for full E2E mode).",
     )
     p_runner_test_run.add_argument(
+        "--le-repair-profile",
+        default=None,
+        help=(
+            "Optional LE script patch profile for post-ATH repair "
+            "(baseline, driver_drvgroup, driver_drvgroup_def_driving)."
+        ),
+    )
+    p_runner_test_run.add_argument(
         "--workspace-root",
         default="runner_test_workspace",
         help="Dedicated workspace root for harness artifacts.",
@@ -917,6 +930,27 @@ def build_parser() -> argparse.ArgumentParser:
     p_runner_test_le_repair_import_only.add_argument(
         "--reuse-export-dir",
         help="Optional existing ATH export root to scan for Project.abec (alternative to --abec-path).",
+    )
+    p_runner_test_le_repair_import_only.add_argument(
+        "--le-repair-profile",
+        default=None,
+        help="Optional LE script patch profile (baseline, driver_drvgroup, driver_drvgroup_def_driving).",
+    )
+    p_runner_test_le_repair_import_only.add_argument(
+        "--le-driver-tag",
+        default="D1",
+        help="LE driver tag used when applying LE profile patches.",
+    )
+    p_runner_test_le_repair_import_only.add_argument(
+        "--le-drvgroup",
+        default="1001",
+        help="DrvGroup value used for LE profile patches.",
+    )
+    p_runner_test_le_repair_import_only.add_argument(
+        "--le-voltage-vrms",
+        type=float,
+        default=1.0,
+        help="Voltage value used when profile inserts Def_Driving.",
     )
     p_runner_test_le_repair_import_only.add_argument(
         "--repeats",

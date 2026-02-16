@@ -1662,3 +1662,46 @@ Validation executed:
 - Real baseline runs:
   - `b02388cc-54cb-49bb-a2f4-0a44c8947825`: AKABAK+VACS export path successful; remaining failures were validation-only.
   - `404bfb68-40e2-4dbe-857c-90f82f9d7780`: `export_quality:spl=ok`; remaining blocker is `impedance` all-zero + `radimp_diagnosis` failed.
+
+### Update 61 (LE A/B/C/D matrix + normalized RadImp classification + repeat stability)
+#### Done
+- Added LE repair profile support to harness/CLI:
+  - `baseline`
+  - `driver_drvgroup`
+  - `driver_drvgroup_def_driving`
+  - `driver_drvgroup_def_driving_resistor`
+- Implemented LE script profile patching in `app/ath_driver_assets.py` (idempotent, hash-aware copy remains intact).
+- Added persistent diagnostics artifacts in full E2E harness:
+  - `ath_input_project`, `ath_input_solving`, `ath_input_observation`, `ath_input_le_script`
+  - `abec_tree_snapshot` after AKABAK solve
+- Extended RadImp validation logic in `app/runner_test_harness.py`:
+  - all-zero impedance export is accepted when metadata indicates normalized RadImp baseline
+  - new diagnosis class: `radimp_normalized_zero_baseline`
+- Hardened preflight/process behavior:
+  - wait/backoff for transient unmanaged AKABAK/VACS processes
+  - register VACS pids that are already alive before export (spawned by AKABAK/F4), so cleanup can terminate them deterministically
+
+#### Why
+- Real runs showed RadImp remained all-zero across LE script variants while SPL was non-zero.
+- Export evidence showed the correct graph was selected (`Radiation_Impedance #5`) and marked normalized.
+- Previous hard-fail on all-zero RadImp was generating false negatives for this normalized baseline mode.
+- Repeats were intermittently blocked by leftover unmanaged VACS pids between sequential runs.
+
+#### Validation
+- Unit tests:
+  - `python -m pytest tests/test_ath_driver_assets.py tests/test_runner_test_harness.py tests/test_cli_runner_test.py -q`
+  - `16 passed`
+- Real E2E matrix runs:
+  - A baseline: `92d37a9a-fcff-4f73-880b-c647f9c94451`
+  - B drvgroup: `f2cc10a8-c2fe-4e3a-b389-c24a6e887957`
+  - C drvgroup+def_driving: `159eef18-4a67-4727-afc1-19bbda645c25`
+  - D doc-like topology: `427c4a22-7fdb-4f8d-a963-54dbda0c8091`
+  - all showed normalized RadImp zero signature with successful flow.
+- Green baseline after classifier/process fixes:
+  - single run: `ec32ba97-70b4-4c6d-aa6c-a1632bb183ac` (`succeeded`)
+  - repeats=3: `3515ef82-c38c-4d97-89f7-124a7b1febef`, `577b29f0-4abe-4af6-82ca-fbf95805e8d5`, `e2ebbcf8-9b88-4313-ab2a-5423516ba2f4` (all `succeeded`)
+
+#### Docs
+- Updated: `docs/TOOLCHAIN_BASELINE.md`
+- Updated: `docs/RADIMP_BASELINE_REPORT.md`
+- Added: `docs/LE_RULES_EXTRACT.md`

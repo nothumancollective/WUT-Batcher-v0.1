@@ -14,6 +14,10 @@ from typing import Any, Dict, Optional
 DEFAULT_LE_DRIVER_BASENAME = "generic25"
 LE_SCRIPT_SECTION_NAME = "LEScript"
 LE_SCRIPT_KEY_NAME = "Scriptname_LEScript"
+LE_PATCH_PROFILE_BASELINE = "baseline"
+LE_PATCH_PROFILE_DRIVER_DRVGROUP = "driver_drvgroup"
+LE_PATCH_PROFILE_DRIVER_DRVGROUP_DEF_DRIVING = "driver_drvgroup_def_driving"
+LE_PATCH_PROFILE_DRIVER_DRVGROUP_DEF_DRIVING_RESISTOR = "driver_drvgroup_def_driving_resistor"
 
 
 def _sha256_file(path: Path) -> str:
@@ -97,6 +101,7 @@ class PostAthLeRepairResult:
     binding_matches_expected: bool
     binding_value: str
     copy: DriverScriptEnsureResult
+    driver_patch: "LeDriverScriptPatchResult"
     patch: AbecLeScriptPatchResult
     diagnostics_path: Optional[str] = None
     before_snapshot_path: Optional[str] = None
@@ -107,6 +112,7 @@ class PostAthLeRepairResult:
     def ok(self) -> bool:
         return (
             self.copy.ok
+            and self.driver_patch.ok
             and self.patch.ok
             and self.script_exists
             and self.binding_non_empty
@@ -125,10 +131,49 @@ class PostAthLeRepairResult:
             "binding_matches_expected": self.binding_matches_expected,
             "binding_value": self.binding_value,
             "copy": self.copy.to_dict(),
+            "driver_patch": self.driver_patch.to_dict(),
             "patch": self.patch.to_dict(),
             "diagnostics_path": self.diagnostics_path,
             "before_snapshot_path": self.before_snapshot_path,
             "after_snapshot_path": self.after_snapshot_path,
+            "error": self.error,
+        }
+
+
+@dataclass(frozen=True)
+class LeDriverScriptPatchResult:
+    status: str
+    profile: str
+    target_path: Optional[str] = None
+    changed: bool = False
+    driver_line_changed: bool = False
+    def_driving_changed: bool = False
+    driver_drvgroup_value: Optional[str] = None
+    def_driving_value: Optional[str] = None
+    sha256_before: Optional[str] = None
+    sha256_after: Optional[str] = None
+    error: Optional[str] = None
+
+    @property
+    def ok(self) -> bool:
+        return self.status in {
+            "not_requested",
+            "already_conformant",
+            "patched",
+        }
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "status": self.status,
+            "profile": self.profile,
+            "target_path": self.target_path,
+            "changed": self.changed,
+            "driver_line_changed": self.driver_line_changed,
+            "def_driving_changed": self.def_driving_changed,
+            "driver_drvgroup_value": self.driver_drvgroup_value,
+            "def_driving_value": self.def_driving_value,
+            "sha256_before": self.sha256_before,
+            "sha256_after": self.sha256_after,
             "error": self.error,
         }
 
@@ -138,6 +183,258 @@ def _driver_filename(driver_basename: str) -> str:
     if not name:
         raise ValueError("driver_basename must not be empty")
     return name if name.lower().endswith(".txt") else f"{name}.txt"
+
+
+def _normalize_le_patch_profile(profile: Optional[str]) -> str:
+    value = str(profile or "").strip().lower()
+    if not value:
+        return LE_PATCH_PROFILE_BASELINE
+    aliases = {
+        "none": LE_PATCH_PROFILE_BASELINE,
+        "baseline": LE_PATCH_PROFILE_BASELINE,
+        "drvgroup": LE_PATCH_PROFILE_DRIVER_DRVGROUP,
+        "driver_drvgroup": LE_PATCH_PROFILE_DRIVER_DRVGROUP,
+        "drvgroup+def_driving": LE_PATCH_PROFILE_DRIVER_DRVGROUP_DEF_DRIVING,
+        "driver_drvgroup_def_driving": LE_PATCH_PROFILE_DRIVER_DRVGROUP_DEF_DRIVING,
+        "driver_drvgroup+def_driving": LE_PATCH_PROFILE_DRIVER_DRVGROUP_DEF_DRIVING,
+        "driver_drvgroup_def_driving_resistor": LE_PATCH_PROFILE_DRIVER_DRVGROUP_DEF_DRIVING_RESISTOR,
+        "doc_example": LE_PATCH_PROFILE_DRIVER_DRVGROUP_DEF_DRIVING_RESISTOR,
+    }
+    return aliases.get(value, value)
+
+
+def _format_voltage_vrms(value: float) -> str:
+    rendered = f"{float(value):.6f}".rstrip("0").rstrip(".")
+    return rendered or "0"
+
+
+def _split_line_comment(raw: str) -> tuple[str, str]:
+    body, marker, comment = raw.partition("//")
+    if not marker:
+        return raw, ""
+    return body.rstrip(), f" {marker}{comment}"
+
+
+def _ensure_driver_drvgroup(
+    content: str,
+    *,
+    driver_tag: str,
+    drvgroup_value: str,
+) -> tuple[str, bool, bool]:
+    lines = content.splitlines()
+    driver_regex = re.compile(
+        r"^\s*Driver\s+'{}'(?=\s|$)".format(re.escape(driver_tag)),
+        flags=re.IGNORECASE,
+    )
+    drvgroup_regex = re.compile(r"\bDrvGroup\s*=", flags=re.IGNORECASE)
+    drvgroup_value_regex = re.compile(
+        r"\bDrvGroup\s*=\s*([0-9,\s]+)",
+        flags=re.IGNORECASE,
+    )
+    changed = False
+    found = False
+
+    for index, line in enumerate(lines):
+        if not driver_regex.search(line):
+            continue
+        found = True
+        body, comment = _split_line_comment(line)
+        if drvgroup_regex.search(body):
+            match = drvgroup_value_regex.search(body)
+            if match and str(drvgroup_value) in str(match.group(1)):
+                break
+            body = drvgroup_value_regex.sub(f"DrvGroup={drvgroup_value}", body, count=1)
+        else:
+            body = f"{body.rstrip()} DrvGroup={drvgroup_value}".rstrip()
+        updated = f"{body}{comment}".rstrip()
+        if updated != line.rstrip():
+            lines[index] = updated
+            changed = True
+        break
+
+    return "\n".join(lines), changed, found
+
+
+def _ensure_def_driving(
+    content: str,
+    *,
+    voltage_vrms: float,
+) -> tuple[str, bool]:
+    lines = content.splitlines()
+    if any(re.search(r"^\s*Def_Driving\b", line, flags=re.IGNORECASE) for line in lines):
+        return "\n".join(lines), False
+
+    insert_at = 0
+    for index, line in enumerate(lines):
+        if re.search(r"^\s*System\b", line, flags=re.IGNORECASE):
+            insert_at = index
+            break
+    driving_line = f'Def_Driving "Voltage source" Value={_format_voltage_vrms(voltage_vrms)}V IsRms'
+    lines.insert(insert_at, driving_line)
+    if insert_at + 1 < len(lines) and str(lines[insert_at + 1]).strip():
+        lines.insert(insert_at + 1, "")
+    return "\n".join(lines), True
+
+
+def _ensure_system_resistor_and_driver_node(
+    content: str,
+    *,
+    driver_tag: str,
+) -> tuple[str, bool]:
+    lines = content.splitlines()
+    changed = False
+    system_index = -1
+    for index, line in enumerate(lines):
+        if re.search(r"^\s*System\b", line, flags=re.IGNORECASE):
+            system_index = index
+            break
+    if system_index >= 0:
+        has_resistor = False
+        for line in lines[system_index + 1 :]:
+            if re.search(r"^\s*System\b", line, flags=re.IGNORECASE):
+                break
+            if re.search(r"^\s*Resistor\s+'Rg'\b", line, flags=re.IGNORECASE):
+                has_resistor = True
+                break
+        if not has_resistor:
+            insert_at = system_index + 1
+            lines.insert(insert_at, "  Resistor 'Rg' Node=1=2 R=1ohm")
+            changed = True
+
+    driver_regex = re.compile(
+        r"^\s*Driver\s+'{}'(?=\s|$)".format(re.escape(driver_tag)),
+        flags=re.IGNORECASE,
+    )
+    for index, line in enumerate(lines):
+        if not driver_regex.search(line):
+            continue
+        updated = re.sub(r"Node\s*=\s*1\s*=\s*0\s*=", "Node=2=0=", line, count=1, flags=re.IGNORECASE)
+        if updated != line:
+            lines[index] = updated
+            changed = True
+        break
+    return "\n".join(lines), changed
+
+
+def patch_driver_script_for_le_profile(
+    *,
+    script_path: str | Path,
+    profile: Optional[str],
+    driver_tag: str = "D1",
+    drvgroup_value: str = "1001",
+    voltage_vrms: float = 1.0,
+) -> LeDriverScriptPatchResult:
+    canonical = _normalize_le_patch_profile(profile)
+    target = Path(str(script_path)).expanduser()
+    try:
+        target = target.resolve()
+    except Exception:
+        target = target.absolute()
+    if not target.exists() or not target.is_file():
+        return LeDriverScriptPatchResult(
+            status="target_missing",
+            profile=canonical,
+            target_path=str(target),
+            error="driver script target missing",
+        )
+
+    if canonical == LE_PATCH_PROFILE_BASELINE:
+        return LeDriverScriptPatchResult(
+            status="not_requested",
+            profile=canonical,
+            target_path=str(target),
+            changed=False,
+            driver_drvgroup_value=str(drvgroup_value),
+            def_driving_value=f"{_format_voltage_vrms(voltage_vrms)}V",
+            sha256_before=_sha256_file(target),
+            sha256_after=_sha256_file(target),
+        )
+
+    if canonical not in {
+        LE_PATCH_PROFILE_DRIVER_DRVGROUP,
+        LE_PATCH_PROFILE_DRIVER_DRVGROUP_DEF_DRIVING,
+        LE_PATCH_PROFILE_DRIVER_DRVGROUP_DEF_DRIVING_RESISTOR,
+    }:
+        return LeDriverScriptPatchResult(
+            status="invalid_profile",
+            profile=canonical,
+            target_path=str(target),
+            error=f"unsupported le patch profile: {canonical}",
+        )
+
+    newline = "\r\n"
+    try:
+        original = target.read_text(encoding="utf-8", errors="replace")
+        before_hash = _sha256_file(target)
+        newline = "\r\n" if "\r\n" in original else "\n"
+        trailing_newline = original.endswith("\n") or original.endswith("\r\n")
+
+        driver_changed = False
+        def_driving_changed = False
+        patched = original
+
+        patched, driver_changed, driver_found = _ensure_driver_drvgroup(
+            patched,
+            driver_tag=driver_tag,
+            drvgroup_value=str(drvgroup_value),
+        )
+        if not driver_found:
+            return LeDriverScriptPatchResult(
+                status="driver_not_found",
+                profile=canonical,
+                target_path=str(target),
+                driver_drvgroup_value=str(drvgroup_value),
+                def_driving_value=f"{_format_voltage_vrms(voltage_vrms)}V",
+                sha256_before=before_hash,
+                sha256_after=before_hash,
+                error=f"driver section '{driver_tag}' not found",
+            )
+
+        if canonical in {
+            LE_PATCH_PROFILE_DRIVER_DRVGROUP_DEF_DRIVING,
+            LE_PATCH_PROFILE_DRIVER_DRVGROUP_DEF_DRIVING_RESISTOR,
+        }:
+            patched, def_driving_changed = _ensure_def_driving(
+                patched,
+                voltage_vrms=float(voltage_vrms),
+            )
+        if canonical == LE_PATCH_PROFILE_DRIVER_DRVGROUP_DEF_DRIVING_RESISTOR:
+            patched, system_changed = _ensure_system_resistor_and_driver_node(
+                patched,
+                driver_tag=driver_tag,
+            )
+            driver_changed = driver_changed or system_changed
+
+        if newline == "\r\n":
+            patched = patched.replace("\n", "\r\n")
+        if trailing_newline and not patched.endswith(newline):
+            patched += newline
+        if not trailing_newline and patched.endswith(newline):
+            patched = patched[: -len(newline)]
+
+        changed = driver_changed or def_driving_changed
+        if changed:
+            target.write_text(patched, encoding="utf-8")
+        after_hash = _sha256_file(target)
+        return LeDriverScriptPatchResult(
+            status="patched" if changed else "already_conformant",
+            profile=canonical,
+            target_path=str(target),
+            changed=changed,
+            driver_line_changed=driver_changed,
+            def_driving_changed=def_driving_changed,
+            driver_drvgroup_value=str(drvgroup_value),
+            def_driving_value=f"{_format_voltage_vrms(voltage_vrms)}V",
+            sha256_before=before_hash,
+            sha256_after=after_hash,
+        )
+    except Exception as exc:
+        return LeDriverScriptPatchResult(
+            status="patch_failed",
+            profile=canonical,
+            target_path=str(target),
+            error=str(exc),
+        )
 
 
 def resolve_ath_driver_source_path(
@@ -403,6 +700,10 @@ def repair_post_ath_le_binding(
     abec_path: str | Path,
     ath_executable: str | Path | None,
     driver_basename: str = DEFAULT_LE_DRIVER_BASENAME,
+    le_patch_profile: Optional[str] = None,
+    le_driver_tag: str = "D1",
+    le_drvgroup_value: str = "1001",
+    le_voltage_vrms: float = 1.0,
     diagnostics_dir: str | Path | None = None,
 ) -> PostAthLeRepairResult:
     abec_file = Path(str(abec_path)).expanduser()
@@ -420,6 +721,20 @@ def repair_post_ath_le_binding(
         ath_executable=ath_executable,
         driver_basename=driver_basename,
     )
+    driver_patch_result = LeDriverScriptPatchResult(
+        status="target_missing",
+        profile=_normalize_le_patch_profile(le_patch_profile),
+        target_path=None,
+        error="driver script path unavailable",
+    )
+    if copy_result.target_path:
+        driver_patch_result = patch_driver_script_for_le_profile(
+            script_path=copy_result.target_path,
+            profile=le_patch_profile,
+            driver_tag=str(le_driver_tag or "D1"),
+            drvgroup_value=str(le_drvgroup_value or "1001"),
+            voltage_vrms=float(le_voltage_vrms),
+        )
     expected_filename = _driver_filename(driver_basename)
     patch_result = patch_abec_le_script_binding(
         abec_path=abec_file,
@@ -458,6 +773,7 @@ def repair_post_ath_le_binding(
                 "binding_matches_expected": binding_matches_expected,
                 "binding_value": binding_value,
                 "copy": copy_result.to_dict(),
+                "driver_patch": driver_patch_result.to_dict(),
                 "patch": patch_result.to_dict(),
             }
             summary_path.write_text(json.dumps(summary_payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -472,6 +788,8 @@ def repair_post_ath_le_binding(
     failure = None
     if not copy_result.ok:
         failure = f"copy_failed:{copy_result.status}"
+    elif not driver_patch_result.ok:
+        failure = f"driver_patch_failed:{driver_patch_result.status}"
     elif not patch_result.ok:
         failure = f"abec_patch_failed:{patch_result.status}"
     elif not script_exists:
@@ -493,6 +811,7 @@ def repair_post_ath_le_binding(
         binding_matches_expected=binding_matches_expected,
         binding_value=binding_value,
         copy=copy_result,
+        driver_patch=driver_patch_result,
         patch=patch_result,
         diagnostics_path=diagnostics_path,
         before_snapshot_path=before_snapshot_path,

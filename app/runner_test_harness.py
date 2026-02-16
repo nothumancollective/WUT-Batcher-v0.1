@@ -30,6 +30,7 @@ from app.safe_cleanup import (
     guarded_delete_file_in_workspace,
     guarded_delete_tree_in_workspace,
 )
+from app.ui_automation.waits import wait_until
 from app.ui_automation.discover import discover_app_ui
 from app.vacs_export_pipeline import VacsExportPipelineError, run_vacs_export_specs
 from app.vacs_txt_parser import VacsGraph, parse_vacs_txt_file
@@ -49,6 +50,64 @@ def _sha256_file(path: Path) -> str:
                 break
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _copy_artifact_snapshot(
+    *,
+    source_path: str | Path,
+    snapshot_root: str | Path,
+    snapshot_name: str,
+) -> Optional[Path]:
+    source = Path(str(source_path)).expanduser()
+    if not source.exists() or not source.is_file():
+        return None
+    root = Path(str(snapshot_root)).expanduser()
+    root.mkdir(parents=True, exist_ok=True)
+    target = root / snapshot_name
+    target.write_text(source.read_text(encoding="utf-8", errors="replace"), encoding="utf-8")
+    return target
+
+
+def _write_directory_snapshot(
+    *,
+    root_path: str | Path,
+    output_path: str | Path,
+    max_entries: int = 1000,
+) -> Optional[Path]:
+    root = Path(str(root_path)).expanduser()
+    if not root.exists() or not root.is_dir():
+        return None
+    out = Path(str(output_path)).expanduser()
+    out.parent.mkdir(parents=True, exist_ok=True)
+    entries: List[Dict[str, Any]] = []
+    count = 0
+    for path in sorted(root.rglob("*")):
+        if count >= max_entries:
+            break
+        try:
+            rel = str(path.relative_to(root)).replace("\\", "/")
+        except Exception:
+            rel = str(path)
+        item = {
+            "relative_path": rel,
+            "is_dir": bool(path.is_dir()),
+            "is_file": bool(path.is_file()),
+        }
+        if path.is_file():
+            try:
+                item["bytes"] = int(path.stat().st_size)
+            except Exception:
+                item["bytes"] = None
+        entries.append(item)
+        count += 1
+    payload = {
+        "root": str(root),
+        "entry_count": len(entries),
+        "truncated": bool(count >= max_entries),
+        "entries": entries,
+    }
+    out.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return out
 
 
 def _version_config_hash(parameters: Dict[str, Any], unset_parameters: Sequence[str]) -> str:
@@ -409,6 +468,13 @@ def _collect_validation_metrics(
     min_file_bytes: int = 32,
     min_points: int = 2,
 ) -> Dict[str, Any]:
+    export_metadata = dict(parsed.export_meta.get("metadata", {}) or {})
+    data_level_type = str(export_metadata.get("Data_LevelType", "") or "")
+    data_legend = str(export_metadata.get("Data_Legend", "") or "")
+    data_radimp_type = str(export_metadata.get("RadImpType", "") or "")
+    radimp_normalized_hint = "normalized" in data_legend.lower() or data_radimp_type.lower() == "normalized"
+    all_zero_allowed = bool(_is_radimp_kind(expected_kind) and radimp_normalized_hint and data_level_type.lower().startswith("impedance"))
+
     point_count = sum(len(series.points) for series in parsed.series)
     invalid_values = 0
     monotonic_failures = 0
@@ -444,8 +510,12 @@ def _collect_validation_metrics(
         status = "failed"
         message = "NaN/inf detected in exported data"
     elif all_zero_series == len(parsed.series):
-        status = "failed"
-        message = "all series are zero-valued"
+        if all_zero_allowed:
+            status = "ok"
+            message = "all-zero accepted for normalized radimp baseline"
+        else:
+            status = "failed"
+            message = "all series are zero-valued"
     elif not graph_match:
         status = "failed"
         message = f"graph kind mismatch: expected {expected_kind}, parsed {parsed.graph_type}"
@@ -460,9 +530,13 @@ def _collect_validation_metrics(
             "monotonic_failures": monotonic_failures,
             "invalid_values": invalid_values,
             "all_zero_series": all_zero_series,
+            "all_zero_allowed": all_zero_allowed,
+            "radimp_normalized_hint": radimp_normalized_hint,
             "expected_kind": expected_kind,
             "parsed_graph_type": parsed.graph_type,
             "graph_kind_match": graph_match,
+            "data_level_type": data_level_type,
+            "data_legend": data_legend,
         },
     }
 
@@ -671,6 +745,7 @@ def _diagnose_radimp(
             for item in radimp_exports
         )
         wrong_kind = any(not bool(item.get("graph_kind_match", True)) for item in radimp_exports)
+    all_zero_allowed = bool(radimp_exports) and all(bool(item.get("all_zero_allowed", False)) for item in radimp_exports)
 
     classification = "radimp_not_requested"
     message = "no radimp export requested in this run"
@@ -679,6 +754,10 @@ def _diagnose_radimp(
         classification = "sources_muted_dialog_seen"
         message = "AKABAK watchdog captured a muted-sources style dialog"
         status = "failed"
+    elif radimp_exports and all_zero and all_zero_allowed and observation_radimp_normalized:
+        classification = "radimp_normalized_zero_baseline"
+        message = "radimp export is normalized and zero-valued baseline (accepted)"
+        status = "ok"
     elif radimp_exports and all_zero:
         classification = "solve_succeeded_radimp_all_zero"
         message = "radimp export exists but all series are zero-valued"
@@ -704,6 +783,7 @@ def _diagnose_radimp(
             "radimp_requested": radimp_requested,
             "radimp_export_count": len(radimp_exports),
             "radimp_all_zero": all_zero,
+            "radimp_all_zero_allowed": all_zero_allowed,
             "radimp_wrong_kind": wrong_kind,
             "watchdog_event_count": len(list(watchdog_events)),
             "muted_dialog_seen": muted_seen,
@@ -893,6 +973,33 @@ def _list_running_vacs_pids() -> List[int]:
     return sorted(pids)
 
 
+def _wait_for_unmanaged_processes_to_clear(
+    tracker: HarnessProcessTracker,
+    *,
+    timeout_s: float = 8.0,
+) -> Dict[str, Any]:
+    latest_scan = _detect_unmanaged_tool_processes(tracker)
+    if not bool(latest_scan.get("blocked")):
+        return latest_scan
+
+    def _predicate() -> Tuple[bool, Dict[str, Any]]:
+        nonlocal latest_scan
+        latest_scan = _detect_unmanaged_tool_processes(tracker)
+        return (not bool(latest_scan.get("blocked")), latest_scan)
+
+    try:
+        wait_until(
+            predicate=_predicate,
+            timeout_s=float(timeout_s),
+            initial_interval_s=0.2,
+            max_interval_s=1.0,
+            backoff_factor=1.5,
+        )
+    except TimeoutError:
+        pass
+    return latest_scan
+
+
 @dataclass(frozen=True)
 class RunnerTestHarnessRun:
     test_run_id: str
@@ -925,6 +1032,7 @@ def run_runner_test_harness(
     ath_executable: Optional[str | Path] = None,
     akabak_executable: Optional[str | Path] = None,
     vacs_executable: Optional[str | Path] = None,
+    le_repair_profile: Optional[str] = None,
     dry_run: bool = False,
 ) -> Dict[str, Any]:
     workspace = resolve_runner_test_workspace(workspace_root)
@@ -934,6 +1042,14 @@ def run_runner_test_harness(
     resolved_template_cfg = _resolve_case_template_cfg(case_payload=case_payload, template_cfg_path=template_cfg_path)
     project, batch = _build_project_and_batch(case_payload, workspace)
     ath_export_root_hint = str(case_payload.get("ath_export_root", "") or "").strip() or None
+    case_le_repair_profile = str(case_payload.get("le_repair_profile", "") or "").strip() or None
+    effective_le_repair_profile = str(le_repair_profile or case_le_repair_profile or "").strip() or None
+    effective_le_driver_tag = str(case_payload.get("le_driver_tag", "D1") or "D1").strip() or "D1"
+    effective_le_drvgroup = str(case_payload.get("le_drvgroup", "1001") or "1001").strip() or "1001"
+    try:
+        effective_le_voltage_vrms = float(case_payload.get("le_voltage_vrms", 1.0))
+    except Exception:
+        effective_le_voltage_vrms = 1.0
 
     db.upsert_test_case(
         case_id=str(case_payload.get("case_id", case_id)),
@@ -974,6 +1090,10 @@ def run_runner_test_harness(
                 "test_profile": test_profile,
                 "template_cfg": str(resolved_template_cfg) if resolved_template_cfg else None,
                 "ath_export_root_hint": ath_export_root_hint,
+                "le_repair_profile": effective_le_repair_profile,
+                "le_driver_tag": effective_le_driver_tag,
+                "le_drvgroup": effective_le_drvgroup,
+                "le_voltage_vrms": effective_le_voltage_vrms,
                 "tool_probe": tool_probe,
                 "export_root_probe": export_root_probe,
             },
@@ -983,7 +1103,7 @@ def run_runner_test_harness(
         try:
             preflight_started = _now_iso()
             stale_kill_results = tracker.kill_stale()
-            process_scan = _detect_unmanaged_tool_processes(tracker)
+            process_scan = _wait_for_unmanaged_processes_to_clear(tracker)
             missing_tools = []
             preflight_blockers: List[str] = []
             if not dry_run:
@@ -1231,6 +1351,10 @@ def run_runner_test_harness(
                 driver_sync = repair_post_ath_le_binding(
                     abec_path=abec_path,
                     ath_executable=ath_executable,
+                    le_patch_profile=effective_le_repair_profile,
+                    le_driver_tag=effective_le_driver_tag,
+                    le_drvgroup_value=effective_le_drvgroup,
+                    le_voltage_vrms=effective_le_voltage_vrms,
                     diagnostics_dir=repair_diagnostics_dir,
                 )
                 db.add_test_run_step(
@@ -1272,6 +1396,10 @@ def run_runner_test_harness(
                         "expected_script_filename": driver_sync.expected_script_filename,
                         "abec_path": driver_sync.abec_path,
                         "script_path": driver_sync.script_path,
+                        "driver_patch_status": driver_sync.driver_patch.status,
+                        "driver_patch_profile": driver_sync.driver_patch.profile,
+                        "driver_line_changed": driver_sync.driver_patch.driver_line_changed,
+                        "def_driving_changed": driver_sync.driver_patch.def_driving_changed,
                     },
                     message="post-ATH LE repair assertions passed"
                     if driver_sync.ok
@@ -1282,6 +1410,34 @@ def run_runner_test_harness(
                     raise RuntimeError(
                         "post_ath_le_repair_failed: "
                         f"status={driver_sync.status} error={driver_sync.error or 'n/a'}"
+                    )
+
+                ath_input_dir = abec_path.parent
+                ath_snapshot_dir = workspace.logs_dir / test_run_id / "ath_input_snapshot"
+                snapshot_targets = (
+                    ("ath_input_project", ath_input_dir / "Project.abec", "Project.abec"),
+                    ("ath_input_solving", ath_input_dir / "solving.txt", "solving.txt"),
+                    ("ath_input_observation", ath_input_dir / "observation.txt", "observation.txt"),
+                    (
+                        "ath_input_le_script",
+                        ath_input_dir / str(driver_sync.expected_script_filename),
+                        str(driver_sync.expected_script_filename),
+                    ),
+                )
+                for artifact_kind, source_file, snapshot_name in snapshot_targets:
+                    snapshot = _copy_artifact_snapshot(
+                        source_path=source_file,
+                        snapshot_root=ath_snapshot_dir,
+                        snapshot_name=snapshot_name,
+                    )
+                    if snapshot is None:
+                        continue
+                    db.add_artifact(
+                        test_run_id=test_run_id,
+                        kind=artifact_kind,
+                        path=str(snapshot),
+                        sha256=_sha256_file(snapshot),
+                        bytes_size=snapshot.stat().st_size,
                     )
 
                 guard_started = _now_iso()
@@ -1425,6 +1581,44 @@ def run_runner_test_harness(
                     finished_at=_now_iso(),
                     details={"abec_path": str(abec_path), "watchdog_events": akabak_watchdog_events},
                 )
+                for vacs_pid in _list_running_vacs_pids():
+                    tracker.register(
+                        run_id=test_run_id,
+                        app="vacs",
+                        pid=int(vacs_pid),
+                        started_by_harness=True,
+                    )
+                    started_pids.append(int(vacs_pid))
+                results_dir = abec_path.parent / "Results"
+                if results_dir.exists() and results_dir.is_dir():
+                    results_snapshot_dir = workspace.logs_dir / test_run_id / "akabak_results_snapshot"
+                    for result_file in sorted(results_dir.glob("*.txt")):
+                        snapshot = _copy_artifact_snapshot(
+                            source_path=result_file,
+                            snapshot_root=results_snapshot_dir,
+                            snapshot_name=result_file.name,
+                        )
+                        if snapshot is None:
+                            continue
+                        db.add_artifact(
+                            test_run_id=test_run_id,
+                            kind="akabak_result_txt",
+                            path=str(snapshot),
+                            sha256=_sha256_file(snapshot),
+                            bytes_size=snapshot.stat().st_size,
+                        )
+                abec_tree_snapshot = _write_directory_snapshot(
+                    root_path=abec_path.parent,
+                    output_path=workspace.logs_dir / test_run_id / "akabak_results_snapshot" / "abec_tree.json",
+                )
+                if abec_tree_snapshot and abec_tree_snapshot.exists():
+                    db.add_artifact(
+                        test_run_id=test_run_id,
+                        kind="abec_tree_snapshot",
+                        path=str(abec_tree_snapshot),
+                        sha256=_sha256_file(abec_tree_snapshot),
+                        bytes_size=abec_tree_snapshot.stat().st_size,
+                    )
 
                 vacs_step_started = _now_iso()
                 effective_batch_payload = batch.to_dict()
@@ -1438,6 +1632,14 @@ def run_runner_test_harness(
                 exports_run_dir = workspace.exports_dir / test_run_id
                 exports_run_dir.mkdir(parents=True, exist_ok=True)
                 vacs_pids_before = set(_list_running_vacs_pids())
+                for observed_pid in sorted(vacs_pids_before):
+                    tracker.register(
+                        run_id=test_run_id,
+                        app="vacs",
+                        pid=int(observed_pid),
+                        started_by_harness=True,
+                    )
+                    started_pids.append(int(observed_pid))
                 try:
                     vacs_summary = run_vacs_export_specs(
                         executable=str(vacs_executable),
@@ -1497,6 +1699,15 @@ def run_runner_test_harness(
                         started_by_harness=True,
                     )
                     started_pids.append(pid)
+                vacs_pids_after_success = set(_list_running_vacs_pids())
+                for discovered_pid in sorted(pid for pid in vacs_pids_after_success if pid not in vacs_pids_before):
+                    tracker.register(
+                        run_id=test_run_id,
+                        app="vacs",
+                        pid=int(discovered_pid),
+                        started_by_harness=True,
+                    )
+                    started_pids.append(int(discovered_pid))
 
                 db.add_test_run_step(
                     test_run_id=test_run_id,
@@ -1752,6 +1963,10 @@ def run_runner_test_harness(
         "repeats": effective_repeats,
         "keep_exports": bool(keep_exports),
         "test_profile": test_profile,
+        "le_repair_profile": effective_le_repair_profile,
+        "le_driver_tag": effective_le_driver_tag,
+        "le_drvgroup": effective_le_drvgroup,
+        "le_voltage_vrms": effective_le_voltage_vrms,
         "workspace": workspace.to_dict(),
         "db_path": str(workspace.db_path),
         "dry_run": bool(dry_run),
@@ -1799,7 +2014,7 @@ def run_runner_test_open_dialog_only(
         try:
             preflight_started = _now_iso()
             stale_kill_results = tracker.kill_stale()
-            process_scan = _detect_unmanaged_tool_processes(tracker)
+            process_scan = _wait_for_unmanaged_processes_to_clear(tracker)
             missing_inputs: List[str] = []
             preflight_blockers: List[str] = []
             if not dry_run:
@@ -2139,7 +2354,7 @@ def run_runner_test_import_start_apply_only(
         try:
             preflight_started = _now_iso()
             stale_kill_results = tracker.kill_stale()
-            process_scan = _detect_unmanaged_tool_processes(tracker)
+            process_scan = _wait_for_unmanaged_processes_to_clear(tracker)
             missing_inputs: List[str] = []
             preflight_blockers: List[str] = []
             if not dry_run:
@@ -2528,6 +2743,10 @@ def run_runner_test_le_repair_import_only(
     ath_cfg_path: str | Path | None = None,
     abec_path: str | Path | None = None,
     reuse_export_dir: str | Path | None = None,
+    le_repair_profile: Optional[str] = None,
+    le_driver_tag: str = "D1",
+    le_drvgroup: str = "1001",
+    le_voltage_vrms: float = 1.0,
 ) -> Dict[str, Any]:
     workspace = resolve_runner_test_workspace(workspace_root)
     db = RunnerTestDb(workspace.db_path)
@@ -2562,6 +2781,10 @@ def run_runner_test_le_repair_import_only(
                 "ath_cfg_path": str(ath_cfg_input) if ath_cfg_input else None,
                 "abec_path": str(abec_input) if abec_input else None,
                 "reuse_export_dir": str(reuse_export_input) if reuse_export_input else None,
+                "le_repair_profile": str(le_repair_profile or "").strip() or None,
+                "le_driver_tag": str(le_driver_tag),
+                "le_drvgroup": str(le_drvgroup),
+                "le_voltage_vrms": float(le_voltage_vrms),
                 "mode": "le_repair_import_only",
             },
             notes=f"le_repair_import_only repeats={effective_repeats}",
@@ -2570,7 +2793,7 @@ def run_runner_test_le_repair_import_only(
         try:
             preflight_started = _now_iso()
             stale_kill_results = tracker.kill_stale()
-            process_scan = _detect_unmanaged_tool_processes(tracker)
+            process_scan = _wait_for_unmanaged_processes_to_clear(tracker)
             missing_inputs: List[str] = []
             preflight_blockers: List[str] = []
             if not dry_run:
@@ -2720,6 +2943,10 @@ def run_runner_test_le_repair_import_only(
                 repair_result = repair_post_ath_le_binding(
                     abec_path=resolved_abec,
                     ath_executable=ath_input,
+                    le_patch_profile=le_repair_profile,
+                    le_driver_tag=le_driver_tag,
+                    le_drvgroup_value=le_drvgroup,
+                    le_voltage_vrms=float(le_voltage_vrms),
                     diagnostics_dir=workspace.logs_dir / test_run_id / "le_repair",
                 )
                 db.add_test_run_step(
@@ -2959,5 +3186,9 @@ def run_runner_test_le_repair_import_only(
         "ath_cfg_path": str(ath_cfg_input) if ath_cfg_input else None,
         "abec_path": str(abec_input) if abec_input else None,
         "reuse_export_dir": str(reuse_export_input) if reuse_export_input else None,
+        "le_repair_profile": str(le_repair_profile or "").strip() or None,
+        "le_driver_tag": str(le_driver_tag),
+        "le_drvgroup": str(le_drvgroup),
+        "le_voltage_vrms": float(le_voltage_vrms),
         "runs": [run.to_dict() for run in runs],
     }
