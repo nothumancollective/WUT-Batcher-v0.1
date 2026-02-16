@@ -288,6 +288,12 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     QTextEdit[disclosureHint="true"], QPlainTextEdit[disclosureHint="true"] {{
         border: 1px solid {c['accent']};
     }}
+    QLineEdit[baseLockedBySweep="true"], QComboBox[baseLockedBySweep="true"],
+    QTextEdit[baseLockedBySweep="true"], QPlainTextEdit[baseLockedBySweep="true"] {{
+        background-color: #171717;
+        color: {c['muted']};
+        border: 1px solid #2a2a2a;
+    }}
     QLineEdit[issueFlash="true"], QComboBox[issueFlash="true"],
     QTextEdit[issueFlash="true"], QPlainTextEdit[issueFlash="true"] {{
         border: 1px solid {c['accent']};
@@ -617,6 +623,10 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         background-color: #2a2a2a;
         border: 1px solid #a9a9a9;
         color: #ffffff;
+    }}
+    QPushButton[segment=\"true\"][sweepActive="true"] {{
+        border: 1px solid {c['risk_ok']};
+        color: {c['risk_ok']};
     }}
     QPushButton[segment=\"true\"][disclosureHint="true"] {{
         border: 1px solid {c['accent']};

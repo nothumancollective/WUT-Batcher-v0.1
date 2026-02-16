@@ -5,15 +5,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from ui.form_builder import AccordionGroupBox, ObjectFieldEditor, ScalarFieldEditor, SegmentedEnumInput
+from ui.form_builder import AccordionGroupBox, ContextFrame, ObjectFieldEditor, ScalarFieldEditor, SegmentedEnumInput
 from ui.form_schema import FieldSpec, FormSchema, ModeStackSpec, build_project_form_schema
 
 try:
     from PySide6.QtCore import Qt, Signal
     from PySide6.QtGui import QDoubleValidator, QIntValidator
     from PySide6.QtWidgets import (
-        QCheckBox,
         QFrame,
+        QGridLayout,
         QHBoxLayout,
         QLabel,
         QLineEdit,
@@ -64,6 +64,57 @@ def _extract_mode_tag_value(ui_mode_tags: Sequence[str], controller_key: str) ->
     return None
 
 
+class _SingleColumnObjectEditor(QWidget):
+    changed = Signal()
+
+    def __init__(self, field: FieldSpec, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.field = field
+        self.property_editors: Dict[str, ScalarFieldEditor] = {}
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(6)
+
+        frame = ContextFrame("Details")
+        grid = QGridLayout()
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(8)
+        grid.setVerticalSpacing(4)
+        for row_index, property_field in enumerate(list(field.object_properties)):
+            label = QLabel(str(property_field.label))
+            label.setMinimumWidth(120)
+            editor = ScalarFieldEditor(property_field)
+            editor.changed.connect(self.changed.emit)
+            editor.set_is_set(False)
+            grid.addWidget(label, row_index, 0, 1, 1, Qt.AlignVCenter)
+            grid.addWidget(editor, row_index, 1, 1, 1, Qt.AlignLeft | Qt.AlignVCenter)
+            self.property_editors[property_field.key] = editor
+        frame.content_layout.addLayout(grid)
+        root.addWidget(frame)
+
+    def current_state(self) -> Any:
+        value: Dict[str, Any] = {}
+        for property_key, editor in self.property_editors.items():
+            state = editor.current_state()
+            if not bool(state.is_set):
+                continue
+            property_name = property_key.rsplit(".", 1)[-1]
+            value[property_name] = state.value
+        if not value:
+            return type("State", (), {"is_set": False, "value": None})()
+        return type("State", (), {"is_set": True, "value": value})()
+
+    def set_is_set(self, enabled: bool) -> None:
+        if enabled:
+            return
+        for editor in self.property_editors.values():
+            editor.set_is_set(False)
+
+    def set_locked(self, locked: bool) -> None:
+        for editor in self.property_editors.values():
+            editor.set_locked(locked)
+
+
 @dataclass
 class _FieldRow:
     field: FieldSpec
@@ -71,7 +122,7 @@ class _FieldRow:
     group_name: str
     container: QWidget
     base_editor: QWidget
-    sweep_toggle: QCheckBox
+    sweep_toggle: QPushButton
     start_edit: QLineEdit
     end_edit: QLineEdit
     steps_edit: QLineEdit
@@ -82,7 +133,7 @@ class _FieldRow:
 class BatchParameterForm(QWidget):
     changed = Signal()
 
-    _GROUP_ORDER = ["Basics", "Throat Profile", "Morph", "GCurve", "Core", "Enclosure"]
+    _GROUP_ORDER = ["Basics", "Throat Profile", "Morph", "GCurve", "Mesh", "Enclosure"]
 
     def __init__(self, schema: Optional[FormSchema] = None, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -101,6 +152,7 @@ class BatchParameterForm(QWidget):
         self._locked_keys: set[str] = set()
         self._project_fixed_keys: set[str] = set()
         self._sweepable_keys: set[str] = set()
+        self._prevented_keys: set[str] = set()
         self._active_group_name: Optional[str] = None
         self._last_changed_key: Optional[str] = None
         self._prev_visible_keys: set[str] = set()
@@ -129,7 +181,8 @@ class BatchParameterForm(QWidget):
         if field.key in self._controller_group_name:
             return self._controller_group_name[field.key]
         if len(field.group_path) >= 2:
-            return str(field.group_path[1])
+            name = str(field.group_path[1])
+            return "Mesh" if name == "Core" else name
         if field.group_path:
             return str(field.group_path[0])
         return "General"
@@ -150,6 +203,8 @@ class BatchParameterForm(QWidget):
 
     def _make_base_editor(self, field: FieldSpec) -> QWidget:
         if field.widget_kind == "object":
+            if str(field.key).strip() == "R-OSSE":
+                return _SingleColumnObjectEditor(field)
             return ObjectFieldEditor(field, use_toggle=(field.key == "Mesh.Enclosure"))
         return ScalarFieldEditor(field)
 
@@ -262,21 +317,26 @@ class BatchParameterForm(QWidget):
         row_layout.setContentsMargins(0, 0, 0, 0)
         row_layout.setSpacing(8)
 
-        label = QLabel(f"{field.label} ({key})")
+        label = QLabel(str(field.label))
         label.setMinimumWidth(250)
-        label.setWordWrap(True)
-        row_layout.addWidget(label, 0, Qt.AlignTop)
+        label.setWordWrap(False)
+        label.setMinimumHeight(28)
+        row_layout.addWidget(label, 0, Qt.AlignVCenter)
 
         base_editor = self._make_base_editor(field)
         if hasattr(base_editor, "changed"):
             base_editor.changed.connect(lambda *_ignored, row_key=key: self._on_field_edited(row_key))  # type: ignore[attr-defined]
         row_layout.addWidget(base_editor, 0, Qt.AlignLeft | Qt.AlignVCenter)
 
-        sweep_toggle = QCheckBox("Sweep")
+        sweep_toggle = QPushButton("Sweep")
+        sweep_toggle.setProperty("segment", "true")
+        sweep_toggle.setCheckable(True)
+        sweep_toggle.setMinimumHeight(28)
         row_layout.addWidget(sweep_toggle, 0, Qt.AlignLeft | Qt.AlignVCenter)
 
         start_edit = QLineEdit()
         start_edit.setPlaceholderText("start")
+        start_edit.setFixedHeight(28)
         start_edit.setMaximumWidth(96)
         start_edit.setValidator(QDoubleValidator(start_edit))
         start_edit.setVisible(False)
@@ -285,6 +345,7 @@ class BatchParameterForm(QWidget):
 
         end_edit = QLineEdit()
         end_edit.setPlaceholderText("end")
+        end_edit.setFixedHeight(28)
         end_edit.setMaximumWidth(96)
         end_edit.setValidator(QDoubleValidator(end_edit))
         end_edit.setVisible(False)
@@ -293,6 +354,7 @@ class BatchParameterForm(QWidget):
 
         steps_edit = QLineEdit("3")
         steps_edit.setPlaceholderText("steps")
+        steps_edit.setFixedHeight(28)
         steps_edit.setMaximumWidth(78)
         steps_edit.setValidator(QIntValidator(1, 9999, steps_edit))
         steps_edit.setVisible(False)
@@ -373,6 +435,26 @@ class BatchParameterForm(QWidget):
                 return
             editor.set_is_set(bool(value))
             return
+        property_editors = getattr(editor, "property_editors", None)
+        if isinstance(property_editors, dict):
+            if value is None:
+                if hasattr(editor, "set_is_set"):
+                    editor.set_is_set(False)  # type: ignore[attr-defined]
+                return
+            if isinstance(value, dict):
+                if hasattr(editor, "set_is_set"):
+                    editor.set_is_set(True)  # type: ignore[attr-defined]
+                for property_key, property_editor in property_editors.items():
+                    property_name = str(property_key).rsplit(".", 1)[-1]
+                    property_value = value.get(property_name, value.get(property_key))
+                    if property_value is None:
+                        property_editor.set_is_set(False)
+                    else:
+                        property_editor.set_value(property_value)
+                return
+            if hasattr(editor, "set_is_set"):
+                editor.set_is_set(bool(value))  # type: ignore[attr-defined]
+            return
         if value is None:
             if hasattr(editor, "clear"):
                 editor.clear()  # type: ignore[attr-defined]
@@ -389,6 +471,21 @@ class BatchParameterForm(QWidget):
             editor.set_locked(locked)  # type: ignore[attr-defined]
             return
         editor.setEnabled(not locked)
+
+    def _set_editor_sweep_visual(self, row: _FieldRow, active: bool) -> None:
+        targets: List[QWidget] = [row.base_editor]
+        editor = row.base_editor
+        if isinstance(editor, ScalarFieldEditor):
+            value_widget = editor.value_widget()
+            if isinstance(value_widget, QWidget):
+                targets.append(value_widget)
+            for attr in ("edit", "combo", "segment"):
+                maybe = getattr(value_widget, attr, None)
+                if isinstance(maybe, QWidget):
+                    targets.append(maybe)
+        for widget in self._dedup_widgets(targets):
+            widget.setProperty("baseLockedBySweep", bool(active))
+            self._repolish(widget)
 
     @staticmethod
     def _dedup_widgets(widgets: Sequence[QWidget]) -> List[QWidget]:
@@ -519,31 +616,70 @@ class BatchParameterForm(QWidget):
         self._visible_keys = {str(item) for item in list(state.get("visible_keys", []) or []) if str(item).strip()}
         self._locked_keys = {str(item) for item in list(state.get("locked_keys", []) or []) if str(item).strip()}
         self._sweepable_keys = {str(item) for item in list(state.get("sweepable_keys", []) or []) if str(item).strip()}
+        self._prevented_keys = {str(item) for item in list(state.get("prevented_keys", []) or []) if str(item).strip()}
+        hint_key = str(state.get("ui_hint_trigger_key", "") or "").strip()
+        if hint_key:
+            self._last_changed_key = hint_key
         current = self._refresh_visibility()
         self._apply_disclosure_hint(previous, current)
         self._prev_visible_keys = set(current)
 
+    def _controller_value(self, key: str) -> Optional[int]:
+        row = self._rows.get(str(key))
+        if row is None:
+            return None
+        is_set, value = self._current_state(row)
+        if not is_set:
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _clear_hidden_row_state(self, row: _FieldRow) -> None:
+        row.sweep_toggle.blockSignals(True)
+        row.sweep_toggle.setChecked(False)
+        row.sweep_toggle.blockSignals(False)
+        for edit in (row.start_edit, row.end_edit, row.steps_edit):
+            edit.blockSignals(True)
+            if edit is row.steps_edit:
+                edit.setText("3")
+            else:
+                edit.setText("")
+            edit.blockSignals(False)
+        editor = row.base_editor
+        editor.blockSignals(True)
+        if hasattr(editor, "set_is_set"):
+            editor.set_is_set(False)  # type: ignore[attr-defined]
+        elif hasattr(editor, "clear"):
+            editor.clear()  # type: ignore[attr-defined]
+        editor.blockSignals(False)
+
     def _refresh_visibility(self) -> set[str]:
-        active_group = str(self._active_group_name or "").strip()
+        throat_mode = self._controller_value("Throat.Profile")
         effective_visible: set[str] = set()
 
         for key, row in self._rows.items():
             allowed = (not self._visible_keys or key in self._visible_keys) and key not in self._project_fixed_keys
-            keep_in_active = bool((not allowed) and active_group and (row.group_name == active_group))
-            is_visible = bool(allowed or keep_in_active)
-            force_locked = bool(keep_in_active and not allowed)
-            is_locked = bool((key in self._locked_keys) or force_locked)
-
+            if key in self._prevented_keys:
+                allowed = False
+            if key == "R-OSSE":
+                allowed = bool(allowed and throat_mode == 2)
+            is_visible = bool(allowed)
+            is_locked = bool(key in self._locked_keys)
             row.container.setVisible(is_visible)
-            self._set_editor_locked(row, is_locked)
             can_sweep = bool(allowed and (key in self._sweepable_keys) and (not is_locked) and (not row.button_layout))
 
             row.sweep_toggle.setVisible(not row.button_layout)
             row.sweep_toggle.setEnabled(can_sweep)
+            row.sweep_toggle.setProperty("sweepActive", bool(row.sweep_toggle.isChecked() and can_sweep))
+            self._repolish(row.sweep_toggle)
             if not can_sweep and row.sweep_toggle.isChecked():
                 row.sweep_toggle.setChecked(False)
 
             show_sweep_inputs = bool(row.sweep_toggle.isChecked() and can_sweep)
+            self._set_editor_locked(row, bool(is_locked or show_sweep_inputs))
+            self._set_editor_sweep_visual(row, show_sweep_inputs)
             row.start_edit.setVisible(show_sweep_inputs)
             row.end_edit.setVisible(show_sweep_inputs)
             row.steps_edit.setVisible(show_sweep_inputs)
@@ -551,7 +687,9 @@ class BatchParameterForm(QWidget):
             row.end_edit.setEnabled(show_sweep_inputs)
             row.steps_edit.setEnabled(show_sweep_inputs)
 
-            if allowed:
+            if not is_visible:
+                self._clear_hidden_row_state(row)
+            if allowed and is_visible:
                 effective_visible.add(key)
 
         for group_name, box in self._group_boxes.items():
@@ -580,12 +718,17 @@ class BatchParameterForm(QWidget):
         self._last_changed_key = str(key)
         self._active_group_name = row.group_name
         can_show = bool(enabled and row.sweep_toggle.isEnabled() and not row.container.isHidden())
+        row.sweep_toggle.setProperty("sweepActive", bool(can_show))
+        self._repolish(row.sweep_toggle)
         row.start_edit.setVisible(can_show)
         row.end_edit.setVisible(can_show)
         row.steps_edit.setVisible(can_show)
         row.start_edit.setEnabled(can_show)
         row.end_edit.setEnabled(can_show)
         row.steps_edit.setEnabled(can_show)
+        row_locked = key in self._locked_keys
+        self._set_editor_locked(row, bool(row_locked or can_show))
+        self._set_editor_sweep_visual(row, can_show)
         if can_show:
             _is_set, current_value = self._current_state(row)
             base = _as_float(current_value)
@@ -677,7 +820,7 @@ class BatchParameterForm(QWidget):
     def field_label_map(self) -> Dict[str, str]:
         return {key: row.label for key, row in self._rows.items()}
 
-    def sweep_toggle_for_key(self, key: str) -> Optional[QCheckBox]:
+    def sweep_toggle_for_key(self, key: str) -> Optional[QPushButton]:
         row = self._rows.get(str(key))
         return None if row is None else row.sweep_toggle
 
@@ -710,3 +853,7 @@ class BatchParameterForm(QWidget):
     def group_name_for_key(self, key: str) -> Optional[str]:
         row = self._rows.get(str(key))
         return None if row is None else row.group_name
+
+    def last_changed_key(self) -> Optional[str]:
+        value = str(self._last_changed_key or "").strip()
+        return value or None

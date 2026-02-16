@@ -1543,11 +1543,7 @@ class BatchPage(QWidget):
         self.batch_name = QLineEdit()
         self.batch_name.setPlaceholderText("Batch Name")
         self.batch_name.setMinimumWidth(420)
-        self.sweep_mode = QComboBox()
-        self.sweep_mode.addItems(["single", "combined"])
-        self.sweep_mode.setMaximumWidth(220)
         name_layout.addWidget(self.batch_name, 0, Qt.AlignLeft)
-        name_layout.addWidget(self.sweep_mode, 0, Qt.AlignLeft)
         name_layout.addStretch(1)
         root.addWidget(name_row)
 
@@ -1567,11 +1563,15 @@ class BatchPage(QWidget):
         left_card_layout.addWidget(summary_title)
         self.summary_line_1 = QLabel("Define base values, activate sweeps, and configure exports.")
         self.summary_line_1.setObjectName("SummaryText")
-        self.summary_line_1.setWordWrap(False)
+        self.summary_line_1.setWordWrap(True)
         left_card_layout.addWidget(self.summary_line_1)
-        self.summary_meta_counts = QLabel("Visible variable params: 0 · Active sweeps: 0")
-        self.summary_meta_counts.setObjectName("SummaryMeta")
-        left_card_layout.addWidget(self.summary_meta_counts)
+        self.summary_line_2 = QLabel("Dynamic compatibility hiding prevents conflicting fatal combinations.")
+        self.summary_line_2.setObjectName("SummaryText")
+        self.summary_line_2.setWordWrap(True)
+        left_card_layout.addWidget(self.summary_line_2)
+        self.summary_meta_versions = QLabel("Version preview: 0 · Export specs: 0 · Mode: single")
+        self.summary_meta_versions.setObjectName("SummaryMeta")
+        left_card_layout.addWidget(self.summary_meta_versions)
         left_card_layout.addStretch(1)
         summary_strip_layout.addWidget(self.summary_left_card, 1)
 
@@ -1584,9 +1584,12 @@ class BatchPage(QWidget):
         summary_center_title = QLabel("Estimate")
         summary_center_title.setObjectName("SummaryTitle")
         center_card_layout.addWidget(summary_center_title)
-        self.summary_meta_versions = QLabel("Version preview: 0 · Export specs: 0")
-        self.summary_meta_versions.setObjectName("SummaryMeta")
-        center_card_layout.addWidget(self.summary_meta_versions)
+        self.summary_meta_counts = QLabel("Visible variable params: 0 · Active sweeps: 0")
+        self.summary_meta_counts.setObjectName("SummaryMeta")
+        center_card_layout.addWidget(self.summary_meta_counts)
+        self.summary_defined_vars = QLabel("Defined variables: 0")
+        self.summary_defined_vars.setObjectName("SummaryMeta")
+        center_card_layout.addWidget(self.summary_defined_vars)
         self.summary_eta_label = QLabel("ETA: unknown")
         self.summary_eta_label.setObjectName("SummaryMeta")
         center_card_layout.addWidget(self.summary_eta_label)
@@ -1671,8 +1674,12 @@ class BatchPage(QWidget):
 
         self.parameter_form.changed.connect(self._emit_draft_changed)
         self.export_panel.changed.connect(self._emit_draft_changed)
-        self.sweep_mode.currentTextChanged.connect(lambda _: self._emit_draft_changed())
         self.batch_name.textChanged.connect(self._emit_draft_changed)
+
+        self._summary_strip_layout = summary_strip_layout
+        self._body_layout = body
+        self._right_panel = right_panel
+        self._summary_cards = [self.summary_left_card, self.summary_center_card, self.summary_right_card]
 
         self._compat_state: Dict[str, Any] = {"visible_keys": [], "locked_keys": [], "sweepable_keys": [], "issues": []}
         self._project_fixed_keys: set[str] = set()
@@ -1680,6 +1687,25 @@ class BatchPage(QWidget):
         self._eta_sample_count: int = 0
         self._suspend_draft_events = False
         self._update_summary_widgets()
+        QTimer.singleShot(0, self._apply_equal_widths)
+
+    def resizeEvent(self, event) -> None:  # type: ignore[override]
+        super().resizeEvent(event)
+        self._apply_equal_widths()
+
+    def _apply_equal_widths(self) -> None:
+        summary_total = max(int(self.width() - 40), 300)
+        summary_spacing = max(int(self._summary_strip_layout.spacing()), 0)
+        summary_width = max((summary_total - (2 * summary_spacing)) // 3, 220)
+        for card in self._summary_cards:
+            card.setMinimumWidth(summary_width)
+            card.setMaximumWidth(summary_width)
+
+        body_total = max(int(self.width() - 40), 360)
+        body_spacing = max(int(self._body_layout.spacing()), 0)
+        right_width = max((body_total - body_spacing) // 3, 320)
+        self._right_panel.setMinimumWidth(right_width)
+        self._right_panel.setMaximumWidth(right_width)
 
     def _emit_draft_changed(self) -> None:
         if self._suspend_draft_events:
@@ -1741,10 +1767,11 @@ class BatchPage(QWidget):
             }
 
         payload: Dict[str, object] = {
-            "sweep_mode": self.sweep_mode.currentText().strip() or "single",
+            "sweep_mode": self.export_panel.sweep_mode_value(),
             "selected_params": selected,
             "sweeps": sweeps,
             "sim_export_params": self.export_panel.sim_export_params_payload(),
+            "ui_hint_trigger_key": self.parameter_form.last_changed_key(),
         }
         if include_name:
             payload["batch_name"] = self.batch_name.text().strip()
@@ -1754,7 +1781,7 @@ class BatchPage(QWidget):
         self._suspend_draft_events = True
         try:
             self.batch_name.clear()
-            self.sweep_mode.setCurrentText("single")
+            self.export_panel.set_sweep_mode("single")
             self.parameter_form.set_selected_params({})
             self.parameter_form.set_sweeps({})
             self.export_panel.set_from_payload({})
@@ -1771,7 +1798,7 @@ class BatchPage(QWidget):
                 name = str(batch.extra.get("batch_name", batch.batch_id))
             self.batch_name.setText(name)
             mode = str(batch.sweep_mode or "single")
-            self.sweep_mode.setCurrentText(mode if mode in {"single", "combined"} else "single")
+            self.export_panel.set_sweep_mode(mode if mode in {"single", "combined"} else "single")
             self.parameter_form.set_from_batch(batch)
             self.export_panel.set_from_batch(batch)
         finally:
@@ -1786,7 +1813,10 @@ class BatchPage(QWidget):
         self.summary_meta_counts.setText(
             f"Visible variable params: {visible_count} · Active sweeps: {active_sweeps}"
         )
-        mode = self.sweep_mode.currentText().strip() or "single"
+        selected = self.parameter_form.selected_params_payload()
+        defined_vars = sum(1 for value in selected.values() if value is not None)
+        self.summary_defined_vars.setText(f"Defined variables: {defined_vars}")
+        mode = self.export_panel.sweep_mode_value()
         self.summary_meta_versions.setText(
             f"Version preview: {version_preview} · Export specs: {export_specs} · Mode: {mode}"
         )
@@ -1794,18 +1824,20 @@ class BatchPage(QWidget):
         issues = self.compat_panel.issues()
         fatal_count = sum(1 for issue in issues if str(issue.get("severity", "")).lower() == "fatal")
         warn_count = sum(1 for issue in issues if str(issue.get("severity", "")).lower() == "warn")
+        teaser_message = ""
+        if issues:
+            top_issue = issues[0]
+            teaser_message = str(top_issue.get("message", "")).strip()
+            if len(teaser_message) > 120:
+                teaser_message = teaser_message[:117].rstrip() + "..."
         if fatal_count > 0:
             severity = "fatal"
             self.action_status_pill.setText("Fix validation errors before save/run.")
-            self.summary_issue_hint.setText(
-                f"{fatal_count} fatal issue(s), {warn_count} warning(s)."
-            )
+            self.summary_issue_hint.setText(teaser_message or f"{fatal_count} fatal issue(s), {warn_count} warning(s).")
         elif warn_count > 0:
             severity = "warn"
             self.action_status_pill.setText("Warnings present. Review before save/run.")
-            self.summary_issue_hint.setText(
-                f"{warn_count} warning(s) in current draft."
-            )
+            self.summary_issue_hint.setText(teaser_message or f"{warn_count} warning(s) in current draft.")
         else:
             severity = "ok"
             self.action_status_pill.setText("Ready to save batch.")
@@ -2357,6 +2389,7 @@ class MainWindow(QMainWindow):
             selected_params=dict(payload.get("selected_params", {}) or {}),
             sweeps=dict(payload.get("sweeps", {}) or {}),
             sweep_mode=str(payload.get("sweep_mode", "single")),
+            ui_hint_trigger_key=str(payload.get("ui_hint_trigger_key", "") or ""),
         )
         self.batch_page.apply_compatibility(state)
         estimate = self.service.estimate_batch_runtime(
