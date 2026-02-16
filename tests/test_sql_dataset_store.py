@@ -212,6 +212,51 @@ class SqlDatasetStoreTests(unittest.TestCase):
             self.assertEqual(int(series_count), 1)
             self.assertEqual(int(points_count), 2)
 
+    def test_federation_profile_is_bootstrapped_and_updatable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_root = Path(tmp_dir) / "projects" / "P001"
+            project_root.mkdir(parents=True, exist_ok=True)
+            writer = TidyDatasetWriter(project_root, library_root=project_root.parent)
+
+            profile = writer.load_federation_profile()
+            self.assertTrue(profile["installation_id"])
+            self.assertTrue(profile["anonymous_user_id"])
+            self.assertTrue(profile["dataset_namespace"])
+            self.assertFalse(profile["allow_upload"])
+
+            update = writer.update_federation_profile(
+                allow_upload=True,
+                consent_scope="project_and_global",
+                consent_version="v1",
+                consent_updated_at="2026-02-16T00:00:00+00:00",
+            )
+            self.assertTrue(update["profile"]["allow_upload"])
+            self.assertEqual(update["profile"]["consent_scope"], "project_and_global")
+            self.assertEqual(update["profile"]["consent_version"], "v1")
+
+    def test_delete_runs_writes_federation_tombstones(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_root = Path(tmp_dir) / "projects" / "P001"
+            project_root.mkdir(parents=True, exist_ok=True)
+            writer = TidyDatasetWriter(project_root, library_root=project_root.parent)
+
+            writer.create_run(run_id="R001", project_id="P001", batch_id="B001", status="running")
+            writer.cleanup_unpinned_runs(delete_exports=False, dry_run=False)
+
+            with closing(sqlite3.connect(str(project_root / "dataset" / "project.sqlite"))) as conn:
+                row = conn.execute(
+                    """
+                    SELECT entity_type, entity_id, reason
+                    FROM federation_tombstones
+                    ORDER BY deleted_at DESC
+                    LIMIT 1
+                    """
+                ).fetchone()
+            self.assertIsNotNone(row)
+            self.assertEqual(str(row[0]), "run")
+            self.assertEqual(str(row[1]), "R001")
+            self.assertEqual(str(row[2]), "cleanup_unpinned_runs")
+
 
 if __name__ == "__main__":
     unittest.main()

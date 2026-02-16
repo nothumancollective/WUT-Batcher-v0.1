@@ -10,11 +10,12 @@ import json
 from pathlib import Path
 import sqlite3
 from typing import Any, Dict, List, Optional, Sequence, Tuple
+import uuid
 
 from app.models import Batch, Project, VersionSpec
 
 
-SCHEMA_VERSION = "2.3"
+SCHEMA_VERSION = "2.4"
 
 
 def _now_iso() -> str:
@@ -300,6 +301,47 @@ class SqlDatasetStore:
                     created_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS federation_profile (
+                    installation_id TEXT PRIMARY KEY,
+                    anonymous_user_id TEXT NOT NULL,
+                    dataset_namespace TEXT NOT NULL,
+                    allow_upload INTEGER NOT NULL DEFAULT 0 CHECK (allow_upload IN (0, 1)),
+                    consent_scope TEXT NOT NULL DEFAULT 'unset',
+                    consent_version TEXT,
+                    consent_updated_at TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS federation_sync_state (
+                    stream_name TEXT PRIMARY KEY,
+                    last_cursor TEXT,
+                    last_synced_at TEXT,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS federation_export_jobs (
+                    export_id TEXT PRIMARY KEY,
+                    installation_id TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    schema_version TEXT NOT NULL,
+                    item_counts_json TEXT,
+                    payload_sha256 TEXT,
+                    payload_bytes INTEGER,
+                    error_summary TEXT,
+                    created_at TEXT NOT NULL,
+                    finished_at TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS federation_tombstones (
+                    tombstone_id TEXT PRIMARY KEY,
+                    entity_type TEXT NOT NULL,
+                    entity_id TEXT NOT NULL,
+                    reason TEXT,
+                    deleted_at TEXT NOT NULL,
+                    uploaded_at TEXT
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_batches_project ON batches(project_id);
                 CREATE INDEX IF NOT EXISTS idx_versions_project_batch ON versions(project_id, batch_id);
                 CREATE INDEX IF NOT EXISTS idx_version_params_project_batch ON version_params(project_id, batch_id);
@@ -308,6 +350,8 @@ class SqlDatasetStore:
                 CREATE INDEX IF NOT EXISTS idx_run_versions_batch_status ON run_versions(project_id, batch_id, status);
                 CREATE INDEX IF NOT EXISTS idx_replication_queue_status ON replication_queue(status, queue_id);
                 CREATE INDEX IF NOT EXISTS idx_compat_results_project_fact ON compat_verification_results(project_id, fact_id);
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_federation_tombstones_entity
+                ON federation_tombstones(entity_type, entity_id, deleted_at);
                 """
             )
             self._migrate_schema(conn)
@@ -530,12 +574,90 @@ class SqlDatasetStore:
         conn.execute("ALTER TABLE graph_points_new RENAME TO graph_points")
         conn.execute("PRAGMA foreign_keys = ON")
 
+    def _ensure_federation_tables(self, conn: sqlite3.Connection) -> None:
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS federation_profile (
+                installation_id TEXT PRIMARY KEY,
+                anonymous_user_id TEXT NOT NULL,
+                dataset_namespace TEXT NOT NULL,
+                allow_upload INTEGER NOT NULL DEFAULT 0 CHECK (allow_upload IN (0, 1)),
+                consent_scope TEXT NOT NULL DEFAULT 'unset',
+                consent_version TEXT,
+                consent_updated_at TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS federation_sync_state (
+                stream_name TEXT PRIMARY KEY,
+                last_cursor TEXT,
+                last_synced_at TEXT,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS federation_export_jobs (
+                export_id TEXT PRIMARY KEY,
+                installation_id TEXT NOT NULL,
+                status TEXT NOT NULL,
+                schema_version TEXT NOT NULL,
+                item_counts_json TEXT,
+                payload_sha256 TEXT,
+                payload_bytes INTEGER,
+                error_summary TEXT,
+                created_at TEXT NOT NULL,
+                finished_at TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS federation_tombstones (
+                tombstone_id TEXT PRIMARY KEY,
+                entity_type TEXT NOT NULL,
+                entity_id TEXT NOT NULL,
+                reason TEXT,
+                deleted_at TEXT NOT NULL,
+                uploaded_at TEXT
+            );
+            """
+        )
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_federation_tombstones_entity "
+            "ON federation_tombstones(entity_type, entity_id, deleted_at)"
+        )
+
+        row = conn.execute("SELECT installation_id FROM federation_profile LIMIT 1").fetchone()
+        if row is not None:
+            return
+        installation_id = str(uuid.uuid4())
+        anonymous_user_id = "U" + hashlib.sha256(installation_id.encode("utf-8")).hexdigest()[:16]
+        dataset_namespace = "NS" + hashlib.sha256((installation_id + "|dataset").encode("utf-8")).hexdigest()[:16]
+        now = _now_iso()
+        conn.execute(
+            """
+            INSERT INTO federation_profile (
+                installation_id, anonymous_user_id, dataset_namespace, allow_upload, consent_scope,
+                consent_version, consent_updated_at, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                installation_id,
+                anonymous_user_id,
+                dataset_namespace,
+                0,
+                "unset",
+                None,
+                None,
+                now,
+                now,
+            ),
+        )
+
     def _migrate_schema(self, conn: sqlite3.Connection) -> None:
         self._ensure_runs_tables(conn)
         self._ensure_versions_columns(conn)
         self._migrate_ath_dimensions_schema(conn)
         self._ensure_graphs_columns(conn)
         self._migrate_graph_points_schema(conn)
+        self._ensure_federation_tables(conn)
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_runs_project_batch ON runs(project_id, batch_id, started_at)"
         )
@@ -578,6 +700,10 @@ class SqlDatasetStore:
                 "graph_series",
                 "graph_points",
                 "compat_verification_results",
+                "federation_profile",
+                "federation_sync_state",
+                "federation_export_jobs",
+                "federation_tombstones",
             ],
         }
         self.schema_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -621,6 +747,14 @@ class SqlDatasetStore:
             self._op_insert_compat_verification(conn, payload)
         elif operation == "update_version_status":
             self._op_update_version_status(conn, payload)
+        elif operation == "update_federation_profile":
+            self._op_update_federation_profile(conn, payload)
+        elif operation == "upsert_federation_sync_state":
+            self._op_upsert_federation_sync_state(conn, payload)
+        elif operation == "upsert_federation_export_job":
+            self._op_upsert_federation_export_job(conn, payload)
+        elif operation == "insert_federation_tombstones":
+            self._op_insert_federation_tombstones(conn, payload)
         else:
             raise ValueError(f"Unsupported operation: {operation}")
 
@@ -1042,11 +1176,22 @@ class SqlDatasetStore:
         run_ids = [str(item) for item in list(payload.get("run_ids", []))]
         if not run_ids:
             return
+        now = _now_iso()
+        tombstones = [
+            {
+                "entity_type": "run",
+                "entity_id": run_id,
+                "reason": "cleanup_unpinned_runs",
+                "deleted_at": now,
+            }
+            for run_id in run_ids
+        ]
         placeholders = ", ".join("?" for _ in run_ids)
         conn.execute(f"DELETE FROM ath_dimensions WHERE run_id IN ({placeholders})", tuple(run_ids))
         conn.execute(f"DELETE FROM graphs WHERE run_id IN ({placeholders})", tuple(run_ids))
         conn.execute(f"DELETE FROM run_versions WHERE run_id IN ({placeholders})", tuple(run_ids))
         conn.execute(f"DELETE FROM runs WHERE run_id IN ({placeholders})", tuple(run_ids))
+        self._op_insert_federation_tombstones(conn, {"rows": tombstones})
 
     def _op_update_version_status(self, conn: sqlite3.Connection, payload: Dict[str, Any]) -> None:
         fields = ["status = ?"]
@@ -1086,6 +1231,105 @@ class SqlDatasetStore:
                     payload.get("finished_at"),
                     payload.get("error_summary"),
                     str(payload["version_id"]),
+                ),
+            )
+
+    def _op_update_federation_profile(self, conn: sqlite3.Connection, payload: Dict[str, Any]) -> None:
+        row = conn.execute("SELECT installation_id FROM federation_profile LIMIT 1").fetchone()
+        if row is None:
+            self._ensure_federation_tables(conn)
+            row = conn.execute("SELECT installation_id FROM federation_profile LIMIT 1").fetchone()
+            if row is None:
+                raise RuntimeError("federation_profile bootstrap failed")
+        installation_id = str(row["installation_id"])
+
+        fields: List[str] = []
+        values: List[Any] = []
+        if "allow_upload" in payload:
+            fields.append("allow_upload = ?")
+            values.append(1 if bool(payload.get("allow_upload")) else 0)
+        if "consent_scope" in payload:
+            fields.append("consent_scope = ?")
+            values.append(str(payload.get("consent_scope") or "unset"))
+        if "consent_version" in payload:
+            fields.append("consent_version = ?")
+            values.append(payload.get("consent_version"))
+        if "consent_updated_at" in payload:
+            fields.append("consent_updated_at = ?")
+            values.append(payload.get("consent_updated_at"))
+        fields.append("updated_at = ?")
+        values.append(str(payload.get("updated_at") or _now_iso()))
+        values.append(installation_id)
+        conn.execute(f"UPDATE federation_profile SET {', '.join(fields)} WHERE installation_id = ?", tuple(values))
+
+    def _op_upsert_federation_sync_state(self, conn: sqlite3.Connection, payload: Dict[str, Any]) -> None:
+        conn.execute(
+            """
+            INSERT INTO federation_sync_state (stream_name, last_cursor, last_synced_at, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(stream_name) DO UPDATE SET
+                last_cursor=excluded.last_cursor,
+                last_synced_at=excluded.last_synced_at,
+                updated_at=excluded.updated_at
+            """,
+            (
+                str(payload["stream_name"]),
+                payload.get("last_cursor"),
+                payload.get("last_synced_at"),
+                str(payload.get("updated_at") or _now_iso()),
+            ),
+        )
+
+    def _op_upsert_federation_export_job(self, conn: sqlite3.Connection, payload: Dict[str, Any]) -> None:
+        profile = conn.execute("SELECT installation_id FROM federation_profile LIMIT 1").fetchone()
+        installation_id = str(payload.get("installation_id") or "")
+        if not installation_id and profile is not None:
+            installation_id = str(profile["installation_id"])
+        conn.execute(
+            """
+            INSERT INTO federation_export_jobs (
+                export_id, installation_id, status, schema_version, item_counts_json, payload_sha256, payload_bytes,
+                error_summary, created_at, finished_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(export_id) DO UPDATE SET
+                status=excluded.status,
+                item_counts_json=excluded.item_counts_json,
+                payload_sha256=excluded.payload_sha256,
+                payload_bytes=excluded.payload_bytes,
+                error_summary=excluded.error_summary,
+                finished_at=excluded.finished_at
+            """,
+            (
+                str(payload["export_id"]),
+                installation_id,
+                str(payload.get("status", "pending")),
+                str(payload.get("schema_version", SCHEMA_VERSION)),
+                payload.get("item_counts_json"),
+                payload.get("payload_sha256"),
+                payload.get("payload_bytes"),
+                payload.get("error_summary"),
+                str(payload.get("created_at") or _now_iso()),
+                payload.get("finished_at"),
+            ),
+        )
+
+    def _op_insert_federation_tombstones(self, conn: sqlite3.Connection, payload: Dict[str, Any]) -> None:
+        for row in list(payload.get("rows", []) or []):
+            if not isinstance(row, dict):
+                continue
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO federation_tombstones (
+                    tombstone_id, entity_type, entity_id, reason, deleted_at, uploaded_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(row.get("tombstone_id") or uuid.uuid4()),
+                    str(row.get("entity_type", "")),
+                    str(row.get("entity_id", "")),
+                    str(row.get("reason", "")),
+                    str(row.get("deleted_at") or _now_iso()),
+                    row.get("uploaded_at"),
                 ),
             )
 
@@ -1153,6 +1397,91 @@ class SqlDatasetStore:
                 failed += 1
 
         return {"processed": processed, "synced": synced, "failed": failed}
+
+    def load_federation_profile(self) -> Dict[str, Any]:
+        with self._open_conn(self.project_db_path) as conn:
+            row = conn.execute(
+                """
+                SELECT installation_id, anonymous_user_id, dataset_namespace, allow_upload,
+                       consent_scope, consent_version, consent_updated_at, created_at, updated_at
+                FROM federation_profile
+                ORDER BY created_at ASC
+                LIMIT 1
+                """
+            ).fetchone()
+        if row is None:
+            raise RuntimeError("federation_profile not initialized")
+        return {
+            "installation_id": str(row["installation_id"]),
+            "anonymous_user_id": str(row["anonymous_user_id"]),
+            "dataset_namespace": str(row["dataset_namespace"]),
+            "allow_upload": bool(int(row["allow_upload"])),
+            "consent_scope": str(row["consent_scope"]),
+            "consent_version": row["consent_version"],
+            "consent_updated_at": row["consent_updated_at"],
+            "created_at": str(row["created_at"]),
+            "updated_at": str(row["updated_at"]),
+        }
+
+    def update_federation_profile(
+        self,
+        *,
+        allow_upload: Optional[bool] = None,
+        consent_scope: Optional[str] = None,
+        consent_version: Optional[str] = None,
+        consent_updated_at: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {}
+        if allow_upload is not None:
+            payload["allow_upload"] = 1 if bool(allow_upload) else 0
+        if consent_scope is not None:
+            payload["consent_scope"] = str(consent_scope)
+        if consent_version is not None:
+            payload["consent_version"] = str(consent_version)
+        if consent_updated_at is not None:
+            payload["consent_updated_at"] = str(consent_updated_at)
+        payload["updated_at"] = _now_iso()
+        result = self._dual_write("update_federation_profile", payload)
+        return {**result, "profile": self.load_federation_profile()}
+
+    def update_federation_sync_state(
+        self,
+        *,
+        stream_name: str,
+        last_cursor: Optional[str],
+        last_synced_at: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        payload = {
+            "stream_name": str(stream_name),
+            "last_cursor": last_cursor,
+            "last_synced_at": last_synced_at,
+            "updated_at": _now_iso(),
+        }
+        return self._dual_write("upsert_federation_sync_state", payload)
+
+    def record_federation_export_job(
+        self,
+        *,
+        export_id: str,
+        status: str,
+        item_counts: Optional[Dict[str, Any]] = None,
+        payload_sha256: Optional[str] = None,
+        payload_bytes: Optional[int] = None,
+        error_summary: Optional[str] = None,
+        finished_at: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        payload = {
+            "export_id": str(export_id),
+            "status": str(status),
+            "schema_version": SCHEMA_VERSION,
+            "item_counts_json": _to_json(item_counts or {}),
+            "payload_sha256": payload_sha256,
+            "payload_bytes": payload_bytes,
+            "error_summary": error_summary,
+            "created_at": _now_iso(),
+            "finished_at": finished_at,
+        }
+        return self._dual_write("upsert_federation_export_job", payload)
 
     def register_project(self, project: Project) -> Dict[str, Any]:
         payload = {
