@@ -9,8 +9,10 @@ from app.runner_test_db import RunnerTestDb
 from app.runner_test_harness import (
     _collect_validation_metrics,
     _diagnose_radimp,
+    _patch_cfg_le_profile,
     _patch_observation_radimp_profile,
     _parse_abec_mesh_requirements,
+    run_runner_test_radimp_3scope_matrix,
     run_runner_test_radimp_driving_matrix,
     run_runner_test_harness,
     run_runner_test_import_start_apply_only,
@@ -53,6 +55,18 @@ def _write_case(path: Path) -> None:
 
 
 class RunnerTestHarnessTests(unittest.TestCase):
+    def test_patch_cfg_le_profile_updates_le_voltage(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            cfg = root / "input.cfg"
+            cfg.write_text("ABEC.AkabakMode = 1\nLE = generic25\nLE.Voltage = 1.0\n", encoding="utf-8")
+            result = _patch_cfg_le_profile(cfg_path=cfg, profile="le_voltage_2p83")
+            self.assertTrue(result.ok)
+            self.assertTrue(result.changed)
+            self.assertEqual(result.target_le_voltage, 2.83)
+            patched = cfg.read_text(encoding="utf-8")
+            self.assertIn("LE.Voltage = 2.83", patched)
+
     def test_patch_observation_radimp_profile_force_absolute(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
@@ -201,7 +215,7 @@ class RunnerTestHarnessTests(unittest.TestCase):
             self.assertEqual(db.count_rows("test_cases"), 1)
             self.assertEqual(db.count_rows("test_run_steps"), 5)
             self.assertEqual(db.count_rows("artifacts"), 1)
-            self.assertEqual(db.count_rows("validations"), 1)
+            self.assertEqual(db.count_rows("validations"), 2)
             self.assertEqual(db.count_rows("versions"), 1)
             self.assertEqual(db.count_rows("run_versions"), 1)
 
@@ -227,6 +241,29 @@ class RunnerTestHarnessTests(unittest.TestCase):
             self.assertEqual(len(summary["results"]), 2)
             self.assertEqual(summary["results"][0]["driving_observation_profile"], "default")
             self.assertEqual(summary["results"][1]["driving_observation_profile"], "accel_2p83")
+
+    def test_radimp_3scope_matrix_dry_run_executes_combinations(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            cases_root = root / "cases"
+            workspace_root = root / "workspace"
+            _write_case(cases_root / "smoke_fast.json")
+
+            summary = run_runner_test_radimp_3scope_matrix(
+                case_id="smoke_fast",
+                cfg_profiles=["default", "le_voltage_2p83"],
+                radimp_profiles=["default"],
+                driving_profiles=["default", "accel_2p83"],
+                repeats_per_combo=1,
+                keep_exports=True,
+                test_profile="fast",
+                workspace_root=workspace_root,
+                cases_root=cases_root,
+                dry_run=True,
+            )
+            self.assertTrue(summary["ok"])
+            self.assertEqual(summary["phase"], "phase_radimp_3scope_matrix")
+            self.assertEqual(len(summary["results"]), 4)
 
     def test_parse_abec_mesh_requirements_detects_missing_mesh_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

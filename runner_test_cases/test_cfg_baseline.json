@@ -4,6 +4,7 @@
   "description": "Baseline harness case using C:\\Tools\\ATH\\test.cfg with deterministic SPL+impedance exports.",
   "template_cfg": "C:\\Tools\\ATH\\test.cfg",
   "ath_export_root": "C:\\Horns",
+  "cfg_le_profile": "default",
   "project_id": "P_RUNNER_TEST",
   "batch_id": "B_RUNNER_TEST",
   "project_name": "Runner Test Project",

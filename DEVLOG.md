@@ -1786,3 +1786,42 @@ Validation executed:
 - Updated: `docs/RADIMP_BASELINE_REPORT.md`
 - Updated: `docs/TOOLCHAIN_BASELINE.md`
 - Updated: `docs/LE_RULES_EXTRACT.md`
+
+### Update 64 (3-scope LE/RadImp diagnostics: cfg + observation + driving)
+#### Done
+- Added harness-only cfg scope patching in `app/runner_test_harness.py`:
+  - new profile axis `cfg_le_profile` (`default`, `le_voltage_2p83`, `le_voltage_10`, `le_voltage_0p1`)
+  - deterministic `LE.Voltage` patch on generated cfg (post-render, test-only)
+  - persisted validation: `cfg_le_profile_applied`
+  - persisted artifact (when patched): `cfg_patch_summary`
+- Added combined matrix mode:
+  - `runner-test radimp-3scope-matrix`
+  - evaluates combinations across cfg/observation/driving scopes and returns per-run validation outcomes.
+- Added CLI wiring:
+  - `runner-test run --cfg-le-profile ...`
+  - `runner-test radimp-3scope-matrix ...`
+- Added tests:
+  - cfg patch unit test
+  - 3-scope matrix dry-run test
+  - CLI test for `radimp-3scope-matrix`
+
+#### Why
+- We needed to expand diagnostics beyond LE script and observation-only hypotheses and explicitly test cfg-level LE voltage impact without changing production defaults.
+
+#### Validation
+- Tests:
+  - `python -m pytest tests/test_runner_test_harness.py tests/test_cli_runner_test.py -q`
+  - `19 passed`
+- Real 3-scope runs:
+  - 2x2x2 matrix (`cfg=default|le_voltage_2p83`, `radimp=default|force_absolute`, `driving=default|accel_2p83`)
+  - additional `cfg=le_voltage_10` runs with `radimp=default`, `driving=default|accel_2p83`
+  - run IDs documented in `docs/RADIMP_3SCOPE_MATRIX_REPORT.md`
+
+#### Outcome
+- `cfg_le_profile` patching is active and verified (`detected_le_voltage_after` persisted).
+- For successful runs under `radimp=default`, RadImp remains normalized/all-zero baseline.
+- `force_absolute` combinations consistently fail at VACS graph mapping (`impedance` graph not resolved), independent of cfg profile.
+
+#### Docs
+- Added: `docs/RADIMP_3SCOPE_MATRIX_REPORT.md`
+- Added: `docs/LE_CFG_SCOPE_RESEARCH.md`

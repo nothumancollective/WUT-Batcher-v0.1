@@ -220,6 +220,46 @@ class CliRunnerTestTests(unittest.TestCase):
             self.assertEqual(payload["phase"], "phase_radimp_driving_matrix")
             self.assertEqual(len(payload["results"]), 2)
 
+    def test_runner_test_radimp_3scope_matrix_command_executes_skeleton(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            cases_root = root / "cases"
+            workspace_root = root / "workspace"
+            _write_case(cases_root / "smoke_fast.json")
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "app",
+                    "runner-test",
+                    "radimp-3scope-matrix",
+                    "--case",
+                    "smoke_fast",
+                    "--cfg-profiles",
+                    "default,le_voltage_2p83",
+                    "--radimp-profiles",
+                    "default",
+                    "--driving-profiles",
+                    "default,accel_2p83",
+                    "--cases-root",
+                    str(cases_root),
+                    "--workspace-root",
+                    str(workspace_root),
+                    "--dry-run",
+                ],
+                env=self._isolated_env(tmp_dir),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, msg=result.stdout + "\n" + result.stderr)
+            payload = json.loads(result.stdout)
+            self.assertTrue(payload["ok"])
+            self.assertEqual(payload["phase"], "phase_radimp_3scope_matrix")
+            self.assertEqual(len(payload["results"]), 4)
+
 
 if __name__ == "__main__":
     unittest.main()

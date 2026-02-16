@@ -580,6 +580,7 @@ def cmd_runner_test_run(args: argparse.Namespace) -> int:
         akabak_executable=args.akabak_exe or settings.akabak_exe,
         vacs_executable=args.vacs_exe or settings.vacs_exe,
         le_repair_profile=str(args.le_repair_profile or "").strip() or None,
+        cfg_le_profile=str(args.cfg_le_profile or "").strip() or None,
         radimp_observation_profile=str(args.radimp_observation_profile or "").strip() or None,
         driving_observation_profile=str(args.driving_observation_profile or "").strip() or None,
         dry_run=bool(args.dry_run),
@@ -667,6 +668,38 @@ def cmd_runner_test_radimp_driving_matrix(args: argparse.Namespace) -> int:
         vacs_executable=args.vacs_exe or settings.vacs_exe,
         le_repair_profile=str(args.le_repair_profile or "").strip() or None,
         radimp_observation_profile=str(args.radimp_observation_profile or "").strip() or None,
+        dry_run=bool(args.dry_run),
+    )
+    print(json.dumps(summary, indent=2, ensure_ascii=False, default=_json_default))
+    return 0 if summary.get("ok", False) else 4
+
+
+def cmd_runner_test_radimp_3scope_matrix(args: argparse.Namespace) -> int:
+    from app.runner_test_harness import run_runner_test_radimp_3scope_matrix
+
+    settings_store = SettingsStore()
+    settings = settings_store.load()
+    cfg_profiles_raw = str(args.cfg_profiles or "").strip()
+    radimp_profiles_raw = str(args.radimp_profiles or "").strip()
+    driving_profiles_raw = str(args.driving_profiles or "").strip()
+    cfg_profiles = [item.strip() for item in cfg_profiles_raw.split(",") if item.strip()] if cfg_profiles_raw else None
+    radimp_profiles = [item.strip() for item in radimp_profiles_raw.split(",") if item.strip()] if radimp_profiles_raw else None
+    driving_profiles = [item.strip() for item in driving_profiles_raw.split(",") if item.strip()] if driving_profiles_raw else None
+    summary = run_runner_test_radimp_3scope_matrix(
+        case_id=args.case_id,
+        cfg_profiles=cfg_profiles,
+        radimp_profiles=radimp_profiles,
+        driving_profiles=driving_profiles,
+        repeats_per_combo=args.repeats_per_combo,
+        keep_exports=str(args.keep_exports).strip().lower() == "true",
+        test_profile=args.test_profile,
+        workspace_root=args.workspace_root,
+        cases_root=args.cases_root,
+        template_cfg_path=args.template_cfg or settings.template_cfg,
+        ath_executable=args.ath_exe or settings.ath_exe,
+        akabak_executable=args.akabak_exe or settings.akabak_exe,
+        vacs_executable=args.vacs_exe or settings.vacs_exe,
+        le_repair_profile=str(args.le_repair_profile or "").strip() or None,
         dry_run=bool(args.dry_run),
     )
     print(json.dumps(summary, indent=2, ensure_ascii=False, default=_json_default))
@@ -871,6 +904,14 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p_runner_test_run.add_argument(
+        "--cfg-le-profile",
+        default=None,
+        help=(
+            "Optional harness-only CFG LE profile "
+            "(default, le_voltage_2p83, le_voltage_10, le_voltage_0p1)."
+        ),
+    )
+    p_runner_test_run.add_argument(
         "--radimp-observation-profile",
         default=None,
         help=(
@@ -967,6 +1008,72 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run matrix in dry-run mode (no tool launch).",
     )
     p_runner_test_matrix.set_defaults(func=cmd_runner_test_radimp_driving_matrix)
+
+    p_runner_test_3scope = sub_runner_test.add_parser(
+        "radimp-3scope-matrix",
+        help="Run combined CFG/observation/driving hypothesis matrix for RadImp diagnostics.",
+    )
+    p_runner_test_3scope.add_argument("--case", dest="case_id", default="test_cfg_baseline", help="Runner test case id.")
+    p_runner_test_3scope.add_argument(
+        "--cfg-profiles",
+        default="default,le_voltage_2p83,le_voltage_10",
+        help="Comma-separated harness-only cfg LE profiles.",
+    )
+    p_runner_test_3scope.add_argument(
+        "--radimp-profiles",
+        default="default,force_absolute",
+        help="Comma-separated RadImp observation patch profiles.",
+    )
+    p_runner_test_3scope.add_argument(
+        "--driving-profiles",
+        default="default,accel_2p83",
+        help="Comma-separated Driving_Values patch profiles.",
+    )
+    p_runner_test_3scope.add_argument(
+        "--repeats-per-combo",
+        type=int,
+        default=1,
+        help="Sequential repeats for each matrix combination.",
+    )
+    p_runner_test_3scope.add_argument(
+        "--keep-exports",
+        default="true",
+        choices=["true", "false"],
+        help="Retain exported TXT artifacts for each matrix combination.",
+    )
+    p_runner_test_3scope.add_argument(
+        "--test-profile",
+        default="fast",
+        help="Harness test profile id.",
+    )
+    p_runner_test_3scope.add_argument(
+        "--workspace-root",
+        default="runner_test_workspace",
+        help="Dedicated workspace root for harness artifacts.",
+    )
+    p_runner_test_3scope.add_argument(
+        "--cases-root",
+        default="runner_test_cases",
+        help="Directory containing runner test case JSON files.",
+    )
+    p_runner_test_3scope.add_argument("--template-cfg", help="Override template CFG path used for case rendering.")
+    p_runner_test_3scope.add_argument("--ath-exe", help="Override ATH executable path")
+    p_runner_test_3scope.add_argument("--akabak-exe", help="Override AKABAK executable path")
+    p_runner_test_3scope.add_argument("--vacs-exe", help="Override VACS executable path")
+    p_runner_test_3scope.add_argument(
+        "--le-repair-profile",
+        default=None,
+        help=(
+            "Optional LE script patch profile "
+            "(baseline, driver_drvgroup, driver_drvgroup_def_driving, driver_drvgroup_def_driving_resistor)."
+        ),
+    )
+    p_runner_test_3scope.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Run matrix in dry-run mode (no tool launch).",
+    )
+    p_runner_test_3scope.set_defaults(func=cmd_runner_test_radimp_3scope_matrix)
 
     p_runner_test_open_dialog_only = sub_runner_test.add_parser(
         "open-dialog-only",

@@ -105,6 +105,36 @@ class ObservationDrivingPatchResult:
         }
 
 
+@dataclass(frozen=True)
+class CfgLeProfilePatchResult:
+    status: str
+    profile: str
+    cfg_path: str
+    changed: bool
+    target_le_voltage: Optional[float]
+    detected_le_voltage_before: Optional[float]
+    detected_le_voltage_after: Optional[float]
+    diagnostics_path: Optional[str] = None
+    error: Optional[str] = None
+
+    @property
+    def ok(self) -> bool:
+        return self.status in {"not_requested", "already_conformant", "patched"}
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "status": self.status,
+            "profile": self.profile,
+            "cfg_path": self.cfg_path,
+            "changed": bool(self.changed),
+            "target_le_voltage": self.target_le_voltage,
+            "detected_le_voltage_before": self.detected_le_voltage_before,
+            "detected_le_voltage_after": self.detected_le_voltage_after,
+            "diagnostics_path": self.diagnostics_path,
+            "error": self.error,
+        }
+
+
 def _copy_artifact_snapshot(
     *,
     source_path: str | Path,
@@ -190,6 +220,24 @@ def _normalize_driving_observation_profile(profile: Optional[str]) -> str:
         "accel_0p1": "accel_0p1",
         "velocity_1": "velocity_1",
         "displacement_1": "displacement_1",
+    }
+    return aliases.get(value, value)
+
+
+def _normalize_cfg_le_profile(profile: Optional[str]) -> str:
+    value = str(profile or "").strip().lower()
+    if not value:
+        return "default"
+    aliases = {
+        "default": "default",
+        "le_voltage_1": "default",
+        "le_voltage_1p0": "default",
+        "le_voltage_2p83": "le_voltage_2p83",
+        "2p83": "le_voltage_2p83",
+        "le_voltage_10": "le_voltage_10",
+        "10": "le_voltage_10",
+        "le_voltage_0p1": "le_voltage_0p1",
+        "0p1": "le_voltage_0p1",
     }
     return aliases.get(value, value)
 
@@ -754,6 +802,119 @@ def _resolve_observation_files(abec_path: Path) -> List[Path]:
     if fallback.exists() and fallback.is_file() and all(fallback != item for item in files):
         files.append(fallback)
     return files
+
+
+def _patch_cfg_le_profile(
+    *,
+    cfg_path: Path,
+    profile: Optional[str],
+    diagnostics_dir: Optional[Path] = None,
+) -> CfgLeProfilePatchResult:
+    canonical = _normalize_cfg_le_profile(profile)
+    profile_map: Dict[str, Optional[float]] = {
+        "default": None,
+        "le_voltage_2p83": 2.83,
+        "le_voltage_10": 10.0,
+        "le_voltage_0p1": 0.1,
+    }
+    if canonical not in profile_map:
+        return CfgLeProfilePatchResult(
+            status="invalid_profile",
+            profile=canonical,
+            cfg_path=str(cfg_path),
+            changed=False,
+            target_le_voltage=None,
+            detected_le_voltage_before=None,
+            detected_le_voltage_after=None,
+            error=f"unsupported cfg LE profile: {canonical}",
+        )
+
+    if not cfg_path.exists() or not cfg_path.is_file():
+        return CfgLeProfilePatchResult(
+            status="cfg_missing",
+            profile=canonical,
+            cfg_path=str(cfg_path),
+            changed=False,
+            target_le_voltage=profile_map.get(canonical),
+            detected_le_voltage_before=None,
+            detected_le_voltage_after=None,
+            error="cfg file not found",
+        )
+
+    text_before = cfg_path.read_text(encoding="utf-8", errors="replace")
+    line_pattern = re.compile(r"(?im)^(\s*LE\.Voltage\s*=\s*)([^;\r\n]+)(\s*(?:[;#].*)?)$")
+    before_match = line_pattern.search(text_before)
+    detected_before: Optional[float] = None
+    if before_match:
+        try:
+            detected_before = float(str(before_match.group(2)).strip())
+        except Exception:
+            detected_before = None
+
+    target = profile_map[canonical]
+    if canonical == "default":
+        return CfgLeProfilePatchResult(
+            status="not_requested",
+            profile=canonical,
+            cfg_path=str(cfg_path),
+            changed=False,
+            target_le_voltage=target,
+            detected_le_voltage_before=detected_before,
+            detected_le_voltage_after=detected_before,
+        )
+
+    new_value = f"{float(target):.6g}"
+    if before_match:
+        text_after = line_pattern.sub(lambda m: f"{m.group(1)}{new_value}{m.group(3)}", text_before, count=1)
+    else:
+        suffix = "" if text_before.endswith("\n") else "\n"
+        text_after = f"{text_before}{suffix}LE.Voltage = {new_value}\n"
+
+    changed = text_after != text_before
+    if changed:
+        cfg_path.write_text(text_after, encoding="utf-8")
+    detected_after: Optional[float] = None
+    after_match = line_pattern.search(text_after)
+    if after_match:
+        try:
+            detected_after = float(str(after_match.group(2)).strip())
+        except Exception:
+            detected_after = None
+
+    diagnostics_path = None
+    if diagnostics_dir is not None:
+        diagnostics_dir.mkdir(parents=True, exist_ok=True)
+        diagnostics_file = diagnostics_dir / "cfg_le_patch_summary.json"
+        diagnostics_file.write_text(
+            json.dumps(
+                {
+                    "profile": canonical,
+                    "cfg_path": str(cfg_path),
+                    "target_le_voltage": target,
+                    "detected_le_voltage_before": detected_before,
+                    "detected_le_voltage_after": detected_after,
+                    "changed": bool(changed),
+                    "sha256_before": hashlib.sha256(text_before.encode("utf-8", errors="replace")).hexdigest(),
+                    "sha256_after": hashlib.sha256(text_after.encode("utf-8", errors="replace")).hexdigest(),
+                },
+                indent=2,
+                ensure_ascii=False,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        diagnostics_path = str(diagnostics_file)
+
+    return CfgLeProfilePatchResult(
+        status="patched" if changed else "already_conformant",
+        profile=canonical,
+        cfg_path=str(cfg_path),
+        changed=bool(changed),
+        target_le_voltage=target,
+        detected_le_voltage_before=detected_before,
+        detected_le_voltage_after=detected_after,
+        diagnostics_path=diagnostics_path,
+    )
 
 
 def _patch_observation_radimp_profile(
@@ -1380,6 +1541,7 @@ def run_runner_test_harness(
     akabak_executable: Optional[str | Path] = None,
     vacs_executable: Optional[str | Path] = None,
     le_repair_profile: Optional[str] = None,
+    cfg_le_profile: Optional[str] = None,
     radimp_observation_profile: Optional[str] = None,
     driving_observation_profile: Optional[str] = None,
     dry_run: bool = False,
@@ -1393,6 +1555,8 @@ def run_runner_test_harness(
     ath_export_root_hint = str(case_payload.get("ath_export_root", "") or "").strip() or None
     case_le_repair_profile = str(case_payload.get("le_repair_profile", "") or "").strip() or None
     effective_le_repair_profile = str(le_repair_profile or case_le_repair_profile or "").strip() or None
+    case_cfg_le_profile = str(case_payload.get("cfg_le_profile", "") or "").strip() or None
+    effective_cfg_le_profile = str(cfg_le_profile or case_cfg_le_profile or "").strip() or None
     case_radimp_profile = str(case_payload.get("radimp_observation_profile", "") or "").strip() or None
     effective_radimp_profile = str(radimp_observation_profile or case_radimp_profile or "").strip() or None
     case_driving_profile = str(case_payload.get("driving_observation_profile", "") or "").strip() or None
@@ -1444,6 +1608,7 @@ def run_runner_test_harness(
                 "template_cfg": str(resolved_template_cfg) if resolved_template_cfg else None,
                 "ath_export_root_hint": ath_export_root_hint,
                 "le_repair_profile": effective_le_repair_profile,
+                "cfg_le_profile": effective_cfg_le_profile,
                 "radimp_observation_profile": effective_radimp_profile,
                 "driving_observation_profile": effective_driving_profile,
                 "le_driver_tag": effective_le_driver_tag,
@@ -1570,6 +1735,37 @@ def run_runner_test_harness(
             )
             cfg_path = workspace.cfg_dir / f"{test_run_id}_{version.version_id}.cfg"
             cfg_path.write_text(cfg_text, encoding="utf-8")
+            cfg_patch = _patch_cfg_le_profile(
+                cfg_path=cfg_path,
+                profile=effective_cfg_le_profile,
+                diagnostics_dir=workspace.logs_dir / test_run_id / "cfg_patch",
+            )
+            if cfg_patch.diagnostics_path:
+                patch_diag_file = Path(cfg_patch.diagnostics_path)
+                if patch_diag_file.exists() and patch_diag_file.is_file():
+                    db.add_artifact(
+                        test_run_id=test_run_id,
+                        kind="cfg_patch_summary",
+                        path=str(patch_diag_file),
+                        sha256=_sha256_file(patch_diag_file),
+                        bytes_size=patch_diag_file.stat().st_size,
+                    )
+            db.add_validation(
+                test_run_id=test_run_id,
+                validation_name="cfg_le_profile_applied",
+                status="ok" if cfg_patch.ok else "failed",
+                metrics=cfg_patch.to_dict(),
+                message="cfg LE profile patch applied"
+                if cfg_patch.ok
+                else f"cfg LE profile patch failed: {cfg_patch.error or cfg_patch.status}",
+            )
+            if not cfg_patch.ok:
+                notes = "cfg LE profile patch failed"
+                raise RuntimeError(
+                    "cfg_le_profile_patch_failed: "
+                    f"status={cfg_patch.status} error={cfg_patch.error or 'n/a'}"
+                )
+            cfg_text = cfg_path.read_text(encoding="utf-8", errors="replace")
             cfg_sha = _sha256_file(cfg_path)
             db.upsert_run(
                 run_id=test_run_id,
@@ -1614,6 +1810,7 @@ def run_runner_test_harness(
                     "version_id": version.version_id,
                     "cfg_path": str(cfg_path),
                     "cfg_sha256": cfg_sha,
+                    "cfg_le_profile": cfg_patch.to_dict(),
                 },
             )
 
@@ -2411,6 +2608,7 @@ def run_runner_test_harness(
         "keep_exports": bool(keep_exports),
         "test_profile": test_profile,
         "le_repair_profile": effective_le_repair_profile,
+        "cfg_le_profile": effective_cfg_le_profile,
         "radimp_observation_profile": effective_radimp_profile,
         "driving_observation_profile": effective_driving_profile,
         "le_driver_tag": effective_le_driver_tag,
@@ -2526,6 +2724,103 @@ def run_runner_test_radimp_driving_matrix(
         "case_id": case_id,
         "profiles": profile_list,
         "repeats_per_profile": max(1, int(repeats_per_profile)),
+        "workspace": resolve_runner_test_workspace(workspace_root).to_dict(),
+        "db_path": str(db_path),
+        "dry_run": bool(dry_run),
+        "results": matrix_rows,
+    }
+
+
+def run_runner_test_radimp_3scope_matrix(
+    *,
+    case_id: str,
+    cfg_profiles: Sequence[str] | None = None,
+    radimp_profiles: Sequence[str] | None = None,
+    driving_profiles: Sequence[str] | None = None,
+    repeats_per_combo: int = 1,
+    keep_exports: bool = True,
+    test_profile: str = "fast",
+    workspace_root: str | Path = "runner_test_workspace",
+    cases_root: str | Path = "runner_test_cases",
+    template_cfg_path: Optional[str | Path] = None,
+    ath_executable: Optional[str | Path] = None,
+    akabak_executable: Optional[str | Path] = None,
+    vacs_executable: Optional[str | Path] = None,
+    le_repair_profile: Optional[str] = None,
+    dry_run: bool = False,
+) -> Dict[str, Any]:
+    default_cfg_profiles = ["default", "le_voltage_2p83", "le_voltage_10"]
+    default_radimp_profiles = ["default", "force_absolute"]
+    default_driving_profiles = ["default", "accel_2p83"]
+    cfg_profile_list = [str(item).strip() for item in (cfg_profiles or default_cfg_profiles) if str(item).strip()]
+    radimp_profile_list = [str(item).strip() for item in (radimp_profiles or default_radimp_profiles) if str(item).strip()]
+    driving_profile_list = [str(item).strip() for item in (driving_profiles or default_driving_profiles) if str(item).strip()]
+    if not cfg_profile_list:
+        cfg_profile_list = list(default_cfg_profiles)
+    if not radimp_profile_list:
+        radimp_profile_list = list(default_radimp_profiles)
+    if not driving_profile_list:
+        driving_profile_list = list(default_driving_profiles)
+
+    db_path = resolve_runner_test_workspace(workspace_root).db_path
+    all_ok = True
+    matrix_rows: List[Dict[str, Any]] = []
+    for cfg_profile in cfg_profile_list:
+        for radimp_profile in radimp_profile_list:
+            for driving_profile in driving_profile_list:
+                summary = run_runner_test_harness(
+                    case_id=case_id,
+                    repeats=max(1, int(repeats_per_combo)),
+                    keep_exports=bool(keep_exports),
+                    test_profile=test_profile,
+                    workspace_root=workspace_root,
+                    cases_root=cases_root,
+                    template_cfg_path=template_cfg_path,
+                    ath_executable=ath_executable,
+                    akabak_executable=akabak_executable,
+                    vacs_executable=vacs_executable,
+                    le_repair_profile=le_repair_profile,
+                    cfg_le_profile=cfg_profile,
+                    radimp_observation_profile=radimp_profile,
+                    driving_observation_profile=driving_profile,
+                    dry_run=bool(dry_run),
+                )
+                runs = list(summary.get("runs", []) or [])
+                run_outcomes: List[Dict[str, Any]] = []
+                for run in runs:
+                    run_id = str(run.get("test_run_id") or "")
+                    validations = _read_run_validations(db_path, run_id) if run_id else {}
+                    run_outcomes.append(
+                        {
+                            "test_run_id": run_id,
+                            "status": str(run.get("status") or ""),
+                            "notes": str(run.get("notes") or ""),
+                            "cfg_le_profile_applied": validations.get("cfg_le_profile_applied", {}),
+                            "radimp_diagnosis": validations.get("radimp_diagnosis", {}),
+                            "export_quality_impedance": validations.get("export_quality:impedance", {}),
+                        }
+                    )
+                row_ok = bool(summary.get("ok", False))
+                all_ok = all_ok and row_ok
+                matrix_rows.append(
+                    {
+                        "cfg_le_profile": cfg_profile,
+                        "radimp_observation_profile": radimp_profile,
+                        "driving_observation_profile": driving_profile,
+                        "ok": row_ok,
+                        "summary": summary,
+                        "run_outcomes": run_outcomes,
+                    }
+                )
+
+    return {
+        "ok": all_ok,
+        "phase": "phase_radimp_3scope_matrix",
+        "case_id": case_id,
+        "cfg_profiles": cfg_profile_list,
+        "radimp_profiles": radimp_profile_list,
+        "driving_profiles": driving_profile_list,
+        "repeats_per_combo": max(1, int(repeats_per_combo)),
         "workspace": resolve_runner_test_workspace(workspace_root).to_dict(),
         "db_path": str(db_path),
         "dry_run": bool(dry_run),

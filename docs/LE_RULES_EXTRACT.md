@@ -26,6 +26,8 @@ Date: 2026-02-16
 - Post-ATH repair ensures:
   - LE script copied into ABEC project dir.
   - `[LEScript] Scriptname_LEScript` is non-empty and points to expected file.
+- CFG renderer keeps production defaults fixed (`ABEC.AkabakMode=1`, `LE=generic25`, `LE.Voltage=1.0`);
+  cfg-level LE experiments are therefore implemented as harness-only post-render patches.
 - Experimental LE patch profiles are available for controlled A/B/C/D tests:
   - `baseline`
   - `driver_drvgroup`
