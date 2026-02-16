@@ -139,9 +139,9 @@ class BatchExportPanel(QFrame):
         adv_layout.addLayout(button_row)
         root.addWidget(adv_box, 1)
 
-        self.freq_start.textChanged.connect(self.changed.emit)
-        self.freq_end.textChanged.connect(self.changed.emit)
-        self.num_points.textChanged.connect(self.changed.emit)
+        self.freq_start.textChanged.connect(lambda _text: self.changed.emit())
+        self.freq_end.textChanged.connect(lambda _text: self.changed.emit())
+        self.num_points.textChanged.connect(lambda _text: self.changed.emit())
         self.table.itemChanged.connect(lambda _item: self._on_table_changed())
         self.preset_spl.toggled.connect(lambda enabled: self._on_preset_toggled("spl", enabled))
         self.preset_impedance.toggled.connect(lambda enabled: self._on_preset_toggled("impedance", enabled))

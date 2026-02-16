@@ -1656,9 +1656,12 @@ class BatchPage(QWidget):
         self._project_fixed_keys: set[str] = set()
         self._eta_seconds: Optional[float] = None
         self._eta_sample_count: int = 0
+        self._suspend_draft_events = False
         self._update_summary_widgets()
 
     def _emit_draft_changed(self) -> None:
+        if self._suspend_draft_events:
+            return
         self._update_summary_widgets()
         self.draft_changed.emit(self._payload(include_name=False))
 
@@ -1724,6 +1727,34 @@ class BatchPage(QWidget):
         if include_name:
             payload["batch_name"] = self.batch_name.text().strip()
         return payload
+
+    def reset_draft(self) -> None:
+        self._suspend_draft_events = True
+        try:
+            self.batch_name.clear()
+            self.sweep_mode.setCurrentText("single")
+            self.parameter_form.set_selected_params({})
+            self.parameter_form.set_sweeps({})
+            self.export_panel.set_from_payload({})
+            self.set_eta(None, sample_count=0, median_seconds=None)
+        finally:
+            self._suspend_draft_events = False
+        self._emit_draft_changed()
+
+    def load_from_batch(self, batch: Batch, *, batch_name: Optional[str] = None) -> None:
+        self._suspend_draft_events = True
+        try:
+            name = batch_name
+            if not name:
+                name = str(batch.extra.get("batch_name", batch.batch_id))
+            self.batch_name.setText(name)
+            mode = str(batch.sweep_mode or "single")
+            self.sweep_mode.setCurrentText(mode if mode in {"single", "combined"} else "single")
+            self.parameter_form.set_from_batch(batch)
+            self.export_panel.set_from_batch(batch)
+        finally:
+            self._suspend_draft_events = False
+        self._emit_draft_changed()
 
     def _update_summary_widgets(self) -> None:
         visible_count = len(self.parameter_form.visible_field_keys())
@@ -2078,6 +2109,7 @@ class MainWindow(QMainWindow):
         self.stack.setCurrentWidget(self.project_page)
 
     def show_batch(self) -> None:
+        self.batch_page.reset_draft()
         self._on_batch_draft_changed(self.batch_page._payload(include_name=False))
         self.stack.setCurrentWidget(self.batch_page)
 
@@ -2194,12 +2226,34 @@ class MainWindow(QMainWindow):
             self.refresh_dashboard()
 
     def _edit_batch(self, batch_id: str) -> None:
-        self.set_status(f"Edit Batch requested: {batch_id} (placeholder).")
-        self.show_batch()
+        if self.current_project is None:
+            self.set_status("No project loaded.")
+            return
+        try:
+            batch = self.service.repo.load_batch(self.current_project.project_id, batch_id)
+        except Exception as exc:
+            self.set_status(f"Edit Batch failed for {batch_id}", detail=str(exc))
+            return
+        self.batch_page.load_from_batch(batch)
+        self._on_batch_draft_changed(self.batch_page._payload(include_name=False))
+        self.stack.setCurrentWidget(self.batch_page)
+        self.set_status(f"Batch loaded: {batch_id}")
 
     def _clone_batch(self, batch_id: str) -> None:
-        self.set_status(f"Clone Batch requested: {batch_id} (placeholder).")
-        self.show_batch()
+        if self.current_project is None:
+            self.set_status("No project loaded.")
+            return
+        try:
+            batch = self.service.repo.load_batch(self.current_project.project_id, batch_id)
+        except Exception as exc:
+            self.set_status(f"Clone Batch failed for {batch_id}", detail=str(exc))
+            return
+        source_name = str(batch.extra.get("batch_name", batch.batch_id)).strip() or batch.batch_id
+        clone_name = f"{source_name} Clone"
+        self.batch_page.load_from_batch(batch, batch_name=clone_name)
+        self._on_batch_draft_changed(self.batch_page._payload(include_name=False))
+        self.stack.setCurrentWidget(self.batch_page)
+        self.set_status(f"Batch cloned into draft: {clone_name}")
 
     def _export_version(self, batch_id: str, version_id: str, export_stl: bool, export_abec: bool) -> None:
         if self.current_project is None:

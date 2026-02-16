@@ -14,8 +14,8 @@ try:
     from PySide6.QtWidgets import (
         QCheckBox,
         QFrame,
-        QFormLayout,
         QHBoxLayout,
+        QLabel,
         QLineEdit,
         QScrollArea,
         QToolButton,
@@ -135,7 +135,7 @@ class BatchParameterForm(QWidget):
             value_edit.setValidator(QDoubleValidator(value_edit))
             if spec.tooltip:
                 value_edit.setToolTip(spec.tooltip)
-            value_edit.textChanged.connect(self.changed.emit)
+            value_edit.textChanged.connect(lambda _text: self.changed.emit())
             head_layout.addWidget(value_edit, 0, Qt.AlignLeft)
 
             sweep_toggle = QCheckBox("Sweep")
@@ -152,21 +152,21 @@ class BatchParameterForm(QWidget):
             start_edit.setPlaceholderText("start")
             start_edit.setMaximumWidth(120)
             start_edit.setValidator(QDoubleValidator(start_edit))
-            start_edit.textChanged.connect(self.changed.emit)
+            start_edit.textChanged.connect(lambda _text: self.changed.emit())
             sweep_layout.addWidget(start_edit, 0, Qt.AlignLeft)
 
             end_edit = QLineEdit()
             end_edit.setPlaceholderText("end")
             end_edit.setMaximumWidth(120)
             end_edit.setValidator(QDoubleValidator(end_edit))
-            end_edit.textChanged.connect(self.changed.emit)
+            end_edit.textChanged.connect(lambda _text: self.changed.emit())
             sweep_layout.addWidget(end_edit, 0, Qt.AlignLeft)
 
             steps_edit = QLineEdit("3")
             steps_edit.setPlaceholderText("steps")
             steps_edit.setMaximumWidth(80)
             steps_edit.setValidator(QIntValidator(1, 9999, steps_edit))
-            steps_edit.textChanged.connect(self.changed.emit)
+            steps_edit.textChanged.connect(lambda _text: self.changed.emit())
             sweep_layout.addWidget(steps_edit, 0, Qt.AlignLeft)
 
             spacing_button = QToolButton()
@@ -178,7 +178,16 @@ class BatchParameterForm(QWidget):
             sweep_panel.setVisible(False)
             row_layout.addWidget(sweep_panel)
 
-            box.body_layout().addRow(f"{spec.label} ({key})", row_wrap)
+            field_row = QWidget()
+            field_row_layout = QHBoxLayout(field_row)
+            field_row_layout.setContentsMargins(0, 0, 0, 0)
+            field_row_layout.setSpacing(8)
+            field_label = QLabel(f"{spec.label} ({key})")
+            field_label.setMinimumWidth(250)
+            field_label.setWordWrap(True)
+            field_row_layout.addWidget(field_label, 0, Qt.AlignTop)
+            field_row_layout.addWidget(row_wrap, 1)
+            box.body_layout().addWidget(field_row)
             row = _FieldRow(
                 key=key,
                 label=str(spec.label),
@@ -222,7 +231,7 @@ class BatchParameterForm(QWidget):
 
         for group_key, box in self._group_boxes.items():
             any_visible = any(
-                self._rows[key].container.isVisible()
+                not self._rows[key].container.isHidden()
                 for key, row in self._rows.items()
                 if tuple(row.group_path) == tuple(group_key)
             )
@@ -232,7 +241,7 @@ class BatchParameterForm(QWidget):
         row = self._rows.get(str(key))
         if row is None:
             return
-        row.sweep_panel.setVisible(bool(enabled) and row.container.isVisible())
+        row.sweep_panel.setVisible(bool(enabled) and not row.container.isHidden())
         if enabled:
             base = _to_float(row.base_edit.text())
             if base is not None:
@@ -247,7 +256,7 @@ class BatchParameterForm(QWidget):
     def selected_params_payload(self) -> Dict[str, Optional[float]]:
         payload: Dict[str, Optional[float]] = {}
         for key, row in self._rows.items():
-            if not row.container.isVisible():
+            if row.container.isHidden():
                 continue
             payload[key] = _to_float(row.base_edit.text())
         return payload
@@ -255,7 +264,7 @@ class BatchParameterForm(QWidget):
     def sweeps_payload(self) -> Dict[str, Dict[str, Any]]:
         payload: Dict[str, Dict[str, Any]] = {}
         for key, row in self._rows.items():
-            if not row.container.isVisible() or not row.sweep_toggle.isChecked():
+            if row.container.isHidden() or not row.sweep_toggle.isChecked():
                 continue
             payload[key] = {
                 "start": _to_float(row.start_edit.text()),
@@ -334,12 +343,22 @@ class BatchParameterForm(QWidget):
         row = self._rows.get(str(key))
         return None if row is None else row.sweep_panel
 
+    def sweep_inputs_for_key(self, key: str) -> Optional[Dict[str, QLineEdit]]:
+        row = self._rows.get(str(key))
+        if row is None:
+            return None
+        return {
+            "start": row.start_edit,
+            "end": row.end_edit,
+            "steps": row.steps_edit,
+        }
+
     def visible_field_keys(self) -> List[str]:
-        return [key for key, row in self._rows.items() if row.container.isVisible()]
+        return [key for key, row in self._rows.items() if not row.container.isHidden()]
 
     def active_sweep_count(self) -> int:
         return sum(
             1
             for row in self._rows.values()
-            if row.container.isVisible() and row.sweep_toggle.isChecked()
+            if not row.container.isHidden() and row.sweep_toggle.isChecked()
         )
