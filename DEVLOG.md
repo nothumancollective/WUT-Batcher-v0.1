@@ -1978,3 +1978,30 @@ Validation executed:
   - `33 passed`
 - `python -m pytest tests/test_cli_run_sample.py tests/test_cli_runs_tools.py tests/test_cli_vacs_tools.py tests/test_runner_test_harness.py tests/test_cli_runner_test.py tests/test_ath_driver_assets.py -q`
   - `37 passed`
+
+### Update 68 (Real LE proof matrix smoke run)
+#### Done
+- Executed real `le-proof-matrix` run on VM tools with profiles:
+  - `control`
+  - `mut_electrical`
+  - `mut_motor`
+- Matrix result:
+  - `matrix_id=8878622b-9c75-48ff-8b22-8cc63a89eae5`
+  - `le_integration_diagnosis=le_active_confirmed`
+
+#### Evidence
+- Run IDs:
+  - control: `f1117950-bb82-4049-a99a-9e1f1e5dce43`
+  - mut_electrical: `8c26adac-4094-4e53-9758-b5e94d7aec8a`
+  - mut_motor: `5b844f8e-f8bc-4436-b4ee-93e47e1c7ec5`
+- Effect sizes vs control:
+  - `mut_electrical.spl_delta_rms=0.250374733444921` (>= 0.25 threshold)
+  - `mut_motor.spl_delta_rms=0.5543950365469512` (>= 0.25 threshold)
+  - impedance deltas remained `0.0` in this pass.
+
+#### Outcome
+- Composite proof path confirms LE influence on SPL curves for this baseline setup.
+- RadImp stays a secondary KPI and remains normalized/all-zero baseline in these runs.
+
+#### Docs
+- Added: `docs/LE_PROOF_MATRIX_REPORT.md`
