@@ -1535,3 +1535,31 @@ Validation executed:
   - primary interim failed with RPC modal
   - reentry stage `interim_reimport_reentry_open_via_akabak` succeeded
   - 4 exports written, `ok=true`
+
+### Update 56 (Primary path swap + AKABAK speed pass)
+#### Done
+- Switched VACS fast mode reentry order based on measured reliability:
+  - primary now uses AKABAK menu handshake (`Open VACS...`)
+  - reentry fallback uses attach-only
+  - final fallback uses relaxed menu handshake
+- Kept fast export hot path unchanged (top-level detection + fast save/confirm handling).
+- AKABAK driver speed/robustness updates in `app/akabak_driver.py`:
+  - `_solve_signal_snapshot(include_vacs_ui=...)` added to avoid expensive VACS UI scans during solve-start detection.
+  - `run_solve` changed to dual-trigger start (`UIA F4` + `hwnd F4`) then single bounded wait.
+  - solve-start wait tuned for faster reaction (`initial_interval_s=0.05`, capped backoff).
+  - start condition tightened: `vacs_process_started` now requires `new_vacs` (no immediate success from stale VACS PID alone).
+  - completion wait polling tuned (`initial_interval_s=0.08`, capped backoff) for faster end detection without fixed sleeps.
+
+#### Why
+- Fast attach-only primary was statistically weak in this VM and often fell into RPC dialogs.
+- AKABAK solve start previously could spend long fallback windows before trying the second F4 trigger.
+
+#### Validation (real VM)
+- Fast VACS run after primary swap:
+  - `run_20260216_030017` (`ok=true`)
+  - primary interim (`open_vacs_via_akabak`) succeeded directly
+  - total around ~24s for 4 exports
+- Runner baseline run to exercise AKABAK flow with new solve logic:
+  - `test_run_id=43ef4dae-cdfe-44d9-8f39-d276df19f93c`
+  - AKABAK stages reached `run_solve` and `wait_for_completion` successfully (see `akabak_driver.log.jsonl`)
+  - run failed later in VACS export validation pattern (`^Result_.*SPL.*\\.txt$`) - unrelated to solve-start optimization

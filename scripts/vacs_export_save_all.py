@@ -1620,8 +1620,8 @@ def run_once_fast(args: argparse.Namespace) -> Dict[str, Any]:
         interim_startup_timeout_s=min(int(getattr(args, "interim_startup_timeout_s", 25) or 25), 12),
     )
 
-    # Fast primary: attach to existing prestarted VACS and trigger F7 reimport.
-    interim = _run_interim_with_mode(fast_interim_args, skip_open_via_akabak=True)
+    # Fast primary: AKABAK menu handshake path (observed as most stable on this VM).
+    interim = _run_interim_with_mode(fast_interim_args, skip_open_via_akabak=False)
     step("interim_reimport_primary", **interim)
     parsed = dict(interim.get("parsed") or {})
     if not bool(parsed.get("ok")):
@@ -1647,14 +1647,14 @@ def run_once_fast(args: argparse.Namespace) -> Dict[str, Any]:
             )
 
     if not bool(parsed.get("ok")):
-        # Reentry point: retry via AKABAK->Options->Open VACS handshake.
-        interim = _run_interim_with_mode(reentry_interim_args, skip_open_via_akabak=False)
-        step("interim_reimport_reentry_open_via_akabak", **interim)
+        # Reentry point: attach-only retry against existing VACS instance.
+        interim = _run_interim_with_mode(reentry_interim_args, skip_open_via_akabak=True)
+        step("interim_reimport_reentry_attach_only", **interim)
         parsed = dict(interim.get("parsed") or {})
         if not bool(parsed.get("ok")):
-            # Final fallback: attach-only with relaxed timeout budget.
-            interim = _run_interim_with_mode(relaxed_interim_args, skip_open_via_akabak=True)
-            step("interim_reimport_fallback_attach_only", **interim)
+            # Final fallback: menu handshake with relaxed timeout budget.
+            interim = _run_interim_with_mode(relaxed_interim_args, skip_open_via_akabak=False)
+            step("interim_reimport_fallback_open_via_akabak", **interim)
             parsed = dict(interim.get("parsed") or {})
 
     if not bool(parsed.get("ok")):
