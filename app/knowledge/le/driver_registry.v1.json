@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "drivers": [
+    {
+      "id": "generic25",
+      "driver_basename": "generic25",
+      "source_path": "C:\\Tools\\ATH\\lib\\drivers\\generic25.txt",
+      "default_voltage": 1.0,
+      "metadata": {
+        "description": "Default ATH generic 25 mm LE driver model",
+        "status": "harness_reference_only"
+      }
+    }
+  ]
+}

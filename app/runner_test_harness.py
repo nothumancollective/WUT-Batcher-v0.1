@@ -20,7 +20,12 @@ import uuid
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from app.akabak_driver import AkabakDriver, AkabakDriverResult
-from app.ath_driver_assets import repair_post_ath_le_binding
+from app.ath_driver_assets import (
+    LE_PATCH_PROFILE_DRIVER_DRVGROUP_DEF_DRIVING_RESISTOR,
+    LE_PATCH_PROFILE_MUT_ELECTRICAL,
+    LE_PATCH_PROFILE_MUT_MOTOR,
+    repair_post_ath_le_binding,
+)
 from app.cfg_renderer import render_cfg_text
 from app.export_specs import parse_export_specs
 from app.models import Batch, ParamSelection, Project, ProjectConstraints, SweepSpec
@@ -32,6 +37,7 @@ from app.safe_cleanup import (
     guarded_delete_file_in_workspace,
     guarded_delete_tree_in_workspace,
 )
+from app.le_driver_registry import load_le_driver_registry
 from app.ui_automation.waits import wait_until
 from app.ui_automation.discover import discover_app_ui
 from app.vacs_export_pipeline import VacsExportPipelineError, run_vacs_export_specs
@@ -2948,6 +2954,195 @@ def _read_run_validations(db_path: Path, test_run_id: str) -> Dict[str, Dict[str
         con.close()
 
 
+def _read_run_artifacts(db_path: Path, test_run_id: str, *, kind: Optional[str] = None) -> List[Dict[str, Any]]:
+    if not db_path.exists():
+        return []
+    con = sqlite3.connect(str(db_path))
+    con.row_factory = sqlite3.Row
+    try:
+        cur = con.cursor()
+        if kind:
+            rows = cur.execute(
+                "select kind,path,sha256,bytes,created_at from artifacts where test_run_id=? and kind=? order by artifact_id",
+                (test_run_id, kind),
+            ).fetchall()
+        else:
+            rows = cur.execute(
+                "select kind,path,sha256,bytes,created_at from artifacts where test_run_id=? order by artifact_id",
+                (test_run_id,),
+            ).fetchall()
+        payload: List[Dict[str, Any]] = []
+        for row in rows:
+            payload.append(
+                {
+                    "kind": str(row["kind"] or ""),
+                    "path": str(row["path"] or ""),
+                    "sha256": str(row["sha256"] or "") or None,
+                    "bytes": int(row["bytes"] or 0) if row["bytes"] is not None else None,
+                    "created_at": str(row["created_at"] or ""),
+                }
+            )
+        return payload
+    finally:
+        con.close()
+
+
+def _safe_median(values: Sequence[float]) -> Optional[float]:
+    filtered = [float(item) for item in values if item is not None and math.isfinite(float(item))]
+    if not filtered:
+        return None
+    filtered.sort()
+    mid = len(filtered) // 2
+    if len(filtered) % 2 == 1:
+        return float(filtered[mid])
+    return float((filtered[mid - 1] + filtered[mid]) / 2.0)
+
+
+def _read_run_curve_vectors(
+    db_path: Path,
+    test_run_id: str,
+    *,
+    graph_kinds: Sequence[str] = ("spl", "impedance"),
+) -> Dict[str, Dict[str, List[Tuple[float, float]]]]:
+    if not db_path.exists():
+        return {}
+    kind_filter = [str(item).strip().lower() for item in graph_kinds if str(item).strip()]
+    if not kind_filter:
+        return {}
+    placeholders = ",".join("?" for _ in kind_filter)
+    con = sqlite3.connect(str(db_path))
+    con.row_factory = sqlite3.Row
+    try:
+        rows = con.execute(
+            f"""
+            select
+                g.graph_kind as graph_kind,
+                g.variant as variant,
+                gs.series_kind as series_kind,
+                gs.label as series_label,
+                gs.angle_deg as angle_deg,
+                gp.point_index as point_index,
+                gp.x_value as x_value,
+                gp.y_value as y_value,
+                gp.y_imag as y_imag
+            from graphs g
+            join graph_series gs on gs.graph_id = g.graph_id
+            join graph_points gp on gp.series_id = gs.series_id
+            where g.run_id = ?
+              and lower(coalesce(g.graph_kind, '')) in ({placeholders})
+            order by g.graph_kind, g.variant, gs.series_kind, gs.label, gs.angle_deg, gp.point_index
+            """,
+            [test_run_id, *kind_filter],
+        ).fetchall()
+    finally:
+        con.close()
+
+    payload: Dict[str, Dict[str, List[Tuple[float, float]]]] = {}
+    for row in rows:
+        graph_kind = str(row["graph_kind"] or "").strip().lower()
+        variant = str(row["variant"] or "default").strip() or "default"
+        series_kind = str(row["series_kind"] or "").strip() or "curve"
+        label = str(row["series_label"] or "").strip() or "default"
+        angle = row["angle_deg"]
+        angle_token = "" if angle is None else f"{float(angle):.6f}"
+        key = "|".join([variant, series_kind, label, angle_token])
+        x_value = float(row["x_value"] or 0.0)
+        y_value = float(row["y_value"] or 0.0)
+        y_imag = row["y_imag"]
+        if y_imag is not None:
+            value = math.sqrt((y_value * y_value) + (float(y_imag) * float(y_imag)))
+        else:
+            value = y_value
+        kind_payload = payload.setdefault(graph_kind, {})
+        series_payload = kind_payload.setdefault(key, [])
+        series_payload.append((x_value, float(value)))
+    return payload
+
+
+def _compute_run_pair_effect_size(
+    db_path: Path,
+    *,
+    baseline_run_id: str,
+    candidate_run_id: str,
+) -> Dict[str, Any]:
+    baseline = _read_run_curve_vectors(db_path, baseline_run_id)
+    candidate = _read_run_curve_vectors(db_path, candidate_run_id)
+    metrics: Dict[str, Any] = {
+        "baseline_run_id": baseline_run_id,
+        "candidate_run_id": candidate_run_id,
+    }
+    for graph_kind in ("spl", "impedance"):
+        baseline_kind = baseline.get(graph_kind, {})
+        candidate_kind = candidate.get(graph_kind, {})
+        common_keys = sorted(set(baseline_kind.keys()).intersection(set(candidate_kind.keys())))
+        weighted_sum = 0.0
+        compared_points = 0
+        compared_series = 0
+        skipped_series = 0
+        for key in common_keys:
+            series_a = baseline_kind.get(key, [])
+            series_b = candidate_kind.get(key, [])
+            paired_points = min(len(series_a), len(series_b))
+            if paired_points <= 0:
+                continue
+            sum_sq = 0.0
+            used_points = 0
+            for index in range(paired_points):
+                x_a, val_a = series_a[index]
+                x_b, val_b = series_b[index]
+                x_scale = max(1.0, abs(float(x_a)), abs(float(x_b)))
+                if abs(float(x_a) - float(x_b)) > (1e-6 * x_scale):
+                    skipped_series += 1
+                    used_points = 0
+                    break
+                delta = float(val_b) - float(val_a)
+                sum_sq += delta * delta
+                used_points += 1
+            if used_points <= 0:
+                continue
+            series_rms = math.sqrt(sum_sq / float(used_points))
+            weighted_sum += series_rms * series_rms * float(used_points)
+            compared_points += used_points
+            compared_series += 1
+        delta_rms = None
+        if compared_points > 0:
+            delta_rms = math.sqrt(weighted_sum / float(compared_points))
+        metrics[f"{graph_kind}_delta_rms"] = delta_rms
+        metrics[f"{graph_kind}_compared_series"] = compared_series
+        metrics[f"{graph_kind}_compared_points"] = compared_points
+        metrics[f"{graph_kind}_skipped_series"] = skipped_series
+    return metrics
+
+
+def _normalize_le_proof_profile(value: str) -> str:
+    token = str(value or "").strip().lower()
+    if not token:
+        return "control"
+    aliases = {
+        "control": "control",
+        "baseline": "control",
+        "default": "control",
+        "mut_electrical": "mut_electrical",
+        "electrical": "mut_electrical",
+        "mutation_electrical": "mut_electrical",
+        "mut_motor": "mut_motor",
+        "motor": "mut_motor",
+        "mutation_motor": "mut_motor",
+    }
+    return aliases.get(token, token)
+
+
+def _map_le_proof_to_patch_profile(profile: str) -> str:
+    normalized = _normalize_le_proof_profile(profile)
+    if normalized == "control":
+        return LE_PATCH_PROFILE_DRIVER_DRVGROUP_DEF_DRIVING_RESISTOR
+    if normalized == "mut_electrical":
+        return LE_PATCH_PROFILE_MUT_ELECTRICAL
+    if normalized == "mut_motor":
+        return LE_PATCH_PROFILE_MUT_MOTOR
+    return normalized
+
+
 def run_runner_test_radimp_driving_matrix(
     *,
     case_id: str,
@@ -3030,6 +3225,406 @@ def run_runner_test_radimp_driving_matrix(
         "dry_run": bool(dry_run),
         "strict_nonzero_radimp": bool(strict_nonzero_radimp),
         "results": matrix_rows,
+    }
+
+
+def run_runner_test_le_proof_matrix(
+    *,
+    case_id: str,
+    profiles: Sequence[str] | None = None,
+    repeats_per_profile: int = 3,
+    keep_exports: bool = True,
+    test_profile: str = "fast",
+    workspace_root: str | Path = "runner_test_workspace",
+    cases_root: str | Path = "runner_test_cases",
+    template_cfg_path: Optional[str | Path] = None,
+    ath_executable: Optional[str | Path] = None,
+    akabak_executable: Optional[str | Path] = None,
+    vacs_executable: Optional[str | Path] = None,
+    cfg_le_profile: Optional[str] = None,
+    radimp_observation_profile: Optional[str] = None,
+    driving_observation_profile: Optional[str] = None,
+    strict_le_proof: bool = False,
+    randomize_order: bool = True,
+    random_seed: int = 1337,
+    dry_run: bool = False,
+) -> Dict[str, Any]:
+    registry_specs = [item.to_dict() for item in load_le_driver_registry()]
+    case_payload: Dict[str, Any] = {}
+    try:
+        case_payload = _load_case_payload(case_id, cases_root=cases_root)
+    except Exception:
+        case_payload = {}
+
+    le_proof_payload = dict(case_payload.get("le_proof", {}) or {})
+    payload_profiles = le_proof_payload.get("mutation_profiles")
+    default_profiles = ["control", "mut_electrical", "mut_motor"]
+    if isinstance(payload_profiles, list):
+        parsed_default_profiles = [str(item).strip() for item in payload_profiles if str(item).strip()]
+        if parsed_default_profiles:
+            default_profiles = parsed_default_profiles
+    profile_list = [str(item).strip() for item in (profiles or default_profiles) if str(item).strip()]
+    if not profile_list:
+        profile_list = list(default_profiles)
+    profile_list = [_normalize_le_proof_profile(item) for item in profile_list]
+
+    repeats = max(1, int(repeats_per_profile))
+    schedule: List[Dict[str, Any]] = []
+    for profile in profile_list:
+        for repeat_index in range(0, repeats):
+            schedule.append({"profile": profile, "repeat_index": repeat_index + 1})
+    if bool(randomize_order):
+        shuffler = random.Random(int(random_seed))
+        shuffler.shuffle(schedule)
+
+    workspace = resolve_runner_test_workspace(workspace_root)
+    db_path = workspace.db_path
+    db = RunnerTestDb(db_path)
+
+    matrix_id = str(uuid.uuid4())
+    matrix_logs = workspace.logs_dir / "le_proof_matrix" / matrix_id
+    matrix_logs.mkdir(parents=True, exist_ok=True)
+
+    run_rows: List[Dict[str, Any]] = []
+    run_index = 0
+    all_ok = True
+    for item in schedule:
+        run_index += 1
+        logical_profile = str(item["profile"])
+        repeat_index = int(item["repeat_index"])
+        patch_profile = _map_le_proof_to_patch_profile(logical_profile)
+        summary = run_runner_test_harness(
+            case_id=case_id,
+            repeats=1,
+            keep_exports=bool(keep_exports),
+            test_profile=test_profile,
+            workspace_root=workspace_root,
+            cases_root=cases_root,
+            template_cfg_path=template_cfg_path,
+            ath_executable=ath_executable,
+            akabak_executable=akabak_executable,
+            vacs_executable=vacs_executable,
+            le_repair_profile=patch_profile,
+            cfg_le_profile=cfg_le_profile,
+            radimp_observation_profile=radimp_observation_profile,
+            driving_observation_profile=driving_observation_profile,
+            strict_nonzero_radimp=False,
+            dry_run=bool(dry_run),
+        )
+        runs = list(summary.get("runs", []) or [])
+        run = dict(runs[0]) if runs else {}
+        test_run_id = str(run.get("test_run_id") or "")
+        validations = _read_run_validations(db_path, test_run_id) if test_run_id else {}
+        run_status = str(run.get("status") or "")
+        row_ok = bool(summary.get("ok", False))
+        all_ok = all_ok and row_ok
+        run_rows.append(
+            {
+                "matrix_index": run_index,
+                "profile": logical_profile,
+                "repeat_index": repeat_index,
+                "le_patch_profile": patch_profile,
+                "test_run_id": test_run_id,
+                "run_status": run_status,
+                "ok": row_ok,
+                "summary": summary,
+                "validations": validations,
+            }
+        )
+
+    control_rows = [row for row in run_rows if row.get("profile") == "control"]
+    mutation_rows = [row for row in run_rows if row.get("profile") != "control"]
+    control_run_ids = [
+        str(row.get("test_run_id") or "")
+        for row in control_rows
+        if str(row.get("run_status") or "") in {"succeeded", "dry_run_completed"} and str(row.get("test_run_id") or "")
+    ]
+
+    control_spl_valid = 0
+    for row in control_rows:
+        validations = dict(row.get("validations", {}) or {})
+        spl = validations.get("export_quality:spl", {})
+        spl_metrics = dict(spl.get("metrics", {}) or {})
+        if str(spl.get("status") or "") == "ok" and int(spl_metrics.get("series_count", 0) or 0) > int(
+            spl_metrics.get("all_zero_series", 0) or 0
+        ):
+            control_spl_valid += 1
+
+    pair_metrics_rows: List[Dict[str, Any]] = []
+    control_noise_floor = {"spl_delta_rms": 0.0, "impedance_delta_rms": 0.0}
+    if len(control_run_ids) >= 2 and not dry_run:
+        for index, base_run_id in enumerate(control_run_ids):
+            for candidate_run_id in control_run_ids[index + 1 :]:
+                pair_metrics = _compute_run_pair_effect_size(
+                    db_path=db_path,
+                    baseline_run_id=base_run_id,
+                    candidate_run_id=candidate_run_id,
+                )
+                pair_metrics["kind"] = "control_pair"
+                pair_metrics_rows.append(pair_metrics)
+        for metric_name in ("spl_delta_rms", "impedance_delta_rms"):
+            metric_values = [
+                float(item[metric_name]) for item in pair_metrics_rows if item.get(metric_name) is not None
+            ]
+            control_noise_floor[metric_name] = max(metric_values) if metric_values else 0.0
+
+    absolute_min_floor = {
+        "spl_delta_rms": float(le_proof_payload.get("absolute_min_floor_spl", 0.25) or 0.25),
+        "impedance_delta_rms": float(le_proof_payload.get("absolute_min_floor_impedance", 0.05) or 0.05),
+    }
+    threshold_policy = {
+        key: max(5.0 * float(control_noise_floor.get(key, 0.0) or 0.0), float(absolute_min_floor[key]))
+        for key in ("spl_delta_rms", "impedance_delta_rms")
+    }
+
+    mutation_run_effects: Dict[str, Dict[str, Any]] = {}
+    profile_aggregate: Dict[str, Dict[str, Any]] = {}
+    for row in mutation_rows:
+        test_run_id = str(row.get("test_run_id") or "")
+        if not test_run_id or dry_run or not control_run_ids:
+            mutation_run_effects[test_run_id] = {
+                "profile": row.get("profile"),
+                "test_run_id": test_run_id,
+                "comparisons": [],
+                "effect_size": {"spl_delta_rms": None, "impedance_delta_rms": None},
+                "threshold_pass": {"spl_delta_rms": False, "impedance_delta_rms": False},
+            }
+            continue
+        comparisons: List[Dict[str, Any]] = []
+        for baseline_run_id in control_run_ids:
+            metrics = _compute_run_pair_effect_size(
+                db_path=db_path,
+                baseline_run_id=baseline_run_id,
+                candidate_run_id=test_run_id,
+            )
+            metrics["kind"] = "mutation_vs_control"
+            metrics["profile"] = str(row.get("profile") or "")
+            comparisons.append(metrics)
+            pair_metrics_rows.append(metrics)
+        spl_values = [float(item["spl_delta_rms"]) for item in comparisons if item.get("spl_delta_rms") is not None]
+        imp_values = [
+            float(item["impedance_delta_rms"]) for item in comparisons if item.get("impedance_delta_rms") is not None
+        ]
+        spl_effect = _safe_median(spl_values)
+        imp_effect = _safe_median(imp_values)
+        effect_size = {"spl_delta_rms": spl_effect, "impedance_delta_rms": imp_effect}
+        threshold_pass = {
+            "spl_delta_rms": spl_effect is not None and spl_effect >= threshold_policy["spl_delta_rms"],
+            "impedance_delta_rms": imp_effect is not None and imp_effect >= threshold_policy["impedance_delta_rms"],
+        }
+        mutation_run_effects[test_run_id] = {
+            "profile": row.get("profile"),
+            "test_run_id": test_run_id,
+            "comparisons": comparisons,
+            "effect_size": effect_size,
+            "threshold_pass": threshold_pass,
+        }
+
+        profile_name = str(row.get("profile") or "")
+        aggregate = profile_aggregate.setdefault(
+            profile_name,
+            {
+                "run_ids": [],
+                "spl_delta_values": [],
+                "impedance_delta_values": [],
+            },
+        )
+        aggregate["run_ids"].append(test_run_id)
+        if spl_effect is not None:
+            aggregate["spl_delta_values"].append(float(spl_effect))
+        if imp_effect is not None:
+            aggregate["impedance_delta_values"].append(float(imp_effect))
+
+    profile_effects: Dict[str, Dict[str, Any]] = {}
+    any_metric_above_threshold = False
+    for profile_name, aggregate in profile_aggregate.items():
+        spl_profile_effect = _safe_median(aggregate.get("spl_delta_values", []))
+        imp_profile_effect = _safe_median(aggregate.get("impedance_delta_values", []))
+        pass_map = {
+            "spl_delta_rms": spl_profile_effect is not None and spl_profile_effect >= threshold_policy["spl_delta_rms"],
+            "impedance_delta_rms": imp_profile_effect is not None
+            and imp_profile_effect >= threshold_policy["impedance_delta_rms"],
+        }
+        if any(pass_map.values()):
+            any_metric_above_threshold = True
+        profile_effects[profile_name] = {
+            "profile": profile_name,
+            "run_ids": list(aggregate.get("run_ids", [])),
+            "effect_size": {
+                "spl_delta_rms": spl_profile_effect,
+                "impedance_delta_rms": imp_profile_effect,
+            },
+            "threshold_pass": pass_map,
+        }
+
+    if dry_run:
+        le_integration_diagnosis = "le_active_inconclusive"
+    elif not control_run_ids or control_spl_valid <= 0:
+        le_integration_diagnosis = "le_proof_invalid"
+    elif any_metric_above_threshold:
+        le_integration_diagnosis = "le_active_confirmed"
+    elif mutation_rows:
+        le_integration_diagnosis = "le_active_not_evidenced"
+    else:
+        le_integration_diagnosis = "le_active_inconclusive"
+
+    report_payload = {
+        "matrix_id": matrix_id,
+        "case_id": case_id,
+        "le_driver_registry": registry_specs,
+        "profiles": profile_list,
+        "repeats_per_profile": repeats,
+        "randomize_order": bool(randomize_order),
+        "random_seed": int(random_seed),
+        "control_run_ids": control_run_ids,
+        "control_spl_valid_runs": control_spl_valid,
+        "control_noise_floor": control_noise_floor,
+        "absolute_min_floor": absolute_min_floor,
+        "threshold_policy": threshold_policy,
+        "profile_effects": profile_effects,
+        "le_integration_diagnosis": le_integration_diagnosis,
+    }
+    report_path = matrix_logs / "le_proof_comparison_report.json"
+    report_path.write_text(json.dumps(report_payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+    curve_diff_path = matrix_logs / "le_proof_curve_diff.csv"
+    with curve_diff_path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=[
+                "kind",
+                "profile",
+                "baseline_run_id",
+                "candidate_run_id",
+                "spl_delta_rms",
+                "spl_compared_series",
+                "spl_compared_points",
+                "spl_skipped_series",
+                "impedance_delta_rms",
+                "impedance_compared_series",
+                "impedance_compared_points",
+                "impedance_skipped_series",
+            ],
+        )
+        writer.writeheader()
+        for row in pair_metrics_rows:
+            writer.writerow(
+                {
+                    "kind": str(row.get("kind") or ""),
+                    "profile": str(row.get("profile") or ""),
+                    "baseline_run_id": str(row.get("baseline_run_id") or ""),
+                    "candidate_run_id": str(row.get("candidate_run_id") or ""),
+                    "spl_delta_rms": row.get("spl_delta_rms"),
+                    "spl_compared_series": row.get("spl_compared_series"),
+                    "spl_compared_points": row.get("spl_compared_points"),
+                    "spl_skipped_series": row.get("spl_skipped_series"),
+                    "impedance_delta_rms": row.get("impedance_delta_rms"),
+                    "impedance_compared_series": row.get("impedance_compared_series"),
+                    "impedance_compared_points": row.get("impedance_compared_points"),
+                    "impedance_skipped_series": row.get("impedance_skipped_series"),
+                }
+            )
+
+    for row in run_rows:
+        test_run_id = str(row.get("test_run_id") or "")
+        if not test_run_id:
+            continue
+        profile = str(row.get("profile") or "")
+        effect_row = mutation_run_effects.get(test_run_id, {})
+        effect_size = dict(effect_row.get("effect_size", {}) or {})
+        threshold_pass = dict(effect_row.get("threshold_pass", {}) or {})
+        db.add_validation(
+            test_run_id=test_run_id,
+            validation_name="le_proof_noise_floor",
+            status="ok" if control_run_ids and not dry_run else "skipped",
+            metrics={
+                "profile": profile,
+                "control_run_ids": control_run_ids,
+                "control_noise_floor": control_noise_floor,
+                "absolute_min_floor": absolute_min_floor,
+                "threshold_policy": threshold_policy,
+            },
+            message="LE proof noise floor computed"
+            if control_run_ids and not dry_run
+            else "LE proof noise floor unavailable (dry-run or missing controls)",
+        )
+        db.add_validation(
+            test_run_id=test_run_id,
+            validation_name="le_proof_effect_size",
+            status="ok" if profile != "control" and effect_size else "skipped",
+            metrics={
+                "profile": profile,
+                "effect_size": effect_size,
+                "threshold_pass": threshold_pass,
+                "threshold_policy": threshold_policy,
+            },
+            message="LE proof effect size computed for mutation profile"
+            if profile != "control" and effect_size
+            else "LE proof effect size not applicable for control profile",
+        )
+        diagnosis_status = "ok" if le_integration_diagnosis == "le_active_confirmed" else "failed"
+        if le_integration_diagnosis == "le_active_inconclusive":
+            diagnosis_status = "skipped"
+        db.add_validation(
+            test_run_id=test_run_id,
+            validation_name="le_integration_diagnosis",
+            status=diagnosis_status,
+            metrics={
+                "profile": profile,
+                "diagnosis": le_integration_diagnosis,
+                "profile_effects": profile_effects,
+                "strict_le_proof": bool(strict_le_proof),
+            },
+            message=f"LE integration diagnosis: {le_integration_diagnosis}",
+        )
+        for artifact_path, artifact_kind in (
+            (report_path, "le_proof_comparison_report"),
+            (curve_diff_path, "le_proof_curve_diff"),
+        ):
+            if artifact_path.exists() and artifact_path.is_file():
+                db.add_artifact(
+                    test_run_id=test_run_id,
+                    kind=artifact_kind,
+                    path=str(artifact_path),
+                    sha256=_sha256_file(artifact_path),
+                    bytes_size=artifact_path.stat().st_size,
+                )
+        if profile != "control":
+            le_driver_artifacts = _read_run_artifacts(db_path, test_run_id, kind="le_driver")
+            if le_driver_artifacts:
+                source_path = Path(str(le_driver_artifacts[-1].get("path") or ""))
+                if source_path.exists() and source_path.is_file():
+                    db.add_artifact(
+                        test_run_id=test_run_id,
+                        kind="le_mutated_driver",
+                        path=str(source_path),
+                        sha256=_sha256_file(source_path),
+                        bytes_size=source_path.stat().st_size,
+                    )
+
+    strict_gate_ok = le_integration_diagnosis == "le_active_confirmed"
+    ok = all_ok and (strict_gate_ok or not bool(strict_le_proof))
+    return {
+        "ok": ok,
+        "phase": "phase_le_proof_matrix",
+        "matrix_id": matrix_id,
+        "case_id": case_id,
+        "le_driver_registry": registry_specs,
+        "profiles": profile_list,
+        "repeats_per_profile": repeats,
+        "randomize_order": bool(randomize_order),
+        "random_seed": int(random_seed),
+        "strict_le_proof": bool(strict_le_proof),
+        "workspace": workspace.to_dict(),
+        "db_path": str(db_path),
+        "dry_run": bool(dry_run),
+        "le_integration_diagnosis": le_integration_diagnosis,
+        "control_noise_floor": control_noise_floor,
+        "threshold_policy": threshold_policy,
+        "profile_effects": profile_effects,
+        "report_artifact": str(report_path),
+        "curve_diff_artifact": str(curve_diff_path),
+        "results": run_rows,
     }
 
 

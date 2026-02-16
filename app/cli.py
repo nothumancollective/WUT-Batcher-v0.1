@@ -711,6 +711,37 @@ def cmd_runner_test_radimp_3scope_matrix(args: argparse.Namespace) -> int:
     return 0 if summary.get("ok", False) else 4
 
 
+def cmd_runner_test_le_proof_matrix(args: argparse.Namespace) -> int:
+    from app.runner_test_harness import run_runner_test_le_proof_matrix
+
+    settings_store = SettingsStore()
+    settings = settings_store.load()
+    profiles_raw = str(args.profiles or "").strip()
+    profiles = [item.strip() for item in profiles_raw.split(",") if item.strip()] if profiles_raw else None
+    summary = run_runner_test_le_proof_matrix(
+        case_id=args.case_id,
+        profiles=profiles,
+        repeats_per_profile=args.repeats_per_profile,
+        keep_exports=str(args.keep_exports).strip().lower() == "true",
+        test_profile=args.test_profile,
+        workspace_root=args.workspace_root,
+        cases_root=args.cases_root,
+        template_cfg_path=args.template_cfg or settings.template_cfg,
+        ath_executable=args.ath_exe or settings.ath_exe,
+        akabak_executable=args.akabak_exe or settings.akabak_exe,
+        vacs_executable=args.vacs_exe or settings.vacs_exe,
+        cfg_le_profile=str(args.cfg_le_profile or "").strip() or None,
+        radimp_observation_profile=str(args.radimp_observation_profile or "").strip() or None,
+        driving_observation_profile=str(args.driving_observation_profile or "").strip() or None,
+        strict_le_proof=bool(args.strict_le_proof),
+        randomize_order=not bool(args.no_randomize_order),
+        random_seed=int(args.matrix_seed),
+        dry_run=bool(args.dry_run),
+    )
+    print(json.dumps(summary, indent=2, ensure_ascii=False, default=_json_default))
+    return 0 if summary.get("ok", False) else 4
+
+
 def _resolve_run_project_id(service: OrchestratorService, run_id: str, project_id: Optional[str]) -> str:
     if project_id:
         return project_id
@@ -905,7 +936,8 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help=(
             "Optional LE script patch profile for post-ATH repair "
-            "(baseline, driver_drvgroup, driver_drvgroup_def_driving, driver_drvgroup_def_driving_resistor)."
+            "(baseline, driver_drvgroup, driver_drvgroup_def_driving, "
+            "driver_drvgroup_def_driving_resistor, mut_electrical, mut_motor)."
         ),
     )
     p_runner_test_run.add_argument(
@@ -1004,7 +1036,8 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help=(
             "Optional LE script patch profile "
-            "(baseline, driver_drvgroup, driver_drvgroup_def_driving, driver_drvgroup_def_driving_resistor)."
+            "(baseline, driver_drvgroup, driver_drvgroup_def_driving, "
+            "driver_drvgroup_def_driving_resistor, mut_electrical, mut_motor)."
         ),
     )
     p_runner_test_matrix.add_argument(
@@ -1080,7 +1113,8 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help=(
             "Optional LE script patch profile "
-            "(baseline, driver_drvgroup, driver_drvgroup_def_driving, driver_drvgroup_def_driving_resistor)."
+            "(baseline, driver_drvgroup, driver_drvgroup_def_driving, "
+            "driver_drvgroup_def_driving_resistor, mut_electrical, mut_motor)."
         ),
     )
     p_runner_test_3scope.add_argument(
@@ -1105,6 +1139,85 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run matrix in dry-run mode (no tool launch).",
     )
     p_runner_test_3scope.set_defaults(func=cmd_runner_test_radimp_3scope_matrix)
+
+    p_runner_test_le_proof = sub_runner_test.add_parser(
+        "le-proof-matrix",
+        help="Run composite LE integration proof matrix (control vs mutation profiles).",
+    )
+    p_runner_test_le_proof.add_argument("--case", dest="case_id", default="test_cfg_baseline", help="Runner test case id.")
+    p_runner_test_le_proof.add_argument(
+        "--profiles",
+        default="control,mut_electrical,mut_motor",
+        help="Comma-separated LE proof profiles (control, mut_electrical, mut_motor).",
+    )
+    p_runner_test_le_proof.add_argument(
+        "--repeats-per-profile",
+        type=int,
+        default=3,
+        help="Sequential repeats for each LE proof profile.",
+    )
+    p_runner_test_le_proof.add_argument(
+        "--keep-exports",
+        default="true",
+        choices=["true", "false"],
+        help="Retain exported TXT artifacts for each LE proof run.",
+    )
+    p_runner_test_le_proof.add_argument(
+        "--test-profile",
+        default="fast",
+        help="Harness test profile id.",
+    )
+    p_runner_test_le_proof.add_argument(
+        "--workspace-root",
+        default="runner_test_workspace",
+        help="Dedicated workspace root for harness artifacts.",
+    )
+    p_runner_test_le_proof.add_argument(
+        "--cases-root",
+        default="runner_test_cases",
+        help="Directory containing runner test case JSON files.",
+    )
+    p_runner_test_le_proof.add_argument("--template-cfg", help="Override template CFG path used for case rendering.")
+    p_runner_test_le_proof.add_argument("--ath-exe", help="Override ATH executable path")
+    p_runner_test_le_proof.add_argument("--akabak-exe", help="Override AKABAK executable path")
+    p_runner_test_le_proof.add_argument("--vacs-exe", help="Override VACS executable path")
+    p_runner_test_le_proof.add_argument(
+        "--cfg-le-profile",
+        default=None,
+        help="Optional harness-only cfg LE profile (default, le_voltage_2p83, le_voltage_10, le_voltage_0p1).",
+    )
+    p_runner_test_le_proof.add_argument(
+        "--radimp-observation-profile",
+        default=None,
+        help="Optional RadImp observation patch profile (default, force_absolute, drop_radimptype).",
+    )
+    p_runner_test_le_proof.add_argument(
+        "--driving-observation-profile",
+        default=None,
+        help="Optional Driving_Values patch profile (default, accel_2p83, accel_10, velocity_1, displacement_1).",
+    )
+    p_runner_test_le_proof.add_argument(
+        "--strict-le-proof",
+        action="store_true",
+        help="Fail unless the composite LE diagnosis is explicitly le_active_confirmed.",
+    )
+    p_runner_test_le_proof.add_argument(
+        "--no-randomize-order",
+        action="store_true",
+        help="Execute LE proof runs in profile-major order (default: randomized with seed).",
+    )
+    p_runner_test_le_proof.add_argument(
+        "--matrix-seed",
+        type=int,
+        default=1337,
+        help="Seed used for randomized LE proof run order.",
+    )
+    p_runner_test_le_proof.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Run matrix in dry-run mode (no tool launch).",
+    )
+    p_runner_test_le_proof.set_defaults(func=cmd_runner_test_le_proof_matrix)
 
     p_runner_test_open_dialog_only = sub_runner_test.add_parser(
         "open-dialog-only",

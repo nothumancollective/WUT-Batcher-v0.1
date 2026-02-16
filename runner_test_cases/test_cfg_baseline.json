@@ -5,6 +5,15 @@
   "template_cfg": "C:\\Tools\\ATH\\test.cfg",
   "ath_export_root": "C:\\Horns",
   "cfg_le_profile": "default",
+  "le_proof": {
+    "mutation_profiles": [
+      "control",
+      "mut_electrical",
+      "mut_motor"
+    ],
+    "absolute_min_floor_spl": 0.25,
+    "absolute_min_floor_impedance": 0.05
+  },
   "project_id": "P_RUNNER_TEST",
   "batch_id": "B_RUNNER_TEST",
   "project_name": "Runner Test Project",

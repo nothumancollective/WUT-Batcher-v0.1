@@ -18,6 +18,8 @@ LE_PATCH_PROFILE_BASELINE = "baseline"
 LE_PATCH_PROFILE_DRIVER_DRVGROUP = "driver_drvgroup"
 LE_PATCH_PROFILE_DRIVER_DRVGROUP_DEF_DRIVING = "driver_drvgroup_def_driving"
 LE_PATCH_PROFILE_DRIVER_DRVGROUP_DEF_DRIVING_RESISTOR = "driver_drvgroup_def_driving_resistor"
+LE_PATCH_PROFILE_MUT_ELECTRICAL = "mut_electrical"
+LE_PATCH_PROFILE_MUT_MOTOR = "mut_motor"
 
 
 def _sha256_file(path: Path) -> str:
@@ -152,6 +154,7 @@ class LeDriverScriptPatchResult:
     def_driving_value: Optional[str] = None
     sha256_before: Optional[str] = None
     sha256_after: Optional[str] = None
+    mutated_parameters: Optional[list[str]] = None
     error: Optional[str] = None
 
     @property
@@ -174,6 +177,7 @@ class LeDriverScriptPatchResult:
             "def_driving_value": self.def_driving_value,
             "sha256_before": self.sha256_before,
             "sha256_after": self.sha256_after,
+            "mutated_parameters": list(self.mutated_parameters or []),
             "error": self.error,
         }
 
@@ -199,6 +203,8 @@ def _normalize_le_patch_profile(profile: Optional[str]) -> str:
         "driver_drvgroup+def_driving": LE_PATCH_PROFILE_DRIVER_DRVGROUP_DEF_DRIVING,
         "driver_drvgroup_def_driving_resistor": LE_PATCH_PROFILE_DRIVER_DRVGROUP_DEF_DRIVING_RESISTOR,
         "doc_example": LE_PATCH_PROFILE_DRIVER_DRVGROUP_DEF_DRIVING_RESISTOR,
+        "mut_electrical": LE_PATCH_PROFILE_MUT_ELECTRICAL,
+        "mut_motor": LE_PATCH_PROFILE_MUT_MOTOR,
     }
     return aliases.get(value, value)
 
@@ -316,6 +322,74 @@ def _ensure_system_resistor_and_driver_node(
     return "\n".join(lines), changed
 
 
+def _replace_first_param_value(
+    content: str,
+    *,
+    param: str,
+    value_token: str,
+    force_unit: Optional[str] = None,
+) -> tuple[str, bool]:
+    pattern = re.compile(
+        r"(\b"
+        + re.escape(param)
+        + r"\s*=\s*)([-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?)([ \t]*[A-Za-z/%]+)?",
+        flags=re.IGNORECASE,
+    )
+
+    changed = False
+
+    def _repl(match: re.Match[str]) -> str:
+        nonlocal changed
+        prefix = str(match.group(1) or "")
+        old_value = str(match.group(2) or "").strip()
+        unit = str(match.group(3) or "").strip()
+        if force_unit is not None:
+            unit = str(force_unit).strip()
+        replacement = f"{prefix}{value_token}{unit}"
+        previous = f"{prefix}{old_value}{str(match.group(3) or '')}".strip()
+        if replacement.strip() != previous.strip():
+            changed = True
+        return replacement
+
+    patched, count = pattern.subn(_repl, content, count=1)
+    return patched, bool(changed and count > 0)
+
+
+def _apply_mutation_profile(content: str, *, profile: str) -> tuple[str, bool, list[str]]:
+    mutated: list[str] = []
+    patched = content
+    if profile == LE_PATCH_PROFILE_MUT_ELECTRICAL:
+        mutations = [
+            ("Re", "12.0", "ohm"),
+            ("Le", "0.10", "mH"),
+            ("ExpoRe", "1.4", ""),
+            ("ExpoLe", "0.10", ""),
+        ]
+    elif profile == LE_PATCH_PROFILE_MUT_MOTOR:
+        mutations = [
+            ("Bl", "8.0", "N/A"),
+            ("Mms", "120.0", "g"),
+            ("Cms", "0.050e-3", "m/N"),
+            ("Rms", "7.0", "Ns/m"),
+        ]
+    else:
+        return patched, False, mutated
+
+    changed_any = False
+    for key, value, unit in mutations:
+        patched_next, changed = _replace_first_param_value(
+            patched,
+            param=key,
+            value_token=value,
+            force_unit=unit,
+        )
+        if changed:
+            mutated.append(key)
+            changed_any = True
+        patched = patched_next
+    return patched, changed_any, mutated
+
+
 def patch_driver_script_for_le_profile(
     *,
     script_path: str | Path,
@@ -354,6 +428,8 @@ def patch_driver_script_for_le_profile(
         LE_PATCH_PROFILE_DRIVER_DRVGROUP,
         LE_PATCH_PROFILE_DRIVER_DRVGROUP_DEF_DRIVING,
         LE_PATCH_PROFILE_DRIVER_DRVGROUP_DEF_DRIVING_RESISTOR,
+        LE_PATCH_PROFILE_MUT_ELECTRICAL,
+        LE_PATCH_PROFILE_MUT_MOTOR,
     }:
         return LeDriverScriptPatchResult(
             status="invalid_profile",
@@ -371,39 +447,60 @@ def patch_driver_script_for_le_profile(
 
         driver_changed = False
         def_driving_changed = False
+        mutated_parameters: list[str] = []
         patched = original
 
-        patched, driver_changed, driver_found = _ensure_driver_drvgroup(
-            patched,
-            driver_tag=driver_tag,
-            drvgroup_value=str(drvgroup_value),
-        )
-        if not driver_found:
-            return LeDriverScriptPatchResult(
-                status="driver_not_found",
-                profile=canonical,
-                target_path=str(target),
-                driver_drvgroup_value=str(drvgroup_value),
-                def_driving_value=f"{_format_voltage_vrms(voltage_vrms)}V",
-                sha256_before=before_hash,
-                sha256_after=before_hash,
-                error=f"driver section '{driver_tag}' not found",
+        if canonical in {
+            LE_PATCH_PROFILE_DRIVER_DRVGROUP,
+            LE_PATCH_PROFILE_DRIVER_DRVGROUP_DEF_DRIVING,
+            LE_PATCH_PROFILE_DRIVER_DRVGROUP_DEF_DRIVING_RESISTOR,
+            LE_PATCH_PROFILE_MUT_ELECTRICAL,
+            LE_PATCH_PROFILE_MUT_MOTOR,
+        }:
+            patched, driver_changed, driver_found = _ensure_driver_drvgroup(
+                patched,
+                driver_tag=driver_tag,
+                drvgroup_value=str(drvgroup_value),
             )
+            if not driver_found:
+                return LeDriverScriptPatchResult(
+                    status="driver_not_found",
+                    profile=canonical,
+                    target_path=str(target),
+                    driver_drvgroup_value=str(drvgroup_value),
+                    def_driving_value=f"{_format_voltage_vrms(voltage_vrms)}V",
+                    sha256_before=before_hash,
+                    sha256_after=before_hash,
+                    error=f"driver section '{driver_tag}' not found",
+                )
 
         if canonical in {
             LE_PATCH_PROFILE_DRIVER_DRVGROUP_DEF_DRIVING,
             LE_PATCH_PROFILE_DRIVER_DRVGROUP_DEF_DRIVING_RESISTOR,
+            LE_PATCH_PROFILE_MUT_ELECTRICAL,
+            LE_PATCH_PROFILE_MUT_MOTOR,
         }:
             patched, def_driving_changed = _ensure_def_driving(
                 patched,
                 voltage_vrms=float(voltage_vrms),
             )
-        if canonical == LE_PATCH_PROFILE_DRIVER_DRVGROUP_DEF_DRIVING_RESISTOR:
+        if canonical in {
+            LE_PATCH_PROFILE_DRIVER_DRVGROUP_DEF_DRIVING_RESISTOR,
+            LE_PATCH_PROFILE_MUT_ELECTRICAL,
+            LE_PATCH_PROFILE_MUT_MOTOR,
+        }:
             patched, system_changed = _ensure_system_resistor_and_driver_node(
                 patched,
                 driver_tag=driver_tag,
             )
             driver_changed = driver_changed or system_changed
+
+        if canonical in {LE_PATCH_PROFILE_MUT_ELECTRICAL, LE_PATCH_PROFILE_MUT_MOTOR}:
+            patched, mutation_changed, mutated_parameters = _apply_mutation_profile(
+                patched,
+                profile=canonical,
+            )
+            driver_changed = driver_changed or mutation_changed
 
         if newline == "\r\n":
             patched = patched.replace("\n", "\r\n")
@@ -427,6 +524,7 @@ def patch_driver_script_for_le_profile(
             def_driving_value=f"{_format_voltage_vrms(voltage_vrms)}V",
             sha256_before=before_hash,
             sha256_after=after_hash,
+            mutated_parameters=mutated_parameters,
         )
     except Exception as exc:
         return LeDriverScriptPatchResult(
