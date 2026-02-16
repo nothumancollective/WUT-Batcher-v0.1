@@ -368,7 +368,7 @@ class OrchestratorService:
         *,
         project_id: str,
         batch_name: str,
-        selected_params: Dict[str, Optional[float]],
+        selected_params: Dict[str, Any],
         sweeps: Dict[str, Dict[str, Any]],
         sweep_mode: str,
         sim_export_params: Dict[str, Any],

@@ -214,7 +214,7 @@ class SweepSpec:
 
 @dataclass
 class ParamSelection:
-    value: Optional[float] = None
+    value: Any = None
     sweep: Optional[SweepSpec] = None
 
     @classmethod
@@ -222,7 +222,14 @@ class ParamSelection:
         if "sweep" in data and isinstance(data["sweep"], dict):
             return cls(value=None, sweep=SweepSpec.from_dict(data["sweep"], key=key))
         value = data.get("value")
-        return cls(value=None if value is None else float(value), sweep=None)
+        if value is None:
+            return cls(value=None, sweep=None)
+        if isinstance(value, (dict, list, bool, int, float)):
+            return cls(value=value, sweep=None)
+        try:
+            return cls(value=float(value), sweep=None)
+        except Exception:
+            return cls(value=value, sweep=None)
 
     def to_dict(self) -> Dict[str, Any]:
         if self.sweep is not None:
