@@ -8,6 +8,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from app.compatibility_service import CompatibilityService
 from app.constants import DEFAULT_RUNNER_MODE
 from app.gui import BatchPage
+from ui.form_builder import AccordionGroupBox
 
 try:
     from PySide6.QtWidgets import QApplication
@@ -56,9 +57,13 @@ class BatchPageUiTests(unittest.TestCase):
         state = self._compat_state()
         page.apply_compatibility(state)
 
-        sweepable = set(str(item) for item in list(state.get("sweepable_keys", []) or []))
-        locked = set(str(item) for item in list(state.get("locked_keys", []) or []))
-        key = next((item for item in sweepable if item not in locked), None)
+        key = None
+        for candidate in list(state.get("sweepable_keys", []) or []):
+            candidate_key = str(candidate)
+            toggle = page.parameter_form.sweep_toggle_for_key(candidate_key)
+            if toggle is not None and toggle.isEnabled():
+                key = candidate_key
+                break
         if key is None:
             self.skipTest("No sweepable candidate available in current ruleset.")
 
@@ -87,6 +92,30 @@ class BatchPageUiTests(unittest.TestCase):
         self.assertEqual(float(sweeps[key]["start"]), 10.0)
         self.assertEqual(float(sweeps[key]["end"]), 20.0)
         self.assertEqual(int(sweeps[key]["steps"]), 3)
+
+    def test_button_layout_fields_are_not_sweepable(self) -> None:
+        page = BatchPage()
+        state = self._compat_state()
+        page.apply_compatibility(state)
+
+        toggle = page.parameter_form.sweep_toggle_for_key("Throat.Profile")
+        if toggle is None:
+            self.skipTest("Throat.Profile not available.")
+        self.assertFalse(toggle.isVisible())
+
+    def test_only_one_accordion_group_is_expanded(self) -> None:
+        page = BatchPage()
+        boxes = [box for box in page.parameter_form.findChildren(AccordionGroupBox) if box.isVisible()]
+        if len(boxes) < 2:
+            self.skipTest("Not enough accordion groups available.")
+        expanded_initial = [box for box in boxes if not box.is_collapsed()]
+        self.assertEqual(len(expanded_initial), 1)
+
+        second = boxes[1]
+        second.set_collapsed(False)
+        expanded_after = [box for box in boxes if not box.is_collapsed()]
+        self.assertEqual(len(expanded_after), 1)
+        self.assertEqual(expanded_after[0].title(), second.title())
 
 
 if __name__ == "__main__":
