@@ -104,9 +104,28 @@ Behavior:
 - version preview is forced to `0` in that case
 - issue is shown in compatibility details and summary state
 
-Additionally:
-- compatibility state now includes deterministic `prevented_keys` for context-driven fatal-prevention hiding.
-- missing-required fatals are not suppressed; only conflict-driven actionable fatals are prevented.
+## Rule/UI Separation
+Compatibility rules remain in `app/compatibility_service.py` unchanged in meaning.
+
+UI blocking is derived separately in `ui/compat_ui_adapter.py`:
+- input: compatibility snapshot (`visible_keys`, `locked_keys`, `sweepable_keys`, `issues`)
+- output: `compat_ui_state` with:
+  - `hidden_keys`
+  - `blocked_options` (segment option-level blocking metadata)
+  - `cause_map` and helper text for blocked interactions
+
+The adapter runs hypothetical checks through existing service calls only and does not mutate ATH rules.
+
+### Reconcile Pass (`batch_param_not_visible` fix)
+- `MainWindow._on_batch_draft_changed(...)` applies compatibility, then immediately re-reads batch payload.
+- if hidden keys caused stale values/sweeps to be removed, a guarded second validation pass runs.
+- this removes transient resolver errors like:
+  - `Batch parameter 'xy' is not visible for current project constraints`
+
+### Batch Action Policy
+- Save: allowed when no `fatal` issues exist.
+- Run: blocked when `fatal` or `incomplete` issues exist.
+- Incomplete issues (missing required values) remain visible as neutral/incomplete guidance.
 
 ## Edit / Clone
 Main window actions are now wired:

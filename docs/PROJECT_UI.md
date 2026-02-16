@@ -63,3 +63,16 @@ The Batch page is now implemented as a companion to the PROJECT form design.
   - export presets + advanced export-spec editor
   - preview placeholder panel for future STL viewer integration
   - SQL-history based ETA estimate in summary
+
+## Compatibility UX Policy
+- Strict separation:
+  - rule truth from `CompatibilityService`
+  - UI interaction blocking from `ui/compat_ui_adapter.py`
+- Blocked segmented options are rendered in disabled/dark style and emit `blocked_interaction` on click.
+- Clicking a blocked option flashes the primary cause field (controller keys prioritized).
+- Project creation policy:
+  - `fatal` blocks create
+  - `incomplete` does not block create
+- Batch policy differs:
+  - save allowed on `incomplete`
+  - run blocked on `incomplete` and `fatal`

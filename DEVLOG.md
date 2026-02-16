@@ -2006,6 +2006,38 @@ Validation executed:
 #### Docs
 - Added: `docs/LE_PROOF_MATRIX_REPORT.md`
 
+### Update 69 (UI-only Compatibility Rework for Project/Batch)
+#### Done
+- Removed UI-specific prevention fields from compatibility service outputs.
+  - No `prevented_keys`, `prevented_reasons`, `ui_hint_trigger_key` in rule service responses.
+- Added UI-side compatibility adapter:
+  - new `ui/compat_ui_adapter.py`
+  - derives `compat_ui_state` (`hidden_keys`, `blocked_options`, cause/helper mapping) from compatibility snapshots.
+- Project/Batch interaction flow updated:
+  - blocked segmented options emit `blocked_interaction`
+  - click on blocked option flashes primary cause field in subtle blue
+  - fast debounce + batch reconcile pass to remove stale hidden payload values.
+- Fixed transient batch validation noise:
+  - removed temporary `batch_param_not_visible` conflicts after mode switches by revalidate-after-hide reconcile.
+- Policy updates in GUI:
+  - Project: incomplete no longer blocks create.
+  - Batch: save allowed on incomplete; run blocked on incomplete/fatal.
+- Theme states added for compatibility UX:
+  - `compatBlocked`, `compatBlockedOption`, `compatCauseFlash`.
+
+#### Tests
+- Added/updated UI coverage:
+  - blocked option interaction and cause propagation (Project + Batch)
+  - hidden-field reset behavior when visibility changes
+  - project incomplete action policy expectations updated
+- Full suite green:
+  - `236 passed, 5 skipped`.
+
+#### Docs
+- Updated:
+  - `docs/BATCH_UI.md` (rule/UI separation + reconcile pass)
+  - `docs/PROJECT_UI.md` (compatibility UX policy)
+
 ## 2026-02-16
 ### Update (Dataset Pipeline Hardening: Post-VACS Ingest)
 #### Done
