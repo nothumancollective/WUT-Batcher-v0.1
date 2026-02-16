@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 import time
 import uuid
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from app.batch_orchestrator import materialize_batch_plan
 from app.ath_driver_assets import repair_post_ath_le_binding
@@ -110,6 +110,91 @@ def _stage_from_result(version_id: str, stage: str, result: RunnerResult) -> Sta
     )
 
 
+def _path_key(path: Path) -> str:
+    try:
+        return str(path.resolve()).lower()
+    except Exception:
+        return str(path).lower()
+
+
+def _extract_export_contracts(
+    *,
+    exports_dir: Path,
+    vacs_export_summary: Optional[Dict[str, Any]],
+) -> Tuple[Dict[str, Dict[str, Any]], List[Path]]:
+    contracts: Dict[str, Dict[str, Any]] = {}
+    expected_files: List[Path] = []
+    if not isinstance(vacs_export_summary, dict):
+        return contracts, expected_files
+    rows = vacs_export_summary.get("exports")
+    if not isinstance(rows, list):
+        return contracts, expected_files
+
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        output_path_raw = str(row.get("output_path", "") or "").strip()
+        if not output_path_raw:
+            continue
+        output_path = Path(output_path_raw)
+        if not output_path.is_absolute():
+            output_path = exports_dir / output_path
+        expected_files.append(output_path)
+        spec = row.get("spec") if isinstance(row.get("spec"), dict) else {}
+        entry = row.get("entry") if isinstance(row.get("entry"), dict) else {}
+        contracts[_path_key(output_path)] = {
+            "spec_id": str(spec.get("id", "") or ""),
+            "graph_kind": str(spec.get("graph_kind", "") or str(entry.get("graph_kind", "") or "")).strip(),
+            "variant": str(
+                spec.get("variant")
+                or entry.get("graph_variant")
+                or entry.get("variant")
+                or "default"
+            ).strip()
+            or "default",
+            "spec": spec,
+            "entry": entry,
+            "plugin_id": row.get("plugin_id"),
+            "details": row.get("details") if isinstance(row.get("details"), dict) else {},
+        }
+    return contracts, expected_files
+
+
+def _graph_kind_mismatch(*, expected_kind: str, parsed_graph_type: str, parsed_export_meta: Dict[str, Any]) -> bool:
+    expected = str(expected_kind or "").strip().lower()
+    if not expected:
+        return False
+
+    metadata = parsed_export_meta.get("metadata")
+    metadata_map = metadata if isinstance(metadata, dict) else {}
+    hint = " ".join(
+        [
+            str(parsed_graph_type or ""),
+            str(metadata_map.get("Data_LevelType", "") or ""),
+            str(metadata_map.get("Data_Legend", "") or ""),
+        ]
+    ).lower()
+    if not hint.strip():
+        return False
+
+    expected_tokens: Dict[str, Tuple[str, ...]] = {
+        "spl": ("spl", "soundpressure", "spectrum"),
+        "impedance": ("impedance", "radiation_impedance", "radiation impedance"),
+        "imp": ("impedance", "radiation_impedance", "radiation impedance"),
+        "polar": ("polar", "directivity"),
+    }
+    conflict_tokens: Dict[str, Tuple[str, ...]] = {
+        "spl": ("impedance", "radiation_impedance", "radiation impedance"),
+        "impedance": ("spl", "soundpressure", "spectrum"),
+        "imp": ("spl", "soundpressure", "spectrum"),
+    }
+    positive = expected_tokens.get(expected, tuple())
+    negative = conflict_tokens.get(expected, tuple())
+    if any(token in hint for token in positive if token):
+        return False
+    return any(token in hint for token in negative if token)
+
+
 def _ingest_vacs_exports(
     *,
     writer: TidyDatasetWriter,
@@ -118,10 +203,30 @@ def _ingest_vacs_exports(
     run_id: str,
     version_id: str,
     exports_dir: Path,
+    vacs_export_summary: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    export_files = sorted(path for path in exports_dir.rglob("*.txt") if path.is_file())
+    contracts, expected_contract_files = _extract_export_contracts(
+        exports_dir=exports_dir,
+        vacs_export_summary=vacs_export_summary,
+    )
+    missing_contract_files = [str(path) for path in expected_contract_files if not path.exists()]
+    expected_contract_keys = {_path_key(path) for path in expected_contract_files}
+
+    if expected_contract_files:
+        export_files = sorted(path for path in expected_contract_files if path.exists() and path.is_file())
+        ignored_files = sorted(
+            str(path)
+            for path in exports_dir.rglob("*.txt")
+            if path.is_file() and _path_key(path) not in expected_contract_keys
+        )
+    else:
+        export_files = sorted(path for path in exports_dir.rglob("*.txt") if path.is_file())
+        ignored_files = []
+
     parse_errors: List[str] = []
+    mapping_errors: List[str] = []
     rows: List[Dict[str, Any]] = []
+    mapped_file_count = 0
 
     for path in export_files:
         try:
@@ -130,11 +235,45 @@ def _ingest_vacs_exports(
             parse_errors.append(f"{path.name}: {exc}")
             continue
 
+        contract = contracts.get(_path_key(path))
+        expected_kind = ""
+        variant_from_contract = "default"
+        if contract is not None:
+            mapped_file_count += 1
+            expected_kind = str(contract.get("graph_kind", "") or "").strip()
+            variant_from_contract = str(contract.get("variant", "default") or "default")
+
+        if expected_kind and _graph_kind_mismatch(
+            expected_kind=expected_kind,
+            parsed_graph_type=parsed.graph_type,
+            parsed_export_meta=parsed.export_meta,
+        ):
+            mapping_errors.append(
+                f"{path.name}: expected graph_kind '{expected_kind}', parsed hint '{parsed.graph_type}'"
+            )
+            continue
+
+        graph_kind = expected_kind or parsed.graph_type
         for series in parsed.series:
-            variant = "default"
+            variant = variant_from_contract
             metadata = parsed.export_meta.get("metadata")
             if isinstance(metadata, dict):
-                variant = str(metadata.get("variant", metadata.get("Variant", "default")))
+                metadata_variant = str(metadata.get("variant", metadata.get("Variant", "")) or "").strip()
+                if not contract and metadata_variant:
+                    variant = metadata_variant
+
+            export_meta = dict(parsed.export_meta)
+            if contract:
+                export_meta["contract"] = {
+                    "spec_id": contract.get("spec_id"),
+                    "graph_kind": expected_kind,
+                    "variant": variant_from_contract,
+                    "plugin_id": contract.get("plugin_id"),
+                    "spec": contract.get("spec", {}),
+                    "entry": contract.get("entry", {}),
+                    "details": contract.get("details", {}),
+                }
+
             for point_index, point in enumerate(series.points):
                 rows.append(
                     {
@@ -143,7 +282,7 @@ def _ingest_vacs_exports(
                         "run_id": run_id,
                         "version_id": version_id,
                         "graph_type": parsed.graph_type,
-                        "graph_kind": parsed.graph_type,
+                        "graph_kind": graph_kind,
                         "variant": variant,
                         "x_name": parsed.x_name,
                         "y_name": parsed.y_name,
@@ -160,8 +299,8 @@ def _ingest_vacs_exports(
                         "y_imag": point.y_imag,
                         "point_index": point_index,
                         "source_file": str(path),
-                        "export_meta": parsed.export_meta,
-                        "meta_json": parsed.export_meta,
+                        "export_meta": export_meta,
+                        "meta_json": export_meta,
                     }
                 )
 
@@ -172,8 +311,13 @@ def _ingest_vacs_exports(
     return {
         "export_dir": str(exports_dir),
         "files_found": len(export_files),
+        "contract_expected_files": len(expected_contract_files),
+        "contract_mapped_files": mapped_file_count,
+        "missing_contract_files": missing_contract_files,
+        "ignored_unmapped_files": ignored_files,
         "rows_prepared": len(rows),
         "parse_errors": parse_errors,
+        "mapping_errors": mapping_errors,
         "write_result": write_result,
     }
 
@@ -560,9 +704,15 @@ def run_batch_pipeline(
                         run_id=effective_run_id,
                         version_id=version_id,
                         exports_dir=exports_dir,
+                        vacs_export_summary=vacs_export_summary,
                     )
-                    vacs_stage_ok = bool(vacs_export_summary.get("executed")) and not bool(vacs_ingest.get("parse_errors"))
-                    if int(vacs_ingest.get("files_found", 0)) <= 0:
+                    vacs_stage_ok = (
+                        bool(vacs_export_summary.get("executed"))
+                        and not bool(vacs_ingest.get("parse_errors"))
+                        and not bool(vacs_ingest.get("mapping_errors"))
+                        and not bool(vacs_ingest.get("missing_contract_files"))
+                    )
+                    if int(vacs_ingest.get("files_found", 0)) <= 0 or int(vacs_ingest.get("rows_prepared", 0)) <= 0:
                         vacs_stage_ok = False
                     vacs_status = "vacs_ok" if vacs_stage_ok else "vacs_failed"
                     _update_version_state(
@@ -655,7 +805,12 @@ def run_batch_pipeline(
                         version_id=version_id,
                         exports_dir=exports_dir,
                     )
-                    if int(vacs_ingest.get("files_found", 0)) <= 0 or vacs_ingest.get("parse_errors"):
+                    if (
+                        int(vacs_ingest.get("files_found", 0)) <= 0
+                        or int(vacs_ingest.get("rows_prepared", 0)) <= 0
+                        or vacs_ingest.get("parse_errors")
+                        or vacs_ingest.get("mapping_errors")
+                    ):
                         vacs_stage_ok = False
                 vacs_status = "vacs_ok" if vacs_stage_ok else "vacs_failed"
                 _update_version_state(
