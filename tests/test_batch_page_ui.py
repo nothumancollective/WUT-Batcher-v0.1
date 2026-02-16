@@ -8,7 +8,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from app.compatibility_service import CompatibilityService
 from app.constants import DEFAULT_RUNNER_MODE
 from app.gui import BatchPage
-from ui.form_builder import AccordionGroupBox
+from ui.form_builder import AccordionGroupBox, ObjectFieldEditor
 
 try:
     from PySide6.QtWidgets import QApplication
@@ -22,7 +22,7 @@ class BatchPageUiTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.app = QApplication.instance() or QApplication([])
 
-    def _compat_state(self) -> dict:
+    def _compat_state(self, *, selected_params: dict | None = None, sweeps: dict | None = None) -> dict:
         service = CompatibilityService()
         return service.evaluate_batch_definition(
             {
@@ -31,8 +31,8 @@ class BatchPageUiTests(unittest.TestCase):
                 "limits": {},
                 "runner_mode": DEFAULT_RUNNER_MODE,
             },
-            selected_params={},
-            sweeps={},
+            selected_params=dict(selected_params or {}),
+            sweeps=dict(sweeps or {}),
             sweep_mode="single",
         )
 
@@ -117,6 +117,60 @@ class BatchPageUiTests(unittest.TestCase):
         expanded_after = [box for box in boxes if not box.is_collapsed()]
         self.assertEqual(len(expanded_after), 1)
         self.assertEqual(expanded_after[0].title(), second.title())
+
+    def test_rosse_block_uses_object_editor_with_details(self) -> None:
+        page = BatchPage()
+        row = page.parameter_form._rows.get("R-OSSE")
+        if row is None:
+            self.skipTest("R-OSSE not available.")
+        self.assertIsInstance(row.base_editor, ObjectFieldEditor)
+        editor = row.base_editor
+        assert isinstance(editor, ObjectFieldEditor)
+        self.assertIn("R-OSSE.R", editor.property_editors)
+        self.assertIn("R-OSSE.r0", editor.property_editors)
+
+        editor.property_editors["R-OSSE.R"].set_value(120.0)
+        editor.property_editors["R-OSSE.r0"].set_value(17.0)
+        payload = page.parameter_form.selected_params_payload()
+        self.assertIn("R-OSSE", payload)
+        self.assertIsInstance(payload["R-OSSE"], dict)
+        value = payload["R-OSSE"]
+        assert isinstance(value, dict)
+        self.assertEqual(float(value["R"]), 120.0)
+        self.assertEqual(float(value["r0"]), 17.0)
+
+    def test_disclosure_hint_marks_selected_segment_button(self) -> None:
+        page = BatchPage()
+        initial = self._compat_state()
+        page.apply_compatibility(initial)
+        row = page.parameter_form._rows.get("Throat.Profile")
+        if row is None:
+            self.skipTest("Throat.Profile not available.")
+
+        applied = False
+        for mode in (1, 2, 3):
+            if hasattr(row.base_editor, "set_value"):
+                row.base_editor.set_value(mode)  # type: ignore[attr-defined]
+            payload = page._payload(include_name=False)
+            next_state = self._compat_state(
+                selected_params=dict(payload.get("selected_params", {}) or {}),
+                sweeps=dict(payload.get("sweeps", {}) or {}),
+            )
+            page.apply_compatibility(next_state)
+            if row.helper_label.isVisible():
+                applied = True
+                break
+        if not applied:
+            self.skipTest("No disclosure hint scenario produced by current compatibility rules.")
+
+        value_widget = row.base_editor.value_widget()  # type: ignore[attr-defined]
+        segment = getattr(value_widget, "segment", None)
+        if segment is None:
+            self.skipTest("Throat.Profile does not use segmented input.")
+        selected = segment.group.checkedButton()
+        self.assertIsNotNone(selected)
+        assert selected is not None
+        self.assertEqual(str(selected.property("disclosureHint")), "true")
 
 
 if __name__ == "__main__":

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from ui.form_builder import AccordionGroupBox, ScalarFieldEditor, SegmentedEnumInput
+from ui.form_builder import AccordionGroupBox, ObjectFieldEditor, ScalarFieldEditor, SegmentedEnumInput
 from ui.form_schema import FieldSpec, FormSchema, ModeStackSpec, build_project_form_schema
 
 try:
@@ -17,6 +17,7 @@ try:
         QHBoxLayout,
         QLabel,
         QLineEdit,
+        QPushButton,
         QScrollArea,
         QVBoxLayout,
         QWidget,
@@ -61,40 +62,6 @@ def _extract_mode_tag_value(ui_mode_tags: Sequence[str], controller_key: str) ->
         if value.startswith(prefix):
             return value[len(prefix) :].strip()
     return None
-
-
-class _ObjectToggleInput(QWidget):
-    changed = Signal()
-
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        root = QHBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
-        root.setSpacing(6)
-        self.segment = SegmentedEnumInput(
-            options=[("disabled", 0), ("enabled", 1)],
-            fallback_value=0,
-            enforce_fallback=True,
-        )
-        self.segment.set_value(0)
-        self.segment.changed.connect(lambda *_: self.changed.emit())
-        root.addWidget(self.segment, 0, Qt.AlignLeft)
-        root.addStretch(1)
-
-    def is_set(self) -> bool:
-        return self.segment.value() == 1
-
-    def value(self) -> Optional[int]:
-        return 1 if self.is_set() else None
-
-    def set_value(self, value: Any) -> None:
-        self.segment.set_value(1 if bool(value) else 0)
-
-    def clear(self) -> None:
-        self.segment.set_value(0)
-
-    def set_locked(self, locked: bool) -> None:
-        self.segment.set_locked(locked)
 
 
 @dataclass
@@ -183,7 +150,7 @@ class BatchParameterForm(QWidget):
 
     def _make_base_editor(self, field: FieldSpec) -> QWidget:
         if field.widget_kind == "object":
-            return _ObjectToggleInput()
+            return ObjectFieldEditor(field, use_toggle=(field.key == "Mesh.Enclosure"))
         return ScalarFieldEditor(field)
 
     def _mode_label_map(self, stack: ModeStackSpec) -> Dict[str, str]:
@@ -375,6 +342,9 @@ class BatchParameterForm(QWidget):
         if isinstance(editor, ScalarFieldEditor):
             state = editor.current_state()
             return (bool(state.is_set), state.value)
+        if hasattr(editor, "current_state"):
+            state = editor.current_state()  # type: ignore[attr-defined]
+            return (bool(getattr(state, "is_set", False)), getattr(state, "value", None))
         if hasattr(editor, "is_set") and hasattr(editor, "value"):
             return (bool(editor.is_set()), editor.value())  # type: ignore[attr-defined]
         return (False, None)
@@ -386,6 +356,22 @@ class BatchParameterForm(QWidget):
                 editor.set_is_set(False)
             else:
                 editor.set_value(value)
+            return
+        if isinstance(editor, ObjectFieldEditor):
+            if value is None:
+                editor.set_is_set(False)
+                return
+            if isinstance(value, dict):
+                editor.set_is_set(True)
+                for property_key, property_editor in editor.property_editors.items():
+                    property_name = property_key.rsplit(".", 1)[-1]
+                    property_value = value.get(property_name, value.get(property_key))
+                    if property_value is None:
+                        property_editor.set_is_set(False)
+                    else:
+                        property_editor.set_value(property_value)
+                return
+            editor.set_is_set(bool(value))
             return
         if value is None:
             if hasattr(editor, "clear"):
@@ -403,6 +389,37 @@ class BatchParameterForm(QWidget):
             editor.set_locked(locked)  # type: ignore[attr-defined]
             return
         editor.setEnabled(not locked)
+
+    @staticmethod
+    def _dedup_widgets(widgets: Sequence[QWidget]) -> List[QWidget]:
+        dedup: List[QWidget] = []
+        seen: set[int] = set()
+        for widget in list(widgets):
+            widget_id = id(widget)
+            if widget_id in seen:
+                continue
+            seen.add(widget_id)
+            dedup.append(widget)
+        return dedup
+
+    @staticmethod
+    def _segment_buttons(root: QWidget) -> List[QPushButton]:
+        return [
+            button
+            for button in root.findChildren(QPushButton)
+            if str(button.property("segment") or "").strip().lower() == "true"
+        ]
+
+    def _segment_hint_targets(self, segment: QWidget) -> List[QWidget]:
+        buttons: List[QPushButton]
+        if isinstance(segment, SegmentedEnumInput):
+            buttons = [button for button in list(getattr(segment, "_buttons", []) or []) if isinstance(button, QPushButton)]
+            checked = segment.group.checkedButton()
+        else:
+            buttons = self._segment_buttons(segment)
+            checked = next((button for button in buttons if button.isChecked()), None)
+        selected_buttons = [checked] if isinstance(checked, QPushButton) else buttons
+        return self._dedup_widgets([segment, *selected_buttons])
 
     def _iter_hint_targets(self, row: _FieldRow) -> List[QWidget]:
         targets: List[QWidget] = []
@@ -423,14 +440,18 @@ class BatchParameterForm(QWidget):
             if hasattr(value_widget, "segment"):
                 maybe = getattr(value_widget, "segment")
                 if isinstance(maybe, QWidget):
-                    targets.append(maybe)
+                    targets.extend(self._segment_hint_targets(maybe))
+        elif isinstance(editor, ObjectFieldEditor):
+            targets.append(editor)
+            if isinstance(editor.toggle, QWidget):
+                targets.extend(self._segment_hint_targets(editor.toggle))
         else:
             targets.append(editor)
             if hasattr(editor, "segment"):
                 maybe = getattr(editor, "segment")
                 if isinstance(maybe, QWidget):
-                    targets.append(maybe)
-        return targets
+                    targets.extend(self._segment_hint_targets(maybe))
+        return self._dedup_widgets(targets)
 
     @staticmethod
     def _repolish(widget: QWidget) -> None:
@@ -470,7 +491,7 @@ class BatchParameterForm(QWidget):
         params_text = ", ".join(params) if params else "-"
         if extra_count > 0:
             params_text = f"{params_text}, +{extra_count}"
-        message = f"Diese Auswahl blendet aus: Karten [{cards_text}] · Parameter [{params_text}]"
+        message = f"Diese Auswahl blendet aus: Karten [{cards_text}] - Parameter [{params_text}]"
 
         trigger.helper_label.setText(message)
         trigger.helper_label.setProperty("severity", "info")
@@ -577,7 +598,7 @@ class BatchParameterForm(QWidget):
                 row.steps_edit.setText("3")
         self.changed.emit()
 
-    def selected_params_payload(self) -> Dict[str, Optional[float]]:
+    def selected_params_payload(self) -> Dict[str, Any]:
         payload: Dict[str, Any] = {}
         for key, row in self._rows.items():
             if row.container.isHidden():
