@@ -16,6 +16,7 @@ from app.project_issue_model import UiProjectIssue, classify_ui_severity, issue_
 from app.services import OrchestratorService
 from app.settings_store import UserSettings
 from app.ui_validation import UiValidationEngine
+from ui.batch_export_panel import BatchExportPanel
 from ui.batch_parameter_form import BatchParameterForm
 from ui.form_builder import ParameterForm
 from ui.form_metrics import FORM_METRICS
@@ -89,17 +90,6 @@ class IssueRowButton(QPushButton):
     def resizeEvent(self, event) -> None:  # type: ignore[override]
         super().resizeEvent(event)
         self._apply_elide()
-
-
-def _parse_json_object(text: str) -> Dict[str, Any]:
-    raw = text.strip()
-    if not raw:
-        return {}
-    try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError:
-        return {}
-    return dict(parsed) if isinstance(parsed, dict) else {}
 
 
 def _severity_rank(value: str) -> int:
@@ -1552,8 +1542,7 @@ class BatchPage(QWidget):
         self.sweep_mode = QComboBox()
         self.sweep_mode.addItems(["single", "combined"])
         self.parameter_form = BatchParameterForm(build_project_form_schema())
-        self.sim_export_json = QTextEdit()
-        self.sim_export_json.setPlaceholderText('Sim/export params JSON')
+        self.export_panel = BatchExportPanel()
 
         grid.addWidget(QLabel("Batch Name"), 0, 0)
         grid.addWidget(self.batch_name, 0, 1)
@@ -1561,8 +1550,8 @@ class BatchPage(QWidget):
         grid.addWidget(self.sweep_mode, 1, 1)
         grid.addWidget(QLabel("Variable Parameters"), 2, 0)
         grid.addWidget(self.parameter_form, 2, 1)
-        grid.addWidget(QLabel("Sim/Export Params"), 3, 0)
-        grid.addWidget(self.sim_export_json, 3, 1)
+        grid.addWidget(QLabel("Export Settings"), 3, 0)
+        grid.addWidget(self.export_panel, 3, 1)
         grid.setRowStretch(2, 1)
         root.addLayout(grid, 1)
         self.compat_panel = CompatibilityPanel("Batch Compatibility")
@@ -1584,7 +1573,7 @@ class BatchPage(QWidget):
         back_btn.clicked.connect(self.back_to_dashboard.emit)
 
         self.parameter_form.changed.connect(self._emit_draft_changed)
-        self.sim_export_json.textChanged.connect(self._emit_draft_changed)
+        self.export_panel.changed.connect(self._emit_draft_changed)
         self.sweep_mode.currentTextChanged.connect(lambda _: self._emit_draft_changed())
         self.batch_name.textChanged.connect(self._emit_draft_changed)
 
@@ -1603,7 +1592,7 @@ class BatchPage(QWidget):
         self.parameter_form.apply_compatibility(state)
         self.compat_panel.update_state(state)
         severity = _highest_issue_severity(self.compat_panel.issues())
-        for widget in (self.sim_export_json,):
+        for widget in (self.export_panel,):
             widget.setProperty("severity", severity)
             widget.style().unpolish(widget)
             widget.style().polish(widget)
@@ -1634,7 +1623,7 @@ class BatchPage(QWidget):
             "sweep_mode": self.sweep_mode.currentText().strip() or "single",
             "selected_params": selected,
             "sweeps": sweeps,
-            "sim_export_params": _parse_json_object(self.sim_export_json.toPlainText()),
+            "sim_export_params": self.export_panel.sim_export_params_payload(),
         }
         if include_name:
             payload["batch_name"] = self.batch_name.text().strip()
