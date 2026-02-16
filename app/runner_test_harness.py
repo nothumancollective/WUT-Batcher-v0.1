@@ -885,6 +885,14 @@ def _detect_unmanaged_tool_processes(tracker: HarnessProcessTracker) -> Dict[str
     }
 
 
+def _list_running_vacs_pids() -> List[int]:
+    rows: List[Dict[str, Any]] = []
+    rows.extend(_list_processes_by_image("VACSVIEWER_32.exe"))
+    rows.extend(_list_processes_by_image("VACSVIEWER.exe"))
+    pids = {int(row.get("pid", 0)) for row in rows if int(row.get("pid", 0) or 0) > 0}
+    return sorted(pids)
+
+
 @dataclass(frozen=True)
 class RunnerTestHarnessRun:
     test_run_id: str
@@ -1429,6 +1437,7 @@ def run_runner_test_harness(
 
                 exports_run_dir = workspace.exports_dir / test_run_id
                 exports_run_dir.mkdir(parents=True, exist_ok=True)
+                vacs_pids_before = set(_list_running_vacs_pids())
                 try:
                     vacs_summary = run_vacs_export_specs(
                         executable=str(vacs_executable),
@@ -1444,6 +1453,16 @@ def run_runner_test_harness(
                         log_dir=workspace.logs_dir / test_run_id / "vacs",
                     )
                 except Exception:
+                    vacs_pids_after = set(_list_running_vacs_pids())
+                    leaked_vacs_pids = sorted(pid for pid in vacs_pids_after if pid not in vacs_pids_before)
+                    for leaked_pid in leaked_vacs_pids:
+                        tracker.register(
+                            run_id=test_run_id,
+                            app="vacs",
+                            pid=leaked_pid,
+                            started_by_harness=True,
+                        )
+                        started_pids.append(leaked_pid)
                     _capture_ui_observation(
                         db=db,
                         test_run_id=test_run_id,
@@ -1452,6 +1471,18 @@ def run_runner_test_harness(
                         notes="vacs_stage_exception",
                         pid=None,
                         executable=str(vacs_executable) if vacs_executable else None,
+                    )
+                    db.add_test_run_step(
+                        test_run_id=test_run_id,
+                        step_name="vacs_export",
+                        status="failed",
+                        started_at=vacs_step_started,
+                        finished_at=_now_iso(),
+                        details={
+                            "leaked_vacs_pids": leaked_vacs_pids,
+                            "vacs_pids_before": sorted(vacs_pids_before),
+                            "vacs_pids_after": sorted(vacs_pids_after),
+                        },
                     )
                     raise
                 driver_info = dict(vacs_summary.get("driver", {}) or {})

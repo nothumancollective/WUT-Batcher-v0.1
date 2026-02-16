@@ -1613,3 +1613,28 @@ Validation executed:
   - started AKABAK manually, then executed `runner-test open-dialog-only`
   - run failed at preflight with clear note:
     - `unmanaged AKABAK/VACS process detected; close manual tool windows and retry`
+
+### Update 59 (VACS export filename contract + leak-safe exception cleanup)
+#### Done
+- Fixed VACS TXT export success criteria in `app/vacs_driver.py`:
+  - primary success signal is now exact `output_file` existence with non-zero size
+  - legacy recipe `file_pattern` remains as fallback acceptance path
+  - avoids false failures when harness uses deterministic filenames like `V001_spl.txt`.
+- Hardened VACS exception path in `run_runner_test_harness`:
+  - captures VACS PID snapshot before/after export stage
+  - on exception, newly spawned VACS PIDs are registered as harness-owned
+  - those PIDs are then guaranteed to be cleaned in `safe_clean`, preventing unmanaged carry-over into the next run.
+- Added failed `vacs_export` step telemetry on exception with leaked PID diagnostics.
+
+#### Why
+- Baseline run failed with:
+  - `Export file pattern not satisfied: ^Result_.*SPL.*\\.txt$`
+  even though export naming was intentionally case-driven.
+- A failed export before driver meta registration could leave a VACS process behind, which then blocked the next run via unmanaged-process guard.
+
+#### Validation
+- `python -m py_compile app/vacs_driver.py app/runner_test_harness.py`
+- `python -m pytest tests/test_vacs_export_pipeline.py tests/test_cli_vacs_tools.py tests/test_cli_runner_test.py tests/test_runner_test_harness.py -q`
+  - all passed.
+- Observed unmanaged legacy blocker still present from pre-fix run:
+  - `VACSVIEWER_32.exe` pid `996` (must be closed once manually before next clean baseline run).

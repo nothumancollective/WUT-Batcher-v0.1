@@ -233,18 +233,36 @@ class VacsDriver:
                 self._log(level="info", step=step, event="watchdog_handled", payload={"count": len(handled)})
 
         file_pattern = str(recipe.get("expected_output", {}).get("file_pattern", r".*\.txt$"))
+        output_exists = output_path.exists() and output_path.is_file()
+        output_size = int(output_path.stat().st_size) if output_exists else 0
         exported = [path for path in output_path.parent.glob("*") if re.search(file_pattern, path.name, re.IGNORECASE)]
-        self._require(bool(exported), f"Export file pattern not satisfied: {file_pattern}", step)
+        self._require(
+            bool(output_exists and output_size > 0) or bool(exported),
+            f"Export file pattern not satisfied: {file_pattern}",
+            step,
+        )
         self._log(
             level="info",
             step=step,
             event="export_ok",
-            payload={"recipe_id": recipe.get("recipe_id"), "output_file": str(output_path), "matches": len(exported)},
+            payload={
+                "recipe_id": recipe.get("recipe_id"),
+                "output_file": str(output_path),
+                "output_exists": bool(output_exists),
+                "output_size": int(output_size),
+                "pattern_matches": len(exported),
+            },
         )
         return VacsDriverResult(
             ok=True,
             status=self.state,
-            details={"recipe_id": recipe.get("recipe_id"), "output_file": str(output_path), "matches": len(exported)},
+            details={
+                "recipe_id": recipe.get("recipe_id"),
+                "output_file": str(output_path),
+                "output_exists": bool(output_exists),
+                "output_size": int(output_size),
+                "pattern_matches": len(exported),
+            },
         )
 
     def close(self) -> VacsDriverResult:
