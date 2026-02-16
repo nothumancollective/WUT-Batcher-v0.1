@@ -1471,3 +1471,43 @@ Validation executed:
 #### Caveats
 - Graceful VACS shutdown remained flaky in probe context; force-kill fallback used in diagnostics path.
 - Contour double-click did not create a separate modal in this session (possible in-place child state change only).
+
+### Update 54 (VACS export ultra-speed pass + COM registration check)
+#### Done
+- Implemented hot-path performance optimizations in `scripts/vacs_export_save_all.py`:
+  - fast top-level window scan helper (`win32` first) for dialog detection
+  - faster `Data Export` discovery polling
+  - faster `Save As` discovery polling
+  - fast confirm-drain path for modal confirms
+  - fast save path in `Save As` (`quick=True`) while keeping file postcondition checks
+  - reduced per-step sleep/poll overhead in the export loop
+- Kept strict non-visual control strategy:
+  - process-scoped windows, class/control signatures, win32 handle operations
+  - no pixel/OCR/coordinate decisions
+- Added and validated fast mode orchestration in script (`--mode fast`, `--mode auto` fallback behavior retained).
+
+#### COM / RegServer check
+- Executed: `VACSVIEWER_32.exe /RegServer` (outside repo, reversible action).
+- Verified outcome with direct interim test (`open via AKABAK`, `disallow-existing-vacs`):
+  - COM error persisted (`vacs_com_registration_missing`).
+- Environment note:
+  - session is non-admin (`is_admin=False`), so machine-wide COM registration may not be fully applied.
+
+#### Real VM evidence (selected runs)
+- Fast mode successful runs:
+  - `run_20260216_022159` (~53.35s, `ok=true`)
+  - `run_20260216_022728` (~47.52s, `ok=true`)
+  - `run_20260216_023342` (**21.77s**, `ok=true`, 4 exports)
+- Intermittent RPC failures (known flake class):
+  - `run_20260216_023121` (`AKABAK RPC server unavailable`)
+  - `run_20260216_023412` (`AKABAK RPC server unavailable`)
+  - `run_20260216_023510` (`AKABAK RPC server unavailable`)
+- Auto fallback confirmation:
+  - `run_20260216_023723` (`ok=true`, `fallback_used=true`, but significantly slower).
+
+#### Validation
+- `python -m py_compile scripts/vacs_export_save_all.py scripts/vacs_interim_reimport.py`
+- Multiple real executions:
+  - `python scripts/vacs_export_save_all.py --mode fast ...`
+  - `python scripts/vacs_export_save_all.py --mode auto ...`
+  - `python scripts/vacs_interim_reimport.py --open-vacs-via-akabak --disallow-existing-vacs ...`

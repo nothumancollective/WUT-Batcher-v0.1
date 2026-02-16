@@ -82,6 +82,17 @@ def _windows_for_pid(pid: int) -> List[Any]:
         return []
 
 
+def _top_windows_for_pid_fast(pid: int) -> List[Any]:
+    """Fast top-level window scan for hot paths."""
+    try:
+        return list(Desktop(backend="win32").windows(process=int(pid)))
+    except Exception:
+        try:
+            return list(Desktop(backend="uia").windows(process=int(pid)))
+        except Exception:
+            return []
+
+
 def _find_main(pid: int) -> Optional[Any]:
     for w in _windows_for_pid(pid):
         if _sig(w).get("class_name") == "TForm_DatMain":
@@ -163,6 +174,8 @@ def _run_interim_with_mode(args: argparse.Namespace, *, skip_open_via_akabak: bo
     ]
     if skip_open_via_akabak:
         cmd.append("--skip-open-vacs-via-akabak")
+    if bool(getattr(args, "interim_recover_rpc", False)):
+        cmd.append("--recover-rpc-by-restart")
     cp = subprocess.run(cmd, capture_output=True, text=True, check=False)
     out = str(cp.stdout or "").strip()
     payload: Dict[str, Any] = {"returncode": int(cp.returncode), "stderr": str(cp.stderr or "").strip(), "stdout_tail": out[-4000:]}
@@ -184,7 +197,7 @@ def _find_data_export(pid: int, main_handle: int, timeout_s: float) -> Optional[
                 return d
             if class_name == "TForm_Export":
                 return d
-        time.sleep(0.15)
+        time.sleep(0.03)
     return None
 
 
@@ -210,7 +223,23 @@ def _find_data_export_after_trigger(
                 if h > 0 and h not in known_handles:
                     return d
             fallback = exports[0]
-        time.sleep(0.08)
+        time.sleep(0.02)
+    return fallback
+
+
+def _find_data_export_after_trigger_fast(pid: int, timeout_s: float, known_handles: set[int]) -> Optional[Any]:
+    deadline = time.perf_counter() + float(timeout_s)
+    fallback: Optional[Any] = None
+    while time.perf_counter() < deadline:
+        for d in _top_windows_for_pid_fast(int(pid)):
+            s = _sig(d)
+            if str(s.get("class_name", "")) != "TForm_Export":
+                continue
+            h = int(s.get("handle", 0) or 0)
+            if h > 0 and h not in known_handles:
+                return d
+            fallback = d
+        time.sleep(0.01)
     return fallback
 
 
@@ -597,6 +626,21 @@ def _drain_aux_dialogs(vacs_pid: int, main_handle: int, keep_export_handle: int 
     return rows
 
 
+def _drain_aux_dialogs_fast(vacs_pid: int) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    for d in _top_windows_for_pid_fast(int(vacs_pid)):
+        s = _sig(d)
+        cls = str(s.get("class_name", ""))
+        if cls not in {"TForm_Confirm", "#32770"}:
+            continue
+        try:
+            action = _resolve_confirm_dialog(d)
+            rows.append({"dialog": s, "action": action})
+        except Exception as exc:
+            rows.append({"dialog": s, "action": {"status": "error", "error": repr(exc)}})
+    return rows
+
+
 def _close_all_export_dialogs(vacs_pid: int, main_handle: int, timeout_s: float = 3.0) -> List[Dict[str, Any]]:
     def _force_close_export_dialog(dialog: Any) -> Dict[str, Any]:
         sig = _sig(dialog)
@@ -747,11 +791,39 @@ def _find_save_as_dialog(target_pid: int, main_handle: int, timeout_s: float) ->
                     continue
                 if _has_filename_edit(d):
                     return d
-        time.sleep(0.08)
+        time.sleep(0.03)
     return None
 
 
-def _set_save_path(dialog: Any, full_target_path: Path) -> Dict[str, Any]:
+def _find_save_as_dialog_fast(target_pid: int, timeout_s: float) -> Optional[Any]:
+    def _has_filename_edit(dialog: Any) -> bool:
+        hwnd = int(_sig(dialog).get("handle", 0) or 0)
+        if hwnd <= 0:
+            return False
+        rows = _win32_children(hwnd)
+        if any(int(r.get("ctrl_id", -1)) == 1148 for r in rows):
+            return True
+        return bool([r for r in rows if str(r.get("class_name", "")).lower() == "edit"])
+
+    deadline = time.perf_counter() + float(timeout_s)
+    while time.perf_counter() < deadline:
+        for w in _top_windows_for_pid_fast(int(target_pid)):
+            s = _sig(w)
+            class_name = str(s.get("class_name", ""))
+            if class_name == "TForm_Confirm":
+                _resolve_confirm_dialog(w)
+                continue
+            if not re.search(r"(#32770|TForm_.*)", class_name, re.IGNORECASE):
+                continue
+            if class_name == "TForm_Export":
+                continue
+            if _has_filename_edit(w):
+                return w
+        time.sleep(0.01)
+    return None
+
+
+def _set_save_path(dialog: Any, full_target_path: Path, *, quick: bool = False) -> Dict[str, Any]:
     target = str(full_target_path)
     user32 = ctypes.windll.user32
     result: Dict[str, Any] = {"target": target}
@@ -815,6 +887,8 @@ def _set_save_path(dialog: Any, full_target_path: Path) -> Dict[str, Any]:
         result["save_action"] = {"method": "bm_click_id1", "handle": int(save_row.get("handle", 0) or 0)}
 
     for caption in ("Save", "Speichern", "&Save", "&Speichern"):
+        if quick:
+            break
         if save_clicked:
             break
         try:
@@ -1168,7 +1242,7 @@ def _close_child_and_context(child_handle: int, vacs_pid: int, main_handle: int)
     return result
 
 
-def run_once(args: argparse.Namespace) -> Dict[str, Any]:
+def run_once_safe(args: argparse.Namespace) -> Dict[str, Any]:
     export_root = Path(args.export_dir).resolve()
     export_root.mkdir(parents=True, exist_ok=True)
     run_id = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
@@ -1484,8 +1558,322 @@ def run_once(args: argparse.Namespace) -> Dict[str, Any]:
     return log
 
 
+def _copy_args_with(args: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
+    data = dict(vars(args))
+    data.update(overrides)
+    return argparse.Namespace(**data)
+
+
+def run_once_fast(args: argparse.Namespace) -> Dict[str, Any]:
+    export_root = Path(args.export_dir).resolve()
+    export_root.mkdir(parents=True, exist_ok=True)
+    run_id = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    out_dir = Path(args.output_dir).resolve() / f"run_{run_id}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    trace_file = out_dir / "trace.jsonl"
+    log: Dict[str, Any] = {
+        "mode": "fast",
+        "run_id": run_id,
+        "started_at": _now_iso(),
+        "export_root": str(export_root),
+        "steps": [],
+        "trace_file": str(trace_file),
+    }
+
+    def step(name: str, **payload: Any) -> None:
+        row = {"time": _now_iso(), "step": name, "payload": payload}
+        log["steps"].append(row)
+        try:
+            with trace_file.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+        except Exception:
+            pass
+
+    _kill_vacs()
+    step("kill_vacs_prestart")
+    proc = subprocess.Popen([str(args.vacs_exe)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    step("start_vacs_mode", mode="fast_prestart_vacs_primary", prestart=True, pid=int(proc.pid), vacs_exe=str(args.vacs_exe))
+    time.sleep(0.08)
+
+    fast_interim_args = _copy_args_with(
+        args,
+        interim_timeout_s=min(int(getattr(args, "interim_timeout_s", 90) or 90), 24),
+        interim_idle_timeout_s=min(int(getattr(args, "interim_idle_timeout_s", 20) or 20), 9),
+        interim_startup_timeout_s=min(int(getattr(args, "interim_startup_timeout_s", 25) or 25), 8),
+    )
+    relaxed_interim_args = _copy_args_with(
+        args,
+        interim_timeout_s=min(int(getattr(args, "interim_timeout_s", 90) or 90), 35),
+        interim_idle_timeout_s=min(int(getattr(args, "interim_idle_timeout_s", 20) or 20), 12),
+        interim_startup_timeout_s=min(int(getattr(args, "interim_startup_timeout_s", 25) or 25), 12),
+    )
+
+    # Fast primary: attach to existing prestarted VACS and trigger F7 reimport.
+    interim = _run_interim_with_mode(fast_interim_args, skip_open_via_akabak=True)
+    step("interim_reimport_primary", **interim)
+    parsed = dict(interim.get("parsed") or {})
+    if not bool(parsed.get("ok")):
+        # Fast accept path: if graphs are already present in VACS, skip second interim run.
+        vacs_pid_hint = int(parsed.get("vacs_pid", 0) or 0)
+        graph_count_hint = 0
+        if vacs_pid_hint > 0:
+            main_hint = _find_main(vacs_pid_hint)
+            if main_hint is not None:
+                try:
+                    graph_count_hint = len(_graph_children(main_hint))
+                except Exception:
+                    graph_count_hint = 0
+        if graph_count_hint > 0:
+            parsed["ok"] = True
+            parsed["accepted_existing_graphs"] = True
+            parsed["accepted_graph_count"] = int(graph_count_hint)
+            step(
+                "interim_reimport_primary_accepted_existing_graphs",
+                vacs_pid=vacs_pid_hint,
+                graph_count=graph_count_hint,
+                reason=str(parsed.get("error", "")),
+            )
+
+    if not bool(parsed.get("ok")):
+        # Fallback: same attach-only mode with relaxed idle/timeout budget.
+        interim = _run_interim_with_mode(relaxed_interim_args, skip_open_via_akabak=True)
+        step("interim_reimport_fallback", **interim)
+        parsed = dict(interim.get("parsed") or {})
+        if not bool(parsed.get("ok")):
+            log["ok"] = False
+            log["error"] = "interim_reimport_failed"
+            out_file = out_dir / "summary.json"
+            out_file.write_text(json.dumps(log, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+            log["summary_file"] = str(out_file)
+            return log
+
+    vacs_pid = int(parsed.get("vacs_pid", 0) or 0)
+    main = _find_main(vacs_pid)
+    if main is None:
+        log["ok"] = False
+        log["error"] = "vacs_main_missing"
+        out_file = out_dir / "summary.json"
+        out_file.write_text(json.dumps(log, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        log["summary_file"] = str(out_file)
+        return log
+    main_sig = _sig(main)
+    main_handle = int(main_sig.get("handle", 0) or 0)
+    step("vacs_main", signature=main_sig)
+
+    main = _find_main(vacs_pid)
+    graphs = _graph_children(main) if main is not None else []
+    graphs_sorted = sorted(graphs, key=lambda g: str(_sig(g).get("title", "")).lower())
+    step("graph_snapshot_initial", count=len(graphs_sorted), graphs=[_sig(g) for g in graphs_sorted])
+    if not graphs_sorted:
+        log["ok"] = False
+        log["error"] = "no_graph_windows"
+        out_file = out_dir / "summary.json"
+        out_file.write_text(json.dumps(log, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        log["summary_file"] = str(out_file)
+        return log
+
+    exported_files: List[Dict[str, Any]] = []
+    per_graph: List[Dict[str, Any]] = []
+    seen_export_dialog_handles: set[int] = set()
+    max_graphs = min(len(graphs_sorted), int(args.max_loops))
+
+    user32 = ctypes.windll.user32
+    mdi_handle = _find_mdi_client_handle(int(main_handle))
+
+    for loop_idx, target in enumerate(graphs_sorted[:max_graphs], start=1):
+        t_sig = _sig(target)
+        t_handle = int(t_sig.get("handle", 0) or 0)
+        row: Dict[str, Any] = {"loop": loop_idx, "target": t_sig}
+        step("graph_target_selected", loop=loop_idx, target=t_sig)
+
+        try:
+            if mdi_handle > 0 and t_handle > 0:
+                user32.SendMessageW(int(mdi_handle), WM_MDIACTIVATE, int(t_handle), 0)
+            user32.SetForegroundWindow(int(t_handle))
+            row["focus"] = "ok"
+        except Exception as exc:
+            row["focus"] = f"error:{exc!r}"
+        step("graph_target_focused", loop=loop_idx, handle=t_handle, focus=row["focus"])
+
+        trigger_attempts: List[Dict[str, Any]] = []
+        export_dialog = None
+        for method in ("main_wm_command_52", "target_f7_postmessage", "main_f7_postmessage"):
+            try:
+                if method == "main_wm_command_52":
+                    user32.SendMessageW(int(main_handle), WM_COMMAND, int(VACS_EXPORT_COMMAND_ID), 0)
+                elif method == "target_f7_postmessage":
+                    _send_f7(int(t_handle))
+                else:
+                    _send_f7(int(main_handle))
+                trigger_attempts.append({"method": method, "status": "ok"})
+                export_dialog = _find_data_export_after_trigger_fast(vacs_pid, timeout_s=0.28, known_handles=seen_export_dialog_handles)
+                if export_dialog is not None:
+                    trigger_attempts.append({"method": method, "postcheck": "data_export_visible"})
+                    break
+            except Exception as exc:
+                trigger_attempts.append({"method": method, "status": "error", "error": repr(exc)})
+        row["export_trigger"] = trigger_attempts
+        step("graph_export_triggered", loop=loop_idx, attempts=trigger_attempts)
+
+        if export_dialog is None:
+            export_dialog = _find_data_export_after_trigger_fast(vacs_pid, timeout_s=0.65, known_handles=seen_export_dialog_handles)
+        if export_dialog is None:
+            row["error"] = "data_export_missing"
+            row["wrong_windows"] = [_sig(d) for d in _dialog_candidates(vacs_pid, int(main_handle))]
+            step("graph_data_export_missing", loop=loop_idx, wrong_windows=row["wrong_windows"])
+            per_graph.append(row)
+            break
+
+        exp_sig = _sig(export_dialog)
+        exp_handle = int(exp_sig.get("handle", 0) or 0)
+        if exp_handle > 0:
+            seen_export_dialog_handles.add(exp_handle)
+        row["data_export_dialog"] = exp_sig
+        step("graph_data_export_found", loop=loop_idx, dialog=exp_sig)
+
+        save_ctrl = _find_save_bitbtn(export_dialog)
+        row["save_control"] = save_ctrl
+        if not save_ctrl:
+            row["error"] = "save_control_missing"
+            step("graph_save_control_missing", loop=loop_idx)
+            per_graph.append(row)
+            break
+
+        save_handle = int(save_ctrl.get("handle", 0) or 0)
+        save_attempts: List[Dict[str, Any]] = []
+        try:
+            w = Desktop(backend="win32").window(handle=int(save_handle))
+            w.click()
+            save_attempts.append({"method": "primary_save_handle_win32_click", "status": "ok", "button_handle": int(save_handle)})
+        except Exception as exc:
+            save_attempts.append({"method": "primary_save_handle_win32_click", "status": "error", "error": repr(exc), "button_handle": int(save_handle)})
+            try:
+                user32.SendMessageW(int(save_handle), BM_CLICK, 0, 0)
+                save_attempts.append({"method": "primary_save_handle_bm_click", "status": "ok", "button_handle": int(save_handle)})
+            except Exception as exc2:
+                save_attempts.append({"method": "primary_save_handle_bm_click", "status": "error", "error": repr(exc2), "button_handle": int(save_handle)})
+        row["save_click"] = {"handle": save_handle, "attempts": save_attempts}
+        step("graph_save_invoked", loop=loop_idx, save_handle=save_handle, attempts=save_attempts)
+
+        save_as = _find_save_as_dialog_fast(vacs_pid, timeout_s=min(float(args.save_as_timeout_s), 1.8))
+        if save_as is None:
+            row["error"] = "save_as_dialog_missing"
+            row["dialogs_after_save"] = [
+                {"signature": _sig(d), "message": _dialog_message_text(d), "buttons": _dialog_button_labels(d)}
+                for d in _dialog_candidates(vacs_pid, int(main_handle))
+            ]
+            step("graph_save_as_missing", loop=loop_idx, dialogs_after_save=row["dialogs_after_save"])
+            per_graph.append(row)
+            break
+
+        save_as_sig = _sig(save_as)
+        row["save_as_dialog"] = save_as_sig
+        step("graph_save_as_found", loop=loop_idx, dialog=save_as_sig)
+
+        safe_name = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(t_sig.get("title", "graph")).strip()).strip("_")
+        if not safe_name:
+            safe_name = f"graph_{loop_idx}"
+        target_file = _unique_export_path(export_root, run_id, loop_idx, safe_name)
+        set_path_res = _set_save_path(save_as, target_file, quick=True)
+        row["save_as_set_path"] = set_path_res
+        step("graph_save_as_path_set", loop=loop_idx, target=str(target_file), set_path=set_path_res)
+
+        deadline = time.perf_counter() + min(float(args.file_timeout_s), 1.2)
+        while time.perf_counter() < deadline and (not target_file.exists() or target_file.stat().st_size <= 0):
+            time.sleep(0.03)
+        file_ok = target_file.exists() and target_file.stat().st_size > 0
+        row["file_postcondition"] = {
+            "path": str(target_file),
+            "exists": bool(target_file.exists()),
+            "bytes": int(target_file.stat().st_size) if target_file.exists() else 0,
+            "ok": bool(file_ok),
+        }
+        if not file_ok:
+            row["error"] = "export_file_missing_or_empty"
+            step("graph_export_file_failed", loop=loop_idx, file_postcondition=row["file_postcondition"])
+            per_graph.append(row)
+            break
+        exported_files.append({"graph": t_sig, "path": str(target_file), "bytes": int(target_file.stat().st_size)})
+        step("graph_export_file_ok", loop=loop_idx, file=row["file_postcondition"])
+
+        # Fast path: close export dialog only; do not close graph child per iteration.
+        try:
+            if exp_handle > 0:
+                user32.PostMessageW(int(exp_handle), WM_CLOSE, 0, 0)
+                closed = False
+                t0 = time.perf_counter()
+                while time.perf_counter() - t0 < 0.25:
+                    if not _is_window_alive(exp_handle):
+                        closed = True
+                        break
+                    time.sleep(0.02)
+                if not closed:
+                    row["close_data_export"] = {
+                        "status": "partial",
+                        "method": "wm_close_post_timeout",
+                        "handle": exp_handle,
+                    }
+                    try:
+                        row["close_data_export_fallback"] = _close_dialog(export_dialog)
+                    except Exception as exc:
+                        row["close_data_export_fallback"] = {"status": "error", "error": repr(exc)}
+                else:
+                    row["close_data_export"] = {"status": "ok", "method": "wm_close_post", "handle": exp_handle}
+            else:
+                row["close_data_export"] = _close_dialog(export_dialog)
+        except Exception as exc:
+            row["close_data_export"] = {"status": "error", "error": repr(exc)}
+        step("graph_data_export_closed", loop=loop_idx, close=row["close_data_export"])
+
+        confirm_drain = _drain_aux_dialogs_fast(vacs_pid)
+        if confirm_drain:
+            row["confirm_drain"] = confirm_drain
+            step("graph_confirm_drained", loop=loop_idx, count=len(confirm_drain), rows=confirm_drain)
+
+        per_graph.append(row)
+
+    main_end = _find_main(vacs_pid)
+    remaining = [_sig(g) for g in _graph_children(main_end)] if main_end is not None else []
+    step("remaining_graphs", count=len(remaining), graphs=remaining)
+    log["per_graph"] = per_graph
+    log["exported_files"] = exported_files
+    log["remaining_graphs"] = remaining
+    log["ok"] = bool(len(exported_files) >= max_graphs and max_graphs > 0)
+
+    _kill_vacs()
+    step("kill_vacs_final")
+    log["finished_at"] = _now_iso()
+    out_file = out_dir / "summary.json"
+    out_file.write_text(json.dumps(log, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    log["summary_file"] = str(out_file)
+    return log
+
+
+def run_once(args: argparse.Namespace) -> Dict[str, Any]:
+    mode = str(getattr(args, "mode", "auto") or "auto").lower()
+    if mode == "safe":
+        return run_once_safe(args)
+    if mode == "fast":
+        return run_once_fast(args)
+
+    fast = run_once_fast(args)
+    if bool(fast.get("ok")):
+        fast["fallback_used"] = False
+        return fast
+    safe = run_once_safe(args)
+    safe["fallback_used"] = True
+    safe["fast_failure"] = {
+        "error": fast.get("error"),
+        "summary_file": fast.get("summary_file"),
+        "run_id": fast.get("run_id"),
+    }
+    return safe
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Export and save all VACS graph child windows.")
+    p.add_argument("--mode", choices=("auto", "fast", "safe"), default="auto", help="auto=fast-first then safe fallback")
     p.add_argument("--akabak-exe", required=True)
     p.add_argument("--vacs-exe", required=True)
     p.add_argument("--export-dir", required=True, help="Target folder under C:\\Horns\\... for this version")
