@@ -165,6 +165,82 @@ class AthDriverAssetsTests(unittest.TestCase):
             self.assertIn("Driver 'D1' Def='Drv1' Node=2=0=10=20 DrvGroup=1001", patched_driver)
             self.assertIn('Def_Driving "Voltage source" Value=1V IsRms', patched_driver)
 
+    def test_repair_post_ath_le_binding_mut_electrical_profile_mutates_expected_parameters(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            ath_root = root / "ATH"
+            driver_dir = ath_root / "lib" / "drivers"
+            driver_dir.mkdir(parents=True, exist_ok=True)
+            (driver_dir / "generic25.txt").write_text(
+                "Def_Driver 'Drv1'\n"
+                "  Re=6.3ohm\n"
+                "  Le=0.03mH\n"
+                "  ExpoRe=1.0\n"
+                "  ExpoLe=1.0\n"
+                "\n"
+                "System 'S1'\n"
+                "  Driver 'D1' Def='Drv1' Node=1=0=10=20\n",
+                encoding="utf-8",
+            )
+            ath_exe = ath_root / "ath.exe"
+            ath_exe.write_text("stub\n", encoding="utf-8")
+            abec_dir = root / "export" / "ABEC_FreeStanding"
+            abec_dir.mkdir(parents=True, exist_ok=True)
+            abec = abec_dir / "Project.abec"
+            abec.write_text("[LEScript]\nScriptname_LEScript=\n", encoding="utf-8")
+
+            result = repair_post_ath_le_binding(
+                abec_path=abec,
+                ath_executable=ath_exe,
+                le_patch_profile="mut_electrical",
+            )
+            self.assertTrue(result.ok)
+            self.assertEqual(result.driver_patch.profile, "mut_electrical")
+            self.assertTrue(result.driver_patch.changed)
+            patched_driver = Path(result.script_path).read_text(encoding="utf-8")
+            self.assertIn("Re=12.0ohm", patched_driver)
+            self.assertIn("Le=0.10mH", patched_driver)
+            self.assertIn("ExpoRe=1.4", patched_driver)
+            self.assertIn("ExpoLe=0.10", patched_driver)
+
+    def test_repair_post_ath_le_binding_mut_motor_profile_mutates_expected_parameters(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            ath_root = root / "ATH"
+            driver_dir = ath_root / "lib" / "drivers"
+            driver_dir.mkdir(parents=True, exist_ok=True)
+            (driver_dir / "generic25.txt").write_text(
+                "Def_Driver 'Drv1'\n"
+                "  Bl=12.5N/A\n"
+                "  Mms=60g\n"
+                "  Cms=0.20e-3m/N\n"
+                "  Rms=1.2Ns/m\n"
+                "\n"
+                "System 'S1'\n"
+                "  Driver 'D1' Def='Drv1' Node=1=0=10=20\n",
+                encoding="utf-8",
+            )
+            ath_exe = ath_root / "ath.exe"
+            ath_exe.write_text("stub\n", encoding="utf-8")
+            abec_dir = root / "export" / "ABEC_FreeStanding"
+            abec_dir.mkdir(parents=True, exist_ok=True)
+            abec = abec_dir / "Project.abec"
+            abec.write_text("[LEScript]\nScriptname_LEScript=\n", encoding="utf-8")
+
+            result = repair_post_ath_le_binding(
+                abec_path=abec,
+                ath_executable=ath_exe,
+                le_patch_profile="mut_motor",
+            )
+            self.assertTrue(result.ok)
+            self.assertEqual(result.driver_patch.profile, "mut_motor")
+            self.assertTrue(result.driver_patch.changed)
+            patched_driver = Path(result.script_path).read_text(encoding="utf-8")
+            self.assertIn("Bl=8.0N/A", patched_driver)
+            self.assertIn("Mms=120.0g", patched_driver)
+            self.assertIn("Cms=0.050e-3m/N", patched_driver)
+            self.assertIn("Rms=7.0Ns/m", patched_driver)
+
 
 if __name__ == "__main__":
     unittest.main()

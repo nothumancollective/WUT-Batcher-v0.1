@@ -13,6 +13,7 @@ from app.runner_test_harness import (
     _patch_cfg_le_profile,
     _patch_observation_radimp_profile,
     _parse_abec_mesh_requirements,
+    run_runner_test_le_proof_matrix,
     run_runner_test_radimp_3scope_matrix,
     run_runner_test_radimp_driving_matrix,
     run_runner_test_harness,
@@ -396,6 +397,30 @@ class RunnerTestHarnessTests(unittest.TestCase):
             self.assertEqual(len(summary["results"]), 4)
             self.assertTrue(summary["randomize_order"])
             self.assertEqual(summary["random_seed"], 1337)
+
+    def test_le_proof_matrix_dry_run_executes_profiles(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            cases_root = root / "cases"
+            workspace_root = root / "workspace"
+            _write_case(cases_root / "smoke_fast.json")
+
+            summary = run_runner_test_le_proof_matrix(
+                case_id="smoke_fast",
+                profiles=["control", "mut_electrical"],
+                repeats_per_profile=2,
+                keep_exports=True,
+                test_profile="fast",
+                workspace_root=workspace_root,
+                cases_root=cases_root,
+                random_seed=20260216,
+                dry_run=True,
+            )
+            self.assertTrue(summary["ok"])
+            self.assertEqual(summary["phase"], "phase_le_proof_matrix")
+            self.assertEqual(summary["le_integration_diagnosis"], "le_active_inconclusive")
+            self.assertEqual(len(summary["results"]), 4)
+            self.assertEqual(summary["random_seed"], 20260216)
 
     def test_parse_abec_mesh_requirements_detects_missing_mesh_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

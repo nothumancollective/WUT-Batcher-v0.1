@@ -269,6 +269,48 @@ class CliRunnerTestTests(unittest.TestCase):
             self.assertEqual(payload["random_seed"], 20260216)
             self.assertTrue(payload["strict_nonzero_radimp"])
 
+    def test_runner_test_le_proof_matrix_command_executes_skeleton(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            cases_root = root / "cases"
+            workspace_root = root / "workspace"
+            _write_case(cases_root / "smoke_fast.json")
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "app",
+                    "runner-test",
+                    "le-proof-matrix",
+                    "--case",
+                    "smoke_fast",
+                    "--profiles",
+                    "control,mut_electrical",
+                    "--repeats-per-profile",
+                    "1",
+                    "--matrix-seed",
+                    "20260216",
+                    "--cases-root",
+                    str(cases_root),
+                    "--workspace-root",
+                    str(workspace_root),
+                    "--dry-run",
+                ],
+                env=self._isolated_env(tmp_dir),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, msg=result.stdout + "\n" + result.stderr)
+            payload = json.loads(result.stdout)
+            self.assertTrue(payload["ok"])
+            self.assertEqual(payload["phase"], "phase_le_proof_matrix")
+            self.assertEqual(len(payload["results"]), 2)
+            self.assertEqual(payload["random_seed"], 20260216)
+            self.assertFalse(payload["strict_le_proof"])
+
 
 if __name__ == "__main__":
     unittest.main()
