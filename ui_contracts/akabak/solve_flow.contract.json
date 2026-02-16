@@ -114,14 +114,15 @@
       "action_sequence": [
         "invoke Start Importing button",
         "wait until Apply button is visible/enabled",
-        "invoke Apply button"
+        "invoke Apply button",
+        "invoke Close button on interpreter"
       ],
-      "postcondition": "interpreter_closed OR start_importing_disabled",
+      "postcondition": "interpreter_closed",
       "modal_handling": "known interpreter modal dialogs are captured and classified; unknown modals fail fast"
     },
     {
       "step": "run_solve",
-      "trigger": "F5",
+      "trigger": "F4",
       "completion_signal": "solve_progress_window_disappeared"
     }
   ]

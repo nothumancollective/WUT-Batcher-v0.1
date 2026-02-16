@@ -60,6 +60,13 @@ class ModalDialogWatchdog:
                     action="ok",
                     notes="Known confirmation prompts can be accepted.",
                 ),
+                DialogRule(
+                    rule_id="edge_length_not_defined_continue",
+                    title_regex=r"(warning|confirm|akabak|question|hinweis|achtung)",
+                    message_regex=r"(edge\s*length|kantenl(ä|ae)nge|not\s*defined|undefined)",
+                    action="ok",
+                    notes="Edge-length/mesh warning should be acknowledged with Yes/OK in harness runs.",
+                ),
             ]
         )
 
@@ -142,7 +149,7 @@ class ModalDialogWatchdog:
     def _click_action(self, *, window, action: str) -> bool:
         normalized = str(action).lower().strip()
         button_titles = {
-            "ok": ("OK", "Ok", "Yes", "Continue"),
+            "ok": ("OK", "Ok", "Yes", "Ja", "Continue", "Fortfahren"),
             "cancel": ("Cancel", "No"),
             "close": ("Close", "Cancel", "No"),
         }
