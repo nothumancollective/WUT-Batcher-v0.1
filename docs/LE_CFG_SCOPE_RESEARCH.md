@@ -33,8 +33,18 @@ Check whether missing/incorrect cfg-level LE parameters could explain persistent
 - Shows reference topology with `Def_Driving` + resistor path as a known pattern.
 
 ## Internet Research
-- Additional web search did not yield higher-confidence primary material than the local AKABAK/ATH manuals for this specific LE+ABEC path.
-- Decision: rely on local primary docs and reproducible harness evidence for this pass.
+- Official RD Team download/Docs index confirms canonical distribution path for AKABAK/VACS docs and binaries:
+  - https://www.randteam.de/Download/download.html
+- AKABAK ReadTheDocs changelog references official AKABAK 3.2 documentation download anchor (indirect confirmation):
+  - https://akabak.readthedocs.io/en/latest/changelog/
+- Observed limitation:
+  - the downloaded/local manuals remain the highest-confidence source for LE/Driving syntax details in this pass; web sources are primarily distribution/index pointers, not deeper syntax references.
+- Decision: keep local primary docs (`AKABAK.pdf`, ATH User Guide) as normative source for patch semantics; keep web links as provenance for package/doc origin.
+
+## CHM Help Notes
+- Installed CHM found at:
+  - `C:\Program Files (x86)\RDTeam\AKABAK\AKABAK.chm`
+- CLI decompile attempt in this VM session did not yield extractable files via `hh.exe -decompile`; therefore rule extraction continued from `AKABAK.pdf` + ATH guide for reproducible text evidence.
 
 ## Repo/Renderer Constraint Check
 - `app/constants.py` + `app/cfg_renderer.py` enforce mandatory source block defaults for normal rendering:

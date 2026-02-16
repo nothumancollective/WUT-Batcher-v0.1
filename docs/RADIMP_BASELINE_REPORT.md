@@ -69,3 +69,18 @@ Result:
 ## Remaining Open Question (separate from runner robustness)
 - If non-trivial (non-zero) RadImp values are required for downstream analysis, the model/export definition must switch to a non-normalized RadImp target or a different observation/export configuration.
 - This is a modeling/ATH-observation question, not an AKABAK/VACS UI automation instability in the current baseline.
+
+## Strict Non-Zero Gate Results (2026-02-16)
+- Added strict gate flag:
+  - `--strict-nonzero-radimp`
+- Latest strict baseline run:
+  - `4747aaa6-f41a-4566-9912-74edd5391535` -> `strict_nonzero_radimp=failed`
+  - `radimp_diagnosis.classification=radimp_normalized_zero_baseline`
+- Strict matrix campaign (3 scopes, randomized order) produced:
+  - `radimp_normalized_zero_baseline`: 10
+  - `radimp_all_zero_unclassified`: 9
+  - `wrong_graph_exported`: 1
+  - `radimp_nonzero`: 0
+
+Conclusion of strict campaign:
+- No tested combination achieved a reproducible non-zero RadImp signal in this pass.

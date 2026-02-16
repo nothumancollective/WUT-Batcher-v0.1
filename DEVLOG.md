@@ -1864,3 +1864,74 @@ Validation executed:
 - Updated: `docs/LE_CFG_SCOPE_RESEARCH.md`
 - Updated: `docs/UI_AUTOMATION_CONTRACTS.md`
 - Added: `docs/RADIMP_3SCOPE_RUNBOOK.md`
+
+### Update 66 (Strict non-zero RadImp gate + bias-safe matrix + stability reruns)
+#### Done
+- Harness diagnostics/classification hardening in `app/runner_test_harness.py`:
+  - Added strict target gate flag: `strict_nonzero_radimp`
+  - Added/normalized diagnosis classes:
+    - `sources_muted_dialog_seen`
+    - `solve_not_completed_or_no_results`
+    - `wrong_graph_exported`
+    - `radimp_normalized_zero_baseline`
+    - `radimp_all_zero_unclassified`
+    - `radimp_nonzero`
+  - Added export-stage fallback diagnosis persistence for `VacsExportPipelineError` (wrong graph mapping now persists as `radimp_diagnosis` instead of generic failure only).
+  - Added manual-interference preflight abort classification (`HarnessManualInterferenceError` -> run status `aborted`).
+- Matrix bias controls:
+  - `run_runner_test_radimp_3scope_matrix` now supports randomized combo order with deterministic seed.
+  - CLI wiring added:
+    - `--strict-nonzero-radimp`
+    - `--no-randomize-order`
+    - `--matrix-seed`
+- Test updates:
+  - Added/updated harness and CLI tests for new diagnosis classes, strict gate, and matrix seed metadata.
+  - Target suites green.
+
+#### Validation (tests)
+- `python -m pytest tests/test_runner_test_harness.py tests/test_cli_runner_test.py tests/test_vacs_export_pipeline.py -q`
+  - `29 passed`
+
+#### Validation (real VM runs)
+- Strict baseline run (expected fail if RadImp remains zero):
+  - `4747aaa6-f41a-4566-9912-74edd5391535`
+  - `strict_nonzero_radimp=failed`
+  - `radimp_diagnosis=radimp_normalized_zero_baseline`
+- Strict force-absolute run with deterministic mapping failure classification:
+  - `31bd2c95-29a0-49f4-ab3c-63ea932992d5`
+  - `radimp_diagnosis=wrong_graph_exported`
+  - evidence persisted (`available_graphs`, `Data_LevelType=SoundPressure`)
+- Bias-safe strict 3-scope campaign (`--matrix-seed 20260216`):
+  - strict rows: `20`
+  - class counts:
+    - `radimp_normalized_zero_baseline`: `10`
+    - `radimp_all_zero_unclassified`: `9`
+    - `wrong_graph_exported`: `1`
+    - `radimp_nonzero`: `0`
+- Stability re-check (non-strict baseline):
+  - repeats=3 green:
+    - `9cfd8364-12b1-405a-9576-d64d8a9ed802`
+    - `9e44fb2d-9bc2-4bce-b880-9352927361f3`
+    - `6dfdccd0-6b0c-4ba3-b55d-39eb00f3951e`
+  - repeats=10 green:
+    - `5fa745e8-8885-4ec2-a421-68b6966081de`
+    - `8b04fab7-5161-4388-8c34-b1e6c7b69809`
+    - `3756bd6d-7669-4cdd-aa93-b27ae0b518c5`
+    - `a2f9667d-d852-432e-9a43-c1afeb5d5f31`
+    - `5c07e3de-3e20-4d4c-bb27-4b75518bce29`
+    - `0a96afd2-bcd2-4e65-a45e-2ea4b9690acf`
+    - `783ffd0d-2df6-4332-bd97-3877b2ad0b68`
+    - `5a915552-d2c4-4b1b-be95-6c6e5ea1ccfa`
+    - `f2304c75-44c0-43db-ae61-5e16df7c50f3`
+    - `8be59014-353d-4ca6-926f-aca7f17f136b`
+
+#### Docs
+- Updated: `docs/RUNNER_RECOVERY_NOTE.md`
+- Updated: `docs/TOOLCHAIN_BASELINE.md`
+- Updated: `docs/LE_CFG_SCOPE_RESEARCH.md`
+- Updated: `docs/LE_RULES_EXTRACT.md`
+- Updated: `docs/RADIMP_3SCOPE_RUNBOOK.md`
+- Updated: `docs/RADIMP_3SCOPE_MATRIX_REPORT.md`
+- Updated: `docs/RADIMP_BASELINE_REPORT.md`
+- Added: `docs/RUNNER_E2E_GREEN.md`
+- Added: `docs/LE_SOLUTION.md`

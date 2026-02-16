@@ -6,6 +6,12 @@ Date: 2026-02-16
 - `C:\Users\maximilianheinze\Documents\Downloads\AKABAK.pdf`
 - `C:\Users\maximilianheinze\Desktop\Ath-4.8.2-UserGuide-2.pdf`
 
+## Online Source Anchors (distribution/provenance)
+- RD Team official download index (AKABAK/VACS docs + packages):  
+  `https://www.randteam.de/Download/download.html`
+- AKABAK ReadTheDocs changelog (contains official doc/package pointer context):  
+  `https://akabak.readthedocs.io/en/latest/changelog/`
+
 ## Extracted Rules (with page anchors)
 1. LE/BEM coupling uses `DrvGroup` on relevant components.
 - AKABAK.pdf p.283-284: Transducer and RadImp connected to BEM should specify `DrvGroup`.
@@ -43,3 +49,6 @@ Date: 2026-02-16
 - Driving experiments (`DrvType/Value` matrix):
   - `Acceleration` (`1.0`, `2.83`, `10.0`), `Velocity=1.0`, `Displacement=1.0` all ran successfully.
   - RadImp remained normalized/all-zero across the full matrix.
+- Strict non-zero gate (`--strict-nonzero-radimp`) produced no passing run in this pass:
+  - classes observed: `radimp_normalized_zero_baseline`, `radimp_all_zero_unclassified`, `wrong_graph_exported`
+  - observed `radimp_nonzero` count: `0`

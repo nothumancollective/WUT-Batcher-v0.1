@@ -33,3 +33,13 @@
 - No deletion outside `runner_test_workspace` performed.
 - No tool installation directories modified.
 - No repo files were deleted during recovery.
+
+## Re-Validation (2026-02-16 UTC)
+
+- DB check confirms run remains correctly classified:
+  - `test_run_id=f5688841-63bb-40dd-85e0-d2b78d97ba2e`
+  - `status=aborted`
+  - `notes` contains `manual_interrupt_user_error`
+- Process ledger check:
+  - `runner_test_workspace/logs/process_ledger.json` currently empty (`[]`).
+  - No lingering harness-owned AKABAK/VACS process detected at recovery checkpoint.

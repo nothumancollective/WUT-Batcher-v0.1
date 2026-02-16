@@ -129,3 +129,41 @@ python -m app runner-test radimp-3scope-matrix \
 Run IDs:
 - le_voltage_10/default/default: `56cb7f3b-ae35-4c5a-aef4-f18c7fa62687`, `9c9ef072-47c8-4319-989a-284f29dc2292`
 - le_voltage_10/force_absolute/default: `feb18fc9-703c-4cbf-a026-ac51834ef678`, `dbec610d-e2f7-44ac-ae01-e83f837913ad`
+
+## Strict Non-Zero Campaign (2026-02-16, randomized 3-scope)
+
+### Command E
+```powershell
+python -m app runner-test radimp-3scope-matrix \
+  --case test_cfg_baseline \
+  --cfg-profiles "default,le_voltage_2p83,le_voltage_10" \
+  --radimp-profiles "default,drop_radimptype" \
+  --driving-profiles "default,accel_2p83,velocity_1" \
+  --repeats-per-combo 1 \
+  --keep-exports false \
+  --test-profile fast \
+  --le-repair-profile driver_drvgroup_def_driving_resistor \
+  --strict-nonzero-radimp \
+  --matrix-seed 20260216 \
+  --ath-exe "C:\Tools\ATH\ath.exe" \
+  --akabak-exe "C:\Program Files (x86)\RDTeam\AKABAK\AKABAK.exe" \
+  --vacs-exe "C:\Program Files (x86)\RDTeam\VACSVIEWER_32\VACSVIEWER_32.exe"
+```
+
+### Result
+- Matrix summary: `ok=false` (expected under strict gate).
+- Strict-gate classification counts (`strict_nonzero_radimp`):
+  - `radimp_normalized_zero_baseline`: `10`
+  - `radimp_all_zero_unclassified`: `9`
+  - `wrong_graph_exported`: `1`
+- `radimp_nonzero`: `0` (no passing non-zero RadImp run in this campaign).
+
+Representative strict-run IDs:
+- `4747aaa6-f41a-4566-9912-74edd5391535` (default/default/default, strict fail)
+- `87443d0a-678a-44b8-9e99-e8883c31b11a` (default/drop_radimptype/default, strict fail)
+- `31bd2c95-29a0-49f4-ab3c-63ea932992d5` (force_absolute single-run follow-up; `wrong_graph_exported`)
+
+### Interpretation
+- UIA automation path is stable and deterministic under strict gating.
+- Non-zero RadImp was not reached in tested cfg/observation/driving combinations.
+- Remaining work is model/observation semantics, not runner-window control instability.
