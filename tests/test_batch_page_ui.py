@@ -23,7 +23,13 @@ class BatchPageUiTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.app = QApplication.instance() or QApplication([])
 
-    def _compat_state(self, *, selected_params: dict | None = None, sweeps: dict | None = None) -> dict:
+    def _compat_state(
+        self,
+        *,
+        selected_params: dict | None = None,
+        sweeps: dict | None = None,
+        ui_hint_trigger_key: str | None = None,
+    ) -> dict:
         service = CompatibilityService()
         return service.evaluate_batch_definition(
             {
@@ -35,6 +41,7 @@ class BatchPageUiTests(unittest.TestCase):
             selected_params=dict(selected_params or {}),
             sweeps=dict(sweeps or {}),
             sweep_mode="single",
+            ui_hint_trigger_key=ui_hint_trigger_key,
         )
 
     def test_sweep_toggle_disabled_when_field_not_sweepable(self) -> None:
@@ -163,21 +170,27 @@ class BatchPageUiTests(unittest.TestCase):
         if row is None:
             self.skipTest("Throat.Profile not available.")
 
-        applied = False
-        for mode in (1, 2, 3):
-            if hasattr(row.base_editor, "set_value"):
-                row.base_editor.set_value(mode)  # type: ignore[attr-defined]
-            payload = page._payload(include_name=False)
-            next_state = self._compat_state(
-                selected_params=dict(payload.get("selected_params", {}) or {}),
-                sweeps=dict(payload.get("sweeps", {}) or {}),
-            )
-            page.apply_compatibility(next_state)
-            if row.helper_label.isVisible():
-                applied = True
-                break
-        if not applied:
-            self.skipTest("No disclosure hint scenario produced by current compatibility rules.")
+        if not hasattr(row.base_editor, "set_value"):
+            self.skipTest("Throat.Profile editor does not expose set_value.")
+        row.base_editor.set_value(1)  # type: ignore[attr-defined]
+        payload = page._payload(include_name=False)
+        state_a = self._compat_state(
+            selected_params=dict(payload.get("selected_params", {}) or {}),
+            sweeps=dict(payload.get("sweeps", {}) or {}),
+            ui_hint_trigger_key="Throat.Profile",
+        )
+        page.apply_compatibility(state_a)
+
+        row.base_editor.set_value(2)  # type: ignore[attr-defined]
+        payload = page._payload(include_name=False)
+        state_b = self._compat_state(
+            selected_params=dict(payload.get("selected_params", {}) or {}),
+            sweeps=dict(payload.get("sweeps", {}) or {}),
+            ui_hint_trigger_key="Throat.Profile",
+        )
+        page.apply_compatibility(state_b)
+        self.assertFalse(row.helper_label.isHidden())
+        self.assertTrue(bool(row.helper_label.text().strip()))
 
         value_widget = row.base_editor.value_widget()  # type: ignore[attr-defined]
         segment = getattr(value_widget, "segment", None)
@@ -212,7 +225,9 @@ class BatchPageUiTests(unittest.TestCase):
         self.assertAlmostEqual(widths[0], widths[1], delta=3)
         self.assertAlmostEqual(widths[1], widths[2], delta=3)
 
-        expected_right = max((int(page.width() - 40) - int(page._body_layout.spacing())) // 3, 320)
+        margins = page._root_layout.contentsMargins()
+        available = int(page.width() - margins.left() - margins.right())
+        expected_right = max((available - int(page._body_layout.spacing())) // 3, 1)
         self.assertAlmostEqual(page._right_panel.width(), expected_right, delta=5)
 
     def test_sweep_button_locks_base_editor_when_active(self) -> None:

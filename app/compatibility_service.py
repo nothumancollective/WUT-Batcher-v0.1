@@ -136,9 +136,7 @@ class CompatibilityService:
             "missing",
             "not defined",
             "must be set",
-            "explicitly set",
             "incomplete",
-            "empty",
             "erforderlich",
         )
         return any(marker in normalized for marker in markers)
@@ -160,6 +158,18 @@ class CompatibilityService:
             field_key = str(issue.field_key or "").strip()
             signatures.add(f"{issue.rule_id}|{field_key}|{issue.message}")
         return signatures
+
+    def _actionable_fatal_issues_for_selection(
+        self,
+        *,
+        constraints_payload: Dict[str, Any],
+        runner_mode: str,
+        selected_params: Dict[str, Any],
+    ) -> List[CompatibilityIssue]:
+        preview = self._build_preview_constraints(constraints_payload, selected_params)
+        report = validity_report(preview, runner_mode=runner_mode, bundle=self.bundle)
+        issues = self._sort_and_dedup_issues([self._from_validity_issue(item) for item in report.get("issues", [])])
+        return [issue for issue in issues if self._is_actionable_fatal(issue)]
 
     @staticmethod
     def _numeric_probe(minimum: Any, maximum: Any, *, fallback: float = 1.0) -> float:
@@ -255,7 +265,6 @@ class CompatibilityService:
         selected_params: Dict[str, Any],
         visible: Sequence[str],
         locked: Sequence[str],
-        baseline_actionable_fatals: set[str],
         ui_hint_trigger_key: Optional[str],
     ) -> tuple[List[str], Dict[str, Dict[str, Any]]]:
         visible_set = {str(key) for key in list(visible or []) if str(key).strip()}
@@ -266,19 +275,28 @@ class CompatibilityService:
         for key in sorted(visible_set):
             if key in locked_set:
                 continue
-            if selected_params.get(key) is not None:
-                continue
-            probe_value = self._probe_value_for_key(key, selected_params)
+            base_selected = dict(selected_params or {})
+            current_value = base_selected.pop(key, None)
+            without_issues = self._actionable_fatal_issues_for_selection(
+                constraints_payload=constraints_payload,
+                runner_mode=runner_mode,
+                selected_params=base_selected,
+            )
+            actionable_without = self._actionable_fatal_signatures(without_issues)
+
+            probe_value = current_value if current_value is not None else self._probe_value_for_key(key, base_selected)
             if probe_value is None:
                 continue
 
-            hypothetical = dict(selected_params or {})
+            hypothetical = dict(base_selected)
             hypothetical[key] = probe_value
-            preview = self._build_preview_constraints(constraints_payload, hypothetical)
-            report = validity_report(preview, runner_mode=runner_mode, bundle=self.bundle)
-            hypo_issues = self._sort_and_dedup_issues([self._from_validity_issue(item) for item in report.get("issues", [])])
+            hypo_issues = self._actionable_fatal_issues_for_selection(
+                constraints_payload=constraints_payload,
+                runner_mode=runner_mode,
+                selected_params=hypothetical,
+            )
             actionable_hypo = self._actionable_fatal_signatures(hypo_issues)
-            new_actionable = sorted(actionable_hypo - baseline_actionable_fatals)
+            new_actionable = sorted(actionable_hypo - actionable_without)
             if not new_actionable:
                 continue
 
@@ -464,14 +482,12 @@ class CompatibilityService:
         report = validity_report(preview_constraints, runner_mode=runner_mode, bundle=self.bundle)
         validity_issues = self._sort_and_dedup_issues([self._from_validity_issue(item) for item in report.get("issues", [])])
         issues.extend(validity_issues)
-        baseline_actionable_fatals = self._actionable_fatal_signatures(validity_issues)
         prevented_keys, prevented_reasons = self._build_prevented_keys(
             constraints_payload=constraints_payload,
             runner_mode=runner_mode,
             selected_params=dict(selected_params or {}),
             visible=visible,
             locked=locked,
-            baseline_actionable_fatals=baseline_actionable_fatals,
             ui_hint_trigger_key=ui_hint_trigger_key,
         )
 

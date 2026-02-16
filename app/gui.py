@@ -1531,6 +1531,7 @@ class BatchPage(QWidget):
         root = QVBoxLayout(self)
         root.setContentsMargins(20, 12, 20, 14)
         root.setSpacing(10)
+        self._root_layout = root
 
         title = QLabel("BATCH")
         title.setObjectName("PageTitle")
@@ -1677,6 +1678,7 @@ class BatchPage(QWidget):
         self.batch_name.textChanged.connect(self._emit_draft_changed)
 
         self._summary_strip_layout = summary_strip_layout
+        self._summary_strip = summary_strip
         self._body_layout = body
         self._right_panel = right_panel
         self._summary_cards = [self.summary_left_card, self.summary_center_card, self.summary_right_card]
@@ -1694,16 +1696,19 @@ class BatchPage(QWidget):
         self._apply_equal_widths()
 
     def _apply_equal_widths(self) -> None:
-        summary_total = max(int(self.width() - 40), 300)
+        margins = self._root_layout.contentsMargins()
+        available_width = max(int(self.width() - margins.left() - margins.right()), 1)
+        summary_reference = int(self._summary_strip.width()) if self._summary_strip is not None else 0
+        summary_total = max(summary_reference or available_width, 1)
         summary_spacing = max(int(self._summary_strip_layout.spacing()), 0)
-        summary_width = max((summary_total - (2 * summary_spacing)) // 3, 220)
+        summary_width = max((summary_total - (2 * summary_spacing)) // 3, 1)
         for card in self._summary_cards:
             card.setMinimumWidth(summary_width)
             card.setMaximumWidth(summary_width)
 
-        body_total = max(int(self.width() - 40), 360)
+        body_total = max(available_width, 1)
         body_spacing = max(int(self._body_layout.spacing()), 0)
-        right_width = max((body_total - body_spacing) // 3, 320)
+        right_width = max((body_total - body_spacing) // 3, 1)
         self._right_panel.setMinimumWidth(right_width)
         self._right_panel.setMaximumWidth(right_width)
 

@@ -133,7 +133,7 @@ class _FieldRow:
 class BatchParameterForm(QWidget):
     changed = Signal()
 
-    _GROUP_ORDER = ["Basics", "Throat Profile", "Morph", "GCurve", "Mesh", "Enclosure"]
+    _GROUP_ORDER = ["Basics", "Throat Profile", "GCurve", "Morph", "Mesh", "Enclosure"]
 
     def __init__(self, schema: Optional[FormSchema] = None, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -576,19 +576,22 @@ class BatchParameterForm(QWidget):
         if trigger is None:
             return
 
-        newly_hidden = [key for key in sorted(previous_visible) if key not in current_visible]
-        hidden_other = [key for key in newly_hidden if self._rows.get(key) and self._rows[key].group_name != trigger.group_name]
-        if not hidden_other:
+        newly_hidden = [key for key in sorted(previous_visible) if key not in current_visible and key != trigger_key]
+        hidden_rows = [self._rows[key] for key in newly_hidden if key in self._rows]
+        if not hidden_rows:
             return
 
-        groups = sorted({self._rows[key].group_name for key in hidden_other if key in self._rows})
-        params = [self._rows[key].label for key in hidden_other if key in self._rows][:4]
-        extra_count = max(0, len(hidden_other) - len(params))
-        cards_text = ", ".join(groups[:3]) if groups else "-"
+        groups = sorted({row.group_name for row in hidden_rows})
+        params = [row.label for row in hidden_rows[:4]]
+        extra_count = max(0, len(hidden_rows) - len(params))
+        cards_text = ", ".join(groups[:3]) if groups else trigger.group_name
         params_text = ", ".join(params) if params else "-"
         if extra_count > 0:
             params_text = f"{params_text}, +{extra_count}"
-        message = f"Diese Auswahl blendet aus: Karten [{cards_text}] - Parameter [{params_text}]"
+        if groups == [trigger.group_name]:
+            message = f"Diese Auswahl blendet in dieser Karte aus: Parameter [{params_text}]"
+        else:
+            message = f"Diese Auswahl blendet aus: Karten [{cards_text}] - Parameter [{params_text}]"
 
         trigger.helper_label.setText(message)
         trigger.helper_label.setProperty("severity", "info")
