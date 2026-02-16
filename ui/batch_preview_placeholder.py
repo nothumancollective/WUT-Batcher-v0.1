@@ -4,7 +4,7 @@ from __future__ import annotations
 
 try:
     from PySide6.QtCore import Qt
-    from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
+    from PySide6.QtWidgets import QFrame, QLabel, QPushButton, QVBoxLayout
 except ImportError as exc:  # pragma: no cover
     raise RuntimeError("PySide6 is required for batch preview placeholder.") from exc
 
@@ -13,9 +13,11 @@ class BatchPreviewPlaceholder(QFrame):
     def __init__(self) -> None:
         super().__init__()
         self.setObjectName("ProjectSummaryPanel")
+        self._preview_requested = False
         root = QVBoxLayout(self)
         root.setContentsMargins(10, 10, 10, 10)
         root.setSpacing(8)
+        self.setMinimumHeight(280)
 
         title = QLabel("Preview (.stl)")
         title.setObjectName("SummaryTitle")
@@ -30,13 +32,14 @@ class BatchPreviewPlaceholder(QFrame):
         stage.setObjectName("SummaryMeta")
         root.addWidget(stage)
 
-        actions = QHBoxLayout()
-        open_btn = QPushButton("Open")
-        open_btn.setEnabled(False)
-        refresh_btn = QPushButton("Refresh")
-        refresh_btn.setEnabled(False)
-        actions.addWidget(open_btn, 0, Qt.AlignLeft)
-        actions.addWidget(refresh_btn, 0, Qt.AlignLeft)
-        actions.addStretch(1)
-        root.addLayout(actions)
         root.addStretch(1)
+
+        self.preview_btn = QPushButton("show preview")
+        self.preview_btn.setObjectName("PrimaryButton")
+        self.preview_btn.clicked.connect(self._on_preview_clicked)
+        root.addWidget(self.preview_btn, 0, Qt.AlignBottom)
+
+    def _on_preview_clicked(self) -> None:
+        if not self._preview_requested:
+            self._preview_requested = True
+            self.preview_btn.setText("update preview")
