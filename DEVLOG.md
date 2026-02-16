@@ -2116,3 +2116,32 @@ Validation executed:
   - `docs/Wizard_Batch_FieldHints_And_EmptySeverity_Design.md`
   - `docs/ath_update_todo_log.md`
 - Replaced unreadable `docs/Wizard_Batch_Optionality_Analysis.md` with valid Markdown pointer.
+
+### Update 9 (Batch UI Korrekturpaket V2)
+#### Done
+- Batch top summary cards now enforce equal third-width behavior on resize.
+- Batch body layout now enforces left/right split near 2/3 : 1/3 with right column width lock.
+- Batch parameter rows updated:
+  - labels no longer append `(<key>)`
+  - `Core` card title rendered as `Mesh`
+  - sweep uses segmented button style with green active border
+  - active sweep locks/dims base editor
+- `R-OSSE` now uses a dedicated single-column object details block and is only shown when `Throat.Profile == R-OSSE`.
+- Export panel reworked to structured graph cards:
+  - preset buttons (`SPL`, `Impedance`, `Polar`)
+  - no free-text advanced table
+  - per-graph guide dialog with repo-verified static defaults
+  - sweep mode moved into export panel
+  - new `mesh_frequency` field included in payload/model
+- Compatibility service now returns deterministic proactive fatal-prevention metadata:
+  - `prevented_keys`
+  - `prevented_reasons`
+  - `ui_hint_trigger_key`
+
+#### Tests
+- Added:
+  - `tests/test_batch_export_panel.py`
+  - `tests/test_compatibility_service_batch_fatal_prevention.py`
+  - `tests/test_sim_export_settings.py`
+- Extended:
+  - `tests/test_batch_page_ui.py`

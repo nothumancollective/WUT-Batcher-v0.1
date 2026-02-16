@@ -6,14 +6,14 @@ It replaces JSON textareas with structured controls for variable parameters, swe
 
 ## Implemented UI Blocks
 - Summary panel (`ProjectSummaryPanel` style)
-  - visible variable parameter count
-  - active sweep count
-  - version-count preview
-  - export-spec count
+  - strict 3-way card layout (left/estimate/validation with equal width)
+  - center card: visible variable parameter count + active sweep count + defined variable count
+  - left card: version preview/export spec summary + dynamic-hide explanation
+  - right card: short validation teaser text from top issue
   - ETA line with tooltip
 - Main body (two columns)
-  - left: variable parameter form (`ui/batch_parameter_form.py`)
-  - right: STL preview placeholder (`ui/batch_preview_placeholder.py`) + export panel (`ui/batch_export_panel.py`)
+  - left: variable parameter form (`ui/batch_parameter_form.py`) at ~2/3 width
+  - right: STL preview placeholder (`ui/batch_preview_placeholder.py`) + export panel (`ui/batch_export_panel.py`) at ~1/3 width
 - Compatibility panel (details + rule messages)
 - Action bar (`ProjectActionBar` style) with save/run gating and severity pill
 
@@ -22,12 +22,18 @@ Widget: `ui/batch_parameter_form.py`
 
 Per variable field:
 - base value input (`Optional[float]`)
-- sweep toggle (`QCheckBox`)
+- sweep toggle (`QPushButton`, segmented style)
 - inline sweep details when enabled:
   - start (float)
   - end (float)
   - steps (int)
   - spacing placeholder (`linear`, disabled control for v1)
+
+Behavior:
+- active sweep locks and dims base value editor
+- labels show only display label text (no `(<key>)` suffix)
+- `Core` group is rendered as `Mesh`
+- `R-OSSE` object details render as single-column rows and only when `Throat.Profile == R-OSSE`
 
 Default behavior on sweep enable:
 - if base value is set and start/end are empty: start=end=base
@@ -48,12 +54,14 @@ Payload API:
 Widget: `ui/batch_export_panel.py`
 
 - Presets:
-  - `SPL`
-  - `Impedance`
-  - `Polar`
+  - segmented preset buttons: `SPL`, `Impedance`, `Polar` (`Polar` currently disabled/coming soon)
 - Advanced:
-  - editable table of `export_specs` (`id`, `graph_kind`, `variant`, `format`, `output_name_template`)
-  - add/remove rows
+  - structured graph cards by graph kind (no free-text table editing)
+  - graph-level variant/format controls
+  - per-graph guide dialog with repo-verified static export defaults
+- Global export settings:
+  - `sweep_mode` (`single|combined`) moved into export panel
+  - `mesh_frequency` optional numeric field persisted in `sim_export_settings`
 
 Payload API:
 - `sim_export_params_payload() -> Dict[str, Any]`
@@ -95,6 +103,10 @@ Behavior:
 - invalid sweep entries produce issue `sweep_parse_failed` (severity `fatal`)
 - version preview is forced to `0` in that case
 - issue is shown in compatibility details and summary state
+
+Additionally:
+- compatibility state now includes deterministic `prevented_keys` for context-driven fatal-prevention hiding.
+- missing-required fatals are not suppressed; only conflict-driven actionable fatals are prevented.
 
 ## Edit / Clone
 Main window actions are now wired:
