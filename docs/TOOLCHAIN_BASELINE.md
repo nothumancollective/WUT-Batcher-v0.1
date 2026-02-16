@@ -43,3 +43,13 @@ Date: 2026-02-16
 - `export_quality:impedance`: `ok` with message `all-zero accepted for normalized radimp baseline`
 - `radimp_diagnosis`: `ok` with classification `radimp_normalized_zero_baseline`
 - No muted-sources watchdog events in successful runs.
+
+## Driving Matrix
+- Matrix command available:
+  - `python -m app runner-test radimp-driving-matrix --case test_cfg_baseline ...`
+- Latest matrix batch (5 profiles) completed:
+  - `default`: `8854f9dd-b0ac-4df2-9d8b-238ae3105d00`
+  - `accel_2p83`: `13114a8a-6ca6-4cca-9fd1-4cf57f2c12ba`
+  - `accel_10`: `a00eef05-0624-4f5e-8c53-ce0222639f25`
+  - `velocity_1`: `42920920-1b53-47ef-8f24-c8428deb5992`
+  - `displacement_1`: `781979c4-b2aa-466f-8512-6f201e91bfe6`

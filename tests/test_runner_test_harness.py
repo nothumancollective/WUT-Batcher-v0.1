@@ -11,6 +11,7 @@ from app.runner_test_harness import (
     _diagnose_radimp,
     _patch_observation_radimp_profile,
     _parse_abec_mesh_requirements,
+    run_runner_test_radimp_driving_matrix,
     run_runner_test_harness,
     run_runner_test_import_start_apply_only,
     run_runner_test_le_repair_import_only,
@@ -87,6 +88,30 @@ class RunnerTestHarnessTests(unittest.TestCase):
             self.assertTrue(result.ok)
             patched = obs.read_text(encoding="utf-8")
             self.assertNotIn("RadImpType=", patched)
+
+    def test_patch_observation_driving_profile_updates_drvtype_and_value(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            abec = root / "Project.abec"
+            obs = root / "observation.txt"
+            abec.write_text("[Observation]\nC0=observation.txt\n", encoding="utf-8")
+            obs.write_text(
+                "Driving_Values\n"
+                "  DrvType=Acceleration; Value=1.0\n"
+                "  401  DrvGroup=1001  Weight=1 Delay=0ms\n",
+                encoding="utf-8",
+            )
+            from app.runner_test_harness import _patch_observation_driving_profile
+
+            result = _patch_observation_driving_profile(abec_path=abec, profile="accel_2p83")
+            self.assertTrue(result.ok)
+            patched = obs.read_text(encoding="utf-8")
+            self.assertIn("DrvType=Acceleration; Value=2.83", patched)
+
+            result2 = _patch_observation_driving_profile(abec_path=abec, profile="velocity_1")
+            self.assertTrue(result2.ok)
+            patched2 = obs.read_text(encoding="utf-8")
+            self.assertIn("DrvType=Velocity; Value=1.0", patched2)
 
     def test_collect_validation_metrics_accepts_normalized_radimp_zero_baseline(self) -> None:
         parsed = VacsGraph(
@@ -179,6 +204,29 @@ class RunnerTestHarnessTests(unittest.TestCase):
             self.assertEqual(db.count_rows("validations"), 1)
             self.assertEqual(db.count_rows("versions"), 1)
             self.assertEqual(db.count_rows("run_versions"), 1)
+
+    def test_radimp_driving_matrix_dry_run_executes_profiles(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            cases_root = root / "cases"
+            workspace_root = root / "workspace"
+            _write_case(cases_root / "smoke_fast.json")
+
+            summary = run_runner_test_radimp_driving_matrix(
+                case_id="smoke_fast",
+                driving_profiles=["default", "accel_2p83"],
+                repeats_per_profile=1,
+                keep_exports=True,
+                test_profile="fast",
+                workspace_root=workspace_root,
+                cases_root=cases_root,
+                dry_run=True,
+            )
+            self.assertTrue(summary["ok"])
+            self.assertEqual(summary["phase"], "phase_radimp_driving_matrix")
+            self.assertEqual(len(summary["results"]), 2)
+            self.assertEqual(summary["results"][0]["driving_observation_profile"], "default")
+            self.assertEqual(summary["results"][1]["driving_observation_profile"], "accel_2p83")
 
     def test_parse_abec_mesh_requirements_detects_missing_mesh_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

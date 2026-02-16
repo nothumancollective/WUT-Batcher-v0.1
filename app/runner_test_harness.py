@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import platform
 import re
+import sqlite3
 import subprocess
 import time
 import uuid
@@ -73,6 +74,32 @@ class ObservationPatchResult:
             "observation_files": list(self.observation_files),
             "changed_files": int(self.changed_files),
             "radimp_entries_seen": int(self.radimp_entries_seen),
+            "diagnostics_path": self.diagnostics_path,
+            "error": self.error,
+        }
+
+
+@dataclass(frozen=True)
+class ObservationDrivingPatchResult:
+    status: str
+    profile: str
+    observation_files: List[str]
+    changed_files: int
+    driving_sections_seen: int
+    diagnostics_path: Optional[str] = None
+    error: Optional[str] = None
+
+    @property
+    def ok(self) -> bool:
+        return self.status in {"not_requested", "already_conformant", "patched"}
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "status": self.status,
+            "profile": self.profile,
+            "observation_files": list(self.observation_files),
+            "changed_files": int(self.changed_files),
+            "driving_sections_seen": int(self.driving_sections_seen),
             "diagnostics_path": self.diagnostics_path,
             "error": self.error,
         }
@@ -147,6 +174,22 @@ def _normalize_radimp_observation_profile(profile: Optional[str]) -> str:
         "absolute": "force_absolute",
         "drop_radimptype": "drop_radimptype",
         "remove_radimptype": "drop_radimptype",
+    }
+    return aliases.get(value, value)
+
+
+def _normalize_driving_observation_profile(profile: Optional[str]) -> str:
+    value = str(profile or "").strip().lower()
+    if not value:
+        return "default"
+    aliases = {
+        "default": "default",
+        "accel_1": "default",
+        "accel_2p83": "accel_2p83",
+        "accel_10": "accel_10",
+        "accel_0p1": "accel_0p1",
+        "velocity_1": "velocity_1",
+        "displacement_1": "displacement_1",
     }
     return aliases.get(value, value)
 
@@ -852,6 +895,130 @@ def _patch_observation_radimp_profile(
         )
 
 
+def _patch_observation_driving_profile(
+    *,
+    abec_path: Path,
+    profile: Optional[str],
+    diagnostics_dir: Optional[Path] = None,
+) -> ObservationDrivingPatchResult:
+    canonical = _normalize_driving_observation_profile(profile)
+    observation_files = _resolve_observation_files(abec_path)
+    if canonical == "default":
+        return ObservationDrivingPatchResult(
+            status="not_requested",
+            profile=canonical,
+            observation_files=[str(path) for path in observation_files],
+            changed_files=0,
+            driving_sections_seen=0,
+        )
+    profile_map = {
+        "accel_2p83": ("Acceleration", "2.83"),
+        "accel_10": ("Acceleration", "10.0"),
+        "accel_0p1": ("Acceleration", "0.1"),
+        "velocity_1": ("Velocity", "1.0"),
+        "displacement_1": ("Displacement", "1.0"),
+    }
+    if canonical not in profile_map:
+        return ObservationDrivingPatchResult(
+            status="invalid_profile",
+            profile=canonical,
+            observation_files=[str(path) for path in observation_files],
+            changed_files=0,
+            driving_sections_seen=0,
+            error=f"unsupported driving observation profile: {canonical}",
+        )
+    if not observation_files:
+        return ObservationDrivingPatchResult(
+            status="observation_missing",
+            profile=canonical,
+            observation_files=[],
+            changed_files=0,
+            driving_sections_seen=0,
+            error="observation files not found",
+        )
+
+    target_drv_type, target_value = profile_map[canonical]
+    changed_files = 0
+    driving_sections = 0
+    diagnostics_payload: Dict[str, Any] = {"profile": canonical, "files": []}
+    driving_header = re.compile(
+        r"(\bDrvType\s*=\s*)([^;]+)(\s*;\s*Value\s*=\s*)([^;\r\n]+)",
+        flags=re.IGNORECASE,
+    )
+
+    try:
+        for obs_file in observation_files:
+            original_text = obs_file.read_text(encoding="utf-8", errors="replace")
+            lines = original_text.splitlines()
+            in_driving = False
+            file_changed = False
+            sections_seen_local = 0
+            updated_lines: List[str] = []
+            for line in lines:
+                stripped = str(line).strip()
+                if re.match(r"^\s*Driving_Values\s*$", line, flags=re.IGNORECASE):
+                    in_driving = True
+                    sections_seen_local += 1
+                    updated_lines.append(line)
+                    continue
+                if in_driving and stripped and re.match(r"^[A-Za-z_]+\s*$", stripped):
+                    in_driving = False
+                if in_driving and "DrvType" in line and "Value" in line:
+                    replaced = driving_header.sub(
+                        lambda match: f"{match.group(1)}{target_drv_type}{match.group(3)}{target_value}",
+                        line,
+                        count=1,
+                    )
+                    if replaced != line:
+                        file_changed = True
+                    updated_lines.append(replaced)
+                    continue
+                updated_lines.append(line)
+            driving_sections += sections_seen_local
+            new_text = "\n".join(updated_lines)
+            if original_text.endswith("\n"):
+                new_text += "\n"
+            if file_changed:
+                obs_file.write_text(new_text, encoding="utf-8")
+                changed_files += 1
+            diagnostics_payload["files"].append(
+                {
+                    "path": str(obs_file),
+                    "changed": bool(file_changed),
+                    "driving_sections_seen": int(sections_seen_local),
+                    "target_drv_type": target_drv_type,
+                    "target_value": target_value,
+                    "sha256_before": hashlib.sha256(original_text.encode("utf-8", errors="replace")).hexdigest(),
+                    "sha256_after": hashlib.sha256(new_text.encode("utf-8", errors="replace")).hexdigest(),
+                }
+            )
+
+        status = "patched" if changed_files > 0 else "already_conformant"
+        diagnostics_path = None
+        if diagnostics_dir is not None:
+            diagnostics_dir.mkdir(parents=True, exist_ok=True)
+            diagnostics_path = diagnostics_dir / "driving_patch_summary.json"
+            diagnostics_path.write_text(json.dumps(diagnostics_payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        return ObservationDrivingPatchResult(
+            status=status,
+            profile=canonical,
+            observation_files=[str(path) for path in observation_files],
+            changed_files=changed_files,
+            driving_sections_seen=driving_sections,
+            diagnostics_path=str(diagnostics_path) if diagnostics_path else None,
+        )
+    except Exception as exc:
+        return ObservationDrivingPatchResult(
+            status="patch_failed",
+            profile=canonical,
+            observation_files=[str(path) for path in observation_files],
+            changed_files=changed_files,
+            driving_sections_seen=driving_sections,
+            diagnostics_path=None,
+            error=str(exc),
+        )
+
+
 def _read_le_script_binding_value(abec_path: Path) -> str:
     section = ""
     for raw_line in abec_path.read_text(encoding="utf-8", errors="replace").splitlines():
@@ -1214,6 +1381,7 @@ def run_runner_test_harness(
     vacs_executable: Optional[str | Path] = None,
     le_repair_profile: Optional[str] = None,
     radimp_observation_profile: Optional[str] = None,
+    driving_observation_profile: Optional[str] = None,
     dry_run: bool = False,
 ) -> Dict[str, Any]:
     workspace = resolve_runner_test_workspace(workspace_root)
@@ -1227,6 +1395,8 @@ def run_runner_test_harness(
     effective_le_repair_profile = str(le_repair_profile or case_le_repair_profile or "").strip() or None
     case_radimp_profile = str(case_payload.get("radimp_observation_profile", "") or "").strip() or None
     effective_radimp_profile = str(radimp_observation_profile or case_radimp_profile or "").strip() or None
+    case_driving_profile = str(case_payload.get("driving_observation_profile", "") or "").strip() or None
+    effective_driving_profile = str(driving_observation_profile or case_driving_profile or "").strip() or None
     effective_le_driver_tag = str(case_payload.get("le_driver_tag", "D1") or "D1").strip() or "D1"
     effective_le_drvgroup = str(case_payload.get("le_drvgroup", "1001") or "1001").strip() or "1001"
     try:
@@ -1275,6 +1445,7 @@ def run_runner_test_harness(
                 "ath_export_root_hint": ath_export_root_hint,
                 "le_repair_profile": effective_le_repair_profile,
                 "radimp_observation_profile": effective_radimp_profile,
+                "driving_observation_profile": effective_driving_profile,
                 "le_driver_tag": effective_le_driver_tag,
                 "le_drvgroup": effective_le_drvgroup,
                 "le_voltage_vrms": effective_le_voltage_vrms,
@@ -1640,6 +1811,52 @@ def run_runner_test_harness(
                     raise RuntimeError(
                         "post_ath_observation_patch_failed: "
                         f"status={observation_patch.status} error={observation_patch.error or 'n/a'}"
+                    )
+                driving_patch_started = _now_iso()
+                driving_patch = _patch_observation_driving_profile(
+                    abec_path=abec_path,
+                    profile=effective_driving_profile,
+                    diagnostics_dir=workspace.logs_dir / test_run_id / "driving_patch",
+                )
+                db.add_test_run_step(
+                    test_run_id=test_run_id,
+                    step_name="post_ath_driving_patch",
+                    status="ok" if driving_patch.ok else "failed",
+                    started_at=driving_patch_started,
+                    finished_at=_now_iso(),
+                    details=driving_patch.to_dict(),
+                    error={} if driving_patch.ok else {"error": driving_patch.error or driving_patch.status},
+                )
+                if driving_patch.diagnostics_path:
+                    driving_diag_file = Path(driving_patch.diagnostics_path)
+                    if driving_diag_file.exists() and driving_diag_file.is_file():
+                        db.add_artifact(
+                            test_run_id=test_run_id,
+                            kind="driving_patch_summary",
+                            path=str(driving_diag_file),
+                            sha256=_sha256_file(driving_diag_file),
+                            bytes_size=driving_diag_file.stat().st_size,
+                        )
+                db.add_validation(
+                    test_run_id=test_run_id,
+                    validation_name="post_ath_driving_patch_assertions",
+                    status="ok" if driving_patch.ok else "failed",
+                    metrics={
+                        "profile": driving_patch.profile,
+                        "status": driving_patch.status,
+                        "changed_files": driving_patch.changed_files,
+                        "driving_sections_seen": driving_patch.driving_sections_seen,
+                        "observation_files": driving_patch.observation_files,
+                    },
+                    message="post-ATH driving patch assertions passed"
+                    if driving_patch.ok
+                    else f"post-ATH driving patch failed: {driving_patch.error or driving_patch.status}",
+                )
+                if not driving_patch.ok:
+                    notes = "post-ATH driving patch failed"
+                    raise RuntimeError(
+                        "post_ath_driving_patch_failed: "
+                        f"status={driving_patch.status} error={driving_patch.error or 'n/a'}"
                     )
 
                 ath_input_dir = abec_path.parent
@@ -2195,6 +2412,7 @@ def run_runner_test_harness(
         "test_profile": test_profile,
         "le_repair_profile": effective_le_repair_profile,
         "radimp_observation_profile": effective_radimp_profile,
+        "driving_observation_profile": effective_driving_profile,
         "le_driver_tag": effective_le_driver_tag,
         "le_drvgroup": effective_le_drvgroup,
         "le_voltage_vrms": effective_le_voltage_vrms,
@@ -2202,6 +2420,116 @@ def run_runner_test_harness(
         "db_path": str(workspace.db_path),
         "dry_run": bool(dry_run),
         "runs": [run.to_dict() for run in runs],
+    }
+
+
+def _read_run_validations(db_path: Path, test_run_id: str) -> Dict[str, Dict[str, Any]]:
+    if not db_path.exists():
+        return {}
+    con = sqlite3.connect(str(db_path))
+    con.row_factory = sqlite3.Row
+    try:
+        cur = con.cursor()
+        rows = cur.execute(
+            "select validation_name,status,message,metrics_json from validations where test_run_id=?",
+            (test_run_id,),
+        ).fetchall()
+        payload: Dict[str, Dict[str, Any]] = {}
+        for row in rows:
+            metrics: Dict[str, Any] = {}
+            try:
+                metrics = json.loads(str(row["metrics_json"] or "{}"))
+            except Exception:
+                metrics = {}
+            payload[str(row["validation_name"])] = {
+                "status": str(row["status"] or ""),
+                "message": str(row["message"] or ""),
+                "metrics": metrics,
+            }
+        return payload
+    finally:
+        con.close()
+
+
+def run_runner_test_radimp_driving_matrix(
+    *,
+    case_id: str,
+    driving_profiles: Sequence[str] | None = None,
+    repeats_per_profile: int = 1,
+    keep_exports: bool = True,
+    test_profile: str = "fast",
+    workspace_root: str | Path = "runner_test_workspace",
+    cases_root: str | Path = "runner_test_cases",
+    template_cfg_path: Optional[str | Path] = None,
+    ath_executable: Optional[str | Path] = None,
+    akabak_executable: Optional[str | Path] = None,
+    vacs_executable: Optional[str | Path] = None,
+    le_repair_profile: Optional[str] = None,
+    radimp_observation_profile: Optional[str] = None,
+    dry_run: bool = False,
+) -> Dict[str, Any]:
+    default_profiles = ["default", "accel_2p83", "accel_10", "velocity_1", "displacement_1"]
+    profile_list = [str(item).strip() for item in (driving_profiles or default_profiles) if str(item).strip()]
+    if not profile_list:
+        profile_list = list(default_profiles)
+
+    matrix_rows: List[Dict[str, Any]] = []
+    all_ok = True
+    db_path = resolve_runner_test_workspace(workspace_root).db_path
+    for profile in profile_list:
+        summary = run_runner_test_harness(
+            case_id=case_id,
+            repeats=max(1, int(repeats_per_profile)),
+            keep_exports=bool(keep_exports),
+            test_profile=test_profile,
+            workspace_root=workspace_root,
+            cases_root=cases_root,
+            template_cfg_path=template_cfg_path,
+            ath_executable=ath_executable,
+            akabak_executable=akabak_executable,
+            vacs_executable=vacs_executable,
+            le_repair_profile=le_repair_profile,
+            radimp_observation_profile=radimp_observation_profile,
+            driving_observation_profile=profile,
+            dry_run=bool(dry_run),
+        )
+        runs = list(summary.get("runs", []) or [])
+        run_outcomes: List[Dict[str, Any]] = []
+        for run in runs:
+            run_id = str(run.get("test_run_id") or "")
+            validations = _read_run_validations(db_path, run_id) if run_id else {}
+            radimp_diag = validations.get("radimp_diagnosis", {})
+            export_imp = validations.get("export_quality:impedance", {})
+            run_outcomes.append(
+                {
+                    "test_run_id": run_id,
+                    "status": str(run.get("status") or ""),
+                    "notes": str(run.get("notes") or ""),
+                    "radimp_diagnosis": radimp_diag,
+                    "export_quality_impedance": export_imp,
+                }
+            )
+        row_ok = bool(summary.get("ok", False))
+        all_ok = all_ok and row_ok
+        matrix_rows.append(
+            {
+                "driving_observation_profile": profile,
+                "ok": row_ok,
+                "summary": summary,
+                "run_outcomes": run_outcomes,
+            }
+        )
+
+    return {
+        "ok": all_ok,
+        "phase": "phase_radimp_driving_matrix",
+        "case_id": case_id,
+        "profiles": profile_list,
+        "repeats_per_profile": max(1, int(repeats_per_profile)),
+        "workspace": resolve_runner_test_workspace(workspace_root).to_dict(),
+        "db_path": str(db_path),
+        "dry_run": bool(dry_run),
+        "results": matrix_rows,
     }
 
 

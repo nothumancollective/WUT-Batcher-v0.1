@@ -29,6 +29,21 @@ Observed behavior:
 - `drop_radimptype` keeps the Radiation Impedance graph, but export metadata still resolves to normalized RadImp and remains all-zero.
 - Therefore no tested observation-profile variant in this pass produced non-zero RadImp values.
 
+## Driving_Values / DrvType Matrix (real runs)
+Profiles tested on top of stable LE repair and default RadImp observation profile:
+- `default` (`8854f9dd-b0ac-4df2-9d8b-238ae3105d00`)
+- `accel_2p83` (`13114a8a-6ca6-4cca-9fd1-4cf57f2c12ba`)
+- `accel_10` (`a00eef05-0624-4f5e-8c53-ce0222639f25`)
+- `velocity_1` (`42920920-1b53-47ef-8f24-c8428deb5992`)
+- `displacement_1` (`781979c4-b2aa-466f-8512-6f201e91bfe6`)
+
+Observation snapshots confirm profile patches were applied (`DrvType/Value` changed as configured), while `RadImpType=Normalized` remained unchanged.
+
+Result:
+- All matrix runs completed.
+- RadImp export stayed all-zero for all profiles.
+- `radimp_diagnosis` remained normalized-zero baseline in every profile.
+
 ## Key Evidence
 - Exported graph is the correct one:
   - VACS child window title: `Radiation Impedance - Radiation_Impedance #5`

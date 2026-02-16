@@ -581,6 +581,7 @@ def cmd_runner_test_run(args: argparse.Namespace) -> int:
         vacs_executable=args.vacs_exe or settings.vacs_exe,
         le_repair_profile=str(args.le_repair_profile or "").strip() or None,
         radimp_observation_profile=str(args.radimp_observation_profile or "").strip() or None,
+        driving_observation_profile=str(args.driving_observation_profile or "").strip() or None,
         dry_run=bool(args.dry_run),
     )
     print(json.dumps(summary, indent=2, ensure_ascii=False, default=_json_default))
@@ -640,6 +641,33 @@ def cmd_runner_test_le_repair_import_only(args: argparse.Namespace) -> int:
         le_driver_tag=str(args.le_driver_tag or "D1"),
         le_drvgroup=str(args.le_drvgroup or "1001"),
         le_voltage_vrms=float(args.le_voltage_vrms),
+    )
+    print(json.dumps(summary, indent=2, ensure_ascii=False, default=_json_default))
+    return 0 if summary.get("ok", False) else 4
+
+
+def cmd_runner_test_radimp_driving_matrix(args: argparse.Namespace) -> int:
+    from app.runner_test_harness import run_runner_test_radimp_driving_matrix
+
+    settings_store = SettingsStore()
+    settings = settings_store.load()
+    profiles_raw = str(args.profiles or "").strip()
+    profiles = [item.strip() for item in profiles_raw.split(",") if item.strip()] if profiles_raw else None
+    summary = run_runner_test_radimp_driving_matrix(
+        case_id=args.case_id,
+        driving_profiles=profiles,
+        repeats_per_profile=args.repeats_per_profile,
+        keep_exports=str(args.keep_exports).strip().lower() == "true",
+        test_profile=args.test_profile,
+        workspace_root=args.workspace_root,
+        cases_root=args.cases_root,
+        template_cfg_path=args.template_cfg or settings.template_cfg,
+        ath_executable=args.ath_exe or settings.ath_exe,
+        akabak_executable=args.akabak_exe or settings.akabak_exe,
+        vacs_executable=args.vacs_exe or settings.vacs_exe,
+        le_repair_profile=str(args.le_repair_profile or "").strip() or None,
+        radimp_observation_profile=str(args.radimp_observation_profile or "").strip() or None,
+        dry_run=bool(args.dry_run),
     )
     print(json.dumps(summary, indent=2, ensure_ascii=False, default=_json_default))
     return 0 if summary.get("ok", False) else 4
@@ -851,6 +879,14 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p_runner_test_run.add_argument(
+        "--driving-observation-profile",
+        default=None,
+        help=(
+            "Optional Driving_Values patch profile "
+            "(default, accel_2p83, accel_10, velocity_1, displacement_1)."
+        ),
+    )
+    p_runner_test_run.add_argument(
         "--workspace-root",
         default="runner_test_workspace",
         help="Dedicated workspace root for harness artifacts.",
@@ -870,6 +906,67 @@ def build_parser() -> argparse.ArgumentParser:
         help="Stop before launching ATH/AKABAK/VACS (CFG+DB+cleanup wiring only).",
     )
     p_runner_test_run.set_defaults(func=cmd_runner_test_run)
+
+    p_runner_test_matrix = sub_runner_test.add_parser(
+        "radimp-driving-matrix",
+        help="Run a controlled Driving_Values/DrvType hypothesis matrix for RadImp diagnostics.",
+    )
+    p_runner_test_matrix.add_argument("--case", dest="case_id", default="test_cfg_baseline", help="Runner test case id.")
+    p_runner_test_matrix.add_argument(
+        "--profiles",
+        default="default,accel_2p83,accel_10,velocity_1,displacement_1",
+        help="Comma-separated driving observation profiles to execute in order.",
+    )
+    p_runner_test_matrix.add_argument(
+        "--repeats-per-profile",
+        type=int,
+        default=1,
+        help="Sequential repeats for each driving profile.",
+    )
+    p_runner_test_matrix.add_argument(
+        "--keep-exports",
+        default="true",
+        choices=["true", "false"],
+        help="Retain exported TXT artifacts for each matrix profile.",
+    )
+    p_runner_test_matrix.add_argument(
+        "--test-profile",
+        default="fast",
+        help="Harness test profile id.",
+    )
+    p_runner_test_matrix.add_argument(
+        "--workspace-root",
+        default="runner_test_workspace",
+        help="Dedicated workspace root for harness artifacts.",
+    )
+    p_runner_test_matrix.add_argument(
+        "--cases-root",
+        default="runner_test_cases",
+        help="Directory containing runner test case JSON files.",
+    )
+    p_runner_test_matrix.add_argument("--template-cfg", help="Override template CFG path used for case rendering.")
+    p_runner_test_matrix.add_argument("--ath-exe", help="Override ATH executable path")
+    p_runner_test_matrix.add_argument("--akabak-exe", help="Override AKABAK executable path")
+    p_runner_test_matrix.add_argument("--vacs-exe", help="Override VACS executable path")
+    p_runner_test_matrix.add_argument(
+        "--le-repair-profile",
+        default=None,
+        help=(
+            "Optional LE script patch profile "
+            "(baseline, driver_drvgroup, driver_drvgroup_def_driving, driver_drvgroup_def_driving_resistor)."
+        ),
+    )
+    p_runner_test_matrix.add_argument(
+        "--radimp-observation-profile",
+        default=None,
+        help="Optional RadImp observation patch profile (default, force_absolute, drop_radimptype).",
+    )
+    p_runner_test_matrix.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Run matrix in dry-run mode (no tool launch).",
+    )
+    p_runner_test_matrix.set_defaults(func=cmd_runner_test_radimp_driving_matrix)
 
     p_runner_test_open_dialog_only = sub_runner_test.add_parser(
         "open-dialog-only",

@@ -1744,3 +1744,45 @@ Validation executed:
 - Updated: `docs/RADIMP_BASELINE_REPORT.md`
 - Updated: `docs/TOOLCHAIN_BASELINE.md`
 - Updated: `docs/LE_RULES_EXTRACT.md`
+
+### Update 63 (Driving_Values/DrvType hypothesis matrix)
+#### Done
+- Added dedicated driving observation patch layer in harness (`post_ath_driving_patch`):
+  - profiles: `default`, `accel_2p83`, `accel_10`, `accel_0p1`, `velocity_1`, `displacement_1`
+- Added matrix mode:
+  - `python -m app runner-test radimp-driving-matrix ...`
+  - executes profile list sequentially and returns per-run outcome incl. `radimp_diagnosis` + `export_quality:impedance`.
+- Added CLI support:
+  - `runner-test run --driving-observation-profile ...`
+  - `runner-test radimp-driving-matrix --profiles ... --repeats-per-profile ...`
+- Added DB telemetry/artifacts:
+  - validation `post_ath_driving_patch_assertions`
+  - artifact `driving_patch_summary`
+
+#### Why
+- We needed an evidence-backed way to test whether changing only `Driving_Values` (`DrvType`/`Value`) can break out of normalized RadImp zero baseline.
+
+#### Validation
+- Tests:
+  - `python -m pytest tests/test_runner_test_harness.py tests/test_cli_runner_test.py -q`
+  - `16 passed`
+- Real matrix run:
+  - command: `runner-test radimp-driving-matrix` with profiles `default,accel_2p83,accel_10,velocity_1,displacement_1`
+  - run_ids:
+    - `8854f9dd-b0ac-4df2-9d8b-238ae3105d00`
+    - `13114a8a-6ca6-4cca-9fd1-4cf57f2c12ba`
+    - `a00eef05-0624-4f5e-8c53-ce0222639f25`
+    - `42920920-1b53-47ef-8f24-c8428deb5992`
+    - `781979c4-b2aa-466f-8512-6f201e91bfe6`
+  - all profiles completed successfully.
+- Snapshot proof confirms profile values were actually patched in `observation.txt`.
+
+#### Outcome
+- RadImp remained normalized/all-zero across the full Driving_Values matrix.
+- This further narrows the remaining issue to model/observation semantics beyond `Driving_Values` tuning.
+
+#### Docs
+- Added: `docs/RADIMP_DRIVING_MATRIX_REPORT.md`
+- Updated: `docs/RADIMP_BASELINE_REPORT.md`
+- Updated: `docs/TOOLCHAIN_BASELINE.md`
+- Updated: `docs/LE_RULES_EXTRACT.md`

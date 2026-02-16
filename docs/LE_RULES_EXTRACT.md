@@ -38,3 +38,6 @@ Date: 2026-02-16
 - Observation experiments:
   - `force_absolute` removed the Radiation Impedance graph from VACS in this setup (export mapping for `impedance` cannot resolve).
   - `drop_radimptype` retained Radiation Impedance graph but still produced normalized/all-zero output.
+- Driving experiments (`DrvType/Value` matrix):
+  - `Acceleration` (`1.0`, `2.83`, `10.0`), `Velocity=1.0`, `Displacement=1.0` all ran successfully.
+  - RadImp remained normalized/all-zero across the full matrix.
