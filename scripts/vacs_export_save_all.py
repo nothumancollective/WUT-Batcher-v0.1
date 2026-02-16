@@ -55,13 +55,18 @@ def _now_iso() -> str:
 
 def _sig(ctrl: Any) -> Dict[str, Any]:
     info = getattr(ctrl, "element_info", None)
+    def _safe_attr(name: str, default: Any = "") -> Any:
+        try:
+            return getattr(info, name, default)
+        except Exception:
+            return default
     return {
-        "handle": int(getattr(info, "handle", 0) or 0),
-        "title": str(getattr(info, "name", "") or ""),
-        "class_name": str(getattr(info, "class_name", "") or ""),
-        "control_type": str(getattr(info, "control_type", "") or ""),
-        "automation_id": str(getattr(info, "automation_id", "") or ""),
-        "process_id": int(getattr(info, "process_id", 0) or 0),
+        "handle": int(_safe_attr("handle", 0) or 0),
+        "title": str(_safe_attr("name", "") or ""),
+        "class_name": str(_safe_attr("class_name", "") or ""),
+        "control_type": str(_safe_attr("control_type", "") or ""),
+        "automation_id": str(_safe_attr("automation_id", "") or ""),
+        "process_id": int(_safe_attr("process_id", 0) or 0),
     }
 
 
@@ -1602,6 +1607,12 @@ def run_once_fast(args: argparse.Namespace) -> Dict[str, Any]:
         interim_idle_timeout_s=min(int(getattr(args, "interim_idle_timeout_s", 20) or 20), 9),
         interim_startup_timeout_s=min(int(getattr(args, "interim_startup_timeout_s", 25) or 25), 8),
     )
+    reentry_interim_args = _copy_args_with(
+        args,
+        interim_timeout_s=min(int(getattr(args, "interim_timeout_s", 90) or 90), 35),
+        interim_idle_timeout_s=min(int(getattr(args, "interim_idle_timeout_s", 20) or 20), 12),
+        interim_startup_timeout_s=min(int(getattr(args, "interim_startup_timeout_s", 25) or 25), 12),
+    )
     relaxed_interim_args = _copy_args_with(
         args,
         interim_timeout_s=min(int(getattr(args, "interim_timeout_s", 90) or 90), 35),
@@ -1636,17 +1647,45 @@ def run_once_fast(args: argparse.Namespace) -> Dict[str, Any]:
             )
 
     if not bool(parsed.get("ok")):
-        # Fallback: same attach-only mode with relaxed idle/timeout budget.
-        interim = _run_interim_with_mode(relaxed_interim_args, skip_open_via_akabak=True)
-        step("interim_reimport_fallback", **interim)
+        # Reentry point: retry via AKABAK->Options->Open VACS handshake.
+        interim = _run_interim_with_mode(reentry_interim_args, skip_open_via_akabak=False)
+        step("interim_reimport_reentry_open_via_akabak", **interim)
         parsed = dict(interim.get("parsed") or {})
         if not bool(parsed.get("ok")):
-            log["ok"] = False
-            log["error"] = "interim_reimport_failed"
-            out_file = out_dir / "summary.json"
-            out_file.write_text(json.dumps(log, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-            log["summary_file"] = str(out_file)
-            return log
+            # Final fallback: attach-only with relaxed timeout budget.
+            interim = _run_interim_with_mode(relaxed_interim_args, skip_open_via_akabak=True)
+            step("interim_reimport_fallback_attach_only", **interim)
+            parsed = dict(interim.get("parsed") or {})
+
+    if not bool(parsed.get("ok")):
+        # Late accept path: attach fallback may have produced visible graph windows despite timeout text.
+        vacs_pid_hint = int(parsed.get("vacs_pid", 0) or 0)
+        graph_count_hint = 0
+        if vacs_pid_hint > 0:
+            main_hint = _find_main(vacs_pid_hint)
+            if main_hint is not None:
+                try:
+                    graph_count_hint = len(_graph_children(main_hint))
+                except Exception:
+                    graph_count_hint = 0
+        if graph_count_hint > 0:
+            parsed["ok"] = True
+            parsed["accepted_existing_graphs"] = True
+            parsed["accepted_graph_count"] = int(graph_count_hint)
+            step(
+                "interim_reimport_fallback_accepted_existing_graphs",
+                vacs_pid=vacs_pid_hint,
+                graph_count=graph_count_hint,
+                reason=str(parsed.get("error", "")),
+            )
+
+    if not bool(parsed.get("ok")):
+        log["ok"] = False
+        log["error"] = "interim_reimport_failed"
+        out_file = out_dir / "summary.json"
+        out_file.write_text(json.dumps(log, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        log["summary_file"] = str(out_file)
+        return log
 
     vacs_pid = int(parsed.get("vacs_pid", 0) or 0)
     main = _find_main(vacs_pid)

@@ -1511,3 +1511,27 @@ Validation executed:
   - `python scripts/vacs_export_save_all.py --mode fast ...`
   - `python scripts/vacs_export_save_all.py --mode auto ...`
   - `python scripts/vacs_interim_reimport.py --open-vacs-via-akabak --disallow-existing-vacs ...`
+
+### Update 55 (Fast reentry point after RPC + transient handle hardening)
+#### Done
+- Added deterministic reentry ladder in `run_once_fast` (`scripts/vacs_export_save_all.py`):
+  - primary: interim attach-only (`--skip-open-vacs-via-akabak`)
+  - reentry: interim via AKABAK menu (`Options -> Open VACS...`)
+  - final fallback: relaxed attach-only retry
+  - plus late-accept guard when graph windows are already visible
+- Hardened signature extraction against transient/invalid Win32 handles:
+  - `_sig()` now wraps attribute access defensively to prevent hard crashes during fast top-level scans.
+
+#### Why
+- Fast mode was very quick but could fail hard when AKABAK showed intermittent RPC modal.
+- Goal was a safe and deterministic reentry point without immediately falling back to the slow full-safe export path.
+
+#### Validation (real VM)
+- command:
+  - `python scripts/vacs_export_save_all.py --mode fast --akabak-exe "C:\Program Files (x86)\RDTeam\AKABAK\AKABAK.exe" --vacs-exe "C:\Program Files (x86)\RDTeam\VACSVIEWER_32\VACSVIEWER_32.exe" --export-dir "C:\Horns\test\ABEC_FreeStanding\Results" --output-dir "runner_test_workspace/logs/vacs_export_save_all" --max-runtime-s 240`
+- run:
+  - `run_20260216_025403`
+- result:
+  - primary interim failed with RPC modal
+  - reentry stage `interim_reimport_reentry_open_via_akabak` succeeded
+  - 4 exports written, `ok=true`
