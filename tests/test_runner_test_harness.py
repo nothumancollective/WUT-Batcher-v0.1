@@ -9,6 +9,7 @@ from app.runner_test_db import RunnerTestDb
 from app.runner_test_harness import (
     _collect_validation_metrics,
     _diagnose_radimp,
+    _patch_observation_radimp_profile,
     _parse_abec_mesh_requirements,
     run_runner_test_harness,
     run_runner_test_import_start_apply_only,
@@ -51,6 +52,42 @@ def _write_case(path: Path) -> None:
 
 
 class RunnerTestHarnessTests(unittest.TestCase):
+    def test_patch_observation_radimp_profile_force_absolute(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            abec = root / "Project.abec"
+            obs = root / "observation.txt"
+            abec.write_text("[Observation]\nC0=observation.txt\n", encoding="utf-8")
+            obs.write_text(
+                "Radiation_Impedance\n"
+                "  BodeType=Complex; GraphHeader=\"RadImp\"\n"
+                "  Range_min=0; Range_max=2; RadImpType=Normalized\n"
+                "  402 1001 1001 ID=8001\n",
+                encoding="utf-8",
+            )
+            result = _patch_observation_radimp_profile(abec_path=abec, profile="force_absolute")
+            self.assertTrue(result.ok)
+            patched = obs.read_text(encoding="utf-8")
+            self.assertIn("RadImpType=Absolute", patched)
+
+    def test_patch_observation_radimp_profile_drop_radimptype(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            abec = root / "Project.abec"
+            obs = root / "observation.txt"
+            abec.write_text("[Observation]\nC0=observation.txt\n", encoding="utf-8")
+            obs.write_text(
+                "Radiation_Impedance\n"
+                "  BodeType=Complex; GraphHeader=\"RadImp\"\n"
+                "  Range_min=0; Range_max=2; RadImpType=Normalized\n"
+                "  402 1001 1001 ID=8001\n",
+                encoding="utf-8",
+            )
+            result = _patch_observation_radimp_profile(abec_path=abec, profile="drop_radimptype")
+            self.assertTrue(result.ok)
+            patched = obs.read_text(encoding="utf-8")
+            self.assertNotIn("RadImpType=", patched)
+
     def test_collect_validation_metrics_accepts_normalized_radimp_zero_baseline(self) -> None:
         parsed = VacsGraph(
             graph_type="impedance",

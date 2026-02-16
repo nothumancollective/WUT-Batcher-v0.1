@@ -580,6 +580,7 @@ def cmd_runner_test_run(args: argparse.Namespace) -> int:
         akabak_executable=args.akabak_exe or settings.akabak_exe,
         vacs_executable=args.vacs_exe or settings.vacs_exe,
         le_repair_profile=str(args.le_repair_profile or "").strip() or None,
+        radimp_observation_profile=str(args.radimp_observation_profile or "").strip() or None,
         dry_run=bool(args.dry_run),
     )
     print(json.dumps(summary, indent=2, ensure_ascii=False, default=_json_default))
@@ -838,7 +839,15 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help=(
             "Optional LE script patch profile for post-ATH repair "
-            "(baseline, driver_drvgroup, driver_drvgroup_def_driving)."
+            "(baseline, driver_drvgroup, driver_drvgroup_def_driving, driver_drvgroup_def_driving_resistor)."
+        ),
+    )
+    p_runner_test_run.add_argument(
+        "--radimp-observation-profile",
+        default=None,
+        help=(
+            "Optional observation patch profile for RadImp experiment "
+            "(default, force_absolute, drop_radimptype)."
         ),
     )
     p_runner_test_run.add_argument(
@@ -934,7 +943,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_runner_test_le_repair_import_only.add_argument(
         "--le-repair-profile",
         default=None,
-        help="Optional LE script patch profile (baseline, driver_drvgroup, driver_drvgroup_def_driving).",
+        help=(
+            "Optional LE script patch profile "
+            "(baseline, driver_drvgroup, driver_drvgroup_def_driving, driver_drvgroup_def_driving_resistor)."
+        ),
     )
     p_runner_test_le_repair_import_only.add_argument(
         "--le-driver-tag",

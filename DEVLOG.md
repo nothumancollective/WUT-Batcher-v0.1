@@ -1705,3 +1705,42 @@ Validation executed:
 - Updated: `docs/TOOLCHAIN_BASELINE.md`
 - Updated: `docs/RADIMP_BASELINE_REPORT.md`
 - Added: `docs/LE_RULES_EXTRACT.md`
+
+### Update 62 (RadImp observation-profile experiments + default baseline confirmation)
+#### Done
+- Added harness observation patch profiles (post-ATH, test-only):
+  - `default`
+  - `force_absolute`
+  - `drop_radimptype`
+- Wired new CLI option:
+  - `runner-test run --radimp-observation-profile <profile>`
+- Added deterministic observation patch step + DB telemetry/artifacts:
+  - step: `post_ath_observation_patch`
+  - validation: `post_ath_observation_patch_assertions`
+  - artifact: `observation_patch_summary`
+- Added unit tests for observation patch helper.
+
+#### Why
+- We needed a controlled, reproducible way to test whether non-normalized RadImp observation settings produce non-trivial values, without changing production pipeline semantics.
+
+#### Validation
+- Unit tests:
+  - `python -m pytest tests/test_runner_test_harness.py tests/test_cli_runner_test.py tests/test_ath_driver_assets.py -q`
+  - `18 passed`
+- Real runs:
+  - `default`: `e4648f14-2d45-48cc-8590-59c6812b9dcc` (`succeeded`)
+  - `force_absolute`: `3f03e9cf-36d7-4bc1-8a0d-743555f90091` (`failed`: no impedance graph available for export mapping)
+  - `drop_radimptype`: `5afeefcb-ac24-46a9-9f55-e21807586f8e` (`failed` by validation; RadImp remained all-zero)
+- Stable baseline re-check (`default`, repeats=3):
+  - `f09efdc4-60fc-4fcc-be4d-e1ee5b7e6b12` (`succeeded`)
+  - `c917fcf1-927c-4bb8-aca6-ff0cafa25de0` (`succeeded`)
+  - `67f9f99b-2961-42f6-8646-fca2f793ec6f` (`succeeded`)
+
+#### Outcome
+- In this environment/configuration, tested observation-profile changes did not yield non-zero RadImp exports.
+- Runner robustness remains green on default profile; issue is narrowed to modeling/observation semantics, not UI automation flow.
+
+#### Docs
+- Updated: `docs/RADIMP_BASELINE_REPORT.md`
+- Updated: `docs/TOOLCHAIN_BASELINE.md`
+- Updated: `docs/LE_RULES_EXTRACT.md`

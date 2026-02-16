@@ -35,3 +35,6 @@ Date: 2026-02-16
 ## Observed Outcome In Real Runs
 - LE patch variants changed script topology as intended.
 - RadImp stayed zero in normalized mode and was reclassified as normalized baseline (not UI flow failure).
+- Observation experiments:
+  - `force_absolute` removed the Radiation Impedance graph from VACS in this setup (export mapping for `impedance` cannot resolve).
+  - `drop_radimptype` retained Radiation Impedance graph but still produced normalized/all-zero output.

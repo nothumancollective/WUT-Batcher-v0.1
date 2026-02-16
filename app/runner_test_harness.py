@@ -52,6 +52,32 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+@dataclass(frozen=True)
+class ObservationPatchResult:
+    status: str
+    profile: str
+    observation_files: List[str]
+    changed_files: int
+    radimp_entries_seen: int
+    diagnostics_path: Optional[str] = None
+    error: Optional[str] = None
+
+    @property
+    def ok(self) -> bool:
+        return self.status in {"not_requested", "already_conformant", "patched"}
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "status": self.status,
+            "profile": self.profile,
+            "observation_files": list(self.observation_files),
+            "changed_files": int(self.changed_files),
+            "radimp_entries_seen": int(self.radimp_entries_seen),
+            "diagnostics_path": self.diagnostics_path,
+            "error": self.error,
+        }
+
+
 def _copy_artifact_snapshot(
     *,
     source_path: str | Path,
@@ -108,6 +134,21 @@ def _write_directory_snapshot(
     }
     out.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return out
+
+
+def _normalize_radimp_observation_profile(profile: Optional[str]) -> str:
+    value = str(profile or "").strip().lower()
+    if not value:
+        return "default"
+    aliases = {
+        "default": "default",
+        "normalized": "default",
+        "force_absolute": "force_absolute",
+        "absolute": "force_absolute",
+        "drop_radimptype": "drop_radimptype",
+        "remove_radimptype": "drop_radimptype",
+    }
+    return aliases.get(value, value)
 
 
 def _version_config_hash(parameters: Dict[str, Any], unset_parameters: Sequence[str]) -> str:
@@ -672,6 +713,145 @@ def _resolve_observation_files(abec_path: Path) -> List[Path]:
     return files
 
 
+def _patch_observation_radimp_profile(
+    *,
+    abec_path: Path,
+    profile: Optional[str],
+    diagnostics_dir: Optional[Path] = None,
+) -> ObservationPatchResult:
+    canonical = _normalize_radimp_observation_profile(profile)
+    observation_files = _resolve_observation_files(abec_path)
+    if canonical == "default":
+        return ObservationPatchResult(
+            status="not_requested",
+            profile=canonical,
+            observation_files=[str(path) for path in observation_files],
+            changed_files=0,
+            radimp_entries_seen=0,
+        )
+    if canonical not in {"force_absolute", "drop_radimptype"}:
+        return ObservationPatchResult(
+            status="invalid_profile",
+            profile=canonical,
+            observation_files=[str(path) for path in observation_files],
+            changed_files=0,
+            radimp_entries_seen=0,
+            error=f"unsupported radimp observation profile: {canonical}",
+        )
+    if not observation_files:
+        return ObservationPatchResult(
+            status="observation_missing",
+            profile=canonical,
+            observation_files=[],
+            changed_files=0,
+            radimp_entries_seen=0,
+            error="observation files not found",
+        )
+
+    changed_files = 0
+    radimp_entries = 0
+    diagnostics_payload: Dict[str, Any] = {"profile": canonical, "files": []}
+
+    section_line = re.compile(r"^\s*Radiation_Impedance\s*$", flags=re.IGNORECASE)
+    radimp_type_line = re.compile(r"(\bRadImpType\s*=\s*)([^;\r\n]+)", flags=re.IGNORECASE)
+
+    try:
+        for obs_file in observation_files:
+            original_text = obs_file.read_text(encoding="utf-8", errors="replace")
+            lines = original_text.splitlines()
+            in_radimp_block = False
+            block_has_type = False
+            local_radimp_entries = 0
+            updated_lines: List[str] = []
+            file_changed = False
+
+            for index, line in enumerate(lines):
+                stripped = str(line).strip()
+                if section_line.match(line):
+                    if in_radimp_block and canonical == "force_absolute" and not block_has_type:
+                        updated_lines.append("  RadImpType=Absolute")
+                        file_changed = True
+                    in_radimp_block = True
+                    block_has_type = False
+                    updated_lines.append(line)
+                    continue
+                if in_radimp_block and stripped and not stripped.startswith("//") and not stripped.startswith(";"):
+                    if re.match(r"^[A-Za-z_]+\s*$", stripped):
+                        if canonical == "force_absolute" and not block_has_type:
+                            updated_lines.append("  RadImpType=Absolute")
+                            file_changed = True
+                        in_radimp_block = False
+                        block_has_type = False
+                if in_radimp_block and radimp_type_line.search(line):
+                    local_radimp_entries += 1
+                    if canonical == "force_absolute":
+                        replaced = radimp_type_line.sub(r"\1Absolute", line, count=1)
+                        if replaced != line:
+                            file_changed = True
+                        block_has_type = True
+                        updated_lines.append(replaced)
+                        continue
+                    if canonical == "drop_radimptype":
+                        replaced = radimp_type_line.sub("", line, count=1)
+                        replaced = re.sub(r";\s*;", ";", replaced)
+                        replaced = replaced.rstrip()
+                        if replaced != line:
+                            file_changed = True
+                        if replaced.strip():
+                            updated_lines.append(replaced)
+                        continue
+                updated_lines.append(line)
+                if in_radimp_block and "RadImpType" in line:
+                    block_has_type = True
+
+                if index == len(lines) - 1 and in_radimp_block and canonical == "force_absolute" and not block_has_type:
+                    updated_lines.append("  RadImpType=Absolute")
+                    file_changed = True
+
+            radimp_entries += local_radimp_entries
+            new_text = "\n".join(updated_lines)
+            if original_text.endswith("\n"):
+                new_text += "\n"
+            if file_changed:
+                obs_file.write_text(new_text, encoding="utf-8")
+                changed_files += 1
+
+            diagnostics_payload["files"].append(
+                {
+                    "path": str(obs_file),
+                    "changed": bool(file_changed),
+                    "radimp_entries_seen": int(local_radimp_entries),
+                    "sha256_before": hashlib.sha256(original_text.encode("utf-8", errors="replace")).hexdigest(),
+                    "sha256_after": hashlib.sha256(new_text.encode("utf-8", errors="replace")).hexdigest(),
+                }
+            )
+
+        status = "patched" if changed_files > 0 else "already_conformant"
+        diagnostics_path = None
+        if diagnostics_dir is not None:
+            diagnostics_dir.mkdir(parents=True, exist_ok=True)
+            diagnostics_path = diagnostics_dir / "observation_patch_summary.json"
+            diagnostics_path.write_text(json.dumps(diagnostics_payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        return ObservationPatchResult(
+            status=status,
+            profile=canonical,
+            observation_files=[str(path) for path in observation_files],
+            changed_files=changed_files,
+            radimp_entries_seen=radimp_entries,
+            diagnostics_path=str(diagnostics_path) if diagnostics_path else None,
+        )
+    except Exception as exc:
+        return ObservationPatchResult(
+            status="patch_failed",
+            profile=canonical,
+            observation_files=[str(path) for path in observation_files],
+            changed_files=changed_files,
+            radimp_entries_seen=radimp_entries,
+            diagnostics_path=None,
+            error=str(exc),
+        )
+
+
 def _read_le_script_binding_value(abec_path: Path) -> str:
     section = ""
     for raw_line in abec_path.read_text(encoding="utf-8", errors="replace").splitlines():
@@ -1033,6 +1213,7 @@ def run_runner_test_harness(
     akabak_executable: Optional[str | Path] = None,
     vacs_executable: Optional[str | Path] = None,
     le_repair_profile: Optional[str] = None,
+    radimp_observation_profile: Optional[str] = None,
     dry_run: bool = False,
 ) -> Dict[str, Any]:
     workspace = resolve_runner_test_workspace(workspace_root)
@@ -1044,6 +1225,8 @@ def run_runner_test_harness(
     ath_export_root_hint = str(case_payload.get("ath_export_root", "") or "").strip() or None
     case_le_repair_profile = str(case_payload.get("le_repair_profile", "") or "").strip() or None
     effective_le_repair_profile = str(le_repair_profile or case_le_repair_profile or "").strip() or None
+    case_radimp_profile = str(case_payload.get("radimp_observation_profile", "") or "").strip() or None
+    effective_radimp_profile = str(radimp_observation_profile or case_radimp_profile or "").strip() or None
     effective_le_driver_tag = str(case_payload.get("le_driver_tag", "D1") or "D1").strip() or "D1"
     effective_le_drvgroup = str(case_payload.get("le_drvgroup", "1001") or "1001").strip() or "1001"
     try:
@@ -1091,6 +1274,7 @@ def run_runner_test_harness(
                 "template_cfg": str(resolved_template_cfg) if resolved_template_cfg else None,
                 "ath_export_root_hint": ath_export_root_hint,
                 "le_repair_profile": effective_le_repair_profile,
+                "radimp_observation_profile": effective_radimp_profile,
                 "le_driver_tag": effective_le_driver_tag,
                 "le_drvgroup": effective_le_drvgroup,
                 "le_voltage_vrms": effective_le_voltage_vrms,
@@ -1410,6 +1594,52 @@ def run_runner_test_harness(
                     raise RuntimeError(
                         "post_ath_le_repair_failed: "
                         f"status={driver_sync.status} error={driver_sync.error or 'n/a'}"
+                    )
+                observation_patch_started = _now_iso()
+                observation_patch = _patch_observation_radimp_profile(
+                    abec_path=abec_path,
+                    profile=effective_radimp_profile,
+                    diagnostics_dir=workspace.logs_dir / test_run_id / "observation_patch",
+                )
+                db.add_test_run_step(
+                    test_run_id=test_run_id,
+                    step_name="post_ath_observation_patch",
+                    status="ok" if observation_patch.ok else "failed",
+                    started_at=observation_patch_started,
+                    finished_at=_now_iso(),
+                    details=observation_patch.to_dict(),
+                    error={} if observation_patch.ok else {"error": observation_patch.error or observation_patch.status},
+                )
+                if observation_patch.diagnostics_path:
+                    patch_diag_file = Path(observation_patch.diagnostics_path)
+                    if patch_diag_file.exists() and patch_diag_file.is_file():
+                        db.add_artifact(
+                            test_run_id=test_run_id,
+                            kind="observation_patch_summary",
+                            path=str(patch_diag_file),
+                            sha256=_sha256_file(patch_diag_file),
+                            bytes_size=patch_diag_file.stat().st_size,
+                        )
+                db.add_validation(
+                    test_run_id=test_run_id,
+                    validation_name="post_ath_observation_patch_assertions",
+                    status="ok" if observation_patch.ok else "failed",
+                    metrics={
+                        "profile": observation_patch.profile,
+                        "status": observation_patch.status,
+                        "changed_files": observation_patch.changed_files,
+                        "radimp_entries_seen": observation_patch.radimp_entries_seen,
+                        "observation_files": observation_patch.observation_files,
+                    },
+                    message="post-ATH observation patch assertions passed"
+                    if observation_patch.ok
+                    else f"post-ATH observation patch failed: {observation_patch.error or observation_patch.status}",
+                )
+                if not observation_patch.ok:
+                    notes = "post-ATH observation patch failed"
+                    raise RuntimeError(
+                        "post_ath_observation_patch_failed: "
+                        f"status={observation_patch.status} error={observation_patch.error or 'n/a'}"
                     )
 
                 ath_input_dir = abec_path.parent
@@ -1964,6 +2194,7 @@ def run_runner_test_harness(
         "keep_exports": bool(keep_exports),
         "test_profile": test_profile,
         "le_repair_profile": effective_le_repair_profile,
+        "radimp_observation_profile": effective_radimp_profile,
         "le_driver_tag": effective_le_driver_tag,
         "le_drvgroup": effective_le_drvgroup,
         "le_voltage_vrms": effective_le_voltage_vrms,

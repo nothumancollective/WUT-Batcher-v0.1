@@ -19,6 +19,16 @@ Result across A/B/C/D:
 - RadImp export remains numerically zero in all variants.
 - Therefore the zero signature is not explained by missing `Scriptname_LEScript`, missing `Driver DrvGroup`, or missing `Def_Driving`/`Resistor` topology alone.
 
+## Observation Profile Experiments (real runs)
+1. `default`: `e4648f14-2d45-48cc-8590-59c6812b9dcc` (succeeded)
+2. `force_absolute`: `3f03e9cf-36d7-4bc1-8a0d-743555f90091` (failed in export mapping)
+3. `drop_radimptype`: `5afeefcb-ac24-46a9-9f55-e21807586f8e` (flow succeeded, RadImp still zero)
+
+Observed behavior:
+- `force_absolute` patches `observation.txt` as intended, but after solve/VACS only SPL contour windows are present (no Radiation Impedance graph window to map/export).
+- `drop_radimptype` keeps the Radiation Impedance graph, but export metadata still resolves to normalized RadImp and remains all-zero.
+- Therefore no tested observation-profile variant in this pass produced non-zero RadImp values.
+
 ## Key Evidence
 - Exported graph is the correct one:
   - VACS child window title: `Radiation Impedance - Radiation_Impedance #5`
