@@ -8,12 +8,13 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from app.compatibility_service import CompatibilityService
 from app.constants import DEFAULT_RUNNER_MODE
 from app.gui import BatchPage
-from ui.form_builder import AccordionGroupBox, ObjectFieldEditor
+from ui.form_builder import AccordionGroupBox
 
 try:
-    from PySide6.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication, QLabel
 except ImportError:  # pragma: no cover
     QApplication = None  # type: ignore[assignment]
+    QLabel = None  # type: ignore[assignment]
 
 
 @unittest.skipIf(QApplication is None, "PySide6 is required")
@@ -120,17 +121,32 @@ class BatchPageUiTests(unittest.TestCase):
 
     def test_rosse_block_uses_object_editor_with_details(self) -> None:
         page = BatchPage()
+        base = self._compat_state()
+        page.apply_compatibility(base)
+        throat_row = page.parameter_form._rows.get("Throat.Profile")
+        if throat_row is None:
+            self.skipTest("Throat.Profile not available.")
+        if hasattr(throat_row.base_editor, "set_value"):
+            throat_row.base_editor.set_value(2)  # type: ignore[attr-defined]
+        payload = page._payload(include_name=False)
+        state = self._compat_state(
+            selected_params=dict(payload.get("selected_params", {}) or {}),
+            sweeps=dict(payload.get("sweeps", {}) or {}),
+        )
+        page.apply_compatibility(state)
+
         row = page.parameter_form._rows.get("R-OSSE")
         if row is None:
             self.skipTest("R-OSSE not available.")
-        self.assertIsInstance(row.base_editor, ObjectFieldEditor)
+        self.assertFalse(row.container.isHidden())
         editor = row.base_editor
-        assert isinstance(editor, ObjectFieldEditor)
-        self.assertIn("R-OSSE.R", editor.property_editors)
-        self.assertIn("R-OSSE.r0", editor.property_editors)
+        self.assertTrue(hasattr(editor, "property_editors"))
+        props = getattr(editor, "property_editors")
+        self.assertIn("R-OSSE.R", props)
+        self.assertIn("R-OSSE.r0", props)
 
-        editor.property_editors["R-OSSE.R"].set_value(120.0)
-        editor.property_editors["R-OSSE.r0"].set_value(17.0)
+        props["R-OSSE.R"].set_value(120.0)
+        props["R-OSSE.r0"].set_value(17.0)
         payload = page.parameter_form.selected_params_payload()
         self.assertIn("R-OSSE", payload)
         self.assertIsInstance(payload["R-OSSE"], dict)
@@ -171,6 +187,54 @@ class BatchPageUiTests(unittest.TestCase):
         self.assertIsNotNone(selected)
         assert selected is not None
         self.assertEqual(str(selected.property("disclosureHint")), "true")
+
+    def test_core_group_is_renamed_to_mesh(self) -> None:
+        page = BatchPage()
+        self.assertEqual(page.parameter_form.group_name_for_key("Mesh.Quadrants"), "Mesh")
+
+    def test_labels_do_not_render_key_suffix(self) -> None:
+        page = BatchPage()
+        row = page.parameter_form._rows.get("Length")
+        if row is None:
+            self.skipTest("Length row not available.")
+        if QLabel is None:
+            self.skipTest("QLabel unavailable.")
+        text_candidates = [label.text() for label in row.container.findChildren(QLabel)]
+        self.assertTrue(any(str(text).strip() == "Length" for text in text_candidates))
+
+    def test_summary_cards_and_right_column_use_thirds(self) -> None:
+        page = BatchPage()
+        page.resize(1500, 900)
+        page.show()
+        self.app.processEvents()
+        widths = [page.summary_left_card.width(), page.summary_center_card.width(), page.summary_right_card.width()]
+        self.assertTrue(all(width > 0 for width in widths))
+        self.assertAlmostEqual(widths[0], widths[1], delta=3)
+        self.assertAlmostEqual(widths[1], widths[2], delta=3)
+
+        expected_right = max((int(page.width() - 40) - int(page._body_layout.spacing())) // 3, 320)
+        self.assertAlmostEqual(page._right_panel.width(), expected_right, delta=5)
+
+    def test_sweep_button_locks_base_editor_when_active(self) -> None:
+        page = BatchPage()
+        state = self._compat_state()
+        page.apply_compatibility(state)
+        key = None
+        for candidate in list(state.get("sweepable_keys", []) or []):
+            candidate_key = str(candidate)
+            toggle = page.parameter_form.sweep_toggle_for_key(candidate_key)
+            editor = page.parameter_form.editor_for_key(candidate_key)
+            if toggle is not None and toggle.isVisible() and toggle.isEnabled() and editor is not None:
+                key = candidate_key
+                break
+        if key is None:
+            self.skipTest("No scalar sweep candidate available.")
+        toggle = page.parameter_form.sweep_toggle_for_key(key)
+        editor = page.parameter_form.editor_for_key(key)
+        assert toggle is not None and editor is not None
+        toggle.setChecked(True)
+        self.assertFalse(editor.isEnabled())
+        self.assertTrue(bool(toggle.property("sweepActive")))
 
 
 if __name__ == "__main__":
