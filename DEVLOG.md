@@ -1585,3 +1585,31 @@ Validation executed:
   - key observation: pre-existing VACS process (`pid 9020`) was already active in baseline snapshot, indicating external state contamination risk for this run.
 - Note:
   - `pytest` not available in current Python env (`No module named pytest`), so no local unit suite execution in this pass.
+
+### Update 58 (Preflight contamination guard + pytest environment bootstrap)
+#### Done
+- Installed `pytest` in the active Python environment (`python -m pip install pytest`).
+- Replaced unsafe preflight behavior that previously forced global AKABAK shutdown.
+- Added deterministic unmanaged-process scan in `app/runner_test_harness.py`:
+  - scans running `AKABAK.exe`, `VACSVIEWER_32.exe`, `VACSVIEWER.exe`
+  - compares against harness-owned PIDs from `process_ledger.json`
+  - blocks run early when unmanaged tool processes are detected.
+- Added tracker helper `owned_pids()` and reusable process-list helper.
+- Applied guard consistently to:
+  - `run_runner_test_harness`
+  - `run_runner_test_open_dialog_only`
+  - `run_runner_test_import_start_apply_only`
+  - `run_runner_test_le_repair_import_only`
+
+#### Why
+- Recent failures showed contaminated VM state (externally started VACS/AKABAK) causing false-negative solve detection.
+- Guardrails require process safety: only harness-owned processes may be managed by harness logic.
+
+#### Validation
+- `python -m py_compile app/runner_test_harness.py`
+- `python -m pytest tests/test_runner_test_harness.py tests/test_cli_runner_test.py tests/test_cli_runs_tools.py tests/test_cli_vacs_tools.py tests/test_cli_run_sample.py -q`
+  - `13 passed`
+- Real guard proof:
+  - started AKABAK manually, then executed `runner-test open-dialog-only`
+  - run failed at preflight with clear note:
+    - `unmanaged AKABAK/VACS process detected; close manual tool windows and retry`

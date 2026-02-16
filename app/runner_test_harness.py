@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
@@ -740,6 +741,41 @@ def _kill_pid(pid: int) -> bool:
     return proc.returncode == 0
 
 
+def _list_processes_by_image(image_name: str) -> List[Dict[str, Any]]:
+    image = str(image_name or "").strip()
+    if not image:
+        return []
+    try:
+        proc = subprocess.run(
+            ["tasklist", "/FI", f"IMAGENAME eq {image}", "/FO", "CSV", "/NH"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+    except Exception:
+        return []
+    lines = [line.strip() for line in str(proc.stdout or "").splitlines() if line.strip()]
+    rows: List[Dict[str, Any]] = []
+    for row in csv.reader(lines):
+        if len(row) < 2:
+            continue
+        image_cell = str(row[0] or "").strip()
+        pid_cell = str(row[1] or "").strip()
+        if not image_cell or image_cell.lower() != image.lower():
+            continue
+        if not pid_cell.isdigit():
+            continue
+        rows.append(
+            {
+                "image": image_cell,
+                "pid": int(pid_cell),
+            }
+        )
+    return rows
+
+
 class HarnessProcessTracker:
     def __init__(self, ledger_path: Path) -> None:
         self.ledger_path = ledger_path
@@ -782,6 +818,15 @@ class HarnessProcessTracker:
         rows = [row for row in rows if int(row.get("pid", 0)) != int(pid)]
         self._save(rows)
 
+    def owned_pids(self) -> List[int]:
+        rows = self._load()
+        pids = {
+            int(row.get("pid", 0))
+            for row in rows
+            if int(row.get("pid", 0) or 0) > 0 and bool(row.get("started_by_harness", False))
+        }
+        return sorted(pids)
+
     def kill_stale(self) -> List[Dict[str, Any]]:
         rows = self._load()
         results: List[Dict[str, Any]] = []
@@ -807,6 +852,37 @@ class HarnessProcessTracker:
                 kept.append(row)
         self._save(kept)
         return results
+
+
+def _detect_unmanaged_tool_processes(tracker: HarnessProcessTracker) -> Dict[str, Any]:
+    owned_pids = set(int(pid) for pid in tracker.owned_pids())
+    scan_specs: List[Tuple[str, str]] = [
+        ("akabak", "AKABAK.exe"),
+        ("vacs", "VACSVIEWER_32.exe"),
+        ("vacs", "VACSVIEWER.exe"),
+    ]
+    running_by_pid: Dict[int, Dict[str, Any]] = {}
+    for app, image_name in scan_specs:
+        for row in _list_processes_by_image(image_name):
+            pid = int(row.get("pid", 0) or 0)
+            if pid <= 0:
+                continue
+            if pid in running_by_pid:
+                continue
+            running_by_pid[pid] = {
+                "app": app,
+                "image": str(row.get("image", image_name) or image_name),
+                "pid": pid,
+                "owned_by_harness": pid in owned_pids,
+            }
+    running_processes = sorted(running_by_pid.values(), key=lambda item: (str(item.get("app", "")), int(item.get("pid", 0))))
+    unmanaged_processes = [row for row in running_processes if not bool(row.get("owned_by_harness"))]
+    return {
+        "owned_pids": sorted(owned_pids),
+        "running_processes": running_processes,
+        "unmanaged_processes": unmanaged_processes,
+        "blocked": bool(unmanaged_processes),
+    }
 
 
 @dataclass(frozen=True)
@@ -899,7 +975,9 @@ def run_runner_test_harness(
         try:
             preflight_started = _now_iso()
             stale_kill_results = tracker.kill_stale()
+            process_scan = _detect_unmanaged_tool_processes(tracker)
             missing_tools = []
+            preflight_blockers: List[str] = []
             if not dry_run:
                 for key, probe in tool_probe.items():
                     if not probe.get("path"):
@@ -920,25 +998,37 @@ def run_runner_test_harness(
                         missing_tools.append(
                             f"ath_export_root:not_writable:{export_root_probe.get('resolved_path')}"
                         )
+                if bool(process_scan.get("blocked")):
+                    preflight_blockers.append("unmanaged_tool_processes_running")
             db.add_test_run_step(
                 test_run_id=test_run_id,
                 step_name="preflight",
-                status="ok" if not missing_tools else "failed",
+                status="ok" if not missing_tools and not preflight_blockers else "failed",
                 started_at=preflight_started,
                 finished_at=_now_iso(),
                 details={
                     "dry_run": bool(dry_run),
                     "workspace": workspace.to_dict(),
                     "stale_process_cleanup": stale_kill_results,
+                    "process_scan": process_scan,
                     "tool_probe": tool_probe,
                     "ath_export_root_hint": ath_export_root_hint,
                     "export_root_probe": export_root_probe,
                 },
-                error={"missing_tools": missing_tools} if missing_tools else {},
+                error={
+                    "missing_tools": missing_tools,
+                    "preflight_blockers": preflight_blockers,
+                    "unmanaged_processes": list(process_scan.get("unmanaged_processes", []) or []),
+                }
+                if missing_tools or preflight_blockers
+                else {},
             )
             if missing_tools:
                 notes = "preflight missing tools"
                 raise RuntimeError("missing required executables for non-dry run")
+            if preflight_blockers:
+                notes = "preflight blocked by unmanaged tool processes"
+                raise RuntimeError("unmanaged AKABAK/VACS process detected; close manual tool windows and retry")
 
             resolve_started = _now_iso()
             resolved = resolve_versions(project.constraints, batch, existing_version_ids=(), strict=False)
@@ -1677,30 +1767,44 @@ def run_runner_test_open_dialog_only(
         try:
             preflight_started = _now_iso()
             stale_kill_results = tracker.kill_stale()
+            process_scan = _detect_unmanaged_tool_processes(tracker)
             missing_inputs: List[str] = []
+            preflight_blockers: List[str] = []
             if not dry_run:
                 if not akabak_input.exists() or not akabak_input.is_file():
                     missing_inputs.append(f"akabak_executable:not_found:{akabak_input}")
                 if not abec_input.exists() or not abec_input.is_file():
                     missing_inputs.append(f"abec_path:not_found:{abec_input}")
+                if bool(process_scan.get("blocked")):
+                    preflight_blockers.append("unmanaged_tool_processes_running")
             db.add_test_run_step(
                 test_run_id=test_run_id,
                 step_name="preflight",
-                status="ok" if not missing_inputs else "failed",
+                status="ok" if not missing_inputs and not preflight_blockers else "failed",
                 started_at=preflight_started,
                 finished_at=_now_iso(),
                 details={
                     "dry_run": bool(dry_run),
                     "workspace": workspace.to_dict(),
                     "stale_process_cleanup": stale_kill_results,
+                    "process_scan": process_scan,
                     "akabak_executable": str(akabak_input),
                     "abec_path": str(abec_input),
                 },
-                error={"missing_inputs": missing_inputs} if missing_inputs else {},
+                error={
+                    "missing_inputs": missing_inputs,
+                    "preflight_blockers": preflight_blockers,
+                    "unmanaged_processes": list(process_scan.get("unmanaged_processes", []) or []),
+                }
+                if missing_inputs or preflight_blockers
+                else {},
             )
             if missing_inputs:
                 notes = "preflight missing inputs"
                 raise RuntimeError("missing inputs for open-dialog-only harness")
+            if preflight_blockers:
+                notes = "preflight blocked by unmanaged tool processes"
+                raise RuntimeError("unmanaged AKABAK/VACS process detected; close manual tool windows and retry")
 
             db.upsert_run(
                 run_id=test_run_id,
@@ -2003,30 +2107,44 @@ def run_runner_test_import_start_apply_only(
         try:
             preflight_started = _now_iso()
             stale_kill_results = tracker.kill_stale()
+            process_scan = _detect_unmanaged_tool_processes(tracker)
             missing_inputs: List[str] = []
+            preflight_blockers: List[str] = []
             if not dry_run:
                 if not akabak_input.exists() or not akabak_input.is_file():
                     missing_inputs.append(f"akabak_executable:not_found:{akabak_input}")
                 if not abec_input.exists() or not abec_input.is_file():
                     missing_inputs.append(f"abec_path:not_found:{abec_input}")
+                if bool(process_scan.get("blocked")):
+                    preflight_blockers.append("unmanaged_tool_processes_running")
             db.add_test_run_step(
                 test_run_id=test_run_id,
                 step_name="preflight",
-                status="ok" if not missing_inputs else "failed",
+                status="ok" if not missing_inputs and not preflight_blockers else "failed",
                 started_at=preflight_started,
                 finished_at=_now_iso(),
                 details={
                     "dry_run": bool(dry_run),
                     "workspace": workspace.to_dict(),
                     "stale_process_cleanup": stale_kill_results,
+                    "process_scan": process_scan,
                     "akabak_executable": str(akabak_input),
                     "abec_path": str(abec_input),
                 },
-                error={"missing_inputs": missing_inputs} if missing_inputs else {},
+                error={
+                    "missing_inputs": missing_inputs,
+                    "preflight_blockers": preflight_blockers,
+                    "unmanaged_processes": list(process_scan.get("unmanaged_processes", []) or []),
+                }
+                if missing_inputs or preflight_blockers
+                else {},
             )
             if missing_inputs:
                 notes = "preflight missing inputs"
                 raise RuntimeError("missing inputs for import-start-apply-only harness")
+            if preflight_blockers:
+                notes = "preflight blocked by unmanaged tool processes"
+                raise RuntimeError("unmanaged AKABAK/VACS process detected; close manual tool windows and retry")
 
             db.upsert_run(
                 run_id=test_run_id,
@@ -2420,7 +2538,9 @@ def run_runner_test_le_repair_import_only(
         try:
             preflight_started = _now_iso()
             stale_kill_results = tracker.kill_stale()
+            process_scan = _detect_unmanaged_tool_processes(tracker)
             missing_inputs: List[str] = []
+            preflight_blockers: List[str] = []
             if not dry_run:
                 if not akabak_input.exists() or not akabak_input.is_file():
                     missing_inputs.append(f"akabak_executable:not_found:{akabak_input}")
@@ -2432,27 +2552,39 @@ def run_runner_test_le_repair_import_only(
                     missing_inputs.append(f"reuse_export_dir:not_found:{reuse_export_input}")
                 if not ath_cfg_input and not reuse_export_input and (abec_input is None or not abec_input.exists() or not abec_input.is_file()):
                     missing_inputs.append(f"abec_path:not_found:{abec_input}")
+                if bool(process_scan.get("blocked")):
+                    preflight_blockers.append("unmanaged_tool_processes_running")
             db.add_test_run_step(
                 test_run_id=test_run_id,
                 step_name="preflight",
-                status="ok" if not missing_inputs else "failed",
+                status="ok" if not missing_inputs and not preflight_blockers else "failed",
                 started_at=preflight_started,
                 finished_at=_now_iso(),
                 details={
                     "dry_run": bool(dry_run),
                     "workspace": workspace.to_dict(),
                     "stale_process_cleanup": stale_kill_results,
+                    "process_scan": process_scan,
                     "akabak_executable": str(akabak_input),
                     "ath_executable": str(ath_input) if ath_input else None,
                     "ath_cfg_path": str(ath_cfg_input) if ath_cfg_input else None,
                     "abec_path": str(abec_input) if abec_input else None,
                     "reuse_export_dir": str(reuse_export_input) if reuse_export_input else None,
                 },
-                error={"missing_inputs": missing_inputs} if missing_inputs else {},
+                error={
+                    "missing_inputs": missing_inputs,
+                    "preflight_blockers": preflight_blockers,
+                    "unmanaged_processes": list(process_scan.get("unmanaged_processes", []) or []),
+                }
+                if missing_inputs or preflight_blockers
+                else {},
             )
             if missing_inputs:
                 notes = "preflight missing inputs"
                 raise RuntimeError("missing inputs for le-repair-import-only harness")
+            if preflight_blockers:
+                notes = "preflight blocked by unmanaged tool processes"
+                raise RuntimeError("unmanaged AKABAK/VACS process detected; close manual tool windows and retry")
 
             db.upsert_run(
                 run_id=test_run_id,
