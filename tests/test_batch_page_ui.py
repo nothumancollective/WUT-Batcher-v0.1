@@ -202,6 +202,26 @@ class BatchPageUiTests(unittest.TestCase):
         page = BatchPage()
         self.assertEqual(page.parameter_form.group_name_for_key("Mesh.Quadrants"), "Mesh")
 
+    def test_project_fixed_controller_keys_are_hidden_in_batch_form(self) -> None:
+        page = BatchPage()
+        state = self._compat_state()
+        page.set_project_fixed_keys(["Throat.Profile", "Morph.TargetShape", "GCurve.Type", "Mesh.Enclosure"])
+        page.apply_compatibility(state)
+
+        throat = page.parameter_form._rows.get("Throat.Profile")
+        morph = page.parameter_form._rows.get("Morph.TargetShape")
+        gcurve = page.parameter_form._rows.get("GCurve.Type")
+        enclosure = page.parameter_form._rows.get("Mesh.Enclosure")
+        self.assertIsNotNone(throat)
+        self.assertIsNotNone(morph)
+        self.assertIsNotNone(gcurve)
+        self.assertIsNotNone(enclosure)
+        assert throat is not None and morph is not None and gcurve is not None and enclosure is not None
+        self.assertTrue(throat.container.isHidden())
+        self.assertTrue(morph.container.isHidden())
+        self.assertTrue(gcurve.container.isHidden())
+        self.assertTrue(enclosure.container.isHidden())
+
     def test_labels_do_not_render_key_suffix(self) -> None:
         page = BatchPage()
         row = page.parameter_form._rows.get("Length")
