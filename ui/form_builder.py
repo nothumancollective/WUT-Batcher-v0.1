@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import re
-from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from ui.form_metrics import FORM_METRICS, configure_single_column_grid, configure_two_column_grid
 from ui.form_schema import FieldSpec, FormSchema, ModeStackSpec, build_project_form_schema
@@ -799,6 +799,7 @@ class NullableBoolInput(QWidget):
 
 class SegmentedEnumInput(QWidget):
     changed = Signal()
+    blocked_interaction = Signal(object, str, str)
 
     def __init__(
         self,
@@ -818,6 +819,8 @@ class SegmentedEnumInput(QWidget):
         self._enforce_fallback = enforce_fallback
         self._fallback_is_unset = fallback_is_unset
         self._fallback_option_id: Optional[int] = None
+        self._pressed_prev_checked_id: int = -1
+        self._blocked_button_meta: Dict[int, Dict[str, Any]] = {}
 
         root = QHBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -845,8 +848,18 @@ class SegmentedEnumInput(QWidget):
     def _on_pressed(self, button_id: int) -> None:
         button = self.group.button(button_id)
         self._pressed_checked[button_id] = bool(button and button.isChecked())
+        self._pressed_prev_checked_id = int(self.group.checkedId())
 
     def _on_clicked(self, button_id: int, checked: bool) -> None:
+        blocked_meta = self._blocked_button_meta.get(int(button_id))
+        if blocked_meta is not None:
+            self._restore_checked_state_after_blocked_click()
+            self.blocked_interaction.emit(
+                self._values_by_id.get(int(button_id)),
+                str(blocked_meta.get("cause_key", "") or ""),
+                str(blocked_meta.get("message", "") or ""),
+            )
+            return
         if self._pressed_checked.get(button_id, False) and checked:
             if self._enforce_fallback and self._fallback_option_id is not None:
                 if button_id == self._fallback_option_id:
@@ -859,6 +872,17 @@ class SegmentedEnumInput(QWidget):
             self.clear()
             return
         self.changed.emit()
+
+    def _restore_checked_state_after_blocked_click(self) -> None:
+        previous = int(self._pressed_prev_checked_id)
+        self.group.setExclusive(False)
+        for button in self._buttons:
+            button.setChecked(False)
+        self.group.setExclusive(True)
+        if previous >= 0:
+            prev_button = self.group.button(previous)
+            if prev_button is not None:
+                prev_button.setChecked(True)
 
     def clear(self, *, emit: bool = True, force_empty: bool = False) -> None:
         if self._enforce_fallback and not force_empty and self._fallback_option_id is not None:
@@ -912,6 +936,33 @@ class SegmentedEnumInput(QWidget):
     def set_locked(self, locked: bool) -> None:
         for button in self._buttons:
             button.setEnabled(not locked)
+
+    def set_blocked_option_map(self, blocked_options: Mapping[str, Mapping[str, Any]] | None) -> None:
+        raw = dict(blocked_options or {})
+        self._blocked_button_meta = {}
+        for button_id, value in self._values_by_id.items():
+            token = "__none__" if value is None else str(value)
+            button = self.group.button(button_id)
+            if button is None:
+                continue
+            meta = raw.get(token)
+            if not isinstance(meta, Mapping):
+                button.setProperty("compatBlockedOption", "false")
+                button.setProperty("compatBlocked", "false")
+                button.setToolTip("")
+                continue
+            message = str(meta.get("message", "") or "").strip()
+            self._blocked_button_meta[int(button_id)] = {
+                "cause_key": str(meta.get("cause_key", "") or "").strip(),
+                "message": message,
+            }
+            button.setProperty("compatBlockedOption", "true")
+            button.setProperty("compatBlocked", "true")
+            button.setToolTip(message)
+        for button in self._buttons:
+            button.style().unpolish(button)
+            button.style().polish(button)
+            button.update()
 
 
 class NullableEnumComboInput(QWidget):
@@ -1320,6 +1371,7 @@ def _finalize_group_box(box: QGroupBox) -> None:
 
 class ParameterForm(QWidget):
     changed = Signal(dict)
+    blocked_interaction = Signal(str, str, str)
 
     def __init__(self, schema: FormSchema | None = None, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -1342,6 +1394,8 @@ class ParameterForm(QWidget):
         self._rollback_detail_keys: Tuple[str, ...] = ("Rollback.Angle", "Rollback.Exp", "Rollback.StartAt")
         self._coverage_angle_key = "Coverage.Angle"
         self._suspend_emit = False
+        self._last_changed_key: Optional[str] = None
+        self._compat_ui_state: Dict[str, Any] = {}
         self._base_width: Optional[int] = None
         self._risk_widgets: Dict[int, QWidget] = {}
         self._risk_original_tooltips: Dict[int, str] = {}
@@ -2034,9 +2088,61 @@ class ParameterForm(QWidget):
             editor = ScalarFieldEditor(field)
 
         if hasattr(editor, "changed"):
-            editor.changed.connect(self._on_any_field_changed)  # type: ignore[attr-defined]
+            editor.changed.connect(lambda *_args, key=field.key: self._on_any_field_changed(changed_key=key))  # type: ignore[attr-defined]
+        self._wire_blocked_interaction_signals(field.key, editor)
         self._field_editors[field.key] = editor
         return editor
+
+    def _segments_for_editor(self, editor: QWidget) -> List[SegmentedEnumInput]:
+        segments: List[SegmentedEnumInput] = []
+        if isinstance(editor, ScalarFieldEditor):
+            value_widget = editor.value_widget()
+            if isinstance(value_widget, SegmentedEnumInput):
+                segments.append(value_widget)
+            maybe_segment = getattr(value_widget, "segment", None)
+            if isinstance(maybe_segment, SegmentedEnumInput):
+                segments.append(maybe_segment)
+        if isinstance(editor, ObjectFieldEditor):
+            if isinstance(editor.toggle, SegmentedEnumInput):
+                segments.append(editor.toggle)
+        dedup: List[SegmentedEnumInput] = []
+        seen: set[int] = set()
+        for segment in segments:
+            seg_id = id(segment)
+            if seg_id in seen:
+                continue
+            seen.add(seg_id)
+            dedup.append(segment)
+        return dedup
+
+    def _wire_blocked_interaction_signals(self, field_key: str, editor: QWidget) -> None:
+        for segment in self._segments_for_editor(editor):
+            if bool(getattr(segment, "_blocked_signal_wired", False)):
+                continue
+            segment._blocked_signal_wired = True  # type: ignore[attr-defined]
+            segment.blocked_interaction.connect(  # type: ignore[attr-defined]
+                lambda value, cause_key, message, key=field_key: self._on_segment_blocked_interaction(
+                    key,
+                    value,
+                    str(cause_key or ""),
+                    str(message or ""),
+                )
+            )
+
+    def _on_segment_blocked_interaction(self, target_key: str, _value: Any, cause_key: str, message: str) -> None:
+        self.blocked_interaction.emit(str(target_key), str(cause_key), str(message))
+
+    def _apply_blocked_option_state(self) -> None:
+        compat_ui = dict(self._compat_ui_state or {})
+        blocked_by_key = {
+            str(key): dict(value)
+            for key, value in dict(compat_ui.get("blocked_options", {}) or {}).items()
+            if isinstance(value, Mapping)
+        }
+        for key, editor in self._field_editors.items():
+            blocked_options = blocked_by_key.get(str(key), {})
+            for segment in self._segments_for_editor(editor):
+                segment.set_blocked_option_map(blocked_options)
 
     def _controller_value(self, key: str) -> Optional[int]:
         editor = self._field_editors.get(key)
@@ -2081,9 +2187,11 @@ class ParameterForm(QWidget):
         else:
             rosse_editor.set_is_set(False)  # type: ignore[attr-defined]
 
-    def _on_any_field_changed(self, *_: Any) -> None:
+    def _on_any_field_changed(self, *_: Any, changed_key: Optional[str] = None) -> None:
         if self._suspend_emit:
             return
+        if changed_key:
+            self._last_changed_key = str(changed_key)
         self._refresh_mode_stacks()
         self._sync_mode_side_effects()
         self._apply_local_disclosure()
@@ -2453,8 +2561,14 @@ class ParameterForm(QWidget):
 
     def apply_compatibility(self, state: Dict[str, Any]) -> None:
         self._compat_state = dict(state)
+        self._compat_ui_state = dict(state.get("compat_ui_state", {}) or {})
         visible_keys = set(str(item) for item in list(state.get("visible_keys", []) or []))
         locked_keys = set(str(item) for item in list(state.get("locked_keys", []) or []))
+        blocked_keys = {
+            str(item)
+            for item in list(self._compat_ui_state.get("blocked_keys", []) or [])
+            if str(item).strip()
+        }
         self._compat_visible_keys = set(visible_keys)
 
         self._suspend_emit = True
@@ -2476,8 +2590,14 @@ class ParameterForm(QWidget):
                 editor.setVisible(is_visible)
 
                 if hasattr(editor, "set_locked"):
-                    editor.set_locked(key in locked_keys)  # type: ignore[attr-defined]
+                    editor.set_locked((key in locked_keys) or (key in blocked_keys))  # type: ignore[attr-defined]
+                target = self._risk_target_for_key(key)
+                if isinstance(target, QWidget):
+                    is_blocked = key in blocked_keys
+                    target.setProperty("compatBlocked", "true" if is_blocked else "false")
+                    self._repolish(target)
             changed_hidden = self._apply_local_disclosure() or changed_hidden
+            self._apply_blocked_option_state()
         finally:
             self._suspend_emit = False
 
@@ -2536,6 +2656,23 @@ class ParameterForm(QWidget):
         for key, box in self._field_group_boxes.items():
             result[key] = str(box.title() or "General")
         return result
+
+    def last_changed_key(self) -> Optional[str]:
+        value = str(self._last_changed_key or "").strip()
+        return value or None
+
+    def flash_cause_key(self, key: str) -> None:
+        target = self._risk_target_for_key(str(key))
+        if not isinstance(target, QWidget):
+            return
+        target.setProperty("compatCauseFlash", "true")
+        self._repolish(target)
+
+        def _clear() -> None:
+            target.setProperty("compatCauseFlash", "false")
+            self._repolish(target)
+
+        QTimer.singleShot(460, _clear)
 
     def focus_issue_key(self, key: str) -> bool:
         key_s = str(key or "").strip()

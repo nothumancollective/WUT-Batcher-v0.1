@@ -9,7 +9,7 @@ from ui.form_builder import AccordionGroupBox, ContextFrame, ObjectFieldEditor, 
 from ui.form_schema import FieldSpec, FormSchema, ModeStackSpec, build_project_form_schema
 
 try:
-    from PySide6.QtCore import Qt, Signal
+    from PySide6.QtCore import Qt, QTimer, Signal
     from PySide6.QtGui import QDoubleValidator, QIntValidator
     from PySide6.QtWidgets import (
         QFrame,
@@ -132,6 +132,7 @@ class _FieldRow:
 
 class BatchParameterForm(QWidget):
     changed = Signal()
+    blocked_interaction = Signal(str, str, str)
 
     _GROUP_ORDER = ["Basics", "Throat Profile", "GCurve", "Morph", "Mesh", "Enclosure"]
 
@@ -156,6 +157,8 @@ class BatchParameterForm(QWidget):
         self._last_changed_key: Optional[str] = None
         self._prev_visible_keys: set[str] = set()
         self._hint_widgets: List[QWidget] = []
+        self._compat_ui_state: Dict[str, Any] = {}
+        self._blocked_keys: set[str] = set()
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -384,6 +387,7 @@ class BatchParameterForm(QWidget):
             button_layout=self._is_button_layout(field),
         )
         self._rows[key] = row_data
+        self._wire_row_blocked_interactions(key)
         sweep_toggle.toggled.connect(lambda enabled, row_key=key: self._on_sweep_toggled(row_key, enabled))
 
     def _open_first_visible_group(self) -> None:
@@ -485,6 +489,45 @@ class BatchParameterForm(QWidget):
         for widget in self._dedup_widgets(targets):
             widget.setProperty("baseLockedBySweep", bool(active))
             self._repolish(widget)
+
+    def _row_segments(self, row: _FieldRow) -> List[SegmentedEnumInput]:
+        editor = row.base_editor
+        segments: List[SegmentedEnumInput] = []
+        if isinstance(editor, ScalarFieldEditor):
+            value_widget = editor.value_widget()
+            if isinstance(value_widget, SegmentedEnumInput):
+                segments.append(value_widget)
+            maybe = getattr(value_widget, "segment", None)
+            if isinstance(maybe, SegmentedEnumInput):
+                segments.append(maybe)
+        if isinstance(editor, ObjectFieldEditor):
+            if isinstance(editor.toggle, SegmentedEnumInput):
+                segments.append(editor.toggle)
+        dedup: List[SegmentedEnumInput] = []
+        seen: set[int] = set()
+        for segment in segments:
+            seg_id = id(segment)
+            if seg_id in seen:
+                continue
+            seen.add(seg_id)
+            dedup.append(segment)
+        return dedup
+
+    def _wire_row_blocked_interactions(self, key: str) -> None:
+        row = self._rows.get(str(key))
+        if row is None:
+            return
+        for segment in self._row_segments(row):
+            if bool(getattr(segment, "_blocked_signal_wired", False)):
+                continue
+            segment._blocked_signal_wired = True  # type: ignore[attr-defined]
+            segment.blocked_interaction.connect(  # type: ignore[attr-defined]
+                lambda value, cause_key, message, target_key=key: self.blocked_interaction.emit(
+                    str(target_key),
+                    str(cause_key or ""),
+                    str(message or ""),
+                )
+            )
 
     @staticmethod
     def _dedup_widgets(widgets: Sequence[QWidget]) -> List[QWidget]:
@@ -611,16 +654,27 @@ class BatchParameterForm(QWidget):
 
     def set_project_fixed_keys(self, keys: Sequence[str]) -> None:
         self._project_fixed_keys = {str(item) for item in list(keys or []) if str(item).strip()}
-        self._refresh_visibility()
+        _current, changed_hidden = self._refresh_visibility()
+        if changed_hidden:
+            self.changed.emit()
 
     def apply_compatibility(self, state: Dict[str, Any]) -> None:
         previous = set(self._prev_visible_keys)
         self._visible_keys = {str(item) for item in list(state.get("visible_keys", []) or []) if str(item).strip()}
         self._locked_keys = {str(item) for item in list(state.get("locked_keys", []) or []) if str(item).strip()}
         self._sweepable_keys = {str(item) for item in list(state.get("sweepable_keys", []) or []) if str(item).strip()}
-        current = self._refresh_visibility()
+        self._compat_ui_state = dict(state.get("compat_ui_state", {}) or {})
+        self._blocked_keys = {
+            str(item)
+            for item in list(self._compat_ui_state.get("blocked_keys", []) or [])
+            if str(item).strip()
+        }
+        current, changed_hidden = self._refresh_visibility()
+        self._apply_blocked_option_state()
         self._apply_disclosure_hint(previous, current)
         self._prev_visible_keys = set(current)
+        if changed_hidden:
+            self.changed.emit()
 
     def _controller_value(self, key: str) -> Optional[int]:
         row = self._rows.get(str(key))
@@ -634,36 +688,52 @@ class BatchParameterForm(QWidget):
         except (TypeError, ValueError):
             return None
 
-    def _clear_hidden_row_state(self, row: _FieldRow) -> None:
+    def _clear_hidden_row_state(self, row: _FieldRow) -> bool:
+        changed = False
         row.sweep_toggle.blockSignals(True)
+        if row.sweep_toggle.isChecked():
+            changed = True
         row.sweep_toggle.setChecked(False)
         row.sweep_toggle.blockSignals(False)
         for edit in (row.start_edit, row.end_edit, row.steps_edit):
             edit.blockSignals(True)
+            if edit is row.steps_edit:
+                changed = changed or str(edit.text()).strip() not in {"", "3"}
+            else:
+                changed = changed or bool(str(edit.text()).strip())
             if edit is row.steps_edit:
                 edit.setText("3")
             else:
                 edit.setText("")
             edit.blockSignals(False)
         editor = row.base_editor
+        is_set = False
+        if hasattr(editor, "current_state"):
+            state = editor.current_state()  # type: ignore[attr-defined]
+            is_set = bool(getattr(state, "is_set", False))
+        changed = changed or is_set
         editor.blockSignals(True)
         if hasattr(editor, "set_is_set"):
             editor.set_is_set(False)  # type: ignore[attr-defined]
         elif hasattr(editor, "clear"):
             editor.clear()  # type: ignore[attr-defined]
         editor.blockSignals(False)
+        return changed
 
-    def _refresh_visibility(self) -> set[str]:
+    def _refresh_visibility(self) -> tuple[set[str], bool]:
         throat_mode = self._controller_value("Throat.Profile")
         effective_visible: set[str] = set()
+        changed_hidden = False
 
         for key, row in self._rows.items():
             allowed = (not self._visible_keys or key in self._visible_keys) and key not in self._project_fixed_keys
             if key == "R-OSSE":
                 allowed = bool(allowed and throat_mode == 2)
             is_visible = bool(allowed)
-            is_locked = bool(key in self._locked_keys)
+            is_locked = bool(key in self._locked_keys or key in self._blocked_keys)
             row.container.setVisible(is_visible)
+            row.base_editor.setProperty("compatBlocked", "true" if key in self._blocked_keys else "false")
+            self._repolish(row.base_editor)
             can_sweep = bool(allowed and (key in self._sweepable_keys) and (not is_locked) and (not row.button_layout))
 
             row.sweep_toggle.setVisible(not row.button_layout)
@@ -684,7 +754,7 @@ class BatchParameterForm(QWidget):
             row.steps_edit.setEnabled(show_sweep_inputs)
 
             if not is_visible:
-                self._clear_hidden_row_state(row)
+                changed_hidden = self._clear_hidden_row_state(row) or changed_hidden
             if allowed and is_visible:
                 effective_visible.add(key)
 
@@ -705,7 +775,18 @@ class BatchParameterForm(QWidget):
             finally:
                 self._accordion_sync = False
             keep.set_collapsed(False)
-        return effective_visible
+        return effective_visible, changed_hidden
+
+    def _apply_blocked_option_state(self) -> None:
+        blocked_by_key = {
+            str(key): dict(value)
+            for key, value in dict(self._compat_ui_state.get("blocked_options", {}) or {}).items()
+            if isinstance(value, dict)
+        }
+        for key, row in self._rows.items():
+            blocked_options = blocked_by_key.get(str(key), {})
+            for segment in self._row_segments(row):
+                segment.set_blocked_option_map(blocked_options)
 
     def _on_sweep_toggled(self, key: str, enabled: bool) -> None:
         row = self._rows.get(str(key))
@@ -853,3 +934,19 @@ class BatchParameterForm(QWidget):
     def last_changed_key(self) -> Optional[str]:
         value = str(self._last_changed_key or "").strip()
         return value or None
+
+    def flash_cause_key(self, key: str) -> None:
+        row = self._rows.get(str(key))
+        if row is None:
+            return
+        targets = self._iter_hint_targets(row) or [row.base_editor]
+        for widget in targets:
+            widget.setProperty("compatCauseFlash", "true")
+            self._repolish(widget)
+
+        def _clear() -> None:
+            for widget in targets:
+                widget.setProperty("compatCauseFlash", "false")
+                self._repolish(widget)
+
+        QTimer.singleShot(460, _clear)

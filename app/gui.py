@@ -19,6 +19,7 @@ from app.ui_validation import UiValidationEngine
 from ui.batch_export_panel import BatchExportPanel
 from ui.batch_parameter_form import BatchParameterForm
 from ui.batch_preview_placeholder import BatchPreviewPlaceholder
+from ui.compat_ui_adapter import CompatUiAdapter
 from ui.form_builder import ParameterForm
 from ui.form_metrics import FORM_METRICS
 from ui.form_schema import build_project_form_schema
@@ -1118,6 +1119,7 @@ class SummaryIssuesSection(QFrame):
 class ProjectPage(QWidget):
     submit_project = Signal(str, dict)
     draft_changed = Signal(dict)
+    blocked_interaction = Signal(str, str, str)
 
     def __init__(self) -> None:
         super().__init__()
@@ -1235,6 +1237,7 @@ class ProjectPage(QWidget):
         self.issues_section.header.toggled_request.connect(self._toggle_issues_panel)
         self.issues_section.issue_selected.connect(self._focus_issue_key)
         self.constraints_form.changed.connect(self._emit_draft_changed)
+        self.constraints_form.blocked_interaction.connect(self.blocked_interaction.emit)
 
         self._compat_state: Dict[str, Any] = {"visible_keys": [], "locked_keys": [], "sweepable_keys": [], "issues": []}
         self._latest_field_issues: List[Dict[str, Any]] = []
@@ -1402,11 +1405,11 @@ class ProjectPage(QWidget):
             severity = "fatal"
             hint = "Resolve errors to proceed."
         elif incomplete > 0 and warn > 0:
-            text = "Complete required fields and review warnings."
+            text = "Configuration incomplete. You can create the project, but review warnings."
             severity = "warn"
             hint = "Missing required values are shown as incomplete."
         elif incomplete > 0:
-            text = "Complete required fields to continue."
+            text = "Configuration incomplete. You can create the project and complete values later."
             severity = "neutral"
             hint = ""
         elif warn > 0:
@@ -1431,12 +1434,10 @@ class ProjectPage(QWidget):
             self._set_issues_open(False, animated=False)
         self.summary_right.setVisible(True)
 
-        enabled = (fatal == 0) and (incomplete == 0) and (not self._creating_project)
+        enabled = (fatal == 0) and (not self._creating_project)
         self.create_btn.setEnabled(enabled)
         if not enabled and fatal > 0:
             self.create_btn.setToolTip("Resolve errors before creating the project.")
-        elif not enabled and incomplete > 0:
-            self.create_btn.setToolTip("Complete required fields before creating the project.")
         else:
             self.create_btn.setToolTip("")
 
@@ -1525,6 +1526,7 @@ class BatchPage(QWidget):
     run_batch = Signal(dict)
     back_to_dashboard = Signal()
     draft_changed = Signal(dict)
+    blocked_interaction = Signal(str, str, str)
 
     def __init__(self) -> None:
         super().__init__()
@@ -1674,6 +1676,7 @@ class BatchPage(QWidget):
         self.back_btn.clicked.connect(self.back_to_dashboard.emit)
 
         self.parameter_form.changed.connect(self._emit_draft_changed)
+        self.parameter_form.blocked_interaction.connect(self.blocked_interaction.emit)
         self.export_panel.changed.connect(self._emit_draft_changed)
         self.batch_name.textChanged.connect(self._emit_draft_changed)
 
@@ -1826,8 +1829,22 @@ class BatchPage(QWidget):
         )
 
         issues = self.compat_panel.issues()
-        fatal_count = sum(1 for issue in issues if str(issue.get("severity", "")).lower() == "fatal")
-        warn_count = sum(1 for issue in issues if str(issue.get("severity", "")).lower() == "warn")
+        fatal_count = 0
+        warn_count = 0
+        incomplete_count = 0
+        for issue in issues:
+            severity = str(issue.get("severity", "")).lower()
+            if severity == "warn":
+                warn_count += 1
+                continue
+            if severity != "fatal":
+                continue
+            issue_key = str(issue.get("field_key") or issue.get("key") or "").strip()
+            ui_severity = classify_ui_severity(issue, field_is_set=bool(selected.get(issue_key) is not None))
+            if ui_severity == "incomplete":
+                incomplete_count += 1
+            else:
+                fatal_count += 1
         teaser_message = ""
         if issues:
             top_issue = issues[0]
@@ -1838,6 +1855,10 @@ class BatchPage(QWidget):
             severity = "fatal"
             self.action_status_pill.setText("Fix validation errors before save/run.")
             self.summary_issue_hint.setText(teaser_message or f"{fatal_count} fatal issue(s), {warn_count} warning(s).")
+        elif incomplete_count > 0:
+            severity = "neutral"
+            self.action_status_pill.setText("Configuration incomplete. Save is allowed, run is blocked.")
+            self.summary_issue_hint.setText("Define required values to run this batch.")
         elif warn_count > 0:
             severity = "warn"
             self.action_status_pill.setText("Warnings present. Review before save/run.")
@@ -1850,13 +1871,23 @@ class BatchPage(QWidget):
         self.summary_issue_hint.style().unpolish(self.summary_issue_hint)
         self.summary_issue_hint.style().polish(self.summary_issue_hint)
 
-        self.action_hint.setText(f"{fatal_count} errors · {warn_count} warnings")
+        self.action_hint.setText(f"{fatal_count} errors · {warn_count} warnings · {incomplete_count} incomplete")
         self.action_status_pill.setProperty("severity", severity)
         self.action_status_pill.style().unpolish(self.action_status_pill)
         self.action_status_pill.style().polish(self.action_status_pill)
-        can_submit = fatal_count == 0 and bool(self.batch_name.text().strip())
-        self.save_btn.setEnabled(can_submit)
-        self.run_btn.setEnabled(can_submit)
+        has_name = bool(self.batch_name.text().strip())
+        can_save = fatal_count == 0 and has_name
+        can_run = fatal_count == 0 and incomplete_count == 0 and has_name
+        self.save_btn.setEnabled(can_save)
+        self.run_btn.setEnabled(can_run)
+        if not has_name:
+            self.run_btn.setToolTip("Provide a batch name first.")
+        elif incomplete_count > 0:
+            self.run_btn.setToolTip("Complete required values before running.")
+        elif fatal_count > 0:
+            self.run_btn.setToolTip("Resolve fatal validation issues before running.")
+        else:
+            self.run_btn.setToolTip("")
 
 
 class RunPage(QWidget):
@@ -1989,17 +2020,19 @@ class MainWindow(QMainWindow):
     def __init__(self, service: OrchestratorService) -> None:
         super().__init__()
         self.service = service
+        self.compat_ui_adapter = CompatUiAdapter(build_project_form_schema())
         self.current_project: Optional[Project] = None
         self.last_status_detail = ""
         self.ui_validation = UiValidationEngine()
-        self._project_validation_debounce_ms = 200
+        self._project_validation_debounce_ms = 100
         self._pending_project_payload: Optional[Dict[str, object]] = None
         self._project_validation_timer = QTimer(self)
         self._project_validation_timer.setSingleShot(True)
         self._project_validation_timer.setInterval(self._project_validation_debounce_ms)
         self._project_validation_timer.timeout.connect(self._flush_project_draft_validation)
-        self._batch_validation_debounce_ms = 220
+        self._batch_validation_debounce_ms = 100
         self._pending_batch_payload: Optional[Dict[str, object]] = None
+        self._batch_reconcile_guard = False
         self._batch_validation_timer = QTimer(self)
         self._batch_validation_timer.setSingleShot(True)
         self._batch_validation_timer.setInterval(self._batch_validation_debounce_ms)
@@ -2051,11 +2084,13 @@ class MainWindow(QMainWindow):
 
         self.project_page.submit_project.connect(self._create_project)
         self.project_page.draft_changed.connect(self._queue_project_draft_changed)
+        self.project_page.blocked_interaction.connect(self._on_project_blocked_interaction)
 
         self.batch_page.save_batch.connect(self._save_batch)
         self.batch_page.run_batch.connect(self._run_batch)
         self.batch_page.back_to_dashboard.connect(self.show_dashboard)
         self.batch_page.draft_changed.connect(self._queue_batch_draft_changed)
+        self.batch_page.blocked_interaction.connect(self._on_batch_blocked_interaction)
         self.batch_page.compat_panel.request_show_details.connect(
             lambda: self._show_validation_details(self.batch_page.compat_panel.issues(), "Batch Validation Details")
         )
@@ -2063,6 +2098,20 @@ class MainWindow(QMainWindow):
     def set_status(self, text: str, detail: Optional[str] = None) -> None:
         self.status_message.setText(text)
         self.last_status_detail = detail or text
+
+    def _on_project_blocked_interaction(self, _target_key: str, cause_key: str, message: str) -> None:
+        if cause_key:
+            self.project_page.constraints_form.flash_cause_key(cause_key)
+        hint = str(message or "").strip()
+        if hint:
+            self.set_status(hint)
+
+    def _on_batch_blocked_interaction(self, _target_key: str, cause_key: str, message: str) -> None:
+        if cause_key:
+            self.batch_page.parameter_form.flash_cause_key(cause_key)
+        hint = str(message or "").strip()
+        if hint:
+            self.set_status(hint)
 
     def _show_status_detail(self) -> None:
         StatusDetailDialog(self.last_status_detail or "No details.", self).exec()
@@ -2123,6 +2172,35 @@ class MainWindow(QMainWindow):
             return False
         dialog.setStandardButtons(QMessageBox.Ok | QMessageBox.Cancel)
         return dialog.exec() == QMessageBox.Ok
+
+    def _normalize_batch_issues_for_ui(
+        self,
+        issues: List[Dict[str, Any]],
+        *,
+        selected_params: Dict[str, Any],
+    ) -> List[Dict[str, Any]]:
+        normalized: List[Dict[str, Any]] = []
+        for issue in issues:
+            entry = dict(issue)
+            severity = str(entry.get("severity", "")).strip().lower()
+            if severity != "fatal":
+                normalized.append(entry)
+                continue
+            key = str(entry.get("field_key") or entry.get("key") or "").strip()
+            ui_severity = classify_ui_severity(entry, field_is_set=bool(selected_params.get(key) is not None))
+            if ui_severity == "incomplete":
+                entry["severity"] = "incomplete"
+            normalized.append(entry)
+        return normalized
+
+    @staticmethod
+    def _batch_issue_counts(issues: List[Dict[str, Any]]) -> Dict[str, int]:
+        counts = {"fatal": 0, "warn": 0, "incomplete": 0}
+        for issue in issues:
+            severity = str(issue.get("severity", "")).strip().lower()
+            if severity in counts:
+                counts[severity] += 1
+        return counts
 
     def _open_settings(self) -> None:
         dialog = SettingsDialog(self.service, self)
@@ -2192,21 +2270,27 @@ class MainWindow(QMainWindow):
         finally:
             self.project_page.set_creating(False)
 
-    def _save_batch(self, payload: Dict[str, object]) -> Optional[str]:
+    def _save_batch(self, payload: Dict[str, object], *, for_run: bool = False) -> Optional[str]:
         if self.current_project is None:
             self.set_status("No project loaded.")
             return None
+        selected_params = dict(payload.get("selected_params", {}) or {})
         validation = self.service.evaluate_batch_definition(
             project_id=self.current_project.project_id,
-            selected_params=dict(payload.get("selected_params", {}) or {}),
+            selected_params=selected_params,
             sweeps=dict(payload.get("sweeps", {}) or {}),
             sweep_mode=str(payload.get("sweep_mode", "single")),
         )
-        issues = [item for item in list(validation.get("issues", []) or []) if isinstance(item, dict)]
+        raw_issues = [item for item in list(validation.get("issues", []) or []) if isinstance(item, dict)]
+        issues = self._normalize_batch_issues_for_ui(raw_issues, selected_params=selected_params)
+        counts = self._batch_issue_counts(issues)
+        block_count = int(counts.get("fatal", 0))
+        if for_run:
+            block_count += int(counts.get("incomplete", 0))
         if not self._present_validation_summary(
             title="Batch Validation Summary",
             issues=issues,
-            block_on_fatal=True,
+            block_on_fatal=(block_count > 0),
         ):
             self.set_status("Batch save blocked by validation.")
             return None
@@ -2227,7 +2311,7 @@ class MainWindow(QMainWindow):
         return summary.batch_id
 
     def _run_batch(self, payload: Dict[str, object]) -> None:
-        batch_id = self._save_batch(payload)
+        batch_id = self._save_batch(payload, for_run=True)
         if self.current_project is None or not batch_id:
             return
         self.show_run()
@@ -2363,7 +2447,15 @@ class MainWindow(QMainWindow):
             "param_states": [item for item in list(payload.get("param_states", []) or []) if isinstance(item, dict)],
             "runner_mode": runner_mode,
         }
-        state = self.service.evaluate_project_constraints(constraints_payload)
+        state_raw = self.service.evaluate_project_constraints(constraints_payload)
+        ui_state = self.compat_ui_adapter.compute_project_ui_state(
+            draft_payload=constraints_payload,
+            compat_state=state_raw,
+            evaluate_constraints=self.service.evaluate_project_constraints,
+            last_changed_key=self.project_page.constraints_form.last_changed_key(),
+        )
+        state = dict(state_raw)
+        state["compat_ui_state"] = ui_state
         self.project_page.apply_compatibility(state)
         visible_keys = set(str(item) for item in list(state.get("visible_keys", []) or []))
         issues = [item for item in list(state.get("issues", []) or []) if isinstance(item, dict)]
@@ -2383,23 +2475,53 @@ class MainWindow(QMainWindow):
                     "visible_keys": [],
                     "locked_keys": [],
                     "sweepable_keys": [],
+                    "compat_ui_state": {},
                     "issues": [],
                 }
             )
             self.batch_page.set_eta(None, sample_count=0, median_seconds=None)
             return
-        state = self.service.evaluate_batch_definition(
+        sweep_mode = str(payload.get("sweep_mode", "single"))
+        selected_params = dict(payload.get("selected_params", {}) or {})
+        sweeps = dict(payload.get("sweeps", {}) or {})
+        state_raw = self.service.evaluate_batch_definition(
             project_id=self.current_project.project_id,
-            selected_params=dict(payload.get("selected_params", {}) or {}),
-            sweeps=dict(payload.get("sweeps", {}) or {}),
-            sweep_mode=str(payload.get("sweep_mode", "single")),
+            selected_params=selected_params,
+            sweeps=sweeps,
+            sweep_mode=sweep_mode,
         )
+        ui_state = self.compat_ui_adapter.compute_batch_ui_state(
+            selected_params=selected_params,
+            sweeps=sweeps,
+            sweep_mode=sweep_mode,
+            compat_state=state_raw,
+            evaluate_batch=lambda sel, sw, mode: self.service.evaluate_batch_definition(
+                project_id=self.current_project.project_id,
+                selected_params=sel,
+                sweeps=sw,
+                sweep_mode=mode,
+            ),
+            last_changed_key=self.batch_page.parameter_form.last_changed_key(),
+        )
+        state = dict(state_raw)
+        state["compat_ui_state"] = ui_state
         self.batch_page.apply_compatibility(state)
+        if not self._batch_reconcile_guard:
+            reconciled_payload = self.batch_page._payload(include_name=False)
+            reconciled_selected = dict(reconciled_payload.get("selected_params", {}) or {})
+            reconciled_sweeps = dict(reconciled_payload.get("sweeps", {}) or {})
+            if reconciled_selected != selected_params or reconciled_sweeps != sweeps:
+                self._batch_reconcile_guard = True
+                try:
+                    self._on_batch_draft_changed(reconciled_payload)
+                finally:
+                    self._batch_reconcile_guard = False
+                return
         estimate = self.service.estimate_batch_runtime(
             project_id=self.current_project.project_id,
-            selected_params=dict(payload.get("selected_params", {}) or {}),
-            sweeps=dict(payload.get("sweeps", {}) or {}),
-            sweep_mode=str(payload.get("sweep_mode", "single")),
+            selected_params=selected_params,
+            sweeps=sweeps,
+            sweep_mode=sweep_mode,
             validation_state=state,
         )
         self.batch_page.set_eta(

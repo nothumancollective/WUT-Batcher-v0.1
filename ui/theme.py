@@ -298,6 +298,16 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     QTextEdit[issueFlash="true"], QPlainTextEdit[issueFlash="true"] {{
         border: 1px solid {c['accent']};
     }}
+    QLineEdit[compatBlocked="true"], QComboBox[compatBlocked="true"],
+    QTextEdit[compatBlocked="true"], QPlainTextEdit[compatBlocked="true"] {{
+        background-color: #191919;
+        color: {c['muted']};
+        border: 1px solid #2a2a2a;
+    }}
+    QLineEdit[compatCauseFlash="true"], QComboBox[compatCauseFlash="true"],
+    QTextEdit[compatCauseFlash="true"], QPlainTextEdit[compatCauseFlash="true"] {{
+        border: 1px solid {c['accent']};
+    }}
     SegmentedEnumInput[fieldState="warn"], ScalarFieldEditor[fieldState="warn"],
     ObjectFieldEditor[fieldState="warn"], ContextFrame[fieldState="warn"] {{
         border: 1px solid {c['warning_border']};
@@ -316,6 +326,17 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     SegmentedEnumInput[disclosureHint="true"], ScalarFieldEditor[disclosureHint="true"],
     ObjectFieldEditor[disclosureHint="true"], ContextFrame[disclosureHint="true"],
     QWidget[disclosureHint="true"] {{
+        border: 1px solid {c['accent']};
+        border-radius: {r['sm']}px;
+    }}
+    SegmentedEnumInput[compatBlocked="true"], ScalarFieldEditor[compatBlocked="true"],
+    ObjectFieldEditor[compatBlocked="true"], ContextFrame[compatBlocked="true"] {{
+        border: 1px solid #2a2a2a;
+        border-radius: {r['sm']}px;
+    }}
+    SegmentedEnumInput[compatCauseFlash="true"], ScalarFieldEditor[compatCauseFlash="true"],
+    ObjectFieldEditor[compatCauseFlash="true"], ContextFrame[compatCauseFlash="true"],
+    QWidget[compatCauseFlash="true"] {{
         border: 1px solid {c['accent']};
         border-radius: {r['sm']}px;
     }}
@@ -629,6 +650,17 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         color: {c['risk_ok']};
     }}
     QPushButton[segment=\"true\"][disclosureHint="true"] {{
+        border: 1px solid {c['accent']};
+    }}
+    QPushButton[segment=\"true\"][compatBlockedOption="true"] {{
+        background-color: #191919;
+        color: {c['muted']};
+        border: 1px solid #2a2a2a;
+    }}
+    QPushButton[segment=\"true\"][compatBlockedOption="true"]:hover {{
+        border-color: {c['accent']};
+    }}
+    QPushButton[segment=\"true\"][compatCauseFlash="true"] {{
         border: 1px solid {c['accent']};
     }}
     QToolButton#ClearValueButton {{
