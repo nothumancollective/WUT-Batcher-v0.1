@@ -227,17 +227,42 @@ class CompatibilityService:
         selected_params: Dict[str, Any],
         sweeps: Dict[str, Dict[str, Any]],
         sweep_mode: str,
-    ) -> Batch:
+    ) -> tuple[Batch, List[CompatibilityIssue]]:
         selected = {str(key): ParamSelection(value=value) for key, value in dict(selected_params or {}).items()}
         normalized_sweeps: Dict[str, SweepSpec] = {}
+        parse_issues: List[CompatibilityIssue] = []
         for key, value in dict(sweeps or {}).items():
             if not isinstance(value, dict):
+                parse_issues.append(
+                    CompatibilityIssue(
+                        rule_id="sweep_parse_failed",
+                        severity="fatal",
+                        category="batch_input",
+                        message=f"Invalid sweep definition for '{key}': expected object payload.",
+                        source="compatibility_service",
+                        scope="batch_definition",
+                        evidence_type="hypothesis",
+                        field_key=str(key),
+                    )
+                )
                 continue
             try:
                 normalized_sweeps[str(key)] = SweepSpec.from_dict(value, key=str(key))
-            except Exception:
+            except Exception as exc:
+                parse_issues.append(
+                    CompatibilityIssue(
+                        rule_id="sweep_parse_failed",
+                        severity="fatal",
+                        category="batch_input",
+                        message=f"Invalid sweep definition for '{key}': {exc}",
+                        source="compatibility_service",
+                        scope="batch_definition",
+                        evidence_type="hypothesis",
+                        field_key=str(key),
+                    )
+                )
                 continue
-        return Batch(
+        batch = Batch(
             batch_id="B_DRAFT",
             project_id=project_id,
             selected_params=selected,
@@ -245,6 +270,7 @@ class CompatibilityService:
             sweep_mode=sweep_mode if sweep_mode in {"single", "combined"} else "single",
             runner_mode=runner_mode,
         )
+        return batch, parse_issues
 
     def evaluate_batch_definition(
         self,
@@ -267,15 +293,24 @@ class CompatibilityService:
         report = validity_report(preview_constraints, runner_mode=runner_mode, bundle=self.bundle)
         issues.extend(self._from_validity_issue(item) for item in report.get("issues", []))
 
-        batch = self._build_draft_batch(
+        batch, parse_issues = self._build_draft_batch(
             project_id=project_id,
             runner_mode=runner_mode,
             selected_params=selected_params,
             sweeps=sweeps,
             sweep_mode=sweep_mode,
         )
-        resolved = resolve_versions(constraints_payload, batch, existing_version_ids=(), strict=False)
-        issues.extend(self._from_resolution_issue(item) for item in resolved.issues)
+        issues.extend(parse_issues)
+
+        has_parse_fatal = any(issue.severity == "fatal" for issue in parse_issues)
+        if has_parse_fatal:
+            resolved_issues: List[ResolutionIssue] = []
+            version_count_preview = 0
+        else:
+            resolved = resolve_versions(constraints_payload, batch, existing_version_ids=(), strict=False)
+            resolved_issues = list(resolved.issues)
+            version_count_preview = len(resolved.versions)
+        issues.extend(self._from_resolution_issue(item) for item in resolved_issues)
 
         sorted_issues = self._sort_and_dedup_issues(issues)
         return {
@@ -285,5 +320,5 @@ class CompatibilityService:
             "locked_keys": locked,
             "issues": [issue.to_dict() for issue in sorted_issues],
             "issue_count": len(sorted_issues),
-            "version_count_preview": len(resolved.versions),
+            "version_count_preview": version_count_preview,
         }
