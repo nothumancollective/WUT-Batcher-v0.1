@@ -1,0 +1,1343 @@
+﻿"""Save all VACS graph child windows to TXT files in ATH version folder.
+
+Non-visual automation only:
+- process-bound UIA/Win32 controls
+- no pixel/OCR-based branching
+"""
+
+from __future__ import annotations
+
+import argparse
+import ctypes
+from datetime import datetime, timezone
+import json
+from pathlib import Path
+import re
+import subprocess
+import sys
+import time
+from typing import Any, Dict, List, Optional
+
+from pywinauto import Desktop
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+
+WM_COMMAND = 0x0111
+WM_SETTEXT = 0x000C
+WM_CLOSE = 0x0010
+WM_MDIDESTROY = 0x0221
+WM_MDIACTIVATE = 0x0222
+BM_CLICK = 0x00F5
+BN_CLICKED = 0
+WM_KEYDOWN = 0x0100
+WM_KEYUP = 0x0101
+VK_F7 = 0x76
+VACS_EXPORT_COMMAND_ID = 52
+
+GRAPH_CLASSES = {"TForm_DatGraph", "TForm_DatContour"}
+CHILD_CLASSES = {"TForm_DatGraph", "TForm_DatContour", "TForm_Editor"}
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _sig(ctrl: Any) -> Dict[str, Any]:
+    info = getattr(ctrl, "element_info", None)
+    return {
+        "handle": int(getattr(info, "handle", 0) or 0),
+        "title": str(getattr(info, "name", "") or ""),
+        "class_name": str(getattr(info, "class_name", "") or ""),
+        "control_type": str(getattr(info, "control_type", "") or ""),
+        "automation_id": str(getattr(info, "automation_id", "") or ""),
+        "process_id": int(getattr(info, "process_id", 0) or 0),
+    }
+
+
+def _window_text(ctrl: Any) -> str:
+    try:
+        return str(ctrl.window_text() or "").strip()
+    except Exception:
+        try:
+            return str(getattr(ctrl.element_info, "name", "") or "").strip()
+        except Exception:
+            return ""
+
+
+def _windows_for_pid(pid: int) -> List[Any]:
+    try:
+        return list(Desktop(backend="uia").windows(process=int(pid)))
+    except Exception:
+        return []
+
+
+def _find_main(pid: int) -> Optional[Any]:
+    for w in _windows_for_pid(pid):
+        if _sig(w).get("class_name") == "TForm_DatMain":
+            return w
+    return None
+
+
+def _graph_children(main: Any) -> List[Any]:
+    rows: Dict[int, Any] = {}
+    for c in main.descendants():
+        s = _sig(c)
+        if s.get("control_type") != "Window":
+            continue
+        class_name = str(s.get("class_name", "") or "")
+        title = str(s.get("title", "") or "")
+        if class_name not in GRAPH_CLASSES:
+            continue
+        # Hard guard: editor helper panes are not graph windows.
+        if re.match(r"^\s*Editor\s+\d+\s*$", title, re.IGNORECASE):
+            continue
+        h = int(s.get("handle", 0) or 0)
+        if h > 0:
+            rows[h] = c
+    return list(rows.values())
+
+
+def _dialog_candidates(pid: int, main_handle: int) -> List[Any]:
+    rows: List[Any] = []
+    for w in _windows_for_pid(pid):
+        s = _sig(w)
+        h = int(s.get("handle", 0) or 0)
+        if h <= 0 or h == int(main_handle):
+            continue
+        rows.append(w)
+    main = _find_main(pid)
+    if main is not None:
+        for c in main.descendants():
+            s = _sig(c)
+            if s.get("control_type") != "Window":
+                continue
+            h = int(s.get("handle", 0) or 0)
+            if h <= 0 or h == int(main_handle):
+                continue
+            if s.get("class_name") in CHILD_CLASSES:
+                continue
+            rows.append(c)
+    uniq: Dict[int, Any] = {}
+    for w in rows:
+        h = int(_sig(w).get("handle", 0) or 0)
+        if h > 0:
+            uniq[h] = w
+    return list(uniq.values())
+
+
+def _kill_vacs() -> None:
+    for image in ("VACSVIEWER_32.exe", "vacsviewer.exe"):
+        subprocess.run(["taskkill", "/IM", image, "/T", "/F"], capture_output=True, text=True, check=False)
+
+
+def _run_interim(args: argparse.Namespace) -> Dict[str, Any]:
+    return _run_interim_with_mode(args, skip_open_via_akabak=False)
+
+
+def _run_interim_with_mode(args: argparse.Namespace, *, skip_open_via_akabak: bool) -> Dict[str, Any]:
+    cmd = [
+        sys.executable,
+        str(REPO_ROOT / "scripts" / "vacs_interim_reimport.py"),
+        "--akabak-exe",
+        str(args.akabak_exe),
+        "--vacs-exe",
+        str(args.vacs_exe),
+        "--allow-existing-vacs",
+        "--idle-timeout-s",
+        str(args.interim_idle_timeout_s),
+        "--timeout-s",
+        str(args.interim_timeout_s),
+        "--startup-timeout-s",
+        str(args.interim_startup_timeout_s),
+    ]
+    if skip_open_via_akabak:
+        cmd.append("--skip-open-vacs-via-akabak")
+    cp = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    out = str(cp.stdout or "").strip()
+    payload: Dict[str, Any] = {"returncode": int(cp.returncode), "stderr": str(cp.stderr or "").strip(), "stdout_tail": out[-4000:]}
+    try:
+        payload["parsed"] = json.loads(out) if out else {}
+    except Exception:
+        payload["parsed"] = {}
+    return payload
+
+
+def _find_data_export(pid: int, main_handle: int, timeout_s: float) -> Optional[Any]:
+    deadline = time.perf_counter() + float(timeout_s)
+    while time.perf_counter() < deadline:
+        for d in _dialog_candidates(pid, main_handle):
+            s = _sig(d)
+            title = str(s.get("title", ""))
+            class_name = str(s.get("class_name", ""))
+            if re.search(r"data\s*export", title, re.IGNORECASE):
+                return d
+            if class_name == "TForm_Export":
+                return d
+        time.sleep(0.15)
+    return None
+
+
+def _find_data_export_after_trigger(
+    pid: int,
+    main_handle: int,
+    timeout_s: float,
+    known_handles: set[int],
+) -> Optional[Any]:
+    deadline = time.perf_counter() + float(timeout_s)
+    fallback: Optional[Any] = None
+    while time.perf_counter() < deadline:
+        dialogs = _dialog_candidates(pid, int(main_handle))
+        exports: List[Any] = []
+        for d in dialogs:
+            s = _sig(d)
+            if str(s.get("class_name", "")) != "TForm_Export":
+                continue
+            exports.append(d)
+        if exports:
+            for d in exports:
+                h = int(_sig(d).get("handle", 0) or 0)
+                if h > 0 and h not in known_handles:
+                    return d
+            fallback = exports[0]
+        time.sleep(0.08)
+    return fallback
+
+
+def _dialog_controls(dialog: Any) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    for c in list(dialog.descendants())[:220]:
+        s = _sig(c)
+        s["text"] = _window_text(c)
+        rows.append(s)
+    return rows
+
+
+def _win32_children(hwnd: int) -> List[Dict[str, Any]]:
+    if int(hwnd or 0) <= 0:
+        return []
+    user32 = ctypes.windll.user32
+    get_class = user32.GetClassNameW
+    get_text = user32.GetWindowTextW
+    get_id = user32.GetDlgCtrlID
+    rows: List[Dict[str, Any]] = []
+    enum_child_proc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+
+    def cls(h: int) -> str:
+        b = ctypes.create_unicode_buffer(256)
+        get_class(int(h), b, 255)
+        return str(b.value or "")
+
+    def txt(h: int) -> str:
+        b = ctypes.create_unicode_buffer(512)
+        get_text(int(h), b, 511)
+        return str(b.value or "")
+
+    def cb(chwnd, _lparam):
+        h = int(chwnd)
+        rows.append({"handle": h, "class_name": cls(h), "text": txt(h), "ctrl_id": int(get_id(h))})
+        return True
+
+    user32.EnumChildWindows(int(hwnd), enum_child_proc(cb), 0)
+    return rows
+
+
+def _find_mdi_client_handle(main_handle: int) -> int:
+    for row in _win32_children(int(main_handle)):
+        if str(row.get("class_name", "") or "").lower() == "mdiclient":
+            return int(row.get("handle", 0) or 0)
+    return 0
+
+
+def _click_handle(hwnd: int) -> bool:
+    if int(hwnd or 0) <= 0:
+        return False
+    try:
+        ctypes.windll.user32.SendMessageW(int(hwnd), BM_CLICK, 0, 0)
+        return True
+    except Exception:
+        return False
+
+
+def _send_f7(hwnd: int) -> bool:
+    if int(hwnd or 0) <= 0:
+        return False
+    try:
+        user32 = ctypes.windll.user32
+        user32.PostMessageW(int(hwnd), WM_KEYDOWN, VK_F7, 0)
+        user32.PostMessageW(int(hwnd), WM_KEYUP, VK_F7, 0)
+        return True
+    except Exception:
+        return False
+
+
+def _dialog_message_text(dialog: Any) -> str:
+    parts: List[str] = []
+    try:
+        for c in list(dialog.descendants())[:80]:
+            txt = _window_text(c)
+            if txt:
+                parts.append(txt)
+    except Exception:
+        pass
+    if parts:
+        return " | ".join(parts[:12])
+    return _window_text(dialog)
+
+
+def _dialog_button_labels(dialog: Any) -> List[str]:
+    labels: List[str] = []
+    try:
+        for c in dialog.descendants():
+            ct = str(_sig(c).get("control_type", "") or "")
+            if ct != "Button":
+                continue
+            txt = _window_text(c)
+            if txt:
+                labels.append(txt)
+    except Exception:
+        pass
+    h = int(_sig(dialog).get("handle", 0) or 0)
+    if h > 0:
+        for row in _win32_children(h):
+            cls = str(row.get("class_name", "") or "")
+            if not re.search(r"(button|bitbtn)", cls, re.IGNORECASE):
+                continue
+            txt = str(row.get("text", "") or "")
+            if txt:
+                labels.append(txt)
+    # preserve order while deduplicating
+    seen: Dict[str, bool] = {}
+    out: List[str] = []
+    for x in labels:
+        if x in seen:
+            continue
+        seen[x] = True
+        out.append(x)
+    return out
+
+
+def _close_dialog(dialog: Any) -> Dict[str, Any]:
+    title = _window_text(dialog)
+    message = _dialog_message_text(dialog).lower()
+    is_confirm = bool(re.search(r"(confirm|best.tigen|please confirm|warn|warning)", f"{title} {message}", re.IGNORECASE))
+
+    preferred: List[str]
+    if is_confirm and re.search(r"(save|speicher|overwrite|replace|ersetzen)", message, re.IGNORECASE):
+        preferred = ["OK", "Ok", "Yes", "Ja", "No", "Nein", "Dont Save", "Nicht speichern"]
+    elif is_confirm:
+        preferred = ["OK", "Ok", "Schließen", "Close", "Yes", "Ja", "No", "Nein", "Cancel", "Abbrechen"]
+    else:
+        preferred = ["Close", "Schließen", "Cancel", "Abbrechen", "No", "Nein", "OK", "Ok", "Yes", "Ja"]
+
+    for caption in preferred:
+        try:
+            btn = dialog.child_window(title=caption)
+            if btn.exists(timeout=0.2):
+                try:
+                    btn.invoke()
+                    return {"status": "ok", "method": "invoke", "caption": caption, "dialog_title": title}
+                except Exception:
+                    try:
+                        btn.click()
+                        return {"status": "ok", "method": "click", "caption": caption, "dialog_title": title}
+                    except Exception:
+                        pass
+        except Exception:
+            continue
+
+    try:
+        descendants = list(dialog.descendants())
+    except Exception:
+        descendants = []
+    for caption in preferred:
+        wanted = caption.strip().lower()
+        if not wanted:
+            continue
+        for c in descendants:
+            label = _window_text(c).strip().lower()
+            if not label or label != wanted:
+                continue
+            try:
+                c.invoke()
+                return {"status": "ok", "method": "invoke_descendant", "caption": label, "dialog_title": title}
+            except Exception:
+                try:
+                    c.click()
+                    return {"status": "ok", "method": "click_descendant", "caption": label, "dialog_title": title}
+                except Exception:
+                    h = int(_sig(c).get("handle", 0) or 0)
+                    if h > 0 and _click_handle(h):
+                        return {"status": "ok", "method": "bm_click_descendant", "caption": label, "dialog_title": title}
+    try:
+        dialog.type_keys("{ESC}")
+        return {"status": "ok", "method": "esc", "dialog_title": title}
+    except Exception as exc:
+        return {"status": "error", "error": repr(exc), "dialog_title": title}
+
+
+def _click_caption(dialog: Any, caption: str) -> Dict[str, Any]:
+    want = str(caption or "").strip().lower()
+    if not want:
+        return {"status": "error", "error": "empty_caption"}
+    try:
+        btn = dialog.child_window(title=caption)
+        if btn.exists(timeout=0.1):
+            try:
+                btn.invoke()
+                return {"status": "ok", "method": "invoke", "caption": caption}
+            except Exception:
+                try:
+                    btn.click()
+                    return {"status": "ok", "method": "click", "caption": caption}
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    try:
+        for c in dialog.descendants():
+            label = _window_text(c).strip().lower()
+            if label != want:
+                continue
+            try:
+                c.invoke()
+                return {"status": "ok", "method": "invoke_descendant", "caption": label}
+            except Exception:
+                try:
+                    c.click()
+                    return {"status": "ok", "method": "click_descendant", "caption": label}
+                except Exception:
+                    h = int(_sig(c).get("handle", 0) or 0)
+                    if h > 0 and _click_handle(h):
+                        return {"status": "ok", "method": "bm_click_descendant", "caption": label}
+    except Exception:
+        pass
+    return {"status": "error", "error": f"caption_not_found:{caption}"}
+
+
+def _handle_close_confirm_dialog(dialog: Any, vacs_pid: int, child_handle: int) -> Dict[str, Any]:
+    attempts: List[Dict[str, Any]] = []
+    for caption in ("OK", "Ok", "Schließen", "Close", "Cancel", "Abbrechen"):
+        action = _click_caption(dialog, caption)
+        attempts.append({"caption": caption, "action": action})
+        time.sleep(0.12)
+        if not _is_graph_child_open(int(vacs_pid), int(child_handle)):
+            return {"status": "ok", "resolved": True, "attempts": attempts}
+    return {"status": "ok", "resolved": False, "attempts": attempts}
+
+
+def _resolve_confirm_dialog(dialog: Any) -> Dict[str, Any]:
+    dialog_handle = int(_sig(dialog).get("handle", 0) or 0)
+    title = str(_sig(dialog).get("title", "") or "")
+    msg = _dialog_message_text(dialog)
+    labels = [x.strip().lower() for x in _dialog_button_labels(dialog)]
+    attempts: List[Dict[str, Any]] = []
+    if "schließen" in labels:
+        preferred = ("Schließen", "Close", "OK", "Ok", "Yes", "Ja")
+    elif re.search(r"(overwrite|replace|ersetzen|save|speicher)", f"{title} {msg}", re.IGNORECASE):
+        preferred = ("Yes", "Ja", "OK", "Ok", "Replace", "Ersetzen")
+    else:
+        preferred = ("OK", "Ok", "Yes", "Ja", "Continue", "Fortfahren", "Close", "Schließen")
+
+    for caption in preferred:
+        action = _click_caption(dialog, caption)
+        attempts.append({"caption": caption, "action": action})
+        if str(action.get("status", "")) == "ok":
+            time.sleep(0.08)
+            if dialog_handle <= 0 or not _is_window_alive(dialog_handle):
+                return {"status": "ok", "closed": True, "attempts": attempts}
+            return {"status": "partial", "closed": False, "attempts": attempts}
+    try:
+        dialog.type_keys("{ENTER}")
+        attempts.append({"caption": "{ENTER}", "action": {"status": "ok", "method": "enter"}})
+        time.sleep(0.08)
+        closed = dialog_handle <= 0 or not _is_window_alive(dialog_handle)
+        return {"status": "ok" if closed else "partial", "closed": closed, "attempts": attempts}
+    except Exception as exc:
+        attempts.append({"caption": "{ENTER}", "action": {"status": "error", "error": repr(exc)}})
+        return {"status": "error", "closed": False, "attempts": attempts}
+
+
+def _is_window_alive(hwnd: int) -> bool:
+    if int(hwnd or 0) <= 0:
+        return False
+    try:
+        return bool(ctypes.windll.user32.IsWindow(int(hwnd)))
+    except Exception:
+        return False
+
+
+def _drain_aux_dialogs(vacs_pid: int, main_handle: int, keep_export_handle: int = 0) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    for d in _dialog_candidates(int(vacs_pid), int(main_handle)):
+        s = _sig(d)
+        cls = str(s.get("class_name", ""))
+        if cls == "TForm_Confirm":
+            rows.append({"dialog": s, "action": _resolve_confirm_dialog(d)})
+    return rows
+
+
+def _close_all_export_dialogs(vacs_pid: int, main_handle: int, timeout_s: float = 3.0) -> List[Dict[str, Any]]:
+    def _force_close_export_dialog(dialog: Any) -> Dict[str, Any]:
+        sig = _sig(dialog)
+        h = int(sig.get("handle", 0) or 0)
+        attempts: List[Dict[str, Any]] = []
+        if h > 0:
+            try:
+                ctypes.windll.user32.PostMessageW(int(h), WM_CLOSE, 0, 0)
+                attempts.append({"method": "wm_close_post", "status": "ok", "handle": h})
+            except Exception as exc:
+                attempts.append({"method": "wm_close_post", "status": "error", "error": repr(exc), "handle": h})
+            t0 = time.perf_counter()
+            while time.perf_counter() - t0 < 0.35:
+                if not _is_window_alive(h):
+                    return {"status": "ok", "closed": True, "attempts": attempts}
+                time.sleep(0.05)
+        action = _close_dialog(dialog)
+        attempts.append({"method": "close_dialog", "action": action})
+        if h > 0:
+            t0 = time.perf_counter()
+            while time.perf_counter() - t0 < 0.35:
+                if not _is_window_alive(h):
+                    return {"status": "ok", "closed": True, "attempts": attempts}
+                time.sleep(0.05)
+            return {"status": "ok", "closed": False, "attempts": attempts}
+        return {"status": "ok", "closed": None, "attempts": attempts}
+
+    rows: List[Dict[str, Any]] = []
+    deadline = time.perf_counter() + float(timeout_s)
+    while time.perf_counter() < deadline:
+        did_any = False
+        for d in _dialog_candidates(int(vacs_pid), int(main_handle)):
+            s = _sig(d)
+            cls = str(s.get("class_name", ""))
+            if cls == "TForm_Confirm":
+                rows.append({"dialog": s, "action": _resolve_confirm_dialog(d)})
+                did_any = True
+                continue
+            if cls == "TForm_Export":
+                rows.append({"dialog": s, "action": _force_close_export_dialog(d)})
+                did_any = True
+                continue
+        if not did_any:
+            break
+        time.sleep(0.08)
+    return rows
+
+
+def _wait_for_dialog_quiescence(vacs_pid: int, main_handle: int, timeout_s: float = 5.0, stable_s: float = 0.25) -> Dict[str, Any]:
+    """Drain confirm/export dialogs until none remain for a stable interval."""
+    actions: List[Dict[str, Any]] = []
+    remaining: List[Dict[str, Any]] = []
+    stable_since: Optional[float] = None
+    deadline = time.perf_counter() + float(timeout_s)
+    while time.perf_counter() < deadline:
+        dialogs = _dialog_candidates(int(vacs_pid), int(main_handle))
+        actionable = []
+        for d in dialogs:
+            s = _sig(d)
+            cls = str(s.get("class_name", "") or "")
+            if cls in CHILD_CLASSES:
+                continue
+            if cls in {"TForm_Confirm", "TForm_Export"}:
+                actionable.append(d)
+                continue
+            title = str(s.get("title", "") or "")
+            if re.search(r"(confirm|warning|warn|please confirm|best.tigen|save|overwrite)", title, re.IGNORECASE):
+                actionable.append(d)
+
+        if not actionable:
+            if stable_since is None:
+                stable_since = time.perf_counter()
+            if (time.perf_counter() - stable_since) >= float(stable_s):
+                return {"status": "ok", "quiescent": True, "actions": actions, "remaining": []}
+            time.sleep(0.08)
+            continue
+
+        stable_since = None
+        for d in actionable:
+            s = _sig(d)
+            cls = str(s.get("class_name", "") or "")
+            if cls == "TForm_Confirm":
+                action = _resolve_confirm_dialog(d)
+            else:
+                action = _close_dialog(d)
+            actions.append(
+                {
+                    "dialog": s,
+                    "dialog_message": _dialog_message_text(d),
+                    "dialog_buttons": _dialog_button_labels(d),
+                    "action": action,
+                }
+            )
+        time.sleep(0.08)
+
+    for d in _dialog_candidates(int(vacs_pid), int(main_handle)):
+        s = _sig(d)
+        if str(s.get("class_name", "") or "") in CHILD_CLASSES:
+            continue
+        remaining.append(
+            {
+                "signature": s,
+                "message": _dialog_message_text(d),
+                "buttons": _dialog_button_labels(d),
+            }
+        )
+    return {"status": "timeout", "quiescent": False, "actions": actions, "remaining": remaining}
+
+
+def _find_save_as_dialog(target_pid: int, main_handle: int, timeout_s: float) -> Optional[Any]:
+    def _has_filename_edit(dialog: Any) -> bool:
+        hwnd = int(_sig(dialog).get("handle", 0) or 0)
+        if hwnd <= 0:
+            return False
+        rows = _win32_children(hwnd)
+        if any(int(r.get("ctrl_id", -1)) == 1148 for r in rows):
+            return True
+        edits = [r for r in rows if str(r.get("class_name", "")).lower() == "edit"]
+        return bool(edits)
+
+    def _resolve_intermediate_confirm(dialog: Any) -> None:
+        _resolve_confirm_dialog(dialog)
+
+    deadline = time.perf_counter() + float(timeout_s)
+    while time.perf_counter() < deadline:
+        for w in _windows_for_pid(int(target_pid)):
+            s = _sig(w)
+            title = str(s.get("title", ""))
+            class_name = str(s.get("class_name", ""))
+            handle = int(s.get("handle", 0) or 0)
+            if handle <= 0 or handle == int(main_handle):
+                continue
+            if class_name == "TForm_Confirm":
+                _resolve_intermediate_confirm(w)
+                continue
+            if re.search(r"(save\s*as|speichern\s*unter|speichern unter|save|file)", title, re.IGNORECASE) and re.search(
+                r"(#32770|Dialog|TForm_.*)", class_name, re.IGNORECASE
+            ):
+                if _has_filename_edit(w):
+                    return w
+            # Common file dialog can have generic title but still #32770 with file-name edit.
+            if re.search(r"(#32770|TForm_.*)", class_name, re.IGNORECASE):
+                if _has_filename_edit(w):
+                    return w
+        # Fallback on process-scoped descendant dialogs under main.
+        main = _find_main(int(target_pid))
+        if main is not None:
+            for d in _dialog_candidates(int(target_pid), int(main_handle)):
+                s = _sig(d)
+                cls = str(s.get("class_name", ""))
+                if cls == "TForm_Confirm":
+                    _resolve_intermediate_confirm(d)
+                    continue
+                if cls in {"TForm_Export", *CHILD_CLASSES}:
+                    continue
+                if _has_filename_edit(d):
+                    return d
+        time.sleep(0.08)
+    return None
+
+
+def _set_save_path(dialog: Any, full_target_path: Path) -> Dict[str, Any]:
+    target = str(full_target_path)
+    user32 = ctypes.windll.user32
+    result: Dict[str, Any] = {"target": target}
+
+    # Prefer file-name edit by id 1148 in common file dialog.
+    rows = _win32_children(int(_sig(dialog).get("handle", 0) or 0))
+    filename_row = None
+    for r in rows:
+        if int(r.get("ctrl_id", -1)) == 1148:
+            filename_row = r
+            break
+    if filename_row is None:
+        # fallback: first Edit control
+        for r in rows:
+            if str(r.get("class_name", "")) == "Edit":
+                filename_row = r
+                break
+
+    if filename_row is not None:
+        h = int(filename_row.get("handle", 0) or 0)
+        user32.SendMessageW(h, WM_SETTEXT, 0, target)
+        buf = ctypes.create_unicode_buffer(1024)
+        user32.GetWindowTextW(h, buf, 1023)
+        readback = str(buf.value or "")
+        result["filename_handle"] = h
+        result["filename_readback"] = readback
+        result["filename_exact_match"] = bool(readback.strip() == target)
+    else:
+        # UIA fallback typing.
+        try:
+            edits = [c for c in dialog.descendants() if str(_sig(c).get("control_type", "")) == "Edit"]
+        except Exception:
+            edits = []
+        if edits:
+            edit = edits[0]
+            try:
+                edit.set_focus()
+                edit.type_keys("^a{BACKSPACE}", set_foreground=True)
+                edit.type_keys(target, with_spaces=True, set_foreground=True)
+                result["filename_uia"] = "typed"
+                try:
+                    rb = str(edit.window_text() or "")
+                    result["filename_readback"] = rb
+                    result["filename_exact_match"] = bool(rb.strip() == target)
+                except Exception:
+                    result["filename_exact_match"] = None
+            except Exception as exc:
+                result["filename_uia"] = f"error:{exc!r}"
+        else:
+            result["filename_uia"] = "missing_edit"
+
+    # click Save button
+    save_clicked = False
+    for caption in ("Save", "Speichern", "&Save", "&Speichern"):
+        try:
+            btn = dialog.child_window(title=caption, control_type="Button")
+            if btn.exists(timeout=0.2):
+                try:
+                    btn.invoke()
+                    save_clicked = True
+                    result["save_action"] = {"method": "invoke", "caption": caption}
+                    break
+                except Exception:
+                    btn.click()
+                    save_clicked = True
+                    result["save_action"] = {"method": "click", "caption": caption}
+                    break
+        except Exception:
+            continue
+    if not save_clicked and filename_row is not None:
+        # common save button often id 1
+        save_row = None
+        for r in rows:
+            if int(r.get("ctrl_id", -1)) == 1:
+                save_row = r
+                break
+        if save_row is not None and _click_handle(int(save_row.get("handle", 0) or 0)):
+            save_clicked = True
+            result["save_action"] = {"method": "bm_click_id1", "handle": int(save_row.get("handle", 0) or 0)}
+    if not save_clicked:
+        try:
+            dialog.type_keys("{ENTER}")
+            save_clicked = True
+            result["save_action"] = {"method": "enter_fallback"}
+        except Exception as exc:
+            result["save_action"] = {"method": "failed", "error": repr(exc)}
+    return result
+
+
+def _activate_save_ladder(export_dialog: Any, save_handle: int) -> List[Dict[str, Any]]:
+    attempts: List[Dict[str, Any]] = []
+    dialog_handle = int(_sig(export_dialog).get("handle", 0) or 0)
+    user32 = ctypes.windll.user32
+
+    def _save_as_now_visible() -> bool:
+        t0 = time.perf_counter()
+        while time.perf_counter() - t0 < 0.4:
+            if _find_save_as_dialog(int(_sig(export_dialog).get("process_id", 0) or 0), 0, timeout_s=0.05) is not None:
+                return True
+            time.sleep(0.04)
+        return False
+
+    def _run_one(method: str) -> bool:
+        try:
+            if method == "win32_click":
+                w = Desktop(backend="win32").window(handle=int(save_handle))
+                w.click()
+                attempts.append({"method": method, "status": "ok"})
+            elif method == "bm_click":
+                user32.SendMessageW(int(save_handle), BM_CLICK, 0, 0)
+                attempts.append({"method": method, "status": "ok"})
+            elif method == "wm_command_bn_clicked":
+                ctrl_id = int(user32.GetDlgCtrlID(int(save_handle)))
+                if dialog_handle > 0 and ctrl_id > 0:
+                    wparam = (int(ctrl_id) & 0xFFFF) | ((int(BN_CLICKED) & 0xFFFF) << 16)
+                    user32.SendMessageW(int(dialog_handle), WM_COMMAND, int(wparam), int(save_handle))
+                    attempts.append({"method": method, "status": "ok", "ctrl_id": ctrl_id})
+                else:
+                    attempts.append({"method": method, "status": "skipped", "ctrl_id": ctrl_id})
+            elif method == "alt_s":
+                export_dialog.type_keys("%s", set_foreground=True)
+                attempts.append({"method": method, "status": "ok"})
+            else:
+                export_dialog.type_keys("{ENTER}", set_foreground=True)
+                attempts.append({"method": method, "status": "ok"})
+        except Exception as exc:
+            attempts.append({"method": method, "status": "error", "error": repr(exc)})
+            return False
+        return True
+
+    for method in ("win32_click", "bm_click", "wm_command_bn_clicked", "alt_s", "enter"):
+        ran = _run_one(method)
+        if not ran:
+            continue
+        if _save_as_now_visible():
+            attempts.append({"method": method, "postcheck": "save_as_visible"})
+            break
+    return attempts
+
+
+def _find_overwrite_dialog(target_pid: int, main_handle: int) -> Optional[Any]:
+    for w in _dialog_candidates(int(target_pid), int(main_handle)):
+        s = _sig(w)
+        class_name = str(s.get("class_name", ""))
+        if not re.search(r"(#32770|Dialog|TForm_.*)", class_name, re.IGNORECASE):
+            continue
+        title = str(s.get("title", "")).lower()
+        texts: List[str] = []
+        try:
+            for c in list(w.descendants())[:60]:
+                txt = _window_text(c)
+                if txt:
+                    texts.append(txt.lower())
+        except Exception:
+            pass
+        haystack = " ".join([title, *texts])
+        overwrite_hint = bool(re.search(r"(overwrite|replace|ersetzen|exist|bereits vorhanden|already exists)", haystack, re.IGNORECASE))
+        if not overwrite_hint:
+            continue
+        # require at least one positive action button
+        for caption in ("Yes", "Ja", "Replace", "Ersetzen", "OK", "Ok"):
+            try:
+                btn = w.child_window(title=caption, control_type="Button")
+                if btn.exists(timeout=0.05):
+                    return w
+            except Exception:
+                continue
+    return None
+
+
+def _handle_overwrite_confirm(target_pid: int, main_handle: int, timeout_s: float = 3.0) -> Optional[Dict[str, Any]]:
+    deadline = time.perf_counter() + float(timeout_s)
+    while time.perf_counter() < deadline:
+        w = _find_overwrite_dialog(int(target_pid), int(main_handle))
+        if w is not None:
+            s = _sig(w)
+            for caption in ("Yes", "Ja", "Replace", "Ersetzen", "OK", "Ok"):
+                try:
+                    btn = w.child_window(title=caption, control_type="Button")
+                    if btn.exists(timeout=0.1):
+                        try:
+                            btn.invoke()
+                            return {"dialog": s, "action": {"method": "invoke", "caption": caption}}
+                        except Exception:
+                            btn.click()
+                            return {"dialog": s, "action": {"method": "click", "caption": caption}}
+                except Exception:
+                    continue
+        time.sleep(0.15)
+    return None
+
+
+def _unique_export_path(export_root: Path, run_id: str, loop_idx: int, safe_name: str) -> Path:
+    base = export_root / f"{run_id}_{loop_idx:02d}_{safe_name}.txt"
+    if not base.exists():
+        return base
+    n = 1
+    while True:
+        candidate = export_root / f"{run_id}_{loop_idx:02d}_{safe_name}_{n}.txt"
+        if not candidate.exists():
+            return candidate
+        n += 1
+
+
+def _find_save_bitbtn(export_dialog: Any) -> Optional[Dict[str, Any]]:
+    controls = _dialog_controls(export_dialog)
+    for c in controls:
+        label = (str(c.get("title", "")) + " " + str(c.get("text", ""))).strip().lower()
+        class_name = str(c.get("class_name", "") or "")
+        if re.search(r"(save|speicher)", label) and re.search(r"(trzbitbtn|button)", class_name, re.IGNORECASE):
+            return c
+    # Win32 fallback
+    win32_rows = _win32_children(int(_sig(export_dialog).get("handle", 0) or 0))
+    for r in win32_rows:
+        text = str(r.get("text", "") or "").lower()
+        cls = str(r.get("class_name", "") or "")
+        if re.search(r"(save|speicher)", text) and re.search(r"(bitbtn|button)", cls, re.IGNORECASE):
+            return {"handle": int(r.get("handle", 0) or 0), "title": r.get("text", ""), "class_name": r.get("class_name", "")}
+    return None
+
+
+def _is_graph_child_open(vacs_pid: int, child_handle: int) -> bool:
+    main = _find_main(int(vacs_pid))
+    if main is None:
+        return False
+    return any(int(_sig(g).get("handle", 0) or 0) == int(child_handle) for g in _graph_children(main))
+
+
+def _issue_child_close(child_handle: int, main_handle: int) -> List[Dict[str, Any]]:
+    attempts: List[Dict[str, Any]] = []
+    def _closed_now() -> bool:
+        return not _is_window_alive(int(child_handle))
+
+    try:
+        child_uia = Desktop(backend="uia").window(handle=int(child_handle))
+        child_uia.set_focus()
+        attempts.append({"method": "uia_child_focus", "status": "ok"})
+    except Exception as exc:
+        attempts.append({"method": "uia_child_focus", "status": "error", "error": repr(exc)})
+    # Try explicit child close buttons first (X/Close/Schliessen) before message-based close.
+    try:
+        child_uia = Desktop(backend="uia").window(handle=int(child_handle))
+        close_clicked = False
+        for c in child_uia.descendants():
+            label = _window_text(c).strip().lower()
+            if label not in {"close", "schließen", "schliessen", "x"}:
+                continue
+            try:
+                c.invoke()
+                attempts.append({"method": "uia_child_close_button", "status": "ok", "caption": label})
+                close_clicked = True
+                break
+            except Exception:
+                try:
+                    c.click()
+                    attempts.append({"method": "uia_child_close_button", "status": "ok", "caption": label})
+                    close_clicked = True
+                    break
+                except Exception:
+                    continue
+        if not close_clicked:
+            attempts.append({"method": "uia_child_close_button", "status": "missing"})
+        else:
+            t0 = time.perf_counter()
+            while time.perf_counter() - t0 < 0.4:
+                if _closed_now():
+                    return attempts
+                time.sleep(0.04)
+    except Exception as exc:
+        attempts.append({"method": "uia_child_close_button", "status": "error", "error": repr(exc)})
+    try:
+        child_uia = Desktop(backend="uia").window(handle=int(child_handle))
+        child_uia.type_keys("%{F4}", set_foreground=True)
+        attempts.append({"method": "uia_child_alt_f4", "status": "ok"})
+        t0 = time.perf_counter()
+        while time.perf_counter() - t0 < 0.35:
+            if _closed_now():
+                return attempts
+            time.sleep(0.04)
+    except Exception as exc:
+        attempts.append({"method": "uia_child_alt_f4", "status": "error", "error": repr(exc)})
+    try:
+        ctypes.windll.user32.PostMessageW(int(child_handle), WM_CLOSE, 0, 0)
+        attempts.append({"method": "wm_close_post", "status": "ok"})
+        t0 = time.perf_counter()
+        while time.perf_counter() - t0 < 0.25:
+            if _closed_now():
+                return attempts
+            time.sleep(0.04)
+    except Exception as exc:
+        attempts.append({"method": "wm_close_post", "status": "error", "error": repr(exc)})
+    try:
+        user32 = ctypes.windll.user32
+        mdi = _find_mdi_client_handle(int(main_handle))
+        if mdi > 0:
+            user32.SendMessageW(int(mdi), WM_MDIACTIVATE, int(child_handle), 0)
+            user32.SendMessageW(int(mdi), WM_MDIDESTROY, int(child_handle), 0)
+            attempts.append({"method": "mdi_destroy", "status": "ok", "mdi_handle": int(mdi)})
+        else:
+            attempts.append({"method": "mdi_destroy", "status": "missing_mdi_client"})
+    except Exception as exc:
+        attempts.append({"method": "mdi_destroy", "status": "error", "error": repr(exc)})
+    return attempts
+
+
+def _close_child_and_context(child_handle: int, vacs_pid: int, main_handle: int) -> Dict[str, Any]:
+    result: Dict[str, Any] = {"child_handle": int(child_handle)}
+    result["close_attempts"] = _issue_child_close(int(child_handle), int(main_handle))
+    handled: List[Dict[str, Any]] = []
+    deadline = time.perf_counter() + 5.0
+    retries = 0
+    while time.perf_counter() < deadline:
+        if not _is_graph_child_open(int(vacs_pid), int(child_handle)):
+            break
+        dialogs = _dialog_candidates(vacs_pid, int(main_handle))
+        if not dialogs:
+            if retries < 2:
+                retries += 1
+                handled.append({"retry_close": retries, "attempts": _issue_child_close(int(child_handle), int(main_handle))})
+                time.sleep(0.2)
+                continue
+            break
+        any_action = False
+        for d in dialogs:
+            ds = _sig(d)
+            # close only non-graph residual dialogs
+            if ds.get("class_name") in CHILD_CLASSES:
+                continue
+            if ds.get("class_name") == "TForm_Export":
+                continue
+            if str(ds.get("class_name", "")) == "TForm_Confirm" and _is_graph_child_open(int(vacs_pid), int(child_handle)):
+                action = _handle_close_confirm_dialog(d, int(vacs_pid), int(child_handle))
+            else:
+                action = _close_dialog(d)
+            handled.append(
+                {
+                    "dialog": ds,
+                    "dialog_message": _dialog_message_text(d),
+                    "dialog_buttons": _dialog_button_labels(d),
+                    "action": action,
+                }
+            )
+            any_action = True
+        if not any_action:
+            if retries < 2:
+                retries += 1
+                handled.append({"retry_close": retries, "attempts": _issue_child_close(int(child_handle), int(main_handle))})
+            else:
+                break
+        time.sleep(0.15)
+    result["context_dialogs"] = handled
+    result["closed"] = not _is_graph_child_open(int(vacs_pid), int(child_handle))
+    return result
+
+
+def run_once(args: argparse.Namespace) -> Dict[str, Any]:
+    export_root = Path(args.export_dir).resolve()
+    export_root.mkdir(parents=True, exist_ok=True)
+    run_id = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    out_dir = Path(args.output_dir).resolve() / f"run_{run_id}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    trace_file = out_dir / "trace.jsonl"
+    log: Dict[str, Any] = {
+        "run_id": run_id,
+        "started_at": _now_iso(),
+        "export_root": str(export_root),
+        "steps": [],
+        "trace_file": str(trace_file),
+    }
+    started_perf = time.perf_counter()
+
+    def step(name: str, **payload: Any) -> None:
+        row = {"time": _now_iso(), "step": name, "payload": payload}
+        log["steps"].append(row)
+        try:
+            with trace_file.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+        except Exception:
+            pass
+
+    _kill_vacs()
+    proc = subprocess.Popen([str(args.vacs_exe)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    step("start_vacs_mode", mode="prestart_vacs_primary", prestart=True, pid=int(proc.pid), vacs_exe=str(args.vacs_exe))
+    time.sleep(0.6)
+
+    interim = _run_interim_with_mode(args, skip_open_via_akabak=False)
+    step("interim_reimport_primary", **interim)
+    parsed = dict(interim.get("parsed") or {})
+    if not bool(parsed.get("ok")):
+        interim = _run_interim_with_mode(args, skip_open_via_akabak=True)
+        step("interim_reimport_fallback", **interim)
+        parsed = dict(interim.get("parsed") or {})
+        if not bool(parsed.get("ok")):
+            log["ok"] = False
+            log["error"] = "interim_reimport_failed"
+            return log
+
+    vacs_pid = int(parsed.get("vacs_pid", 0) or 0)
+    main = _find_main(vacs_pid)
+    if main is None:
+        log["ok"] = False
+        log["error"] = "vacs_main_missing"
+        return log
+    main_sig = _sig(main)
+    main_handle = int(main_sig.get("handle", 0) or 0)
+    step("vacs_main", signature=main_sig)
+
+    exported_files: List[Dict[str, Any]] = []
+    per_graph: List[Dict[str, Any]] = []
+    processed_handles: set[int] = set()
+    seen_export_dialog_handles: set[int] = set()
+    max_loops = int(args.max_loops)
+    loop_idx = 0
+    while loop_idx < max_loops:
+        if (time.perf_counter() - started_perf) > float(args.max_runtime_s):
+            step("runtime_guard_stop", reason="max_runtime_exceeded", max_runtime_s=float(args.max_runtime_s))
+            break
+        loop_idx += 1
+        main = _find_main(vacs_pid)
+        if main is None:
+            break
+        pre_loop_exports = _close_all_export_dialogs(vacs_pid, int(main_handle), timeout_s=0.9)
+        if pre_loop_exports:
+            step("pre_loop_export_close", loop=loop_idx, actions=pre_loop_exports)
+        drained = _drain_aux_dialogs(vacs_pid, int(main_handle), keep_export_handle=0)
+        if drained:
+            step("pre_loop_dialog_drain", loop=loop_idx, drained=drained)
+        graphs = _graph_children(main)
+        graphs_sorted = sorted(graphs, key=lambda g: str(_sig(g).get("title", "")).lower())
+        step("graph_snapshot", loop=loop_idx, count=len(graphs_sorted), graphs=[_sig(g) for g in graphs_sorted])
+        if not graphs_sorted:
+            break
+        remaining_targets = [g for g in graphs_sorted if int(_sig(g).get("handle", 0) or 0) not in processed_handles]
+        if not remaining_targets:
+            step(
+                "graph_selection_exhausted",
+                loop=loop_idx,
+                processed_count=len(processed_handles),
+                still_open=[_sig(g) for g in graphs_sorted],
+            )
+            break
+        target = remaining_targets[0]
+        t_sig = _sig(target)
+        t_handle = int(t_sig.get("handle", 0) or 0)
+        row: Dict[str, Any] = {"loop": loop_idx, "target": t_sig}
+        step("graph_target_selected", loop=loop_idx, target=t_sig)
+
+        try:
+            ok = bool(ctypes.windll.user32.SetForegroundWindow(int(t_handle)))
+            row["focus"] = "ok" if ok else "set_foreground_false"
+            step("graph_target_focused", loop=loop_idx, handle=t_handle, focus=row["focus"])
+        except Exception as exc:
+            row["focus"] = f"error:{exc!r}"
+            step("graph_target_focus_failed", loop=loop_idx, handle=t_handle, error=repr(exc))
+            per_graph.append(row)
+            break
+
+        # Open export dialog with ladder.
+        trigger_attempts: List[Dict[str, Any]] = []
+        export_dialog = None
+        for method in ("main_wm_command_52", "target_f7_postmessage", "main_f7_postmessage"):
+            try:
+                if method == "target_f7_postmessage":
+                    _send_f7(int(t_handle))
+                elif method == "main_f7_postmessage":
+                    _send_f7(int(main_handle))
+                else:
+                    ctypes.windll.user32.SendMessageW(int(main_handle), WM_COMMAND, int(VACS_EXPORT_COMMAND_ID), 0)
+                trigger_attempts.append({"method": method, "status": "ok"})
+                export_dialog = _find_data_export_after_trigger(
+                    vacs_pid,
+                    int(main_handle),
+                    timeout_s=0.55,
+                    known_handles=seen_export_dialog_handles,
+                )
+                if export_dialog is not None:
+                    trigger_attempts.append({"method": method, "postcheck": "data_export_visible"})
+                    break
+            except Exception as exc:
+                trigger_attempts.append({"method": method, "status": "error", "error": repr(exc)})
+        row["export_trigger"] = trigger_attempts
+        step("graph_export_triggered", loop=loop_idx, attempts=trigger_attempts)
+        if export_dialog is None:
+            export_dialog = _find_data_export_after_trigger(
+                vacs_pid,
+                int(main_handle),
+                timeout_s=float(args.dialog_timeout_s),
+                known_handles=seen_export_dialog_handles,
+            )
+        if export_dialog is None:
+            row["error"] = "data_export_missing"
+            row["wrong_windows"] = [_sig(d) for d in _dialog_candidates(vacs_pid, int(main_handle))]
+            step("graph_data_export_missing", loop=loop_idx, wrong_windows=row["wrong_windows"])
+            per_graph.append(row)
+            break
+
+        exp_sig = _sig(export_dialog)
+        exp_handle = int(exp_sig.get("handle", 0) or 0)
+        if exp_handle > 0:
+            seen_export_dialog_handles.add(exp_handle)
+        row["data_export_dialog"] = exp_sig
+        step("graph_data_export_found", loop=loop_idx, dialog=exp_sig)
+        pre_save_drain = _drain_aux_dialogs(vacs_pid, int(main_handle), keep_export_handle=int(exp_sig.get("handle", 0) or 0))
+        if pre_save_drain:
+            row["pre_save_dialog_drain"] = pre_save_drain
+            step("graph_pre_save_dialog_drain", loop=loop_idx, drained=pre_save_drain)
+        if bool(args.capture_export_controls):
+            row["data_export_controls"] = _dialog_controls(export_dialog)
+            row["data_export_win32_children"] = _win32_children(int(exp_sig.get("handle", 0) or 0))
+
+        save_ctrl = _find_save_bitbtn(export_dialog)
+        row["save_control"] = save_ctrl
+        if not save_ctrl:
+            row["error"] = "save_control_missing"
+            step("graph_save_control_missing", loop=loop_idx)
+            per_graph.append(row)
+            break
+
+        save_handle = int(save_ctrl.get("handle", 0) or 0)
+        save_attempts = _activate_save_ladder(export_dialog, save_handle)
+        row["save_click"] = {"handle": save_handle, "attempts": save_attempts}
+        step("graph_save_invoked", loop=loop_idx, save_handle=save_handle, attempts=save_attempts)
+
+        save_as = _find_save_as_dialog(vacs_pid, int(main_handle), timeout_s=float(args.save_as_timeout_s))
+        if save_as is None:
+            post_save_drain = _drain_aux_dialogs(vacs_pid, int(main_handle), keep_export_handle=int(exp_sig.get("handle", 0) or 0))
+            if post_save_drain:
+                row["post_save_dialog_drain"] = post_save_drain
+                step("graph_post_save_dialog_drain", loop=loop_idx, drained=post_save_drain)
+            save_as = _find_save_as_dialog(vacs_pid, int(main_handle), timeout_s=3.0)
+        if save_as is None:
+            overwrite = _handle_overwrite_confirm(vacs_pid, int(main_handle), timeout_s=2.0)
+            if overwrite is not None:
+                row["overwrite_confirm_without_save_as"] = overwrite
+                step("graph_overwrite_without_save_as", loop=loop_idx, overwrite=overwrite)
+                # In this branch the app saved using previously remembered path.
+                # Try to discover newest TXT as evidence.
+                latest_txt = None
+                latest_mtime = 0.0
+                for p in export_root.glob("*.txt"):
+                    try:
+                        mt = p.stat().st_mtime
+                    except Exception:
+                        continue
+                    if mt > latest_mtime:
+                        latest_mtime = mt
+                        latest_txt = p
+                if latest_txt is not None:
+                    target_file = latest_txt
+                    row["recovered_target_file"] = str(latest_txt)
+                else:
+                    row["error"] = "save_as_missing_and_no_recoverable_target"
+                    row["dialogs_after_save"] = [
+                        {
+                            "signature": _sig(d),
+                            "message": _dialog_message_text(d),
+                            "buttons": _dialog_button_labels(d),
+                        }
+                        for d in _dialog_candidates(vacs_pid, int(main_handle))
+                    ]
+                    step("graph_save_as_missing_unrecoverable", loop=loop_idx, dialogs_after_save=row["dialogs_after_save"])
+                    per_graph.append(row)
+                    break
+            else:
+                row["error"] = "save_as_dialog_missing"
+                row["dialogs_after_save"] = [
+                    {
+                        "signature": _sig(d),
+                        "message": _dialog_message_text(d),
+                        "buttons": _dialog_button_labels(d),
+                    }
+                    for d in _dialog_candidates(vacs_pid, int(main_handle))
+                ]
+                step("graph_save_as_missing", loop=loop_idx, dialogs_after_save=row["dialogs_after_save"])
+                per_graph.append(row)
+                break
+        else:
+            save_as_sig = _sig(save_as)
+            row["save_as_dialog"] = save_as_sig
+            step("graph_save_as_found", loop=loop_idx, dialog=save_as_sig)
+
+            safe_name = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(t_sig.get("title", "graph")).strip()).strip("_")
+            if not safe_name:
+                safe_name = f"graph_{loop_idx}"
+            target_file = _unique_export_path(export_root, run_id, loop_idx, safe_name)
+            set_path_res = _set_save_path(save_as, target_file)
+            row["save_as_set_path"] = set_path_res
+            step("graph_save_as_path_set", loop=loop_idx, target=str(target_file), set_path=set_path_res)
+
+            overwrite = _handle_overwrite_confirm(vacs_pid, int(main_handle), timeout_s=2.0)
+            if overwrite is not None:
+                row["overwrite_confirm"] = overwrite
+                step("graph_overwrite_confirm", loop=loop_idx, overwrite=overwrite)
+
+        # Postcondition: file exists with content.
+        deadline = time.perf_counter() + float(args.file_timeout_s)
+        while time.perf_counter() < deadline and (not target_file.exists() or target_file.stat().st_size <= 0):
+            time.sleep(0.15)
+        file_ok = target_file.exists() and target_file.stat().st_size > 0
+        row["file_postcondition"] = {
+            "path": str(target_file),
+            "exists": bool(target_file.exists()),
+            "bytes": int(target_file.stat().st_size) if target_file.exists() else 0,
+            "ok": bool(file_ok),
+        }
+        if not file_ok:
+            row["error"] = "export_file_missing_or_empty"
+            step("graph_export_file_failed", loop=loop_idx, file_postcondition=row["file_postcondition"])
+            per_graph.append(row)
+            break
+
+        exported_files.append({"graph": t_sig, "path": str(target_file), "bytes": int(target_file.stat().st_size)})
+        step("graph_export_file_ok", loop=loop_idx, file=row["file_postcondition"])
+
+        # Close Data Export window.
+        row["close_data_export"] = _close_dialog(export_dialog)
+        step("graph_data_export_closed", loop=loop_idx, close=row["close_data_export"])
+        row["close_all_export_dialogs"] = _close_all_export_dialogs(vacs_pid, int(main_handle), timeout_s=1.0)
+        if row["close_all_export_dialogs"]:
+            step("graph_close_all_export_dialogs", loop=loop_idx, actions=row["close_all_export_dialogs"])
+        row["dialog_quiescence_after_export"] = _wait_for_dialog_quiescence(vacs_pid, int(main_handle), timeout_s=2.0, stable_s=0.25)
+        if not bool(row["dialog_quiescence_after_export"].get("quiescent")):
+            step("graph_quiescence_after_export_timeout", loop=loop_idx, details=row["dialog_quiescence_after_export"])
+
+        # Close target child window with context handling.
+        row["close_child"] = _close_child_and_context(t_handle, vacs_pid, int(main_handle))
+        step("graph_child_closed_request", loop=loop_idx, close_child=row["close_child"])
+        row["post_close_all_export_dialogs"] = _close_all_export_dialogs(vacs_pid, int(main_handle), timeout_s=0.9)
+        if row["post_close_all_export_dialogs"]:
+            step("graph_post_close_all_export_dialogs", loop=loop_idx, actions=row["post_close_all_export_dialogs"])
+        row["dialog_quiescence_after_child_close"] = _wait_for_dialog_quiescence(vacs_pid, int(main_handle), timeout_s=2.0, stable_s=0.25)
+        if not bool(row["dialog_quiescence_after_child_close"].get("quiescent")):
+            step("graph_quiescence_after_child_close_timeout", loop=loop_idx, details=row["dialog_quiescence_after_child_close"])
+
+        # verify child closed
+        time.sleep(0.05)
+        main_after = _find_main(vacs_pid)
+        if main_after is not None:
+            still_open = any(int(_sig(g).get("handle", 0) or 0) == t_handle for g in _graph_children(main_after))
+        else:
+            still_open = False
+        row["child_closed_postcondition"] = {"handle": t_handle, "closed": not still_open}
+        step("graph_child_closed_postcondition", loop=loop_idx, post=row["child_closed_postcondition"])
+
+        per_graph.append(row)
+        processed_handles.add(int(t_handle))
+        if still_open:
+            step("graph_child_still_open_continue", loop=loop_idx, handle=t_handle)
+            continue
+
+    # Final graph count
+    main_end = _find_main(vacs_pid)
+    remaining = [_sig(g) for g in _graph_children(main_end)] if main_end is not None else []
+    step("remaining_graphs", count=len(remaining), graphs=remaining)
+    log["per_graph"] = per_graph
+    log["exported_files"] = exported_files
+    log["remaining_graphs"] = remaining
+    log["ok"] = bool(len(remaining) == 0 and len(exported_files) > 0)
+
+    # close vacs
+    _kill_vacs()
+    step("kill_vacs_final")
+    log["finished_at"] = _now_iso()
+
+    out_file = out_dir / "summary.json"
+    out_file.write_text(json.dumps(log, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    log["summary_file"] = str(out_file)
+    return log
+
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(description="Export and save all VACS graph child windows.")
+    p.add_argument("--akabak-exe", required=True)
+    p.add_argument("--vacs-exe", required=True)
+    p.add_argument("--export-dir", required=True, help="Target folder under C:\\Horns\\... for this version")
+    p.add_argument("--output-dir", default="runner_test_workspace/logs/vacs_export_save_all")
+    p.add_argument("--dialog-timeout-s", type=float, default=5.0)
+    p.add_argument("--save-as-timeout-s", type=float, default=8.0)
+    p.add_argument("--file-timeout-s", type=float, default=8.0)
+    p.add_argument("--capture-export-controls", action="store_true", help="Capture full Data Export control dumps (slower).")
+    p.add_argument("--max-runtime-s", type=float, default=420.0)
+    p.add_argument("--max-loops", type=int, default=12)
+    p.add_argument("--interim-timeout-s", type=int, default=90)
+    p.add_argument("--interim-idle-timeout-s", type=int, default=20)
+    p.add_argument("--interim-startup-timeout-s", type=int, default=25)
+    return p
+
+
+def main() -> int:
+    args = build_parser().parse_args()
+    result = run_once(args)
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+    return 0 if bool(result.get("ok")) else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
