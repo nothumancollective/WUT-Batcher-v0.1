@@ -11,6 +11,7 @@ import math
 import os
 from pathlib import Path
 import platform
+import random
 import re
 import sqlite3
 import subprocess
@@ -1348,6 +1349,9 @@ def _diagnose_radimp(
     abec_path: Path,
     export_diagnostics: Sequence[Dict[str, Any]],
     watchdog_events: Sequence[Dict[str, Any]],
+    solve_completed: bool = True,
+    export_stage_executed: bool = True,
+    expected_export_kinds: Optional[Sequence[str]] = None,
 ) -> Dict[str, Any]:
     observation_files = _resolve_observation_files(abec_path)
     observation_meta: List[Dict[str, Any]] = []
@@ -1355,7 +1359,7 @@ def _diagnose_radimp(
     observation_radimp_normalized = False
     for file_path in observation_files:
         content = file_path.read_text(encoding="utf-8", errors="replace")
-        has_radimp = bool(re.search(r"\bradimp\b", content, re.IGNORECASE))
+        has_radimp = bool(re.search(r"(radimp|radiation[_\s-]*impedance)", content, re.IGNORECASE))
         has_normalized = bool(re.search(r"radimptype\s*=\s*normalized", content, re.IGNORECASE))
         if has_radimp:
             observation_has_radimp = True
@@ -1383,7 +1387,10 @@ def _diagnose_radimp(
         if _is_radimp_kind(expected_kind) or _is_radimp_kind(parsed_kind):
             radimp_exports.append(row)
 
-    radimp_requested = any(_is_radimp_kind(str(row.get("expected_kind", "") or "")) for row in export_diagnostics)
+    requested_kinds = [str(row.get("expected_kind", "") or "") for row in export_diagnostics]
+    if expected_export_kinds:
+        requested_kinds.extend(str(item or "") for item in expected_export_kinds)
+    radimp_requested = any(_is_radimp_kind(item) for item in requested_kinds)
     all_zero = False
     wrong_kind = False
     if radimp_exports:
@@ -1402,21 +1409,37 @@ def _diagnose_radimp(
         classification = "sources_muted_dialog_seen"
         message = "AKABAK watchdog captured a muted-sources style dialog"
         status = "failed"
+    elif not solve_completed:
+        classification = "solve_not_completed_or_no_results"
+        message = "solve completion signal missing before RadImp evaluation"
+        status = "failed"
+    elif radimp_requested and not export_stage_executed:
+        classification = "solve_not_completed_or_no_results"
+        message = "export stage was not executed after solve"
+        status = "failed"
+    elif radimp_requested and not radimp_exports:
+        classification = "wrong_graph_exported"
+        message = "requested RadImp export but no RadImp graph was exported"
+        status = "failed"
+    elif wrong_kind:
+        classification = "wrong_graph_exported"
+        message = "exported graph metadata does not match requested RadImp graph kind"
+        status = "failed"
     elif radimp_exports and all_zero and all_zero_allowed and observation_radimp_normalized:
         classification = "radimp_normalized_zero_baseline"
         message = "radimp export is normalized and zero-valued baseline (accepted)"
         status = "ok"
     elif radimp_exports and all_zero:
-        classification = "solve_succeeded_radimp_all_zero"
+        classification = "radimp_all_zero_unclassified"
         message = "radimp export exists but all series are zero-valued"
         status = "failed"
-    elif radimp_requested and (not observation_has_radimp or wrong_kind):
-        classification = "observation_misconfigured_or_wrong_export"
-        message = "radimp observation missing/ambiguous or export graph kind mismatch"
+    elif radimp_requested and not observation_has_radimp:
+        classification = "wrong_graph_exported"
+        message = "radimp requested but observation file has no Radiation_Impedance section"
         status = "failed"
-    elif radimp_requested:
-        classification = "radimp_nonzero_or_not_flagged"
-        message = "radimp requested; no all-zero signature detected"
+    elif radimp_requested and radimp_exports:
+        classification = "radimp_nonzero"
+        message = "radimp requested; non-zero RadImp signature detected"
         status = "ok"
 
     return {
@@ -1433,6 +1456,8 @@ def _diagnose_radimp(
             "radimp_all_zero": all_zero,
             "radimp_all_zero_allowed": all_zero_allowed,
             "radimp_wrong_kind": wrong_kind,
+            "solve_completed": bool(solve_completed),
+            "export_stage_executed": bool(export_stage_executed),
             "watchdog_event_count": len(list(watchdog_events)),
             "muted_dialog_seen": muted_seen,
         },
@@ -1668,6 +1693,10 @@ class RunnerTestHarnessRun:
         }
 
 
+class HarnessManualInterferenceError(RuntimeError):
+    """Raised when unmanaged manual tool interaction blocks deterministic harness execution."""
+
+
 def run_runner_test_harness(
     *,
     case_id: str,
@@ -1684,6 +1713,7 @@ def run_runner_test_harness(
     cfg_le_profile: Optional[str] = None,
     radimp_observation_profile: Optional[str] = None,
     driving_observation_profile: Optional[str] = None,
+    strict_nonzero_radimp: bool = False,
     dry_run: bool = False,
 ) -> Dict[str, Any]:
     workspace = resolve_runner_test_workspace(workspace_root)
@@ -1816,7 +1846,9 @@ def run_runner_test_harness(
                 raise RuntimeError("missing required executables for non-dry run")
             if preflight_blockers:
                 notes = "preflight blocked by unmanaged tool processes"
-                raise RuntimeError("unmanaged AKABAK/VACS process detected; close manual tool windows and retry")
+                raise HarnessManualInterferenceError(
+                    "unmanaged AKABAK/VACS process detected; close manual tool windows and retry"
+                )
 
             resolve_started = _now_iso()
             resolved = resolve_versions(project.constraints, batch, existing_version_ids=(), strict=False)
@@ -2538,6 +2570,21 @@ def run_runner_test_harness(
 
                 export_items = list(vacs_summary.get("exports", []) or [])
                 if not export_items:
+                    radimp_diagnosis = _diagnose_radimp(
+                        abec_path=abec_path,
+                        export_diagnostics=[],
+                        watchdog_events=akabak_watchdog_events,
+                        solve_completed=True,
+                        export_stage_executed=bool(vacs_summary.get("executed")),
+                        expected_export_kinds=[str(spec.graph_kind or "") for spec in export_specs],
+                    )
+                    db.add_validation(
+                        test_run_id=test_run_id,
+                        validation_name="radimp_diagnosis",
+                        status=str(radimp_diagnosis["status"]),
+                        metrics=dict(radimp_diagnosis["metrics"]),
+                        message=str(radimp_diagnosis["message"]),
+                    )
                     notes = "VACS export produced no files"
                     raise RuntimeError("no exported files")
 
@@ -2618,6 +2665,9 @@ def run_runner_test_harness(
                     abec_path=abec_path,
                     export_diagnostics=export_diagnostics,
                     watchdog_events=akabak_watchdog_events,
+                    solve_completed=True,
+                    export_stage_executed=bool(vacs_summary.get("executed")),
+                    expected_export_kinds=[str(spec.graph_kind or "") for spec in export_specs],
                 )
                 db.add_validation(
                     test_run_id=test_run_id,
@@ -2626,6 +2676,23 @@ def run_runner_test_harness(
                     metrics=dict(radimp_diagnosis["metrics"]),
                     message=str(radimp_diagnosis["message"]),
                 )
+                if strict_nonzero_radimp:
+                    nonzero_ok = str(radimp_diagnosis.get("classification") or "") == "radimp_nonzero"
+                    db.add_validation(
+                        test_run_id=test_run_id,
+                        validation_name="strict_nonzero_radimp",
+                        status="ok" if nonzero_ok else "failed",
+                        metrics={
+                            "strict_nonzero_radimp": True,
+                            "radimp_classification": str(radimp_diagnosis.get("classification") or ""),
+                            "radimp_status": str(radimp_diagnosis.get("status") or ""),
+                        },
+                        message="strict non-zero RadImp gate passed"
+                        if nonzero_ok
+                        else "strict non-zero RadImp gate failed (RadImp is still zero or unavailable)",
+                    )
+                    if not nonzero_ok:
+                        validation_failed = True
                 if radimp_diagnosis["status"] != "ok":
                     validation_failed = True
 
@@ -2671,7 +2738,67 @@ def run_runner_test_harness(
                     status="success" if run_status == "succeeded" else run_status,
                     finished_at=_now_iso(),
                 )
+        except HarnessManualInterferenceError as exc:
+            run_status = "aborted"
+            notes = str(exc) or "manual tool interference detected"
+            db.upsert_run(
+                run_id=test_run_id,
+                project_id=project.project_id,
+                batch_id=batch.batch_id,
+                status="aborted",
+                finished_at=_now_iso(),
+                error_summary=str(exc),
+            )
+            if version_id:
+                db.upsert_run_version(
+                    run_id=test_run_id,
+                    version_id=version_id,
+                    project_id=project.project_id,
+                    batch_id=batch.batch_id,
+                    status="aborted",
+                    finished_at=_now_iso(),
+                    error_summary=str(exc),
+                )
+                db.upsert_version(
+                    version_id=version_id,
+                    project_id=project.project_id,
+                    batch_id=batch.batch_id,
+                    status="aborted",
+                    finished_at=_now_iso(),
+                )
         except (VacsExportPipelineError, Exception) as exc:
+            if isinstance(exc, VacsExportPipelineError):
+                exc_text = str(exc)
+                lower_text = exc_text.lower()
+                if "could not map graph_kind='impedance'" in lower_text or "graph_kind='impedance'" in lower_text:
+                    diagnosis_class = "wrong_graph_exported"
+                    diagnosis_message = "RadImp graph mapping failed in VACS export stage"
+                else:
+                    diagnosis_class = "solve_not_completed_or_no_results"
+                    diagnosis_message = "RadImp evaluation failed before ingest due to export-stage failure"
+                db.add_validation(
+                    test_run_id=test_run_id,
+                    validation_name="radimp_diagnosis",
+                    status="failed",
+                    metrics={
+                        "classification": diagnosis_class,
+                        "error_summary": exc_text,
+                        "exception_type": type(exc).__name__,
+                    },
+                    message=diagnosis_message,
+                )
+                if strict_nonzero_radimp:
+                    db.add_validation(
+                        test_run_id=test_run_id,
+                        validation_name="strict_nonzero_radimp",
+                        status="failed",
+                        metrics={
+                            "strict_nonzero_radimp": True,
+                            "radimp_classification": diagnosis_class,
+                            "radimp_status": "failed",
+                        },
+                        message="strict non-zero RadImp gate failed due to export-stage error",
+                    )
             if run_status not in {"succeeded", "dry_run_completed"}:
                 run_status = "failed"
             notes = str(exc)
@@ -2782,6 +2909,7 @@ def run_runner_test_harness(
         "cfg_le_profile": effective_cfg_le_profile,
         "radimp_observation_profile": effective_radimp_profile,
         "driving_observation_profile": effective_driving_profile,
+        "strict_nonzero_radimp": bool(strict_nonzero_radimp),
         "le_driver_tag": effective_le_driver_tag,
         "le_drvgroup": effective_le_drvgroup,
         "le_voltage_vrms": effective_le_voltage_vrms,
@@ -2835,6 +2963,7 @@ def run_runner_test_radimp_driving_matrix(
     vacs_executable: Optional[str | Path] = None,
     le_repair_profile: Optional[str] = None,
     radimp_observation_profile: Optional[str] = None,
+    strict_nonzero_radimp: bool = False,
     dry_run: bool = False,
 ) -> Dict[str, Any]:
     default_profiles = ["default", "accel_2p83", "accel_10", "velocity_1", "displacement_1"]
@@ -2860,6 +2989,7 @@ def run_runner_test_radimp_driving_matrix(
             le_repair_profile=le_repair_profile,
             radimp_observation_profile=radimp_observation_profile,
             driving_observation_profile=profile,
+            strict_nonzero_radimp=bool(strict_nonzero_radimp),
             dry_run=bool(dry_run),
         )
         runs = list(summary.get("runs", []) or [])
@@ -2898,6 +3028,7 @@ def run_runner_test_radimp_driving_matrix(
         "workspace": resolve_runner_test_workspace(workspace_root).to_dict(),
         "db_path": str(db_path),
         "dry_run": bool(dry_run),
+        "strict_nonzero_radimp": bool(strict_nonzero_radimp),
         "results": matrix_rows,
     }
 
@@ -2918,6 +3049,9 @@ def run_runner_test_radimp_3scope_matrix(
     akabak_executable: Optional[str | Path] = None,
     vacs_executable: Optional[str | Path] = None,
     le_repair_profile: Optional[str] = None,
+    strict_nonzero_radimp: bool = False,
+    randomize_order: bool = True,
+    random_seed: int = 1337,
     dry_run: bool = False,
 ) -> Dict[str, Any]:
     default_cfg_profiles = ["default", "le_voltage_2p83", "le_voltage_10"]
@@ -2933,12 +3067,19 @@ def run_runner_test_radimp_3scope_matrix(
     if not driving_profile_list:
         driving_profile_list = list(default_driving_profiles)
 
-    db_path = resolve_runner_test_workspace(workspace_root).db_path
-    all_ok = True
-    matrix_rows: List[Dict[str, Any]] = []
+    combo_rows: List[Tuple[str, str, str]] = []
     for cfg_profile in cfg_profile_list:
         for radimp_profile in radimp_profile_list:
             for driving_profile in driving_profile_list:
+                combo_rows.append((cfg_profile, radimp_profile, driving_profile))
+    if bool(randomize_order):
+        shuffler = random.Random(int(random_seed))
+        shuffler.shuffle(combo_rows)
+
+    db_path = resolve_runner_test_workspace(workspace_root).db_path
+    all_ok = True
+    matrix_rows: List[Dict[str, Any]] = []
+    for cfg_profile, radimp_profile, driving_profile in combo_rows:
                 summary = run_runner_test_harness(
                     case_id=case_id,
                     repeats=max(1, int(repeats_per_combo)),
@@ -2954,6 +3095,7 @@ def run_runner_test_radimp_3scope_matrix(
                     cfg_le_profile=cfg_profile,
                     radimp_observation_profile=radimp_profile,
                     driving_observation_profile=driving_profile,
+                    strict_nonzero_radimp=bool(strict_nonzero_radimp),
                     dry_run=bool(dry_run),
                 )
                 runs = list(summary.get("runs", []) or [])
@@ -2992,6 +3134,9 @@ def run_runner_test_radimp_3scope_matrix(
         "radimp_profiles": radimp_profile_list,
         "driving_profiles": driving_profile_list,
         "repeats_per_combo": max(1, int(repeats_per_combo)),
+        "randomize_order": bool(randomize_order),
+        "random_seed": int(random_seed),
+        "strict_nonzero_radimp": bool(strict_nonzero_radimp),
         "workspace": resolve_runner_test_workspace(workspace_root).to_dict(),
         "db_path": str(db_path),
         "dry_run": bool(dry_run),

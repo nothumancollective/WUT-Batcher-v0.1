@@ -226,6 +226,96 @@ class RunnerTestHarnessTests(unittest.TestCase):
             self.assertEqual(diagnosis["status"], "ok")
             self.assertEqual(diagnosis["classification"], "radimp_normalized_zero_baseline")
 
+    def test_diagnose_radimp_wrong_graph_exported_when_radimp_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            abec = root / "Project.abec"
+            obs = root / "observation.txt"
+            abec.write_text("[Observation]\nC0=observation.txt\n", encoding="utf-8")
+            obs.write_text(
+                "Radiation_Impedance\n"
+                "  RadImpType=Absolute\n"
+                "  101 1001 1001 ID=101\n",
+                encoding="utf-8",
+            )
+            diagnosis = _diagnose_radimp(
+                abec_path=abec,
+                export_diagnostics=[
+                    {
+                        "expected_kind": "spl",
+                        "parsed_graph_type": "spl",
+                        "series_count": 1,
+                        "all_zero_series": 0,
+                        "all_zero_allowed": False,
+                        "graph_kind_match": True,
+                    }
+                ],
+                watchdog_events=[],
+                expected_export_kinds=["impedance"],
+            )
+            self.assertEqual(diagnosis["status"], "failed")
+            self.assertEqual(diagnosis["classification"], "wrong_graph_exported")
+
+    def test_diagnose_radimp_all_zero_unclassified(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            abec = root / "Project.abec"
+            obs = root / "observation.txt"
+            abec.write_text("[Observation]\nC0=observation.txt\n", encoding="utf-8")
+            obs.write_text(
+                "Radiation_Impedance\n"
+                "  RadImpType=Absolute\n"
+                "  101 1001 1001 ID=101\n",
+                encoding="utf-8",
+            )
+            diagnosis = _diagnose_radimp(
+                abec_path=abec,
+                export_diagnostics=[
+                    {
+                        "expected_kind": "impedance",
+                        "parsed_graph_type": "impedance",
+                        "series_count": 1,
+                        "all_zero_series": 1,
+                        "all_zero_allowed": False,
+                        "graph_kind_match": True,
+                    }
+                ],
+                watchdog_events=[],
+                expected_export_kinds=["impedance"],
+            )
+            self.assertEqual(diagnosis["status"], "failed")
+            self.assertEqual(diagnosis["classification"], "radimp_all_zero_unclassified")
+
+    def test_diagnose_radimp_nonzero(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            abec = root / "Project.abec"
+            obs = root / "observation.txt"
+            abec.write_text("[Observation]\nC0=observation.txt\n", encoding="utf-8")
+            obs.write_text(
+                "Radiation_Impedance\n"
+                "  RadImpType=Absolute\n"
+                "  101 1001 1001 ID=101\n",
+                encoding="utf-8",
+            )
+            diagnosis = _diagnose_radimp(
+                abec_path=abec,
+                export_diagnostics=[
+                    {
+                        "expected_kind": "impedance",
+                        "parsed_graph_type": "impedance",
+                        "series_count": 1,
+                        "all_zero_series": 0,
+                        "all_zero_allowed": False,
+                        "graph_kind_match": True,
+                    }
+                ],
+                watchdog_events=[],
+                expected_export_kinds=["impedance"],
+            )
+            self.assertEqual(diagnosis["status"], "ok")
+            self.assertEqual(diagnosis["classification"], "radimp_nonzero")
+
     def test_harness_skeleton_writes_cfg_and_db_records(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
@@ -304,6 +394,8 @@ class RunnerTestHarnessTests(unittest.TestCase):
             self.assertTrue(summary["ok"])
             self.assertEqual(summary["phase"], "phase_radimp_3scope_matrix")
             self.assertEqual(len(summary["results"]), 4)
+            self.assertTrue(summary["randomize_order"])
+            self.assertEqual(summary["random_seed"], 1337)
 
     def test_parse_abec_mesh_requirements_detects_missing_mesh_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

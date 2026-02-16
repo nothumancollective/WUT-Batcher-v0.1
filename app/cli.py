@@ -583,6 +583,7 @@ def cmd_runner_test_run(args: argparse.Namespace) -> int:
         cfg_le_profile=str(args.cfg_le_profile or "").strip() or None,
         radimp_observation_profile=str(args.radimp_observation_profile or "").strip() or None,
         driving_observation_profile=str(args.driving_observation_profile or "").strip() or None,
+        strict_nonzero_radimp=bool(args.strict_nonzero_radimp),
         dry_run=bool(args.dry_run),
     )
     print(json.dumps(summary, indent=2, ensure_ascii=False, default=_json_default))
@@ -668,6 +669,7 @@ def cmd_runner_test_radimp_driving_matrix(args: argparse.Namespace) -> int:
         vacs_executable=args.vacs_exe or settings.vacs_exe,
         le_repair_profile=str(args.le_repair_profile or "").strip() or None,
         radimp_observation_profile=str(args.radimp_observation_profile or "").strip() or None,
+        strict_nonzero_radimp=bool(args.strict_nonzero_radimp),
         dry_run=bool(args.dry_run),
     )
     print(json.dumps(summary, indent=2, ensure_ascii=False, default=_json_default))
@@ -700,6 +702,9 @@ def cmd_runner_test_radimp_3scope_matrix(args: argparse.Namespace) -> int:
         akabak_executable=args.akabak_exe or settings.akabak_exe,
         vacs_executable=args.vacs_exe or settings.vacs_exe,
         le_repair_profile=str(args.le_repair_profile or "").strip() or None,
+        strict_nonzero_radimp=bool(args.strict_nonzero_radimp),
+        randomize_order=not bool(args.no_randomize_order),
+        random_seed=int(args.matrix_seed),
         dry_run=bool(args.dry_run),
     )
     print(json.dumps(summary, indent=2, ensure_ascii=False, default=_json_default))
@@ -928,6 +933,11 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p_runner_test_run.add_argument(
+        "--strict-nonzero-radimp",
+        action="store_true",
+        help="Fail run unless RadImp diagnosis is explicitly non-zero.",
+    )
+    p_runner_test_run.add_argument(
         "--workspace-root",
         default="runner_test_workspace",
         help="Dedicated workspace root for harness artifacts.",
@@ -1003,6 +1013,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional RadImp observation patch profile (default, force_absolute, drop_radimptype).",
     )
     p_runner_test_matrix.add_argument(
+        "--strict-nonzero-radimp",
+        action="store_true",
+        help="Fail each profile run unless RadImp diagnosis is explicitly non-zero.",
+    )
+    p_runner_test_matrix.add_argument(
         "--dry-run",
         action="store_true",
         help="Run matrix in dry-run mode (no tool launch).",
@@ -1067,6 +1082,22 @@ def build_parser() -> argparse.ArgumentParser:
             "Optional LE script patch profile "
             "(baseline, driver_drvgroup, driver_drvgroup_def_driving, driver_drvgroup_def_driving_resistor)."
         ),
+    )
+    p_runner_test_3scope.add_argument(
+        "--strict-nonzero-radimp",
+        action="store_true",
+        help="Fail each matrix combination unless RadImp diagnosis is explicitly non-zero.",
+    )
+    p_runner_test_3scope.add_argument(
+        "--no-randomize-order",
+        action="store_true",
+        help="Execute matrix combinations in deterministic nested order (default: randomized with seed).",
+    )
+    p_runner_test_3scope.add_argument(
+        "--matrix-seed",
+        type=int,
+        default=1337,
+        help="Seed used for randomized matrix combination order.",
     )
     p_runner_test_3scope.add_argument(
         "--dry-run",

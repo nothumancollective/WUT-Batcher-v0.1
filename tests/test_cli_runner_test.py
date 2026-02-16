@@ -59,6 +59,7 @@ class CliRunnerTestTests(unittest.TestCase):
                     str(cases_root),
                     "--workspace-root",
                     str(workspace_root),
+                    "--strict-nonzero-radimp",
                     "--dry-run",
                 ],
                 env=self._isolated_env(tmp_dir),
@@ -72,6 +73,7 @@ class CliRunnerTestTests(unittest.TestCase):
             self.assertTrue(payload["ok"])
             self.assertEqual(payload["phase"], "phase2_commit5_e2e")
             self.assertEqual(len(payload["runs"]), 1)
+            self.assertTrue(payload["strict_nonzero_radimp"])
 
     def test_runner_test_open_dialog_only_command_executes_skeleton(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -206,6 +208,7 @@ class CliRunnerTestTests(unittest.TestCase):
                     str(cases_root),
                     "--workspace-root",
                     str(workspace_root),
+                    "--strict-nonzero-radimp",
                     "--dry-run",
                 ],
                 env=self._isolated_env(tmp_dir),
@@ -219,6 +222,7 @@ class CliRunnerTestTests(unittest.TestCase):
             self.assertTrue(payload["ok"])
             self.assertEqual(payload["phase"], "phase_radimp_driving_matrix")
             self.assertEqual(len(payload["results"]), 2)
+            self.assertTrue(payload["strict_nonzero_radimp"])
 
     def test_runner_test_radimp_3scope_matrix_command_executes_skeleton(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -242,6 +246,9 @@ class CliRunnerTestTests(unittest.TestCase):
                     "default",
                     "--driving-profiles",
                     "default,accel_2p83",
+                    "--matrix-seed",
+                    "20260216",
+                    "--strict-nonzero-radimp",
                     "--cases-root",
                     str(cases_root),
                     "--workspace-root",
@@ -259,6 +266,8 @@ class CliRunnerTestTests(unittest.TestCase):
             self.assertTrue(payload["ok"])
             self.assertEqual(payload["phase"], "phase_radimp_3scope_matrix")
             self.assertEqual(len(payload["results"]), 4)
+            self.assertEqual(payload["random_seed"], 20260216)
+            self.assertTrue(payload["strict_nonzero_radimp"])
 
 
 if __name__ == "__main__":
