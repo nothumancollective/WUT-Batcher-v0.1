@@ -52,3 +52,16 @@ Date: 2026-02-16
 - Strict non-zero gate (`--strict-nonzero-radimp`) produced no passing run in this pass:
   - classes observed: `radimp_normalized_zero_baseline`, `radimp_all_zero_unclassified`, `wrong_graph_exported`
   - observed `radimp_nonzero` count: `0`
+
+## Composite Proof Update (2026-02-16)
+- Primary LE proof path is now `runner-test le-proof-matrix` (control vs mutation sensitivity), not RadImp-only.
+- Composite evidence uses:
+  - control noise floor (`le_proof_noise_floor`)
+  - mutation effect size (`le_proof_effect_size`)
+  - aggregated diagnosis (`le_integration_diagnosis`)
+- Mutation profiles:
+  - `control`
+  - `mut_electrical`
+  - `mut_motor`
+- Secondary signal retained:
+  - `radimp_diagnosis` remains useful for export correctness classification, but is not sole LE activation proof.

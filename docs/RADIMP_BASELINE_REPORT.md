@@ -84,3 +84,7 @@ Result:
 
 Conclusion of strict campaign:
 - No tested combination achieved a reproducible non-zero RadImp signal in this pass.
+
+## KPI Positioning Update
+- RadImp is treated as a secondary KPI.
+- Primary LE integration proof is now composite mutation sensitivity (`le-proof-matrix`) with noise-floor/effect-size evidence.

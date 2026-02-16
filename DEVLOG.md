@@ -1935,3 +1935,46 @@ Validation executed:
 - Updated: `docs/RADIMP_BASELINE_REPORT.md`
 - Added: `docs/RUNNER_E2E_GREEN.md`
 - Added: `docs/LE_SOLUTION.md`
+
+### Update 67 (Composite LE proof matrix + mutation profiles + registry prep)
+#### Done
+- Extended LE patching in `app/ath_driver_assets.py`:
+  - Added harness mutation profiles: `mut_electrical`, `mut_motor`.
+  - Mutations are applied only to run-local copied LE script (never tool-install files).
+  - Persisted mutated parameter names in `driver_patch` result payload.
+- Added new harness command in `app/runner_test_harness.py`:
+  - `run_runner_test_le_proof_matrix(...)`
+  - Randomized seeded run scheduling across profiles.
+  - Control noise-floor + mutation effect-size computation from persisted curve data.
+  - Composite diagnosis: `le_active_confirmed`, `le_active_inconclusive`, `le_active_not_evidenced`, `le_proof_invalid`.
+  - Persisted validations:
+    - `le_proof_noise_floor`
+    - `le_proof_effect_size`
+    - `le_integration_diagnosis`
+  - Persisted artifacts:
+    - `le_mutated_driver`
+    - `le_proof_comparison_report`
+    - `le_proof_curve_diff`
+- Added CLI wiring in `app/cli.py`:
+  - `runner-test le-proof-matrix`
+  - flags: `--profiles`, `--repeats-per-profile`, `--strict-le-proof`, `--matrix-seed`, `--no-randomize-order`.
+- Added harness-side LE registry prep:
+  - `app/le_driver_registry.py` with `LEDriverSpec`
+  - `app/knowledge/le/driver_registry.v1.json` (initial `generic25` entry)
+- Added/updated docs:
+  - `docs/LE_INTEGRATION_REQUIREMENTS.md`
+  - `docs/LE_PROOF_PROTOCOL.md`
+  - `docs/LE_RESEARCH_LOG.md`
+  - updated `docs/LE_RULES_EXTRACT.md`
+  - updated `docs/RADIMP_BASELINE_REPORT.md`
+  - updated `runner_test_cases/test_cfg_baseline.json` (`le_proof` block)
+
+#### Why
+- RadImp-only was not sufficient as primary LE activation proof.
+- We needed a deterministic, bias-aware, reproducible composite proof path while keeping production LE lock unchanged.
+
+#### Validation
+- `python -m pytest tests/test_ath_driver_assets.py tests/test_runner_test_harness.py tests/test_cli_runner_test.py -q`
+  - `33 passed`
+- `python -m pytest tests/test_cli_run_sample.py tests/test_cli_runs_tools.py tests/test_cli_vacs_tools.py tests/test_runner_test_harness.py tests/test_cli_runner_test.py tests/test_ath_driver_assets.py -q`
+  - `37 passed`
