@@ -1563,3 +1563,25 @@ Validation executed:
   - `test_run_id=43ef4dae-cdfe-44d9-8f39-d276df19f93c`
   - AKABAK stages reached `run_solve` and `wait_for_completion` successfully (see `akabak_driver.log.jsonl`)
   - run failed later in VACS export validation pattern (`^Result_.*SPL.*\\.txt$`) - unrelated to solve-start optimization
+
+### Update 57 (AKABAK solve-start timeout hardening after aggressive fast-window regression)
+#### Done
+- Adjusted `app/akabak_driver.py::run_solve` from a single aggressive start wait to a two-tier start strategy:
+  - tier 1 fast wait (`<=6s`) after dual F4 trigger (`UIA` + `hwnd PostMessage`)
+  - tier 2 extended wait (`<=30s`) with a second dual F4 retry
+- Kept non-visual behavior and backoff polling (no fixed sleeps introduced).
+- Preserved tightened stale-VACS protection (`new_vacs` only for `vacs_process_started` signal).
+
+#### Why
+- Real baseline run showed false negative on solve-start when the VM/toolchain reacted slower than the reduced timeout window.
+- The fast path stays fast on good runs, while the extended tier prevents premature aborts.
+
+#### Validation
+- Syntax check:
+  - `python -m py_compile app/akabak_driver.py`
+- Real baseline run after patch:
+  - `test_run_id=dc30a051-a816-49cf-ba51-6004592e798e`
+  - result: still failed at solve-start timeout (`30s`) in this specific environment state
+  - key observation: pre-existing VACS process (`pid 9020`) was already active in baseline snapshot, indicating external state contamination risk for this run.
+- Note:
+  - `pytest` not available in current Python env (`No module named pytest`), so no local unit suite execution in this pass.

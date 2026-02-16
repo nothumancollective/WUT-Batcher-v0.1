@@ -2111,7 +2111,8 @@ class AkabakDriver:
             return False, snapshot
 
         try:
-            # Fast dual-trigger: UIA F4 plus hwnd F4, then one bounded start wait.
+            # Fast dual-trigger: UIA F4 plus hwnd F4, then fast start wait with
+            # an extended fallback window to avoid false negatives on slower hosts.
             try:
                 main_window.set_focus()
                 main_window.type_keys("{F4}", set_foreground=True)
@@ -2120,13 +2121,36 @@ class AkabakDriver:
                 trigger_attempts.append({"trigger": "uia_type_keys_f4", "status": "error", "error": repr(exc)})
             self._send_key_f4(main_handle)
             trigger_attempts.append({"trigger": "hwnd_postmessage_f4", "status": "sent", "main_handle": main_handle})
-            started = wait_until(
-                predicate=_started_state,
-                timeout_s=min(12.0, float(self.step_timeout_s)),
-                initial_interval_s=0.05,
-                max_interval_s=0.35,
-                backoff_factor=1.8,
-            )
+            started: Dict[str, Any]
+            try:
+                started = wait_until(
+                    predicate=_started_state,
+                    timeout_s=min(6.0, float(self.step_timeout_s)),
+                    initial_interval_s=0.05,
+                    max_interval_s=0.3,
+                    backoff_factor=1.7,
+                )
+                trigger_attempts.append({"trigger": "wait_tier_fast", "status": "started"})
+            except TimeoutError:
+                trigger_attempts.append({"trigger": "wait_tier_fast", "status": "timeout"})
+                try:
+                    main_window.set_focus()
+                    main_window.type_keys("{F4}", set_foreground=True)
+                    trigger_attempts.append({"trigger": "uia_type_keys_f4_retry", "status": "sent"})
+                except Exception as retry_exc:
+                    trigger_attempts.append(
+                        {"trigger": "uia_type_keys_f4_retry", "status": "error", "error": repr(retry_exc)}
+                    )
+                self._send_key_f4(main_handle)
+                trigger_attempts.append({"trigger": "hwnd_postmessage_f4_retry", "status": "sent", "main_handle": main_handle})
+                started = wait_until(
+                    predicate=_started_state,
+                    timeout_s=min(30.0, float(self.step_timeout_s)),
+                    initial_interval_s=0.08,
+                    max_interval_s=0.45,
+                    backoff_factor=1.8,
+                )
+                trigger_attempts.append({"trigger": "wait_tier_extended", "status": "started"})
             self.solve_context = {"baseline": baseline, "started": started, "trigger_attempts": trigger_attempts}
             self.state = "running"
             self._log(
