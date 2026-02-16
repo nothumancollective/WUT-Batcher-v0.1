@@ -28,7 +28,6 @@ class BatchPageUiTests(unittest.TestCase):
         *,
         selected_params: dict | None = None,
         sweeps: dict | None = None,
-        ui_hint_trigger_key: str | None = None,
     ) -> dict:
         service = CompatibilityService()
         return service.evaluate_batch_definition(
@@ -41,7 +40,6 @@ class BatchPageUiTests(unittest.TestCase):
             selected_params=dict(selected_params or {}),
             sweeps=dict(sweeps or {}),
             sweep_mode="single",
-            ui_hint_trigger_key=ui_hint_trigger_key,
         )
 
     def test_sweep_toggle_disabled_when_field_not_sweepable(self) -> None:
@@ -177,16 +175,15 @@ class BatchPageUiTests(unittest.TestCase):
         state_a = self._compat_state(
             selected_params=dict(payload.get("selected_params", {}) or {}),
             sweeps=dict(payload.get("sweeps", {}) or {}),
-            ui_hint_trigger_key="Throat.Profile",
         )
         page.apply_compatibility(state_a)
 
         row.base_editor.set_value(2)  # type: ignore[attr-defined]
+        page.parameter_form._last_changed_key = "Throat.Profile"  # type: ignore[attr-defined]
         payload = page._payload(include_name=False)
         state_b = self._compat_state(
             selected_params=dict(payload.get("selected_params", {}) or {}),
             sweeps=dict(payload.get("sweeps", {}) or {}),
-            ui_hint_trigger_key="Throat.Profile",
         )
         page.apply_compatibility(state_b)
         self.assertFalse(row.helper_label.isHidden())

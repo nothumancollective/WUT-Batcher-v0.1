@@ -1776,7 +1776,6 @@ class BatchPage(QWidget):
             "selected_params": selected,
             "sweeps": sweeps,
             "sim_export_params": self.export_panel.sim_export_params_payload(),
-            "ui_hint_trigger_key": self.parameter_form.last_changed_key(),
         }
         if include_name:
             payload["batch_name"] = self.batch_name.text().strip()
@@ -2394,7 +2393,6 @@ class MainWindow(QMainWindow):
             selected_params=dict(payload.get("selected_params", {}) or {}),
             sweeps=dict(payload.get("sweeps", {}) or {}),
             sweep_mode=str(payload.get("sweep_mode", "single")),
-            ui_hint_trigger_key=str(payload.get("ui_hint_trigger_key", "") or ""),
         )
         self.batch_page.apply_compatibility(state)
         estimate = self.service.estimate_batch_runtime(

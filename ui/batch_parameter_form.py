@@ -152,7 +152,6 @@ class BatchParameterForm(QWidget):
         self._locked_keys: set[str] = set()
         self._project_fixed_keys: set[str] = set()
         self._sweepable_keys: set[str] = set()
-        self._prevented_keys: set[str] = set()
         self._active_group_name: Optional[str] = None
         self._last_changed_key: Optional[str] = None
         self._prev_visible_keys: set[str] = set()
@@ -619,10 +618,6 @@ class BatchParameterForm(QWidget):
         self._visible_keys = {str(item) for item in list(state.get("visible_keys", []) or []) if str(item).strip()}
         self._locked_keys = {str(item) for item in list(state.get("locked_keys", []) or []) if str(item).strip()}
         self._sweepable_keys = {str(item) for item in list(state.get("sweepable_keys", []) or []) if str(item).strip()}
-        self._prevented_keys = {str(item) for item in list(state.get("prevented_keys", []) or []) if str(item).strip()}
-        hint_key = str(state.get("ui_hint_trigger_key", "") or "").strip()
-        if hint_key:
-            self._last_changed_key = hint_key
         current = self._refresh_visibility()
         self._apply_disclosure_hint(previous, current)
         self._prev_visible_keys = set(current)
@@ -664,8 +659,6 @@ class BatchParameterForm(QWidget):
 
         for key, row in self._rows.items():
             allowed = (not self._visible_keys or key in self._visible_keys) and key not in self._project_fixed_keys
-            if key in self._prevented_keys:
-                allowed = False
             if key == "R-OSSE":
                 allowed = bool(allowed and throat_mode == 2)
             is_visible = bool(allowed)

@@ -164,7 +164,6 @@ class OrchestratorService:
         selected_params: Dict[str, Any],
         sweeps: Dict[str, Dict[str, Any]],
         sweep_mode: str,
-        ui_hint_trigger_key: Optional[str] = None,
     ) -> Dict[str, Any]:
         project = self.repo.load_project(project_id)
         return self.compatibility.evaluate_batch_definition(
@@ -172,7 +171,6 @@ class OrchestratorService:
             selected_params=selected_params,
             sweeps=sweeps,
             sweep_mode=sweep_mode,
-            ui_hint_trigger_key=ui_hint_trigger_key,
         )
 
     def estimate_batch_runtime(
