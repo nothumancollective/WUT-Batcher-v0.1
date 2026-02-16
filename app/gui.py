@@ -1552,8 +1552,6 @@ class BatchPage(QWidget):
         self.sweep_mode = QComboBox()
         self.sweep_mode.addItems(["single", "combined"])
         self.parameter_form = BatchParameterForm(build_project_form_schema())
-        self.sweeps_json = QTextEdit()
-        self.sweeps_json.setPlaceholderText('Sweeps JSON, e.g. {"Length":{"start":80,"end":120,"steps":3}}')
         self.sim_export_json = QTextEdit()
         self.sim_export_json.setPlaceholderText('Sim/export params JSON')
 
@@ -1563,10 +1561,8 @@ class BatchPage(QWidget):
         grid.addWidget(self.sweep_mode, 1, 1)
         grid.addWidget(QLabel("Variable Parameters"), 2, 0)
         grid.addWidget(self.parameter_form, 2, 1)
-        grid.addWidget(QLabel("Sweep Definitions"), 3, 0)
-        grid.addWidget(self.sweeps_json, 3, 1)
-        grid.addWidget(QLabel("Sim/Export Params"), 4, 0)
-        grid.addWidget(self.sim_export_json, 4, 1)
+        grid.addWidget(QLabel("Sim/Export Params"), 3, 0)
+        grid.addWidget(self.sim_export_json, 3, 1)
         grid.setRowStretch(2, 1)
         root.addLayout(grid, 1)
         self.compat_panel = CompatibilityPanel("Batch Compatibility")
@@ -1588,7 +1584,6 @@ class BatchPage(QWidget):
         back_btn.clicked.connect(self.back_to_dashboard.emit)
 
         self.parameter_form.changed.connect(self._emit_draft_changed)
-        self.sweeps_json.textChanged.connect(self._emit_draft_changed)
         self.sim_export_json.textChanged.connect(self._emit_draft_changed)
         self.sweep_mode.currentTextChanged.connect(lambda _: self._emit_draft_changed())
         self.batch_name.textChanged.connect(self._emit_draft_changed)
@@ -1608,14 +1603,14 @@ class BatchPage(QWidget):
         self.parameter_form.apply_compatibility(state)
         self.compat_panel.update_state(state)
         severity = _highest_issue_severity(self.compat_panel.issues())
-        for widget in (self.sweeps_json,):
+        for widget in (self.sim_export_json,):
             widget.setProperty("severity", severity)
             widget.style().unpolish(widget)
             widget.style().polish(widget)
 
     def _payload(self, *, include_name: bool = True) -> Dict[str, object]:
         selected = self.parameter_form.selected_params_payload()
-        sweeps = _parse_json_object(self.sweeps_json.toPlainText())
+        sweeps = self.parameter_form.sweeps_payload()
 
         visible = set(str(item) for item in list(self._compat_state.get("visible_keys", []) or []))
         locked = set(str(item) for item in list(self._compat_state.get("locked_keys", []) or []))
