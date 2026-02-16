@@ -248,6 +248,79 @@ class BatchPageUiTests(unittest.TestCase):
         self.assertFalse(editor.isEnabled())
         self.assertTrue(bool(toggle.property("sweepActive")))
 
+    def test_hidden_field_value_is_cleared_after_visibility_change(self) -> None:
+        page = BatchPage()
+        state = self._compat_state()
+        page.apply_compatibility(state)
+
+        target_key = None
+        target_editor = None
+        for candidate in list(state.get("visible_keys", []) or []):
+            key = str(candidate)
+            editor = page.parameter_form.editor_for_key(key)
+            if editor is None:
+                continue
+            target_key = key
+            target_editor = editor
+            break
+        if target_key is None or target_editor is None:
+            self.skipTest("No scalar visible field available.")
+
+        target_editor.setText("33.3")
+        payload_before = page._payload(include_name=False)
+        selected_before = dict(payload_before.get("selected_params", {}) or {})
+        self.assertEqual(float(selected_before.get(target_key)), 33.3)
+
+        reduced_state = dict(state)
+        reduced_state["visible_keys"] = [key for key in list(state.get("visible_keys", []) or []) if str(key) != target_key]
+        page.apply_compatibility(reduced_state)
+        page.apply_compatibility(state)
+        payload_after = page._payload(include_name=False)
+        selected_after = dict(payload_after.get("selected_params", {}) or {})
+        self.assertIsNone(selected_after.get(target_key))
+
+    def test_blocked_batch_segment_option_emits_interaction_and_keeps_selection(self) -> None:
+        page = BatchPage()
+        state = self._compat_state()
+        state["compat_ui_state"] = {
+            "blocked_options": {
+                "Throat.Profile": {
+                    "2": {
+                        "cause_key": "Length",
+                        "message": "Blocked for test.",
+                        "hidden_keys": ["Term.s"],
+                    }
+                }
+            }
+        }
+        page.apply_compatibility(state)
+
+        row = page.parameter_form._rows.get("Throat.Profile")
+        if row is None:
+            self.skipTest("Throat.Profile not available.")
+        value_widget = row.base_editor.value_widget()  # type: ignore[attr-defined]
+        segment = getattr(value_widget, "segment", value_widget)
+
+        blocked_button = None
+        for button_id, value in dict(getattr(segment, "_values_by_id", {})).items():
+            if value == 2:
+                blocked_button = segment.group.button(int(button_id))
+                break
+        if blocked_button is None:
+            self.skipTest("Blocked option button not available.")
+
+        captured: list[tuple[str, str, str]] = []
+        page.blocked_interaction.connect(
+            lambda target_key, cause_key, message: captured.append((target_key, cause_key, message))
+        )
+        before = segment.value()
+        blocked_button.click()
+        after = segment.value()
+        self.assertEqual(before, after)
+        self.assertTrue(captured)
+        self.assertEqual(captured[-1][0], "Throat.Profile")
+        self.assertEqual(captured[-1][1], "Length")
+
 
 if __name__ == "__main__":
     unittest.main()

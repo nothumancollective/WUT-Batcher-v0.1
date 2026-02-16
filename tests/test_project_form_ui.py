@@ -186,10 +186,62 @@ class ProjectFormUiTests(unittest.TestCase):
                 }
             ]
         )
-        self.assertIn("Complete required fields", page.action_status_pill.text())
+        self.assertIn("Configuration incomplete", page.action_status_pill.text())
         self.assertEqual(str(page.action_status_pill.property("severity")), "neutral")
-        self.assertFalse(page.create_btn.isEnabled())
+        self.assertTrue(page.create_btn.isEnabled())
         self.assertFalse(page.summary_right.isHidden())
+
+    def test_blocked_segment_option_emits_interaction_and_keeps_selection(self) -> None:
+        page = ProjectPage()
+        service = CompatibilityService()
+        state = service.evaluate_project_constraints(
+            {
+                "fixed_params": {"Length": 200.0},
+                "limits": {},
+                "runner_mode": DEFAULT_RUNNER_MODE,
+            }
+        )
+        state["compat_ui_state"] = {
+            "blocked_options": {
+                "Throat.Profile": {
+                    "2": {
+                        "cause_key": "Length",
+                        "message": "Blocked for test.",
+                        "hidden_keys": ["Term.s"],
+                    }
+                }
+            }
+        }
+        page.apply_compatibility(state)
+
+        editor = page.constraints_form.editor_for_key("Throat.Profile")
+        self.assertIsNotNone(editor)
+        assert editor is not None
+        value_widget = editor.value_widget()  # type: ignore[attr-defined]
+        segment = getattr(value_widget, "segment", value_widget)
+        self.assertIsInstance(segment, SegmentedEnumInput)
+        assert isinstance(segment, SegmentedEnumInput)
+
+        blocked_button = None
+        for button_id, value in dict(getattr(segment, "_values_by_id", {})).items():
+            if value == 2:
+                blocked_button = segment.group.button(int(button_id))
+                break
+        self.assertIsNotNone(blocked_button)
+        assert blocked_button is not None
+
+        captured: list[tuple[str, str, str]] = []
+        page.blocked_interaction.connect(
+            lambda target_key, cause_key, message: captured.append((target_key, cause_key, message))
+        )
+        before = segment.value()
+        blocked_button.click()
+        after = segment.value()
+
+        self.assertEqual(before, after)
+        self.assertTrue(captured)
+        self.assertEqual(captured[-1][0], "Throat.Profile")
+        self.assertEqual(captured[-1][1], "Length")
 
     def test_view_issues_panel_lists_all_and_orders_by_severity(self) -> None:
         page = ProjectPage()
