@@ -32,7 +32,7 @@
 - Integration: `app/gui.py`
   - PROJECT page now emits draft payload from form (`fixed_params`, `limits`, `param_states`).
   - Compatibility actions drive progressive disclosure (show/hide).
-  - Project creation is not blocked by draft compatibility issues.
+  - Project creation is blocked only on `fatal`; `warn`/`incomplete` remain creatable.
 
 ## Storage
 - `ProjectConstraints` now persists `param_states` (`app/models.py`).
@@ -60,8 +60,8 @@ The Batch page is now implemented as a companion to the PROJECT form design.
   - severity pill semantics (`ok|warn|fatal`)
 - Batch-specific UX:
   - per-parameter base value + sweep toggle (start/end/steps)
-  - export presets + advanced export-spec editor
-  - preview placeholder panel for future STL viewer integration
+  - export presets + structured advanced graph cards (no free-text table editing)
+  - preview placeholder panel with `show preview`/`update preview` button hook
   - SQL-history based ETA estimate in summary
 
 ## Compatibility UX Policy
@@ -76,3 +76,4 @@ The Batch page is now implemented as a companion to the PROJECT form design.
 - Batch policy differs:
   - save allowed on `incomplete`
   - run blocked on `incomplete` and `fatal`
+  - hidden-value reconcile + payload sanitize pass prevents transient `batch_param_not_visible` conflicts

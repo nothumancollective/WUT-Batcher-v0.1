@@ -2177,3 +2177,22 @@ Validation executed:
   - `tests/test_sim_export_settings.py`
 - Extended:
   - `tests/test_batch_page_ui.py`
+
+## 2026-02-17
+### Update 70 (Batch UI Docs Sync + Behavior Clarification)
+#### Done
+- Updated `docs/BATCH_UI.md` to match current implementation in code.
+  - documents strict 3-card top strip + 2/3 : 1/3 body sizing
+  - documents sweep button behavior (active lock/dim, inline inputs, defaults)
+  - documents current preview placeholder behavior (`show preview` -> `update preview`)
+  - documents structured export panel (`SPL/Impedance/Polar`, guide dialogs, `mesh_frequency`)
+  - documents Batch warning/fatal/incomplete field-risk coloring flow (`UiValidationEngine` + `apply_ui_risks`)
+  - documents reconcile + sanitize flow that avoids transient `batch_param_not_visible` issues
+  - documents sanitization rule that uses current batch compatibility state so valid sweeps are preserved
+- Updated `docs/PROJECT_UI.md` companion section and policy wording.
+  - clarified project create policy: blocked on `fatal`, allowed on `warn`/`incomplete`
+  - updated Batch companion notes to current export/preview implementation
+  - added reconcile/sanitize note for Batch compatibility flow
+
+#### Notes
+- This update supersedes older text in historical entries that mentioned UI-prevention fields directly in compatibility service outputs.
