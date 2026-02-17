@@ -596,16 +596,23 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         border-radius: {r['md']}px;
         padding: {s['sm']}px {s['md']}px;
         font-weight: 600;
+        min-height: 30px;
     }}
     QPushButton:hover {{
         background-color: {c['button_hover']};
+        border-color: {c['accent']};
     }}
     QPushButton:pressed {{
         background-color: {c['button_pressed']};
+        border-color: {c['accent']};
+    }}
+    QPushButton:focus {{
+        border-color: {c['accent']};
     }}
     QPushButton:disabled {{
         background-color: {c['button_disabled']};
         color: #666666;
+        border-color: {c['border']};
     }}
     QPushButton#WindowCloseButton {{
         background-color: transparent;
@@ -632,6 +639,7 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         border-radius: {r['md']}px;
         padding: {s['sm']}px {s['md']}px;
         font-weight: 500;
+        min-height: 30px;
     }}
     QPushButton[segment=\"true\"]:hover {{
         background-color: {c['surface']};
@@ -649,6 +657,10 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         border: 1px solid {c['risk_ok']};
         color: {c['risk_ok']};
     }}
+    QPushButton[segment=\"true\"][sweepActive="true"][riskLevel="warn"] {{
+        border: 1px solid {c['warning_border']};
+        color: {c['warning_text']};
+    }}
     QPushButton[segment=\"true\"][disclosureHint="true"] {{
         border: 1px solid {c['accent']};
     }}
@@ -662,6 +674,19 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     }}
     QPushButton[segment=\"true\"][compatCauseFlash="true"] {{
         border: 1px solid {c['accent']};
+    }}
+    QPushButton#StatusActionButton {{
+        background-color: {c['surface2']};
+        color: {c['text']};
+        border: 1px solid {c['border']};
+        border-radius: {r['md']}px;
+        font-weight: 600;
+        min-height: 28px;
+        padding: 0px {s['md']}px;
+    }}
+    QPushButton#StatusActionButton:hover {{
+        border-color: {c['accent']};
+        background-color: {c['surface']};
     }}
     QToolButton#ClearValueButton {{
         background-color: {c['surface2']};
@@ -706,6 +731,36 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         border-radius: {r['md']}px;
         min-height: 20px;
     }}
+    QScrollArea#BatchVariableScroll QScrollBar:vertical,
+    QScrollArea#BatchAdvancedScroll QScrollBar:vertical {{
+        background: transparent;
+        width: 10px;
+        margin: 2px 4px 2px 0px;
+        border: none;
+    }}
+    QScrollArea#BatchVariableScroll QScrollBar::handle:vertical,
+    QScrollArea#BatchAdvancedScroll QScrollBar::handle:vertical {{
+        background: rgba(255, 255, 255, 0.26);
+        border-radius: 5px;
+        min-height: 28px;
+    }}
+    QScrollArea#BatchVariableScroll QScrollBar::handle:vertical:hover,
+    QScrollArea#BatchAdvancedScroll QScrollBar::handle:vertical:hover {{
+        background: rgba(255, 255, 255, 0.38);
+    }}
+    QScrollArea#BatchVariableScroll QScrollBar::add-line:vertical,
+    QScrollArea#BatchVariableScroll QScrollBar::sub-line:vertical,
+    QScrollArea#BatchAdvancedScroll QScrollBar::add-line:vertical,
+    QScrollArea#BatchAdvancedScroll QScrollBar::sub-line:vertical {{
+        height: 0px;
+        background: transparent;
+    }}
+    QScrollArea#BatchVariableScroll QScrollBar::add-page:vertical,
+    QScrollArea#BatchVariableScroll QScrollBar::sub-page:vertical,
+    QScrollArea#BatchAdvancedScroll QScrollBar::add-page:vertical,
+    QScrollArea#BatchAdvancedScroll QScrollBar::sub-page:vertical {{
+        background: transparent;
+    }}
     QScrollArea#ProjectGeometryScroll QScrollBar:vertical,
     QScrollArea#ProjectMeshScroll QScrollBar:vertical {{
         background: transparent;
@@ -735,6 +790,41 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     QScrollArea#ProjectMeshScroll QScrollBar::add-page:vertical,
     QScrollArea#ProjectMeshScroll QScrollBar::sub-page:vertical {{
         background: transparent;
+    }}
+    QListWidget#ProjectTileList {{
+        border: none;
+        background: transparent;
+    }}
+    QListWidget#ProjectTileList::item {{
+        border: 1px solid {c['border']};
+        border-radius: {r['md']}px;
+        margin: 4px;
+        padding: 4px;
+        background: transparent;
+    }}
+    QListWidget#ProjectTileList::item:selected {{
+        border: 2px solid {c['accent']};
+        background: transparent;
+    }}
+    QListWidget#ProjectTileList::item:hover {{
+        border-color: {c['accent']};
+    }}
+    QListWidget#DashboardBatchList::item {{
+        border: 1px solid {c['border']};
+        border-radius: {r['md']}px;
+        margin: 2px 0px;
+        padding: 6px 8px;
+        background: transparent;
+    }}
+    QListWidget#DashboardBatchList::item:selected {{
+        border: 2px solid {c['accent']};
+        background: transparent;
+        color: {c['text']};
+    }}
+    QLineEdit[sweepNeedsBaseFlash="true"], QComboBox[sweepNeedsBaseFlash="true"],
+    ScalarFieldEditor[sweepNeedsBaseFlash="true"], QWidget[sweepNeedsBaseFlash="true"] {{
+        border: 1px solid #d9dde3;
+        background-color: rgba(217, 221, 227, 0.08);
     }}
     """
 

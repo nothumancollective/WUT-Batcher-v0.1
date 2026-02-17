@@ -176,6 +176,7 @@ class BatchParameterForm(QWidget):
         root.setSpacing(0)
 
         self.scroll = QScrollArea()
+        self.scroll.setObjectName("BatchVariableScroll")
         self.scroll.setWidgetResizable(True)
         self.scroll.setFrameShape(QFrame.NoFrame)
         root.addWidget(self.scroll, 1)
@@ -719,6 +720,8 @@ class BatchParameterForm(QWidget):
                 target.setProperty("fieldState", "neutral")
                 target.setProperty("riskLevel", "")
                 self._repolish(target)
+            row.sweep_toggle.setProperty("riskLevel", "")
+            self._repolish(row.sweep_toggle)
 
     def apply_ui_risks(self, issues: List[Dict[str, Any]]) -> None:
         self._clear_ui_risks()
@@ -750,6 +753,8 @@ class BatchParameterForm(QWidget):
                 target.setProperty("fieldState", visual)
                 target.setProperty("riskLevel", visual)
                 self._repolish(target)
+            row.sweep_toggle.setProperty("riskLevel", "warn" if highest == "warn" else "")
+            self._repolish(row.sweep_toggle)
 
     def set_project_fixed_keys(self, keys: Sequence[str]) -> None:
         self._project_fixed_keys = {str(item) for item in list(keys or []) if str(item).strip()}
@@ -925,9 +930,25 @@ class BatchParameterForm(QWidget):
                     row.start_edit.setText(str(base))
                 if not row.end_edit.text().strip():
                     row.end_edit.setText(str(base))
+            else:
+                self._blink_base_editor(row)
             if not row.steps_edit.text().strip():
                 row.steps_edit.setText("3")
         self.changed.emit()
+
+    def _blink_base_editor(self, row: _FieldRow) -> None:
+        targets = self._iter_hint_targets(row) or [row.base_editor]
+
+        def _set(value: bool) -> None:
+            token = "true" if bool(value) else "false"
+            for widget in targets:
+                widget.setProperty("sweepNeedsBaseFlash", token)
+                self._repolish(widget)
+
+        QTimer.singleShot(0, lambda: _set(True))
+        QTimer.singleShot(130, lambda: _set(False))
+        QTimer.singleShot(260, lambda: _set(True))
+        QTimer.singleShot(390, lambda: _set(False))
 
     def selected_params_payload(self) -> Dict[str, Any]:
         payload: Dict[str, Any] = {}

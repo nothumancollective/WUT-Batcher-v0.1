@@ -36,7 +36,7 @@ class BatchPreviewPlaceholder(QFrame):
 
         self.preview_btn = QPushButton("show preview")
         self.preview_btn.setProperty("segment", "true")
-        self.preview_btn.setFixedHeight(26)
+        self.preview_btn.setFixedHeight(32)
         self.preview_btn.setMinimumWidth(124)
         self.preview_btn.setMaximumWidth(164)
         self.preview_btn.clicked.connect(self._on_preview_clicked)

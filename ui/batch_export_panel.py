@@ -182,6 +182,7 @@ class _AdvancedDialog(QDialog):
         title_bar.mouseReleaseEvent = self._title_mouse_release  # type: ignore[assignment]
 
         scroll = QScrollArea()
+        scroll.setObjectName("BatchAdvancedScroll")
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
         root.addWidget(scroll, 1)
@@ -253,6 +254,7 @@ class _AdvancedDialog(QDialog):
         active = QPushButton("Activate")
         active.setCheckable(True)
         active.setProperty("segment", "true")
+        active.setFixedHeight(32)
         active.setChecked(bool(state.enabled))
         active.toggled.connect(lambda value, key=graph_key: self._set_simple(key, bool(value)))
         top.addWidget(active)
@@ -274,6 +276,7 @@ class _AdvancedDialog(QDialog):
         active = QPushButton("Activate Polar")
         active.setCheckable(True)
         active.setProperty("segment", "true")
+        active.setFixedHeight(32)
         active.setChecked(bool(state.enabled))
         top.addWidget(active)
         layout.addLayout(top)
@@ -445,7 +448,7 @@ class BatchExportPanel(QFrame):
         presets_row.addStretch(1)
         self.advanced_btn = QPushButton("Advanced")
         self.advanced_btn.setProperty("segment", "true")
-        self.advanced_btn.setFixedHeight(26)
+        self.advanced_btn.setFixedHeight(32)
         self.advanced_btn.setMinimumWidth(92)
         presets_row.addWidget(self.advanced_btn, 0, Qt.AlignRight)
         root.addLayout(presets_row)
@@ -473,7 +476,7 @@ class BatchExportPanel(QFrame):
         layout.addWidget(text)
         widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         if hasattr(widget, "setFixedHeight"):
-            widget.setFixedHeight(28)
+            widget.setFixedHeight(32)
         layout.addWidget(widget)
         return box
 
@@ -482,7 +485,7 @@ class BatchExportPanel(QFrame):
         button = QPushButton(str(label))
         button.setCheckable(True)
         button.setProperty("segment", "true")
-        button.setFixedHeight(28)
+        button.setFixedHeight(32)
         return button
 
     def _open_advanced(self) -> None:

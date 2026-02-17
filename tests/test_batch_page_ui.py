@@ -365,6 +365,36 @@ class BatchPageUiTests(unittest.TestCase):
         self.assertEqual(inputs_after["start"].text(), "12")
         self.assertEqual(inputs_after["end"].text(), "18")
 
+    def test_sweep_remains_enabled_under_warning_and_turns_warn_tint(self) -> None:
+        page = BatchPage()
+        state = self._compat_state()
+        page.apply_compatibility(state)
+        key = None
+        for candidate in list(state.get("sweepable_keys", []) or []):
+            candidate_key = str(candidate)
+            toggle = page.parameter_form.sweep_toggle_for_key(candidate_key)
+            if toggle is not None and toggle.isVisible() and toggle.isEnabled():
+                key = candidate_key
+                break
+        if key is None:
+            self.skipTest("No sweepable candidate available.")
+        toggle = page.parameter_form.sweep_toggle_for_key(key)
+        assert toggle is not None
+        page.apply_ui_risks(
+            [
+                {
+                    "field_key": key,
+                    "severity": "warn",
+                    "rule_id": "warn_test",
+                    "message": "Warning for sweep test.",
+                    "source": "experiment",
+                }
+            ]
+        )
+        self.assertTrue(toggle.isEnabled())
+        toggle.setChecked(True)
+        self.assertEqual(str(toggle.property("riskLevel")), "warn")
+
     def test_batch_ui_risks_colorize_fields_and_warn_summary(self) -> None:
         page = BatchPage()
         state = self._compat_state()
