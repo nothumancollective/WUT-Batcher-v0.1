@@ -26,8 +26,8 @@ from ui.form_schema import build_project_form_schema
 from ui.theme import apply_theme, apply_windows_dark_titlebar, configure_windows_qt_darkmode_env
 
 try:
-    from PySide6.QtCore import QEasingCurve, QPoint, QPropertyAnimation, QEvent, QObject, Qt, QTimer, Signal
-    from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPixmap
+    from PySide6.QtCore import QEasingCurve, QPoint, QPropertyAnimation, QEvent, QObject, Qt, QTimer, Signal, QSize
+    from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPixmap, QIcon
     from PySide6.QtWidgets import (
         QAbstractItemView,
         QApplication,
@@ -45,6 +45,7 @@ try:
         QLineEdit,
         QListWidget,
         QListWidgetItem,
+        QListView,
         QMainWindow,
         QMessageBox,
         QPushButton,
@@ -1638,7 +1639,7 @@ class BatchPage(QWidget):
         right_layout = QVBoxLayout(right_panel)
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(10)
-        right_layout.addWidget(self.preview_panel, 3)
+        right_layout.addWidget(self.preview_panel, 1)
         right_layout.addWidget(self.export_panel, 1)
         body.addWidget(right_panel, 2)
         root.addLayout(body, 1)
@@ -1973,6 +1974,15 @@ class ProjectManagerWindow(QMainWindow):
         title_bar.mouseReleaseEvent = self._title_mouse_release  # type: ignore[assignment]
 
         self.project_list = QListWidget()
+        self.project_list.setViewMode(QListView.IconMode)
+        self.project_list.setResizeMode(QListView.Adjust)
+        self.project_list.setMovement(QListView.Static)
+        self.project_list.setWrapping(True)
+        self.project_list.setSpacing(12)
+        self.project_list.setIconSize(QSize(170, 120))
+        self.project_list.setGridSize(QSize(210, 170))
+        self.project_list.setWordWrap(True)
+        self.project_list.setSelectionRectVisible(False)
         root.addWidget(self.project_list, 1)
 
         buttons = QHBoxLayout()
@@ -1988,15 +1998,48 @@ class ProjectManagerWindow(QMainWindow):
         open_btn.clicked.connect(self._emit_open)
         new_btn.clicked.connect(self.create_project.emit)
         refresh_btn.clicked.connect(self.refresh)
+        self.project_list.itemDoubleClicked.connect(lambda _item: self._emit_open())
         self.refresh()
 
     def refresh(self) -> None:
         self.project_list.clear()
         for project in self.service.list_projects():
-            label = f"{project.project_id} | {project.name}"
-            item = QListWidgetItem(label)
+            item = QListWidgetItem()
+            item.setIcon(self._project_tile_icon(project.name))
+            item.setText("")
+            item.setToolTip(f"{project.project_id} | {project.name}")
             item.setData(Qt.UserRole, project.project_id)
             self.project_list.addItem(item)
+
+    def _project_tile_icon(self, project_name: str) -> QIcon:
+        pixmap = QPixmap(170, 120)
+        pixmap.fill(Qt.transparent)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+
+        frame = QPainterPath()
+        frame.addRoundedRect(1, 1, 168, 118, 10, 10)
+        painter.fillPath(frame, QColor("#13161A"))
+        painter.setPen(QColor("#2C323A"))
+        painter.drawPath(frame)
+
+        painter.setPen(QColor("#F1F1F1"))
+        title_font = QFont("Segoe UI", 9)
+        title_font.setBold(True)
+        painter.setFont(title_font)
+        painter.drawText(8, 8, 154, 22, Qt.AlignCenter | Qt.TextWordWrap, str(project_name or "Project"))
+
+        painter.setPen(QColor("#252B33"))
+        painter.setBrush(QColor("#1A1F25"))
+        painter.drawRoundedRect(18, 36, 134, 72, 8, 8)
+        painter.setPen(QColor("#3A424D"))
+        painter.drawLine(28, 95, 78, 58)
+        painter.drawLine(78, 58, 112, 86)
+        painter.drawLine(112, 86, 138, 65)
+        painter.setBrush(QColor("#3A424D"))
+        painter.drawEllipse(38, 54, 8, 8)
+        painter.end()
+        return QIcon(pixmap)
 
     def _emit_open(self) -> None:
         item = self.project_list.currentItem()

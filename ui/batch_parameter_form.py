@@ -943,10 +943,16 @@ class BatchParameterForm(QWidget):
         for key, row in self._rows.items():
             if row.container.isHidden() or row.sweep_toggle.isHidden() or not row.sweep_toggle.isChecked():
                 continue
+            start = _to_float(row.start_edit.text())
+            end = _to_float(row.end_edit.text())
+            steps = _to_int(row.steps_edit.text())
+            if start is None or end is None or steps is None or int(steps) < 1:
+                # Keep sweep UI active, but suppress invalid draft payloads until fields are complete.
+                continue
             payload[key] = {
-                "start": _to_float(row.start_edit.text()),
-                "end": _to_float(row.end_edit.text()),
-                "steps": _to_int(row.steps_edit.text()),
+                "start": float(start),
+                "end": float(end),
+                "steps": int(steps),
                 "spacing": "linear",
             }
         return payload

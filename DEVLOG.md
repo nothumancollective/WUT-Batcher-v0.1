@@ -2231,3 +2231,36 @@ Validation executed:
   - `tests/test_batch_validation_alignment_fuzz.py` -> pass
   - `tests/test_gui_project_fixed_keys.py` -> pass
   - `tests/test_ui_validation_ranges.py` -> pass
+### Update 72 (Batch UI Polish: Layout, Advanced Dialog, Tiles, Sweep Robustness)
+#### Done
+- Export panel layout polished for symmetry and clipping safety:
+  - structured 3-column settings grid
+  - balanced rows for simulation/sweep/mesh frequency and frequency start/end/points
+  - compact preset + advanced action row without clipping at typical window sizes.
+- Preview panel polish:
+  - adjusted margins/min-height to prevent preview button clipping at panel bottom.
+- Advanced export dialog refined:
+  - frameless shell with in-dialog `X` close (no native title bar)
+  - scrollable content area for full card visibility
+  - removed Variant/Format dropdowns (pipeline-fixed `txt`/`main` behavior)
+  - Polar cards include `Norm Angle`.
+- Project Manager project list switched from plain list to tile-like icon grid:
+  - placeholder preview tile per project
+  - project name rendered in tile header
+  - double-click open support retained with current selection behavior.
+- Sweep robustness fix:
+  - incomplete sweep drafts are no longer emitted to payload until `start/end/steps` are valid
+  - avoids transient parse-fatal churn while keeping sweep UI active.
+
+#### Tests
+- Added: `tests/test_project_manager_ui.py`
+- Extended:
+  - `tests/test_batch_page_ui.py` (sweep robustness cases)
+  - `tests/test_batch_export_panel.py` (polar `norm_angle` payload)
+- Targeted runs passed:
+  - `tests/test_batch_export_panel.py`
+  - `tests/test_batch_page_ui.py`
+  - `tests/test_project_manager_ui.py`
+  - `tests/test_sim_export_settings.py`
+  - `tests/test_batch_validation_alignment_fuzz.py`
+  - `tests/test_gui_project_fixed_keys.py`

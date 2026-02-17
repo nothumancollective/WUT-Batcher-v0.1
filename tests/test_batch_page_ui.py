@@ -302,6 +302,69 @@ class BatchPageUiTests(unittest.TestCase):
         self.assertFalse(editor.isEnabled())
         self.assertTrue(bool(toggle.property("sweepActive")))
 
+    def test_incomplete_sweep_is_not_emitted_until_inputs_are_complete(self) -> None:
+        page = BatchPage()
+        state = self._compat_state()
+        page.apply_compatibility(state)
+        key = None
+        for candidate in list(state.get("sweepable_keys", []) or []):
+            candidate_key = str(candidate)
+            toggle = page.parameter_form.sweep_toggle_for_key(candidate_key)
+            if toggle is not None and toggle.isVisible() and toggle.isEnabled():
+                key = candidate_key
+                break
+        if key is None:
+            self.skipTest("No sweepable candidate available.")
+        toggle = page.parameter_form.sweep_toggle_for_key(key)
+        inputs = page.parameter_form.sweep_inputs_for_key(key)
+        assert toggle is not None and inputs is not None
+        toggle.setChecked(True)
+        inputs["start"].setText("")
+        inputs["end"].setText("")
+        payload = page._payload(include_name=False)
+        sweeps = dict(payload.get("sweeps", {}) or {})
+        self.assertNotIn(key, sweeps)
+        inputs["start"].setText("10")
+        inputs["end"].setText("20")
+        inputs["steps"].setText("3")
+        payload_ready = page._payload(include_name=False)
+        sweeps_ready = dict(payload_ready.get("sweeps", {}) or {})
+        self.assertIn(key, sweeps_ready)
+
+    def test_sweep_toggle_survives_compatibility_refresh(self) -> None:
+        page = BatchPage()
+        state = self._compat_state()
+        page.apply_compatibility(state)
+        key = None
+        for candidate in list(state.get("sweepable_keys", []) or []):
+            candidate_key = str(candidate)
+            toggle = page.parameter_form.sweep_toggle_for_key(candidate_key)
+            inputs = page.parameter_form.sweep_inputs_for_key(candidate_key)
+            if toggle is not None and inputs is not None and toggle.isVisible() and toggle.isEnabled():
+                key = candidate_key
+                break
+        if key is None:
+            self.skipTest("No sweepable candidate available.")
+        toggle = page.parameter_form.sweep_toggle_for_key(key)
+        inputs = page.parameter_form.sweep_inputs_for_key(key)
+        assert toggle is not None and inputs is not None
+        toggle.setChecked(True)
+        inputs["start"].setText("12")
+        inputs["end"].setText("18")
+        inputs["steps"].setText("4")
+        payload = page._payload(include_name=False)
+        refreshed = self._compat_state(
+            selected_params=dict(payload.get("selected_params", {}) or {}),
+            sweeps=dict(payload.get("sweeps", {}) or {}),
+        )
+        page.apply_compatibility(refreshed)
+        toggle_after = page.parameter_form.sweep_toggle_for_key(key)
+        inputs_after = page.parameter_form.sweep_inputs_for_key(key)
+        assert toggle_after is not None and inputs_after is not None
+        self.assertTrue(toggle_after.isChecked())
+        self.assertEqual(inputs_after["start"].text(), "12")
+        self.assertEqual(inputs_after["end"].text(), "18")
+
     def test_batch_ui_risks_colorize_fields_and_warn_summary(self) -> None:
         page = BatchPage()
         state = self._compat_state()
