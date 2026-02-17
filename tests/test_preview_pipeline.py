@@ -57,8 +57,20 @@ class PreviewPipelineTests(unittest.TestCase):
 
         self.assertNotIn("Throat.Profile", payload)
         self.assertIn("R-OSSE", payload)
+        self.assertEqual(float(payload["GCurve.Dist"]), 80.0)
         self.assertEqual(float(payload["GCurve.Width"]), 0.7)
-        self.assertNotIn("GCurve.Dist", payload)
+
+    def test_preview_seed_parameters_adds_superformula_defaults_in_ath_minimal(self) -> None:
+        constraints = ProjectConstraints(
+            fixed_params={},
+            limits={},
+            param_states=[],
+        )
+        payload = _preview_seed_parameters(constraints, {"Length": 100.0, "GCurve.Type": 2})
+        self.assertEqual(float(payload.get("GCurve.Dist", 0.0)), 80.0)
+        self.assertEqual(float(payload.get("GCurve.Width", 0.0)), 0.7)
+        for key in ("GCurve.SF.a", "GCurve.SF.b", "GCurve.SF.m1", "GCurve.SF.m2", "GCurve.SF.n1", "GCurve.SF.n2", "GCurve.SF.n3"):
+            self.assertIn(key, payload)
 
     def test_extract_not_visible_batch_keys_parses_rule_issues(self) -> None:
         issue = type(
@@ -131,6 +143,59 @@ class PreviewPipelineTests(unittest.TestCase):
         self.assertIn("Term.q", missing)
         self.assertIn("OS.k", missing)
         self.assertIn("Mesh.ThroatResolution", missing)
+
+    def test_missing_preview_policy_keys_for_superellipse_include_aspect_and_se_n(self) -> None:
+        missing = _missing_preview_policy_keys(
+            {
+                "Length": 100.0,
+                "GCurve.Type": 1,
+                "GCurve.Dist": 80.0,
+                "GCurve.Width": 0.7,
+            }
+        )
+        self.assertIn("GCurve.AspectRatio", missing)
+        self.assertIn("GCurve.SE.n", missing)
+        self.assertNotIn("GCurve.Rot", missing)
+
+    def test_missing_preview_policy_keys_for_superformula_include_sf_vector(self) -> None:
+        missing = _missing_preview_policy_keys(
+            {
+                "Length": 100.0,
+                "GCurve.Type": 2,
+                "GCurve.Dist": 80.0,
+                "GCurve.Width": 0.7,
+                "GCurve.AspectRatio": 1.0,
+            }
+        )
+        for key in ("GCurve.SF.a", "GCurve.SF.b", "GCurve.SF.m1", "GCurve.SF.m2", "GCurve.SF.n1", "GCurve.SF.n2", "GCurve.SF.n3"):
+            self.assertIn(key, missing)
+        self.assertNotIn("GCurve.Rot", missing)
+
+    def test_preview_render_payload_keeps_policy_gaps_visible_while_using_ath_minimal_defaults(self) -> None:
+        project = Project(
+            project_id="P_PREVIEW_GCURVE",
+            name="Preview",
+            root_path=".",
+            constraints=ProjectConstraints(
+                project_id="P_PREVIEW_GCURVE",
+                fixed_params={},
+                limits={},
+                param_states=[],
+            ),
+        )
+        payload = _build_preview_render_payload(
+            project=project,
+            selected_params={"GCurve.Type": 2},
+            sweep_mode="single",
+        )
+        render = dict(payload.get("render_parameters", {}) or {})
+        self.assertIn("GCurve.SF.a", render)
+        self.assertIn("GCurve.SF.n3", render)
+        missing = set(payload.get("policy_missing_keys", []) or [])
+        self.assertIn("GCurve.Dist", missing)
+        self.assertIn("GCurve.Width", missing)
+        self.assertIn("GCurve.AspectRatio", missing)
+        self.assertIn("GCurve.SF.a", missing)
 
     def test_stl_preview_widget_renders_mesh_without_qt3d(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_preview_test_") as tmp:

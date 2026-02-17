@@ -159,7 +159,16 @@ _PREVIEW_R_OSSE_DEFAULTS: Dict[str, float] = {
 _PREVIEW_ATH_MINIMAL_DEFAULTS: Dict[str, Any] = {
     # Keep STL preview generation resilient with the smallest practical set.
     "Length": 120.0,
+    "GCurve.Dist": 80.0,
     "GCurve.Width": 0.7,
+    "GCurve.SE.n": 3.0,
+    "GCurve.SF.a": 1.0,
+    "GCurve.SF.b": 1.0,
+    "GCurve.SF.m1": 4.0,
+    "GCurve.SF.m2": 4.0,
+    "GCurve.SF.n1": 1.0,
+    "GCurve.SF.n2": 1.0,
+    "GCurve.SF.n3": 1.0,
     "R-OSSE": {},
 }
 
@@ -213,6 +222,22 @@ _PREVIEW_POLICY_REQUIRED_MESH: List[str] = [
     "Mesh.MouthResolution",
     "Mesh.Quadrants",
 ]
+
+_PREVIEW_POLICY_REQUIRED_GCURVE: Dict[int, List[str]] = {
+    1: ["GCurve.Dist", "GCurve.Width", "GCurve.AspectRatio", "GCurve.SE.n"],
+    2: [
+        "GCurve.Dist",
+        "GCurve.Width",
+        "GCurve.AspectRatio",
+        "GCurve.SF.a",
+        "GCurve.SF.b",
+        "GCurve.SF.m1",
+        "GCurve.SF.m2",
+        "GCurve.SF.n1",
+        "GCurve.SF.n2",
+        "GCurve.SF.n3",
+    ],
+}
 
 
 def _local_appdata_root() -> Path:
@@ -665,7 +690,8 @@ def _missing_preview_policy_keys(parameters: Mapping[str, Any]) -> List[str]:
     except Exception:
         gcurve_type_num = None
     if gcurve_type_num not in {None, 0}:
-        required.extend(["GCurve.Type", "GCurve.Dist", "GCurve.Width"])
+        required.append("GCurve.Type")
+        required.extend(list(_PREVIEW_POLICY_REQUIRED_GCURVE.get(int(gcurve_type_num), ["GCurve.Dist", "GCurve.Width"])))
 
     morph_shape = payload.get("Morph.TargetShape")
     try:
@@ -728,6 +754,39 @@ def _policy_defaults_for_missing_keys(
     return filled
 
 
+def _apply_ath_minimal_selected_defaults(selected_params: Mapping[str, Any]) -> Dict[str, Any]:
+    selected: Dict[str, Any] = {}
+    for key, value in dict(selected_params or {}).items():
+        key_s = str(key).strip()
+        if not key_s or value is None:
+            continue
+        selected[key_s] = value
+
+    if "Length" not in selected and "OSSE" not in selected and "R-OSSE" not in selected:
+        selected["Length"] = _PREVIEW_ATH_MINIMAL_DEFAULTS.get("Length", 120.0)
+
+    gcurve_type = selected.get("GCurve.Type")
+    try:
+        gcurve_type_num = int(float(gcurve_type)) if gcurve_type is not None else None
+    except Exception:
+        gcurve_type_num = None
+    if gcurve_type_num in {1, 2}:
+        selected.setdefault("GCurve.Dist", _PREVIEW_ATH_MINIMAL_DEFAULTS.get("GCurve.Dist", 80.0))
+        selected.setdefault("GCurve.Width", _PREVIEW_ATH_MINIMAL_DEFAULTS.get("GCurve.Width", 0.7))
+    if gcurve_type_num == 2:
+        for sf_key in (
+            "GCurve.SF.a",
+            "GCurve.SF.b",
+            "GCurve.SF.m1",
+            "GCurve.SF.m2",
+            "GCurve.SF.n1",
+            "GCurve.SF.n2",
+            "GCurve.SF.n3",
+        ):
+            selected.setdefault(sf_key, _PREVIEW_ATH_MINIMAL_DEFAULTS.get(sf_key))
+    return selected
+
+
 def _build_preview_render_payload(
     *,
     project: Project,
@@ -737,7 +796,8 @@ def _build_preview_render_payload(
     runner_mode = str(project.constraints.runner_mode or "")
     catalog_map = _catalog_parameter_map()
     project_values = _project_defined_values(project.constraints)
-    selected_clean = _non_none_selected_params(selected_params)
+    selected_user_clean = _non_none_selected_params(selected_params)
+    selected_clean = _apply_ath_minimal_selected_defaults(selected_user_clean)
 
     ignored_hidden_keys: List[str] = []
     auto_completed: Dict[str, Any] = {}
@@ -762,10 +822,11 @@ def _build_preview_render_payload(
         if resolved.versions:
             version = resolved.versions[0]
             render_parameters = _normalize_preview_render_parameters(dict(version.parameters))
-            policy_missing_keys = _missing_preview_policy_keys(render_parameters)
+            policy_basis = _preview_policy_seed_parameters(project.constraints, selected_user_clean)
+            policy_missing_keys = _missing_preview_policy_keys(policy_basis)
             policy_default_values = _policy_defaults_for_missing_keys(
                 policy_missing_keys,
-                context_values=render_parameters,
+                context_values=policy_basis,
                 catalog_map=catalog_map,
             )
             return {
@@ -791,6 +852,7 @@ def _build_preview_render_payload(
                 changed = True
 
         required_keys = _extract_required_keys(list(resolved.issues or []))
+        selected_clean = _apply_ath_minimal_selected_defaults(selected_clean)
         merged_seed = _preview_seed_parameters(project.constraints, selected_clean)
         context_values = dict(merged_seed)
         context_values.update(project_values)
@@ -819,10 +881,11 @@ def _build_preview_render_payload(
 
     merged = _preview_seed_parameters(project.constraints, selected_clean)
     merged = _normalize_preview_render_parameters(merged)
-    policy_missing_keys = _missing_preview_policy_keys(merged)
+    policy_basis = _preview_policy_seed_parameters(project.constraints, selected_user_clean)
+    policy_missing_keys = _missing_preview_policy_keys(policy_basis)
     policy_default_values = _policy_defaults_for_missing_keys(
         policy_missing_keys,
-        context_values=merged,
+        context_values=policy_basis,
         catalog_map=catalog_map,
     )
     return {
@@ -838,7 +901,7 @@ def _build_preview_render_payload(
     }
 
 
-def _preview_seed_parameters(constraints: ProjectConstraints, selected_params: Mapping[str, Any]) -> Dict[str, Any]:
+def _preview_policy_seed_parameters(constraints: ProjectConstraints, selected_params: Mapping[str, Any]) -> Dict[str, Any]:
     payload = constraints.to_dict()
     merged: Dict[str, Any] = {}
 
@@ -879,7 +942,13 @@ def _preview_seed_parameters(constraints: ProjectConstraints, selected_params: M
     # emitted into ATH cfg (ATH reports "Unknown profile type: 2").
     if str(merged.get("Throat.Profile", "")).strip() in {"2", "2.0"}:
         merged.pop("Throat.Profile", None)
-        merged.setdefault("R-OSSE", dict(_PREVIEW_ATH_MINIMAL_DEFAULTS.get("R-OSSE", {}) or {}))
+        merged.setdefault("R-OSSE", {})
+
+    return _normalize_preview_render_parameters(merged)
+
+
+def _preview_seed_parameters(constraints: ProjectConstraints, selected_params: Mapping[str, Any]) -> Dict[str, Any]:
+    merged = _preview_policy_seed_parameters(constraints, selected_params)
 
     # Keep preview generation robust for incomplete drafts by filling the small
     # set of ATH-minimal keys.
@@ -891,8 +960,20 @@ def _preview_seed_parameters(constraints: ProjectConstraints, selected_params: M
         gcurve_type_num = int(float(gcurve_type)) if gcurve_type is not None else None
     except Exception:
         gcurve_type_num = None
-    if gcurve_type_num not in {None, 0}:
+    if gcurve_type_num in {1, 2}:
+        merged.setdefault("GCurve.Dist", _PREVIEW_ATH_MINIMAL_DEFAULTS.get("GCurve.Dist", 80.0))
         merged.setdefault("GCurve.Width", _PREVIEW_ATH_MINIMAL_DEFAULTS.get("GCurve.Width", 0.7))
+    if gcurve_type_num == 2:
+        for sf_key in (
+            "GCurve.SF.a",
+            "GCurve.SF.b",
+            "GCurve.SF.m1",
+            "GCurve.SF.m2",
+            "GCurve.SF.n1",
+            "GCurve.SF.n2",
+            "GCurve.SF.n3",
+        ):
+            merged.setdefault(sf_key, _PREVIEW_ATH_MINIMAL_DEFAULTS.get(sf_key))
 
     return _normalize_preview_render_parameters(merged)
 
@@ -971,19 +1052,20 @@ class OrchestratorService:
     ) -> Dict[str, Any]:
         project = self.repo.load_project(project_id)
         selected_clean = _non_none_selected_params(selected_params)
-        ath_minimal_seed = _preview_seed_parameters(project.constraints, selected_clean)
+        policy_seed = _preview_policy_seed_parameters(project.constraints, selected_clean)
         catalog_map = _catalog_parameter_map()
-        missing_keys = _missing_preview_policy_keys(ath_minimal_seed)
+        missing_keys = _missing_preview_policy_keys(policy_seed)
         default_values = _policy_defaults_for_missing_keys(
             missing_keys,
-            context_values=ath_minimal_seed,
+            context_values=policy_seed,
             catalog_map=catalog_map,
         )
         return {
             "tier": "policy_minimal",
             "missing_keys": list(missing_keys),
             "default_values": default_values,
-            "ath_minimal_seed": ath_minimal_seed,
+            "policy_seed": policy_seed,
+            "ath_minimal_seed": _preview_seed_parameters(project.constraints, selected_clean),
         }
 
     def cleanup_preview_cache(
