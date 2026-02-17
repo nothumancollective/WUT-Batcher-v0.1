@@ -1,6 +1,25 @@
 ﻿# DEVLOG
 
 ## 2026-02-17
+### Update: Contextual Safe-Range Analysis For ATH Experiments
+#### Done
+- Added context-stratified range extraction:
+  - module: `app/contextual_range_analysis.py`
+  - CLI: `python -m app ath-experiments contextual-ranges`
+- New output artifacts:
+  - `reports/ath_experiments/range_suggestions.contextual.v1.json`
+  - `reports/ath_experiments/range_suggestions.contextual.v1.md`
+- Stratification axes:
+  - `profile` (`osse|circarc|rosse`)
+  - `gcurve` (`none|se|sf`)
+  - `morph` (`off|shape1|shape2`)
+  - `enclosure` (`off|on`)
+- `UiValidationEngine` now consumes contextual ranges when available and falls back to global ranges otherwise.
+
+#### Impact
+- Improves warning precision of safe-range hints without changing ATH compatibility rule semantics.
+- Keeps existing range pipeline compatible while enabling context-aware refinement.
+
 ### Update: Preview Runtime MeshCmd + Enclosure Tier Integration
 #### Done
 - Fixed preview ATH runtime mesh command behavior in `app/services.py`:

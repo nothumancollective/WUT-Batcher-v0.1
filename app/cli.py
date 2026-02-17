@@ -481,6 +481,21 @@ def cmd_ath_experiments_minimal_completion_search(args: argparse.Namespace) -> i
     return 0
 
 
+def cmd_ath_experiments_contextual_ranges(args: argparse.Namespace) -> int:
+    from app.contextual_range_analysis import run_contextual_range_analysis
+
+    summary = run_contextual_range_analysis(
+        reports_root=args.reports_root,
+        run_group=args.run_group,
+        min_count=args.min_count,
+        output_json_name=args.output_json,
+        output_md_name=args.output_md,
+        max_contexts_per_key=args.max_contexts_per_key,
+    )
+    print(json.dumps(summary, indent=2, ensure_ascii=False, default=_json_default))
+    return 0
+
+
 def _inspect_ui_tool(
     *,
     tool_name: str,
@@ -1673,6 +1688,47 @@ def build_parser() -> argparse.ArgumentParser:
     p_min_completion.add_argument("--ath-exe", help="Override ATH executable path used for --verify-ath")
     p_min_completion.add_argument("--template-cfg", help="Override template CFG path used for --verify-ath")
     p_min_completion.set_defaults(func=cmd_ath_experiments_minimal_completion_search)
+
+    p_contextual_ranges = sub_ath_exp_admin.add_parser(
+        "contextual-ranges",
+        help=(
+            "Compute context-stratified safe-range suggestions from ath_experiments.sqlite "
+            "(profile/gcurve/morph/enclosure)."
+        ),
+    )
+    p_contextual_ranges.add_argument(
+        "--reports-root",
+        default="reports/ath_experiments",
+        help="ATH experiment reports root containing ath_experiments.sqlite",
+    )
+    p_contextual_ranges.add_argument(
+        "--run-group",
+        default="all",
+        help="Run-group selector (single, comma-separated, or 'all').",
+    )
+    p_contextual_ranges.add_argument(
+        "--min-count",
+        type=int,
+        default=80,
+        help="Minimum sample count per key/context bucket.",
+    )
+    p_contextual_ranges.add_argument(
+        "--output-json",
+        default="range_suggestions.contextual.v1.json",
+        help="Output JSON filename written under reports-root.",
+    )
+    p_contextual_ranges.add_argument(
+        "--output-md",
+        default="range_suggestions.contextual.v1.md",
+        help="Output markdown filename written under reports-root.",
+    )
+    p_contextual_ranges.add_argument(
+        "--max-contexts-per-key",
+        type=int,
+        default=8,
+        help="Maximum number of context rows shown per key in markdown report.",
+    )
+    p_contextual_ranges.set_defaults(func=cmd_ath_experiments_contextual_ranges)
 
     p_ui = sub.add_parser("ui", help="UI automation inspection utilities.")
     sub_ui = p_ui.add_subparsers(dest="ui_cmd", required=True)

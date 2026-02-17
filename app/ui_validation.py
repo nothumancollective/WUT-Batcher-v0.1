@@ -320,10 +320,12 @@ class UiValidationEngine:
         root = reports_root or (_repo_root() / "reports" / "ath_experiments")
         self.reports_root = Path(root)
         self.range_path = _latest_versioned_file(self.reports_root, "range_suggestions") or (self.reports_root / "range_suggestions.v1.3.json")
+        self.contextual_range_path = self.reports_root / "range_suggestions.contextual.v1.json"
         self.candidates_path = _latest_versioned_file(self.reports_root, "compat_rule_candidates") or (
             self.reports_root / "compat_rule_candidates.v2.json"
         )
         self._ranges: Dict[str, _RangeHint] = {}
+        self._contextual_ranges: Dict[str, Dict[str, _RangeHint]] = {}
         self._candidates: List[_CandidateRule] = []
         self._unit_by_key: Dict[str, str] = {}
         self.enabled = False
@@ -354,8 +356,9 @@ class UiValidationEngine:
 
     def reload(self) -> None:
         self._ranges = self._load_ranges(self.range_path)
+        self._contextual_ranges = self._load_contextual_ranges(self.contextual_range_path)
         self._candidates = self._load_candidates(self.candidates_path)
-        self.enabled = bool(self._ranges or self._candidates)
+        self.enabled = bool(self._ranges or self._contextual_ranges or self._candidates)
 
     def _load_ranges(self, path: Path) -> Dict[str, _RangeHint]:
         payload = _load_json(path)
@@ -376,6 +379,70 @@ class UiValidationEngine:
                 notes=str(raw.get("notes", "")),
             )
         return out
+
+    def _load_contextual_ranges(self, path: Path) -> Dict[str, Dict[str, _RangeHint]]:
+        payload = _load_json(path)
+        if not isinstance(payload, Mapping):
+            return {}
+        per_key = payload.get("contextual_per_key")
+        if not isinstance(per_key, Mapping):
+            return {}
+        result: Dict[str, Dict[str, _RangeHint]] = {}
+        for raw_key, raw_contexts in per_key.items():
+            key = str(raw_key).strip()
+            if not key or not isinstance(raw_contexts, Mapping):
+                continue
+            bucket: Dict[str, _RangeHint] = {}
+            for token, raw in raw_contexts.items():
+                if not isinstance(raw, Mapping):
+                    continue
+                tok = str(token).strip()
+                if not tok:
+                    continue
+                bucket[tok] = _RangeHint(
+                    safe_min=_to_float(raw.get("safe_min")),
+                    safe_max=_to_float(raw.get("safe_max")),
+                    rec_p05=_to_float(raw.get("rec_p05")),
+                    rec_p95=_to_float(raw.get("rec_p95")),
+                    notes=f"context:{tok}",
+                )
+            if bucket:
+                result[key] = bucket
+        return result
+
+    def _context_token(self, values: Mapping[str, Any], set_keys: Set[str]) -> str:
+        profile = "osse"
+        if ("R-OSSE" in set_keys) or (str(values.get("Throat.Profile", "")).strip() in {"2", "2.0"}):
+            profile = "rosse"
+        elif str(values.get("Throat.Profile", "")).strip() in {"3", "3.0"}:
+            profile = "circarc"
+
+        gcurve = "none"
+        if "GCurve.Type" in set_keys:
+            token = str(values.get("GCurve.Type", "")).strip()
+            if token in {"1", "1.0"}:
+                gcurve = "se"
+            elif token in {"2", "2.0"}:
+                gcurve = "sf"
+
+        morph = "off"
+        if "Morph.TargetShape" in set_keys:
+            token = str(values.get("Morph.TargetShape", "")).strip()
+            if token in {"1", "1.0"}:
+                morph = "shape1"
+            elif token in {"2", "2.0"}:
+                morph = "shape2"
+
+        enclosure = "on" if "Mesh.Enclosure" in set_keys else "off"
+        return f"profile={profile}|gcurve={gcurve}|morph={morph}|enclosure={enclosure}"
+
+    def _range_hint_for_key(self, *, key: str, context_token: str) -> Optional[_RangeHint]:
+        contextual = dict(self._contextual_ranges.get(str(key), {}) or {})
+        if contextual:
+            match = contextual.get(str(context_token))
+            if match is not None:
+                return match
+        return self._ranges.get(str(key))
 
     def _load_candidates(self, path: Path) -> List[_CandidateRule]:
         payload = _load_json(path)
@@ -468,13 +535,14 @@ class UiValidationEngine:
         visible = set(str(item) for item in (visible_keys or set_keys))
         if not visible:
             visible = set(set_keys)
+        context_token = self._context_token(values, set_keys)
 
         # Range-based hints.
         issues: List[FieldIssue] = []
         for key in sorted(set_keys):
             if key not in visible:
                 continue
-            hint = self._ranges.get(key)
+            hint = self._range_hint_for_key(key=key, context_token=context_token)
             if hint is None:
                 continue
             value = values.get(key)
