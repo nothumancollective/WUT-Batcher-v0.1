@@ -87,7 +87,7 @@ Payload API:
 
 ## STL Preview
 Widgets / flow:
-- `ui/batch_preview_placeholder.py` (panel + toggle + loader)
+- `ui/batch_preview_placeholder.py` (panel + loader + message states)
 - `ui/stl_preview_widget.py` (Qt3D renderer + STL parser fallback)
 - `app/services.py::generate_preview_stl(...)` (single source of truth pipeline)
 - `app/gui.py` (`_BatchPreviewWorker` in background thread + cancellation)
@@ -95,12 +95,13 @@ Widgets / flow:
 
 UI behavior:
 - title is `Preview`
-- preview is always enabled on the Batch page
+- preview is always enabled on the Batch page (no toggle)
 - preview updates are triggered automatically after batch draft changes (debounced)
 - loading state:
   - in-canvas indeterminate loader while cfg write + ATH run + STL copy + load
 - failure state:
   - unobtrusive inline error text in preview panel (no modal)
+- no footer controls in preview panel (canvas area maximized)
 
 Render behavior:
 - transparent background
@@ -120,6 +121,12 @@ Cache:
 - retention: keep last 10 preview STL files
 - startup cleanup: remove stale files older than 7 days (cache dir only)
 
+Project Manager thumbnail:
+- first successful `Run` click on Batch page captures current preview canvas as:
+  - `<project_dir>/_meta/project_preview.png`
+- project tile rendering prefers this image over placeholder art
+- preview thumbnail is write-once by default (existing file is preserved)
+
 Debug artifacts:
 - `%LOCALAPPDATA%\\WUTBatcher\\preview_cache\\logs\\preview_<run>.stdout.log`
 - `%LOCALAPPDATA%\\WUTBatcher\\preview_cache\\logs\\preview_<run>.stderr.log`
@@ -138,7 +145,10 @@ Preview robustness:
   - `R-OSSE` object is auto-completed with safe defaults when needed
 - `Mesh.Enclosure` object completion:
   - if enclosure is set without `Plan` and without `Depth`, preview seed injects `Depth` for stable generation
-  - policy layer still reports missing enclosure requirements for explicit run decisions
+  - list fields (`Spacing`, `FrontResolution`, `BackResolution`) are normalized to up to 4 values
+  - plan mode is intentionally downgraded for preview STL generation when no in-CFG plan script block exists
+  - preview payload reports this downgrade in `preview_notes`
+- policy layer still reports missing enclosure requirements for explicit run decisions
 - mesh interface list normalization is applied for preview generation:
   - `Mesh.InterfaceOffset` / `Mesh.InterfaceDraw` are normalized to list form
   - lengths are aligned to `Mesh.SubdomainSlices` when both are present
@@ -211,8 +221,14 @@ Behavior:
 
 ## Batch Action Policy
 - Save: allowed when no `fatal` issues exist.
-- Run: allowed only when no `fatal` and no `incomplete` issues exist.
-- Incomplete issues remain visible as neutral guidance.
+- Run button is interactable once batch name is set.
+- Run execution still goes through validation and can be blocked by fatal issues.
+- Incomplete/warning guidance remains visible in summary/fields.
+
+## Sweepability Fallback
+- In baseline drafts some rulesets may return empty `sweepable_keys`.
+- Batch UI now applies a deterministic fallback for visible numeric scalar keys (`float|int|expr`), excluding runner-locked and button-layout controls.
+- This prevents false "all sweep toggles disabled" states while preserving compatibility gating.
 
 ## Edit / Clone
 Main window actions:
@@ -243,13 +259,12 @@ Both paths restore:
 
 ## Manual Preview Checklist
 1. Open a project and go to Batch page.
-2. Toggle Preview `On`.
-3. Verify loader appears while preview is generated.
+2. Verify loader appears while preview is generated automatically.
 4. Verify mesh appears and can be rotated (drag/orbit) and zoomed.
 5. Verify background stays transparent and mesh is bright/neutral.
-6. Click `Update Preview` and verify new generation + reload.
-7. Toggle Preview `Off` during generation and verify request is canceled/ignored.
-8. Trigger an ATH/config error and verify inline error text (no modal) appears.
+6. Change any visible batch parameter and verify preview regenerates automatically.
+7. Trigger an ATH/config error and verify inline error text (no modal) appears.
+8. Click `Run` once and verify Project Manager tile gets a preview thumbnail.
 9. Check `%LOCALAPPDATA%\\WUTBatcher\\preview_cache\\` and verify:
    - unique file naming
    - only latest 10 STL files retained.

@@ -1,6 +1,38 @@
 ﻿# DEVLOG
 
 ## 2026-02-17
+### Update: Batch Run/Preview Reliability + Enclosure Input Hardening
+#### Done
+- Run-flow stabilization in `app/gui.py`:
+  - Batch `Run` button is now interactable as soon as a batch name is present.
+  - Run path no longer forces dashboard navigation before execution.
+  - Added guarded exception handling around `run_batch(...)` to avoid silent UI dead-ends.
+- Project thumbnail capture implemented from live preview:
+  - first run captures preview canvas and stores:
+    - `<project_dir>/_meta/project_preview.png`
+  - Project Manager tiles now prefer this image over the placeholder tile art.
+- Sweep robustness fix:
+  - compatibility layer now applies a deterministic numeric fallback when rules return empty `sweepable_keys`.
+  - prevents false “all sweep buttons disabled” states in early/incomplete drafts.
+- Enclosure formatting and preview resilience:
+  - added normalization for `Mesh.Enclosure` list fields (`Spacing`, `FrontResolution`, `BackResolution`) with flexible separators.
+  - stock defaults injected for preview stability when needed.
+  - plan-mode downgrade for preview STL is made explicit via `preview_notes`.
+  - software preview renderer can show enclosure overlay bounds for immediate visual feedback.
+- Input UX improvements for enclosure lists:
+  - placeholders/hints now match vector-like inputs.
+  - parser accepts comma/semicolon/whitespace tokenization.
+
+#### Tests
+- `tests/test_batch_page_ui.py`
+- `tests/test_preview_pipeline.py`
+- `tests/test_batch_validation_alignment_fuzz.py`
+- `tests/test_service_export.py`
+
+#### Docs
+- Updated `docs/BATCH_UI.md` (auto-preview, thumbnail capture, sweep fallback, enclosure behavior).
+- Added `docs/ENCLOSURE_INPUT_UI_RESEARCH_2026-02-17.md` with ATH guide-backed format notes and modern UI references.
+
 ### Update: Field Ordering + Numeric Guardrail Research
 #### Done
 - Introduced shared field display ordering (`field_display_priority`) in `ui/form_schema.py`.
