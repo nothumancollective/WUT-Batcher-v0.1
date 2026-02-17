@@ -96,6 +96,27 @@ def _extract_constrained_params(constraints_payload: Dict[str, Any]) -> Dict[str
     return constrained
 
 
+def _preview_constraints_with_batch_selected(constraints_payload: Dict[str, Any], batch: Batch) -> Dict[str, Any]:
+    fixed = dict(constraints_payload.get("fixed_params", {}) or {})
+    limits = dict(constraints_payload.get("limits", {}) or {})
+    param_states = [
+        item
+        for item in list(constraints_payload.get("param_states", []) or [])
+        if isinstance(item, dict)
+    ]
+    for key, value in _iter_batch_selected(batch):
+        if value is None:
+            continue
+        fixed[str(key)] = value
+        param_states.append({"param_name": str(key), "is_set": 1, "value": value})
+    return {
+        "fixed_params": fixed,
+        "limits": limits,
+        "param_states": param_states,
+        "runner_mode": str(constraints_payload.get("runner_mode", "")),
+    }
+
+
 def _selection_value(selection: Any) -> Any:
     if isinstance(selection, ParamSelection):
         return selection.value
@@ -181,8 +202,9 @@ def _compatibility_precheck(
             )
         )
 
-    visible = set(visible_params(constraints_payload, runner_mode=runner_mode))
-    sweepable = set(sweepable_params(constraints_payload, runner_mode=runner_mode))
+    preview_constraints = _preview_constraints_with_batch_selected(constraints_payload, batch)
+    visible = set(visible_params(preview_constraints, runner_mode=runner_mode))
+    sweepable = set(sweepable_params(preview_constraints, runner_mode=runner_mode))
 
     for key, _ in _iter_batch_selected(batch):
         if key not in visible:

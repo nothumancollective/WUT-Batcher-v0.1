@@ -110,6 +110,44 @@ class VersionResolverTests(unittest.TestCase):
         self.assertIn("Mesh.Quadrants", version.parameters)
         self.assertNotIn("Mesh.LengthSegments", version.parameters)
 
+    def test_selected_param_visibility_uses_batch_context(self) -> None:
+        constraints = {"fixed_params": {"Length": 120}, "limits": {}, "runner_mode": "AthGuidePreview"}
+        batch = Batch(
+            batch_id="B001",
+            project_id="P001",
+            selected_params={
+                "GCurve.Type": ParamSelection(value=1),
+                "GCurve.Dist": ParamSelection(value=60.0),
+                "GCurve.Width": ParamSelection(value=120.0),
+            },
+            sweeps={},
+            sweep_mode="single",
+            runner_mode="AthGuidePreview",
+        )
+        result = resolve_versions(constraints, batch, strict=False)
+        rule_ids = {issue.rule_id for issue in result.issues}
+        self.assertNotIn("batch_param_not_visible", rule_ids)
+        self.assertEqual(len(result.versions), 1)
+
+    def test_sweepability_uses_batch_context(self) -> None:
+        constraints = {"fixed_params": {"Length": 120}, "limits": {}, "runner_mode": "AthGuidePreview"}
+        batch = Batch(
+            batch_id="B001",
+            project_id="P001",
+            selected_params={
+                "GCurve.Type": ParamSelection(value=1),
+                "GCurve.Dist": ParamSelection(value=60.0),
+            },
+            sweeps={"GCurve.Width": SweepSpec(start=80.0, end=100.0, steps=2)},
+            sweep_mode="single",
+            runner_mode="AthGuidePreview",
+        )
+        result = resolve_versions(constraints, batch, strict=False)
+        rule_ids = {issue.rule_id for issue in result.issues}
+        self.assertNotIn("sweep_not_allowed", rule_ids)
+        self.assertNotIn("batch_param_not_visible", rule_ids)
+        self.assertEqual(len(result.versions), 2)
+
 
 if __name__ == "__main__":
     unittest.main()
