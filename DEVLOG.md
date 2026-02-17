@@ -37,6 +37,23 @@
   - `GCurve.Rot` remains optional.
 - Policy-gap reporting now reflects user-input completeness (not masked by ATH-minimal completion).
 
+### Update: Morph Tier Refinement + Run-Time Default Prompt
+#### Done
+- Refined `policy_minimal` for morph-on states:
+  - when `Morph.TargetShape` is `1` or `2`, policy layer now treats full morph block as required:
+    - `Morph.TargetWidth`, `Morph.TargetHeight`, `Morph.CornerRadius`,
+      `Morph.FixedPart`, `Morph.Rate`, `Morph.AllowShrinkage`.
+- Kept `ath_minimal` morph behavior intentionally lightweight:
+  - selecting morph mode alone does not force extra morph keys for preview generation.
+- Added run-time policy-default flow in Batch UI:
+  - new compact frameless dialog on Run with two main actions:
+    - `Show undefined` (highlights unresolved fields in subtle blue)
+    - `Use defaults` (applies policy defaults into draft and continues run flow)
+  - dialog is styled in the same frameless shell language as advanced/export dialogs.
+- Added helper methods in Batch form/page to:
+  - persist/clear manual blue highlights,
+  - apply default values to currently unset fields.
+
 ### Update: Minimal Completion Search Tooling (DB + ATH Oracle)
 #### Done
 - Added new search module: `app/minimal_completion_search.py`.
