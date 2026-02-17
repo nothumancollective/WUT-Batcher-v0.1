@@ -15,7 +15,7 @@ from pathlib import Path
 import sqlite3
 import shutil
 import subprocess
-from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from app.batch_orchestrator import PlanningSummary, materialize_batch_plan
 from app.ath_knowledge import load_ath_knowledge
@@ -248,6 +248,8 @@ _PREVIEW_POLICY_REQUIRED_GCURVE: Dict[int, List[str]] = {
         "GCurve.SF.n3",
     ],
 }
+
+_PREVIEW_POLICY_BLOCK_ORDER: Tuple[str, ...] = ("profile", "mesh", "gcurve", "morph", "enclosure")
 
 
 def _local_appdata_root() -> Path:
@@ -688,11 +690,13 @@ def _preview_profile_mode(parameters: Mapping[str, Any]) -> str:
     return "osse"
 
 
-def _missing_preview_policy_keys(parameters: Mapping[str, Any]) -> List[str]:
+def _preview_policy_requirement_map(parameters: Mapping[str, Any]) -> Dict[str, List[str]]:
     payload = dict(parameters or {})
+    requirements: Dict[str, List[str]] = {block: [] for block in _PREVIEW_POLICY_BLOCK_ORDER}
+
     profile_mode = _preview_profile_mode(payload)
-    required: List[str] = list(_PREVIEW_POLICY_REQUIRED_BY_PROFILE.get(profile_mode, []))
-    required.extend(_PREVIEW_POLICY_REQUIRED_MESH)
+    requirements["profile"] = list(_PREVIEW_POLICY_REQUIRED_BY_PROFILE.get(profile_mode, []))
+    requirements["mesh"] = list(_PREVIEW_POLICY_REQUIRED_MESH)
 
     gcurve_type = payload.get("GCurve.Type")
     try:
@@ -700,8 +704,8 @@ def _missing_preview_policy_keys(parameters: Mapping[str, Any]) -> List[str]:
     except Exception:
         gcurve_type_num = None
     if gcurve_type_num not in {None, 0}:
-        required.append("GCurve.Type")
-        required.extend(list(_PREVIEW_POLICY_REQUIRED_GCURVE.get(int(gcurve_type_num), ["GCurve.Dist", "GCurve.Width"])))
+        requirements["gcurve"].append("GCurve.Type")
+        requirements["gcurve"].extend(list(_PREVIEW_POLICY_REQUIRED_GCURVE.get(int(gcurve_type_num), ["GCurve.Dist", "GCurve.Width"])))
 
     morph_shape = payload.get("Morph.TargetShape")
     try:
@@ -709,24 +713,44 @@ def _missing_preview_policy_keys(parameters: Mapping[str, Any]) -> List[str]:
     except Exception:
         morph_shape_num = 0
     if morph_shape_num in {1, 2}:
-        required.extend(list(_PREVIEW_POLICY_REQUIRED_MORPH_ON))
+        requirements["morph"] = list(_PREVIEW_POLICY_REQUIRED_MORPH_ON)
 
-    missing: List[str] = []
-    for key in required:
-        key_s = str(key).strip()
-        if not key_s:
-            continue
-        if "." in key_s and key_s.startswith("R-OSSE."):
-            sub_key = key_s.split(".", 1)[1]
-            rosse = payload.get("R-OSSE")
-            if not isinstance(rosse, Mapping):
-                missing.append(key_s)
+    # Enclosure is integrated in a dedicated follow-up block so this function
+    # remains the single source of truth for future policy extensions.
+    requirements["enclosure"] = []
+    return requirements
+
+
+def _missing_preview_policy_by_block(parameters: Mapping[str, Any]) -> Dict[str, List[str]]:
+    payload = dict(parameters or {})
+    required = _preview_policy_requirement_map(payload)
+    missing_by_block: Dict[str, List[str]] = {}
+    for block in _PREVIEW_POLICY_BLOCK_ORDER:
+        missing: List[str] = []
+        for key in list(required.get(block, []) or []):
+            key_s = str(key).strip()
+            if not key_s:
                 continue
-            if rosse.get(sub_key) is None:
+            if "." in key_s and key_s.startswith("R-OSSE."):
+                sub_key = key_s.split(".", 1)[1]
+                rosse = payload.get("R-OSSE")
+                if not isinstance(rosse, Mapping):
+                    missing.append(key_s)
+                    continue
+                if rosse.get(sub_key) is None:
+                    missing.append(key_s)
+                continue
+            if payload.get(key_s) is None:
                 missing.append(key_s)
-            continue
-        if payload.get(key_s) is None:
-            missing.append(key_s)
+        missing_by_block[block] = sorted(set(missing))
+    return missing_by_block
+
+
+def _missing_preview_policy_keys(parameters: Mapping[str, Any]) -> List[str]:
+    missing_by_block = _missing_preview_policy_by_block(parameters)
+    missing: List[str] = []
+    for block in _PREVIEW_POLICY_BLOCK_ORDER:
+        missing.extend(list(missing_by_block.get(block, []) or []))
     return sorted(set(missing))
 
 
@@ -833,6 +857,7 @@ def _build_preview_render_payload(
             version = resolved.versions[0]
             render_parameters = _normalize_preview_render_parameters(dict(version.parameters))
             policy_basis = _preview_policy_seed_parameters(project.constraints, selected_user_clean)
+            policy_missing_by_block = _missing_preview_policy_by_block(policy_basis)
             policy_missing_keys = _missing_preview_policy_keys(policy_basis)
             policy_default_values = _policy_defaults_for_missing_keys(
                 policy_missing_keys,
@@ -847,6 +872,7 @@ def _build_preview_render_payload(
                 "render_parameters": render_parameters,
                 "omit_keys": list(version.unset_parameters),
                 "completion_tier": "ath_minimal",
+                "policy_missing_by_block": dict(policy_missing_by_block),
                 "policy_missing_keys": list(policy_missing_keys),
                 "policy_default_values": dict(policy_default_values),
             }
@@ -892,6 +918,7 @@ def _build_preview_render_payload(
     merged = _preview_seed_parameters(project.constraints, selected_clean)
     merged = _normalize_preview_render_parameters(merged)
     policy_basis = _preview_policy_seed_parameters(project.constraints, selected_user_clean)
+    policy_missing_by_block = _missing_preview_policy_by_block(policy_basis)
     policy_missing_keys = _missing_preview_policy_keys(policy_basis)
     policy_default_values = _policy_defaults_for_missing_keys(
         policy_missing_keys,
@@ -906,6 +933,7 @@ def _build_preview_render_payload(
         "render_parameters": merged,
         "omit_keys": [],
         "completion_tier": "ath_minimal",
+        "policy_missing_by_block": dict(policy_missing_by_block),
         "policy_missing_keys": list(policy_missing_keys),
         "policy_default_values": dict(policy_default_values),
     }
@@ -1063,6 +1091,7 @@ class OrchestratorService:
         project = self.repo.load_project(project_id)
         selected_clean = _non_none_selected_params(selected_params)
         policy_seed = _preview_policy_seed_parameters(project.constraints, selected_clean)
+        missing_by_block = _missing_preview_policy_by_block(policy_seed)
         catalog_map = _catalog_parameter_map()
         missing_keys = _missing_preview_policy_keys(policy_seed)
         default_values = _policy_defaults_for_missing_keys(
@@ -1073,6 +1102,7 @@ class OrchestratorService:
         return {
             "tier": "policy_minimal",
             "missing_keys": list(missing_keys),
+            "missing_by_block": dict(missing_by_block),
             "default_values": default_values,
             "policy_seed": policy_seed,
             "ath_minimal_seed": _preview_seed_parameters(project.constraints, selected_clean),
@@ -1138,6 +1168,11 @@ class OrchestratorService:
             if str(key).strip()
         }
         completion_tier = str(preview_payload.get("completion_tier", "ath_minimal") or "ath_minimal")
+        policy_missing_by_block = {
+            str(block): [str(item) for item in list(items or []) if str(item).strip()]
+            for block, items in dict(preview_payload.get("policy_missing_by_block", {}) or {}).items()
+            if str(block).strip()
+        }
         policy_missing_keys = [
             str(item)
             for item in list(preview_payload.get("policy_missing_keys", []) or [])
@@ -1295,6 +1330,7 @@ class OrchestratorService:
             "ignored_hidden_keys": ignored_hidden_keys,
             "auto_completed": auto_completed,
             "completion_tier": completion_tier,
+            "policy_missing_by_block": policy_missing_by_block,
             "policy_missing_keys": policy_missing_keys,
             "policy_default_values": policy_default_values,
             "cfg_path": str(cfg_path),

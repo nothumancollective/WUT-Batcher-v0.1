@@ -12,6 +12,7 @@ from app.models import ProjectConstraints
 from app.services import (
     _build_preview_render_payload,
     _extract_not_visible_batch_keys,
+    _missing_preview_policy_by_block,
     _missing_preview_policy_keys,
     _normalize_preview_render_parameters,
     _preview_seed_parameters,
@@ -143,6 +144,22 @@ class PreviewPipelineTests(unittest.TestCase):
         self.assertIn("Term.q", missing)
         self.assertIn("OS.k", missing)
         self.assertIn("Mesh.ThroatResolution", missing)
+
+    def test_missing_preview_policy_by_block_keeps_requirements_explicit(self) -> None:
+        missing = _missing_preview_policy_by_block(
+            {
+                "Throat.Profile": 1,
+                "Length": 100.0,
+                "Morph.TargetShape": 1,
+                "GCurve.Type": 1,
+                "GCurve.Dist": 80.0,
+                "GCurve.Width": 0.7,
+            }
+        )
+        self.assertIn("Term.s", set(missing.get("profile", [])))
+        self.assertIn("Mesh.ThroatResolution", set(missing.get("mesh", [])))
+        self.assertIn("GCurve.AspectRatio", set(missing.get("gcurve", [])))
+        self.assertIn("Morph.TargetWidth", set(missing.get("morph", [])))
 
     def test_missing_preview_policy_keys_for_superellipse_include_aspect_and_se_n(self) -> None:
         missing = _missing_preview_policy_keys(
