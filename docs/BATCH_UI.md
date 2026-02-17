@@ -94,21 +94,19 @@ Widgets / flow:
 
 UI behavior:
 - title is `Preview`
-- toggle `On/Off`:
-  - `On`: preview area is shown and generation starts immediately
-  - `Off`: preview area is hidden and running work is canceled/ignored
-- `Update Preview` runs a new generation with current batch UI parameters
+- preview is always enabled on the Batch page
+- preview updates are triggered automatically after batch draft changes (debounced)
 - loading state:
   - in-canvas indeterminate loader while cfg write + ATH run + STL copy + load
 - failure state:
   - unobtrusive inline error text in preview panel (no modal)
-  - last successfully loaded mesh remains in viewer
 
 Render behavior:
 - transparent background
 - light gray/white glossy material
 - basic orbit rotate + zoom
 - STL loading supports binary and ASCII STL parsing
+- if Qt3D is unavailable, a software fallback renderer is used (still interactive)
 
 Hard paths:
 - preview cfg directory: `C:\\Tools\\ATH`
@@ -125,6 +123,21 @@ Debug artifacts:
 - `%LOCALAPPDATA%\\WUTBatcher\\preview_cache\\logs\\preview_<run>.stdout.log`
 - `%LOCALAPPDATA%\\WUTBatcher\\preview_cache\\logs\\preview_<run>.stderr.log`
 - `%LOCALAPPDATA%\\WUTBatcher\\preview_cache\\logs\\preview_<run>.runner.log`
+
+Preview robustness:
+- preview generation uses resolver output when available
+- resolver input for preview ignores unset (`None`) batch values, so transient hidden fields do not poison resolver prechecks
+- if resolver returns no versions, preview falls back to seeded ATH parameters with iterative minimal completion:
+  - adds only missing required fields from resolver issues (catalog/default based)
+  - keeps user-entered values untouched
+  - recomputes until stable (or max rounds)
+- resolver issues `batch_param_not_visible` are parsed and hidden keys are ignored for preview generation (`ignored_hidden_keys` in preview result payload)
+- internal UI selector `Throat.Profile = 2` (R-OSSE mode) is normalized before ATH run:
+  - removed from final cfg
+  - `R-OSSE` object is auto-completed with safe defaults when needed
+- mesh interface list normalization is applied for preview generation:
+  - `Mesh.InterfaceOffset` / `Mesh.InterfaceDraw` are normalized to list form
+  - lengths are aligned to `Mesh.SubdomainSlices` when both are present
 
 ## Validation and UI Risk Layer
 Rule evaluation remains in `app/compatibility_service.py`.

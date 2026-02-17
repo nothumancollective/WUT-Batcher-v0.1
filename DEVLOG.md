@@ -1,5 +1,22 @@
 ﻿# DEVLOG
 
+## 2026-02-17
+### Update: Preview Minimal Completion + R-OSSE Normalization
+#### Done
+- Preview parameter assembly hardened in app/services.py:
+  - ignores unset batch values for resolver preview input
+  - adds iterative minimal-completion fallback for required parameters (resolver-issue driven, catalog/default based)
+  - keeps explicit user inputs unchanged while filling only missing required keys
+- R-OSSE preview normalization fixed:
+  - internal UI selector Throat.Profile=2 is removed before ATH cfg render
+  - R-OSSE object receives safe default completion for missing fields
+- Mesh preview normalization added:
+  - Mesh.InterfaceOffset / Mesh.InterfaceDraw are normalized to list values
+  - list lengths are aligned to Mesh.SubdomainSlices when available
+- Preview payload diagnostics extended with auto_completed keys.
+- Tests extended/updated:
+  - tests/test_preview_pipeline.py now covers R-OSSE normalization and preview payload assembly behavior.
+
 ## 2026-02-12
 ### Done
 - Rebuild branch checked (`wut-batcher/rebuild` already active).
@@ -2319,3 +2336,30 @@ Validation executed:
 - `python -m py_compile app/services.py app/gui.py ui/batch_preview_placeholder.py ui/stl_preview_widget.py ui/batch_parameter_form.py ui/batch_export_panel.py ui/theme.py`
 - `PYTHONPATH=. pytest tests/test_batch_page_ui.py tests/test_batch_export_panel.py tests/test_project_form_ui.py -q`
 - `PYTHONPATH=. pytest tests/test_batch_validation_alignment_fuzz.py tests/test_project_validation_alignment_fuzz.py tests/test_gui_project_fixed_keys.py -q`
+
+### Update 75 (Preview E2E Stabilization + Auto Refresh)
+#### Done
+- Reworked Batch preview UX to auto-refresh mode:
+  - removed manual preview toggle/update controls from preview card
+  - preview now auto-requests on batch draft changes (debounced in `MainWindow`)
+  - removed filename/status line under canvas so the mesh viewport uses maximal panel height
+- Added robust software STL renderer fallback when Qt3D is unavailable:
+  - `ui/stl_preview_widget.py` now renders STL triangles in a translucent QWidget painter fallback
+  - keeps orbit drag + wheel zoom behavior without Qt3D modules
+- Hardened preview generation for compatibility/UI edge cases:
+  - preview resolver path stays best-effort
+  - when resolver reports `batch_param_not_visible`, those keys are ignored for preview fallback generation
+  - result payload now includes `ignored_hidden_keys` for diagnostics
+- Aligned compatibility visibility for `Mesh.InterfaceOffset`:
+  - removed enclosure-only visibility gate in ATH ruleset (`visibility_mesh_interfaceoffset_*`)
+  - `Mesh.InterfaceOffset` now no longer triggers false `batch_param_not_visible` for the validated guide-style OS-SE baseline
+- Investigated OS-SE/Coverage baseline + morph rectangle case against local ATH files:
+  - reproduced and validated with `C:\\Tools\\ATH\\Tritonia.cfg`
+  - documented findings and source links in `docs/PREVIEW_INVESTIGATION_2026-02-17.md`
+
+#### Validation
+- `python -m compileall app/services.py app/gui.py ui/batch_preview_placeholder.py ui/stl_preview_widget.py`
+- `python -m pytest tests/test_preview_pipeline.py -q`
+- `python -m pytest tests/test_batch_page_ui.py tests/test_service_export.py -q`
+
+

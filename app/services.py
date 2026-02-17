@@ -15,9 +15,10 @@ from pathlib import Path
 import sqlite3
 import shutil
 import subprocess
-from typing import Any, Callable, Dict, List, Mapping, Optional
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
 
 from app.batch_orchestrator import PlanningSummary, materialize_batch_plan
+from app.ath_knowledge import load_ath_knowledge
 from app.ath_driver_assets import repair_post_ath_le_binding
 from app.compatibility_service import CompatibilityService
 from app.constants import (
@@ -139,6 +140,50 @@ class PreviewGenerationCancelled(RuntimeError):
 
 
 _OUTPUT_ASSIGN_RE = re.compile(r"(?im)^[ \t]*({key})[ \t]*=.*$")
+_BATCH_NOT_VISIBLE_KEY_RE = re.compile(r"'([^']+)'")
+_REQUIRED_KEY_PREFIX_RE = re.compile(r"^([A-Za-z0-9_.-]+)\s+ist\b", re.IGNORECASE)
+_EN_REQUIRED_KEY_RE = re.compile(r"^([A-Za-z0-9_.-]+)\s+(?:is|was)\s+required\b", re.IGNORECASE)
+
+_PREVIEW_R_OSSE_DEFAULTS: Dict[str, float] = {
+    "R": 120.0,
+    "r0": 12.7,
+    "a0": 7.0,
+    "a": 45.0,
+    "k": 0.5,
+    "r": 0.5,
+    "m": 4.0,
+    "b": 1.0,
+    "q": 0.996,
+}
+
+_PREVIEW_FALLBACK_DEFAULTS: Dict[str, Any] = {
+    "Throat.Diameter": 25.4,
+    "Throat.Angle": 7.0,
+    "Coverage.Angle": 45.0,
+    "Length": 120.0,
+    "Term.s": 0.7,
+    "Term.n": 4.0,
+    "Term.q": 0.995,
+    "CircArc.TermAngle": 1.0,
+    "GCurve.Dist": 80.0,
+    "GCurve.Width": 0.7,
+    "GCurve.AspectRatio": 1.0,
+    "GCurve.SE.n": 3.0,
+    "Morph.TargetShape": 0,
+    "Morph.TargetWidth": 0.0,
+    "Morph.TargetHeight": 0.0,
+    "Morph.CornerRadius": 35.0,
+    "Morph.FixedPart": 0.0,
+    "Morph.Rate": 3.0,
+    "Morph.AllowShrinkage": 0,
+    "Mesh.AngularSegments": 64,
+    "Mesh.LengthSegments": 20,
+    "Mesh.ThroatResolution": 5.0,
+    "Mesh.MouthResolution": 10.0,
+    "Mesh.InterfaceResolution": 8.0,
+    "Mesh.CornerSegments": 4,
+    "R-OSSE": dict(_PREVIEW_R_OSSE_DEFAULTS),
+}
 
 
 def _local_appdata_root() -> Path:
@@ -180,11 +225,33 @@ def _detect_changed_export_dir(export_root: Path, before: Mapping[str, int]) -> 
     return None
 
 
-def _best_mesh_cmd_for_preview(ath_executable: Path) -> str:
+def _extract_mesh_cmd_from_runtime_cfg(runtime_cfg_path: Path) -> str:
+    if not runtime_cfg_path.exists():
+        return ""
+    try:
+        text = runtime_cfg_path.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return ""
+    for raw_line in text.splitlines():
+        line = str(raw_line).strip()
+        if not line or line.startswith(";"):
+            continue
+        if "=" not in line:
+            continue
+        left, right = line.split("=", 1)
+        if str(left).strip().lower() != "meshcmd":
+            continue
+        value = str(right).strip().strip('"').strip()
+        if value:
+            return value
+    return ""
+
+
+def _best_mesh_cmd_for_preview(ath_executable: Path, *, fallback_cmd: str = "") -> str:
     candidate = ath_executable.parent / "gmsh.exe"
     if candidate.exists():
         return str(candidate)
-    return ""
+    return str(fallback_cmd or "").strip()
 
 
 def _write_preview_runtime_cfg(cfg_dir: Path, *, export_root: Path, mesh_cmd: str) -> Path:
@@ -204,7 +271,10 @@ def _write_preview_runtime_cfg(cfg_dir: Path, *, export_root: Path, mesh_cmd: st
 
 def _enforce_output_flag(cfg_text: str, *, key: str, value: int) -> str:
     normalized_key = str(key).strip()
-    pattern = re.compile(_OUTPUT_ASSIGN_RE.pattern.format(key=re.escape(normalized_key)))
+    pattern = re.compile(
+        _OUTPUT_ASSIGN_RE.pattern.format(key=re.escape(normalized_key)),
+        flags=re.IGNORECASE | re.MULTILINE,
+    )
     replacement = f"{normalized_key} = {int(value)}"
     if pattern.search(cfg_text):
         return pattern.sub(replacement, cfg_text)
@@ -278,6 +348,413 @@ def _prune_preview_cache(cache_dir: Path, *, keep_last: int, max_age_days: int) 
         "deleted_age": int(deleted_age),
         "remaining_stl": int(remaining),
     }
+
+
+def _issue_attr(issue: Any, key: str, default: Any = None) -> Any:
+    if isinstance(issue, Mapping):
+        return issue.get(key, default)
+    return getattr(issue, key, default)
+
+
+def _non_none_selected_params(selected_params: Mapping[str, Any]) -> Dict[str, Any]:
+    selected: Dict[str, Any] = {}
+    for key, value in dict(selected_params or {}).items():
+        key_str = str(key).strip()
+        if not key_str or value is None:
+            continue
+        selected[key_str] = value
+    return selected
+
+
+def _project_defined_values(constraints: ProjectConstraints) -> Dict[str, Any]:
+    payload = constraints.to_dict()
+    merged: Dict[str, Any] = {}
+    fixed = payload.get("fixed_params")
+    if isinstance(fixed, Mapping):
+        for key, value in fixed.items():
+            if value is not None:
+                merged[str(key)] = value
+    limits = payload.get("limits")
+    if isinstance(limits, Mapping):
+        for key, value in limits.items():
+            if value is not None:
+                merged[str(key)] = value
+    for row in list(payload.get("param_states", []) or []):
+        if not isinstance(row, Mapping):
+            continue
+        if not bool(row.get("is_set")):
+            continue
+        key = str(row.get("param_name", "")).strip()
+        if not key:
+            continue
+        value = row.get("value")
+        if value is not None:
+            merged[key] = value
+    return merged
+
+
+def _catalog_parameter_map() -> Dict[str, Dict[str, Any]]:
+    bundle = load_ath_knowledge()
+    result: Dict[str, Dict[str, Any]] = {}
+    for item in list(bundle.catalog.get("parameters", []) or []):
+        if not isinstance(item, dict):
+            continue
+        key = str(item.get("key", "")).strip()
+        if key:
+            result[key] = item
+    return result
+
+
+def _extract_required_keys(issues: Sequence[Any]) -> List[str]:
+    required: List[str] = []
+    for issue in list(issues or []):
+        severity = str(_issue_attr(issue, "severity", "")).strip().lower()
+        if severity not in {"fatal", "error"}:
+            continue
+        rule_id = str(_issue_attr(issue, "rule_id", "")).strip().lower()
+        message = str(_issue_attr(issue, "message", "")).strip()
+        field_key = str(_issue_attr(issue, "field_key", "") or _issue_attr(issue, "key", "")).strip()
+        if field_key and ("required" in rule_id or "erforderlich" in message.lower()):
+            required.append(field_key)
+            continue
+        match = _REQUIRED_KEY_PREFIX_RE.search(message)
+        if match:
+            required.append(str(match.group(1)).strip())
+            continue
+        match_en = _EN_REQUIRED_KEY_RE.search(message)
+        if match_en:
+            required.append(str(match_en.group(1)).strip())
+    return sorted({str(key) for key in required if str(key).strip()})
+
+
+def _coerce_preview_scalar(value: Any, *, key: str, catalog: Mapping[str, Any]) -> Any:
+    if value is None:
+        return None
+    ath_type = str(catalog.get("type", "")).strip().lower()
+    domain = catalog.get("domain")
+    domain_map = domain if isinstance(domain, Mapping) else {}
+    if ath_type == "bool":
+        return 1 if bool(value) else 0
+    if ath_type == "int":
+        try:
+            return int(float(value))
+        except Exception:
+            return value
+    if ath_type in {"float", "expr"}:
+        try:
+            return float(value)
+        except Exception:
+            return value
+    if ath_type == "enum":
+        enum_values = list(domain_map.get("enum", []) or [])
+        if enum_values and value not in enum_values:
+            return enum_values[0]
+    if key == "Throat.Profile":
+        try:
+            parsed = int(float(value))
+        except Exception:
+            return value
+        return parsed
+    return value
+
+
+def _default_for_catalog_key(key: str, *, current_values: Mapping[str, Any], catalog_map: Mapping[str, Dict[str, Any]]) -> Any:
+    if key in _PREVIEW_FALLBACK_DEFAULTS:
+        preset = _PREVIEW_FALLBACK_DEFAULTS[key]
+        if isinstance(preset, dict):
+            return dict(preset)
+        return preset
+
+    raw = dict(catalog_map.get(str(key), {}) or {})
+    if not raw:
+        return None
+    if "default" in raw:
+        return raw.get("default")
+    ath_type = str(raw.get("type", "")).strip().lower()
+    domain = raw.get("domain")
+    domain_map = domain if isinstance(domain, Mapping) else {}
+    if ath_type == "enum":
+        enum_values = list(domain_map.get("enum", []) or [])
+        if enum_values:
+            return enum_values[0]
+        return None
+    if ath_type == "bool":
+        return 0
+    if ath_type == "int":
+        min_value = domain_map.get("min")
+        try:
+            return int(float(min_value))
+        except Exception:
+            return 1
+    if ath_type in {"float", "expr"}:
+        min_value = domain_map.get("min")
+        try:
+            return float(min_value)
+        except Exception:
+            return 0.0
+    if ath_type == "list<int>":
+        return []
+    if ath_type == "list<float>":
+        return []
+    if ath_type == "object" and key == "R-OSSE":
+        baseline = dict(_PREVIEW_R_OSSE_DEFAULTS)
+        throat_diameter = current_values.get("Throat.Diameter")
+        try:
+            if throat_diameter is not None:
+                baseline["r0"] = float(throat_diameter) / 2.0
+        except Exception:
+            pass
+        return baseline
+    return None
+
+
+def _normalize_mesh_interface_lists(parameters: Dict[str, Any]) -> Dict[str, Any]:
+    normalized = dict(parameters)
+
+    def _as_int_list(value: Any) -> Optional[List[int]]:
+        if value is None:
+            return None
+        if isinstance(value, list):
+            result: List[int] = []
+            for item in value:
+                try:
+                    result.append(int(float(item)))
+                except Exception:
+                    continue
+            return result
+        try:
+            return [int(float(value))]
+        except Exception:
+            return None
+
+    def _as_float_list(value: Any) -> Optional[List[float]]:
+        if value is None:
+            return None
+        if isinstance(value, list):
+            result: List[float] = []
+            for item in value:
+                try:
+                    result.append(float(item))
+                except Exception:
+                    continue
+            return result
+        try:
+            return [float(value)]
+        except Exception:
+            return None
+
+    slices = _as_int_list(normalized.get("Mesh.SubdomainSlices"))
+    if slices:
+        normalized["Mesh.SubdomainSlices"] = slices
+
+    count = len(slices or [])
+    for key in ("Mesh.InterfaceOffset", "Mesh.InterfaceDraw"):
+        values = _as_float_list(normalized.get(key))
+        if values is None:
+            continue
+        if count > 0:
+            if len(values) > count:
+                values = values[:count]
+            elif len(values) < count:
+                pad = [0.0 for _ in range(count - len(values))]
+                values = [*values, *pad]
+        normalized[key] = values
+    return normalized
+
+
+def _normalize_preview_render_parameters(parameters: Mapping[str, Any]) -> Dict[str, Any]:
+    normalized: Dict[str, Any] = {}
+    for key, value in dict(parameters or {}).items():
+        key_s = str(key).strip()
+        if not key_s or value is None:
+            continue
+        normalized[key_s] = value
+
+    throat_profile_value = normalized.get("Throat.Profile")
+    rosse_mode = str(throat_profile_value).strip() in {"2", "2.0"}
+    if rosse_mode:
+        normalized.pop("Throat.Profile", None)
+
+    rosse_value = normalized.get("R-OSSE")
+    if isinstance(rosse_value, Mapping):
+        merged = dict(_PREVIEW_R_OSSE_DEFAULTS)
+        for name, raw_value in dict(rosse_value).items():
+            if raw_value is None:
+                continue
+            merged[str(name)] = raw_value
+        normalized["R-OSSE"] = merged
+    elif rosse_mode and "R-OSSE" not in normalized:
+        normalized["R-OSSE"] = dict(_PREVIEW_R_OSSE_DEFAULTS)
+
+    normalized = _normalize_mesh_interface_lists(normalized)
+    return normalized
+
+
+def _build_preview_render_payload(
+    *,
+    project: Project,
+    selected_params: Mapping[str, Any],
+    sweep_mode: str,
+) -> Dict[str, Any]:
+    runner_mode = str(project.constraints.runner_mode or "")
+    catalog_map = _catalog_parameter_map()
+    project_values = _project_defined_values(project.constraints)
+    selected_clean = _non_none_selected_params(selected_params)
+
+    ignored_hidden_keys: List[str] = []
+    auto_completed: Dict[str, Any] = {}
+    preview_resolution_issues: List[Dict[str, Any]] = []
+    resolver_fallback_used = False
+    merged_seed = _preview_seed_parameters(project.constraints, selected_clean)
+
+    for _round in range(6):
+        temp_batch = Batch(
+            batch_id="B_PREVIEW",
+            project_id=project.project_id,
+            selected_params={
+                str(key): ParamSelection(value=value)
+                for key, value in dict(selected_clean).items()
+                if str(key).strip()
+            },
+            sweeps={},
+            sweep_mode=str(sweep_mode or "single"),
+            runner_mode=runner_mode,
+        )
+        resolved = resolve_versions(project.constraints, temp_batch, strict=False)
+        preview_resolution_issues = [issue.to_dict() for issue in list(resolved.issues or [])]
+        if resolved.versions:
+            version = resolved.versions[0]
+            return {
+                "resolver_fallback_used": bool(resolver_fallback_used),
+                "resolution_issues": preview_resolution_issues,
+                "ignored_hidden_keys": sorted(set(ignored_hidden_keys)),
+                "auto_completed": dict(auto_completed),
+                "render_parameters": _normalize_preview_render_parameters(dict(version.parameters)),
+                "omit_keys": list(version.unset_parameters),
+            }
+
+        resolver_fallback_used = True
+        changed = False
+        hidden = _extract_not_visible_batch_keys(list(resolved.issues or []))
+        for key in hidden:
+            key_s = str(key).strip()
+            if key_s in selected_clean:
+                selected_clean.pop(key_s, None)
+                ignored_hidden_keys.append(key_s)
+                changed = True
+
+        required_keys = _extract_required_keys(list(resolved.issues or []))
+        merged_seed = _preview_seed_parameters(project.constraints, selected_clean)
+        context_values = dict(merged_seed)
+        context_values.update(project_values)
+        for required_key in required_keys:
+            key_s = str(required_key).strip()
+            if not key_s:
+                continue
+            if key_s in selected_clean or key_s in project_values:
+                continue
+            default_value = _default_for_catalog_key(
+                key_s,
+                current_values=context_values,
+                catalog_map=catalog_map,
+            )
+            if default_value is None:
+                continue
+            coerced = _coerce_preview_scalar(default_value, key=key_s, catalog=dict(catalog_map.get(key_s, {}) or {}))
+            selected_clean[key_s] = coerced
+            auto_completed[key_s] = coerced
+            context_values[key_s] = coerced
+            changed = True
+
+        if not changed:
+            break
+
+    merged = _preview_seed_parameters(project.constraints, selected_clean)
+    merged = _normalize_preview_render_parameters(merged)
+    return {
+        "resolver_fallback_used": True,
+        "resolution_issues": preview_resolution_issues,
+        "ignored_hidden_keys": sorted(set(ignored_hidden_keys)),
+        "auto_completed": dict(auto_completed),
+        "render_parameters": merged,
+        "omit_keys": [],
+    }
+
+
+def _preview_seed_parameters(constraints: ProjectConstraints, selected_params: Mapping[str, Any]) -> Dict[str, Any]:
+    payload = constraints.to_dict()
+    merged: Dict[str, Any] = {}
+
+    fixed = payload.get("fixed_params")
+    if isinstance(fixed, Mapping):
+        for key, value in fixed.items():
+            if value is None:
+                continue
+            merged[str(key)] = value
+
+    limits = payload.get("limits")
+    if isinstance(limits, Mapping):
+        for key, value in limits.items():
+            if value is None:
+                continue
+            merged[str(key)] = value
+
+    for row in list(payload.get("param_states", []) or []):
+        if not isinstance(row, Mapping):
+            continue
+        if not bool(row.get("is_set")):
+            continue
+        key = str(row.get("param_name", "")).strip()
+        if not key:
+            continue
+        value = row.get("value")
+        if value is None:
+            continue
+        merged[key] = value
+
+    for key, value in dict(selected_params or {}).items():
+        key_str = str(key).strip()
+        if not key_str or value is None:
+            continue
+        merged[key_str] = value
+
+    # Throat.Profile=2 is an internal UI selector for R-OSSE and must not be
+    # emitted into ATH cfg (ATH reports "Unknown profile type: 2").
+    if str(merged.get("Throat.Profile", "")).strip() in {"2", "2.0"}:
+        merged.pop("Throat.Profile", None)
+        merged.setdefault("R-OSSE", dict(_PREVIEW_R_OSSE_DEFAULTS))
+
+    # Keep preview generation robust for incomplete drafts by filling the small
+    # set of mandatory ATH geometry keys with conservative fallback values.
+    if "Length" not in merged and "OSSE" not in merged and "R-OSSE" not in merged:
+        merged["Length"] = 120.0
+
+    gcurve_type = merged.get("GCurve.Type")
+    try:
+        gcurve_type_num = int(float(gcurve_type)) if gcurve_type is not None else None
+    except Exception:
+        gcurve_type_num = None
+    if gcurve_type_num not in {None, 0}:
+        merged.setdefault("GCurve.Dist", 80.0)
+        merged.setdefault("GCurve.Width", 0.7)
+
+    return _normalize_preview_render_parameters(merged)
+
+
+def _extract_not_visible_batch_keys(issues: Sequence[Any]) -> List[str]:
+    keys: List[str] = []
+    for issue in list(issues or []):
+        rule_id = str(getattr(issue, "rule_id", "") or "").strip()
+        if rule_id != "batch_param_not_visible":
+            continue
+        message = str(getattr(issue, "message", "") or "")
+        match = _BATCH_NOT_VISIBLE_KEY_RE.search(message)
+        if not match:
+            continue
+        key = str(match.group(1) or "").strip()
+        if key:
+            keys.append(key)
+    return sorted(set(keys))
 
 
 class OrchestratorService:
@@ -366,23 +843,29 @@ class OrchestratorService:
             raise FileNotFoundError(f"ATH executable not found: {ath_executable}")
 
         project = self.repo.load_project(project_id)
-
-        temp_batch = Batch(
-            batch_id="B_PREVIEW",
-            project_id=project_id,
-            selected_params={
-                str(key): ParamSelection(value=value)
-                for key, value in dict(selected_params or {}).items()
-                if str(key).strip()
-            },
-            sweeps={},
+        preview_payload = _build_preview_render_payload(
+            project=project,
+            selected_params=dict(selected_params or {}),
             sweep_mode=str(sweep_mode or "single"),
-            runner_mode=project.constraints.runner_mode,
         )
-        resolved = resolve_versions(project.constraints, temp_batch, strict=True)
-        if not resolved.versions:
-            raise RuntimeError("No resolvable version for current draft parameters.")
-        version = resolved.versions[0]
+        render_parameters = dict(preview_payload.get("render_parameters", {}) or {})
+        omit_keys = list(preview_payload.get("omit_keys", []) or [])
+        preview_resolution_issues = [
+            dict(item)
+            for item in list(preview_payload.get("resolution_issues", []) or [])
+            if isinstance(item, Mapping)
+        ]
+        resolver_fallback_used = bool(preview_payload.get("resolver_fallback_used", False))
+        ignored_hidden_keys = [
+            str(item)
+            for item in list(preview_payload.get("ignored_hidden_keys", []) or [])
+            if str(item).strip()
+        ]
+        auto_completed = {
+            str(key): value
+            for key, value in dict(preview_payload.get("auto_completed", {}) or {}).items()
+            if str(key).strip()
+        }
 
         template_text = "; autogenerated template\n"
         if self.settings.template_cfg:
@@ -390,10 +873,10 @@ class OrchestratorService:
 
         cfg_text = render_cfg_text(
             template_text=template_text,
-            parameters=dict(version.parameters),
-            version_id=str(version.version_id or "V_PREVIEW"),
+            parameters=render_parameters,
+            version_id="V_PREVIEW",
             runner_mode=project.constraints.runner_mode,
-            omit_keys=list(version.unset_parameters),
+            omit_keys=omit_keys,
         )
         cfg_text = _enforce_output_flag(cfg_text, key="Output.STL", value=1)
         cfg_text = _enforce_output_flag(cfg_text, key="Output.ABECProject", value=0)
@@ -426,46 +909,47 @@ class OrchestratorService:
             except Exception:
                 had_runtime_cfg = False
 
-        mesh_cmd = _best_mesh_cmd_for_preview(ath_executable)
+        existing_mesh_cmd = _extract_mesh_cmd_from_runtime_cfg(runtime_cfg_path)
+        mesh_cmd = _best_mesh_cmd_for_preview(ath_executable, fallback_cmd=existing_mesh_cmd)
         _write_preview_runtime_cfg(cfg_dir, export_root=export_root, mesh_cmd=mesh_cmd)
 
         command = [str(ath_executable), str(cfg_path)]
         proc: Optional[subprocess.Popen[str]] = None
-        stdout_text = ""
-        stderr_text = ""
         started_at = _now_iso()
         exit_code = -1
+        preview_timeout_s = 90.0
 
         try:
-            proc = subprocess.Popen(
-                command,
-                cwd=str(cfg_dir),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-            )
-            if process_handle_cb is not None:
-                process_handle_cb(proc)
+            with stdout_log.open("w", encoding="utf-8") as stdout_handle, stderr_log.open(
+                "w", encoding="utf-8"
+            ) as stderr_handle:
+                proc = subprocess.Popen(
+                    command,
+                    cwd=str(cfg_dir),
+                    stdout=stdout_handle,
+                    stderr=stderr_handle,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                )
+                if process_handle_cb is not None:
+                    process_handle_cb(proc)
 
-            while True:
-                if cancel_check and bool(cancel_check()):
-                    _terminate_process(proc)
-                    raise PreviewGenerationCancelled("Preview request cancelled.")
-                try:
-                    out, err = proc.communicate(timeout=0.20)
-                    stdout_text = str(out or "")
-                    stderr_text = str(err or "")
-                    break
-                except subprocess.TimeoutExpired:
-                    continue
-
-            exit_code = int(proc.returncode if proc.returncode is not None else -1)
+                started_monotonic = time.monotonic()
+                while True:
+                    if cancel_check and bool(cancel_check()):
+                        _terminate_process(proc)
+                        raise PreviewGenerationCancelled("Preview request cancelled.")
+                    if (time.monotonic() - started_monotonic) > preview_timeout_s:
+                        _terminate_process(proc)
+                        raise RuntimeError(f"ATH preview run timed out after {int(preview_timeout_s)}s.")
+                    rc = proc.poll()
+                    if rc is not None:
+                        exit_code = int(rc)
+                        break
+                    time.sleep(0.20)
         finally:
             finished_at = _now_iso()
-            stdout_log.write_text(stdout_text, encoding="utf-8")
-            stderr_log.write_text(stderr_text, encoding="utf-8")
             summary_log.write_text(
                 json.dumps(
                     {
@@ -503,8 +987,11 @@ class OrchestratorService:
         if exit_code != 0:
             raise RuntimeError(f"ATH preview run failed (exit_code={exit_code}).")
 
-        export_dir = _detect_changed_export_dir(export_root, before_snapshot)
+        expected_export_dir = export_root / Path(ATH_PREVIEW_CFG_NAME).stem
+        export_dir = expected_export_dir if expected_export_dir.exists() else _detect_changed_export_dir(export_root, before_snapshot)
         source_stl = _pick_latest_stl(export_dir) if export_dir is not None else None
+        if source_stl is None:
+            source_stl = _pick_latest_stl(expected_export_dir)
         if source_stl is None:
             source_stl = _pick_latest_stl(export_root)
         if source_stl is None:
@@ -525,6 +1012,10 @@ class OrchestratorService:
             "ok": True,
             "run_id": run_token,
             "cfg_hash": cfg_hash,
+            "resolver_fallback_used": bool(resolver_fallback_used),
+            "resolution_issues": preview_resolution_issues,
+            "ignored_hidden_keys": ignored_hidden_keys,
+            "auto_completed": auto_completed,
             "cfg_path": str(cfg_path),
             "command": command,
             "export_root": str(export_root),
