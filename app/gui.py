@@ -2121,16 +2121,16 @@ class MainWindow(QMainWindow):
     def _sanitize_batch_payload_for_project_constraints(
         payload: Dict[str, Any],
         constraints: ProjectConstraints,
-        project_compat_state: Dict[str, Any],
+        compat_state: Dict[str, Any],
     ) -> tuple[Dict[str, Any], bool]:
         visible_keys = {
             str(item)
-            for item in list(project_compat_state.get("visible_keys", []) or [])
+            for item in list(compat_state.get("visible_keys", []) or [])
             if str(item).strip()
         }
         sweepable_keys = {
             str(item)
-            for item in list(project_compat_state.get("sweepable_keys", []) or [])
+            for item in list(compat_state.get("sweepable_keys", []) or [])
             if str(item).strip()
         }
         fixed_keys = set(MainWindow._project_fixed_keys_from_constraints(constraints))
@@ -2342,20 +2342,30 @@ class MainWindow(QMainWindow):
         if self.current_project is None:
             self.set_status("No project loaded.")
             return None
-        project_compat_state = self.service.evaluate_project_constraints(self.current_project.constraints.to_dict())
-        sanitized_payload, _changed = self._sanitize_batch_payload_for_project_constraints(
-            dict(payload),
+        raw_payload = dict(payload)
+        raw_selected_params = dict(raw_payload.get("selected_params", {}) or {})
+        raw_sweeps = dict(raw_payload.get("sweeps", {}) or {})
+        raw_mode = str(raw_payload.get("sweep_mode", "single"))
+        validation = self.service.evaluate_batch_definition(
+            project_id=self.current_project.project_id,
+            selected_params=raw_selected_params,
+            sweeps=raw_sweeps,
+            sweep_mode=raw_mode,
+        )
+        sanitized_payload, changed = self._sanitize_batch_payload_for_project_constraints(
+            raw_payload,
             self.current_project.constraints,
-            project_compat_state,
+            validation,
         )
         payload = sanitized_payload
         selected_params = dict(payload.get("selected_params", {}) or {})
-        validation = self.service.evaluate_batch_definition(
-            project_id=self.current_project.project_id,
-            selected_params=selected_params,
-            sweeps=dict(payload.get("sweeps", {}) or {}),
-            sweep_mode=str(payload.get("sweep_mode", "single")),
-        )
+        if changed:
+            validation = self.service.evaluate_batch_definition(
+                project_id=self.current_project.project_id,
+                selected_params=selected_params,
+                sweeps=dict(payload.get("sweeps", {}) or {}),
+                sweep_mode=str(payload.get("sweep_mode", "single")),
+            )
         raw_issues = [item for item in list(validation.get("issues", []) or []) if isinstance(item, dict)]
         issues = self._normalize_batch_issues_for_ui(raw_issues, selected_params=selected_params)
         counts = self._batch_issue_counts(issues)
@@ -2557,22 +2567,32 @@ class MainWindow(QMainWindow):
             self.batch_page.apply_ui_risks([])
             self.batch_page.set_eta(None, sample_count=0, median_seconds=None)
             return
-        project_compat_state = self.service.evaluate_project_constraints(self.current_project.constraints.to_dict())
+        raw_payload = dict(payload)
+        raw_sweep_mode = str(raw_payload.get("sweep_mode", "single"))
+        raw_selected_params = dict(raw_payload.get("selected_params", {}) or {})
+        raw_sweeps = dict(raw_payload.get("sweeps", {}) or {})
+        state_raw = self.service.evaluate_batch_definition(
+            project_id=self.current_project.project_id,
+            selected_params=raw_selected_params,
+            sweeps=raw_sweeps,
+            sweep_mode=raw_sweep_mode,
+        )
         sanitized_payload, _changed = self._sanitize_batch_payload_for_project_constraints(
-            dict(payload),
+            raw_payload,
             self.current_project.constraints,
-            project_compat_state,
+            state_raw,
         )
         payload = sanitized_payload
         sweep_mode = str(payload.get("sweep_mode", "single"))
         selected_params = dict(payload.get("selected_params", {}) or {})
         sweeps = dict(payload.get("sweeps", {}) or {})
-        state_raw = self.service.evaluate_batch_definition(
-            project_id=self.current_project.project_id,
-            selected_params=selected_params,
-            sweeps=sweeps,
-            sweep_mode=sweep_mode,
-        )
+        if selected_params != raw_selected_params or sweeps != raw_sweeps or sweep_mode != raw_sweep_mode:
+            state_raw = self.service.evaluate_batch_definition(
+                project_id=self.current_project.project_id,
+                selected_params=selected_params,
+                sweeps=sweeps,
+                sweep_mode=sweep_mode,
+            )
         ui_state = self.compat_ui_adapter.compute_batch_ui_state(
             selected_params=selected_params,
             sweeps=sweeps,
