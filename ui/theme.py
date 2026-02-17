@@ -659,7 +659,7 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     }}
     QPushButton[segment=\"true\"][sweepActive="true"][riskLevel="warn"] {{
         border: 1px solid {c['warning_border']};
-        color: {c['warning_text']};
+        color: {c['warning_text_muted']};
     }}
     QPushButton[segment=\"true\"][disclosureHint="true"] {{
         border: 1px solid {c['accent']};
