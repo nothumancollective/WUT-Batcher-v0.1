@@ -91,6 +91,7 @@ Widgets / flow:
 - `ui/stl_preview_widget.py` (Qt3D renderer + STL parser fallback)
 - `app/services.py::generate_preview_stl(...)` (single source of truth pipeline)
 - `app/gui.py` (`_BatchPreviewWorker` in background thread + cancellation)
+- model notes: `docs/PREVIEW_MINIMAL_COMPLETION_MODEL.md`
 
 UI behavior:
 - title is `Preview`
