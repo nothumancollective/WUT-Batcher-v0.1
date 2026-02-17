@@ -1,6 +1,29 @@
 ﻿# DEVLOG
 
 ## 2026-02-17
+### Update: Two-Tier Preview Minimal Definition (ATH-Minimal vs Policy-Minimal)
+#### Done
+- Introduced explicit two-tier completion semantics in `app/services.py`:
+  - `ath_minimal`:
+    - used by STL preview auto-completion only
+    - fills only the smallest set needed for robust preview generation
+    - keeps undefined values undefined whenever ATH defaults can safely apply
+  - `policy_minimal`:
+    - non-fatal interpretability layer (for future run-time UX prompts)
+    - computes missing recommended keys and corresponding default proposals
+- Preview payload now includes:
+  - `completion_tier`
+  - `policy_missing_keys`
+  - `policy_default_values`
+- Added service API groundwork for later Run-Batch dialog flow:
+  - `OrchestratorService.evaluate_batch_default_policy(...)`
+- Reduced preview over-completion behavior:
+  - `GCurve.Width` remains the ATH-minimal fallback for guiding-curve runs
+  - `GCurve.Dist` is no longer force-added in the minimal tier
+  - R-OSSE normalization no longer expands all defaults unless explicitly requested
+- Updated tests:
+  - `tests/test_preview_pipeline.py` extended for two-tier semantics and policy-gap reporting.
+
 ### Update: Minimal Completion Search Tooling (DB + ATH Oracle)
 #### Done
 - Added new search module: `app/minimal_completion_search.py`.
