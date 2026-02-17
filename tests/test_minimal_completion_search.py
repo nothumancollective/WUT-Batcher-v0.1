@@ -5,8 +5,16 @@ import sqlite3
 import tempfile
 import unittest
 
-from app.minimal_completion_search import _classify_run_status, run_minimal_completion_search
+from app.minimal_completion_search import (
+    ScenarioSpec,
+    _adaptive_complete_candidate,
+    _card_registry,
+    _catalog_map,
+    _classify_run_status,
+    run_minimal_completion_search,
+)
 from app.settings_store import UserSettings
+from ui.form_schema import build_project_form_schema
 
 
 def _init_experiment_db(path: Path) -> None:
@@ -96,6 +104,43 @@ class MinimalCompletionSearchTests(unittest.TestCase):
             self.assertEqual(int(params.get("Throat.Profile", -1)), 1)
             self.assertTrue(Path(str(summary.get("report_json"))).exists())
             self.assertTrue(Path(str(summary.get("report_md"))).exists())
+
+    def test_adaptive_completion_adds_required_gcurve_keys(self) -> None:
+        schema = build_project_form_schema()
+        _, key_to_card = _card_registry(schema)
+        catalog = _catalog_map()
+        scenario = ScenarioSpec(
+            scenario_id="test_gcurve",
+            description="",
+            included_cards=("profile", "basics", "mesh", "gcurve"),
+            selectors={"Throat.Profile": 1, "GCurve.Type": 1},
+            require_defined=(),
+            require_undefined=("Morph.TargetShape", "Mesh.Enclosure"),
+        )
+        params = {
+            "Throat.Profile": 1,
+            "Throat.Diameter": 25.4,
+            "Throat.Angle": 7.0,
+            "Coverage.Angle": 45.0,
+            "Term.s": 0.5,
+            "Term.n": 4.0,
+            "Term.q": 0.996,
+            "Mesh.AngularSegments": 64,
+            "Mesh.LengthSegments": 20,
+            "Mesh.ThroatResolution": 4.0,
+            "Mesh.InterfaceResolution": 8.0,
+            "GCurve.Type": 1,
+        }
+        completed, meta = _adaptive_complete_candidate(
+            params=params,
+            scenario=scenario,
+            key_to_card=key_to_card,
+            catalog_by_key=catalog,
+        )
+        self.assertIn("GCurve.Dist", completed)
+        self.assertIn("GCurve.Width", completed)
+        self.assertIn("GCurve.Dist", list(meta.get("added_keys", []) or []))
+        self.assertIn("GCurve.Width", list(meta.get("added_keys", []) or []))
 
 
 if __name__ == "__main__":

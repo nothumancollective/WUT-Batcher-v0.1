@@ -475,6 +475,7 @@ def cmd_ath_experiments_minimal_completion_search(args: argparse.Namespace) -> i
         max_seed_candidates=args.max_seed_candidates,
         max_eval_per_scenario=args.max_eval_per_scenario,
         scenario_filter=args.scenario_filter,
+        mesh_cmd=args.mesh_cmd,
     )
     print(json.dumps(summary, indent=2, ensure_ascii=False, default=_json_default))
     return 0
@@ -1653,6 +1654,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--scenario-filter",
         default="",
         help="Optional substring filter for scenario_id (e.g. s2_profile1 or s6_profile2).",
+    )
+    p_min_completion.add_argument(
+        "--mesh-cmd",
+        default="",
+        help="Optional override for ATH MeshCmd path (e.g. C:\\Tools\\ATH\\gmsh.exe).",
     )
     p_min_completion.add_argument(
         "--all-combinations",

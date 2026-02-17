@@ -36,6 +36,8 @@ from ui.form_schema import FormSchema, build_project_form_schema
 
 
 _NUMERIC_RE = re.compile(r"^[+-]?\d+(?:[.,]\d+)?(?:[eE][+-]?\d+)?$")
+_REQ_DE_RE = re.compile(r"^([A-Za-z0-9_.-]+)\s+ist\s+erforderlich\b", re.IGNORECASE)
+_REQ_EN_RE = re.compile(r"^([A-Za-z0-9_.-]+)\s+(?:is|was)\s+required\b", re.IGNORECASE)
 _CARD_ORDER: Tuple[str, ...] = ("profile", "basics", "mesh", "morph", "gcurve", "enclosure")
 
 # User-provided known-valid baseline. Used as synthetic fallback seed only.
@@ -106,6 +108,26 @@ def _safe_token(text: str, *, max_len: int = 24) -> str:
     if not cleaned:
         cleaned = "scenario"
     return cleaned[: max(4, int(max_len))]
+
+
+def _extract_mesh_cmd_from_runtime_cfg(path: Path) -> str:
+    if not path.exists():
+        return ""
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return ""
+    for raw in text.splitlines():
+        line = str(raw).strip()
+        if not line or line.startswith(";") or "=" not in line:
+            continue
+        left, right = line.split("=", 1)
+        if str(left).strip().lower() != "meshcmd":
+            continue
+        value = str(right).strip().strip('"').strip()
+        if value:
+            return value
+    return ""
 
 
 def _classify_run_status(*, ath_exit_code: Optional[int], stl_path: Optional[str]) -> str:
@@ -265,6 +287,7 @@ class _AthOracle:
         output_root: Path,
         cfg_dir: Path = Path(ATH_PREVIEW_CFG_DIR),
         export_root: Path = Path(ATH_PREVIEW_EXPORT_ROOT),
+        mesh_cmd_override: str = "",
     ) -> None:
         self.enabled = bool(enabled)
         self.output_root = output_root
@@ -272,6 +295,7 @@ class _AthOracle:
         self.export_root = Path(export_root)
         self.logs_root = self.output_root / "logs"
         self.logs_root.mkdir(parents=True, exist_ok=True)
+        self._mesh_cmd_override = str(mesh_cmd_override or "").strip()
         self._memory_cache: Dict[str, Dict[str, Any]] = {}
         self._cache_db_path = self.output_root / "oracle_cache.sqlite"
         self._conn = sqlite3.connect(str(self._cache_db_path))
@@ -327,26 +351,30 @@ class _AthOracle:
                 pass
         self._runtime_cfg_had_existing = False
 
-    def _prepare_runtime_cfg(self) -> None:
+    def _prepare_runtime_cfg(self) -> str:
         self.cfg_dir.mkdir(parents=True, exist_ok=True)
         self.export_root.mkdir(parents=True, exist_ok=True)
         had_existing = self._runtime_cfg_path.exists()
         self._runtime_cfg_had_existing = had_existing
+        existing_mesh_cmd = _extract_mesh_cmd_from_runtime_cfg(self._runtime_cfg_path)
         if had_existing:
             try:
                 shutil.copy2(self._runtime_cfg_path, self._runtime_cfg_backup)
             except Exception:
                 self._runtime_cfg_had_existing = False
-        mesh_cmd = ""
+        mesh_cmd = str(self._mesh_cmd_override or "").strip()
         if self._ath_exe is not None and self._ath_exe.exists():
             gmsh_candidate = self._ath_exe.parent / "gmsh.exe"
-            if gmsh_candidate.exists():
+            if (not mesh_cmd) and gmsh_candidate.exists():
                 mesh_cmd = str(gmsh_candidate)
+        if not mesh_cmd:
+            mesh_cmd = str(existing_mesh_cmd or "").strip()
         export_value = str(self.export_root).replace("\\", "/")
         self._runtime_cfg_path.write_text(
             f'OutputRootDir = "{export_value}"\nMeshCmd = "{mesh_cmd}"\nGnuplotPath = ""\n',
             encoding="utf-8",
         )
+        return mesh_cmd
 
     def _load_cached(self, config_hash: str) -> Optional[Dict[str, Any]]:
         if config_hash in self._memory_cache:
@@ -440,7 +468,7 @@ class _AthOracle:
             self._store_cached(config_hash, payload)
             return payload
 
-        self._prepare_runtime_cfg()
+        mesh_cmd_used = self._prepare_runtime_cfg()
         rendered_params = self._normalize_for_ath(params)
         cfg_text = render_cfg_text(
             template_text=self._template_text,
@@ -488,6 +516,7 @@ class _AthOracle:
                 "output_stl_forced": bool(output_stl_forced),
                 "cfg_path": str(cfg_path),
                 "expected_export_dir": str(export_dir),
+                "mesh_cmd_used": str(mesh_cmd_used or ""),
                 "stdout_log": str(result.stdout_log),
                 "stderr_log": str(result.stderr_log),
                 "summary_log": str(result.summary_log),
@@ -792,6 +821,93 @@ def _compat_summary(params: Mapping[str, Any]) -> Dict[str, Any]:
     return {"fatal_count": len(fatal), "warn_count": len(warn), "top_messages": top}
 
 
+def _extract_required_keys_from_fatal(fatal_issues: Sequence[Mapping[str, Any]]) -> List[str]:
+    keys: List[str] = []
+    for issue in list(fatal_issues or []):
+        if not isinstance(issue, Mapping):
+            continue
+        field_key = str(issue.get("field_key", "") or issue.get("key", "")).strip()
+        if field_key:
+            keys.append(field_key)
+            continue
+        message = str(issue.get("message", "")).strip()
+        match = _REQ_DE_RE.search(message)
+        if match:
+            keys.append(str(match.group(1)).strip())
+            continue
+        match = _REQ_EN_RE.search(message)
+        if match:
+            keys.append(str(match.group(1)).strip())
+    return sorted({str(key) for key in keys if str(key).strip()})
+
+
+def _adaptive_complete_candidate(
+    *,
+    params: Mapping[str, Any],
+    scenario: ScenarioSpec,
+    key_to_card: Mapping[str, str],
+    catalog_by_key: Mapping[str, Mapping[str, Any]],
+    max_rounds: int = 8,
+) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    working = {str(key): value for key, value in dict(params).items() if value is not None}
+    added_keys: List[str] = []
+    blocked_required: List[str] = []
+    unresolved_required: List[str] = []
+    final_fatal: List[Dict[str, Any]] = []
+    final_warn: List[Dict[str, Any]] = []
+    included = set(str(card) for card in scenario.included_cards)
+
+    for _ in range(max(1, int(max_rounds))):
+        report = validity_report({"fixed_params": dict(working), "limits": {}}, runner_mode=DEFAULT_RUNNER_MODE)
+        fatal = [dict(item) for item in list(report.get("fatal", []) or []) if isinstance(item, Mapping)]
+        warn = [dict(item) for item in list(report.get("warn", []) or []) if isinstance(item, Mapping)]
+        final_fatal = fatal
+        final_warn = warn
+        required_keys = _extract_required_keys_from_fatal(fatal)
+        if not required_keys:
+            break
+
+        changed = False
+        for key in required_keys:
+            key_s = str(key).strip()
+            if not key_s:
+                continue
+            if key_s in working:
+                continue
+            if key_s in scenario.require_undefined:
+                blocked_required.append(key_s)
+                continue
+            card = key_to_card.get(key_s)
+            allowed = (
+                (key_s in scenario.selectors and scenario.selectors.get(key_s) is not None)
+                or key_s in scenario.require_defined
+                or (card in included)
+            )
+            if not allowed:
+                blocked_required.append(key_s)
+                continue
+            fallback = _fallback_value_for_key(key_s, catalog_by_key)
+            if fallback is None:
+                unresolved_required.append(key_s)
+                continue
+            working[key_s] = fallback
+            added_keys.append(key_s)
+            changed = True
+        if not changed:
+            break
+
+    final_messages = [str(item.get("message", "")) for item in final_fatal[:4]]
+    metadata = {
+        "added_keys": sorted(set(added_keys)),
+        "blocked_required": sorted(set(blocked_required)),
+        "unresolved_required": sorted(set(unresolved_required)),
+        "fatal_count_post_completion": int(len(final_fatal)),
+        "warn_count_post_completion": int(len(final_warn)),
+        "fatal_messages_post_completion": final_messages,
+    }
+    return working, metadata
+
+
 def _profile_mode(scenario: ScenarioSpec) -> Optional[int]:
     raw = scenario.selectors.get("Throat.Profile")
     try:
@@ -950,7 +1066,7 @@ def _greedy_minimize(
     catalog_by_key: Mapping[str, Mapping[str, Any]],
     oracle: _AthOracle,
     max_eval: int,
-) -> Tuple[Optional[Dict[str, Any]], Dict[str, Any], int]:
+) -> Tuple[Optional[Dict[str, Any]], Dict[str, Any], int, Dict[str, Any]]:
     working = _inject_minimum_card_keys(
         {str(k): v for k, v in dict(seed.params).items() if v is not None},
         scenario=scenario,
@@ -958,14 +1074,25 @@ def _greedy_minimize(
         key_to_card=key_to_card,
         catalog_by_key=catalog_by_key,
     )
+    working, completion_meta = _adaptive_complete_candidate(
+        params=working,
+        scenario=scenario,
+        key_to_card=key_to_card,
+        catalog_by_key=catalog_by_key,
+    )
     if not _scenario_compliant(working, scenario, key_to_card=key_to_card):
-        return (None, {"feasible": False, "detail": {"error": "seed_not_compliant"}}, 0)
+        return (
+            None,
+            {"feasible": False, "status": "invalidScenario", "detail": {"error": "seed_not_compliant"}},
+            0,
+            completion_meta,
+        )
 
     eval_count = 0
     current_eval = oracle.evaluate(working, scenario_id=scenario.scenario_id)
     eval_count += 1
     if not bool(current_eval.get("feasible")):
-        return (None, current_eval, eval_count)
+        return (None, current_eval, eval_count, completion_meta)
 
     while eval_count < max_eval:
         improved = False
@@ -982,6 +1109,12 @@ def _greedy_minimize(
                     continue
             candidate = dict(working)
             candidate.pop(str(key), None)
+            candidate, candidate_completion_meta = _adaptive_complete_candidate(
+                params=candidate,
+                scenario=scenario,
+                key_to_card=key_to_card,
+                catalog_by_key=catalog_by_key,
+            )
             if not _scenario_compliant(candidate, scenario, key_to_card=key_to_card):
                 continue
             candidate_eval = oracle.evaluate(candidate, scenario_id=scenario.scenario_id)
@@ -995,13 +1128,14 @@ def _greedy_minimize(
             ):
                 working = candidate
                 current_eval = candidate_eval
+                completion_meta = candidate_completion_meta
                 improved = True
                 break
             if eval_count >= max_eval:
                 break
         if not improved:
             break
-    return (working, current_eval, eval_count)
+    return (working, current_eval, eval_count, completion_meta)
 
 
 def _write_reports(*, output_root: Path, summary: Mapping[str, Any]) -> Dict[str, str]:
@@ -1018,16 +1152,17 @@ def _write_reports(*, output_root: Path, summary: Mapping[str, Any]) -> Dict[str
     lines.append(f"- verify_with_ath: `{summary.get('verify_with_ath')}`")
     lines.append(f"- scenarios: `{summary.get('scenario_count')}`")
     lines.append("")
-    lines.append("| scenario | status | source | objective | cards | key_count | notes |")
-    lines.append("|---|---|---|---|---|---:|---|")
+    lines.append("| scenario | status | ath | source | objective | cards | key_count | notes |")
+    lines.append("|---|---|---|---|---|---|---:|---|")
     for row in list(summary.get("results", []) or []):
         if not isinstance(row, Mapping):
             continue
         notes = ", ".join(str(item) for item in list(row.get("notes", []) or []))
         objective = json.dumps(row.get("objective", []), ensure_ascii=False)
         cards = ",".join(str(item) for item in list(row.get("included_cards", []) or []))
+        ath_status = str((row.get("ath") or {}).get("status", "") or "")
         lines.append(
-            f"| `{row.get('scenario_id')}` | `{row.get('status')}` | `{row.get('source')}` | `{objective}` | "
+            f"| `{row.get('scenario_id')}` | `{row.get('status')}` | `{ath_status}` | `{row.get('source')}` | `{objective}` | "
             f"`{cards}` | {int(row.get('key_count', 0) or 0)} | {notes} |"
         )
     md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -1046,6 +1181,7 @@ def run_minimal_completion_search(
     max_seed_candidates: int = 12,
     max_eval_per_scenario: int = 250,
     scenario_filter: str = "",
+    mesh_cmd: str = "",
 ) -> Dict[str, Any]:
     schema = build_project_form_schema()
     card_keys, key_to_card = _card_registry(schema)
@@ -1068,6 +1204,7 @@ def run_minimal_completion_search(
         enabled=bool(verify_with_ath),
         settings=settings,
         output_root=output_root_path,
+        mesh_cmd_override=mesh_cmd,
     )
 
     results: List[Dict[str, Any]] = []
@@ -1115,7 +1252,7 @@ def run_minimal_completion_search(
                         notes=["db_observed_candidate"],
                     )
                 else:
-                    params, ath_eval, eval_count = _greedy_minimize(
+                    params, ath_eval, eval_count, completion_meta = _greedy_minimize(
                         seed=seed,
                         scenario=scenario,
                         key_to_card=key_to_card,
@@ -1126,6 +1263,9 @@ def run_minimal_completion_search(
                     )
                     total_eval += int(eval_count)
                     if params is None:
+                        status_token = str(ath_eval.get("status", "")).strip()
+                        if status_token:
+                            attempt_errors.append(f"{seed.source}:{status_token}")
                         detail = dict(ath_eval.get("detail", {}) or {})
                         error_token = str(detail.get("error", "")).strip()
                         if error_token:
@@ -1156,6 +1296,7 @@ def run_minimal_completion_search(
                             "stl_path": ath_eval.get("stl_path"),
                             "cached": bool(ath_eval.get("cached", False)),
                             "detail": dict(ath_eval.get("detail", {}) or {}),
+                            "compat_completion": dict(completion_meta),
                         },
                         compat=_compat_summary(params),
                         notes=["ath_verified"],
@@ -1205,6 +1346,32 @@ def run_minimal_completion_search(
     finally:
         oracle.close()
 
+    alignment: Dict[str, int] = {}
+    if verify_with_ath:
+        alignment = {
+            "compat_fatal0_and_stl": 0,
+            "compat_fatal0_and_not_stl": 0,
+            "compat_fatal_gt0_and_stl": 0,
+            "compat_fatal_gt0_and_not_stl": 0,
+        }
+        for row in results:
+            if not isinstance(row, Mapping):
+                continue
+            ath = dict(row.get("ath", {}) or {})
+            ath_status = str(ath.get("status", "") or "").strip()
+            if ath_status not in {"stl", "noStl", "athFail"}:
+                continue
+            completion_meta = dict(ath.get("compat_completion", {}) or {})
+            fatal_count = int(completion_meta.get("fatal_count_post_completion", 0) or 0)
+            if fatal_count <= 0 and ath_status == "stl":
+                alignment["compat_fatal0_and_stl"] += 1
+            elif fatal_count <= 0 and ath_status != "stl":
+                alignment["compat_fatal0_and_not_stl"] += 1
+            elif fatal_count > 0 and ath_status == "stl":
+                alignment["compat_fatal_gt0_and_stl"] += 1
+            else:
+                alignment["compat_fatal_gt0_and_not_stl"] += 1
+
     summary: Dict[str, Any] = {
         "generated_at": _now_iso(),
         "optimization_problem": (
@@ -1220,6 +1387,8 @@ def run_minimal_completion_search(
         "max_eval_per_scenario": int(max_eval_per_scenario),
         "ath_eval_calls": int(total_eval),
         "scenario_filter": filter_token,
+        "mesh_cmd": str(mesh_cmd or ""),
+        "compat_ath_alignment": alignment,
         "results": results,
     }
     files = _write_reports(output_root=output_root_path, summary=summary)

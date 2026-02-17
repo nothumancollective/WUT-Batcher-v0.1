@@ -47,6 +47,7 @@ Wichtige Optionen:
 - `--scenario-filter` nur Szenarien mit Teilstring im `scenario_id`
 - `--all-combinations` Step-7 Matrix aktivieren
 - `--ath-exe`, `--template-cfg` Overrides für ATH-Verify-Modus
+- `--mesh-cmd` optionaler Override für `MeshCmd` (wichtig, wenn ATH keine STL ohne externes Meshing erzeugt)
 
 ## Empfohlene Ausführung
 1. Schnellstart (nur beobachtete Minima):
@@ -62,6 +63,7 @@ python -m app ath-experiments minimal-completion-search `
 python -m app ath-experiments minimal-completion-search `
   --verify-ath `
   --scenario-filter s2_profile1_basic_mesh `
+  --mesh-cmd C:\Tools\ATH\gmsh.exe `
   --seed-run-limit 5000 `
   --max-seed-candidates 8 `
   --max-eval-per-scenario 200 `
@@ -73,6 +75,7 @@ python -m app ath-experiments minimal-completion-search `
 python -m app ath-experiments minimal-completion-search `
   --verify-ath `
   --all-combinations `
+  --mesh-cmd C:\Tools\ATH\gmsh.exe `
   --seed-run-limit 40000 `
   --max-seed-candidates 12 `
   --max-eval-per-scenario 300 `
@@ -90,6 +93,8 @@ Im `output-root`:
 - `ATH-verified` kann lang laufen (viele Oracle-Calls).
 - Pro Oracle-Evaluation wird eine eigene CFG (`mc_<scenario>_<hash>_<token>.cfg`) geschrieben;
   der erwartete Exportordner ist entsprechend eindeutig unter `C:\\Horns\\mc_<...>\\`.
+- Wenn `MeshCmd` leer ist, kann ATH trotz `Output.STL=1` ohne STL enden (`noStl`).
+  In diesem Fall `--mesh-cmd` setzen oder `ath.cfg` mit gültigem MeshCmd pflegen.
 - Run-Klassifikation im Oracle:
   - `stl`: `Output.STL=1` und STL vorhanden (`size > 0`)
   - `noStl`: `Output.STL=1`, ATH exit `0`, aber keine STL im erwarteten Exportordner

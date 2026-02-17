@@ -18,6 +18,9 @@
   - `docs/MINIMAL_COMPLETION_SEARCH.md` with model explanation and run commands.
   - Oracle classification clarified: `stl` / `noStl` / `athFail`.
   - ATH-verify now uses unique cfg/export basenames per evaluation for deterministic STL-path attribution.
+  - Added adaptive required-field completion before ATH oracle calls (stepwise "rantasten").
+  - Added compatibility-vs-ATH alignment counters in summary output.
+  - Added CLI option `--mesh-cmd` for explicit MeshCmd override in ATH verify runs.
 
 ### Update: Preview Minimal Completion + R-OSSE Normalization
 #### Done
