@@ -413,6 +413,25 @@ def _apply_sweepability_rules(
     return {key for key in sweepable if key not in locked and key in visible}
 
 
+def _fallback_sweepable_keys(
+    *,
+    bundle: AthKnowledgeBundle,
+    visible: Set[str],
+) -> Set[str]:
+    numeric_scalar_types = {"float", "int", "expr"}
+    fallback: Set[str] = set()
+    for item in list(bundle.catalog.get("parameters", []) or []):
+        if not isinstance(item, dict):
+            continue
+        key = str(item.get("key", "")).strip()
+        if not key or key not in visible:
+            continue
+        ath_type = str(item.get("type", "")).strip().lower()
+        if ath_type in numeric_scalar_types:
+            fallback.add(key)
+    return fallback
+
+
 def _build_validity_issues(
     rules: Sequence[Dict[str, Any]],
     values: Dict[str, Any],
@@ -567,6 +586,9 @@ def sweepable_params(
     visible = _apply_visibility_rules(keys, rules, values)
     sweepable = _apply_sweepability_rules(rules, values, visible)
     _apply_runner_restrictions(visible, sweepable, values, ruleset, runner_mode)
+    if not sweepable:
+        sweepable = _fallback_sweepable_keys(bundle=bundle, visible=visible)
+        _apply_runner_restrictions(visible, sweepable, values, ruleset, runner_mode)
     return _sorted_keys(sweepable, keys)
 
 
@@ -583,6 +605,8 @@ def validity_report(
 
     visible = _apply_visibility_rules(keys, rules, values)
     sweepable = _apply_sweepability_rules(rules, values, visible)
+    if not sweepable:
+        sweepable = _fallback_sweepable_keys(bundle=bundle, visible=visible)
     issues = _build_validity_issues(rules, values)
     issues.extend(_build_semantic_issues(rules, values))
     issues.extend(_apply_runner_restrictions(visible, sweepable, values, ruleset, runner_mode))

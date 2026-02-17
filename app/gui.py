@@ -1986,6 +1986,9 @@ class BatchPage(QWidget):
     def set_preview_mesh(self, path: str) -> None:
         self.preview_panel.set_preview_mesh(str(path))
 
+    def set_preview_parameters(self, parameters: Dict[str, Any]) -> None:
+        self.preview_panel.set_preview_parameters(dict(parameters or {}))
+
     def set_project_fixed_keys(self, keys: List[str]) -> None:
         self._project_fixed_keys = {str(item) for item in list(keys or []) if str(item).strip()}
         self.parameter_form.set_project_fixed_keys(sorted(self._project_fixed_keys))
@@ -2078,6 +2081,7 @@ class BatchPage(QWidget):
             self.export_panel.set_from_payload({})
             self.set_eta(None, sample_count=0, median_seconds=None)
             self.preview_panel.set_busy(False)
+            self.preview_panel.set_preview_parameters({})
             self.preview_panel.set_info_message("No preview mesh loaded.")
         finally:
             self._suspend_draft_events = False
@@ -2163,7 +2167,9 @@ class BatchPage(QWidget):
         self.action_status_pill.style().polish(self.action_status_pill)
         has_name = bool(self.batch_name.text().strip())
         can_save = fatal_count == 0 and has_name
-        can_run = fatal_count == 0 and has_name
+        # Keep run button interactive once a name is present; run-time validation
+        # dialog explains blockers/default options without silently disabling action.
+        can_run = has_name
         self.save_btn.setEnabled(can_save)
         self.run_btn.setEnabled(can_run)
         if not has_name:
@@ -2282,13 +2288,13 @@ class ProjectManagerWindow(QMainWindow):
         self.project_list.clear()
         for project in self.service.list_projects():
             item = QListWidgetItem()
-            item.setIcon(self._project_tile_icon(project.name))
+            item.setIcon(self._project_tile_icon(project.name, project.project_id))
             item.setText("")
             item.setToolTip(f"{project.project_id} | {project.name}")
             item.setData(Qt.UserRole, project.project_id)
             self.project_list.addItem(item)
 
-    def _project_tile_icon(self, project_name: str) -> QIcon:
+    def _project_tile_icon(self, project_name: str, project_id: str) -> QIcon:
         pixmap = QPixmap(170, 120)
         pixmap.fill(Qt.transparent)
         painter = QPainter(pixmap)
@@ -2306,15 +2312,31 @@ class ProjectManagerWindow(QMainWindow):
         painter.setFont(title_font)
         painter.drawText(8, 8, 154, 22, Qt.AlignCenter | Qt.TextWordWrap, str(project_name or "Project"))
 
-        painter.setPen(QColor("#252B33"))
-        painter.setBrush(QColor("#1A1F25"))
-        painter.drawRoundedRect(18, 36, 134, 72, 8, 8)
-        painter.setPen(QColor("#3A424D"))
-        painter.drawLine(28, 95, 78, 58)
-        painter.drawLine(78, 58, 112, 86)
-        painter.drawLine(112, 86, 138, 65)
-        painter.setBrush(QColor("#3A424D"))
-        painter.drawEllipse(38, 54, 8, 8)
+        thumbnail_rect = (18, 36, 134, 72)
+        image_path = self.service.project_preview_image_path(project_id)
+        preview = QPixmap(str(image_path)) if image_path.exists() else QPixmap()
+        if not preview.isNull():
+            clipped = preview.scaled(
+                thumbnail_rect[2],
+                thumbnail_rect[3],
+                Qt.KeepAspectRatioByExpanding,
+                Qt.SmoothTransformation,
+            )
+            painter.setClipRect(*thumbnail_rect)
+            painter.drawPixmap(thumbnail_rect[0], thumbnail_rect[1], clipped)
+            painter.setClipping(False)
+            painter.setPen(QColor("#323941"))
+            painter.drawRoundedRect(*thumbnail_rect, 8, 8)
+        else:
+            painter.setPen(QColor("#252B33"))
+            painter.setBrush(QColor("#1A1F25"))
+            painter.drawRoundedRect(*thumbnail_rect, 8, 8)
+            painter.setPen(QColor("#3A424D"))
+            painter.drawLine(28, 95, 78, 58)
+            painter.drawLine(78, 58, 112, 86)
+            painter.drawLine(112, 86, 138, 65)
+            painter.setBrush(QColor("#3A424D"))
+            painter.drawEllipse(38, 54, 8, 8)
         painter.end()
         return QIcon(pixmap)
 
@@ -2833,13 +2855,15 @@ class MainWindow(QMainWindow):
         block_count = int(counts.get("fatal", 0))
         if for_run:
             block_count += int(counts.get("incomplete", 0))
-        if not self._present_validation_summary(
-            title="Batch Validation Summary",
-            issues=issues,
-            block_on_fatal=(block_count > 0),
-        ):
-            self.set_status("Batch save blocked by validation.")
-            return None
+        should_prompt = not for_run or int(counts.get("fatal", 0)) > 0
+        if should_prompt:
+            if not self._present_validation_summary(
+                title="Batch Validation Summary",
+                issues=issues,
+                block_on_fatal=(block_count > 0),
+            ):
+                self.set_status("Batch save blocked by validation.")
+                return None
         summary = self.service.create_batch(
             project_id=self.current_project.project_id,
             batch_name=str(payload.get("batch_name", "")),
@@ -2853,7 +2877,8 @@ class MainWindow(QMainWindow):
             detail=json.dumps(asdict(summary), indent=2, ensure_ascii=False),
         )
         self.refresh_dashboard()
-        self.show_dashboard()
+        if not for_run:
+            self.show_dashboard()
         return summary.batch_id
 
     @staticmethod
@@ -2933,10 +2958,15 @@ class MainWindow(QMainWindow):
         batch_id = self._save_batch(run_payload, for_run=True)
         if self.current_project is None or not batch_id:
             return
+        self._ensure_project_preview_thumbnail()
         self.show_run()
         self.run_page.version_label.setText("Version 0/0")
         self.run_page.mode_label.setText("Mode: running...")
-        summary = self.service.run_batch(self.current_project.project_id, batch_id, continue_on_error=True)
+        try:
+            summary = self.service.run_batch(self.current_project.project_id, batch_id, continue_on_error=True)
+        except Exception as exc:
+            self.set_status(f"Run failed for {batch_id}", detail=str(exc))
+            return
         self.run_page.progress.setValue(100)
         self.run_page.version_label.setText(f"Version {len(summary.versions)}/{len(summary.versions)}")
         self.run_page.mode_label.setText("Mode: dry-run" if summary.dry_run else "Mode: real")
@@ -2945,6 +2975,17 @@ class MainWindow(QMainWindow):
             f"Run finished for {batch_id}",
             detail=json.dumps(asdict(summary), indent=2, ensure_ascii=False),
         )
+        self.refresh_dashboard()
+
+    def _ensure_project_preview_thumbnail(self) -> None:
+        if self.current_project is None:
+            return
+        target = self.service.project_preview_image_path(self.current_project.project_id)
+        if target.exists():
+            return
+        ok = self.batch_page.preview_panel.capture_snapshot(target)
+        if not ok:
+            return
         self.refresh_dashboard()
 
     def _open_export_dialog(self) -> None:
@@ -3118,6 +3159,7 @@ class MainWindow(QMainWindow):
             self.batch_page.apply_ui_risks([])
             self.batch_page.set_eta(None, sample_count=0, median_seconds=None)
             self.batch_page.set_preview_busy(False)
+            self.batch_page.set_preview_parameters({})
             self.batch_page.preview_panel.set_info_message("No preview mesh loaded.")
             return
         raw_payload = dict(payload)
@@ -3233,6 +3275,7 @@ class MainWindow(QMainWindow):
                 "sweep_mode": sweep_mode,
             }
         )
+        self.batch_page.set_preview_parameters(selected_params)
 
 
 class GuiController:

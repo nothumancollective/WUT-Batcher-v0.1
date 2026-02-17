@@ -67,12 +67,48 @@ class CompatibilityService:
     def __init__(self, bundle: AthKnowledgeBundle | None = None) -> None:
         self.bundle = bundle or load_ath_knowledge()
         self.ruleset = normalize_ruleset(self.bundle.ruleset, self.bundle.catalog)
+        self._catalog_by_key: Dict[str, Dict[str, Any]] = {}
+        fallback_sweepable: List[str] = []
+        for item in self.bundle.catalog.get("parameters", []):
+            if not isinstance(item, dict):
+                continue
+            key = str(item.get("key", "")).strip()
+            if not key:
+                continue
+            self._catalog_by_key[key] = dict(item)
+            ath_type = str(item.get("type", "")).strip().lower()
+            if ath_type in {"float", "int", "expr"}:
+                fallback_sweepable.append(key)
+        self._fallback_sweepable_keys = set(_sorted_unique(fallback_sweepable))
         self.catalog_keys = _sorted_unique(
             item.get("key", "")
             for item in self.bundle.catalog.get("parameters", [])
             if isinstance(item, dict)
         )
         self._rule_evidence_type = self._build_evidence_type_map(self.ruleset)
+
+    def _resolve_sweepable_keys(
+        self,
+        *,
+        visible: Sequence[str],
+        sweepable: Sequence[str],
+        locked: Sequence[str],
+    ) -> List[str]:
+        visible_set = {str(item) for item in list(visible or []) if str(item).strip()}
+        locked_set = {str(item) for item in list(locked or []) if str(item).strip()}
+        sweepable_set = {
+            str(item)
+            for item in list(sweepable or [])
+            if str(item).strip() and str(item) in visible_set and str(item) not in locked_set
+        }
+        if sweepable_set:
+            return _sorted_unique(sweepable_set)
+        fallback = {
+            key
+            for key in visible_set
+            if key in self._fallback_sweepable_keys and key not in locked_set
+        }
+        return _sorted_unique(fallback)
 
     def _build_evidence_type_map(self, ruleset: Dict[str, Any]) -> Dict[str, str]:
         mapping: Dict[str, str] = {}
@@ -206,8 +242,12 @@ class CompatibilityService:
             "runner_mode": resolved_runner_mode,
         }
         visible = visible_params(preview, runner_mode=resolved_runner_mode, bundle=self.bundle)
-        sweepable = sweepable_params(preview, runner_mode=resolved_runner_mode, bundle=self.bundle)
         locked = self.runner_locked_keys(resolved_runner_mode)
+        sweepable = self._resolve_sweepable_keys(
+            visible=visible,
+            sweepable=sweepable_params(preview, runner_mode=resolved_runner_mode, bundle=self.bundle),
+            locked=locked,
+        )
         report = validity_report(preview, runner_mode=resolved_runner_mode, bundle=self.bundle)
         issues = self._sort_and_dedup_issues([self._from_validity_issue(item) for item in report.get("issues", [])])
         return {
@@ -286,8 +326,12 @@ class CompatibilityService:
         preview_constraints = self._build_preview_constraints(constraints_payload, selected_params)
 
         visible = visible_params(preview_constraints, runner_mode=runner_mode, bundle=self.bundle)
-        sweepable = sweepable_params(preview_constraints, runner_mode=runner_mode, bundle=self.bundle)
         locked = self.runner_locked_keys(runner_mode)
+        sweepable = self._resolve_sweepable_keys(
+            visible=visible,
+            sweepable=sweepable_params(preview_constraints, runner_mode=runner_mode, bundle=self.bundle),
+            locked=locked,
+        )
 
         issues: List[CompatibilityIssue] = []
         report = validity_report(preview_constraints, runner_mode=runner_mode, bundle=self.bundle)
