@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from app.doctor_service import run_doctor_checks
 from app.constants import DEFAULT_RUNNER_MODE
@@ -764,6 +764,96 @@ class CleanupTestDataDialog(QDialog):
         apply_windows_dark_titlebar(self)
 
 
+class ConstraintSummaryGrid(QFrame):
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("ProjectSummaryPanel")
+        self._entries: List[tuple[str, str]] = []
+        root = QVBoxLayout(self)
+        root.setContentsMargins(10, 10, 10, 10)
+        root.setSpacing(8)
+        title = QLabel("Project Constraints")
+        title.setObjectName("SummaryTitle")
+        root.addWidget(title)
+        self._grid_wrap = QWidget()
+        self._grid = QGridLayout(self._grid_wrap)
+        self._grid.setContentsMargins(0, 0, 0, 0)
+        self._grid.setHorizontalSpacing(8)
+        self._grid.setVerticalSpacing(8)
+        root.addWidget(self._grid_wrap)
+        self._empty = QLabel("No project loaded.")
+        self._empty.setObjectName("SummaryText")
+        root.addWidget(self._empty)
+        self._clear_grid()
+
+    def _clear_grid(self) -> None:
+        while self._grid.count():
+            item = self._grid.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
+    @staticmethod
+    def _format_value(value: Any) -> str:
+        if isinstance(value, float):
+            return f"{value:.4g}"
+        if isinstance(value, list):
+            return ", ".join(str(item) for item in value)
+        return str(value)
+
+    def set_constraints_payload(self, payload: Optional[Dict[str, Any]]) -> None:
+        raw = dict(payload or {})
+        entries: List[tuple[str, str]] = []
+        for key, value in sorted(dict(raw.get("fixed_params", {}) or {}).items()):
+            entries.append((str(key), self._format_value(value)))
+        for key, value in sorted(dict(raw.get("limits", {}) or {}).items()):
+            entries.append((f"{key} (limit)", self._format_value(value)))
+        for row in list(raw.get("param_states", []) or []):
+            if not isinstance(row, dict):
+                continue
+            if not bool(row.get("is_set")):
+                continue
+            key = str(row.get("param_name", "")).strip()
+            if not key:
+                continue
+            if any(item[0] == key for item in entries):
+                continue
+            entries.append((key, self._format_value(row.get("value"))))
+        self._entries = entries
+        self._rebuild_grid()
+
+    def _rebuild_grid(self) -> None:
+        self._clear_grid()
+        if not self._entries:
+            self._empty.setVisible(True)
+            return
+        self._empty.setVisible(False)
+        width = max(int(self.width()), 1)
+        cols = 1 if width < 620 else (2 if width < 980 else 3)
+        for index, (key, value) in enumerate(list(self._entries)):
+            row = index // cols
+            col = index % cols
+            card = QFrame()
+            card.setObjectName("ConstraintCard")
+            card_layout = QVBoxLayout(card)
+            card_layout.setContentsMargins(8, 8, 8, 8)
+            card_layout.setSpacing(2)
+            k = QLabel(str(key))
+            k.setObjectName("SummaryMeta")
+            v = QLabel(str(value))
+            v.setObjectName("SummaryText")
+            v.setWordWrap(True)
+            card_layout.addWidget(k)
+            card_layout.addWidget(v)
+            self._grid.addWidget(card, row, col)
+        for col in range(cols):
+            self._grid.setColumnStretch(col, 1)
+
+    def resizeEvent(self, event) -> None:  # type: ignore[override]
+        super().resizeEvent(event)
+        self._rebuild_grid()
+
+
 class DashboardPage(QWidget):
     request_new_batch = Signal()
     request_edit_batch = Signal(str)
@@ -781,12 +871,11 @@ class DashboardPage(QWidget):
         title.setObjectName("PageTitle")
         root.addWidget(title)
 
-        self.constraints_summary = QTextEdit()
-        self.constraints_summary.setReadOnly(True)
-        self.constraints_summary.setPlaceholderText("Constraints summary")
+        self.constraints_summary = ConstraintSummaryGrid()
         root.addWidget(self.constraints_summary)
 
         self.batch_list = QListWidget()
+        self.batch_list.setObjectName("DashboardBatchList")
         root.addWidget(self.batch_list, 1)
 
         actions = QHBoxLayout()
@@ -822,6 +911,9 @@ class DashboardPage(QWidget):
         self.manage_runs_btn.clicked.connect(self.request_manage_runs.emit)
         self.cleanup_testdata_btn.clicked.connect(self.request_cleanup_testdata.emit)
         self.settings_btn.clicked.connect(self.request_settings.emit)
+
+    def set_constraints_payload(self, payload: Optional[Dict[str, Any]]) -> None:
+        self.constraints_summary.set_constraints_payload(payload)
 
     def _selected_batch_id(self) -> Optional[str]:
         item = self.batch_list.currentItem()
@@ -1191,18 +1283,21 @@ class ProjectPage(QWidget):
         self.summary_right = QWidget()
         self.summary_right.setObjectName("SummaryIssuesDock")
         summary_right_layout = QVBoxLayout(self.summary_right)
-        summary_right_layout.setContentsMargins(0, 0, 0, 0)
-        summary_right_layout.setSpacing(0)
-        self.issues_section = SummaryIssuesSection(self.summary_right)
-        self.issues_section.set_body_target_size(320, 74)
-        summary_right_layout.addWidget(self.issues_section, 1)
-        collapsed_width = self.issues_section.collapsed_width()
-        self.summary_right.setMinimumWidth(collapsed_width)
-        self.summary_right.setMaximumWidth(collapsed_width)
+        summary_right_layout.setContentsMargins(10, 8, 10, 8)
+        summary_right_layout.setSpacing(2)
+        self.summary_issue_title = QLabel("Validation")
+        self.summary_issue_title.setObjectName("SummaryTitle")
+        summary_right_layout.addWidget(self.summary_issue_title)
+        self.summary_issue_hint = QLabel("No validation issues.")
+        self.summary_issue_hint.setObjectName("IssueHint")
+        self.summary_issue_hint.setWordWrap(True)
+        summary_right_layout.addWidget(self.summary_issue_hint)
+        summary_right_layout.addStretch(1)
+        self.summary_right.setMinimumWidth(320)
+        self.summary_right.setMaximumWidth(420)
         summary_layout.addWidget(self.summary_right, 0)
         root.addWidget(self.summary_panel)
         root.addSpacing(2)
-        self._issues_open = False
 
         self.constraints_form = ParameterForm(build_project_form_schema())
         root.addWidget(self.constraints_form, 1)
@@ -1235,8 +1330,6 @@ class ProjectPage(QWidget):
         root.addWidget(self.action_bar)
 
         self.create_btn.clicked.connect(self._submit)
-        self.issues_section.header.toggled_request.connect(self._toggle_issues_panel)
-        self.issues_section.issue_selected.connect(self._focus_issue_key)
         self.constraints_form.changed.connect(self._emit_draft_changed)
         self.constraints_form.blocked_interaction.connect(self.blocked_interaction.emit)
 
@@ -1249,7 +1342,6 @@ class ProjectPage(QWidget):
         self._update_action_state()
         self._update_summary_panel()
         self._update_issues_panel()
-        QTimer.singleShot(0, self._sync_summary_issues_geometry)
 
     def _emit_draft_changed(self, payload: Dict[str, Any] | None = None) -> None:
         self.draft_changed.emit(payload or self._raw_constraints_payload())
@@ -1381,7 +1473,31 @@ class ProjectPage(QWidget):
         self._set_summary_chips(self._mode_chips(payload))
 
     def _update_issues_panel(self) -> None:
-        self.issues_section.set_issues(self._ui_issues)
+        counts = issue_counts(self._ui_issues)
+        fatal = int(counts.get("error", 0))
+        warn = int(counts.get("warn", 0))
+        incomplete = int(counts.get("incomplete", 0))
+        if self._ui_issues:
+            top = self._ui_issues[0]
+            teaser = str(top.message or "").strip()
+            if len(teaser) > 132:
+                teaser = f"{teaser[:129].rstrip()}..."
+        else:
+            teaser = "No validation issues."
+        if fatal > 0:
+            self.summary_issue_hint.setProperty("severity", "fatal")
+            self.summary_issue_hint.setText(teaser or f"{fatal} fatal issue(s).")
+        elif warn > 0:
+            self.summary_issue_hint.setProperty("severity", "warn")
+            self.summary_issue_hint.setText(teaser or f"{warn} warning(s).")
+        elif incomplete > 0:
+            self.summary_issue_hint.setProperty("severity", "")
+            self.summary_issue_hint.setText("Configuration incomplete. Fill required values when ready.")
+        else:
+            self.summary_issue_hint.setProperty("severity", "")
+            self.summary_issue_hint.setText("No validation issues.")
+        self.summary_issue_hint.style().unpolish(self.summary_issue_hint)
+        self.summary_issue_hint.style().polish(self.summary_issue_hint)
 
     def _update_action_state(self) -> None:
         counts = self._issue_counts()
@@ -1430,11 +1546,6 @@ class ProjectPage(QWidget):
         self.action_status_hint.setVisible(bool(hint))
         self.action_counts.setText(f"{fatal} errors · {warn} warnings · {incomplete} incomplete")
 
-        has_issues = fatal > 0 or warn > 0 or incomplete > 0
-        if not has_issues and self._issues_open:
-            self._set_issues_open(False, animated=False)
-        self.summary_right.setVisible(True)
-
         enabled = (fatal == 0) and (not self._creating_project)
         self.create_btn.setEnabled(enabled)
         if not enabled and fatal > 0:
@@ -1443,77 +1554,24 @@ class ProjectPage(QWidget):
             self.create_btn.setToolTip("")
 
     def _toggle_issues_panel(self) -> None:
-        if not self._ui_issues:
-            self._set_issues_open(False, animated=False)
-            self._update_action_state()
-            return
-        self._set_issues_open(not self._issues_open, animated=True)
-        self._update_action_state()
+        return
 
     def _focus_issue_key(self, key: str) -> None:
         self.constraints_form.focus_issue_key(str(key))
-        if self._issues_open:
-            self._set_issues_open(False, animated=True)
         self._update_action_state()
 
     def _set_issues_open(self, open_state: bool, *, animated: bool) -> None:
-        target_open = bool(open_state)
-        self._issues_open = target_open
-        collapsed_width, expanded_width, body_height = self._summary_issues_dimensions()
-        body_width = max(expanded_width - collapsed_width - 8, 220)
-        self.issues_section.set_body_target_size(body_width, body_height)
-        if target_open:
-            self.summary_right.setMinimumWidth(collapsed_width)
-            self.summary_right.setMaximumWidth(expanded_width)
-            self.issues_section.set_expanded(True, animated=animated)
-        else:
-            self.issues_section.set_expanded(False, animated=animated)
-            if animated:
-                QTimer.singleShot(
-                    210,
-                    lambda: (not self._issues_open)
-                    and self.summary_right.setMaximumWidth(collapsed_width),
-                )
-            else:
-                self.summary_right.setMaximumWidth(collapsed_width)
-            self.summary_right.setMinimumWidth(collapsed_width)
+        _ = (open_state, animated)
+        return
 
     def _summary_issues_dimensions(self) -> tuple[int, int, int]:
-        collapsed_width = max(self.issues_section.collapsed_width(), 78)
-        body_height = max(int(self.summary_panel.height()) - 16, 72)
-        expanded_width = collapsed_width + 240
-
-        mesh_widget = getattr(self.constraints_form, "mesh_scroll", None)
-        if mesh_widget is not None:
-            mesh_ref = mesh_widget.viewport()
-            mesh_left_global = int(mesh_ref.mapToGlobal(QPoint(0, 0)).x())
-            anchor_right_global = int(
-                self.summary_right.mapToGlobal(QPoint(max(int(self.summary_right.width()), collapsed_width), 0)).x()
-            )
-            target_width = max(anchor_right_global - mesh_left_global - 10, collapsed_width + 220)
-            expanded_width = max(expanded_width, target_width)
-
-        panel_width = int(self.summary_panel.width()) if self.summary_panel is not None else 0
-        if panel_width > 0:
-            expanded_width = min(expanded_width, max(panel_width - 8, collapsed_width + 220))
-
-        expanded_width = max(expanded_width, collapsed_width + 220)
-        return collapsed_width, expanded_width, body_height
+        return (320, 420, 96)
 
     def _sync_summary_issues_geometry(self) -> None:
-        collapsed_width, expanded_width, body_height = self._summary_issues_dimensions()
-        body_width = max(expanded_width - collapsed_width - 8, 220)
-        self.issues_section.set_body_target_size(body_width, body_height)
-        if self._issues_open:
-            self.summary_right.setMinimumWidth(collapsed_width)
-            self.summary_right.setMaximumWidth(expanded_width)
-        else:
-            self.summary_right.setMinimumWidth(collapsed_width)
-            self.summary_right.setMaximumWidth(collapsed_width)
+        return
 
     def resizeEvent(self, event) -> None:  # type: ignore[override]
         super().resizeEvent(event)
-        self._sync_summary_issues_geometry()
 
     def _submit(self) -> None:
         if not self.create_btn.isEnabled():
@@ -1974,6 +2032,7 @@ class ProjectManagerWindow(QMainWindow):
         title_bar.mouseReleaseEvent = self._title_mouse_release  # type: ignore[assignment]
 
         self.project_list = QListWidget()
+        self.project_list.setObjectName("ProjectTileList")
         self.project_list.setViewMode(QListView.IconMode)
         self.project_list.setResizeMode(QListView.Adjust)
         self.project_list.setMovement(QListView.Static)
@@ -2090,6 +2149,7 @@ class MainWindow(QMainWindow):
         self._batch_validation_timer.setSingleShot(True)
         self._batch_validation_timer.setInterval(self._batch_validation_debounce_ms)
         self._batch_validation_timer.timeout.connect(self._flush_batch_draft_validation)
+        self._project_manager_handler: Optional[Callable[[], None]] = None
 
         self.setWindowTitle("WUT Batcher")
         self.setMinimumSize(1280, 800)
@@ -2120,11 +2180,26 @@ class MainWindow(QMainWindow):
         self.status_message.clicked.connect(self._show_status_detail)
         bar.addWidget(self.status_message, 1)
 
+        self.project_manager_btn = QPushButton("Project Manager")
+        self.project_manager_btn.setObjectName("StatusActionButton")
+        self.project_manager_btn.setFixedHeight(28)
+        self.project_manager_btn.setMinimumWidth(148)
+        self.project_manager_btn.setMaximumWidth(178)
+        self.project_manager_btn.clicked.connect(self._open_project_manager)
+        bar.addPermanentWidget(self.project_manager_btn)
+
         self.brand = ClickableLabel("WUT BATCHER")
         self.brand.setObjectName("StatusBrand")
         self.brand.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.brand.clicked.connect(self._show_about)
         bar.addPermanentWidget(self.brand)
+
+    def set_project_manager_handler(self, handler: Callable[[], None]) -> None:
+        self._project_manager_handler = handler
+
+    def _open_project_manager(self) -> None:
+        if callable(self._project_manager_handler):
+            self._project_manager_handler()
 
     def _connect_page_signals(self) -> None:
         self.dashboard_page.request_new_batch.connect(self.show_batch)
@@ -2339,12 +2414,11 @@ class MainWindow(QMainWindow):
 
     def refresh_dashboard(self) -> None:
         if self.current_project is None:
-            self.dashboard_page.constraints_summary.setPlainText("No project loaded.")
+            self.dashboard_page.set_constraints_payload(None)
             self.dashboard_page.batch_list.clear()
             return
 
-        constraints_json = json.dumps(self.current_project.constraints.to_dict(), indent=2, ensure_ascii=False)
-        self.dashboard_page.constraints_summary.setPlainText(constraints_json)
+        self.dashboard_page.set_constraints_payload(self.current_project.constraints.to_dict())
         self.dashboard_page.batch_list.clear()
         for batch in self.service.repo.list_batches(self.current_project.project_id):
             label = f"{batch.batch_id} | {batch.extra.get('batch_name', batch.batch_id)}"
@@ -2746,6 +2820,7 @@ class GuiController:
         self.main_window = MainWindow(service)
         self.project_manager.open_project.connect(self._open_project)
         self.project_manager.create_project.connect(self._new_project)
+        self.main_window.set_project_manager_handler(self._open_project_manager_from_main)
 
     def show_project_manager(self) -> None:
         self.project_manager.refresh()
@@ -2779,6 +2854,11 @@ class GuiController:
         self._show_main_window_maximized()
         self.main_window.show_project()
         self.project_manager.hide()
+
+    def _open_project_manager_from_main(self) -> None:
+        self.project_manager.refresh()
+        self._show_window_normal_foreground(self.project_manager)
+        self.main_window.hide()
 
 
 def _make_splash(app: QApplication) -> QSplashScreen:

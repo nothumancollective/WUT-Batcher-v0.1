@@ -260,7 +260,7 @@ class ProjectFormUiTests(unittest.TestCase):
         self.assertEqual(captured[-1][0], "Throat.Profile")
         self.assertEqual(captured[-1][1], "Length")
 
-    def test_view_issues_panel_lists_all_and_orders_by_severity(self) -> None:
+    def test_validation_teaser_lists_top_issue_and_orders_internal_state(self) -> None:
         page = ProjectPage()
         page.resize(1600, 980)
         page._update_action_state()  # type: ignore[attr-defined]
@@ -290,14 +290,13 @@ class ProjectFormUiTests(unittest.TestCase):
                 },
             ]
         )
-        page._toggle_issues_panel()  # type: ignore[attr-defined]
-        self.assertTrue(page.issues_section.is_expanded())
-        self.assertFalse(page.issues_section.body.isHidden())
         self.assertGreaterEqual(len(page._ui_issues), 2)  # type: ignore[attr-defined]
         self.assertEqual(page._ui_issues[0].severity, "error")  # type: ignore[attr-defined]
         self.assertEqual(page._ui_issues[0].key, "Length")  # type: ignore[attr-defined]
+        self.assertIn("Length exceeds hard limit.", page.summary_issue_hint.text())
+        self.assertEqual(str(page.summary_issue_hint.property("severity")), "fatal")
 
-    def test_infobar_issues_header_toggle_expands_embedded_section(self) -> None:
+    def test_project_summary_right_matches_batch_style_validation_teaser(self) -> None:
         page = ProjectPage()
         page.apply_ui_risks(
             [
@@ -308,10 +307,9 @@ class ProjectFormUiTests(unittest.TestCase):
                 }
             ]
         )
-        self.assertFalse(page.issues_section.is_expanded())
-        page._toggle_issues_panel()  # type: ignore[attr-defined]
-        self.assertTrue(page.issues_section.is_expanded())
-        self.assertGreater(page.summary_right.maximumWidth(), 124)
+        self.assertTrue(hasattr(page, "summary_issue_hint"))
+        self.assertIn("Length exceeds hard limit.", page.summary_issue_hint.text())
+        self.assertGreaterEqual(page.summary_right.minimumWidth(), 300)
 
     def test_numeric_input_normalizes_decimal_comma_to_dot(self) -> None:
         editor = self.form.editor_for_key("Throat.Diameter")
