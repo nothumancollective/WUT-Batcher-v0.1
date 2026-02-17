@@ -2111,6 +2111,57 @@ class MainWindow(QMainWindow):
                 keys.add(key)
         return sorted(keys)
 
+    @staticmethod
+    def _sanitize_batch_payload_for_project_constraints(
+        payload: Dict[str, Any],
+        constraints: ProjectConstraints,
+        project_compat_state: Dict[str, Any],
+    ) -> tuple[Dict[str, Any], bool]:
+        visible_keys = {
+            str(item)
+            for item in list(project_compat_state.get("visible_keys", []) or [])
+            if str(item).strip()
+        }
+        sweepable_keys = {
+            str(item)
+            for item in list(project_compat_state.get("sweepable_keys", []) or [])
+            if str(item).strip()
+        }
+        fixed_keys = set(MainWindow._project_fixed_keys_from_constraints(constraints))
+
+        selected_in = dict(payload.get("selected_params", {}) or {})
+        sweeps_in = dict(payload.get("sweeps", {}) or {})
+
+        selected_out: Dict[str, Any] = {}
+        for key, value in selected_in.items():
+            key_s = str(key).strip()
+            if not key_s:
+                continue
+            if key_s in fixed_keys:
+                continue
+            if key_s not in visible_keys:
+                continue
+            selected_out[key_s] = value
+
+        sweeps_out: Dict[str, Any] = {}
+        for key, sweep in sweeps_in.items():
+            key_s = str(key).strip()
+            if not key_s:
+                continue
+            if key_s in fixed_keys:
+                continue
+            if key_s not in visible_keys:
+                continue
+            if key_s not in sweepable_keys:
+                continue
+            sweeps_out[key_s] = sweep
+
+        changed = (selected_out != selected_in) or (sweeps_out != sweeps_in)
+        sanitized = dict(payload)
+        sanitized["selected_params"] = selected_out
+        sanitized["sweeps"] = sweeps_out
+        return sanitized, changed
+
     def set_status(self, text: str, detail: Optional[str] = None) -> None:
         self.status_message.setText(text)
         self.last_status_detail = detail or text
@@ -2285,6 +2336,13 @@ class MainWindow(QMainWindow):
         if self.current_project is None:
             self.set_status("No project loaded.")
             return None
+        project_compat_state = self.service.evaluate_project_constraints(self.current_project.constraints.to_dict())
+        sanitized_payload, _changed = self._sanitize_batch_payload_for_project_constraints(
+            dict(payload),
+            self.current_project.constraints,
+            project_compat_state,
+        )
+        payload = sanitized_payload
         selected_params = dict(payload.get("selected_params", {}) or {})
         validation = self.service.evaluate_batch_definition(
             project_id=self.current_project.project_id,
@@ -2492,6 +2550,13 @@ class MainWindow(QMainWindow):
             )
             self.batch_page.set_eta(None, sample_count=0, median_seconds=None)
             return
+        project_compat_state = self.service.evaluate_project_constraints(self.current_project.constraints.to_dict())
+        sanitized_payload, _changed = self._sanitize_batch_payload_for_project_constraints(
+            dict(payload),
+            self.current_project.constraints,
+            project_compat_state,
+        )
+        payload = sanitized_payload
         sweep_mode = str(payload.get("sweep_mode", "single"))
         selected_params = dict(payload.get("selected_params", {}) or {})
         sweeps = dict(payload.get("sweeps", {}) or {})
