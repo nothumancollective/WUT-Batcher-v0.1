@@ -1,6 +1,23 @@
 ﻿# DEVLOG
 
 ## 2026-02-17
+### Update: Field Ordering + Numeric Guardrail Research
+#### Done
+- Introduced shared field display ordering (`field_display_priority`) in `ui/form_schema.py`.
+- Applied ordering consistently to:
+  - Project form rendering (`ui/form_builder.py`)
+  - Batch form rendering (`ui/batch_parameter_form.py`)
+  - Mode-page and object-property ordering.
+- Added card-internal subgroup clustering on Batch page for better scanability:
+  - Basics, Morph, Mesh subgroup buckets.
+- Added research doc for modern hard numeric input constraints:
+  - `docs/UI_FIELD_ORDERING_AND_NUMERIC_GUARDRAILS_2026-02-17.md`
+
+#### Impact
+- Mandatory/high-impact inputs are surfaced earlier in each card.
+- Project and Batch now present consistent ordering semantics.
+- Numeric guardrail strategy is documented with Qt + accessibility references.
+
 ### Update: Contextual Safe-Range Analysis For ATH Experiments
 #### Done
 - Added context-stratified range extraction:

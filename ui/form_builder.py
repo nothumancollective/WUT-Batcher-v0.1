@@ -7,7 +7,7 @@ import re
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from ui.form_metrics import FORM_METRICS, configure_single_column_grid, configure_two_column_grid
-from ui.form_schema import FieldSpec, FormSchema, ModeStackSpec, build_project_form_schema
+from ui.form_schema import FieldSpec, FormSchema, ModeStackSpec, build_project_form_schema, field_display_priority
 
 try:
     from PySide6.QtCore import (
@@ -1643,6 +1643,20 @@ class ParameterForm(QWidget):
             grouped.setdefault(group_name, []).append(field)
         return grouped
 
+    @staticmethod
+    def _field_sort_tuple(field: FieldSpec) -> tuple[int, int, str]:
+        return (field_display_priority(str(field.key)), int(field.order), str(field.key))
+
+    def _ordered_keys(self, keys: Iterable[str]) -> List[str]:
+        return sorted(
+            [str(item) for item in list(keys or []) if str(item).strip()],
+            key=lambda key: (
+                field_display_priority(key),
+                int(self._field_specs.get(key).order) if self._field_specs.get(key) is not None else 100_000,
+                key,
+            ),
+        )
+
     def _add_group_by_name(
         self,
         parent_layout: QVBoxLayout,
@@ -1668,7 +1682,15 @@ class ParameterForm(QWidget):
             return
 
         selection_priority = {"Mesh.Quadrants": 0, "Mesh.RearShape": 1}
-        ordered = sorted(fields, key=lambda field: (selection_priority.get(field.key, 9), field.order))
+        ordered = sorted(
+            fields,
+            key=lambda field: (
+                selection_priority.get(field.key, 9),
+                field_display_priority(str(field.key)),
+                int(field.order),
+                str(field.key),
+            ),
+        )
 
         box = AccordionGroupBox("Core")
         _finalize_group_box(box)
@@ -1697,19 +1719,19 @@ class ParameterForm(QWidget):
         selection_fields = [field for field in ordered if field.key in selection_keys]
         other_fields = [field for field in ordered if field.key not in selection_keys]
         core_body_order = [
-            "Mesh.AngularSegments",
-            "Mesh.LengthSegments",
-            "Mesh.ZMapPoints",
-            "Mesh.CornerSegments",
-            "Mesh.ThroatSegments",
             "Mesh.ThroatResolution",
             "Mesh.MouthResolution",
+            "Mesh.AngularSegments",
+            "Mesh.LengthSegments",
+            "Mesh.CornerSegments",
+            "Mesh.ThroatSegments",
             "Mesh.InterfaceResolution",
+            "Mesh.ZMapPoints",
             "Mesh.SubdomainSlices",
+            "Mesh.InterfaceOffset",
             "Mesh.InterfaceDraw",
             "Mesh.WallThickness",
             "Mesh.RearResolution",
-            "Mesh.InterfaceOffset",
         ]
         rank = {key: index for index, key in enumerate(core_body_order)}
         other_fields.sort(key=lambda field: rank.get(field.key, 10_000))
@@ -1760,7 +1782,7 @@ class ParameterForm(QWidget):
         *,
         column_key: str,
     ) -> None:
-        fields = sorted(grouped_fields.get("Morph", []), key=lambda field: field.order)
+        fields = sorted(grouped_fields.get("Morph", []), key=self._field_sort_tuple)
         if not fields:
             return
 
@@ -1832,7 +1854,7 @@ class ParameterForm(QWidget):
         *,
         column_key: str,
     ) -> None:
-        fields = sorted(grouped_fields.get("Rollback", []), key=lambda field: field.order)
+        fields = sorted(grouped_fields.get("Rollback", []), key=self._field_sort_tuple)
         if not fields:
             return
 
@@ -1905,7 +1927,7 @@ class ParameterForm(QWidget):
             box = AccordionGroupBox(group_name)
             _finalize_group_box(box)
             self._register_group_box(box, column_key=column_key)
-            ordered = sorted(group_fields, key=lambda field: field.order)
+            ordered = sorted(group_fields, key=self._field_sort_tuple)
             if column_key == "Geometry":
                 dense_grid = self._build_geometry_dense_grid()
                 for field in ordered:
@@ -1979,7 +2001,7 @@ class ParameterForm(QWidget):
                 common_box = ContextFrame("Common")
                 if column_key == "Geometry":
                     common_grid = self._build_geometry_dense_grid()
-                    for key in sorted(common_keys):
+                    for key in self._ordered_keys(common_keys):
                         field = self._field_specs.get(key)
                         if field is None:
                             continue
@@ -1992,7 +2014,7 @@ class ParameterForm(QWidget):
                     common_widget = QWidget()
                     common_grid = QGridLayout(common_widget)
                     configure_two_column_grid(common_grid)
-                    for index, key in enumerate(sorted(common_keys)):
+                    for index, key in enumerate(self._ordered_keys(common_keys)):
                         field = self._field_specs.get(key)
                         if field is None:
                             continue
@@ -2010,7 +2032,7 @@ class ParameterForm(QWidget):
             pages.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
             index_by_value: Dict[Optional[int], int] = {}
             for page in stack.pages:
-                page_fields = [key for key in page.field_keys if key not in common_keys]
+                page_fields = self._ordered_keys([key for key in page.field_keys if key not in common_keys])
                 page_single_field = self._field_specs.get(page_fields[0]) if len(page_fields) == 1 else None
                 single_object_page = bool(
                     page_single_field is not None and page_single_field.widget_kind == "object"
@@ -2075,7 +2097,7 @@ class ParameterForm(QWidget):
             pages.currentChanged.connect(lambda *_args, box=box: box.adjustSize())
             self._mode_widgets[stack.controller_key] = (pages, index_by_value)
             if common_keys:
-                self._mode_common_frames[stack.controller_key] = (common_box, tuple(sorted(common_keys)))
+                self._mode_common_frames[stack.controller_key] = (common_box, tuple(self._ordered_keys(common_keys)))
             parent_layout.addWidget(box)
 
     def _ensure_editor(self, field: FieldSpec) -> QWidget:

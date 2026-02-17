@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from ui.form_builder import AccordionGroupBox, ContextFrame, ObjectFieldEditor, ScalarFieldEditor, SegmentedEnumInput
-from ui.form_schema import FieldSpec, FormSchema, ModeStackSpec, build_project_form_schema
+from ui.form_schema import FieldSpec, FormSchema, ModeStackSpec, build_project_form_schema, field_display_priority
 
 try:
     from PySide6.QtCore import Qt, QTimer, Signal
@@ -247,9 +247,27 @@ class BatchParameterForm(QWidget):
             result[str(page.value)] = str(page.label).strip() or str(page.value)
         return result
 
+    @staticmethod
+    def _field_sort_tuple(field: FieldSpec) -> tuple[int, int, str]:
+        return (field_display_priority(str(field.key)), int(field.order), str(field.key))
+
     def _subgroup_for_field(self, field: FieldSpec, group_name: str) -> Tuple[int, str]:
         if field.key in self._mode_stacks:
             return (0, "Mode")
+
+        if group_name == "Basics":
+            key = str(field.key)
+            if key == "Length":
+                return (0, "Primary")
+            if key in {"Throat.Diameter", "Throat.Angle", "Coverage.Angle"}:
+                return (1, "Throat")
+            if key in {"Throat.Ext.Length", "Throat.Ext.Angle"}:
+                return (2, "Throat Extension")
+            if key == "Slot.Length":
+                return (3, "Slot")
+            if key == "Rot":
+                return (4, "Orientation")
+            return (5, "General")
 
         if group_name == "Throat Profile":
             mode = _extract_mode_tag_value(field.ui_mode_tags, "Throat.Profile")
@@ -273,6 +291,32 @@ class BatchParameterForm(QWidget):
             if mode == "<unset>":
                 return (4, "Coverage")
             return (4, "General")
+
+        if group_name == "Morph":
+            key = str(field.key)
+            if key == "Morph.TargetShape":
+                return (0, "Mode")
+            if key in {"Morph.TargetWidth", "Morph.TargetHeight"}:
+                return (1, "Target")
+            if key in {"Morph.CornerRadius", "Morph.AllowShrinkage"}:
+                return (2, "Shape")
+            if key in {"Morph.FixedPart", "Morph.Rate"}:
+                return (3, "Transition")
+            return (4, "General")
+
+        if group_name == "Mesh":
+            key = str(field.key)
+            if key in {"Mesh.Quadrants", "Mesh.RearShape"}:
+                return (0, "Topology")
+            if key in {"Mesh.ThroatResolution", "Mesh.MouthResolution"}:
+                return (1, "Required")
+            if key in {"Mesh.AngularSegments", "Mesh.LengthSegments", "Mesh.CornerSegments", "Mesh.ThroatSegments"}:
+                return (2, "Segments")
+            if key in {"Mesh.InterfaceResolution", "Mesh.SubdomainSlices", "Mesh.InterfaceOffset", "Mesh.InterfaceDraw"}:
+                return (3, "Interfaces")
+            if key in {"Mesh.ZMapPoints", "Mesh.WallThickness", "Mesh.RearResolution"}:
+                return (4, "Advanced")
+            return (5, "General")
 
         return (0, "General")
 
@@ -307,7 +351,7 @@ class BatchParameterForm(QWidget):
             group_name = self._display_group_name(field)
             grouped.setdefault(group_name, []).append(field)
         for rows in grouped.values():
-            rows.sort(key=lambda item: (int(item.order), str(item.key)))
+            rows.sort(key=self._field_sort_tuple)
 
         for group_name in self._ordered_group_names(grouped):
             box = AccordionGroupBox(group_name)
@@ -322,6 +366,7 @@ class BatchParameterForm(QWidget):
                 key=lambda field: (
                     self._subgroup_for_field(field, group_name)[0],
                     self._subgroup_for_field(field, group_name)[1],
+                    field_display_priority(str(field.key)),
                     int(field.order),
                     str(field.key),
                 ),

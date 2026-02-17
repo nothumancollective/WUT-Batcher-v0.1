@@ -20,6 +20,84 @@ _UNIT_OVERRIDES: Dict[str, str] = {
     "R-OSSE.a": "deg/2",
 }
 
+# Shared UI display priority so project and batch forms keep identical, task-oriented ordering.
+_FIELD_DISPLAY_PRIORITY: Dict[str, int] = {
+    # Basics
+    "Length": 10,
+    "Throat.Diameter": 20,
+    "Throat.Angle": 30,
+    "Coverage.Angle": 40,
+    "Throat.Ext.Length": 50,
+    "Throat.Ext.Angle": 60,
+    "Slot.Length": 70,
+    "Rot": 80,
+    # Throat modes
+    "OS.k": 100,
+    "Term.s": 110,
+    "Term.n": 120,
+    "Term.q": 130,
+    "CircArc.Radius": 140,
+    "CircArc.TermAngle": 150,
+    "R-OSSE": 160,
+    # R-OSSE object properties
+    "R-OSSE.R": 161,
+    "R-OSSE.a": 162,
+    "R-OSSE.m": 163,
+    "R-OSSE.r0": 164,
+    "R-OSSE.k": 165,
+    "R-OSSE.b": 166,
+    "R-OSSE.a0": 167,
+    "R-OSSE.r": 168,
+    "R-OSSE.q": 169,
+    # GCurve
+    "GCurve.Type": 200,
+    "GCurve.Dist": 210,
+    "GCurve.Width": 220,
+    "GCurve.AspectRatio": 230,
+    "GCurve.SE.n": 240,
+    "GCurve.SF.a": 250,
+    "GCurve.SF.b": 260,
+    "GCurve.SF.m1": 270,
+    "GCurve.SF.m2": 280,
+    "GCurve.SF.n1": 290,
+    "GCurve.SF.n2": 300,
+    "GCurve.SF.n3": 310,
+    "GCurve.Rot": 320,
+    # Morph
+    "Morph.TargetShape": 400,
+    "Morph.TargetWidth": 410,
+    "Morph.TargetHeight": 420,
+    "Morph.CornerRadius": 430,
+    "Morph.FixedPart": 440,
+    "Morph.Rate": 450,
+    "Morph.AllowShrinkage": 460,
+    # Mesh/Core
+    "Mesh.Quadrants": 500,
+    "Mesh.RearShape": 510,
+    "Mesh.ThroatResolution": 520,
+    "Mesh.MouthResolution": 530,
+    "Mesh.AngularSegments": 540,
+    "Mesh.LengthSegments": 550,
+    "Mesh.CornerSegments": 560,
+    "Mesh.ThroatSegments": 570,
+    "Mesh.InterfaceResolution": 580,
+    "Mesh.ZMapPoints": 590,
+    "Mesh.SubdomainSlices": 600,
+    "Mesh.InterfaceOffset": 610,
+    "Mesh.InterfaceDraw": 620,
+    "Mesh.WallThickness": 630,
+    "Mesh.RearResolution": 640,
+    # Enclosure
+    "Mesh.Enclosure": 700,
+    "Mesh.Enclosure.Depth": 710,
+    "Mesh.Enclosure.Spacing": 720,
+    "Mesh.Enclosure.EdgeType": 730,
+    "Mesh.Enclosure.EdgeRadius": 740,
+    "Mesh.Enclosure.FrontResolution": 750,
+    "Mesh.Enclosure.BackResolution": 760,
+    "Mesh.Enclosure.Plan": 770,
+}
+
 
 @dataclass(frozen=True)
 class EnumSpec:
@@ -102,6 +180,13 @@ def _field_label(param: Mapping[str, Any], fallback_key: str) -> str:
     if label:
         return label
     return _title_from_key(fallback_key)
+
+
+def field_display_priority(key: str) -> int:
+    token = str(key or "").strip()
+    if not token:
+        return 100_000
+    return int(_FIELD_DISPLAY_PRIORITY.get(token, 100_000))
 
 
 def _numeric_limits(param: Mapping[str, Any]) -> Tuple[Optional[float], Optional[float]]:
@@ -255,7 +340,12 @@ def _mode_stacks(
             page_targets = set(controller_modes.get(value, set()))
             if controller_key == "GCurve.Type":
                 page_targets.update(gcurve_common)
-            page_keys = tuple(sorted(page_targets))
+            page_keys = tuple(
+                sorted(
+                    page_targets,
+                    key=lambda item: (field_display_priority(str(item)), str(item)),
+                )
+            )
             pages.append(ModePageSpec(value=value, label=label, field_keys=page_keys))
 
         if controller_key == "Throat.Profile":
@@ -330,7 +420,11 @@ def _property_specs(
         return ()
 
     specs: List[FieldSpec] = []
-    for index, (property_name, property_schema_raw) in enumerate(properties.items()):
+    ordered_properties = sorted(
+        list(properties.items()),
+        key=lambda item: (field_display_priority(f"{parent_key}.{str(item[0]).strip()}"), str(item[0])),
+    )
+    for index, (property_name, property_schema_raw) in enumerate(ordered_properties):
         if not isinstance(property_schema_raw, dict):
             continue
         property_key = f"{parent_key}.{property_name}"
