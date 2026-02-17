@@ -452,6 +452,34 @@ def cmd_ath_experiments_analyze_compare_mismatch(args: argparse.Namespace) -> in
     return 0
 
 
+def cmd_ath_experiments_minimal_completion_search(args: argparse.Namespace) -> int:
+    from app.minimal_completion_search import run_minimal_completion_search
+
+    settings_store = SettingsStore()
+    loaded = settings_store.load()
+    settings = UserSettings(
+        library_root=loaded.library_root,
+        ath_exe=(args.ath_exe or loaded.ath_exe),
+        akabak_exe=loaded.akabak_exe,
+        vacs_exe=loaded.vacs_exe,
+        template_cfg=(args.template_cfg or loaded.template_cfg),
+    )
+    summary = run_minimal_completion_search(
+        settings=settings,
+        reports_root=args.reports_root,
+        output_root=args.output_root,
+        run_group=args.run_group,
+        include_all_combinations=bool(args.all_combinations),
+        verify_with_ath=bool(args.verify_ath),
+        seed_run_limit=args.seed_run_limit,
+        max_seed_candidates=args.max_seed_candidates,
+        max_eval_per_scenario=args.max_eval_per_scenario,
+        scenario_filter=args.scenario_filter,
+    )
+    print(json.dumps(summary, indent=2, ensure_ascii=False, default=_json_default))
+    return 0
+
+
 def _inspect_ui_tool(
     *,
     tool_name: str,
@@ -1580,6 +1608,65 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional tag inserted into filenames (e.g. v2).",
     )
     p_analyze_compare.set_defaults(func=cmd_ath_experiments_analyze_compare_mismatch)
+
+    p_min_completion = sub_ath_exp_admin.add_parser(
+        "minimal-completion-search",
+        help=(
+            "Search minimal per-card parameter configurations (minXY) for STL-feasible ATH geometry "
+            "using experiment DB seeds and optional ATH verification."
+        ),
+    )
+    p_min_completion.add_argument(
+        "--reports-root",
+        default="reports/ath_experiments",
+        help="ATH experiment reports root containing ath_experiments.sqlite",
+    )
+    p_min_completion.add_argument(
+        "--output-root",
+        default="reports/minimal_completion",
+        help="Output folder for summary JSON/Markdown and oracle cache",
+    )
+    p_min_completion.add_argument(
+        "--run-group",
+        default="all",
+        help="Run-group selector (single, comma-separated, or 'all') for seed extraction",
+    )
+    p_min_completion.add_argument(
+        "--seed-run-limit",
+        type=int,
+        default=20000,
+        help="Maximum number of successful runs loaded as seed pool from ath_experiments.sqlite",
+    )
+    p_min_completion.add_argument(
+        "--max-seed-candidates",
+        type=int,
+        default=12,
+        help="Maximum seed candidates retained per scenario before minimization",
+    )
+    p_min_completion.add_argument(
+        "--max-eval-per-scenario",
+        type=int,
+        default=250,
+        help="ATH oracle evaluation budget per scenario (used only with --verify-ath)",
+    )
+    p_min_completion.add_argument(
+        "--scenario-filter",
+        default="",
+        help="Optional substring filter for scenario_id (e.g. s2_profile1 or s6_profile2).",
+    )
+    p_min_completion.add_argument(
+        "--all-combinations",
+        action="store_true",
+        help="Include full step-7 combination matrix (can significantly increase runtime).",
+    )
+    p_min_completion.add_argument(
+        "--verify-ath",
+        action="store_true",
+        help="Enable real ATH STL feasibility oracle and greedy minimization (slow, robust).",
+    )
+    p_min_completion.add_argument("--ath-exe", help="Override ATH executable path used for --verify-ath")
+    p_min_completion.add_argument("--template-cfg", help="Override template CFG path used for --verify-ath")
+    p_min_completion.set_defaults(func=cmd_ath_experiments_minimal_completion_search)
 
     p_ui = sub.add_parser("ui", help="UI automation inspection utilities.")
     sub_ui = p_ui.add_subparsers(dest="ui_cmd", required=True)
