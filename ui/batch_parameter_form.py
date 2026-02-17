@@ -130,6 +130,14 @@ class _FieldRow:
     button_layout: bool
 
 
+@dataclass
+class _SubgroupHeader:
+    group_name: str
+    subgroup_name: str
+    label: QLabel
+    keys: set[str]
+
+
 class BatchParameterForm(QWidget):
     changed = Signal()
     blocked_interaction = Signal(str, str, str)
@@ -161,6 +169,7 @@ class BatchParameterForm(QWidget):
         self._blocked_keys: set[str] = set()
         self._hidden_ui_keys: set[str] = set()
         self._risk_targets_by_key: Dict[str, List[QWidget]] = {}
+        self._subgroup_headers: List[_SubgroupHeader] = []
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -236,13 +245,16 @@ class BatchParameterForm(QWidget):
             return (4, "General")
 
         if group_name == "GCurve":
+            key = str(field.key)
+            if key in {"GCurve.Dist", "GCurve.Width", "GCurve.AspectRatio", "GCurve.Rot"}:
+                return (1, "Common")
+            if key == "GCurve.SE.n":
+                return (2, "Superellipse")
+            if key.startswith("GCurve.SF"):
+                return (3, "Superformula")
             mode = _extract_mode_tag_value(field.ui_mode_tags, "GCurve.Type")
-            if mode == "1":
-                return (1, "Superellipse")
-            if mode == "2":
-                return (2, "Superformula")
             if mode == "<unset>":
-                return (3, "Coverage")
+                return (4, "Coverage")
             return (4, "General")
 
         return (0, "General")
@@ -297,6 +309,12 @@ class BatchParameterForm(QWidget):
                     str(field.key),
                 ),
             )
+            subgroup_keys: Dict[str, set[str]] = {}
+            for field in ordered_fields:
+                subgroup_name = self._subgroup_for_field(field, group_name)[1]
+                if subgroup_name == "General":
+                    continue
+                subgroup_keys.setdefault(str(subgroup_name), set()).add(str(field.key))
             for field in ordered_fields:
                 subgroup_order, subgroup_name = self._subgroup_for_field(field, group_name)
                 _ = subgroup_order
@@ -304,6 +322,14 @@ class BatchParameterForm(QWidget):
                     subgroup_label = QLabel(subgroup_name)
                     subgroup_label.setObjectName("IssuesPanelGroupTitle")
                     box.body_layout().addWidget(subgroup_label)
+                    self._subgroup_headers.append(
+                        _SubgroupHeader(
+                            group_name=str(group_name),
+                            subgroup_name=str(subgroup_name),
+                            label=subgroup_label,
+                            keys=set(subgroup_keys.get(str(subgroup_name), set())),
+                        )
+                    )
                     last_subgroup = subgroup_name
                 if subgroup_name == "General":
                     last_subgroup = "General"
@@ -616,6 +642,8 @@ class BatchParameterForm(QWidget):
         trigger_key = str(self._last_changed_key or "").strip()
         if not trigger_key:
             return
+        if trigger_key == "Mesh.Enclosure":
+            return
         trigger = self._rows.get(trigger_key)
         if trigger is None:
             return
@@ -839,6 +867,11 @@ class BatchParameterForm(QWidget):
         for group_name, box in self._group_boxes.items():
             any_visible = any((row.group_name == group_name) and (not row.container.isHidden()) for row in self._rows.values())
             box.setVisible(any_visible)
+        for header in self._subgroup_headers:
+            visible = any(
+                (key in self._rows) and (not self._rows[key].container.isHidden()) for key in list(header.keys or set())
+            )
+            header.label.setVisible(bool(visible))
 
         visible_boxes = [box for box in self._accordion_boxes if box.isVisible()]
         expanded = [box for box in visible_boxes if not box.is_collapsed()]

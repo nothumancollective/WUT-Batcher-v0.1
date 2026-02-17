@@ -1408,7 +1408,7 @@ class ParameterForm(QWidget):
         self._hover_tooltip_timer.setSingleShot(True)
         self._hover_tooltip_timer.setInterval(90)
         self._hover_tooltip_timer.timeout.connect(self._show_pending_risk_tooltip)
-        self._risk_popup = RiskHelperPopup(self.window())
+        self._risk_popup = RiskHelperPopup(self)
 
         root = QHBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)

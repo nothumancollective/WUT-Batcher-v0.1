@@ -1545,7 +1545,6 @@ class BatchPage(QWidget):
         name_layout.setSpacing(10)
         self.batch_name = QLineEdit()
         self.batch_name.setPlaceholderText("Batch Name")
-        self.batch_name.setMinimumWidth(420)
         name_layout.addWidget(self.batch_name, 0, Qt.AlignLeft)
         name_layout.addStretch(1)
         root.addWidget(name_row)
@@ -1715,6 +1714,10 @@ class BatchPage(QWidget):
         right_width = max((body_total - body_spacing) // 3, 1)
         self._right_panel.setMinimumWidth(right_width)
         self._right_panel.setMaximumWidth(right_width)
+
+        name_width = max(240, available_width // 3)
+        self.batch_name.setMinimumWidth(name_width)
+        self.batch_name.setMaximumWidth(name_width)
 
     def _emit_draft_changed(self) -> None:
         if self._suspend_draft_events:
@@ -2369,6 +2372,7 @@ class MainWindow(QMainWindow):
             )
         raw_issues = [item for item in list(validation.get("issues", []) or []) if isinstance(item, dict)]
         issues = self._normalize_batch_issues_for_ui(raw_issues, selected_params=selected_params)
+        issues.extend(self.batch_page.export_panel.validation_issues())
         counts = self._batch_issue_counts(issues)
         block_count = int(counts.get("fatal", 0))
         if for_run:
@@ -2675,7 +2679,8 @@ class MainWindow(QMainWindow):
             [dict(item) for item in list(batch_field_issues_raw or []) if isinstance(item, dict)],
             selected_params=selected_params,
         )
-        self.batch_page.apply_ui_risks(batch_field_issues)
+        export_validation_issues = [dict(item) for item in list(self.batch_page.export_panel.validation_issues() or [])]
+        self.batch_page.apply_ui_risks([*batch_field_issues, *export_validation_issues])
 
         estimate = self.service.estimate_batch_runtime(
             project_id=self.current_project.project_id,
@@ -2819,8 +2824,6 @@ def launch_gui() -> int:
             "Doctor ok.",
             detail=json.dumps(doctor_payload, indent=2, ensure_ascii=False),
         )
-    apply_windows_dark_titlebar(controller.main_window)
-    apply_windows_dark_titlebar(controller.project_manager)
     splash.finish(controller.project_manager)
     controller.show_project_manager()
     return app.exec()

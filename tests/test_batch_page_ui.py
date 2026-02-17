@@ -257,6 +257,30 @@ class BatchPageUiTests(unittest.TestCase):
         expected_right = max((available - int(page._body_layout.spacing())) // 3, 1)
         self.assertAlmostEqual(page._right_panel.width(), expected_right, delta=5)
 
+    def test_batch_name_input_uses_one_third_width(self) -> None:
+        page = BatchPage()
+        page.resize(1500, 900)
+        page.show()
+        self.app.processEvents()
+        margins = page._root_layout.contentsMargins()
+        available = int(page.width() - margins.left() - margins.right())
+        expected = max(240, available // 3)
+        self.assertAlmostEqual(page.batch_name.width(), expected, delta=5)
+
+    def test_gcurve_subgroup_headers_hidden_for_no_gcurve(self) -> None:
+        page = BatchPage()
+        state = self._compat_state(selected_params={"GCurve.Type": None})
+        page.apply_compatibility(state)
+        headers = [
+            label
+            for label in page.parameter_form.findChildren(QLabel)
+            if label.objectName() == "IssuesPanelGroupTitle"
+            and str(label.text()).strip() in {"Superellipse", "Superformula"}
+        ]
+        self.assertTrue(headers, "Expected GCurve subgroup headers to exist.")
+        for header in headers:
+            self.assertTrue(header.isHidden())
+
     def test_sweep_button_locks_base_editor_when_active(self) -> None:
         page = BatchPage()
         state = self._compat_state()
