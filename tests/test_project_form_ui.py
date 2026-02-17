@@ -191,6 +191,23 @@ class ProjectFormUiTests(unittest.TestCase):
         self.assertTrue(page.create_btn.isEnabled())
         self.assertFalse(page.summary_right.isHidden())
 
+    def test_compat_ui_hidden_keys_are_applied_in_project_form(self) -> None:
+        page = ProjectPage()
+        service = CompatibilityService()
+        state = service.evaluate_project_constraints(
+            {
+                "fixed_params": {"Length": 200.0},
+                "limits": {},
+                "runner_mode": DEFAULT_RUNNER_MODE,
+            }
+        )
+        state["compat_ui_state"] = {"hidden_keys": ["GCurve.Type"], "blocked_options": {}}
+        page.apply_compatibility(state)
+        editor = page.constraints_form.editor_for_key("GCurve.Type")
+        self.assertIsNotNone(editor)
+        assert editor is not None
+        self.assertTrue(editor.isHidden())
+
     def test_blocked_segment_option_emits_interaction_and_keeps_selection(self) -> None:
         page = ProjectPage()
         service = CompatibilityService()

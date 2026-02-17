@@ -222,6 +222,16 @@ class BatchPageUiTests(unittest.TestCase):
         self.assertTrue(gcurve.container.isHidden())
         self.assertTrue(enclosure.container.isHidden())
 
+    def test_compat_ui_hidden_keys_are_applied_in_batch_form(self) -> None:
+        page = BatchPage()
+        state = self._compat_state()
+        state["compat_ui_state"] = {"hidden_keys": ["GCurve.Type"], "blocked_options": {}}
+        page.apply_compatibility(state)
+        row = page.parameter_form._rows.get("GCurve.Type")
+        if row is None:
+            self.skipTest("GCurve.Type not available.")
+        self.assertTrue(row.container.isHidden())
+
     def test_labels_do_not_render_key_suffix(self) -> None:
         page = BatchPage()
         row = page.parameter_form._rows.get("Length")
