@@ -2036,6 +2036,7 @@ class MainWindow(QMainWindow):
         self._project_validation_timer.setSingleShot(True)
         self._project_validation_timer.setInterval(self._project_validation_debounce_ms)
         self._project_validation_timer.timeout.connect(self._flush_project_draft_validation)
+        self._project_reconcile_guard = False
         self._batch_validation_debounce_ms = 100
         self._pending_batch_payload: Optional[Dict[str, object]] = None
         self._batch_reconcile_guard = False
@@ -2542,6 +2543,21 @@ class MainWindow(QMainWindow):
         state = dict(state_raw)
         state["compat_ui_state"] = ui_state
         self.project_page.apply_compatibility(state)
+        if not self._project_reconcile_guard:
+            reconciled_payload = self.project_page._raw_constraints_payload()
+            reconciled_constraints = {
+                "fixed_params": dict(reconciled_payload.get("fixed_params", {}) or {}),
+                "limits": dict(reconciled_payload.get("limits", {}) or {}),
+                "param_states": [item for item in list(reconciled_payload.get("param_states", []) or []) if isinstance(item, dict)],
+                "runner_mode": runner_mode,
+            }
+            if reconciled_constraints != constraints_payload:
+                self._project_reconcile_guard = True
+                try:
+                    self._on_project_draft_changed(reconciled_payload)
+                finally:
+                    self._project_reconcile_guard = False
+                return
         visible_keys = set(str(item) for item in list(state.get("visible_keys", []) or []))
         issues = [item for item in list(state.get("issues", []) or []) if isinstance(item, dict)]
         field_issues = self.ui_validation.evaluate(
