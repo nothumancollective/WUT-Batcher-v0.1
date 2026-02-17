@@ -49,3 +49,30 @@ def test_sanitize_batch_payload_prunes_non_visible_and_fixed_keys() -> None:
     assert changed is True
     assert sanitized["selected_params"] == {"GCurve.Dist": 120.0}
     assert sanitized["sweeps"] == {"GCurve.Dist": {"start": 100.0, "end": 140.0, "steps": 3}}
+
+
+def test_sanitize_batch_payload_keeps_sweeps_if_current_batch_state_allows_them() -> None:
+    constraints = ProjectConstraints(
+        project_id="P001",
+        fixed_params={"Length": 200.0},
+        limits={},
+        param_states=[],
+    )
+    payload = {
+        "batch_name": "B1",
+        "sweep_mode": "single",
+        "selected_params": {"Term.s": 0.4},
+        "sweeps": {"Term.s": {"start": 0.3, "end": 0.5, "steps": 3}},
+    }
+    current_batch_state = {
+        "visible_keys": ["Length", "Term.s"],
+        "sweepable_keys": ["Term.s"],
+    }
+    sanitized, changed = MainWindow._sanitize_batch_payload_for_project_constraints(
+        payload,
+        constraints,
+        current_batch_state,
+    )
+    assert changed is False
+    assert sanitized["selected_params"] == {"Term.s": 0.4}
+    assert sanitized["sweeps"] == {"Term.s": {"start": 0.3, "end": 0.5, "steps": 3}}
