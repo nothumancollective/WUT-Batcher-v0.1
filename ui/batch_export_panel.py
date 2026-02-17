@@ -1,12 +1,12 @@
-"""Batch export settings panel with presets and structured advanced cards."""
+"""Batch export settings panel with compact presets and advanced dialog."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Sequence, Set
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Set
 
 try:
-    from PySide6.QtCore import Qt, Signal
+    from PySide6.QtCore import QPoint, Qt, Signal
     from PySide6.QtGui import QDoubleValidator, QIntValidator
     from PySide6.QtWidgets import (
         QComboBox,
@@ -17,6 +17,8 @@ try:
         QLabel,
         QLineEdit,
         QPushButton,
+        QScrollArea,
+        QSizePolicy,
         QVBoxLayout,
         QWidget,
     )
@@ -63,65 +65,52 @@ def _normalize_sim_mode(value: str) -> str:
 @dataclass
 class _SimpleGraphState:
     enabled: bool = False
-    variant: str = "main"
-    fmt: str = "txt"
 
     @classmethod
-    def from_dict(cls, payload: Dict[str, Any]) -> "_SimpleGraphState":
-        return cls(
-            enabled=bool(payload.get("enabled", False)),
-            variant=str(payload.get("variant", "main") or "main").strip() or "main",
-            fmt=str(payload.get("fmt", "txt") or "txt").strip().lower() or "txt",
-        )
+    def from_dict(cls, payload: Mapping[str, Any]) -> "_SimpleGraphState":
+        return cls(enabled=bool(payload.get("enabled", False)))
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
-            "enabled": bool(self.enabled),
-            "variant": str(self.variant or "main").strip() or "main",
-            "fmt": str(self.fmt or "txt").strip().lower() or "txt",
-        }
+        return {"enabled": bool(self.enabled)}
 
 
 @dataclass
 class _PolarCardState:
     enabled: bool = False
     polar_name: str = ""
-    variant: str = "main"
-    fmt: str = "txt"
     map_angle_start: int = 0
     map_angle_end: int = 90
     map_angle_steps: int = 19
     distance_m: float = 2.0
     offset: int = 145
     inclination: int = 90
+    norm_angle: int = 0
 
     @classmethod
-    def from_dict(cls, payload: Dict[str, Any]) -> "_PolarCardState":
+    def from_dict(cls, payload: Mapping[str, Any]) -> "_PolarCardState":
         return cls(
             enabled=bool(payload.get("enabled", False)),
             polar_name=str(payload.get("polar_name", "") or "").strip(),
-            variant=str(payload.get("variant", "main") or "main").strip() or "main",
-            fmt=str(payload.get("fmt", "txt") or "txt").strip().lower() or "txt",
             map_angle_start=int(payload.get("map_angle_start", 0) or 0),
             map_angle_end=int(payload.get("map_angle_end", 90) or 90),
             map_angle_steps=max(1, int(payload.get("map_angle_steps", 19) or 19)),
             distance_m=float(payload.get("distance_m", 2.0) or 2.0),
             offset=int(payload.get("offset", 145) or 145),
             inclination=int(payload.get("inclination", 90) or 90),
+            norm_angle=int(payload.get("norm_angle", 0) or 0),
         )
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "enabled": bool(self.enabled),
             "polar_name": str(self.polar_name or "").strip(),
-            "variant": str(self.variant or "main").strip() or "main",
-            "fmt": str(self.fmt or "txt").strip().lower() or "txt",
             "map_angle_start": int(self.map_angle_start),
             "map_angle_end": int(self.map_angle_end),
             "map_angle_steps": max(1, int(self.map_angle_steps)),
             "distance_m": float(self.distance_m),
             "offset": int(self.offset),
             "inclination": int(self.inclination),
+            "norm_angle": int(self.norm_angle),
         }
 
 
@@ -134,8 +123,8 @@ class _AdvancedState:
     @classmethod
     def defaults(cls) -> "_AdvancedState":
         return cls(
-            spl=_SimpleGraphState(enabled=False, variant="main", fmt="txt"),
-            impedance=_SimpleGraphState(enabled=False, variant="main", fmt="txt"),
+            spl=_SimpleGraphState(enabled=False),
+            impedance=_SimpleGraphState(enabled=False),
             polars=[_PolarCardState(enabled=False) for _ in range(3)],
         )
 
@@ -150,9 +139,12 @@ class _AdvancedState:
 class _AdvancedDialog(QDialog):
     def __init__(self, state: _AdvancedState, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Advanced Export Settings")
+        self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.setProperty("framelessShell", True)
         self.setModal(True)
-        self.setMinimumWidth(760)
+        self.setMinimumSize(760, 620)
+        self._drag_offset: Optional[QPoint] = None
 
         self._initial = state.to_dict()
         self._current = _AdvancedState(
@@ -161,30 +153,64 @@ class _AdvancedDialog(QDialog):
             polars=[_PolarCardState.from_dict(item.to_dict()) for item in list(state.polars)],
         )
 
-        root = QVBoxLayout(self)
-        root.setContentsMargins(12, 12, 12, 12)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(10, 10, 10, 10)
+        outer.setSpacing(0)
+        shell = QFrame()
+        shell.setObjectName("FramelessShell")
+        outer.addWidget(shell)
+        root = QVBoxLayout(shell)
+        root.setContentsMargins(12, 10, 12, 12)
         root.setSpacing(10)
 
+        title_bar = QWidget()
+        title_row = QHBoxLayout(title_bar)
+        title_row.setContentsMargins(0, 0, 0, 0)
+        title_row.setSpacing(8)
+        title = QLabel("Advanced Export Settings")
+        title.setObjectName("SectionTitle")
+        title_row.addWidget(title)
+        title_row.addStretch(1)
+        close_btn = QPushButton("X")
+        close_btn.setObjectName("WindowCloseButton")
+        close_btn.setFixedSize(28, 24)
+        close_btn.clicked.connect(self.reject)
+        title_row.addWidget(close_btn, alignment=Qt.AlignRight)
+        root.addWidget(title_bar)
+        title_bar.mousePressEvent = self._title_mouse_press  # type: ignore[assignment]
+        title_bar.mouseMoveEvent = self._title_mouse_move  # type: ignore[assignment]
+        title_bar.mouseReleaseEvent = self._title_mouse_release  # type: ignore[assignment]
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        root.addWidget(scroll, 1)
+        content = QWidget()
+        scroll.setWidget(content)
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(10)
+
         hint = QLabel(
-            "ATH guide defaults: Polar -> ABEC.Polars:SPL_V with MapAngleRange, Distance, Offset, Inclination."
+            "ATH guide defaults: ABEC.Polars:SPL_V uses MapAngleRange, Distance, Offset, Inclination, NormAngle."
         )
         hint.setObjectName("SummaryText")
         hint.setWordWrap(True)
-        root.addWidget(hint)
+        content_layout.addWidget(hint)
 
-        top_cards = QHBoxLayout()
-        top_cards.setContentsMargins(0, 0, 0, 0)
-        top_cards.setSpacing(10)
-        top_cards.addWidget(self._build_simple_card("SPL", self._current.spl, graph_key="spl"), 1)
-        top_cards.addWidget(self._build_simple_card("Impedance", self._current.impedance, graph_key="impedance"), 1)
-        root.addLayout(top_cards)
+        cards_top = QHBoxLayout()
+        cards_top.setContentsMargins(0, 0, 0, 0)
+        cards_top.setSpacing(10)
+        cards_top.addWidget(self._build_simple_card("SPL", self._current.spl, graph_key="spl"), 1)
+        cards_top.addWidget(self._build_simple_card("Impedance", self._current.impedance, graph_key="impedance"), 1)
+        content_layout.addLayout(cards_top)
 
-        polar_title = QLabel("Polar (up to 3)")
+        polar_title = QLabel("Polars")
         polar_title.setObjectName("SummaryTitle")
-        root.addWidget(polar_title)
-
-        for index in range(3):
-            root.addWidget(self._build_polar_card(index=index, state=self._current.polars[index]))
+        content_layout.addWidget(polar_title)
+        for idx in range(3):
+            content_layout.addWidget(self._build_polar_card(index=idx, state=self._current.polars[idx]))
+        content_layout.addStretch(1)
 
         buttons = QHBoxLayout()
         buttons.addStretch(1)
@@ -197,13 +223,30 @@ class _AdvancedDialog(QDialog):
         buttons.addWidget(apply_btn)
         root.addLayout(buttons)
 
+    def _title_mouse_press(self, event) -> None:  # type: ignore[override]
+        if event.button() != Qt.LeftButton:
+            return
+        self._drag_offset = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+        event.accept()
+
+    def _title_mouse_move(self, event) -> None:  # type: ignore[override]
+        if self._drag_offset is None:
+            return
+        if not (event.buttons() & Qt.LeftButton):
+            return
+        self.move(event.globalPosition().toPoint() - self._drag_offset)
+        event.accept()
+
+    def _title_mouse_release(self, event) -> None:  # type: ignore[override]
+        self._drag_offset = None
+        event.accept()
+
     def _build_simple_card(self, title: str, state: _SimpleGraphState, *, graph_key: str) -> QWidget:
         card = QFrame()
         card.setObjectName("ProjectSummaryPanel")
         layout = QVBoxLayout(card)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(6)
-
         top = QHBoxLayout()
         top.addWidget(QLabel(title))
         top.addStretch(1)
@@ -211,35 +254,12 @@ class _AdvancedDialog(QDialog):
         active.setCheckable(True)
         active.setProperty("segment", "true")
         active.setChecked(bool(state.enabled))
+        active.toggled.connect(lambda value, key=graph_key: self._set_simple(key, bool(value)))
         top.addWidget(active)
         layout.addLayout(top)
-
-        grid = QGridLayout()
-        grid.setHorizontalSpacing(8)
-        grid.setVerticalSpacing(4)
-        variant = QComboBox()
-        variant.addItems(["main", "default"])
-        variant.setCurrentText(str(state.variant))
-        fmt = QComboBox()
-        fmt.addItems(["txt"])
-        fmt.setCurrentText(str(state.fmt))
-        controls: List[QWidget] = [variant, fmt]
-
-        def _toggle(enabled: bool) -> None:
-            for control in controls:
-                control.setEnabled(bool(enabled))
-
-        _toggle(bool(state.enabled))
-        active.toggled.connect(_toggle)
-        active.toggled.connect(lambda value, key=graph_key: self._set_simple(key, "enabled", bool(value)))
-        variant.currentTextChanged.connect(lambda value, key=graph_key: self._set_simple(key, "variant", str(value)))
-        fmt.currentTextChanged.connect(lambda value, key=graph_key: self._set_simple(key, "fmt", str(value).lower()))
-
-        grid.addWidget(QLabel("Variant"), 0, 0)
-        grid.addWidget(variant, 0, 1)
-        grid.addWidget(QLabel("Format"), 1, 0)
-        grid.addWidget(fmt, 1, 1)
-        layout.addLayout(grid)
+        fixed = QLabel("Format: txt (fixed)")
+        fixed.setObjectName("SummaryMeta")
+        layout.addWidget(fixed)
         return card
 
     def _build_polar_card(self, *, index: int, state: _PolarCardState) -> QWidget:
@@ -248,7 +268,6 @@ class _AdvancedDialog(QDialog):
         layout = QVBoxLayout(card)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(6)
-
         top = QHBoxLayout()
         top.addWidget(QLabel(f"Polar {index + 1}"))
         top.addStretch(1)
@@ -262,15 +281,8 @@ class _AdvancedDialog(QDialog):
         grid = QGridLayout()
         grid.setHorizontalSpacing(8)
         grid.setVerticalSpacing(4)
-
         name_edit = QLineEdit(str(state.polar_name or ""))
         name_edit.setPlaceholderText("Polars Name")
-        variant = QComboBox()
-        variant.addItems(["main", "default"])
-        variant.setCurrentText(str(state.variant))
-        fmt = QComboBox()
-        fmt.addItems(["txt"])
-        fmt.setCurrentText(str(state.fmt))
         map_start = QLineEdit(str(int(state.map_angle_start)))
         map_start.setValidator(QIntValidator(-360, 360, map_start))
         map_end = QLineEdit(str(int(state.map_angle_end)))
@@ -283,17 +295,18 @@ class _AdvancedDialog(QDialog):
         offset.setValidator(QIntValidator(-9999, 9999, offset))
         inclination = QLineEdit(str(int(state.inclination)))
         inclination.setValidator(QIntValidator(-360, 360, inclination))
+        norm_angle = QLineEdit(str(int(state.norm_angle)))
+        norm_angle.setValidator(QIntValidator(-360, 360, norm_angle))
 
         controls: List[QWidget] = [
             name_edit,
-            variant,
-            fmt,
             map_start,
             map_end,
             map_steps,
             distance,
             offset,
             inclination,
+            norm_angle,
         ]
 
         def _toggle(enabled: bool) -> None:
@@ -304,34 +317,19 @@ class _AdvancedDialog(QDialog):
         active.toggled.connect(_toggle)
         active.toggled.connect(lambda value, idx=index: self._set_polar(idx, "enabled", bool(value)))
         name_edit.textChanged.connect(lambda value, idx=index: self._set_polar(idx, "polar_name", str(value)))
-        variant.currentTextChanged.connect(lambda value, idx=index: self._set_polar(idx, "variant", str(value)))
-        fmt.currentTextChanged.connect(lambda value, idx=index: self._set_polar(idx, "fmt", str(value).lower()))
-        map_start.textChanged.connect(
-            lambda value, idx=index: self._set_polar(idx, "map_angle_start", _int_or_default(value, 0))
-        )
-        map_end.textChanged.connect(
-            lambda value, idx=index: self._set_polar(idx, "map_angle_end", _int_or_default(value, 90))
-        )
+        map_start.textChanged.connect(lambda value, idx=index: self._set_polar(idx, "map_angle_start", _int_or_default(value, 0)))
+        map_end.textChanged.connect(lambda value, idx=index: self._set_polar(idx, "map_angle_end", _int_or_default(value, 90)))
         map_steps.textChanged.connect(
             lambda value, idx=index: self._set_polar(idx, "map_angle_steps", max(1, _int_or_default(value, 19)))
         )
-        distance.textChanged.connect(
-            lambda value, idx=index: self._set_polar(idx, "distance_m", _float_or_default(value, 2.0))
-        )
+        distance.textChanged.connect(lambda value, idx=index: self._set_polar(idx, "distance_m", _float_or_default(value, 2.0)))
         offset.textChanged.connect(lambda value, idx=index: self._set_polar(idx, "offset", _int_or_default(value, 145)))
-        inclination.textChanged.connect(
-            lambda value, idx=index: self._set_polar(idx, "inclination", _int_or_default(value, 90))
-        )
+        inclination.textChanged.connect(lambda value, idx=index: self._set_polar(idx, "inclination", _int_or_default(value, 90)))
+        norm_angle.textChanged.connect(lambda value, idx=index: self._set_polar(idx, "norm_angle", _int_or_default(value, 0)))
 
         row = 0
         grid.addWidget(QLabel("Polars Name"), row, 0)
         grid.addWidget(name_edit, row, 1)
-        row += 1
-        grid.addWidget(QLabel("Variant"), row, 0)
-        grid.addWidget(variant, row, 1)
-        row += 1
-        grid.addWidget(QLabel("Format"), row, 0)
-        grid.addWidget(fmt, row, 1)
         row += 1
         grid.addWidget(QLabel("MapAngle Start"), row, 0)
         grid.addWidget(map_start, row, 1)
@@ -350,12 +348,17 @@ class _AdvancedDialog(QDialog):
         row += 1
         grid.addWidget(QLabel("Inclination"), row, 0)
         grid.addWidget(inclination, row, 1)
+        row += 1
+        grid.addWidget(QLabel("Norm Angle"), row, 0)
+        grid.addWidget(norm_angle, row, 1)
         layout.addLayout(grid)
         return card
 
-    def _set_simple(self, graph_key: str, key: str, value: Any) -> None:
-        state = self._current.spl if graph_key == "spl" else self._current.impedance
-        setattr(state, str(key), value)
+    def _set_simple(self, graph_key: str, enabled: bool) -> None:
+        if graph_key == "spl":
+            self._current.spl.enabled = bool(enabled)
+        else:
+            self._current.impedance.enabled = bool(enabled)
 
     def _set_polar(self, index: int, key: str, value: Any) -> None:
         if index < 0 or index >= len(self._current.polars):
@@ -389,6 +392,7 @@ class BatchExportPanel(QFrame):
         super().__init__(parent)
         self.setObjectName("ProjectSummaryPanel")
         self._advanced_state = _AdvancedState.defaults()
+        self.setMinimumHeight(320)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(10, 10, 10, 10)
@@ -398,62 +402,36 @@ class BatchExportPanel(QFrame):
         title.setObjectName("SummaryTitle")
         root.addWidget(title)
 
-        mode_row = QHBoxLayout()
-        mode_row.setContentsMargins(0, 0, 0, 0)
-        mode_row.setSpacing(8)
+        settings_grid = QGridLayout()
+        settings_grid.setContentsMargins(0, 0, 0, 0)
+        settings_grid.setHorizontalSpacing(8)
+        settings_grid.setVerticalSpacing(8)
+
         self.simulation_mode = QComboBox()
         self.simulation_mode.addItem("Free Standing", "free_standing")
         self.simulation_mode.addItem("Infinite Baffle", "infinite_baffle")
-        self.simulation_mode.setMinimumWidth(152)
-        self.simulation_mode.setMaximumWidth(180)
         self.sweep_mode = QComboBox()
         self.sweep_mode.addItems(["single", "combined"])
-        self.sweep_mode.setMinimumWidth(112)
-        self.sweep_mode.setMaximumWidth(132)
-        mode_row.addWidget(QLabel("Simulation Mode"))
-        mode_row.addWidget(self.simulation_mode, 0, Qt.AlignLeft)
-        mode_row.addSpacing(10)
-        mode_row.addWidget(QLabel("Sweep Mode"))
-        mode_row.addWidget(self.sweep_mode, 0, Qt.AlignLeft)
-        mode_row.addStretch(1)
-        root.addLayout(mode_row)
-
-        freq_row = QHBoxLayout()
-        freq_row.setContentsMargins(0, 0, 0, 0)
-        freq_row.setSpacing(8)
         self.freq_start = QLineEdit("500")
         self.freq_start.setValidator(QIntValidator(1, 1_000_000, self.freq_start))
-        self.freq_start.setFixedWidth(112)
-        self.freq_start.setFixedHeight(28)
         self.freq_end = QLineEdit("15000")
         self.freq_end.setValidator(QIntValidator(1, 1_000_000, self.freq_end))
-        self.freq_end.setFixedWidth(112)
-        self.freq_end.setFixedHeight(28)
         self.num_points = QLineEdit("16")
         self.num_points.setValidator(QIntValidator(1, 1_000_000, self.num_points))
-        self.num_points.setFixedWidth(112)
-        self.num_points.setFixedHeight(28)
-        freq_row.addWidget(QLabel("Freq Start [Hz]"))
-        freq_row.addWidget(self.freq_start, 0, Qt.AlignLeft)
-        freq_row.addWidget(QLabel("Freq End [Hz]"))
-        freq_row.addWidget(self.freq_end, 0, Qt.AlignLeft)
-        freq_row.addWidget(QLabel("Points"))
-        freq_row.addWidget(self.num_points, 0, Qt.AlignLeft)
-        freq_row.addStretch(1)
-        root.addLayout(freq_row)
-
-        mesh_row = QHBoxLayout()
-        mesh_row.setContentsMargins(0, 0, 0, 0)
-        mesh_row.setSpacing(8)
         self.mesh_frequency = QLineEdit("")
         self.mesh_frequency.setValidator(QIntValidator(1, 1_000_000, self.mesh_frequency))
         self.mesh_frequency.setPlaceholderText("optional")
-        self.mesh_frequency.setFixedWidth(112)
-        self.mesh_frequency.setFixedHeight(28)
-        mesh_row.addWidget(QLabel("Mesh Freq [Hz]"))
-        mesh_row.addWidget(self.mesh_frequency, 0, Qt.AlignLeft)
-        mesh_row.addStretch(1)
-        root.addLayout(mesh_row)
+
+        settings_grid.addWidget(self._field_stack("Simulation Mode", self.simulation_mode), 0, 0)
+        settings_grid.addWidget(self._field_stack("Sweep Mode", self.sweep_mode), 0, 1)
+        settings_grid.addWidget(self._field_stack("Mesh Freq [Hz]", self.mesh_frequency), 0, 2)
+        settings_grid.addWidget(self._field_stack("Freq Start [Hz]", self.freq_start), 1, 0)
+        settings_grid.addWidget(self._field_stack("Freq End [Hz]", self.freq_end), 1, 1)
+        settings_grid.addWidget(self._field_stack("Points", self.num_points), 1, 2)
+        settings_grid.setColumnStretch(0, 1)
+        settings_grid.setColumnStretch(1, 1)
+        settings_grid.setColumnStretch(2, 1)
+        root.addLayout(settings_grid)
 
         presets_row = QHBoxLayout()
         presets_row.setContentsMargins(0, 0, 0, 0)
@@ -467,9 +445,8 @@ class BatchExportPanel(QFrame):
         presets_row.addStretch(1)
         self.advanced_btn = QPushButton("Advanced")
         self.advanced_btn.setProperty("segment", "true")
-        self.advanced_btn.setFixedHeight(24)
-        self.advanced_btn.setMinimumWidth(84)
-        self.advanced_btn.setMaximumWidth(96)
+        self.advanced_btn.setFixedHeight(26)
+        self.advanced_btn.setMinimumWidth(92)
         presets_row.addWidget(self.advanced_btn, 0, Qt.AlignRight)
         root.addLayout(presets_row)
         root.addStretch(1)
@@ -484,6 +461,21 @@ class BatchExportPanel(QFrame):
         self.preset_impedance.toggled.connect(lambda _checked: self.changed.emit())
         self.preset_polar.toggled.connect(lambda _checked: self.changed.emit())
         self.advanced_btn.clicked.connect(self._open_advanced)
+
+    @staticmethod
+    def _field_stack(label: str, widget: QWidget) -> QWidget:
+        box = QWidget()
+        layout = QVBoxLayout(box)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+        text = QLabel(str(label))
+        text.setObjectName("SummaryMeta")
+        layout.addWidget(text)
+        widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        if hasattr(widget, "setFixedHeight"):
+            widget.setFixedHeight(28)
+        layout.addWidget(widget)
+        return box
 
     @staticmethod
     def _make_preset_button(label: str) -> QPushButton:
@@ -562,6 +554,7 @@ class BatchExportPanel(QFrame):
                         "distance_m": 2.0,
                         "offset": 145,
                         "inclination": 90,
+                        "norm_angle": 0,
                     },
                     "output_name_template": "{version_id}_{graph_kind}.{format}",
                 }
@@ -576,8 +569,8 @@ class BatchExportPanel(QFrame):
                     "id": "adv_spl",
                     "tool": "vacs",
                     "graph_kind": "spl",
-                    "variant": self._advanced_state.spl.variant,
-                    "format": self._advanced_state.spl.fmt,
+                    "variant": "main",
+                    "format": "txt",
                     "options": {},
                     "output_name_template": "{version_id}_{graph_kind}.{format}",
                 }
@@ -588,8 +581,8 @@ class BatchExportPanel(QFrame):
                     "id": "adv_impedance",
                     "tool": "vacs",
                     "graph_kind": "impedance",
-                    "variant": self._advanced_state.impedance.variant,
-                    "format": self._advanced_state.impedance.fmt,
+                    "variant": "main",
+                    "format": "txt",
                     "options": {},
                     "output_name_template": "{version_id}_{graph_kind}.{format}",
                 }
@@ -603,8 +596,8 @@ class BatchExportPanel(QFrame):
                     "id": f"adv_polar_{idx}",
                     "tool": "vacs",
                     "graph_kind": "polar",
-                    "variant": polar.variant,
-                    "format": polar.fmt,
+                    "variant": "main",
+                    "format": "txt",
                     "options": {
                         "polar_name": polar_name,
                         "map_angle_range": [
@@ -615,6 +608,7 @@ class BatchExportPanel(QFrame):
                         "distance_m": float(polar.distance_m),
                         "offset": int(polar.offset),
                         "inclination": int(polar.inclination),
+                        "norm_angle": int(polar.norm_angle),
                     },
                     "output_name_template": "{version_id}_{graph_kind}_{export_id}.{format}",
                 }
@@ -699,10 +693,7 @@ class BatchExportPanel(QFrame):
                 continue
             graph_kind = str(spec.get("graph_kind", "")).strip().lower()
             spec_id = str(spec.get("id", "")).strip().lower()
-            variant = str(spec.get("variant", "main") or "main")
-            fmt = str(spec.get("format", "txt") or "txt").lower()
             options = dict(spec.get("options", {}) or {})
-
             if spec_id == "preset_spl":
                 self.preset_spl.setChecked(True)
                 continue
@@ -712,12 +703,11 @@ class BatchExportPanel(QFrame):
             if spec_id == "preset_polar":
                 self.preset_polar.setChecked(True)
                 continue
-
             if graph_kind == "spl":
-                self._advanced_state.spl = _SimpleGraphState(enabled=True, variant=variant, fmt=fmt)
+                self._advanced_state.spl.enabled = True
                 continue
             if graph_kind == "impedance":
-                self._advanced_state.impedance = _SimpleGraphState(enabled=True, variant=variant, fmt=fmt)
+                self._advanced_state.impedance.enabled = True
                 continue
             if graph_kind == "polar" and polar_slot < len(self._advanced_state.polars):
                 map_range = list(options.get("map_angle_range", [0, 90, 19]) or [0, 90, 19])
@@ -726,14 +716,13 @@ class BatchExportPanel(QFrame):
                 self._advanced_state.polars[polar_slot] = _PolarCardState(
                     enabled=True,
                     polar_name=str(options.get("polar_name", "") or "").strip(),
-                    variant=variant,
-                    fmt=fmt,
                     map_angle_start=int(map_range[0] or 0),
                     map_angle_end=int(map_range[1] or 90),
                     map_angle_steps=max(1, int(map_range[2] or 19)),
                     distance_m=float(options.get("distance_m", 2.0) or 2.0),
                     offset=int(options.get("offset", 145) or 145),
                     inclination=int(options.get("inclination", 90) or 90),
+                    norm_angle=int(options.get("norm_angle", 0) or 0),
                 )
                 polar_slot += 1
 
@@ -743,10 +732,7 @@ class BatchExportPanel(QFrame):
         self.freq_end.setText(str(int(float(raw.get("freq_end_hz", 15000) or 15000))))
         self.num_points.setText(str(int(raw.get("num_points", 16) or 16)))
         mesh_frequency = raw.get("mesh_frequency")
-        if mesh_frequency is None:
-            self.mesh_frequency.setText("")
-        else:
-            self.mesh_frequency.setText(str(int(float(mesh_frequency))))
+        self.mesh_frequency.setText("" if mesh_frequency is None else str(int(float(mesh_frequency))))
         if "sweep_mode" in raw:
             self.set_sweep_mode(str(raw.get("sweep_mode", "single") or "single"))
         self.set_simulation_mode(str(raw.get("simulation_mode", "free_standing") or "free_standing"))

@@ -68,11 +68,11 @@ Widget: `ui/batch_export_panel.py`
   - no surrounding groupbox/title container
 - Advanced:
   - compact `Advanced` button (no inline block)
-  - opens a structured dialog with cards (no JSON/free-text editing)
+  - opens a structured, frameless dialog (Project-Manager style `X` close) with scrolling
   - cards:
-    - `SPL` card (`Activate`, `Variant`, `Format`)
-    - `Impedance` card (`Activate`, `Variant`, `Format`)
-    - up to 3 `Polar` cards (`Activate Polar`, `Polars Name`, map angle range, distance, offset, inclination)
+    - `SPL` card (`Activate`, format fixed to `txt`)
+    - `Impedance` card (`Activate`, format fixed to `txt`)
+    - up to 3 `Polar` cards (`Activate Polar`, `Polars Name`, map angle range, distance, offset, inclination, norm angle)
   - editing advanced cards deactivates touched presets
   - duplicate `Polars Name` values across active cards emit fatal issue `export_duplicate_polar_name`
 - Global export settings:

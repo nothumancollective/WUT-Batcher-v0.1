@@ -69,6 +69,18 @@ class BatchExportPanelTests(unittest.TestCase):
         self.assertTrue(issues)
         self.assertEqual(str(issues[0].get("rule_id")), "export_duplicate_polar_name")
 
+    def test_advanced_polar_payload_contains_norm_angle(self) -> None:
+        panel = BatchExportPanel()
+        panel._advanced_state.polars[0].enabled = True  # type: ignore[attr-defined]
+        panel._advanced_state.polars[0].polar_name = "P1"  # type: ignore[attr-defined]
+        panel._advanced_state.polars[0].norm_angle = 35  # type: ignore[attr-defined]
+        payload = panel.sim_export_params_payload()
+        specs = list(payload.get("export_specs", []))
+        polar_specs = [item for item in specs if str(item.get("graph_kind", "")).lower() == "polar"]
+        self.assertTrue(polar_specs)
+        options = dict(polar_specs[0].get("options", {}) or {})
+        self.assertEqual(int(options.get("norm_angle")), 35)
+
 
 if __name__ == "__main__":
     unittest.main()
