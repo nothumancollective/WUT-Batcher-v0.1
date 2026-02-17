@@ -159,6 +159,7 @@ class BatchParameterForm(QWidget):
         self._hint_widgets: List[QWidget] = []
         self._compat_ui_state: Dict[str, Any] = {}
         self._blocked_keys: set[str] = set()
+        self._hidden_ui_keys: set[str] = set()
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -664,6 +665,11 @@ class BatchParameterForm(QWidget):
         self._locked_keys = {str(item) for item in list(state.get("locked_keys", []) or []) if str(item).strip()}
         self._sweepable_keys = {str(item) for item in list(state.get("sweepable_keys", []) or []) if str(item).strip()}
         self._compat_ui_state = dict(state.get("compat_ui_state", {}) or {})
+        self._hidden_ui_keys = {
+            str(item)
+            for item in list(self._compat_ui_state.get("hidden_keys", []) or [])
+            if str(item).strip()
+        }
         self._blocked_keys = {
             str(item)
             for item in list(self._compat_ui_state.get("blocked_keys", []) or [])
@@ -727,6 +733,8 @@ class BatchParameterForm(QWidget):
 
         for key, row in self._rows.items():
             allowed = (not self._visible_keys or key in self._visible_keys) and key not in self._project_fixed_keys
+            if key in self._hidden_ui_keys:
+                allowed = False
             if key == "R-OSSE":
                 allowed = bool(allowed and throat_mode == 2)
             is_visible = bool(allowed)

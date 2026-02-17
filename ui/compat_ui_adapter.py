@@ -41,6 +41,11 @@ class CompatUiAdapter:
         self._scope_by_key = {key: field.scope for key, field in self._field_by_key.items()}
         self.controller_options = self._collect_controller_options()
         self.controller_keys = set(self.controller_options.keys())
+        self._controller_related_keys = self._collect_controller_related_keys()
+        self._controller_off_values: Dict[str, Set[Any]] = {
+            "GCurve.Type": {None},
+            "Morph.TargetShape": {0, None},
+        }
 
     def _collect_controller_options(self) -> Dict[str, List[Any]]:
         keys: Set[str] = {stack.controller_key for stack in list(self.schema.mode_stacks or [])}
@@ -77,6 +82,29 @@ class CompatUiAdapter:
         return f"This parameter doesn't allow the configuration of: {head}{suffix}"
 
     @staticmethod
+    def _required_unavailable_message(keys: Sequence[str]) -> str:
+        labels = [str(item) for item in list(keys or []) if str(item).strip()]
+        if not labels:
+            return ""
+        head = ", ".join(labels[:5])
+        extra = len(labels) - min(len(labels), 5)
+        suffix = f", +{extra}" if extra > 0 else ""
+        return f"This option requires currently unavailable fields: {head}{suffix}"
+
+    @staticmethod
+    def _is_required_missing_issue(issue: Mapping[str, Any]) -> bool:
+        severity = str(issue.get("severity", "")).strip().lower()
+        if severity not in {"fatal", "error"}:
+            return False
+        rule_id = str(issue.get("rule_id", "")).strip().lower()
+        message = str(issue.get("message", "")).strip().lower()
+        if "required" in rule_id or "required" in message or "erforderlich" in message:
+            return True
+        if "missing" in rule_id and ("field" in message or "value" in message):
+            return True
+        return False
+
+    @staticmethod
     def _extract_project_set_values(payload: Mapping[str, Any]) -> tuple[Dict[str, Any], Set[str]]:
         values: Dict[str, Any] = {}
         set_keys: Set[str] = set()
@@ -101,6 +129,56 @@ class CompatUiAdapter:
                 values.pop(key, None)
                 set_keys.discard(key)
         return values, set_keys
+
+    def _collect_controller_related_keys(self) -> Dict[str, Set[str]]:
+        related: Dict[str, Set[str]] = {str(key): {str(key)} for key in self.controller_options.keys()}
+        for field in list(self.schema.fields):
+            key = str(field.key)
+            tags = [str(raw).strip() for raw in list(field.ui_mode_tags or []) if str(raw).strip()]
+            for controller_key in self.controller_options.keys():
+                prefix = f"{controller_key}="
+                if any(tag.startswith(prefix) for tag in tags):
+                    related.setdefault(str(controller_key), set()).add(key)
+        return related
+
+    def _required_unavailable_keys(self, state: Mapping[str, Any], hypo_visible: Set[str]) -> List[str]:
+        keys: Set[str] = set()
+        for raw in list(state.get("issues", []) or []):
+            if not isinstance(raw, Mapping):
+                continue
+            if not self._is_required_missing_issue(raw):
+                continue
+            key = str(raw.get("field_key") or raw.get("key") or "").strip()
+            if not key:
+                continue
+            if key not in hypo_visible:
+                keys.add(key)
+        return sorted(keys)
+
+    def _controller_hidden_keys(
+        self,
+        *,
+        blocked_options: Mapping[str, Mapping[str, Mapping[str, Any]]],
+        selected_values: Mapping[str, Any],
+    ) -> Set[str]:
+        hidden: Set[str] = set()
+        for controller_key, options in self.controller_options.items():
+            option_list = list(options or [])
+            if not option_list:
+                continue
+            off_values = set(self._controller_off_values.get(str(controller_key), set()))
+            active = [value for value in option_list if value not in off_values]
+            if not active:
+                active = list(option_list)
+            current_value = selected_values.get(str(controller_key))
+            if current_value in active:
+                continue
+            blocked_map = dict(blocked_options.get(str(controller_key), {}) or {})
+            viable_active = [value for value in active if option_token(value) not in blocked_map]
+            if viable_active:
+                continue
+            hidden.update(self._controller_related_keys.get(str(controller_key), {str(controller_key)}))
+        return hidden
 
     def _apply_project_selection(self, payload: Mapping[str, Any], key: str, value: Any) -> Dict[str, Any]:
         updated = {
@@ -157,21 +235,37 @@ class CompatUiAdapter:
                     for key in set_keys
                     if key != controller_key and key in visible_now and key not in hypo_visible
                 )
-                if not hidden_conflicts:
+                required_unavailable = self._required_unavailable_keys(hypo_state, hypo_visible)
+                if not hidden_conflicts and not required_unavailable:
                     continue
-                cause_key = self._pick_primary_cause(hidden_conflicts, last_changed_key=last_changed_key)
-                message = self._helper_message(hidden_conflicts)
+                cause_candidates = hidden_conflicts or (
+                    [str(last_changed_key)] if str(last_changed_key or "").strip() else []
+                )
+                cause_key = self._pick_primary_cause(cause_candidates, last_changed_key=last_changed_key)
+                message_parts: List[str] = []
+                if hidden_conflicts:
+                    message_parts.append(self._helper_message(hidden_conflicts))
+                if required_unavailable:
+                    message_parts.append(self._required_unavailable_message(required_unavailable))
+                message = " ".join(part for part in message_parts if part).strip()
                 blocked_options.setdefault(controller_key, {})[option_token(option_value)] = {
                     "cause_key": cause_key,
                     "message": message,
                     "hidden_keys": hidden_conflicts,
+                    "required_unavailable": required_unavailable,
                 }
                 cause_map[f"{controller_key}:{option_token(option_value)}"] = cause_key
                 helper_text[f"{controller_key}:{option_token(option_value)}"] = message
 
-        hidden_keys = sorted(set(self._field_by_key.keys()) - visible_now)
+        hidden_keys = set(self._field_by_key.keys()) - visible_now
+        hidden_keys.update(
+            self._controller_hidden_keys(
+                blocked_options=blocked_options,
+                selected_values=values,
+            )
+        )
         return {
-            "hidden_keys": hidden_keys,
+            "hidden_keys": sorted(hidden_keys),
             "blocked_keys": [],
             "blocked_options": blocked_options,
             "cause_map": cause_map,
@@ -223,21 +317,39 @@ class CompatUiAdapter:
                     for key in set_keys
                     if key != controller_key and key in visible_now and key not in hypo_visible
                 )
-                if not hidden_conflicts:
+                required_unavailable = self._required_unavailable_keys(hypo_state, hypo_visible)
+                if not hidden_conflicts and not required_unavailable:
                     continue
-                cause_key = self._pick_primary_cause(hidden_conflicts, last_changed_key=last_changed_key)
-                message = self._helper_message(hidden_conflicts)
+                cause_candidates = hidden_conflicts or (
+                    [str(last_changed_key)] if str(last_changed_key or "").strip() else []
+                )
+                cause_key = self._pick_primary_cause(cause_candidates, last_changed_key=last_changed_key)
+                message_parts: List[str] = []
+                if hidden_conflicts:
+                    message_parts.append(self._helper_message(hidden_conflicts))
+                if required_unavailable:
+                    message_parts.append(self._required_unavailable_message(required_unavailable))
+                message = " ".join(part for part in message_parts if part).strip()
                 blocked_options.setdefault(controller_key, {})[option_token(option_value)] = {
                     "cause_key": cause_key,
                     "message": message,
                     "hidden_keys": hidden_conflicts,
+                    "required_unavailable": required_unavailable,
                 }
                 cause_map[f"{controller_key}:{option_token(option_value)}"] = cause_key
                 helper_text[f"{controller_key}:{option_token(option_value)}"] = message
 
-        hidden_keys = sorted(set(self._field_by_key.keys()) - visible_now)
+        selected_values = dict(project_values)
+        selected_values.update(selected)
+        hidden_keys = set(self._field_by_key.keys()) - visible_now
+        hidden_keys.update(
+            self._controller_hidden_keys(
+                blocked_options=blocked_options,
+                selected_values=selected_values,
+            )
+        )
         return {
-            "hidden_keys": hidden_keys,
+            "hidden_keys": sorted(hidden_keys),
             "blocked_keys": [],
             "blocked_options": blocked_options,
             "cause_map": cause_map,

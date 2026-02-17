@@ -1396,6 +1396,7 @@ class ParameterForm(QWidget):
         self._suspend_emit = False
         self._last_changed_key: Optional[str] = None
         self._compat_ui_state: Dict[str, Any] = {}
+        self._compat_hidden_keys: set[str] = set()
         self._base_width: Optional[int] = None
         self._risk_widgets: Dict[int, QWidget] = {}
         self._risk_original_tooltips: Dict[int, str] = {}
@@ -2173,7 +2174,9 @@ class ParameterForm(QWidget):
                 frame.setVisible(False)
                 continue
             if self._compat_visible_keys:
-                frame.setVisible(any(key in self._compat_visible_keys for key in keys))
+                frame.setVisible(
+                    any((key in self._compat_visible_keys) and (key not in self._compat_hidden_keys) for key in keys)
+                )
             else:
                 frame.setVisible(True)
 
@@ -2234,6 +2237,8 @@ class ParameterForm(QWidget):
                 continue
             label = self._field_labels.get(key)
             compat_visible = key in self._compat_visible_keys if self._compat_visible_keys else True
+            if key in self._compat_hidden_keys:
+                compat_visible = False
             should_show = bool(enabled and compat_visible)
             any_visible = any_visible or should_show
             if label is not None:
@@ -2562,6 +2567,11 @@ class ParameterForm(QWidget):
     def apply_compatibility(self, state: Dict[str, Any]) -> None:
         self._compat_state = dict(state)
         self._compat_ui_state = dict(state.get("compat_ui_state", {}) or {})
+        self._compat_hidden_keys = {
+            str(item)
+            for item in list(self._compat_ui_state.get("hidden_keys", []) or [])
+            if str(item).strip()
+        }
         visible_keys = set(str(item) for item in list(state.get("visible_keys", []) or []))
         locked_keys = set(str(item) for item in list(state.get("locked_keys", []) or []))
         blocked_keys = {
@@ -2575,7 +2585,7 @@ class ParameterForm(QWidget):
         changed_hidden = False
         try:
             for key, editor in self._field_editors.items():
-                is_visible = key in visible_keys
+                is_visible = (key in visible_keys) and (key not in self._compat_hidden_keys)
                 label = self._field_labels.get(key)
                 if label is not None:
                     label.setVisible(is_visible)
