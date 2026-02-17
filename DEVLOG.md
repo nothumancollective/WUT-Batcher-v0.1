@@ -24,6 +24,19 @@
 - Updated tests:
   - `tests/test_preview_pipeline.py` extended for two-tier semantics and policy-gap reporting.
 
+### Update: GCurve Tier Refinement (Superellipse/Superformula)
+#### Done
+- Refined tier behavior for `GCurve.Type`:
+  - `ath_minimal` now applies type-aware defaults for preview robustness:
+    - type=1 (Superellipse): `GCurve.Dist`, `GCurve.Width`
+    - type=2 (Superformula): `GCurve.Dist`, `GCurve.Width`, `GCurve.SF.*`
+  - avoids unstable `GCurve.Dist=0` fallback by using explicit ATH-minimal defaults.
+- Refined `policy_minimal` requirement model for GCurve:
+  - type=1 requires: `GCurve.Dist`, `GCurve.Width`, `GCurve.AspectRatio`, `GCurve.SE.n`
+  - type=2 requires: `GCurve.Dist`, `GCurve.Width`, `GCurve.AspectRatio`, `GCurve.SF.a/b/m1/m2/n1/n2/n3`
+  - `GCurve.Rot` remains optional.
+- Policy-gap reporting now reflects user-input completeness (not masked by ATH-minimal completion).
+
 ### Update: Minimal Completion Search Tooling (DB + ATH Oracle)
 #### Done
 - Added new search module: `app/minimal_completion_search.py`.
