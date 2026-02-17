@@ -16,7 +16,7 @@ It replaces JSON textareas with structured controls for variable parameters, swe
 - Action bar (`ProjectActionBar` style)
   - severity pill
   - save/run gating
-  - compact issue counters (`errors · warnings · incomplete`)
+  - compact issue counters (`errors Â· warnings Â· incomplete`)
 
 Note:
 - `CompatibilityPanel` still exists (`app/gui.py`) but is currently not shown in Batch (`setVisible(False)`).
@@ -58,16 +58,27 @@ Payload API:
 ## Export Settings
 Widget: `ui/batch_export_panel.py`
 
-- Presets as segmented buttons:
-  - `SPL`, `Impedance`, `Polar`
-  - `Polar` visible but disabled (`coming soon`)
+- Top rows:
+  - `Simulation Mode` (`Free Standing`, `Infinite Baffle`)
+  - `Sweep Mode` (`single`, `combined`)
+  - `Freq Start [Hz]`, `Freq End [Hz]`, `Points` (integer-only)
+  - `Mesh Freq [Hz]` (optional integer-only)
+- Presets:
+  - segmented graph buttons: `SPL`, `Impedance`, `Polar`
+  - no surrounding groupbox/title container
 - Advanced:
-  - structured graph cards (no free-text table editing)
-  - per-graph `variant`/`format`
-  - per-graph Guide dialog with static repo-verified defaults
+  - compact `Advanced` button (no inline block)
+  - opens a structured dialog with cards (no JSON/free-text editing)
+  - cards:
+    - `SPL` card (`Activate`, `Variant`, `Format`)
+    - `Impedance` card (`Activate`, `Variant`, `Format`)
+    - up to 3 `Polar` cards (`Activate Polar`, `Polars Name`, map angle range, distance, offset, inclination)
+  - editing advanced cards deactivates touched presets
+  - duplicate `Polars Name` values across active cards emit fatal issue `export_duplicate_polar_name`
 - Global export settings:
-  - `sweep_mode` (`single|combined`)
-  - frequency range (`f_start`, `f_end`, `points`)
+  - `simulation_mode`
+  - `sweep_mode`
+  - frequency range (`freq_start_hz`, `freq_end_hz`, `num_points`)
   - optional `mesh_frequency`
 
 Payload API:
@@ -170,3 +181,4 @@ Both paths restore:
 - `tests/test_gui_project_fixed_keys.py`
 - `tests/test_compatibility_service_batch_sweep_validation.py`
 - `tests/test_eta_estimator.py`
+

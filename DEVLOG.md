@@ -2196,3 +2196,38 @@ Validation executed:
 
 #### Notes
 - This update supersedes older text in historical entries that mentioned UI-prevention fields directly in compatibility service outputs.
+### Update 71 (Batch UI Korrekturen: Export, Layout, Validierung)
+#### Done
+- Batch Name input width is now pinned to one third of the available Batch page width.
+- Startup flicker/glitch mitigation improved:
+  - dark titlebar application moved to explicit show-time window hooks
+  - risk helper popup parent anchored to the form widget.
+- Batch parameter form refinements:
+  - GCurve subgroup headers (`Superellipse`, `Superformula`) are visibility-driven and hide when no matching fields are visible.
+  - Enclosure toggle no longer produces the disclosure helper text under the control.
+- Export panel redesigned to requested compact UX:
+  - top-row `Simulation Mode` (`Free Standing`, `Infinite Baffle`)
+  - integer-only `Freq Start [Hz]`, `Freq End [Hz]`, `Points`
+  - integer-only optional `Mesh Freq [Hz]`
+  - segmented graph preset buttons (`SPL`, `Impedance`, `Polar`) without grouped title boxes
+  - compact `Advanced` button that opens structured cards (no JSON/free-text editing)
+  - advanced cards for `SPL`, `Impedance`, and up to 3 `Polar` exports with ATH-style fields (including `Polars Name`)
+  - touching advanced graph settings deactivates corresponding presets.
+- Added export-side validation issue generation for duplicate active polar names:
+  - fatal issue id: `export_duplicate_polar_name`.
+- Wired export validation issues into Batch validation flow:
+  - draft summary/action gating now includes export validation output
+  - save/run dialog validation includes export validation output.
+
+#### Tests
+- Updated/extended:
+  - `tests/test_batch_export_panel.py`
+  - `tests/test_sim_export_settings.py`
+  - `tests/test_batch_page_ui.py`
+- Targeted runs executed with `PYTHONPATH=.`:
+  - `tests/test_batch_export_panel.py` -> pass
+  - `tests/test_sim_export_settings.py` -> pass
+  - `tests/test_batch_page_ui.py` -> pass
+  - `tests/test_batch_validation_alignment_fuzz.py` -> pass
+  - `tests/test_gui_project_fixed_keys.py` -> pass
+  - `tests/test_ui_validation_ranges.py` -> pass

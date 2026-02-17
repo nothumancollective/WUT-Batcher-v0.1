@@ -9,6 +9,8 @@ from pathlib import Path
 import re
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
+from app.ath_knowledge import load_ath_knowledge
+
 
 _VERSIONED_RE = re.compile(r"^(?P<base>[A-Za-z0-9_.-]+)\.v(?P<v1>\d+)(?:\.(?P<v2>\d+))?\.json$")
 _KEY_TOKEN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.-]*$")
@@ -323,8 +325,32 @@ class UiValidationEngine:
         )
         self._ranges: Dict[str, _RangeHint] = {}
         self._candidates: List[_CandidateRule] = []
+        self._unit_by_key: Dict[str, str] = {}
         self.enabled = False
+        self._load_units()
         self.reload()
+
+    def _load_units(self) -> None:
+        try:
+            bundle = load_ath_knowledge()
+            params = list(bundle.catalog.get("parameters", []) or [])
+        except Exception:
+            params = []
+        units: Dict[str, str] = {}
+        for row in params:
+            if not isinstance(row, Mapping):
+                continue
+            key = str(row.get("key", "")).strip()
+            if not key:
+                continue
+            unit = str(row.get("unit", "")).strip().lower()
+            if unit:
+                units[key] = unit
+        self._unit_by_key = units
+
+    def _is_hard_cap_key_supported(self, key: str) -> bool:
+        unit = str(self._unit_by_key.get(str(key), "")).strip().lower()
+        return "mm" in unit
 
     def reload(self) -> None:
         self._ranges = self._load_ranges(self.range_path)
@@ -527,7 +553,7 @@ class UiValidationEngine:
                     value_num = _to_float(values.get(key))
                     if value_num is None:
                         continue
-                    if "hard_cap" in candidate.rule_id and value_num > 5000.0:
+                    if "hard_cap" in candidate.rule_id and self._is_hard_cap_key_supported(key) and value_num > 5000.0:
                         affected.append(key)
             for key in sorted(set(affected)):
                 issues.append(
