@@ -2279,3 +2279,43 @@ Validation executed:
 #### Validation
 - `python -m py_compile ui/theme.py`
 - `PYTHONPATH=. pytest tests/test_batch_export_panel.py -q`
+
+### Update 74 (Batch STL Preview + Sweep/UI Fixes)
+#### Done
+- Implemented real Batch STL preview with background generation pipeline:
+  - new service pipeline entry: `OrchestratorService.generate_preview_stl(...)`
+  - hard-path runtime for preview cfg + ATH export:
+    - cfg written to `C:\\Tools\\ATH\\preview_current.cfg`
+    - ATH output observed under `C:\\Horns\\...`
+  - STL export flags enforced in generated cfg:
+    - `Output.STL = 1`
+    - `Output.ABECProject = 0`
+  - generated STL copied to local preview cache:
+    - `%LOCALAPPDATA%\\WUTBatcher\\preview_cache\\`
+    - naming: `horn_preview_<timestamp>_<cfgHash>.stl`
+    - retention: keep last 10 STL files
+    - startup cache cleanup: remove files older than 7 days (cache dir only)
+- Added non-blocking preview worker in GUI:
+  - `QThread`-based `_BatchPreviewWorker`
+  - cancellation/obsolete handling when toggled off or restarted
+  - loader state in preview canvas while generation is in-flight
+- Replaced preview placeholder with actual preview panel + controls:
+  - toggle `On/Off`
+  - `Update Preview` action
+  - inline error text (non-modal)
+  - last successful mesh remains visible on failures
+- Added STL renderer widget:
+  - `ui/stl_preview_widget.py`
+  - transparent background + light glossy material
+  - orbit/zoom controls
+  - binary/ascii STL parsing without additional heavy deps
+- Sweep/UI fixes:
+  - sweep buttons and sweep input fields aligned to uniform control height/width
+  - sweep blink/toggle state handling hardened for repeated toggles and reset paths
+- Export dropdown theming refined for dark mode:
+  - styled drop-down arrow, popup view, selection/disabled states for Batch export combos
+
+#### Validation
+- `python -m py_compile app/services.py app/gui.py ui/batch_preview_placeholder.py ui/stl_preview_widget.py ui/batch_parameter_form.py ui/batch_export_panel.py ui/theme.py`
+- `PYTHONPATH=. pytest tests/test_batch_page_ui.py tests/test_batch_export_panel.py tests/test_project_form_ui.py -q`
+- `PYTHONPATH=. pytest tests/test_batch_validation_alignment_fuzz.py tests/test_project_validation_alignment_fuzz.py tests/test_gui_project_fixed_keys.py -q`

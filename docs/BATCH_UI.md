@@ -85,15 +85,46 @@ Payload API:
 - `sim_export_params_payload() -> Dict[str, Any]`
 - compatible with `SimExportSettings.from_dict(...)`
 
-## Preview Placeholder
-Widget: `ui/batch_preview_placeholder.py`
+## STL Preview
+Widgets / flow:
+- `ui/batch_preview_placeholder.py` (panel + toggle + loader)
+- `ui/stl_preview_widget.py` (Qt3D renderer + STL parser fallback)
+- `app/services.py::generate_preview_stl(...)` (single source of truth pipeline)
+- `app/gui.py` (`_BatchPreviewWorker` in background thread + cancellation)
 
-- title: `Preview (.stl)`
-- text: coming-soon placeholder
-- small segmented button, right-bottom anchored:
-  - first click label: `show preview`
-  - subsequent label: `update preview`
-- no renderer integration yet (future STL viewport hook)
+UI behavior:
+- title is `Preview`
+- toggle `On/Off`:
+  - `On`: preview area is shown and generation starts immediately
+  - `Off`: preview area is hidden and running work is canceled/ignored
+- `Update Preview` runs a new generation with current batch UI parameters
+- loading state:
+  - in-canvas indeterminate loader while cfg write + ATH run + STL copy + load
+- failure state:
+  - unobtrusive inline error text in preview panel (no modal)
+  - last successfully loaded mesh remains in viewer
+
+Render behavior:
+- transparent background
+- light gray/white glossy material
+- basic orbit rotate + zoom
+- STL loading supports binary and ASCII STL parsing
+
+Hard paths:
+- preview cfg directory: `C:\\Tools\\ATH`
+- preview cfg file name: `preview_current.cfg`
+- ATH export root: `C:\\Horns`
+
+Cache:
+- dedicated cache dir: `%LOCALAPPDATA%\\WUTBatcher\\preview_cache\\`
+- file naming: `horn_preview_<timestamp>_<cfgHash>.stl`
+- retention: keep last 10 preview STL files
+- startup cleanup: remove stale files older than 7 days (cache dir only)
+
+Debug artifacts:
+- `%LOCALAPPDATA%\\WUTBatcher\\preview_cache\\logs\\preview_<run>.stdout.log`
+- `%LOCALAPPDATA%\\WUTBatcher\\preview_cache\\logs\\preview_<run>.stderr.log`
+- `%LOCALAPPDATA%\\WUTBatcher\\preview_cache\\logs\\preview_<run>.runner.log`
 
 ## Validation and UI Risk Layer
 Rule evaluation remains in `app/compatibility_service.py`.
@@ -183,8 +214,22 @@ Both paths restore:
 - `ui/batch_parameter_form.py`
 - `ui/batch_export_panel.py`
 - `ui/batch_preview_placeholder.py`
+- `ui/stl_preview_widget.py`
 - `tests/test_batch_page_ui.py`
 - `tests/test_gui_project_fixed_keys.py`
 - `tests/test_compatibility_service_batch_sweep_validation.py`
 - `tests/test_eta_estimator.py`
+
+## Manual Preview Checklist
+1. Open a project and go to Batch page.
+2. Toggle Preview `On`.
+3. Verify loader appears while preview is generated.
+4. Verify mesh appears and can be rotated (drag/orbit) and zoomed.
+5. Verify background stays transparent and mesh is bright/neutral.
+6. Click `Update Preview` and verify new generation + reload.
+7. Toggle Preview `Off` during generation and verify request is canceled/ignored.
+8. Trigger an ATH/config error and verify inline error text (no modal) appears.
+9. Check `%LOCALAPPDATA%\\WUTBatcher\\preview_cache\\` and verify:
+   - unique file naming
+   - only latest 10 STL files retained.
 
