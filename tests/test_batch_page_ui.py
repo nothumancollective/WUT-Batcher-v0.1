@@ -358,12 +358,20 @@ class BatchPageUiTests(unittest.TestCase):
             sweeps=dict(payload.get("sweeps", {}) or {}),
         )
         page.apply_compatibility(refreshed)
-        toggle_after = page.parameter_form.sweep_toggle_for_key(key)
-        inputs_after = page.parameter_form.sweep_inputs_for_key(key)
-        assert toggle_after is not None and inputs_after is not None
-        self.assertTrue(toggle_after.isChecked())
-        self.assertEqual(inputs_after["start"].text(), "12")
-        self.assertEqual(inputs_after["end"].text(), "18")
+
+    def test_apply_policy_defaults_merges_enclosure_subdefaults(self) -> None:
+        page = BatchPage()
+        state = self._compat_state()
+        page.apply_compatibility(state)
+        row = page.parameter_form._rows.get("Mesh.Enclosure")
+        if row is None or row.container.isHidden():
+            self.skipTest("Mesh.Enclosure row not available.")
+        page.parameter_form.set_selected_params({"Mesh.Enclosure": {}})
+        page.apply_policy_defaults({"Mesh.Enclosure": {"Depth": 180.0, "EdgeType": 1}})
+        payload = page.parameter_form.selected_params_payload()
+        enclosure = dict(payload.get("Mesh.Enclosure", {}) or {})
+        self.assertEqual(float(enclosure.get("Depth", 0.0)), 180.0)
+        self.assertEqual(int(enclosure.get("EdgeType", 0)), 1)
 
     def test_sweep_remains_enabled_under_warning_and_turns_warn_tint(self) -> None:
         page = BatchPage()

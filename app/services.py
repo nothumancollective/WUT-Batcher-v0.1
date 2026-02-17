@@ -156,6 +156,11 @@ _PREVIEW_R_OSSE_DEFAULTS: Dict[str, float] = {
     "q": 0.996,
 }
 
+_PREVIEW_ENCLOSURE_DEFAULTS: Dict[str, Any] = {
+    "Depth": 180.0,
+    "EdgeType": 1,
+}
+
 _PREVIEW_ATH_MINIMAL_DEFAULTS: Dict[str, Any] = {
     # Keep STL preview generation resilient with the smallest practical set.
     "Length": 120.0,
@@ -170,6 +175,7 @@ _PREVIEW_ATH_MINIMAL_DEFAULTS: Dict[str, Any] = {
     "GCurve.SF.n2": 1.0,
     "GCurve.SF.n3": 1.0,
     "R-OSSE": {},
+    "Mesh.Enclosure": {},
 }
 
 _PREVIEW_POLICY_DEFAULTS: Dict[str, Any] = {
@@ -198,6 +204,9 @@ _PREVIEW_POLICY_DEFAULTS: Dict[str, Any] = {
     "Mesh.MouthResolution": 10.0,
     "Mesh.InterfaceResolution": 8.0,
     "Mesh.CornerSegments": 4,
+    "Mesh.Enclosure": dict(_PREVIEW_ENCLOSURE_DEFAULTS),
+    "Mesh.Enclosure.Depth": float(_PREVIEW_ENCLOSURE_DEFAULTS["Depth"]),
+    "Mesh.Enclosure.EdgeType": int(_PREVIEW_ENCLOSURE_DEFAULTS["EdgeType"]),
     "R-OSSE": dict(_PREVIEW_R_OSSE_DEFAULTS),
 }
 
@@ -318,6 +327,45 @@ def _best_mesh_cmd_for_preview(ath_executable: Path, *, fallback_cmd: str = "") 
     if candidate.exists():
         return str(candidate)
     return str(fallback_cmd or "").strip()
+
+
+def _ensure_preview_gmsh_wrapper(*, cfg_dir: Path, gmsh_exe: str) -> str:
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    wrapper_path = cfg_dir / "wut_preview_gmsh_wrapper.cmd"
+    gmsh_norm = str(gmsh_exe or "").strip().replace("\\", "/")
+    wrapper_text = "\n".join(
+        [
+            "@echo off",
+            "setlocal EnableDelayedExpansion",
+            f"set \"GMSH_EXE={gmsh_norm}\"",
+            "if not exist \"%GMSH_EXE%\" exit /b 1",
+            "if exist \"mesh.geo\" (",
+            "  \"%GMSH_EXE%\" -3 \"mesh.geo\" -format stl -o \"mesh.stl\" >nul 2>&1",
+            "  exit /b %errorlevel%",
+            ")",
+            "for %%F in (*.geo) do (",
+            "  \"%GMSH_EXE%\" -3 \"%%~fF\" -format stl -o \"%%~dpnF.stl\" >nul 2>&1",
+            "  exit /b %errorlevel%",
+            ")",
+            "for /r %%F in (*.geo) do (",
+            "  \"%GMSH_EXE%\" -3 \"%%~fF\" -format stl -o \"%%~dpnF.stl\" >nul 2>&1",
+            "  exit /b %errorlevel%",
+            ")",
+            "exit /b 1",
+            "",
+        ]
+    )
+    wrapper_path.write_text(wrapper_text, encoding="ascii")
+    return str(wrapper_path)
+
+
+def _mesh_cmd_for_preview_runtime(*, cfg_dir: Path, mesh_cmd: str) -> str:
+    raw = str(mesh_cmd or "").strip().strip('"').strip("'")
+    if not raw:
+        return raw
+    if raw.lower().endswith("gmsh.exe"):
+        return _ensure_preview_gmsh_wrapper(cfg_dir=cfg_dir, gmsh_exe=raw)
+    return raw
 
 
 def _write_preview_runtime_cfg(cfg_dir: Path, *, export_root: Path, mesh_cmd: str) -> Path:
@@ -533,6 +581,11 @@ def _default_for_catalog_key(
 ) -> Any:
     tier_token = str(tier or "ath_minimal").strip().lower()
     preset_map = _PREVIEW_POLICY_DEFAULTS if tier_token == "policy_minimal" else _PREVIEW_ATH_MINIMAL_DEFAULTS
+    if key.startswith("Mesh.Enclosure."):
+        sub_key = key.split(".", 2)[-1]
+        if sub_key in _PREVIEW_ENCLOSURE_DEFAULTS:
+            return _PREVIEW_ENCLOSURE_DEFAULTS[sub_key]
+        return None
     if key in preset_map:
         preset = preset_map[key]
         if isinstance(preset, dict):
@@ -581,6 +634,8 @@ def _default_for_catalog_key(
                 pass
             return baseline
         return {}
+    if ath_type == "object" and key == "Mesh.Enclosure":
+        return dict(_PREVIEW_ENCLOSURE_DEFAULTS) if tier_token == "policy_minimal" else {}
     return None
 
 
@@ -715,9 +770,14 @@ def _preview_policy_requirement_map(parameters: Mapping[str, Any]) -> Dict[str, 
     if morph_shape_num in {1, 2}:
         requirements["morph"] = list(_PREVIEW_POLICY_REQUIRED_MORPH_ON)
 
-    # Enclosure is integrated in a dedicated follow-up block so this function
-    # remains the single source of truth for future policy extensions.
-    requirements["enclosure"] = []
+    enclosure_value = payload.get("Mesh.Enclosure")
+    if isinstance(enclosure_value, Mapping):
+        plan_name = str(enclosure_value.get("Plan", "") or "").strip()
+        requirements["enclosure"].append("Mesh.Enclosure")
+        if plan_name:
+            requirements["enclosure"].append("Mesh.Enclosure.Plan")
+        else:
+            requirements["enclosure"].append("Mesh.Enclosure.Depth")
     return requirements
 
 
@@ -731,15 +791,13 @@ def _missing_preview_policy_by_block(parameters: Mapping[str, Any]) -> Dict[str,
             key_s = str(key).strip()
             if not key_s:
                 continue
-            if "." in key_s and key_s.startswith("R-OSSE."):
-                sub_key = key_s.split(".", 1)[1]
-                rosse = payload.get("R-OSSE")
-                if not isinstance(rosse, Mapping):
-                    missing.append(key_s)
+            if "." in key_s:
+                parent_key, sub_key = key_s.rsplit(".", 1)
+                parent_value = payload.get(parent_key)
+                if isinstance(parent_value, Mapping):
+                    if parent_value.get(sub_key) is None:
+                        missing.append(key_s)
                     continue
-                if rosse.get(sub_key) is None:
-                    missing.append(key_s)
-                continue
             if payload.get(key_s) is None:
                 missing.append(key_s)
         missing_by_block[block] = sorted(set(missing))
@@ -762,6 +820,7 @@ def _policy_defaults_for_missing_keys(
 ) -> Dict[str, Any]:
     filled: Dict[str, Any] = {}
     rosse_sub_defaults: Dict[str, Any] = {}
+    enclosure_sub_defaults: Dict[str, Any] = {}
     for raw_key in list(missing_keys or []):
         key = str(raw_key).strip()
         if not key:
@@ -770,6 +829,11 @@ def _policy_defaults_for_missing_keys(
             sub_key = key.split(".", 1)[1]
             if sub_key in _PREVIEW_R_OSSE_DEFAULTS:
                 rosse_sub_defaults[sub_key] = _PREVIEW_R_OSSE_DEFAULTS[sub_key]
+            continue
+        if key.startswith("Mesh.Enclosure."):
+            sub_key = key.split(".", 2)[-1]
+            if sub_key in _PREVIEW_ENCLOSURE_DEFAULTS:
+                enclosure_sub_defaults[sub_key] = _PREVIEW_ENCLOSURE_DEFAULTS[sub_key]
             continue
         default_value = _default_for_catalog_key(
             key,
@@ -785,6 +849,11 @@ def _policy_defaults_for_missing_keys(
         merged = dict(existing) if isinstance(existing, Mapping) else {}
         merged.update(rosse_sub_defaults)
         filled["R-OSSE"] = merged
+    if enclosure_sub_defaults:
+        existing = filled.get("Mesh.Enclosure")
+        merged = dict(existing) if isinstance(existing, Mapping) else {}
+        merged.update(enclosure_sub_defaults)
+        filled["Mesh.Enclosure"] = merged
     return filled
 
 
@@ -818,6 +887,14 @@ def _apply_ath_minimal_selected_defaults(selected_params: Mapping[str, Any]) -> 
             "GCurve.SF.n3",
         ):
             selected.setdefault(sf_key, _PREVIEW_ATH_MINIMAL_DEFAULTS.get(sf_key))
+
+    enclosure_value = selected.get("Mesh.Enclosure")
+    if isinstance(enclosure_value, Mapping):
+        enclosure = dict(enclosure_value)
+        plan_name = str(enclosure.get("Plan", "") or "").strip()
+        if not plan_name and enclosure.get("Depth") is None:
+            enclosure["Depth"] = float(_PREVIEW_ENCLOSURE_DEFAULTS.get("Depth", 180.0))
+        selected["Mesh.Enclosure"] = enclosure
     return selected
 
 
@@ -1012,6 +1089,14 @@ def _preview_seed_parameters(constraints: ProjectConstraints, selected_params: M
             "GCurve.SF.n3",
         ):
             merged.setdefault(sf_key, _PREVIEW_ATH_MINIMAL_DEFAULTS.get(sf_key))
+
+    enclosure_value = merged.get("Mesh.Enclosure")
+    if isinstance(enclosure_value, Mapping):
+        enclosure = dict(enclosure_value)
+        plan_name = str(enclosure.get("Plan", "") or "").strip()
+        if not plan_name and enclosure.get("Depth") is None:
+            enclosure["Depth"] = float(_PREVIEW_ENCLOSURE_DEFAULTS.get("Depth", 180.0))
+        merged["Mesh.Enclosure"] = enclosure
 
     return _normalize_preview_render_parameters(merged)
 
@@ -1224,7 +1309,8 @@ class OrchestratorService:
 
         existing_mesh_cmd = _extract_mesh_cmd_from_runtime_cfg(runtime_cfg_path)
         mesh_cmd = _best_mesh_cmd_for_preview(ath_executable, fallback_cmd=existing_mesh_cmd)
-        _write_preview_runtime_cfg(cfg_dir, export_root=export_root, mesh_cmd=mesh_cmd)
+        mesh_cmd_for_runtime = _mesh_cmd_for_preview_runtime(cfg_dir=cfg_dir, mesh_cmd=mesh_cmd)
+        _write_preview_runtime_cfg(cfg_dir, export_root=export_root, mesh_cmd=mesh_cmd_for_runtime)
 
         command = [str(ath_executable), str(cfg_path)]
         proc: Optional[subprocess.Popen[str]] = None
@@ -1273,6 +1359,7 @@ class OrchestratorService:
                         "run_id": run_token,
                         "exit_code": exit_code,
                         "export_root": str(export_root),
+                        "mesh_cmd": str(mesh_cmd_for_runtime),
                     },
                     indent=2,
                     ensure_ascii=False,

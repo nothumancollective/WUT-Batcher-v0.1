@@ -179,6 +179,22 @@ class PlannerRendererTests(unittest.TestCase):
         self.assertIn("q = 0.99", cfg)
         self.assertIn("}", cfg)
 
+    def test_cfg_renderer_emits_object_lists_as_csv_not_json_array(self) -> None:
+        cfg = render_cfg_text(
+            template_text="Length = 120\n",
+            parameters={
+                "Mesh.Enclosure": {
+                    "Depth": 180.0,
+                    "Spacing": [30, 30, 30, 200],
+                }
+            },
+            version_id="V001",
+        )
+        self.assertIn("Mesh.Enclosure = {", cfg)
+        self.assertIn("Depth = 180", cfg)
+        self.assertIn("Spacing = 30, 30, 30, 200", cfg)
+        self.assertNotIn("Spacing = [30, 30, 30, 200]", cfg)
+
 
 
 

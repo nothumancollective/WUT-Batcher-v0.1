@@ -243,6 +243,34 @@ class PreviewPipelineTests(unittest.TestCase):
         self.assertIn("Morph.Rate", missing)
         self.assertIn("Morph.AllowShrinkage", missing)
 
+    def test_preview_seed_parameters_adds_enclosure_depth_for_predefined_mode(self) -> None:
+        constraints = ProjectConstraints(
+            fixed_params={},
+            limits={},
+            param_states=[],
+        )
+        payload = _preview_seed_parameters(constraints, {"Length": 100.0, "Mesh.Enclosure": {}})
+        enclosure = dict(payload.get("Mesh.Enclosure", {}) or {})
+        self.assertEqual(float(enclosure.get("Depth", 0.0)), 180.0)
+
+    def test_missing_preview_policy_keys_marks_enclosure_depth_when_enclosure_enabled(self) -> None:
+        missing = _missing_preview_policy_by_block(
+            {
+                "Length": 100.0,
+                "Mesh.Enclosure": {},
+            }
+        )
+        self.assertIn("Mesh.Enclosure.Depth", set(missing.get("enclosure", [])))
+
+    def test_missing_preview_policy_keys_does_not_require_enclosure_depth_for_plan_mode(self) -> None:
+        missing = _missing_preview_policy_by_block(
+            {
+                "Length": 100.0,
+                "Mesh.Enclosure": {"Plan": "my_plan"},
+            }
+        )
+        self.assertNotIn("Mesh.Enclosure.Depth", set(missing.get("enclosure", [])))
+
     def test_stl_preview_widget_renders_mesh_without_qt3d(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_preview_test_") as tmp:
             stl_path = Path(tmp) / "sample.stl"

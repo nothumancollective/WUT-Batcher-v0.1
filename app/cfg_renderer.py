@@ -46,7 +46,9 @@ def _format_value(value: Any, *, keep_float_trailing_zero: bool = False) -> str:
         if value.is_integer():
             return f"{value:.1f}" if keep_float_trailing_zero else str(int(value))
         return f"{value:g}"
-    if isinstance(value, (list, dict)):
+    if isinstance(value, list):
+        return ", ".join(_format_value(item, keep_float_trailing_zero=keep_float_trailing_zero) for item in value)
+    if isinstance(value, dict):
         return json.dumps(value, ensure_ascii=False)
     return str(value)
 

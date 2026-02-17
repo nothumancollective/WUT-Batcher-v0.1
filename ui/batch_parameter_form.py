@@ -1103,12 +1103,26 @@ class BatchParameterForm(QWidget):
                     obj[sub_key] = raw_value
                 merged["R-OSSE"] = obj
                 continue
+            if key.startswith("Mesh.Enclosure."):
+                obj = dict(merged.get("Mesh.Enclosure") or {})
+                sub_key = key.split(".", 2)[-1]
+                if obj.get(sub_key) is None:
+                    obj[sub_key] = raw_value
+                merged["Mesh.Enclosure"] = obj
+                continue
             if key == "R-OSSE" and isinstance(raw_value, Mapping):
                 obj = dict(merged.get("R-OSSE") or {})
                 for sub_key, sub_value in dict(raw_value).items():
                     if obj.get(str(sub_key)) is None:
                         obj[str(sub_key)] = sub_value
                 merged["R-OSSE"] = obj
+                continue
+            if key == "Mesh.Enclosure" and isinstance(raw_value, Mapping):
+                obj = dict(merged.get("Mesh.Enclosure") or {})
+                for sub_key, sub_value in dict(raw_value).items():
+                    if obj.get(str(sub_key)) is None:
+                        obj[str(sub_key)] = sub_value
+                merged["Mesh.Enclosure"] = obj
                 continue
             if merged.get(key) is None:
                 merged[key] = raw_value
