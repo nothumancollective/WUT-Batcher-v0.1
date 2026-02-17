@@ -256,6 +256,7 @@ class SimExportSettings:
     freq_end_hz: float = 15000.0
     num_points: int = 16
     mesh_frequency: Optional[float] = None
+    simulation_mode: str = "free_standing"
     exports: Dict[str, ExportOption] = field(default_factory=dict)
     export_specs: List[Dict[str, Any]] = field(default_factory=list)
 
@@ -273,6 +274,11 @@ class SimExportSettings:
             mesh_frequency=(
                 None if data.get("mesh_frequency") is None else float(data.get("mesh_frequency"))
             ),
+            simulation_mode=(
+                str(data.get("simulation_mode", "free_standing")).strip().lower()
+                if str(data.get("simulation_mode", "free_standing")).strip().lower() in {"free_standing", "infinite_baffle"}
+                else "free_standing"
+            ),
             exports=exports,
             export_specs=specs,
         )
@@ -283,6 +289,7 @@ class SimExportSettings:
             "freq_end_hz": self.freq_end_hz,
             "num_points": self.num_points,
             "mesh_frequency": self.mesh_frequency,
+            "simulation_mode": self.simulation_mode,
             "exports": {k: v.to_dict() for k, v in self.exports.items()},
             "export_specs": list(self.export_specs),
         }

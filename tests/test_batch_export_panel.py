@@ -20,14 +20,14 @@ class BatchExportPanelTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.app = QApplication.instance() or QApplication([])
 
-    def test_presets_are_buttons_and_polar_is_disabled(self) -> None:
+    def test_presets_are_buttons(self) -> None:
         panel = BatchExportPanel()
         self.assertIsInstance(panel.preset_spl, QPushButton)
         self.assertIsInstance(panel.preset_impedance, QPushButton)
         self.assertIsInstance(panel.preset_polar, QPushButton)
         self.assertTrue(panel.preset_spl.isCheckable())
         self.assertTrue(panel.preset_impedance.isCheckable())
-        self.assertFalse(panel.preset_polar.isEnabled())
+        self.assertTrue(panel.preset_polar.isCheckable())
 
     def test_payload_contains_mesh_frequency_and_structured_specs(self) -> None:
         panel = BatchExportPanel()
@@ -52,6 +52,22 @@ class BatchExportPanelTests(unittest.TestCase):
         self.assertEqual(panel.sweep_mode_value(), "combined")
         panel.set_sweep_mode("invalid")
         self.assertEqual(panel.sweep_mode_value(), "single")
+
+    def test_simulation_mode_roundtrip(self) -> None:
+        panel = BatchExportPanel()
+        panel.set_simulation_mode("infinite_baffle")
+        payload = panel.sim_export_params_payload()
+        self.assertEqual(str(payload.get("simulation_mode")), "infinite_baffle")
+
+    def test_duplicate_polar_name_returns_fatal_issue(self) -> None:
+        panel = BatchExportPanel()
+        panel._advanced_state.polars[0].enabled = True  # type: ignore[attr-defined]
+        panel._advanced_state.polars[1].enabled = True  # type: ignore[attr-defined]
+        panel._advanced_state.polars[0].polar_name = "SPL_V"  # type: ignore[attr-defined]
+        panel._advanced_state.polars[1].polar_name = "SPL_V"  # type: ignore[attr-defined]
+        issues = panel.validation_issues()
+        self.assertTrue(issues)
+        self.assertEqual(str(issues[0].get("rule_id")), "export_duplicate_polar_name")
 
 
 if __name__ == "__main__":

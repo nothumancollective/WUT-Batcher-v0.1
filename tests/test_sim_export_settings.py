@@ -12,6 +12,7 @@ class SimExportSettingsTests(unittest.TestCase):
             "freq_end_hz": 16000.0,
             "num_points": 32,
             "mesh_frequency": 1100.0,
+            "simulation_mode": "infinite_baffle",
             "export_specs": [
                 {
                     "id": "preset_spl",
@@ -26,8 +27,10 @@ class SimExportSettingsTests(unittest.TestCase):
         }
         settings = SimExportSettings.from_dict(payload)
         self.assertEqual(settings.mesh_frequency, 1100.0)
+        self.assertEqual(settings.simulation_mode, "infinite_baffle")
         back = settings.to_dict()
         self.assertEqual(back.get("mesh_frequency"), 1100.0)
+        self.assertEqual(back.get("simulation_mode"), "infinite_baffle")
 
 
 if __name__ == "__main__":
