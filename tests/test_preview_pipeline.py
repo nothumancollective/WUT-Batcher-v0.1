@@ -197,6 +197,35 @@ class PreviewPipelineTests(unittest.TestCase):
         self.assertIn("GCurve.AspectRatio", missing)
         self.assertIn("GCurve.SF.a", missing)
 
+    def test_morph_targetshape_has_no_ath_minimal_extras_but_policy_marks_full_morph_set(self) -> None:
+        project = Project(
+            project_id="P_PREVIEW_MORPH",
+            name="Preview",
+            root_path=".",
+            constraints=ProjectConstraints(
+                project_id="P_PREVIEW_MORPH",
+                fixed_params={},
+                limits={},
+                param_states=[],
+            ),
+        )
+        payload = _build_preview_render_payload(
+            project=project,
+            selected_params={"Morph.TargetShape": 1},
+            sweep_mode="single",
+        )
+        render = dict(payload.get("render_parameters", {}) or {})
+        self.assertEqual(int(render.get("Morph.TargetShape", 0)), 1)
+        self.assertNotIn("Morph.TargetWidth", render)
+        self.assertNotIn("Morph.TargetHeight", render)
+        missing = set(payload.get("policy_missing_keys", []) or [])
+        self.assertIn("Morph.TargetWidth", missing)
+        self.assertIn("Morph.TargetHeight", missing)
+        self.assertIn("Morph.CornerRadius", missing)
+        self.assertIn("Morph.FixedPart", missing)
+        self.assertIn("Morph.Rate", missing)
+        self.assertIn("Morph.AllowShrinkage", missing)
+
     def test_stl_preview_widget_renders_mesh_without_qt3d(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_preview_test_") as tmp:
             stl_path = Path(tmp) / "sample.stl"

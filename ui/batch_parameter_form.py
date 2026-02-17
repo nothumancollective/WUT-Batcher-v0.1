@@ -165,6 +165,7 @@ class BatchParameterForm(QWidget):
         self._last_changed_key: Optional[str] = None
         self._prev_visible_keys: set[str] = set()
         self._hint_widgets: List[QWidget] = []
+        self._manual_highlight_widgets: List[QWidget] = []
         self._compat_ui_state: Dict[str, Any] = {}
         self._blocked_keys: set[str] = set()
         self._hidden_ui_keys: set[str] = set()
@@ -223,6 +224,19 @@ class BatchParameterForm(QWidget):
                 return _SingleColumnObjectEditor(field)
             return ObjectFieldEditor(field, use_toggle=(field.key == "Mesh.Enclosure"))
         return ScalarFieldEditor(field)
+
+    def _sweep_control_size(self, base_editor: QWidget) -> tuple[int, int]:
+        width = 0
+        height = 0
+        if isinstance(base_editor, ScalarFieldEditor):
+            value_widget = base_editor.value_widget()
+            width = int(value_widget.sizeHint().width() or value_widget.minimumSizeHint().width() or value_widget.width())
+            height = int(value_widget.sizeHint().height() or value_widget.minimumSizeHint().height() or value_widget.height())
+        if width <= 0:
+            width = int(base_editor.sizeHint().width() or base_editor.minimumSizeHint().width() or 96)
+        if height <= 0:
+            height = int(base_editor.sizeHint().height() or base_editor.minimumSizeHint().height() or self._control_height)
+        return (max(72, int(width)), max(self._control_height, int(height)))
 
     def _mode_label_map(self, stack: ModeStackSpec) -> Dict[str, str]:
         result: Dict[str, str] = {}
@@ -360,18 +374,17 @@ class BatchParameterForm(QWidget):
         if hasattr(base_editor, "changed"):
             base_editor.changed.connect(lambda *_ignored, row_key=key: self._on_field_edited(row_key))  # type: ignore[attr-defined]
         row_layout.addWidget(base_editor, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        sweep_width, sweep_height = self._sweep_control_size(base_editor)
 
         sweep_toggle = QPushButton("Sweep")
         sweep_toggle.setProperty("segment", "true")
         sweep_toggle.setCheckable(True)
-        sweep_toggle.setFixedHeight(self._control_height)
-        sweep_toggle.setFixedWidth(96)
+        sweep_toggle.setFixedSize(sweep_width, sweep_height)
         row_layout.addWidget(sweep_toggle, 0, Qt.AlignLeft | Qt.AlignVCenter)
 
         start_edit = QLineEdit()
         start_edit.setPlaceholderText("start")
-        start_edit.setFixedHeight(self._control_height)
-        start_edit.setFixedWidth(96)
+        start_edit.setFixedSize(sweep_width, sweep_height)
         start_edit.setValidator(QDoubleValidator(start_edit))
         start_edit.setVisible(False)
         start_edit.textChanged.connect(lambda _text, row_key=key: self._on_field_edited(row_key))
@@ -379,8 +392,7 @@ class BatchParameterForm(QWidget):
 
         end_edit = QLineEdit()
         end_edit.setPlaceholderText("end")
-        end_edit.setFixedHeight(self._control_height)
-        end_edit.setFixedWidth(96)
+        end_edit.setFixedSize(sweep_width, sweep_height)
         end_edit.setValidator(QDoubleValidator(end_edit))
         end_edit.setVisible(False)
         end_edit.textChanged.connect(lambda _text, row_key=key: self._on_field_edited(row_key))
@@ -388,8 +400,7 @@ class BatchParameterForm(QWidget):
 
         steps_edit = QLineEdit("3")
         steps_edit.setPlaceholderText("steps")
-        steps_edit.setFixedHeight(self._control_height)
-        steps_edit.setFixedWidth(96)
+        steps_edit.setFixedSize(sweep_width, sweep_height)
         steps_edit.setValidator(QIntValidator(1, 9999, steps_edit))
         steps_edit.setVisible(False)
         steps_edit.textChanged.connect(lambda _text, row_key=key: self._on_field_edited(row_key))
@@ -680,6 +691,7 @@ class BatchParameterForm(QWidget):
             self._hint_widgets.append(widget)
 
     def _on_field_edited(self, key: str) -> None:
+        self.clear_manual_highlights()
         row = self._rows.get(str(key))
         if row is not None:
             self._last_changed_key = str(key)
@@ -1000,6 +1012,7 @@ class BatchParameterForm(QWidget):
         raw = dict(payload or {})
         for key, row in self._rows.items():
             self._set_editor_value(row, raw.get(key))
+        self.clear_manual_highlights()
 
     def set_sweeps(self, payload: Dict[str, Any]) -> None:
         raw = dict(payload or {})
@@ -1016,6 +1029,90 @@ class BatchParameterForm(QWidget):
             row.end_edit.setText("" if spec.get("end") is None else str(spec.get("end")))
             steps = spec.get("steps", 3)
             row.steps_edit.setText("" if steps is None else str(steps))
+        self.clear_manual_highlights()
+
+    @staticmethod
+    def _normalize_policy_key_for_row(key: str) -> str:
+        token = str(key or "").strip()
+        if not token:
+            return ""
+        if token.startswith("R-OSSE."):
+            return "R-OSSE"
+        if token in {"R-OSSE", "Throat.Profile"}:
+            return token
+        return token
+
+    def _row_for_policy_key(self, key: str) -> Optional[_FieldRow]:
+        normalized = self._normalize_policy_key_for_row(str(key))
+        if not normalized:
+            return None
+        row = self._rows.get(normalized)
+        if row is not None:
+            return row
+        if "." in normalized:
+            parent = normalized.rsplit(".", 1)[0]
+            return self._rows.get(parent)
+        return None
+
+    def clear_manual_highlights(self) -> None:
+        for widget in list(self._manual_highlight_widgets):
+            widget.setProperty("compatCauseFlash", "false")
+            self._repolish(widget)
+        self._manual_highlight_widgets = []
+        for row in self._rows.values():
+            if row.helper_label.isVisible() and "Use defaults" in str(row.helper_label.text() or ""):
+                row.helper_label.setText("")
+                row.helper_label.setVisible(False)
+                self._repolish(row.helper_label)
+
+    def highlight_policy_missing_keys(self, keys: Sequence[str]) -> List[str]:
+        self.clear_manual_highlights()
+        highlighted: List[str] = []
+        for raw in list(keys or []):
+            key = str(raw).strip()
+            if not key:
+                continue
+            row = self._row_for_policy_key(key)
+            if row is None or row.container.isHidden():
+                continue
+            targets = self._iter_hint_targets(row) or [row.base_editor]
+            for widget in targets:
+                widget.setProperty("compatCauseFlash", "true")
+                self._repolish(widget)
+                self._manual_highlight_widgets.append(widget)
+            row.helper_label.setText("Use defaults available for run.")
+            row.helper_label.setProperty("severity", "info")
+            row.helper_label.setVisible(True)
+            self._repolish(row.helper_label)
+            normalized = self._normalize_policy_key_for_row(key)
+            if normalized and normalized not in highlighted:
+                highlighted.append(normalized)
+        self._manual_highlight_widgets = self._dedup_widgets(self._manual_highlight_widgets)
+        return highlighted
+
+    def apply_default_values(self, defaults: Mapping[str, Any]) -> None:
+        merged = dict(self.selected_params_payload() or {})
+        for raw_key, raw_value in dict(defaults or {}).items():
+            key = str(raw_key).strip()
+            if not key:
+                continue
+            if key.startswith("R-OSSE."):
+                obj = dict(merged.get("R-OSSE") or {})
+                sub_key = key.split(".", 1)[1]
+                if obj.get(sub_key) is None:
+                    obj[sub_key] = raw_value
+                merged["R-OSSE"] = obj
+                continue
+            if key == "R-OSSE" and isinstance(raw_value, Mapping):
+                obj = dict(merged.get("R-OSSE") or {})
+                for sub_key, sub_value in dict(raw_value).items():
+                    if obj.get(str(sub_key)) is None:
+                        obj[str(sub_key)] = sub_value
+                merged["R-OSSE"] = obj
+                continue
+            if merged.get(key) is None:
+                merged[key] = raw_value
+        self.set_selected_params(merged)
 
     def set_from_batch(self, batch: Any) -> None:
         selected_payload: Dict[str, Any] = {}

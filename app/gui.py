@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Mapping, Optional
 
 from app.doctor_service import run_doctor_checks
 from app.constants import DEFAULT_RUNNER_MODE
@@ -500,6 +500,134 @@ class StatusDetailDialog(QDialog):
             scroll.addItem(item)
             scroll.setItemWidget(item, row_widget)
         root.addWidget(scroll, 1)
+
+    def _title_mouse_press(self, event) -> None:  # type: ignore[override]
+        if event.button() != Qt.LeftButton:
+            return
+        self._drag_offset = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+        event.accept()
+
+    def _title_mouse_move(self, event) -> None:  # type: ignore[override]
+        if self._drag_offset is None:
+            return
+        if not (event.buttons() & Qt.LeftButton):
+            return
+        self.move(event.globalPosition().toPoint() - self._drag_offset)
+        event.accept()
+
+    def _title_mouse_release(self, event) -> None:  # type: ignore[override]
+        self._drag_offset = None
+        event.accept()
+
+
+class BatchRunDefaultsDialog(QDialog):
+    def __init__(
+        self,
+        *,
+        missing_keys: List[str],
+        default_values: Dict[str, Any],
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.setProperty("framelessShell", True)
+        self.setModal(True)
+        self.setMinimumSize(560, 360)
+        self.resize(620, 420)
+        self._drag_offset: Optional[QPoint] = None
+        self._decision = "cancel"
+        self._missing_keys = [str(item) for item in list(missing_keys or []) if str(item).strip()]
+        self._default_values = dict(default_values or {})
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(10, 10, 10, 10)
+        outer.setSpacing(0)
+        shell = QFrame()
+        shell.setObjectName("FramelessShell")
+        outer.addWidget(shell)
+        root = QVBoxLayout(shell)
+        root.setContentsMargins(12, 10, 12, 12)
+        root.setSpacing(10)
+
+        title_bar = QWidget()
+        title_row = QHBoxLayout(title_bar)
+        title_row.setContentsMargins(0, 0, 0, 0)
+        title_row.setSpacing(8)
+        title = QLabel("Undefined Parameters For Run")
+        title.setObjectName("SectionTitle")
+        title_row.addWidget(title)
+        title_row.addStretch(1)
+        close_btn = QPushButton("X")
+        close_btn.setObjectName("WindowCloseButton")
+        close_btn.setFixedSize(28, 24)
+        close_btn.clicked.connect(self.reject)
+        title_row.addWidget(close_btn, alignment=Qt.AlignRight)
+        root.addWidget(title_bar)
+        title_bar.mousePressEvent = self._title_mouse_press  # type: ignore[assignment]
+        title_bar.mouseMoveEvent = self._title_mouse_move  # type: ignore[assignment]
+        title_bar.mouseReleaseEvent = self._title_mouse_release  # type: ignore[assignment]
+
+        text = QLabel(
+            "The current configuration contains undefined policy-minimal parameters.\n"
+            "Do you want to inspect them or use defaults for this run?"
+        )
+        text.setWordWrap(True)
+        text.setObjectName("SummaryText")
+        root.addWidget(text)
+
+        list_box = QListWidget()
+        list_box.setSelectionMode(QAbstractItemView.NoSelection)
+        for key in self._missing_keys[:18]:
+            hint = self._default_hint_for_key(key)
+            label = f"{key}  ->  {hint}" if hint else key
+            list_box.addItem(label)
+        if len(self._missing_keys) > 18:
+            list_box.addItem(f"... +{len(self._missing_keys) - 18} more")
+        root.addWidget(list_box, 1)
+
+        buttons = QHBoxLayout()
+        buttons.addStretch(1)
+        show_btn = QPushButton("Show undefined")
+        show_btn.setProperty("segment", "true")
+        show_btn.setFixedHeight(32)
+        defaults_btn = QPushButton("Use defaults")
+        defaults_btn.setObjectName("PrimaryButton")
+        defaults_btn.setFixedHeight(32)
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setFixedHeight(32)
+        show_btn.clicked.connect(self._accept_show)
+        defaults_btn.clicked.connect(self._accept_defaults)
+        cancel_btn.clicked.connect(self.reject)
+        buttons.addWidget(cancel_btn)
+        buttons.addWidget(show_btn)
+        buttons.addWidget(defaults_btn)
+        root.addLayout(buttons)
+
+    def _default_hint_for_key(self, key: str) -> str:
+        token = str(key or "").strip()
+        if not token:
+            return ""
+        if token.startswith("R-OSSE."):
+            obj = dict(self._default_values.get("R-OSSE", {}) or {})
+            return str(obj.get(token.split(".", 1)[1], ""))
+        value = self._default_values.get(token)
+        if value is None:
+            return ""
+        if isinstance(value, Mapping):
+            return "{...}"
+        return str(value)
+
+    def _accept_show(self) -> None:
+        self._decision = "show"
+        self.accept()
+
+    def _accept_defaults(self) -> None:
+        self._decision = "use_defaults"
+        self.accept()
+
+    def decision(self) -> str:
+        return str(self._decision or "cancel")
 
     def _title_mouse_press(self, event) -> None:  # type: ignore[override]
         if event.button() != Qt.LeftButton:
@@ -1651,8 +1779,6 @@ class BatchPage(QWidget):
     back_to_dashboard = Signal()
     draft_changed = Signal(dict)
     blocked_interaction = Signal(str, str, str)
-    preview_toggle_changed = Signal(bool)
-    preview_update_requested = Signal(dict)
 
     def __init__(self) -> None:
         super().__init__()
@@ -1804,8 +1930,6 @@ class BatchPage(QWidget):
         self.parameter_form.blocked_interaction.connect(self.blocked_interaction.emit)
         self.export_panel.changed.connect(self._emit_draft_changed)
         self.batch_name.textChanged.connect(self._emit_draft_changed)
-        self.preview_panel.preview_toggled.connect(self._on_preview_toggled)
-        self.preview_panel.update_requested.connect(self._on_preview_update_requested)
 
         self._summary_strip_layout = summary_strip_layout
         self._summary_strip = summary_strip
@@ -1853,19 +1977,6 @@ class BatchPage(QWidget):
         self._update_summary_widgets()
         self.draft_changed.emit(self._payload(include_name=False))
 
-    def _on_preview_toggled(self, enabled: bool) -> None:
-        preview_enabled = bool(enabled)
-        self.preview_toggle_changed.emit(preview_enabled)
-        if not preview_enabled:
-            self.preview_panel.set_busy(False)
-            return
-        self.preview_update_requested.emit(self._payload(include_name=False))
-
-    def _on_preview_update_requested(self) -> None:
-        if not self.preview_panel.is_preview_enabled():
-            return
-        self.preview_update_requested.emit(self._payload(include_name=False))
-
     def set_preview_busy(self, busy: bool) -> None:
         self.preview_panel.set_busy(bool(busy))
 
@@ -1879,6 +1990,20 @@ class BatchPage(QWidget):
         self._project_fixed_keys = {str(item) for item in list(keys or []) if str(item).strip()}
         self.parameter_form.set_project_fixed_keys(sorted(self._project_fixed_keys))
         self._update_summary_widgets()
+
+    def highlight_policy_missing_keys(self, keys: List[str]) -> List[str]:
+        return self.parameter_form.highlight_policy_missing_keys(list(keys or []))
+
+    def clear_policy_missing_highlights(self) -> None:
+        self.parameter_form.clear_manual_highlights()
+
+    def apply_policy_defaults(self, defaults: Dict[str, Any]) -> None:
+        self._suspend_draft_events = True
+        try:
+            self.parameter_form.apply_default_values(dict(defaults or {}))
+        finally:
+            self._suspend_draft_events = False
+        self._emit_draft_changed()
 
     def set_eta(self, eta_seconds: Optional[float], *, sample_count: int, median_seconds: Optional[float]) -> None:
         self._eta_seconds = eta_seconds
@@ -1952,7 +2077,6 @@ class BatchPage(QWidget):
             self.parameter_form.set_sweeps({})
             self.export_panel.set_from_payload({})
             self.set_eta(None, sample_count=0, median_seconds=None)
-            self.preview_panel.set_preview_enabled(False)
             self.preview_panel.set_busy(False)
             self.preview_panel.set_info_message("No preview mesh loaded.")
         finally:
@@ -2039,13 +2163,13 @@ class BatchPage(QWidget):
         self.action_status_pill.style().polish(self.action_status_pill)
         has_name = bool(self.batch_name.text().strip())
         can_save = fatal_count == 0 and has_name
-        can_run = fatal_count == 0 and incomplete_count == 0 and has_name
+        can_run = fatal_count == 0 and has_name
         self.save_btn.setEnabled(can_save)
         self.run_btn.setEnabled(can_run)
         if not has_name:
             self.run_btn.setToolTip("Provide a batch name first.")
         elif incomplete_count > 0:
-            self.run_btn.setToolTip("Complete required values before running.")
+            self.run_btn.setToolTip("Undefined policy parameters will be offered with defaults on run.")
         elif fatal_count > 0:
             self.run_btn.setToolTip("Resolve fatal validation issues before running.")
         else:
@@ -2247,6 +2371,12 @@ class MainWindow(QMainWindow):
         self._preview_request_id = 0
         self._preview_thread: Optional[QThread] = None
         self._preview_worker: Optional[_BatchPreviewWorker] = None
+        self._preview_update_debounce_ms = 280
+        self._pending_preview_payload: Optional[Dict[str, object]] = None
+        self._preview_update_timer = QTimer(self)
+        self._preview_update_timer.setSingleShot(True)
+        self._preview_update_timer.setInterval(self._preview_update_debounce_ms)
+        self._preview_update_timer.timeout.connect(self._flush_batch_preview_update)
 
         self.setWindowTitle("WUT Batcher")
         self.setMinimumSize(1280, 800)
@@ -2321,13 +2451,12 @@ class MainWindow(QMainWindow):
         self.batch_page.back_to_dashboard.connect(self.show_dashboard)
         self.batch_page.draft_changed.connect(self._queue_batch_draft_changed)
         self.batch_page.blocked_interaction.connect(self._on_batch_blocked_interaction)
-        self.batch_page.preview_toggle_changed.connect(self._on_batch_preview_toggled)
-        self.batch_page.preview_update_requested.connect(self._request_batch_preview_update)
         self.batch_page.compat_panel.request_show_details.connect(
             lambda: self._show_validation_details(self.batch_page.compat_panel.issues(), "Batch Validation Details")
         )
 
     def _stop_preview_worker(self) -> None:
+        self._cancel_pending_preview_update()
         worker = self._preview_worker
         thread = self._preview_thread
         if worker is not None:
@@ -2338,14 +2467,24 @@ class MainWindow(QMainWindow):
         self._preview_worker = None
         self._preview_thread = None
 
-    def _on_batch_preview_toggled(self, enabled: bool) -> None:
-        if enabled:
-            return
-        self._stop_preview_worker()
-        self.batch_page.set_preview_busy(False)
+    def _cancel_pending_preview_update(self) -> None:
+        self._pending_preview_payload = None
+        self._preview_update_timer.stop()
+
+    def _queue_batch_preview_update(self, payload: Dict[str, object]) -> None:
+        self._pending_preview_payload = dict(payload)
+        self._preview_update_timer.start()
+
+    def _flush_batch_preview_update(self) -> None:
+        payload = self._pending_preview_payload
+        self._pending_preview_payload = None
+        if payload is None:
+            payload = self.batch_page._payload(include_name=False)
+        self._request_batch_preview_update(payload)
 
     def _request_batch_preview_update(self, payload: Dict[str, object]) -> None:
         if self.current_project is None:
+            self.batch_page.set_preview_busy(False)
             self.batch_page.set_preview_error("Open a project before generating preview.")
             return
 
@@ -2382,10 +2521,6 @@ class MainWindow(QMainWindow):
 
     def _on_batch_preview_ready(self, request_id: int, result: Dict[str, Any]) -> None:
         if int(request_id) != int(self._preview_request_id):
-            return
-        if not self.batch_page.preview_panel.is_preview_enabled():
-            self._preview_worker = None
-            self._preview_thread = None
             return
         cache_path = str(result.get("cache_stl", "")).strip()
         if not cache_path:
@@ -2721,9 +2856,81 @@ class MainWindow(QMainWindow):
         self.show_dashboard()
         return summary.batch_id
 
+    @staticmethod
+    def _merge_policy_defaults(
+        selected_params: Dict[str, Any],
+        default_values: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        merged = dict(selected_params or {})
+        for raw_key, raw_value in dict(default_values or {}).items():
+            key = str(raw_key).strip()
+            if not key:
+                continue
+            if key.startswith("R-OSSE."):
+                obj = dict(merged.get("R-OSSE", {}) or {})
+                sub_key = key.split(".", 1)[1]
+                if obj.get(sub_key) is None:
+                    obj[sub_key] = raw_value
+                merged["R-OSSE"] = obj
+                continue
+            if key == "R-OSSE" and isinstance(raw_value, Mapping):
+                obj = dict(merged.get("R-OSSE", {}) or {})
+                for sub_key, sub_value in dict(raw_value).items():
+                    if obj.get(str(sub_key)) is None:
+                        obj[str(sub_key)] = sub_value
+                merged["R-OSSE"] = obj
+                continue
+            if merged.get(key) is None:
+                merged[key] = raw_value
+        return merged
+
+    def _resolve_run_policy_defaults(self, payload: Dict[str, object]) -> Optional[Dict[str, object]]:
+        if self.current_project is None:
+            return payload
+        selected_params = dict(payload.get("selected_params", {}) or {})
+        policy = self.service.evaluate_batch_default_policy(
+            project_id=self.current_project.project_id,
+            selected_params=selected_params,
+        )
+        missing_keys = [str(item) for item in list(policy.get("missing_keys", []) or []) if str(item).strip()]
+        default_values = dict(policy.get("default_values", {}) or {})
+        self.batch_page.clear_policy_missing_highlights()
+        if not missing_keys:
+            return payload
+
+        dialog = BatchRunDefaultsDialog(
+            missing_keys=missing_keys,
+            default_values=default_values,
+            parent=self,
+        )
+        decision = "cancel"
+        if dialog.exec() == QDialog.Accepted:
+            decision = dialog.decision()
+        if decision == "show":
+            highlighted = self.batch_page.highlight_policy_missing_keys(missing_keys)
+            if highlighted:
+                self.set_status(f"Highlighted undefined parameters: {len(highlighted)}")
+            else:
+                self.set_status("No visible undefined parameters to highlight.")
+            return None
+        if decision != "use_defaults":
+            self.set_status("Run canceled.")
+            return None
+
+        merged_selected = self._merge_policy_defaults(selected_params, default_values)
+        next_payload = dict(payload)
+        next_payload["selected_params"] = merged_selected
+        self.batch_page.apply_policy_defaults(default_values)
+        self.batch_page.clear_policy_missing_highlights()
+        self.set_status("Applied policy defaults for run.")
+        return next_payload
+
     def _run_batch(self, payload: Dict[str, object]) -> None:
         self._stop_preview_worker()
-        batch_id = self._save_batch(payload, for_run=True)
+        run_payload = self._resolve_run_policy_defaults(dict(payload))
+        if run_payload is None:
+            return
+        batch_id = self._save_batch(run_payload, for_run=True)
         if self.current_project is None or not batch_id:
             return
         self.show_run()
@@ -2896,6 +3103,8 @@ class MainWindow(QMainWindow):
 
     def _on_batch_draft_changed(self, payload: Dict[str, object]) -> None:
         if self.current_project is None:
+            self._cancel_pending_preview_update()
+            self._stop_preview_worker()
             self.batch_page.set_project_fixed_keys([])
             self.batch_page.apply_compatibility(
                 {
@@ -2908,6 +3117,8 @@ class MainWindow(QMainWindow):
             )
             self.batch_page.apply_ui_risks([])
             self.batch_page.set_eta(None, sample_count=0, median_seconds=None)
+            self.batch_page.set_preview_busy(False)
+            self.batch_page.preview_panel.set_info_message("No preview mesh loaded.")
             return
         raw_payload = dict(payload)
         raw_sweep_mode = str(raw_payload.get("sweep_mode", "single"))
@@ -3015,6 +3226,12 @@ class MainWindow(QMainWindow):
             estimate.get("eta_seconds"),
             sample_count=int(estimate.get("sample_count", 0) or 0),
             median_seconds=estimate.get("median_seconds_per_version"),
+        )
+        self._queue_batch_preview_update(
+            {
+                "selected_params": selected_params,
+                "sweep_mode": sweep_mode,
+            }
         )
 
 

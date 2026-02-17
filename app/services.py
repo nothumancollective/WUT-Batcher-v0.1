@@ -223,6 +223,16 @@ _PREVIEW_POLICY_REQUIRED_MESH: List[str] = [
     "Mesh.Quadrants",
 ]
 
+_PREVIEW_POLICY_REQUIRED_MORPH_ON: List[str] = [
+    "Morph.TargetShape",
+    "Morph.TargetWidth",
+    "Morph.TargetHeight",
+    "Morph.CornerRadius",
+    "Morph.FixedPart",
+    "Morph.Rate",
+    "Morph.AllowShrinkage",
+]
+
 _PREVIEW_POLICY_REQUIRED_GCURVE: Dict[int, List[str]] = {
     1: ["GCurve.Dist", "GCurve.Width", "GCurve.AspectRatio", "GCurve.SE.n"],
     2: [
@@ -699,7 +709,7 @@ def _missing_preview_policy_keys(parameters: Mapping[str, Any]) -> List[str]:
     except Exception:
         morph_shape_num = 0
     if morph_shape_num in {1, 2}:
-        required.extend(["Morph.TargetShape", "Morph.TargetWidth", "Morph.TargetHeight"])
+        required.extend(list(_PREVIEW_POLICY_REQUIRED_MORPH_ON))
 
     missing: List[str] = []
     for key in required:
