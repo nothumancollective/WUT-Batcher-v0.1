@@ -19,17 +19,19 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import shutil
 import sqlite3
+import subprocess
+import time
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from app.ath_knowledge import load_ath_knowledge
 from app.cfg_renderer import render_cfg_text
 from app.compat_engine import validity_report
 from app.constants import ATH_PREVIEW_CFG_DIR, ATH_PREVIEW_EXPORT_ROOT, DEFAULT_RUNNER_MODE
-from app.runners import AthRunner
 from app.services import _enforce_output_flag
 from app.settings_store import UserSettings
 from ui.form_schema import FormSchema, build_project_form_schema
@@ -110,6 +112,83 @@ def _safe_token(text: str, *, max_len: int = 24) -> str:
     return cleaned[: max(4, int(max_len))]
 
 
+def _discover_default_mesh_cmd() -> str:
+    candidates: List[Path] = []
+    for env_key in ("ProgramW6432", "ProgramFiles", "ProgramFiles(x86)"):
+        raw = str(os.environ.get(env_key, "")).strip()
+        if not raw:
+            continue
+        candidates.append(Path(raw) / "gmsh" / "gmsh.exe")
+    # Known default fallback on many Windows installs.
+    candidates.append(Path(r"C:\Program Files\gmsh\gmsh.exe"))
+    seen: set[str] = set()
+    for path in candidates:
+        key = str(path).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        if path.exists() and path.is_file():
+            return str(path)
+    return ""
+
+
+def _windows_short_path(path_text: str) -> str:
+    text = str(path_text or "").strip()
+    if os.name != "nt" or not text:
+        return text
+    path = Path(text)
+    if not path.exists():
+        return text
+    try:
+        import ctypes
+
+        GetShortPathNameW = ctypes.windll.kernel32.GetShortPathNameW  # type: ignore[attr-defined]
+        GetShortPathNameW.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint]
+        GetShortPathNameW.restype = ctypes.c_uint
+        out_len = 32768
+        out_buf = ctypes.create_unicode_buffer(out_len)
+        ret = int(GetShortPathNameW(str(path), out_buf, out_len))
+        if ret > 0:
+            candidate = str(out_buf.value or "").strip()
+            if candidate:
+                return candidate
+    except Exception:
+        return text
+    return text
+
+
+def _ensure_gmsh_wrapper_cmd(*, cfg_dir: Path, gmsh_exe: str) -> str:
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    wrapper_path = cfg_dir / "wut_gmsh_wrapper.cmd"
+    gmsh_norm = str(gmsh_exe or "").strip().replace("\\", "/")
+    # ATH invokes MeshCmd without args in export cwd; wrapper converts local .geo files to .stl.
+    wrapper_text = "\n".join(
+        [
+            "@echo off",
+            "setlocal EnableDelayedExpansion",
+            f"set \"GMSH_EXE={gmsh_norm}\"",
+            "if not exist \"%GMSH_EXE%\" exit /b 1",
+            "if exist \"mesh.geo\" (",
+            "  \"%GMSH_EXE%\" -3 \"mesh.geo\" -format stl -o \"mesh.stl\" >nul 2>&1",
+            "  exit /b %errorlevel%",
+            ")",
+            "for %%F in (*.geo) do (",
+            "  \"%GMSH_EXE%\" -3 \"%%~fF\" -format stl -o \"%%~dpnF.stl\" >nul 2>&1",
+            "  exit /b %errorlevel%",
+            ")",
+            "for /r %%F in (*.geo) do (",
+            "  \"%GMSH_EXE%\" -3 \"%%~fF\" -format stl -o \"%%~dpnF.stl\" >nul 2>&1",
+            "  exit /b %errorlevel%",
+            ")",
+            "exit /b 1",
+            "exit /b 0",
+            "",
+        ]
+    )
+    wrapper_path.write_text(wrapper_text, encoding="ascii")
+    return str(wrapper_path)
+
+
 def _extract_mesh_cmd_from_runtime_cfg(path: Path) -> str:
     if not path.exists():
         return ""
@@ -130,6 +209,24 @@ def _extract_mesh_cmd_from_runtime_cfg(path: Path) -> str:
     return ""
 
 
+def _is_probe_mesh_cmd(path_text: str) -> bool:
+    text = str(path_text or "").strip().strip('"').strip("'")
+    if not text:
+        return False
+    base = Path(text).name.lower()
+    if base in {"gmsh_probe.cmd", "gmsh_probe.bat"}:
+        return True
+    return ("probe" in base) and ("gmsh" in base)
+
+
+def _is_path_like_mesh_cmd(path_text: str) -> bool:
+    text = str(path_text or "").strip().strip('"').strip("'")
+    if not text:
+        return False
+    path = Path(text)
+    return path.exists() and path.is_file()
+
+
 def _classify_run_status(*, ath_exit_code: Optional[int], stl_path: Optional[str]) -> str:
     if str(stl_path or "").strip():
         return "stl"
@@ -138,6 +235,33 @@ def _classify_run_status(*, ath_exit_code: Optional[int], stl_path: Optional[str
     if int(ath_exit_code) != 0:
         return "athFail"
     return "noStl"
+
+
+def _terminate_process_tree(proc: subprocess.Popen[str]) -> None:
+    try:
+        if proc.poll() is not None:
+            return
+    except Exception:
+        return
+    try:
+        if os.name == "nt":
+            subprocess.run(
+                ["taskkill", "/PID", str(int(proc.pid)), "/T", "/F"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+                timeout=8,
+            )
+        else:
+            proc.terminate()
+            proc.wait(timeout=3)
+    except Exception:
+        try:
+            proc.kill()
+        except Exception:
+            return
 
 
 def _normalize_scalar(value: Any) -> Any:
@@ -368,13 +492,24 @@ class _AthOracle:
             if (not mesh_cmd) and gmsh_candidate.exists():
                 mesh_cmd = str(gmsh_candidate)
         if not mesh_cmd:
-            mesh_cmd = str(existing_mesh_cmd or "").strip()
+            candidate = str(existing_mesh_cmd or "").strip()
+            if candidate and (not _is_probe_mesh_cmd(candidate)) and _is_path_like_mesh_cmd(candidate):
+                mesh_cmd = candidate
+        if not mesh_cmd:
+            mesh_cmd = _discover_default_mesh_cmd()
+        mesh_cmd = _windows_short_path(mesh_cmd)
+        mesh_cmd = str(mesh_cmd or "").replace("\\", "/")
+        mesh_cmd_for_ath = str(mesh_cmd or "").strip()
+        if mesh_cmd_for_ath.lower().endswith("gmsh.exe"):
+            mesh_cmd_for_ath = _ensure_gmsh_wrapper_cmd(cfg_dir=self.cfg_dir, gmsh_exe=mesh_cmd_for_ath)
+            mesh_cmd_for_ath = _windows_short_path(mesh_cmd_for_ath)
+            mesh_cmd_for_ath = str(mesh_cmd_for_ath or "").replace("\\", "/")
         export_value = str(self.export_root).replace("\\", "/")
         self._runtime_cfg_path.write_text(
-            f'OutputRootDir = "{export_value}"\nMeshCmd = "{mesh_cmd}"\nGnuplotPath = ""\n',
+            f'OutputRootDir = "{export_value}"\nMeshCmd = "{mesh_cmd_for_ath}"\nGnuplotPath = ""\n',
             encoding="utf-8",
         )
-        return mesh_cmd
+        return mesh_cmd_for_ath
 
     def _load_cached(self, config_hash: str) -> Optional[Dict[str, Any]]:
         if config_hash in self._memory_cache:
@@ -490,25 +625,77 @@ class _AthOracle:
         cfg_path.write_text(cfg_text, encoding="utf-8")
         logs_dir = self.logs_root / scenario_token
         logs_dir.mkdir(parents=True, exist_ok=True)
-        runner = AthRunner(self._ath_exe)
-        result = runner.run_cfg(cfg_path, version_logs_dir=logs_dir, workdir=self.cfg_dir)
+        stdout_log = logs_dir / "ath.stdout.log"
+        stderr_log = logs_dir / "ath.stderr.log"
+        summary_log = logs_dir / "ath.runner.log"
+        command = [str(self._ath_exe), str(cfg_path)]
+        exit_code = -1
+        timed_out = False
+        started_monotonic = time.monotonic()
+        stdout_log.write_text("", encoding="utf-8")
+        stderr_log.write_text("", encoding="utf-8")
+        summary_log.write_text("", encoding="utf-8")
+        with stdout_log.open("w", encoding="utf-8") as stdout_handle, stderr_log.open(
+            "w", encoding="utf-8"
+        ) as stderr_handle:
+            proc = subprocess.Popen(
+                command,
+                cwd=str(self.cfg_dir),
+                stdout=stdout_handle,
+                stderr=stderr_handle,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+            timeout_s = 90.0
+            while True:
+                rc = proc.poll()
+                if rc is not None:
+                    exit_code = int(rc)
+                    break
+                if (time.monotonic() - started_monotonic) > timeout_s:
+                    timed_out = True
+                    _terminate_process_tree(proc)
+                    rc2 = proc.poll()
+                    exit_code = int(rc2) if rc2 is not None else -9
+                    break
+                time.sleep(0.20)
+        summary_log.write_text(
+            json.dumps(
+                {
+                    "command": command,
+                    "cfg_path": str(cfg_path),
+                    "workdir": str(self.cfg_dir),
+                    "timed_out": bool(timed_out),
+                    "exit_code": int(exit_code),
+                    "timeout_s": 90.0,
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
         stl_path = None
         if export_dir.exists():
             candidates = [path for path in export_dir.rglob("*.stl") if path.is_file() and path.stat().st_size > 0]
             candidates.sort(key=lambda path: int(path.stat().st_mtime_ns), reverse=True)
             if candidates:
                 stl_path = str(candidates[0])
-        status = _classify_run_status(ath_exit_code=int(result.exit_code), stl_path=stl_path)
+        status = _classify_run_status(ath_exit_code=int(exit_code), stl_path=stl_path)
         feasible = bool(status == "stl")
         error_token = ""
+        if timed_out:
+            error_token = "ath_timeout"
         if status == "athFail":
-            error_token = f"ath_exit_{int(result.exit_code)}"
-        elif status == "noStl":
+            error_token = f"ath_exit_{int(exit_code)}"
+        elif status == "noStl" and not error_token:
             error_token = "stl_not_found"
         payload = {
             "feasible": feasible,
             "status": status,
-            "ath_exit_code": int(result.exit_code),
+            "ath_exit_code": int(exit_code),
             "stl_path": stl_path,
             "cached": False,
             "detail": {
@@ -517,9 +704,10 @@ class _AthOracle:
                 "cfg_path": str(cfg_path),
                 "expected_export_dir": str(export_dir),
                 "mesh_cmd_used": str(mesh_cmd_used or ""),
-                "stdout_log": str(result.stdout_log),
-                "stderr_log": str(result.stderr_log),
-                "summary_log": str(result.summary_log),
+                "timed_out": bool(timed_out),
+                "stdout_log": str(stdout_log),
+                "stderr_log": str(stderr_log),
+                "summary_log": str(summary_log),
             },
         }
         self._store_cached(config_hash, payload)
