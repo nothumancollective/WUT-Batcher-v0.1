@@ -101,6 +101,26 @@ class PreviewPipelineTests(unittest.TestCase):
         self.assertEqual(float(rosse.get("r0", 0.0)), 13.0)
         self.assertEqual(list(normalized.get("Mesh.InterfaceOffset", [])), [5.0, 0.0, 0.0])
 
+    def test_normalize_preview_render_parameters_normalizes_enclosure_lists_and_plan_fallback(self) -> None:
+        normalized = _normalize_preview_render_parameters(
+            {
+                "Mesh.Enclosure": {
+                    "Plan": "my_plan",
+                    "Spacing": "0,30,0,200",
+                    "FrontResolution": [8.0],
+                    "BackResolution": "20 20 20 20",
+                }
+            },
+            allow_enclosure_plan_mode=False,
+        )
+        enclosure = dict(normalized.get("Mesh.Enclosure", {}) or {})
+        self.assertNotIn("Plan", enclosure)
+        self.assertEqual(list(enclosure.get("Spacing", [])), [0.0, 30.0, 0.0, 200.0])
+        self.assertEqual(list(enclosure.get("FrontResolution", [])), [8.0, 8.0, 8.0, 8.0])
+        self.assertEqual(list(enclosure.get("BackResolution", [])), [20.0, 20.0, 20.0, 20.0])
+        self.assertEqual(float(enclosure.get("Depth", 0.0)), 180.0)
+        self.assertEqual(int(enclosure.get("EdgeType", 0)), 1)
+
     def test_preview_render_payload_ignores_none_selected_values(self) -> None:
         project = Project(
             project_id="P_PREVIEW_TEST",
@@ -287,5 +307,7 @@ class PreviewPipelineTests(unittest.TestCase):
             software = getattr(widget, "_software_canvas", None)
             if software is not None:
                 self.assertGreater(int(software.triangle_count()), 0)
+                widget.set_enclosure_overlay({"Depth": 200.0, "Spacing": [30.0, 30.0, 30.0, 200.0]})
+                self.assertGreater(len(list(getattr(software, "_enclosure_edges", []) or [])), 0)
             else:
                 self.assertIsNotNone(getattr(widget, "_mesh_entity", None))

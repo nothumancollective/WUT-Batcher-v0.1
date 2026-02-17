@@ -1114,7 +1114,7 @@ class ScalarFieldEditor(QWidget):
         if not text.strip():
             return []
         values: List[Any] = []
-        for token in [item.strip() for item in text.replace(";", ",").split(",")]:
+        for token in [item.strip() for item in re.split(r"[,\s;]+", text.strip())]:
             if not token:
                 continue
             normalized = token.replace(",", ".")

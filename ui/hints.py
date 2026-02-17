@@ -32,7 +32,9 @@ def tooltip_for(param: Mapping[str, Any]) -> str:
 
 def placeholder_for(*, widget_kind: str, param: Mapping[str, Any]) -> str:
     kind = str(widget_kind)
-    if kind in {"float", "int", "ex", "list", "text"}:
+    if kind == "list":
+        return "v1, v2, v3, v4"
+    if kind in {"float", "int", "ex", "text"}:
         return "0"
     return ""
 
@@ -47,4 +49,13 @@ def property_tooltip_for(property_schema: Mapping[str, Any]) -> str:
 
 
 def property_placeholder_for(*, widget_kind: str, property_schema: Mapping[str, Any]) -> str:
+    if str(widget_kind) == "list":
+        length_raw = property_schema.get("length")
+        meaning = property_schema.get("meaning")
+        if isinstance(length_raw, int) and int(length_raw) == 4:
+            if isinstance(meaning, list) and len(meaning) == 4:
+                labels = ",".join(str(item) for item in meaning)
+                return f"v1, v2, v3, v4 ({labels})"
+            return "v1, v2, v3, v4"
+        return "v1, v2, v3"
     return placeholder_for(widget_kind=widget_kind, param=property_schema)

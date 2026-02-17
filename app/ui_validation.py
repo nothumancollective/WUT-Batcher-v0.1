@@ -93,6 +93,33 @@ def _fmt_num(value: Optional[float]) -> str:
     return f"{value:.4g}"
 
 
+def _parse_numeric_list(value: Any) -> Optional[List[float]]:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return [float(value)]
+    if isinstance(value, str):
+        tokens = [token for token in re.split(r"[,\s;]+", value.strip()) if token]
+        if not tokens:
+            return []
+        parsed: List[float] = []
+        for token in tokens:
+            try:
+                parsed.append(float(token.replace(",", ".")))
+            except Exception:
+                return None
+        return parsed
+    if isinstance(value, (list, tuple)):
+        parsed = []
+        for item in list(value):
+            try:
+                parsed.append(float(item))
+            except Exception:
+                return None
+        return parsed
+    return None
+
+
 def _extract_draft_values(draft_payload: Mapping[str, Any]) -> Tuple[Dict[str, Any], Set[str]]:
     values: Dict[str, Any] = {}
     set_keys: Set[str] = set()
@@ -636,10 +663,119 @@ class UiValidationEngine:
                     )
                 )
 
+        issues.extend(
+            self._evaluate_enclosure_format_issues(
+                values=values,
+                set_keys=set_keys,
+                visible=visible,
+            )
+        )
+
         dedup: Dict[Tuple[str, str, str, str], FieldIssue] = {}
         for issue in issues:
             dedup[(issue.key, issue.severity, issue.rule_id, issue.message)] = issue
         return list(dedup.values())
+
+    def _evaluate_enclosure_format_issues(
+        self,
+        *,
+        values: Mapping[str, Any],
+        set_keys: Set[str],
+        visible: Set[str],
+    ) -> List[FieldIssue]:
+        if "Mesh.Enclosure" not in set_keys:
+            return []
+        if visible and "Mesh.Enclosure" not in visible:
+            return []
+
+        enclosure_raw = values.get("Mesh.Enclosure")
+        if not isinstance(enclosure_raw, Mapping):
+            return [
+                FieldIssue(
+                    key="Mesh.Enclosure",
+                    severity="warn",
+                    source="normative",
+                    rule_id="enclosure_format_invalid",
+                    message="Mesh.Enclosure must be an object block.",
+                    evidence_ref="ATH Guide 6.12",
+                    suggestion="Use object syntax with named fields.",
+                )
+            ]
+
+        enclosure = dict(enclosure_raw)
+        issues: List[FieldIssue] = []
+        plan_name = str(enclosure.get("Plan", "") or "").strip()
+        depth = _to_float(enclosure.get("Depth"))
+
+        if not plan_name and depth is None:
+            issues.append(
+                FieldIssue(
+                    key="Mesh.Enclosure",
+                    severity="warn",
+                    source="normative",
+                    rule_id="enclosure_depth_required_without_plan",
+                    message="Mesh.Enclosure.Depth should be set when Plan is empty.",
+                    evidence_ref="ATH Guide 6.12.1",
+                    suggestion="Set Depth for stock enclosure mode.",
+                )
+            )
+        if plan_name:
+            issues.append(
+                FieldIssue(
+                    key="Mesh.Enclosure",
+                    severity="warn",
+                    source="normative",
+                    rule_id="enclosure_plan_preview_limit",
+                    message="Plan-mode enclosure needs a plan script block; preview may fall back to stock enclosure.",
+                    evidence_ref="ATH Guide 6.12.2",
+                    suggestion="Use stock enclosure fields for preview or provide plan script in CFG workflow.",
+                )
+            )
+
+        for list_key in ("Spacing", "FrontResolution", "BackResolution"):
+            raw = enclosure.get(list_key)
+            if raw is None:
+                continue
+            parsed = _parse_numeric_list(raw)
+            if parsed is None:
+                issues.append(
+                    FieldIssue(
+                        key="Mesh.Enclosure",
+                        severity="warn",
+                        source="normative",
+                        rule_id="enclosure_list_non_numeric",
+                        message=f"Mesh.Enclosure.{list_key} must contain numeric values.",
+                        evidence_ref="ATH Guide 6.12",
+                        suggestion="Use comma-separated numeric values.",
+                    )
+                )
+                continue
+            if len(parsed) == 0:
+                issues.append(
+                    FieldIssue(
+                        key="Mesh.Enclosure",
+                        severity="warn",
+                        source="normative",
+                        rule_id="enclosure_list_empty",
+                        message=f"Mesh.Enclosure.{list_key} is empty.",
+                        evidence_ref="ATH Guide 6.12",
+                        suggestion="Provide at least one value.",
+                    )
+                )
+                continue
+            if len(parsed) > 4:
+                issues.append(
+                    FieldIssue(
+                        key="Mesh.Enclosure",
+                        severity="warn",
+                        source="normative",
+                        rule_id="enclosure_list_too_long",
+                        message=f"Mesh.Enclosure.{list_key} uses more than 4 values; extra values may be ignored.",
+                        evidence_ref="ATH Guide 6.12",
+                        suggestion="Use up to 4 values (q1,q2,q3,q4 / left,top,right,bottom).",
+                    )
+                )
+        return issues
 
     def evaluate(
         self,

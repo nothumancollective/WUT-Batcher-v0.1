@@ -157,8 +157,12 @@ _PREVIEW_R_OSSE_DEFAULTS: Dict[str, float] = {
 }
 
 _PREVIEW_ENCLOSURE_DEFAULTS: Dict[str, Any] = {
+    "Spacing": [30.0, 30.0, 30.0, 200.0],
     "Depth": 180.0,
+    "EdgeRadius": 20.0,
     "EdgeType": 1,
+    "FrontResolution": [8.0, 8.0, 16.0, 16.0],
+    "BackResolution": [20.0, 20.0, 20.0, 20.0],
 }
 
 _PREVIEW_ATH_MINIMAL_DEFAULTS: Dict[str, Any] = {
@@ -693,10 +697,119 @@ def _normalize_mesh_interface_lists(parameters: Dict[str, Any]) -> Dict[str, Any
     return normalized
 
 
+def _as_float_list(raw: Any) -> List[float]:
+    if raw is None:
+        return []
+    if isinstance(raw, (int, float)):
+        return [float(raw)]
+    if isinstance(raw, str):
+        values: List[float] = []
+        for token in re.split(r"[,\s;]+", raw.strip()):
+            if not token:
+                continue
+            try:
+                values.append(float(token.replace(",", ".")))
+            except Exception:
+                continue
+        return values
+    if isinstance(raw, Sequence) and not isinstance(raw, (str, bytes, bytearray)):
+        values = []
+        for item in list(raw):
+            try:
+                values.append(float(item))
+            except Exception:
+                continue
+        return values
+    return []
+
+
+def _expand4(values: Sequence[float], *, fallback: float) -> List[float]:
+    raw = [float(item) for item in list(values or [])]
+    if not raw:
+        return [float(fallback)] * 4
+    out = raw[:4]
+    while len(out) < 4:
+        out.append(float(out[-1]))
+    return out
+
+
+def _normalize_mesh_enclosure(
+    value: Mapping[str, Any],
+    *,
+    allow_plan_mode: bool,
+) -> Dict[str, Any]:
+    enclosure: Dict[str, Any] = {}
+    raw = dict(value or {})
+    plan = str(raw.get("Plan", "") or "").strip()
+    effective_plan = plan if allow_plan_mode else ""
+
+    spacing = _as_float_list(raw.get("Spacing"))
+    if spacing:
+        enclosure["Spacing"] = _expand4(spacing, fallback=float(_PREVIEW_ENCLOSURE_DEFAULTS["Spacing"][0]))
+
+    front = _as_float_list(raw.get("FrontResolution"))
+    if front:
+        enclosure["FrontResolution"] = _expand4(front, fallback=float(_PREVIEW_ENCLOSURE_DEFAULTS["FrontResolution"][0]))
+
+    back = _as_float_list(raw.get("BackResolution"))
+    if back:
+        enclosure["BackResolution"] = _expand4(back, fallback=float(_PREVIEW_ENCLOSURE_DEFAULTS["BackResolution"][0]))
+
+    try:
+        depth = float(raw.get("Depth")) if raw.get("Depth") is not None else None
+    except Exception:
+        depth = None
+    if depth is not None:
+        enclosure["Depth"] = depth
+
+    try:
+        edge_radius = float(raw.get("EdgeRadius")) if raw.get("EdgeRadius") is not None else None
+    except Exception:
+        edge_radius = None
+    if edge_radius is not None:
+        enclosure["EdgeRadius"] = edge_radius
+
+    try:
+        edge_type = int(float(raw.get("EdgeType"))) if raw.get("EdgeType") is not None else None
+    except Exception:
+        edge_type = None
+    if edge_type in {1, 2}:
+        enclosure["EdgeType"] = edge_type
+
+    if effective_plan:
+        enclosure["Plan"] = effective_plan
+        enclosure.setdefault("Spacing", _expand4([], fallback=float(_PREVIEW_ENCLOSURE_DEFAULTS["Spacing"][0])))
+        enclosure.setdefault(
+            "FrontResolution",
+            _expand4([], fallback=float(_PREVIEW_ENCLOSURE_DEFAULTS["FrontResolution"][0])),
+        )
+        enclosure.setdefault(
+            "BackResolution",
+            _expand4([], fallback=float(_PREVIEW_ENCLOSURE_DEFAULTS["BackResolution"][0])),
+        )
+        return enclosure
+
+    if not effective_plan and "Depth" not in enclosure:
+        enclosure["Depth"] = float(_PREVIEW_ENCLOSURE_DEFAULTS.get("Depth", 180.0))
+    if "EdgeType" not in enclosure:
+        enclosure["EdgeType"] = int(_PREVIEW_ENCLOSURE_DEFAULTS.get("EdgeType", 1))
+    enclosure.setdefault("Spacing", _expand4([], fallback=float(_PREVIEW_ENCLOSURE_DEFAULTS["Spacing"][0])))
+    enclosure.setdefault(
+        "FrontResolution",
+        _expand4([], fallback=float(_PREVIEW_ENCLOSURE_DEFAULTS["FrontResolution"][0])),
+    )
+    enclosure.setdefault(
+        "BackResolution",
+        _expand4([], fallback=float(_PREVIEW_ENCLOSURE_DEFAULTS["BackResolution"][0])),
+    )
+    return enclosure
+
+
 def _normalize_preview_render_parameters(
     parameters: Mapping[str, Any],
     *,
     expand_rosse_defaults: bool = False,
+    allow_enclosure_plan_mode: bool = True,
 ) -> Dict[str, Any]:
     normalized: Dict[str, Any] = {}
     for key, value in dict(parameters or {}).items():
@@ -728,6 +841,13 @@ def _normalize_preview_render_parameters(
             normalized["R-OSSE"] = merged
     elif rosse_mode and "R-OSSE" not in normalized:
         normalized["R-OSSE"] = dict(_PREVIEW_R_OSSE_DEFAULTS) if expand_rosse_defaults else {}
+
+    enclosure_value = normalized.get("Mesh.Enclosure")
+    if isinstance(enclosure_value, Mapping):
+        normalized["Mesh.Enclosure"] = _normalize_mesh_enclosure(
+            enclosure_value,
+            allow_plan_mode=bool(allow_enclosure_plan_mode),
+        )
 
     normalized = _normalize_mesh_interface_lists(normalized)
     return normalized
@@ -932,7 +1052,10 @@ def _build_preview_render_payload(
         preview_resolution_issues = [issue.to_dict() for issue in list(resolved.issues or [])]
         if resolved.versions:
             version = resolved.versions[0]
-            render_parameters = _normalize_preview_render_parameters(dict(version.parameters))
+            render_parameters = _normalize_preview_render_parameters(
+                dict(version.parameters),
+                allow_enclosure_plan_mode=False,
+            )
             policy_basis = _preview_policy_seed_parameters(project.constraints, selected_user_clean)
             policy_missing_by_block = _missing_preview_policy_by_block(policy_basis)
             policy_missing_keys = _missing_preview_policy_keys(policy_basis)
@@ -993,7 +1116,10 @@ def _build_preview_render_payload(
             break
 
     merged = _preview_seed_parameters(project.constraints, selected_clean)
-    merged = _normalize_preview_render_parameters(merged)
+    merged = _normalize_preview_render_parameters(
+        merged,
+        allow_enclosure_plan_mode=False,
+    )
     policy_basis = _preview_policy_seed_parameters(project.constraints, selected_user_clean)
     policy_missing_by_block = _missing_preview_policy_by_block(policy_basis)
     policy_missing_keys = _missing_preview_policy_keys(policy_basis)
@@ -1145,6 +1271,10 @@ class OrchestratorService:
     def list_projects(self) -> List[Project]:
         return self.repo.list_projects()
 
+    def project_preview_image_path(self, project_id: str) -> Path:
+        paths = self.repo.project_paths(str(project_id), ensure=True)
+        return paths.project_dir / "_meta" / "project_preview.png"
+
     def compatibility_catalog_keys(self) -> List[str]:
         return list(self.compatibility.catalog_keys)
 
@@ -1235,6 +1365,16 @@ class OrchestratorService:
             sweep_mode=str(sweep_mode or "single"),
         )
         render_parameters = dict(preview_payload.get("render_parameters", {}) or {})
+        selected_enclosure = dict(selected_params.get("Mesh.Enclosure", {}) or {}) if isinstance(selected_params.get("Mesh.Enclosure"), Mapping) else {}
+        render_enclosure = dict(render_parameters.get("Mesh.Enclosure", {}) or {}) if isinstance(render_parameters.get("Mesh.Enclosure"), Mapping) else {}
+        preview_notes: List[str] = []
+        requested_plan = str(selected_enclosure.get("Plan", "") or "").strip()
+        rendered_plan = str(render_enclosure.get("Plan", "") or "").strip()
+        if requested_plan and not rendered_plan:
+            preview_notes.append(
+                "Mesh.Enclosure.Plan was ignored for preview STL. "
+                "Plan-mode enclosures require an in-CFG plan script block; preview uses stock enclosure fallback."
+            )
         omit_keys = list(preview_payload.get("omit_keys", []) or [])
         preview_resolution_issues = [
             dict(item)
@@ -1420,6 +1560,7 @@ class OrchestratorService:
             "policy_missing_by_block": policy_missing_by_block,
             "policy_missing_keys": policy_missing_keys,
             "policy_default_values": policy_default_values,
+            "preview_notes": preview_notes,
             "cfg_path": str(cfg_path),
             "command": command,
             "export_root": str(export_root),

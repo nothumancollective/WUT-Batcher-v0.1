@@ -318,6 +318,14 @@ class BatchParameterForm(QWidget):
                 return (4, "Advanced")
             return (5, "General")
 
+        if group_name == "Enclosure":
+            key = str(field.key)
+            if key == "Mesh.Enclosure":
+                return (0, "Cabinet")
+            if key == "Mesh.InterfaceOffset":
+                return (1, "Interfaces")
+            return (2, "General")
+
         return (0, "General")
 
     def _ordered_group_names(self, grouped: Dict[str, List[FieldSpec]]) -> List[str]:
