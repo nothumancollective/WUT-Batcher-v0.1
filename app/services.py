@@ -6,17 +6,28 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 import json
 import hashlib
+import os
+import re
 import statistics
+import time
 from contextlib import closing
 from pathlib import Path
 import sqlite3
 import shutil
 import subprocess
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Mapping, Optional
 
 from app.batch_orchestrator import PlanningSummary, materialize_batch_plan
 from app.ath_driver_assets import repair_post_ath_le_binding
 from app.compatibility_service import CompatibilityService
+from app.constants import (
+    ATH_PREVIEW_CFG_DIR,
+    ATH_PREVIEW_CFG_NAME,
+    ATH_PREVIEW_EXPORT_ROOT,
+    PREVIEW_CACHE_APPDIR,
+    PREVIEW_CACHE_KEEP_FILES,
+    PREVIEW_CACHE_MAX_AGE_DAYS,
+)
 from app.cfg_renderer import render_cfg_text
 from app.models import Batch, ParamSelection, Project, ProjectConstraints, SweepSpec
 from app.project_storage import ProjectRepository
@@ -123,6 +134,152 @@ def _percentile(sorted_values: List[float], p: float) -> Optional[float]:
     return float(sorted_values[lower] + ((sorted_values[upper] - sorted_values[lower]) * fraction))
 
 
+class PreviewGenerationCancelled(RuntimeError):
+    """Raised when an in-flight preview generation is cancelled by the UI."""
+
+
+_OUTPUT_ASSIGN_RE = re.compile(r"(?im)^[ \t]*({key})[ \t]*=.*$")
+
+
+def _local_appdata_root() -> Path:
+    raw = os.environ.get("LOCALAPPDATA", "")
+    if raw.strip():
+        return Path(raw).expanduser()
+    return (Path.home() / "AppData" / "Local").expanduser()
+
+
+def _preview_cache_dir() -> Path:
+    path = _local_appdata_root()
+    for part in PREVIEW_CACHE_APPDIR:
+        path = path / str(part)
+    return path
+
+
+def _snapshot_subdirs(root: Path) -> Dict[str, int]:
+    if not root.exists():
+        return {}
+    result: Dict[str, int] = {}
+    for entry in root.iterdir():
+        if entry.is_dir():
+            result[entry.name] = int(entry.stat().st_mtime_ns)
+    return result
+
+
+def _detect_changed_export_dir(export_root: Path, before: Mapping[str, int]) -> Optional[Path]:
+    if not export_root.exists():
+        return None
+    after = _snapshot_subdirs(export_root)
+    created = [name for name in after.keys() if name not in before]
+    if created:
+        created.sort(key=lambda name: after[name], reverse=True)
+        return export_root / created[0]
+    changed = [name for name, mtime_ns in after.items() if int(mtime_ns) > int(before.get(name, -1))]
+    if changed:
+        changed.sort(key=lambda name: after[name], reverse=True)
+        return export_root / changed[0]
+    return None
+
+
+def _best_mesh_cmd_for_preview(ath_executable: Path) -> str:
+    candidate = ath_executable.parent / "gmsh.exe"
+    if candidate.exists():
+        return str(candidate)
+    return ""
+
+
+def _write_preview_runtime_cfg(cfg_dir: Path, *, export_root: Path, mesh_cmd: str) -> Path:
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    export_value = str(export_root).replace("\\", "/")
+    ath_cfg = cfg_dir / "ath.cfg"
+    ath_cfg.write_text(
+        (
+            f'OutputRootDir = "{export_value}"\n'
+            f'MeshCmd = "{mesh_cmd}"\n'
+            'GnuplotPath = ""\n'
+        ),
+        encoding="utf-8",
+    )
+    return ath_cfg
+
+
+def _enforce_output_flag(cfg_text: str, *, key: str, value: int) -> str:
+    normalized_key = str(key).strip()
+    pattern = re.compile(_OUTPUT_ASSIGN_RE.pattern.format(key=re.escape(normalized_key)))
+    replacement = f"{normalized_key} = {int(value)}"
+    if pattern.search(cfg_text):
+        return pattern.sub(replacement, cfg_text)
+    text = cfg_text.rstrip()
+    return f"{text}\n{replacement}\n"
+
+
+def _pick_latest_stl(search_root: Path) -> Optional[Path]:
+    candidates = [path for path in search_root.rglob("*.stl") if path.is_file()]
+    if not candidates:
+        return None
+    candidates.sort(key=lambda path: int(path.stat().st_mtime_ns), reverse=True)
+    return candidates[0]
+
+
+def _terminate_process(proc: subprocess.Popen[str]) -> None:
+    try:
+        if proc.poll() is not None:
+            return
+        proc.terminate()
+        try:
+            proc.wait(timeout=3.0)
+            return
+        except Exception:
+            pass
+        proc.kill()
+        proc.wait(timeout=2.0)
+    except Exception:
+        return
+
+
+def _prune_preview_cache(cache_dir: Path, *, keep_last: int, max_age_days: int) -> Dict[str, int]:
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    keep = max(1, int(keep_last))
+    max_age = max(0, int(max_age_days))
+    now_s = float(time.time())
+    age_limit_s = float(max_age) * 86400.0
+
+    stl_files = [path for path in cache_dir.glob("horn_preview_*.stl") if path.is_file()]
+    stl_files.sort(key=lambda path: int(path.stat().st_mtime_ns), reverse=True)
+
+    deleted_retention = 0
+    if len(stl_files) > keep:
+        for stale in stl_files[keep:]:
+            try:
+                stale.unlink()
+                deleted_retention += 1
+            except Exception:
+                continue
+
+    deleted_age = 0
+    if age_limit_s > 0:
+        for candidate in list(cache_dir.glob("*")):
+            if not candidate.is_file():
+                continue
+            try:
+                age_s = now_s - float(candidate.stat().st_mtime)
+            except Exception:
+                continue
+            if age_s <= age_limit_s:
+                continue
+            try:
+                candidate.unlink()
+                deleted_age += 1
+            except Exception:
+                continue
+
+    remaining = len([path for path in cache_dir.glob("horn_preview_*.stl") if path.is_file()])
+    return {
+        "deleted_retention": int(deleted_retention),
+        "deleted_age": int(deleted_age),
+        "remaining_stl": int(remaining),
+    }
+
+
 class OrchestratorService:
     def __init__(self, settings_store: SettingsStore | None = None) -> None:
         self.settings_store = settings_store or SettingsStore()
@@ -172,6 +329,214 @@ class OrchestratorService:
             sweeps=sweeps,
             sweep_mode=sweep_mode,
         )
+
+    def cleanup_preview_cache(
+        self,
+        *,
+        keep_last: int = PREVIEW_CACHE_KEEP_FILES,
+        max_age_days: int = PREVIEW_CACHE_MAX_AGE_DAYS,
+    ) -> Dict[str, Any]:
+        cache_dir = _preview_cache_dir()
+        stats = _prune_preview_cache(cache_dir, keep_last=keep_last, max_age_days=max_age_days)
+        return {"cache_dir": str(cache_dir), **stats}
+
+    def generate_preview_stl(
+        self,
+        *,
+        project_id: str,
+        selected_params: Dict[str, Any],
+        sweep_mode: str = "single",
+        run_id: Optional[str] = None,
+        cancel_check: Optional[Callable[[], bool]] = None,
+        process_handle_cb: Optional[Callable[[subprocess.Popen[str]], None]] = None,
+    ) -> Dict[str, Any]:
+        if cancel_check and bool(cancel_check()):
+            raise PreviewGenerationCancelled("Preview request cancelled before start.")
+
+        ath_exe = str(self.settings.ath_exe or "").strip()
+        if not ath_exe:
+            fallback = Path(ATH_PREVIEW_CFG_DIR) / "ath.exe"
+            if fallback.exists():
+                ath_exe = str(fallback)
+        if not ath_exe:
+            raise ValueError("ATH executable is not configured for preview generation.")
+
+        ath_executable = Path(ath_exe).expanduser()
+        if not ath_executable.exists():
+            raise FileNotFoundError(f"ATH executable not found: {ath_executable}")
+
+        project = self.repo.load_project(project_id)
+
+        temp_batch = Batch(
+            batch_id="B_PREVIEW",
+            project_id=project_id,
+            selected_params={
+                str(key): ParamSelection(value=value)
+                for key, value in dict(selected_params or {}).items()
+                if str(key).strip()
+            },
+            sweeps={},
+            sweep_mode=str(sweep_mode or "single"),
+            runner_mode=project.constraints.runner_mode,
+        )
+        resolved = resolve_versions(project.constraints, temp_batch, strict=True)
+        if not resolved.versions:
+            raise RuntimeError("No resolvable version for current draft parameters.")
+        version = resolved.versions[0]
+
+        template_text = "; autogenerated template\n"
+        if self.settings.template_cfg:
+            template_text = Path(self.settings.template_cfg).read_text(encoding="utf-8")
+
+        cfg_text = render_cfg_text(
+            template_text=template_text,
+            parameters=dict(version.parameters),
+            version_id=str(version.version_id or "V_PREVIEW"),
+            runner_mode=project.constraints.runner_mode,
+            omit_keys=list(version.unset_parameters),
+        )
+        cfg_text = _enforce_output_flag(cfg_text, key="Output.STL", value=1)
+        cfg_text = _enforce_output_flag(cfg_text, key="Output.ABECProject", value=0)
+
+        cfg_hash = hashlib.sha1(cfg_text.encode("utf-8")).hexdigest()[:10]
+        run_token = str(run_id or _now_iso().replace(":", "").replace("-", ""))
+
+        cfg_dir = Path(ATH_PREVIEW_CFG_DIR)
+        export_root = Path(ATH_PREVIEW_EXPORT_ROOT)
+        cache_dir = _preview_cache_dir()
+        logs_dir = cache_dir / "logs"
+        cfg_dir.mkdir(parents=True, exist_ok=True)
+        export_root.mkdir(parents=True, exist_ok=True)
+        logs_dir.mkdir(parents=True, exist_ok=True)
+
+        cfg_path = cfg_dir / ATH_PREVIEW_CFG_NAME
+        stdout_log = logs_dir / f"preview_{run_token}.stdout.log"
+        stderr_log = logs_dir / f"preview_{run_token}.stderr.log"
+        summary_log = logs_dir / f"preview_{run_token}.runner.log"
+
+        before_snapshot = _snapshot_subdirs(export_root)
+        cfg_path.write_text(cfg_text, encoding="utf-8")
+
+        backup_path = cfg_dir / "ath.wut_preview.backup.cfg"
+        runtime_cfg_path = cfg_dir / "ath.cfg"
+        had_runtime_cfg = runtime_cfg_path.exists()
+        if had_runtime_cfg:
+            try:
+                shutil.copy2(runtime_cfg_path, backup_path)
+            except Exception:
+                had_runtime_cfg = False
+
+        mesh_cmd = _best_mesh_cmd_for_preview(ath_executable)
+        _write_preview_runtime_cfg(cfg_dir, export_root=export_root, mesh_cmd=mesh_cmd)
+
+        command = [str(ath_executable), str(cfg_path)]
+        proc: Optional[subprocess.Popen[str]] = None
+        stdout_text = ""
+        stderr_text = ""
+        started_at = _now_iso()
+        exit_code = -1
+
+        try:
+            proc = subprocess.Popen(
+                command,
+                cwd=str(cfg_dir),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+            if process_handle_cb is not None:
+                process_handle_cb(proc)
+
+            while True:
+                if cancel_check and bool(cancel_check()):
+                    _terminate_process(proc)
+                    raise PreviewGenerationCancelled("Preview request cancelled.")
+                try:
+                    out, err = proc.communicate(timeout=0.20)
+                    stdout_text = str(out or "")
+                    stderr_text = str(err or "")
+                    break
+                except subprocess.TimeoutExpired:
+                    continue
+
+            exit_code = int(proc.returncode if proc.returncode is not None else -1)
+        finally:
+            finished_at = _now_iso()
+            stdout_log.write_text(stdout_text, encoding="utf-8")
+            stderr_log.write_text(stderr_text, encoding="utf-8")
+            summary_log.write_text(
+                json.dumps(
+                    {
+                        "started_at": started_at,
+                        "finished_at": finished_at,
+                        "command": command,
+                        "cfg_path": str(cfg_path),
+                        "run_id": run_token,
+                        "exit_code": exit_code,
+                        "export_root": str(export_root),
+                    },
+                    indent=2,
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            if had_runtime_cfg and backup_path.exists():
+                try:
+                    shutil.copy2(backup_path, runtime_cfg_path)
+                except Exception:
+                    pass
+            elif (not had_runtime_cfg) and runtime_cfg_path.exists():
+                try:
+                    runtime_cfg_path.unlink()
+                except Exception:
+                    pass
+            if backup_path.exists():
+                try:
+                    backup_path.unlink()
+                except Exception:
+                    pass
+
+        if exit_code != 0:
+            raise RuntimeError(f"ATH preview run failed (exit_code={exit_code}).")
+
+        export_dir = _detect_changed_export_dir(export_root, before_snapshot)
+        source_stl = _pick_latest_stl(export_dir) if export_dir is not None else None
+        if source_stl is None:
+            source_stl = _pick_latest_stl(export_root)
+        if source_stl is None:
+            raise RuntimeError(f"No STL artifact generated under {export_root}.")
+        if source_stl.stat().st_size <= 0:
+            raise RuntimeError(f"Generated STL is empty: {source_stl}")
+
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+        target_stl = cache_dir / f"horn_preview_{stamp}_{cfg_hash}.stl"
+        shutil.copy2(source_stl, target_stl)
+
+        prune_stats = _prune_preview_cache(
+            cache_dir,
+            keep_last=PREVIEW_CACHE_KEEP_FILES,
+            max_age_days=PREVIEW_CACHE_MAX_AGE_DAYS,
+        )
+        return {
+            "ok": True,
+            "run_id": run_token,
+            "cfg_hash": cfg_hash,
+            "cfg_path": str(cfg_path),
+            "command": command,
+            "export_root": str(export_root),
+            "export_dir": None if export_dir is None else str(export_dir),
+            "source_stl": str(source_stl),
+            "cache_stl": str(target_stl),
+            "cache_dir": str(cache_dir),
+            "stdout_log": str(stdout_log),
+            "stderr_log": str(stderr_log),
+            "summary_log": str(summary_log),
+            "retention": prune_stats,
+        }
 
     def estimate_batch_runtime(
         self,

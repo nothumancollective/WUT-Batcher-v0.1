@@ -257,6 +257,35 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         selection-background-color: {c['selection']};
         selection-color: {c['button_text']};
     }}
+    QComboBox#BatchExportCombo {{
+        padding-right: 24px;
+    }}
+    QComboBox#BatchExportCombo::drop-down {{
+        border: none;
+        width: 22px;
+        background: transparent;
+    }}
+    QComboBox#BatchExportCombo::down-arrow {{
+        image: none;
+        width: 0px;
+        height: 0px;
+        border-left: 5px solid transparent;
+        border-right: 5px solid transparent;
+        border-top: 6px solid {c['muted']};
+        margin-right: 6px;
+    }}
+    QComboBox#BatchExportCombo QAbstractItemView {{
+        background-color: #1b1b1b;
+        color: {c['text']};
+        border: 1px solid {c['border']};
+        outline: 0px;
+        selection-background-color: #2a2a2a;
+        selection-color: {c['text']};
+    }}
+    QComboBox#BatchExportCombo:disabled {{
+        color: {c['muted']};
+        background-color: #1a1a1a;
+    }}
     QLineEdit[severity="warn"], QTextEdit[severity="warn"], QPlainTextEdit[severity="warn"] {{
         border: 1px solid {c['warning']};
     }}

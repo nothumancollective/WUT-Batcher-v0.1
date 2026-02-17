@@ -170,6 +170,8 @@ class BatchParameterForm(QWidget):
         self._hidden_ui_keys: set[str] = set()
         self._risk_targets_by_key: Dict[str, List[QWidget]] = {}
         self._subgroup_headers: List[_SubgroupHeader] = []
+        self._blink_tokens_by_key: Dict[str, int] = {}
+        self._control_height = 30
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -351,7 +353,7 @@ class BatchParameterForm(QWidget):
         label = QLabel(str(field.label))
         label.setMinimumWidth(250)
         label.setWordWrap(False)
-        label.setMinimumHeight(28)
+        label.setMinimumHeight(self._control_height)
         row_layout.addWidget(label, 0, Qt.AlignVCenter)
 
         base_editor = self._make_base_editor(field)
@@ -362,13 +364,14 @@ class BatchParameterForm(QWidget):
         sweep_toggle = QPushButton("Sweep")
         sweep_toggle.setProperty("segment", "true")
         sweep_toggle.setCheckable(True)
-        sweep_toggle.setMinimumHeight(28)
+        sweep_toggle.setFixedHeight(self._control_height)
+        sweep_toggle.setFixedWidth(96)
         row_layout.addWidget(sweep_toggle, 0, Qt.AlignLeft | Qt.AlignVCenter)
 
         start_edit = QLineEdit()
         start_edit.setPlaceholderText("start")
-        start_edit.setFixedHeight(28)
-        start_edit.setMaximumWidth(96)
+        start_edit.setFixedHeight(self._control_height)
+        start_edit.setFixedWidth(96)
         start_edit.setValidator(QDoubleValidator(start_edit))
         start_edit.setVisible(False)
         start_edit.textChanged.connect(lambda _text, row_key=key: self._on_field_edited(row_key))
@@ -376,8 +379,8 @@ class BatchParameterForm(QWidget):
 
         end_edit = QLineEdit()
         end_edit.setPlaceholderText("end")
-        end_edit.setFixedHeight(28)
-        end_edit.setMaximumWidth(96)
+        end_edit.setFixedHeight(self._control_height)
+        end_edit.setFixedWidth(96)
         end_edit.setValidator(QDoubleValidator(end_edit))
         end_edit.setVisible(False)
         end_edit.textChanged.connect(lambda _text, row_key=key: self._on_field_edited(row_key))
@@ -385,8 +388,8 @@ class BatchParameterForm(QWidget):
 
         steps_edit = QLineEdit("3")
         steps_edit.setPlaceholderText("steps")
-        steps_edit.setFixedHeight(28)
-        steps_edit.setMaximumWidth(78)
+        steps_edit.setFixedHeight(self._control_height)
+        steps_edit.setFixedWidth(96)
         steps_edit.setValidator(QIntValidator(1, 9999, steps_edit))
         steps_edit.setVisible(False)
         steps_edit.textChanged.connect(lambda _text, row_key=key: self._on_field_edited(row_key))
@@ -797,7 +800,7 @@ class BatchParameterForm(QWidget):
         except (TypeError, ValueError):
             return None
 
-    def _clear_hidden_row_state(self, row: _FieldRow) -> bool:
+    def _clear_hidden_row_state(self, row: _FieldRow, key: str) -> bool:
         changed = False
         row.sweep_toggle.blockSignals(True)
         if row.sweep_toggle.isChecked():
@@ -827,6 +830,8 @@ class BatchParameterForm(QWidget):
         elif hasattr(editor, "clear"):
             editor.clear()  # type: ignore[attr-defined]
         editor.blockSignals(False)
+        self._blink_tokens_by_key[str(key)] = int(self._blink_tokens_by_key.get(str(key), 0)) + 1
+        self._set_blink_state(row, False)
         return changed
 
     def _refresh_visibility(self) -> tuple[set[str], bool]:
@@ -865,7 +870,7 @@ class BatchParameterForm(QWidget):
             row.steps_edit.setEnabled(show_sweep_inputs)
 
             if not is_visible:
-                changed_hidden = self._clear_hidden_row_state(row) or changed_hidden
+                changed_hidden = self._clear_hidden_row_state(row, key) or changed_hidden
             if allowed and is_visible:
                 effective_visible.add(key)
 
@@ -931,24 +936,37 @@ class BatchParameterForm(QWidget):
                 if not row.end_edit.text().strip():
                     row.end_edit.setText(str(base))
             else:
-                self._blink_base_editor(row)
+                self._blink_base_editor(row, str(key))
             if not row.steps_edit.text().strip():
                 row.steps_edit.setText("3")
+        else:
+            self._blink_tokens_by_key[str(key)] = int(self._blink_tokens_by_key.get(str(key), 0)) + 1
+            self._set_blink_state(row, False)
         self.changed.emit()
 
-    def _blink_base_editor(self, row: _FieldRow) -> None:
+    def _blink_base_editor(self, row: _FieldRow, key: str) -> None:
+        token = int(self._blink_tokens_by_key.get(str(key), 0)) + 1
+        self._blink_tokens_by_key[str(key)] = token
         targets = self._iter_hint_targets(row) or [row.base_editor]
 
         def _set(value: bool) -> None:
-            token = "true" if bool(value) else "false"
+            if int(self._blink_tokens_by_key.get(str(key), 0)) != token:
+                return
+            blink_value = "true" if bool(value) else "false"
             for widget in targets:
-                widget.setProperty("sweepNeedsBaseFlash", token)
+                widget.setProperty("sweepNeedsBaseFlash", blink_value)  # type: ignore[arg-type]
                 self._repolish(widget)
 
         QTimer.singleShot(0, lambda: _set(True))
         QTimer.singleShot(130, lambda: _set(False))
         QTimer.singleShot(260, lambda: _set(True))
         QTimer.singleShot(390, lambda: _set(False))
+
+    def _set_blink_state(self, row: _FieldRow, active: bool) -> None:
+        token = "true" if bool(active) else "false"
+        for widget in self._iter_hint_targets(row) or [row.base_editor]:
+            widget.setProperty("sweepNeedsBaseFlash", token)
+            self._repolish(widget)
 
     def selected_params_payload(self) -> Dict[str, Any]:
         payload: Dict[str, Any] = {}

@@ -13,7 +13,7 @@ from app.doctor_service import run_doctor_checks
 from app.constants import DEFAULT_RUNNER_MODE
 from app.models import AppConfig, Batch, Project, ProjectConstraints
 from app.project_issue_model import UiProjectIssue, classify_ui_severity, issue_counts, normalize_project_issues
-from app.services import OrchestratorService
+from app.services import OrchestratorService, PreviewGenerationCancelled
 from app.settings_store import UserSettings
 from app.ui_validation import UiValidationEngine
 from ui.batch_export_panel import BatchExportPanel
@@ -26,7 +26,7 @@ from ui.form_schema import build_project_form_schema
 from ui.theme import apply_theme, apply_windows_dark_titlebar, configure_windows_qt_darkmode_env
 
 try:
-    from PySide6.QtCore import QEasingCurve, QPoint, QPropertyAnimation, QEvent, QObject, Qt, QTimer, Signal, QSize
+    from PySide6.QtCore import QEasingCurve, QPoint, QPropertyAnimation, QEvent, QObject, Qt, QThread, QTimer, Signal, QSize
     from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPixmap, QIcon
     from PySide6.QtWidgets import (
         QAbstractItemView,
@@ -93,6 +93,71 @@ class IssueRowButton(QPushButton):
     def resizeEvent(self, event) -> None:  # type: ignore[override]
         super().resizeEvent(event)
         self._apply_elide()
+
+
+class _BatchPreviewWorker(QObject):
+    finished = Signal(int, dict)
+    failed = Signal(int, str)
+    canceled = Signal(int, str)
+
+    def __init__(
+        self,
+        *,
+        service: OrchestratorService,
+        project_id: str,
+        selected_params: Dict[str, Any],
+        sweep_mode: str,
+        request_id: int,
+    ) -> None:
+        super().__init__()
+        self._service = service
+        self._project_id = str(project_id)
+        self._selected_params = dict(selected_params or {})
+        self._sweep_mode = str(sweep_mode or "single")
+        self._request_id = int(request_id)
+        self._cancelled = False
+        self._process: Optional[subprocess.Popen[str]] = None
+
+    def cancel(self) -> None:
+        self._cancelled = True
+        proc = self._process
+        if proc is None:
+            return
+        try:
+            if proc.poll() is None:
+                proc.terminate()
+        except Exception:
+            return
+
+    def _cancel_check(self) -> bool:
+        return bool(self._cancelled)
+
+    def _on_process_started(self, process: subprocess.Popen[str]) -> None:
+        self._process = process
+        if self._cancelled:
+            try:
+                if process.poll() is None:
+                    process.terminate()
+            except Exception:
+                return
+
+    def run(self) -> None:
+        try:
+            result = self._service.generate_preview_stl(
+                project_id=self._project_id,
+                selected_params=self._selected_params,
+                sweep_mode=self._sweep_mode,
+                run_id=f"ui_preview_{self._request_id}",
+                cancel_check=self._cancel_check,
+                process_handle_cb=self._on_process_started,
+            )
+        except PreviewGenerationCancelled as exc:
+            self.canceled.emit(self._request_id, str(exc))
+            return
+        except Exception as exc:  # pragma: no cover - integration surface
+            self.failed.emit(self._request_id, str(exc))
+            return
+        self.finished.emit(self._request_id, dict(result))
 
 
 def _severity_rank(value: str) -> int:
@@ -1586,6 +1651,8 @@ class BatchPage(QWidget):
     back_to_dashboard = Signal()
     draft_changed = Signal(dict)
     blocked_interaction = Signal(str, str, str)
+    preview_toggle_changed = Signal(bool)
+    preview_update_requested = Signal(dict)
 
     def __init__(self) -> None:
         super().__init__()
@@ -1737,6 +1804,8 @@ class BatchPage(QWidget):
         self.parameter_form.blocked_interaction.connect(self.blocked_interaction.emit)
         self.export_panel.changed.connect(self._emit_draft_changed)
         self.batch_name.textChanged.connect(self._emit_draft_changed)
+        self.preview_panel.preview_toggled.connect(self._on_preview_toggled)
+        self.preview_panel.update_requested.connect(self._on_preview_update_requested)
 
         self._summary_strip_layout = summary_strip_layout
         self._summary_strip = summary_strip
@@ -1783,6 +1852,28 @@ class BatchPage(QWidget):
             return
         self._update_summary_widgets()
         self.draft_changed.emit(self._payload(include_name=False))
+
+    def _on_preview_toggled(self, enabled: bool) -> None:
+        preview_enabled = bool(enabled)
+        self.preview_toggle_changed.emit(preview_enabled)
+        if not preview_enabled:
+            self.preview_panel.set_busy(False)
+            return
+        self.preview_update_requested.emit(self._payload(include_name=False))
+
+    def _on_preview_update_requested(self) -> None:
+        if not self.preview_panel.is_preview_enabled():
+            return
+        self.preview_update_requested.emit(self._payload(include_name=False))
+
+    def set_preview_busy(self, busy: bool) -> None:
+        self.preview_panel.set_busy(bool(busy))
+
+    def set_preview_error(self, message: str) -> None:
+        self.preview_panel.set_error_message(str(message or "Preview generation failed."))
+
+    def set_preview_mesh(self, path: str) -> None:
+        self.preview_panel.set_preview_mesh(str(path))
 
     def set_project_fixed_keys(self, keys: List[str]) -> None:
         self._project_fixed_keys = {str(item) for item in list(keys or []) if str(item).strip()}
@@ -1861,6 +1952,9 @@ class BatchPage(QWidget):
             self.parameter_form.set_sweeps({})
             self.export_panel.set_from_payload({})
             self.set_eta(None, sample_count=0, median_seconds=None)
+            self.preview_panel.set_preview_enabled(False)
+            self.preview_panel.set_busy(False)
+            self.preview_panel.set_info_message("No preview mesh loaded.")
         finally:
             self._suspend_draft_events = False
         self._emit_draft_changed()
@@ -2150,6 +2244,9 @@ class MainWindow(QMainWindow):
         self._batch_validation_timer.setInterval(self._batch_validation_debounce_ms)
         self._batch_validation_timer.timeout.connect(self._flush_batch_draft_validation)
         self._project_manager_handler: Optional[Callable[[], None]] = None
+        self._preview_request_id = 0
+        self._preview_thread: Optional[QThread] = None
+        self._preview_worker: Optional[_BatchPreviewWorker] = None
 
         self.setWindowTitle("WUT Batcher")
         self.setMinimumSize(1280, 800)
@@ -2169,6 +2266,11 @@ class MainWindow(QMainWindow):
 
         self._build_statusbar()
         self._connect_page_signals()
+        try:
+            self.service.cleanup_preview_cache()
+        except Exception:
+            # Non-critical startup maintenance; runtime preview requests handle errors explicitly.
+            pass
         self.show_dashboard()
 
     def _build_statusbar(self) -> None:
@@ -2219,9 +2321,108 @@ class MainWindow(QMainWindow):
         self.batch_page.back_to_dashboard.connect(self.show_dashboard)
         self.batch_page.draft_changed.connect(self._queue_batch_draft_changed)
         self.batch_page.blocked_interaction.connect(self._on_batch_blocked_interaction)
+        self.batch_page.preview_toggle_changed.connect(self._on_batch_preview_toggled)
+        self.batch_page.preview_update_requested.connect(self._request_batch_preview_update)
         self.batch_page.compat_panel.request_show_details.connect(
             lambda: self._show_validation_details(self.batch_page.compat_panel.issues(), "Batch Validation Details")
         )
+
+    def _stop_preview_worker(self) -> None:
+        worker = self._preview_worker
+        thread = self._preview_thread
+        if worker is not None:
+            worker.cancel()
+        if thread is not None and thread.isRunning():
+            thread.quit()
+            thread.wait(1800)
+        self._preview_worker = None
+        self._preview_thread = None
+
+    def _on_batch_preview_toggled(self, enabled: bool) -> None:
+        if enabled:
+            return
+        self._stop_preview_worker()
+        self.batch_page.set_preview_busy(False)
+
+    def _request_batch_preview_update(self, payload: Dict[str, object]) -> None:
+        if self.current_project is None:
+            self.batch_page.set_preview_error("Open a project before generating preview.")
+            return
+
+        self._stop_preview_worker()
+
+        selected_params = dict(payload.get("selected_params", {}) or {})
+        sweep_mode = str(payload.get("sweep_mode", "single") or "single")
+
+        self._preview_request_id += 1
+        request_id = int(self._preview_request_id)
+        worker = _BatchPreviewWorker(
+            service=self.service,
+            project_id=self.current_project.project_id,
+            selected_params=selected_params,
+            sweep_mode=sweep_mode,
+            request_id=request_id,
+        )
+        thread = QThread(self)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(self._on_batch_preview_ready)
+        worker.failed.connect(self._on_batch_preview_failed)
+        worker.canceled.connect(self._on_batch_preview_canceled)
+        worker.finished.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        worker.canceled.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+
+        self._preview_worker = worker
+        self._preview_thread = thread
+        self.batch_page.set_preview_busy(True)
+        thread.start()
+
+    def _on_batch_preview_ready(self, request_id: int, result: Dict[str, Any]) -> None:
+        if int(request_id) != int(self._preview_request_id):
+            return
+        if not self.batch_page.preview_panel.is_preview_enabled():
+            self._preview_worker = None
+            self._preview_thread = None
+            return
+        cache_path = str(result.get("cache_stl", "")).strip()
+        if not cache_path:
+            self.batch_page.set_preview_busy(False)
+            self.batch_page.set_preview_error("Preview finished without cached STL path.")
+            self._preview_worker = None
+            self._preview_thread = None
+            return
+        try:
+            self.batch_page.set_preview_mesh(cache_path)
+        except Exception as exc:
+            self.batch_page.set_preview_busy(False)
+            self.batch_page.set_preview_error(f"Preview load failed: {exc}")
+            self._preview_worker = None
+            self._preview_thread = None
+            return
+        self.batch_page.set_preview_busy(False)
+        self.set_status("Preview updated.", detail=json.dumps(result, indent=2, ensure_ascii=False))
+        self._preview_worker = None
+        self._preview_thread = None
+
+    def _on_batch_preview_failed(self, request_id: int, message: str) -> None:
+        if int(request_id) != int(self._preview_request_id):
+            return
+        self.batch_page.set_preview_busy(False)
+        self.batch_page.set_preview_error(str(message or "Preview generation failed."))
+        self.set_status("Preview generation failed.", detail=str(message or "unknown error"))
+        self._preview_worker = None
+        self._preview_thread = None
+
+    def _on_batch_preview_canceled(self, request_id: int, message: str) -> None:
+        if int(request_id) != int(self._preview_request_id):
+            return
+        self.batch_page.set_preview_busy(False)
+        self.batch_page.preview_panel.set_info_message("Preview update canceled.")
+        self._preview_worker = None
+        self._preview_thread = None
 
     @staticmethod
     def _project_fixed_keys_from_constraints(constraints: ProjectConstraints) -> List[str]:
@@ -2427,9 +2628,11 @@ class MainWindow(QMainWindow):
             self.dashboard_page.batch_list.addItem(item)
 
     def show_dashboard(self) -> None:
+        self._stop_preview_worker()
         self.stack.setCurrentWidget(self.dashboard_page)
 
     def show_project(self) -> None:
+        self._stop_preview_worker()
         self._on_project_draft_changed(self.project_page._raw_constraints_payload())
         self.stack.setCurrentWidget(self.project_page)
 
@@ -2439,6 +2642,7 @@ class MainWindow(QMainWindow):
         self.stack.setCurrentWidget(self.batch_page)
 
     def show_run(self) -> None:
+        self._stop_preview_worker()
         self.stack.setCurrentWidget(self.run_page)
 
     def _create_project(self, project_name: str, constraints: Dict[str, object]) -> None:
@@ -2518,6 +2722,7 @@ class MainWindow(QMainWindow):
         return summary.batch_id
 
     def _run_batch(self, payload: Dict[str, object]) -> None:
+        self._stop_preview_worker()
         batch_id = self._save_batch(payload, for_run=True)
         if self.current_project is None or not batch_id:
             return

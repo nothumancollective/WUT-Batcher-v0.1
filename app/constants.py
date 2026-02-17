@@ -29,3 +29,11 @@ RUNNER_LOCKED_OR_HIDDEN_KEYS: Final[Tuple[str, ...]] = (
     "Source.Contours",
     "Source.Velocity",
 )
+
+# Preview pipeline hard paths / retention policy.
+ATH_PREVIEW_CFG_DIR: Final[str] = r"C:\Tools\ATH"
+ATH_PREVIEW_EXPORT_ROOT: Final[str] = r"C:\Horns"
+ATH_PREVIEW_CFG_NAME: Final[str] = "preview_current.cfg"
+PREVIEW_CACHE_APPDIR: Final[Tuple[str, ...]] = ("WUTBatcher", "preview_cache")
+PREVIEW_CACHE_KEEP_FILES: Final[int] = 10
+PREVIEW_CACHE_MAX_AGE_DAYS: Final[int] = 7

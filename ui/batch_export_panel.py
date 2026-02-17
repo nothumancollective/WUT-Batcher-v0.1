@@ -411,9 +411,11 @@ class BatchExportPanel(QFrame):
         settings_grid.setVerticalSpacing(8)
 
         self.simulation_mode = QComboBox()
+        self.simulation_mode.setObjectName("BatchExportCombo")
         self.simulation_mode.addItem("Free Standing", "free_standing")
         self.simulation_mode.addItem("Infinite Baffle", "infinite_baffle")
         self.sweep_mode = QComboBox()
+        self.sweep_mode.setObjectName("BatchExportCombo")
         self.sweep_mode.addItems(["single", "combined"])
         self.freq_start = QLineEdit("500")
         self.freq_start.setValidator(QIntValidator(1, 1_000_000, self.freq_start))
