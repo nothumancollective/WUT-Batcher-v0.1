@@ -1687,6 +1687,7 @@ class BatchPage(QWidget):
         self._summary_cards = [self.summary_left_card, self.summary_center_card, self.summary_right_card]
 
         self._compat_state: Dict[str, Any] = {"visible_keys": [], "locked_keys": [], "sweepable_keys": [], "issues": []}
+        self._latest_field_issues: List[Dict[str, Any]] = []
         self._project_fixed_keys: set[str] = set()
         self._eta_seconds: Optional[float] = None
         self._eta_sample_count: int = 0
@@ -1750,6 +1751,11 @@ class BatchPage(QWidget):
         self._compat_state = dict(state)
         self.parameter_form.apply_compatibility(state)
         self.compat_panel.update_state(state)
+        self._update_summary_widgets()
+
+    def apply_ui_risks(self, issues: List[Dict[str, Any]]) -> None:
+        self._latest_field_issues = [dict(item) for item in list(issues or []) if isinstance(item, dict)]
+        self.parameter_form.apply_ui_risks(self._latest_field_issues)
         self._update_summary_widgets()
 
     def _payload(self, *, include_name: bool = True) -> Dict[str, object]:
@@ -1828,7 +1834,7 @@ class BatchPage(QWidget):
             f"Version preview: {version_preview} · Export specs: {export_specs} · Mode: {mode}"
         )
 
-        issues = self.compat_panel.issues()
+        issues = list(self._latest_field_issues or self.compat_panel.issues())
         fatal_count = 0
         warn_count = 0
         incomplete_count = 0
@@ -2548,6 +2554,7 @@ class MainWindow(QMainWindow):
                     "issues": [],
                 }
             )
+            self.batch_page.apply_ui_risks([])
             self.batch_page.set_eta(None, sample_count=0, median_seconds=None)
             return
         project_compat_state = self.service.evaluate_project_constraints(self.current_project.constraints.to_dict())
@@ -2594,6 +2601,46 @@ class MainWindow(QMainWindow):
                 finally:
                     self._batch_reconcile_guard = False
                 return
+
+        project_constraints = self.current_project.constraints.to_dict()
+        draft_fixed = dict(project_constraints.get("fixed_params", {}) or {})
+        draft_limits = dict(project_constraints.get("limits", {}) or {})
+        draft_param_states = [
+            dict(item)
+            for item in list(project_constraints.get("param_states", []) or [])
+            if isinstance(item, dict)
+        ]
+        for key, value in selected_params.items():
+            key_s = str(key).strip()
+            if not key_s:
+                continue
+            if value is not None:
+                draft_fixed[key_s] = value
+            draft_param_states.append(
+                {
+                    "param_name": key_s,
+                    "is_set": 1 if value is not None else 0,
+                    "value": value if value is not None else None,
+                }
+            )
+        batch_draft_payload = {
+            "fixed_params": draft_fixed,
+            "limits": draft_limits,
+            "param_states": draft_param_states,
+            "runner_mode": project_constraints.get("runner_mode", DEFAULT_RUNNER_MODE),
+        }
+        visible_keys = set(str(item) for item in list(state.get("visible_keys", []) or []))
+        batch_field_issues_raw = self.ui_validation.evaluate(
+            draft_payload=batch_draft_payload,
+            validation_state=state,
+            visible_keys=visible_keys,
+        )
+        batch_field_issues = self._normalize_batch_issues_for_ui(
+            [dict(item) for item in list(batch_field_issues_raw or []) if isinstance(item, dict)],
+            selected_params=selected_params,
+        )
+        self.batch_page.apply_ui_risks(batch_field_issues)
+
         estimate = self.service.estimate_batch_runtime(
             project_id=self.current_project.project_id,
             selected_params=selected_params,

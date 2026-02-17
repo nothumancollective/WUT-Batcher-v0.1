@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from ui.form_builder import AccordionGroupBox, ContextFrame, ObjectFieldEditor, ScalarFieldEditor, SegmentedEnumInput
 from ui.form_schema import FieldSpec, FormSchema, ModeStackSpec, build_project_form_schema
@@ -160,6 +160,7 @@ class BatchParameterForm(QWidget):
         self._compat_ui_state: Dict[str, Any] = {}
         self._blocked_keys: set[str] = set()
         self._hidden_ui_keys: set[str] = set()
+        self._risk_targets_by_key: Dict[str, List[QWidget]] = {}
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -652,6 +653,75 @@ class BatchParameterForm(QWidget):
             self._last_changed_key = str(key)
             self._active_group_name = row.group_name
         self.changed.emit()
+
+    @staticmethod
+    def _risk_rank(value: str) -> int:
+        order = {"fatal": 0, "warn": 1, "incomplete": 2, "ok": 3, "info": 4}
+        return order.get(str(value).lower(), 99)
+
+    def _field_is_set(self, key: str) -> bool:
+        row = self._rows.get(str(key))
+        if row is None or row.container.isHidden():
+            return False
+        is_set, _value = self._current_state(row)
+        return bool(is_set)
+
+    def _risk_targets_for_key(self, key: str) -> List[QWidget]:
+        cache = self._risk_targets_by_key.get(str(key))
+        if cache is not None:
+            return cache
+        row = self._rows.get(str(key))
+        if row is None:
+            return []
+        targets = self._iter_hint_targets(row)
+        if not targets:
+            targets = [row.base_editor]
+        dedup = self._dedup_widgets(targets)
+        self._risk_targets_by_key[str(key)] = dedup
+        return dedup
+
+    def _clear_ui_risks(self) -> None:
+        for key in list(self._rows.keys()):
+            row = self._rows.get(key)
+            if row is None:
+                continue
+            if hasattr(row.base_editor, "set_field_state_visual"):
+                row.base_editor.set_field_state_visual("neutral")  # type: ignore[attr-defined]
+            for target in self._risk_targets_for_key(key):
+                target.setProperty("fieldState", "neutral")
+                target.setProperty("riskLevel", "")
+                self._repolish(target)
+
+    def apply_ui_risks(self, issues: List[Dict[str, Any]]) -> None:
+        self._clear_ui_risks()
+        grouped: Dict[str, List[Dict[str, Any]]] = {}
+        for issue in list(issues or []):
+            if not isinstance(issue, Mapping):
+                continue
+            key = str(issue.get("field_key") or issue.get("key") or "").strip()
+            if not key or key not in self._rows:
+                continue
+            grouped.setdefault(key, []).append(dict(issue))
+
+        for key, row_issues in grouped.items():
+            if not row_issues:
+                continue
+            highest = min(
+                (str(item.get("severity", "info")).lower() for item in row_issues),
+                key=self._risk_rank,
+            )
+            if highest not in {"fatal", "warn", "incomplete", "ok"}:
+                continue
+            visual = "neutral" if highest == "incomplete" else highest
+            row = self._rows.get(key)
+            if row is None:
+                continue
+            if hasattr(row.base_editor, "set_field_state_visual"):
+                row.base_editor.set_field_state_visual("ok" if highest == "incomplete" else highest)  # type: ignore[attr-defined]
+            for target in self._risk_targets_for_key(key):
+                target.setProperty("fieldState", visual)
+                target.setProperty("riskLevel", visual)
+                self._repolish(target)
 
     def set_project_fixed_keys(self, keys: Sequence[str]) -> None:
         self._project_fixed_keys = {str(item) for item in list(keys or []) if str(item).strip()}
