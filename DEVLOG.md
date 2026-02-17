@@ -1,6 +1,22 @@
 ﻿# DEVLOG
 
 ## 2026-02-17
+### Update: Minimal Completion Search Tooling (DB + ATH Oracle)
+#### Done
+- Added new search module: `app/minimal_completion_search.py`.
+  - Models the task as constrained black-box minimization (`minXY > 0` per included card).
+  - Generates scenarios for steps 1-6 and optional step-7 combination matrix.
+  - Uses `ath_experiments.sqlite` successful runs as seed pool.
+  - Supports two modes:
+    - DB-observed (fast)
+    - ATH-verified greedy minimization (robust STL oracle)
+  - Persists summary JSON/Markdown and oracle cache.
+- Added CLI command:
+  - `python -m app ath-experiments minimal-completion-search`
+  - options include `--verify-ath`, `--all-combinations`, `--scenario-filter`, run-group and budget controls.
+- Added documentation:
+  - `docs/MINIMAL_COMPLETION_SEARCH.md` with model explanation and run commands.
+
 ### Update: Preview Minimal Completion + R-OSSE Normalization
 #### Done
 - Preview parameter assembly hardened in app/services.py:
