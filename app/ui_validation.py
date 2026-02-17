@@ -387,13 +387,33 @@ class UiValidationEngine:
             )
         return out
 
-    def evaluate_normative_issues(self, validation_state: Mapping[str, Any]) -> List[FieldIssue]:
+    @staticmethod
+    def _is_visibility_noise_issue(raw: Mapping[str, Any]) -> bool:
+        rule_id = str(raw.get("rule_id", "")).strip().lower()
+        message = str(raw.get("message", "")).strip().lower()
+        if rule_id in {"batch_param_not_visible", "project_param_not_visible"}:
+            return True
+        if "not visible for current project constraints" in message:
+            return True
+        return False
+
+    def evaluate_normative_issues(
+        self,
+        validation_state: Mapping[str, Any],
+        *,
+        visible_keys: Optional[Iterable[str]] = None,
+    ) -> List[FieldIssue]:
         issues: List[FieldIssue] = []
+        visible = {str(item) for item in list(visible_keys or []) if str(item).strip()}
         for raw in list(validation_state.get("issues", []) or []):
             if not isinstance(raw, Mapping):
                 continue
+            if self._is_visibility_noise_issue(raw):
+                continue
             key = str(raw.get("field_key", "")).strip()
             if not key:
+                continue
+            if visible and key not in visible:
                 continue
             issues.append(
                 FieldIssue(
@@ -535,6 +555,6 @@ class UiValidationEngine:
         visible_keys: Optional[Iterable[str]] = None,
     ) -> List[Dict[str, Any]]:
         issues = []
-        issues.extend(self.evaluate_normative_issues(validation_state))
+        issues.extend(self.evaluate_normative_issues(validation_state, visible_keys=visible_keys))
         issues.extend(self.evaluate_experiment_issues(draft_payload, visible_keys=visible_keys))
         return [asdict(item) for item in issues]
