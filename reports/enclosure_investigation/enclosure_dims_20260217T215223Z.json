@@ -1,0 +1,396 @@
+{
+  "generated_at": "20260217T215223Z",
+  "project_id": "P018",
+  "rows": [
+    {
+      "profile": "osse",
+      "variant": "none",
+      "run_id": "enc4_osse_none",
+      "ok": true,
+      "dims": [
+        216.85,
+        216.85,
+        80.0
+      ],
+      "policy_missing_by_block": {
+        "profile": [
+          "OS.k"
+        ],
+        "mesh": [
+          "Mesh.MouthResolution",
+          "Mesh.Quadrants"
+        ],
+        "gcurve": [],
+        "morph": [],
+        "enclosure": []
+      },
+      "policy_missing_keys": [
+        "Mesh.MouthResolution",
+        "Mesh.Quadrants",
+        "OS.k"
+      ]
+    },
+    {
+      "profile": "osse",
+      "variant": "enc_empty",
+      "run_id": "enc4_osse_enc_empty",
+      "ok": true,
+      "dims": [
+        216.85,
+        216.85,
+        80.0
+      ],
+      "policy_missing_by_block": {
+        "profile": [
+          "OS.k"
+        ],
+        "mesh": [
+          "Mesh.MouthResolution",
+          "Mesh.Quadrants"
+        ],
+        "gcurve": [],
+        "morph": [],
+        "enclosure": []
+      },
+      "policy_missing_keys": [
+        "Mesh.MouthResolution",
+        "Mesh.Quadrants",
+        "OS.k"
+      ]
+    },
+    {
+      "profile": "osse",
+      "variant": "enc_depth",
+      "run_id": "enc4_osse_enc_depth",
+      "ok": true,
+      "dims": [
+        216.85,
+        216.85,
+        80.0
+      ],
+      "policy_missing_by_block": {
+        "profile": [
+          "OS.k"
+        ],
+        "mesh": [
+          "Mesh.MouthResolution",
+          "Mesh.Quadrants"
+        ],
+        "gcurve": [],
+        "morph": [],
+        "enclosure": []
+      },
+      "policy_missing_keys": [
+        "Mesh.MouthResolution",
+        "Mesh.Quadrants",
+        "OS.k"
+      ]
+    },
+    {
+      "profile": "osse",
+      "variant": "enc_depth_spacing",
+      "run_id": "enc4_osse_enc_depth_spacing",
+      "ok": true,
+      "dims": [
+        216.85,
+        216.85,
+        80.0
+      ],
+      "policy_missing_by_block": {
+        "profile": [
+          "OS.k"
+        ],
+        "mesh": [
+          "Mesh.MouthResolution",
+          "Mesh.Quadrants"
+        ],
+        "gcurve": [],
+        "morph": [],
+        "enclosure": []
+      },
+      "policy_missing_keys": [
+        "Mesh.MouthResolution",
+        "Mesh.Quadrants",
+        "OS.k"
+      ]
+    },
+    {
+      "profile": "osse",
+      "variant": "enc_plan_only",
+      "run_id": "enc4_osse_enc_plan_only",
+      "ok": true,
+      "dims": [
+        216.85,
+        216.85,
+        80.0
+      ],
+      "policy_missing_by_block": {
+        "profile": [
+          "OS.k"
+        ],
+        "mesh": [
+          "Mesh.MouthResolution",
+          "Mesh.Quadrants"
+        ],
+        "gcurve": [],
+        "morph": [],
+        "enclosure": []
+      },
+      "policy_missing_keys": [
+        "Mesh.MouthResolution",
+        "Mesh.Quadrants",
+        "OS.k"
+      ]
+    },
+    {
+      "profile": "circarc",
+      "variant": "none",
+      "run_id": "enc4_circarc_none",
+      "ok": true,
+      "dims": [
+        185.4,
+        185.4,
+        80.0
+      ],
+      "policy_missing_by_block": {
+        "profile": [],
+        "mesh": [
+          "Mesh.MouthResolution",
+          "Mesh.Quadrants"
+        ],
+        "gcurve": [],
+        "morph": [],
+        "enclosure": []
+      },
+      "policy_missing_keys": [
+        "Mesh.MouthResolution",
+        "Mesh.Quadrants"
+      ]
+    },
+    {
+      "profile": "circarc",
+      "variant": "enc_empty",
+      "run_id": "enc4_circarc_enc_empty",
+      "ok": true,
+      "dims": [
+        185.4,
+        185.4,
+        80.0
+      ],
+      "policy_missing_by_block": {
+        "profile": [],
+        "mesh": [
+          "Mesh.MouthResolution",
+          "Mesh.Quadrants"
+        ],
+        "gcurve": [],
+        "morph": [],
+        "enclosure": []
+      },
+      "policy_missing_keys": [
+        "Mesh.MouthResolution",
+        "Mesh.Quadrants"
+      ]
+    },
+    {
+      "profile": "circarc",
+      "variant": "enc_depth",
+      "run_id": "enc4_circarc_enc_depth",
+      "ok": true,
+      "dims": [
+        185.4,
+        185.4,
+        80.0
+      ],
+      "policy_missing_by_block": {
+        "profile": [],
+        "mesh": [
+          "Mesh.MouthResolution",
+          "Mesh.Quadrants"
+        ],
+        "gcurve": [],
+        "morph": [],
+        "enclosure": []
+      },
+      "policy_missing_keys": [
+        "Mesh.MouthResolution",
+        "Mesh.Quadrants"
+      ]
+    },
+    {
+      "profile": "circarc",
+      "variant": "enc_depth_spacing",
+      "run_id": "enc4_circarc_enc_depth_spacing",
+      "ok": true,
+      "dims": [
+        185.4,
+        185.4,
+        80.0
+      ],
+      "policy_missing_by_block": {
+        "profile": [],
+        "mesh": [
+          "Mesh.MouthResolution",
+          "Mesh.Quadrants"
+        ],
+        "gcurve": [],
+        "morph": [],
+        "enclosure": []
+      },
+      "policy_missing_keys": [
+        "Mesh.MouthResolution",
+        "Mesh.Quadrants"
+      ]
+    },
+    {
+      "profile": "circarc",
+      "variant": "enc_plan_only",
+      "run_id": "enc4_circarc_enc_plan_only",
+      "ok": true,
+      "dims": [
+        185.4,
+        185.4,
+        80.0
+      ],
+      "policy_missing_by_block": {
+        "profile": [],
+        "mesh": [
+          "Mesh.MouthResolution",
+          "Mesh.Quadrants"
+        ],
+        "gcurve": [],
+        "morph": [],
+        "enclosure": []
+      },
+      "policy_missing_keys": [
+        "Mesh.MouthResolution",
+        "Mesh.Quadrants"
+      ]
+    },
+    {
+      "profile": "rosse",
+      "variant": "none",
+      "run_id": "enc4_rosse_none",
+      "ok": true,
+      "dims": [
+        240.0,
+        240.0,
+        27.93
+      ],
+      "policy_missing_by_block": {
+        "profile": [],
+        "mesh": [
+          "Mesh.MouthResolution",
+          "Mesh.Quadrants"
+        ],
+        "gcurve": [],
+        "morph": [],
+        "enclosure": []
+      },
+      "policy_missing_keys": [
+        "Mesh.MouthResolution",
+        "Mesh.Quadrants"
+      ]
+    },
+    {
+      "profile": "rosse",
+      "variant": "enc_empty",
+      "run_id": "enc4_rosse_enc_empty",
+      "ok": true,
+      "dims": [
+        240.0,
+        240.0,
+        27.93
+      ],
+      "policy_missing_by_block": {
+        "profile": [],
+        "mesh": [
+          "Mesh.MouthResolution",
+          "Mesh.Quadrants"
+        ],
+        "gcurve": [],
+        "morph": [],
+        "enclosure": []
+      },
+      "policy_missing_keys": [
+        "Mesh.MouthResolution",
+        "Mesh.Quadrants"
+      ]
+    },
+    {
+      "profile": "rosse",
+      "variant": "enc_depth",
+      "run_id": "enc4_rosse_enc_depth",
+      "ok": true,
+      "dims": [
+        240.0,
+        240.0,
+        27.93
+      ],
+      "policy_missing_by_block": {
+        "profile": [],
+        "mesh": [
+          "Mesh.MouthResolution",
+          "Mesh.Quadrants"
+        ],
+        "gcurve": [],
+        "morph": [],
+        "enclosure": []
+      },
+      "policy_missing_keys": [
+        "Mesh.MouthResolution",
+        "Mesh.Quadrants"
+      ]
+    },
+    {
+      "profile": "rosse",
+      "variant": "enc_depth_spacing",
+      "run_id": "enc4_rosse_enc_depth_spacing",
+      "ok": true,
+      "dims": [
+        240.0,
+        240.0,
+        27.93
+      ],
+      "policy_missing_by_block": {
+        "profile": [],
+        "mesh": [
+          "Mesh.MouthResolution",
+          "Mesh.Quadrants"
+        ],
+        "gcurve": [],
+        "morph": [],
+        "enclosure": []
+      },
+      "policy_missing_keys": [
+        "Mesh.MouthResolution",
+        "Mesh.Quadrants"
+      ]
+    },
+    {
+      "profile": "rosse",
+      "variant": "enc_plan_only",
+      "run_id": "enc4_rosse_enc_plan_only",
+      "ok": true,
+      "dims": [
+        240.0,
+        240.0,
+        27.93
+      ],
+      "policy_missing_by_block": {
+        "profile": [],
+        "mesh": [
+          "Mesh.MouthResolution",
+          "Mesh.Quadrants"
+        ],
+        "gcurve": [],
+        "morph": [],
+        "enclosure": []
+      },
+      "policy_missing_keys": [
+        "Mesh.MouthResolution",
+        "Mesh.Quadrants"
+      ]
+    }
+  ]
+}

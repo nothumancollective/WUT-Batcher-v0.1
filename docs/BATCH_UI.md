@@ -136,9 +136,13 @@ Preview robustness:
 - internal UI selector `Throat.Profile = 2` (R-OSSE mode) is normalized before ATH run:
   - removed from final cfg
   - `R-OSSE` object is auto-completed with safe defaults when needed
+- `Mesh.Enclosure` object completion:
+  - if enclosure is set without `Plan` and without `Depth`, preview seed injects `Depth` for stable generation
+  - policy layer still reports missing enclosure requirements for explicit run decisions
 - mesh interface list normalization is applied for preview generation:
   - `Mesh.InterfaceOffset` / `Mesh.InterfaceDraw` are normalized to list form
   - lengths are aligned to `Mesh.SubdomainSlices` when both are present
+- runtime `MeshCmd` for preview uses a gmsh wrapper command to prevent ATH hangs on bare gmsh invocation.
 
 ## Validation and UI Risk Layer
 Rule evaluation remains in `app/compatibility_service.py`.
@@ -156,6 +160,9 @@ Field-level warning/error visuals are applied in Batch via:
 - `BatchPage.apply_ui_risks(...)` / `BatchParameterForm.apply_ui_risks(...)`
 
 This adds warning/fatal/incomplete-aware field styling and keeps summary warning text in sync.
+
+Policy payload now also carries grouped missing requirements:
+- `policy_missing_by_block` (`profile|mesh|gcurve|morph|enclosure`)
 
 ## Reconcile and Sanitization
 Two protections are active for stale payload problems:

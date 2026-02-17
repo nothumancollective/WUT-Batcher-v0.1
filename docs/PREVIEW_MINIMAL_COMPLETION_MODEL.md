@@ -57,6 +57,22 @@ Implementation entry points:
     - `Morph.Rate`
     - `Morph.AllowShrinkage`
 
+### Enclosure
+- `ath_minimal`
+  - If `Mesh.Enclosure` is set and `Plan` is not set, preview seed injects `Depth` when missing.
+  - Default used: `Mesh.Enclosure.Depth = 180`.
+- `policy_minimal`
+  - If `Mesh.Enclosure` is set and `Plan` is empty -> requires `Mesh.Enclosure.Depth`.
+  - If `Mesh.Enclosure.Plan` is set -> requires `Mesh.Enclosure.Plan` only (no forced `Depth`).
+  - Missing keys are exposed under policy block `enclosure`.
+
+Implementation notes:
+- `policy_missing_by_block` is returned in preview/default-policy payloads with blocks:
+  - `profile`, `mesh`, `gcurve`, `morph`, `enclosure`.
+- `Use defaults` merge logic in Batch form now supports:
+  - `R-OSSE.*` and `R-OSSE` object
+  - `Mesh.Enclosure.*` and `Mesh.Enclosure` object
+
 ## Morph Investigation Findings
 Source:
 - `reports/morph_circle_investigation/morph_circle_matrix.json`
@@ -78,7 +94,24 @@ Observed across 48 ATH-verified runs:
 
 This keeps preview robust while preserving user control for final run semantics.
 
-## Known Limits (Current)
-- Enclosure-specific tier rules are not yet modeled in this document version.
-- Compatibility ruleset itself is not changed by this model; this is orchestration/UI policy on top of resolver outputs.
+## Enclosure Investigation Findings
+Sources:
+- `reports/enclosure_investigation/enclosure_dims_20260217T215223Z.json`
+- `reports/enclosure_investigation/enclosure_dims_20260217T215223Z.md`
+- ATH guide sections 6.12.1/6.12.2 (pre-defined vs. plan enclosure)
 
+Observed in profile-wide preview runs (OS-SE / Circular Arc / R-OSSE):
+- All tested enclosure variants produced valid STL.
+- The exported STL bounding dimensions remained unchanged for enclosure toggles/variants in these runs.
+- Operationally this means:
+  - preview STL can stay stable even when enclosure fields change,
+  - enclosure completion still needs to be explicit in policy to avoid hidden run assumptions.
+
+Practical conclusion:
+- keep enclosure handling in policy tier (explicitness),
+- keep preview tier minimally permissive (robust rendering),
+- document that current STL preview is not a reliable visual indicator for enclosure effect.
+
+## Known Limits (Current)
+- Compatibility ruleset itself is not changed by this model; this is orchestration/UI policy on top of resolver outputs.
+- Current STL export behavior (in tested setup) does not visibly encode enclosure deltas in preview dimensions.

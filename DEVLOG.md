@@ -1,6 +1,31 @@
 ﻿# DEVLOG
 
 ## 2026-02-17
+### Update: Preview Runtime MeshCmd + Enclosure Tier Integration
+#### Done
+- Fixed preview ATH runtime mesh command behavior in `app/services.py`:
+  - preview now writes a gmsh wrapper command when gmsh.exe is detected
+  - resolved repeated `ATH preview run timed out after 90s` caused by bare gmsh invocation mode
+- Fixed CFG list serialization in `app/cfg_renderer.py` for ATH object blocks:
+  - list values now render as CSV (`a, b, c`) instead of JSON arrays (`[a, b, c]`)
+  - critical for object fields like `Mesh.Enclosure.Spacing`
+- Integrated enclosure into two-tier completion model:
+  - `ath_minimal`: fills `Mesh.Enclosure.Depth` only when enclosure is enabled without `Plan`
+  - `policy_minimal`: tracks enclosure requirements via `policy_missing_by_block.enclosure`
+    - requires `Mesh.Enclosure.Depth` for pre-defined enclosure mode
+    - requires `Mesh.Enclosure.Plan` for plan mode
+- Extended Batch default-apply path to merge enclosure defaults (`Mesh.Enclosure.*`) analog to `R-OSSE`.
+- Added coverage:
+  - `tests/test_preview_pipeline.py` (enclosure seed/policy behavior)
+  - `tests/test_m5_planner_renderer.py` (object-list CSV formatting)
+  - `tests/test_batch_page_ui.py` (enclosure default merge in UI)
+
+#### Evidence
+- Investigation output:
+  - `reports/enclosure_investigation/enclosure_dims_20260217T215223Z.json`
+  - `reports/enclosure_investigation/enclosure_dims_20260217T215223Z.md`
+- In profile-wide preview checks, enclosure variants stayed STL-feasible; preview dimensions remained unchanged in tested setup.
+
 ### Update: Two-Tier Preview Minimal Definition (ATH-Minimal vs Policy-Minimal)
 #### Done
 - Introduced explicit two-tier completion semantics in `app/services.py`:
