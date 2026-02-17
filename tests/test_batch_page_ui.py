@@ -278,6 +278,27 @@ class BatchPageUiTests(unittest.TestCase):
         self.assertFalse(editor.isEnabled())
         self.assertTrue(bool(toggle.property("sweepActive")))
 
+    def test_batch_ui_risks_colorize_fields_and_warn_summary(self) -> None:
+        page = BatchPage()
+        state = self._compat_state()
+        page.apply_compatibility(state)
+        page.apply_ui_risks(
+            [
+                {
+                    "field_key": "Length",
+                    "severity": "warn",
+                    "rule_id": "exp_range_safe",
+                    "message": "Length outside safe range.",
+                    "source": "experiment",
+                }
+            ]
+        )
+        editor = page.parameter_form.editor_for_key("Length")
+        self.assertIsNotNone(editor)
+        assert editor is not None
+        self.assertEqual(str(editor.property("fieldState")), "warn")
+        self.assertIn("Warnings present", page.action_status_pill.text())
+
     def test_hidden_field_value_is_cleared_after_visibility_change(self) -> None:
         page = BatchPage()
         state = self._compat_state()
