@@ -156,7 +156,14 @@ _PREVIEW_R_OSSE_DEFAULTS: Dict[str, float] = {
     "q": 0.996,
 }
 
-_PREVIEW_FALLBACK_DEFAULTS: Dict[str, Any] = {
+_PREVIEW_ATH_MINIMAL_DEFAULTS: Dict[str, Any] = {
+    # Keep STL preview generation resilient with the smallest practical set.
+    "Length": 120.0,
+    "GCurve.Width": 0.7,
+    "R-OSSE": {},
+}
+
+_PREVIEW_POLICY_DEFAULTS: Dict[str, Any] = {
     "Throat.Diameter": 25.4,
     "Throat.Angle": 7.0,
     "Coverage.Angle": 45.0,
@@ -184,6 +191,28 @@ _PREVIEW_FALLBACK_DEFAULTS: Dict[str, Any] = {
     "Mesh.CornerSegments": 4,
     "R-OSSE": dict(_PREVIEW_R_OSSE_DEFAULTS),
 }
+
+_PREVIEW_POLICY_REQUIRED_BY_PROFILE: Dict[str, List[str]] = {
+    "osse": ["Throat.Profile", "Length", "OS.k", "Term.s", "Term.n", "Term.q"],
+    "circarc": ["Throat.Profile", "Length", "CircArc.TermAngle", "CircArc.Radius"],
+    "rosse": [
+        "R-OSSE.R",
+        "R-OSSE.r0",
+        "R-OSSE.a0",
+        "R-OSSE.a",
+        "R-OSSE.k",
+        "R-OSSE.r",
+        "R-OSSE.m",
+        "R-OSSE.b",
+        "R-OSSE.q",
+    ],
+}
+
+_PREVIEW_POLICY_REQUIRED_MESH: List[str] = [
+    "Mesh.ThroatResolution",
+    "Mesh.MouthResolution",
+    "Mesh.Quadrants",
+]
 
 
 def _local_appdata_root() -> Path:
@@ -458,9 +487,17 @@ def _coerce_preview_scalar(value: Any, *, key: str, catalog: Mapping[str, Any]) 
     return value
 
 
-def _default_for_catalog_key(key: str, *, current_values: Mapping[str, Any], catalog_map: Mapping[str, Dict[str, Any]]) -> Any:
-    if key in _PREVIEW_FALLBACK_DEFAULTS:
-        preset = _PREVIEW_FALLBACK_DEFAULTS[key]
+def _default_for_catalog_key(
+    key: str,
+    *,
+    current_values: Mapping[str, Any],
+    catalog_map: Mapping[str, Dict[str, Any]],
+    tier: str = "ath_minimal",
+) -> Any:
+    tier_token = str(tier or "ath_minimal").strip().lower()
+    preset_map = _PREVIEW_POLICY_DEFAULTS if tier_token == "policy_minimal" else _PREVIEW_ATH_MINIMAL_DEFAULTS
+    if key in preset_map:
+        preset = preset_map[key]
         if isinstance(preset, dict):
             return dict(preset)
         return preset
@@ -497,14 +534,16 @@ def _default_for_catalog_key(key: str, *, current_values: Mapping[str, Any], cat
     if ath_type == "list<float>":
         return []
     if ath_type == "object" and key == "R-OSSE":
-        baseline = dict(_PREVIEW_R_OSSE_DEFAULTS)
-        throat_diameter = current_values.get("Throat.Diameter")
-        try:
-            if throat_diameter is not None:
-                baseline["r0"] = float(throat_diameter) / 2.0
-        except Exception:
-            pass
-        return baseline
+        if tier_token == "policy_minimal":
+            baseline = dict(_PREVIEW_R_OSSE_DEFAULTS)
+            throat_diameter = current_values.get("Throat.Diameter")
+            try:
+                if throat_diameter is not None:
+                    baseline["r0"] = float(throat_diameter) / 2.0
+            except Exception:
+                pass
+            return baseline
+        return {}
     return None
 
 
@@ -562,7 +601,11 @@ def _normalize_mesh_interface_lists(parameters: Dict[str, Any]) -> Dict[str, Any
     return normalized
 
 
-def _normalize_preview_render_parameters(parameters: Mapping[str, Any]) -> Dict[str, Any]:
+def _normalize_preview_render_parameters(
+    parameters: Mapping[str, Any],
+    *,
+    expand_rosse_defaults: bool = False,
+) -> Dict[str, Any]:
     normalized: Dict[str, Any] = {}
     for key, value in dict(parameters or {}).items():
         key_s = str(key).strip()
@@ -577,17 +620,112 @@ def _normalize_preview_render_parameters(parameters: Mapping[str, Any]) -> Dict[
 
     rosse_value = normalized.get("R-OSSE")
     if isinstance(rosse_value, Mapping):
-        merged = dict(_PREVIEW_R_OSSE_DEFAULTS)
-        for name, raw_value in dict(rosse_value).items():
-            if raw_value is None:
-                continue
-            merged[str(name)] = raw_value
-        normalized["R-OSSE"] = merged
+        if expand_rosse_defaults:
+            merged = dict(_PREVIEW_R_OSSE_DEFAULTS)
+            for name, raw_value in dict(rosse_value).items():
+                if raw_value is None:
+                    continue
+                merged[str(name)] = raw_value
+            normalized["R-OSSE"] = merged
+        else:
+            merged = {}
+            for name, raw_value in dict(rosse_value).items():
+                if raw_value is None:
+                    continue
+                merged[str(name)] = raw_value
+            normalized["R-OSSE"] = merged
     elif rosse_mode and "R-OSSE" not in normalized:
-        normalized["R-OSSE"] = dict(_PREVIEW_R_OSSE_DEFAULTS)
+        normalized["R-OSSE"] = dict(_PREVIEW_R_OSSE_DEFAULTS) if expand_rosse_defaults else {}
 
     normalized = _normalize_mesh_interface_lists(normalized)
     return normalized
+
+
+def _preview_profile_mode(parameters: Mapping[str, Any]) -> str:
+    rosse_value = parameters.get("R-OSSE")
+    if isinstance(rosse_value, Mapping):
+        return "rosse"
+    token = str(parameters.get("Throat.Profile", "")).strip()
+    if token in {"2", "2.0"}:
+        return "rosse"
+    if token in {"3", "3.0"}:
+        return "circarc"
+    return "osse"
+
+
+def _missing_preview_policy_keys(parameters: Mapping[str, Any]) -> List[str]:
+    payload = dict(parameters or {})
+    profile_mode = _preview_profile_mode(payload)
+    required: List[str] = list(_PREVIEW_POLICY_REQUIRED_BY_PROFILE.get(profile_mode, []))
+    required.extend(_PREVIEW_POLICY_REQUIRED_MESH)
+
+    gcurve_type = payload.get("GCurve.Type")
+    try:
+        gcurve_type_num = int(float(gcurve_type)) if gcurve_type is not None else None
+    except Exception:
+        gcurve_type_num = None
+    if gcurve_type_num not in {None, 0}:
+        required.extend(["GCurve.Type", "GCurve.Dist", "GCurve.Width"])
+
+    morph_shape = payload.get("Morph.TargetShape")
+    try:
+        morph_shape_num = int(float(morph_shape)) if morph_shape is not None else 0
+    except Exception:
+        morph_shape_num = 0
+    if morph_shape_num in {1, 2}:
+        required.extend(["Morph.TargetShape", "Morph.TargetWidth", "Morph.TargetHeight"])
+
+    missing: List[str] = []
+    for key in required:
+        key_s = str(key).strip()
+        if not key_s:
+            continue
+        if "." in key_s and key_s.startswith("R-OSSE."):
+            sub_key = key_s.split(".", 1)[1]
+            rosse = payload.get("R-OSSE")
+            if not isinstance(rosse, Mapping):
+                missing.append(key_s)
+                continue
+            if rosse.get(sub_key) is None:
+                missing.append(key_s)
+            continue
+        if payload.get(key_s) is None:
+            missing.append(key_s)
+    return sorted(set(missing))
+
+
+def _policy_defaults_for_missing_keys(
+    missing_keys: Sequence[str],
+    *,
+    context_values: Mapping[str, Any],
+    catalog_map: Mapping[str, Dict[str, Any]],
+) -> Dict[str, Any]:
+    filled: Dict[str, Any] = {}
+    rosse_sub_defaults: Dict[str, Any] = {}
+    for raw_key in list(missing_keys or []):
+        key = str(raw_key).strip()
+        if not key:
+            continue
+        if key.startswith("R-OSSE."):
+            sub_key = key.split(".", 1)[1]
+            if sub_key in _PREVIEW_R_OSSE_DEFAULTS:
+                rosse_sub_defaults[sub_key] = _PREVIEW_R_OSSE_DEFAULTS[sub_key]
+            continue
+        default_value = _default_for_catalog_key(
+            key,
+            current_values=context_values,
+            catalog_map=catalog_map,
+            tier="policy_minimal",
+        )
+        if default_value is None:
+            continue
+        filled[key] = default_value
+    if rosse_sub_defaults:
+        existing = filled.get("R-OSSE")
+        merged = dict(existing) if isinstance(existing, Mapping) else {}
+        merged.update(rosse_sub_defaults)
+        filled["R-OSSE"] = merged
+    return filled
 
 
 def _build_preview_render_payload(
@@ -605,7 +743,6 @@ def _build_preview_render_payload(
     auto_completed: Dict[str, Any] = {}
     preview_resolution_issues: List[Dict[str, Any]] = []
     resolver_fallback_used = False
-    merged_seed = _preview_seed_parameters(project.constraints, selected_clean)
 
     for _round in range(6):
         temp_batch = Batch(
@@ -624,13 +761,23 @@ def _build_preview_render_payload(
         preview_resolution_issues = [issue.to_dict() for issue in list(resolved.issues or [])]
         if resolved.versions:
             version = resolved.versions[0]
+            render_parameters = _normalize_preview_render_parameters(dict(version.parameters))
+            policy_missing_keys = _missing_preview_policy_keys(render_parameters)
+            policy_default_values = _policy_defaults_for_missing_keys(
+                policy_missing_keys,
+                context_values=render_parameters,
+                catalog_map=catalog_map,
+            )
             return {
                 "resolver_fallback_used": bool(resolver_fallback_used),
                 "resolution_issues": preview_resolution_issues,
                 "ignored_hidden_keys": sorted(set(ignored_hidden_keys)),
                 "auto_completed": dict(auto_completed),
-                "render_parameters": _normalize_preview_render_parameters(dict(version.parameters)),
+                "render_parameters": render_parameters,
                 "omit_keys": list(version.unset_parameters),
+                "completion_tier": "ath_minimal",
+                "policy_missing_keys": list(policy_missing_keys),
+                "policy_default_values": dict(policy_default_values),
             }
 
         resolver_fallback_used = True
@@ -657,6 +804,7 @@ def _build_preview_render_payload(
                 key_s,
                 current_values=context_values,
                 catalog_map=catalog_map,
+                tier="ath_minimal",
             )
             if default_value is None:
                 continue
@@ -671,6 +819,12 @@ def _build_preview_render_payload(
 
     merged = _preview_seed_parameters(project.constraints, selected_clean)
     merged = _normalize_preview_render_parameters(merged)
+    policy_missing_keys = _missing_preview_policy_keys(merged)
+    policy_default_values = _policy_defaults_for_missing_keys(
+        policy_missing_keys,
+        context_values=merged,
+        catalog_map=catalog_map,
+    )
     return {
         "resolver_fallback_used": True,
         "resolution_issues": preview_resolution_issues,
@@ -678,6 +832,9 @@ def _build_preview_render_payload(
         "auto_completed": dict(auto_completed),
         "render_parameters": merged,
         "omit_keys": [],
+        "completion_tier": "ath_minimal",
+        "policy_missing_keys": list(policy_missing_keys),
+        "policy_default_values": dict(policy_default_values),
     }
 
 
@@ -722,12 +879,12 @@ def _preview_seed_parameters(constraints: ProjectConstraints, selected_params: M
     # emitted into ATH cfg (ATH reports "Unknown profile type: 2").
     if str(merged.get("Throat.Profile", "")).strip() in {"2", "2.0"}:
         merged.pop("Throat.Profile", None)
-        merged.setdefault("R-OSSE", dict(_PREVIEW_R_OSSE_DEFAULTS))
+        merged.setdefault("R-OSSE", dict(_PREVIEW_ATH_MINIMAL_DEFAULTS.get("R-OSSE", {}) or {}))
 
     # Keep preview generation robust for incomplete drafts by filling the small
-    # set of mandatory ATH geometry keys with conservative fallback values.
+    # set of ATH-minimal keys.
     if "Length" not in merged and "OSSE" not in merged and "R-OSSE" not in merged:
-        merged["Length"] = 120.0
+        merged["Length"] = _PREVIEW_ATH_MINIMAL_DEFAULTS.get("Length", 120.0)
 
     gcurve_type = merged.get("GCurve.Type")
     try:
@@ -735,8 +892,7 @@ def _preview_seed_parameters(constraints: ProjectConstraints, selected_params: M
     except Exception:
         gcurve_type_num = None
     if gcurve_type_num not in {None, 0}:
-        merged.setdefault("GCurve.Dist", 80.0)
-        merged.setdefault("GCurve.Width", 0.7)
+        merged.setdefault("GCurve.Width", _PREVIEW_ATH_MINIMAL_DEFAULTS.get("GCurve.Width", 0.7))
 
     return _normalize_preview_render_parameters(merged)
 
@@ -807,6 +963,29 @@ class OrchestratorService:
             sweep_mode=sweep_mode,
         )
 
+    def evaluate_batch_default_policy(
+        self,
+        *,
+        project_id: str,
+        selected_params: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        project = self.repo.load_project(project_id)
+        selected_clean = _non_none_selected_params(selected_params)
+        ath_minimal_seed = _preview_seed_parameters(project.constraints, selected_clean)
+        catalog_map = _catalog_parameter_map()
+        missing_keys = _missing_preview_policy_keys(ath_minimal_seed)
+        default_values = _policy_defaults_for_missing_keys(
+            missing_keys,
+            context_values=ath_minimal_seed,
+            catalog_map=catalog_map,
+        )
+        return {
+            "tier": "policy_minimal",
+            "missing_keys": list(missing_keys),
+            "default_values": default_values,
+            "ath_minimal_seed": ath_minimal_seed,
+        }
+
     def cleanup_preview_cache(
         self,
         *,
@@ -866,6 +1045,13 @@ class OrchestratorService:
             for key, value in dict(preview_payload.get("auto_completed", {}) or {}).items()
             if str(key).strip()
         }
+        completion_tier = str(preview_payload.get("completion_tier", "ath_minimal") or "ath_minimal")
+        policy_missing_keys = [
+            str(item)
+            for item in list(preview_payload.get("policy_missing_keys", []) or [])
+            if str(item).strip()
+        ]
+        policy_default_values = dict(preview_payload.get("policy_default_values", {}) or {})
 
         template_text = "; autogenerated template\n"
         if self.settings.template_cfg:
@@ -1016,6 +1202,9 @@ class OrchestratorService:
             "resolution_issues": preview_resolution_issues,
             "ignored_hidden_keys": ignored_hidden_keys,
             "auto_completed": auto_completed,
+            "completion_tier": completion_tier,
+            "policy_missing_keys": policy_missing_keys,
+            "policy_default_values": policy_default_values,
             "cfg_path": str(cfg_path),
             "command": command,
             "export_root": str(export_root),

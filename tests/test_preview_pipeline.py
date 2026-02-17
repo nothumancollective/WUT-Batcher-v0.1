@@ -12,6 +12,7 @@ from app.models import ProjectConstraints
 from app.services import (
     _build_preview_render_payload,
     _extract_not_visible_batch_keys,
+    _missing_preview_policy_keys,
     _normalize_preview_render_parameters,
     _preview_seed_parameters,
 )
@@ -56,8 +57,8 @@ class PreviewPipelineTests(unittest.TestCase):
 
         self.assertNotIn("Throat.Profile", payload)
         self.assertIn("R-OSSE", payload)
-        self.assertEqual(float(payload["GCurve.Dist"]), 80.0)
         self.assertEqual(float(payload["GCurve.Width"]), 0.7)
+        self.assertNotIn("GCurve.Dist", payload)
 
     def test_extract_not_visible_batch_keys_parses_rule_issues(self) -> None:
         issue = type(
@@ -115,6 +116,21 @@ class PreviewPipelineTests(unittest.TestCase):
         self.assertEqual(float(render.get("Length", 0.0)), 100.0)
         self.assertEqual(int(render.get("Morph.TargetShape", 0)), 1)
         self.assertIn("R-OSSE", render)
+        self.assertEqual(str(payload.get("completion_tier")), "ath_minimal")
+        self.assertTrue(isinstance(payload.get("policy_missing_keys", []), list))
+
+    def test_missing_preview_policy_keys_reports_nonfatal_policy_gaps(self) -> None:
+        missing = _missing_preview_policy_keys(
+            {
+                "Throat.Profile": 1,
+                "Length": 100.0,
+            }
+        )
+        self.assertIn("Term.s", missing)
+        self.assertIn("Term.n", missing)
+        self.assertIn("Term.q", missing)
+        self.assertIn("OS.k", missing)
+        self.assertIn("Mesh.ThroatResolution", missing)
 
     def test_stl_preview_widget_renders_mesh_without_qt3d(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_preview_test_") as tmp:
