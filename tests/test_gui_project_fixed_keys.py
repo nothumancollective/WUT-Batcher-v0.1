@@ -17,3 +17,35 @@ def test_project_fixed_keys_include_set_param_states() -> None:
     )
     keys = MainWindow._project_fixed_keys_from_constraints(constraints)
     assert set(keys) == {"Length", "Throat.Diameter", "Throat.Profile", "GCurve.Type"}
+
+
+def test_sanitize_batch_payload_prunes_non_visible_and_fixed_keys() -> None:
+    constraints = ProjectConstraints(
+        project_id="P001",
+        fixed_params={"Length": 200.0, "Throat.Profile": 2},
+        limits={},
+        param_states=[{"param_name": "Throat.Profile", "is_set": 1, "value": 2}],
+    )
+    payload = {
+        "batch_name": "B1",
+        "sweep_mode": "single",
+        "selected_params": {
+            "Length": 250.0,  # fixed at project level -> remove
+            "Throat.Profile": 1,  # fixed at project level -> remove
+            "Term.s": 0.4,  # not visible in project state -> remove
+            "GCurve.Dist": 120.0,  # keep
+        },
+        "sweeps": {
+            "Term.s": {"start": 0.3, "end": 0.5, "steps": 3},  # remove (not visible)
+            "GCurve.Type": {"start": 1, "end": 2, "steps": 2},  # remove (not sweepable)
+            "GCurve.Dist": {"start": 100.0, "end": 140.0, "steps": 3},  # keep
+        },
+    }
+    project_state = {
+        "visible_keys": ["Length", "GCurve.Type", "GCurve.Dist"],
+        "sweepable_keys": ["GCurve.Dist"],
+    }
+    sanitized, changed = MainWindow._sanitize_batch_payload_for_project_constraints(payload, constraints, project_state)
+    assert changed is True
+    assert sanitized["selected_params"] == {"GCurve.Dist": 120.0}
+    assert sanitized["sweeps"] == {"GCurve.Dist": {"start": 100.0, "end": 140.0, "steps": 3}}
