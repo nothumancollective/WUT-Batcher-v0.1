@@ -148,6 +148,36 @@ class VersionResolverTests(unittest.TestCase):
         self.assertNotIn("batch_param_not_visible", rule_ids)
         self.assertEqual(len(result.versions), 2)
 
+    def test_length_required_is_satisfied_by_batch_selection(self) -> None:
+        constraints = {"fixed_params": {}, "limits": {}, "runner_mode": "AthGuidePreview"}
+        batch = Batch(
+            batch_id="B001",
+            project_id="P001",
+            selected_params={"Length": ParamSelection(value=220.0)},
+            sweeps={},
+            sweep_mode="single",
+            runner_mode="AthGuidePreview",
+        )
+        result = resolve_versions(constraints, batch, strict=False)
+        rule_ids = {issue.rule_id for issue in result.issues}
+        self.assertNotIn("validity_length_required", rule_ids)
+        self.assertEqual(len(result.versions), 1)
+
+    def test_length_required_is_satisfied_by_batch_sweep(self) -> None:
+        constraints = {"fixed_params": {}, "limits": {}, "runner_mode": "AthGuidePreview"}
+        batch = Batch(
+            batch_id="B001",
+            project_id="P001",
+            selected_params={},
+            sweeps={"Length": SweepSpec(start=180.0, end=220.0, steps=2)},
+            sweep_mode="single",
+            runner_mode="AthGuidePreview",
+        )
+        result = resolve_versions(constraints, batch, strict=False)
+        rule_ids = {issue.rule_id for issue in result.issues}
+        self.assertNotIn("validity_length_required", rule_ids)
+        self.assertEqual(len(result.versions), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

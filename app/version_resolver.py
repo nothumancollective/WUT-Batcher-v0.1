@@ -96,7 +96,7 @@ def _extract_constrained_params(constraints_payload: Dict[str, Any]) -> Dict[str
     return constrained
 
 
-def _preview_constraints_with_batch_selected(constraints_payload: Dict[str, Any], batch: Batch) -> Dict[str, Any]:
+def _preview_constraints_with_batch_context(constraints_payload: Dict[str, Any], batch: Batch) -> Dict[str, Any]:
     fixed = dict(constraints_payload.get("fixed_params", {}) or {})
     limits = dict(constraints_payload.get("limits", {}) or {})
     param_states = [
@@ -109,6 +109,15 @@ def _preview_constraints_with_batch_selected(constraints_payload: Dict[str, Any]
             continue
         fixed[str(key)] = value
         param_states.append({"param_name": str(key), "is_set": 1, "value": value})
+    for key, spec in dict(getattr(batch, "sweeps", {}) or {}).items():
+        sweep_key = str(key)
+        start_value = getattr(spec, "start", None)
+        if start_value is None and isinstance(spec, dict):
+            start_value = spec.get("start")
+        if start_value is None:
+            continue
+        fixed[sweep_key] = start_value
+        param_states.append({"param_name": sweep_key, "is_set": 1, "value": start_value})
     return {
         "fixed_params": fixed,
         "limits": limits,
@@ -190,7 +199,8 @@ def _compatibility_precheck(
     runner_mode: str,
 ) -> List[ResolutionIssue]:
     issues: List[ResolutionIssue] = []
-    report = validity_report(constraints_payload, runner_mode=runner_mode)
+    preview_constraints = _preview_constraints_with_batch_context(constraints_payload, batch)
+    report = validity_report(preview_constraints, runner_mode=runner_mode)
     for fatal in report.get("fatal", []):
         issues.append(
             ResolutionIssue(
@@ -202,7 +212,6 @@ def _compatibility_precheck(
             )
         )
 
-    preview_constraints = _preview_constraints_with_batch_selected(constraints_payload, batch)
     visible = set(visible_params(preview_constraints, runner_mode=runner_mode))
     sweepable = set(sweepable_params(preview_constraints, runner_mode=runner_mode))
 

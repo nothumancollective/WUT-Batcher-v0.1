@@ -39,6 +39,22 @@ class CompatibilityServiceTests(unittest.TestCase):
         self.assertGreaterEqual(len(issues), 1)
         self.assertEqual(issues[0]["evidence_type"], "hypothesis")
 
+    def test_batch_evaluation_respects_length_defined_by_batch(self) -> None:
+        service = CompatibilityService()
+        state = service.evaluate_batch_definition(
+            {
+                "project_id": "P001",
+                "fixed_params": {},
+                "limits": {},
+                "runner_mode": DEFAULT_RUNNER_MODE,
+            },
+            selected_params={"Length": 220.0},
+            sweeps={},
+            sweep_mode="single",
+        )
+        rule_ids = {str(item.get("rule_id", "")) for item in list(state.get("issues", []) or [])}
+        self.assertNotIn("validity_length_required", rule_ids)
+
 
 if __name__ == "__main__":
     unittest.main()
