@@ -88,5 +88,11 @@ Im `output-root`:
 
 ## Hinweise
 - `ATH-verified` kann lang laufen (viele Oracle-Calls).
-- Bei `exit_code=0` aber fehlender STL wird `stl_not_found` im Fehlerpfad protokolliert.
+- Pro Oracle-Evaluation wird eine eigene CFG (`mc_<scenario>_<hash>_<token>.cfg`) geschrieben;
+  der erwartete Exportordner ist entsprechend eindeutig unter `C:\\Horns\\mc_<...>\\`.
+- Run-Klassifikation im Oracle:
+  - `stl`: `Output.STL=1` und STL vorhanden (`size > 0`)
+  - `noStl`: `Output.STL=1`, ATH exit `0`, aber keine STL im erwarteten Exportordner
+  - `athFail`: ATH exit `!= 0`
+- Bei `exit_code=0` aber fehlender STL wird zusätzlich `stl_not_found` im Fehlerpfad protokolliert.
 - Für R-OSSE wird `Throat.Profile=2` vor dem ATH-Render entfernt (ATH-intern inkompatibler UI-Selektor), `R-OSSE` bleibt gesetzt.

@@ -16,6 +16,8 @@
   - options include `--verify-ath`, `--all-combinations`, `--scenario-filter`, run-group and budget controls.
 - Added documentation:
   - `docs/MINIMAL_COMPLETION_SEARCH.md` with model explanation and run commands.
+  - Oracle classification clarified: `stl` / `noStl` / `athFail`.
+  - ATH-verify now uses unique cfg/export basenames per evaluation for deterministic STL-path attribution.
 
 ### Update: Preview Minimal Completion + R-OSSE Normalization
 #### Done

@@ -37,7 +37,6 @@ from ui.form_schema import FormSchema, build_project_form_schema
 
 _NUMERIC_RE = re.compile(r"^[+-]?\d+(?:[.,]\d+)?(?:[eE][+-]?\d+)?$")
 _CARD_ORDER: Tuple[str, ...] = ("profile", "basics", "mesh", "morph", "gcurve", "enclosure")
-_CFG_BASENAME = "minimal_completion_current"
 
 # User-provided known-valid baseline. Used as synthetic fallback seed only.
 _REFERENCE_BASELINE: Dict[str, Any] = {
@@ -100,6 +99,23 @@ _DEFAULTS: Dict[str, Any] = {
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def _safe_token(text: str, *, max_len: int = 24) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(text or "").strip()).strip("_.-")
+    if not cleaned:
+        cleaned = "scenario"
+    return cleaned[: max(4, int(max_len))]
+
+
+def _classify_run_status(*, ath_exit_code: Optional[int], stl_path: Optional[str]) -> str:
+    if str(stl_path or "").strip():
+        return "stl"
+    if ath_exit_code is None:
+        return "unknown"
+    if int(ath_exit_code) != 0:
+        return "athFail"
+    return "noStl"
 
 
 def _normalize_scalar(value: Any) -> Any:
@@ -341,12 +357,19 @@ class _AthOracle:
         ).fetchone()
         if row is None:
             return None
+        detail = json.loads(str(row[3])) if row[3] else {}
+        exit_code = None if row[1] is None else int(row[1])
+        stl_path = str(row[2] or "") if row[2] is not None else None
+        status = str(detail.get("status", "") or "").strip()
+        if status not in {"stl", "noStl", "athFail"}:
+            status = _classify_run_status(ath_exit_code=exit_code, stl_path=stl_path)
         payload = {
-            "feasible": bool(int(row[0])),
-            "ath_exit_code": None if row[1] is None else int(row[1]),
-            "stl_path": str(row[2] or "") if row[2] is not None else None,
+            "feasible": bool(status == "stl" or bool(int(row[0]))),
+            "status": status,
+            "ath_exit_code": exit_code,
+            "stl_path": stl_path,
             "cached": True,
-            "detail": json.loads(str(row[3])) if row[3] else {},
+            "detail": detail,
         }
         self._memory_cache[config_hash] = dict(payload)
         return payload
@@ -395,12 +418,20 @@ class _AthOracle:
         if cached is not None:
             return dict(cached)
         if not self.enabled:
-            payload = {"feasible": False, "ath_exit_code": None, "stl_path": None, "cached": False, "detail": {}}
+            payload = {
+                "feasible": False,
+                "status": "skipped",
+                "ath_exit_code": None,
+                "stl_path": None,
+                "cached": False,
+                "detail": {"error": "oracle_disabled"},
+            }
             self._store_cached(config_hash, payload)
             return payload
         if self._ath_exe is None or not self._ath_exe.exists():
             payload = {
                 "feasible": False,
+                "status": "athFail",
                 "ath_exit_code": None,
                 "stl_path": None,
                 "cached": False,
@@ -420,13 +451,16 @@ class _AthOracle:
         )
         cfg_text = _enforce_output_flag(cfg_text, key="Output.STL", value=1)
         cfg_text = _enforce_output_flag(cfg_text, key="Output.ABECProject", value=0)
+        output_stl_forced = bool(re.search(r"(?im)^[ \t]*Output\.STL[ \t]*=[ \t]*1[ \t]*$", cfg_text))
 
-        cfg_path = self.cfg_dir / f"{_CFG_BASENAME}.cfg"
-        export_dir = self.export_root / _CFG_BASENAME
-        if export_dir.exists():
-            shutil.rmtree(export_dir, ignore_errors=True)
+        scenario_token = _safe_token(scenario_id, max_len=16)
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
+        eval_id = f"{scenario_token}_{config_hash[:8]}_{stamp[-8:]}"
+        cfg_basename = f"mc_{eval_id}"
+        cfg_path = self.cfg_dir / f"{cfg_basename}.cfg"
+        export_dir = self.export_root / cfg_basename
         cfg_path.write_text(cfg_text, encoding="utf-8")
-        logs_dir = self.logs_root / scenario_id
+        logs_dir = self.logs_root / scenario_token
         logs_dir.mkdir(parents=True, exist_ok=True)
         runner = AthRunner(self._ath_exe)
         result = runner.run_cfg(cfg_path, version_logs_dir=logs_dir, workdir=self.cfg_dir)
@@ -436,19 +470,24 @@ class _AthOracle:
             candidates.sort(key=lambda path: int(path.stat().st_mtime_ns), reverse=True)
             if candidates:
                 stl_path = str(candidates[0])
-        feasible = bool(result.ok and stl_path)
+        status = _classify_run_status(ath_exit_code=int(result.exit_code), stl_path=stl_path)
+        feasible = bool(status == "stl")
         error_token = ""
-        if not result.ok:
+        if status == "athFail":
             error_token = f"ath_exit_{int(result.exit_code)}"
-        elif not stl_path:
+        elif status == "noStl":
             error_token = "stl_not_found"
         payload = {
             "feasible": feasible,
+            "status": status,
             "ath_exit_code": int(result.exit_code),
             "stl_path": stl_path,
             "cached": False,
             "detail": {
                 "error": error_token,
+                "output_stl_forced": bool(output_stl_forced),
+                "cfg_path": str(cfg_path),
+                "expected_export_dir": str(export_dir),
                 "stdout_log": str(result.stdout_log),
                 "stderr_log": str(result.stderr_log),
                 "summary_log": str(result.summary_log),
@@ -1071,7 +1110,7 @@ def run_minimal_completion_search(
                         source=seed.source,
                         run_id=seed.run_id,
                         params=dict(params),
-                        ath={"feasible": None, "ath_exit_code": None, "stl_path": None},
+                        ath={"status": None, "feasible": None, "ath_exit_code": None, "stl_path": None},
                         compat=_compat_summary(params),
                         notes=["db_observed_candidate"],
                     )
@@ -1111,10 +1150,12 @@ def run_minimal_completion_search(
                         run_id=seed.run_id,
                         params=dict(params),
                         ath={
+                            "status": str(ath_eval.get("status", "") or ""),
                             "feasible": bool(ath_eval.get("feasible")),
                             "ath_exit_code": ath_eval.get("ath_exit_code"),
                             "stl_path": ath_eval.get("stl_path"),
                             "cached": bool(ath_eval.get("cached", False)),
+                            "detail": dict(ath_eval.get("detail", {}) or {}),
                         },
                         compat=_compat_summary(params),
                         notes=["ath_verified"],
@@ -1140,7 +1181,7 @@ def run_minimal_completion_search(
                     source="none",
                     run_id=None,
                     params={},
-                    ath={"feasible": False, "ath_exit_code": None, "stl_path": None},
+                    ath={"status": "unknown", "feasible": False, "ath_exit_code": None, "stl_path": None},
                     compat={"fatal_count": 0, "warn_count": 0, "top_messages": []},
                     notes=notes or ["no_matching_seed_found"],
                 )

@@ -5,7 +5,7 @@ import sqlite3
 import tempfile
 import unittest
 
-from app.minimal_completion_search import run_minimal_completion_search
+from app.minimal_completion_search import _classify_run_status, run_minimal_completion_search
 from app.settings_store import UserSettings
 
 
@@ -61,6 +61,11 @@ def _init_experiment_db(path: Path) -> None:
 
 
 class MinimalCompletionSearchTests(unittest.TestCase):
+    def test_classify_run_status(self) -> None:
+        self.assertEqual(_classify_run_status(ath_exit_code=0, stl_path="C:/Horns/x/test.stl"), "stl")
+        self.assertEqual(_classify_run_status(ath_exit_code=0, stl_path=None), "noStl")
+        self.assertEqual(_classify_run_status(ath_exit_code=2, stl_path=None), "athFail")
+
     def test_db_observed_search_returns_seed_candidate(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_mincomp_test_") as tmp:
             root = Path(tmp)
