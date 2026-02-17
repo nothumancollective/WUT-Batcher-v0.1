@@ -2264,3 +2264,18 @@ Validation executed:
   - `tests/test_sim_export_settings.py`
   - `tests/test_batch_validation_alignment_fuzz.py`
   - `tests/test_gui_project_fixed_keys.py`
+
+### Update 73 (Startup Crash Fix + Docs Sync)
+#### Done
+- Fixed GUI startup crash caused by missing theme color token lookup:
+  - root cause: `ui/theme.py` referenced `warning_text`, but token set only provides `warning_text_muted`.
+  - fix: sweep warning style now uses `warning_text_muted`.
+- Verified GUI launch path again via CLI entrypoint:
+  - `python -m app gui`
+- Synced UI docs for current status:
+  - Batch UI notes now include the startup-token fix under troubleshooting.
+  - Project UI notes now explicitly mention the summary-right validation teaser panel.
+
+#### Validation
+- `python -m py_compile ui/theme.py`
+- `PYTHONPATH=. pytest tests/test_batch_export_panel.py -q`

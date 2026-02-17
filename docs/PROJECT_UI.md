@@ -43,6 +43,7 @@
   - generic inner `QWidget` backgrounds are transparent to avoid dark overlay artifacts in nested forms.
   - `ContextFrame` uses a subtle inset tone + border (no heavy full-block fill).
 - PROJECT page no longer renders a dedicated compatibility panel and no longer includes `Back to Dashboard` / `Show details` actions.
+- PROJECT summary right card now uses a compact validation teaser (`summary_issue_hint`) aligned to the Batch summary style.
 - Source fields (`Source.*`) and `OSSE` object block are intentionally hidden from PROJECT UI to avoid duplication/conflicts.
 - `Throat.Profile = 2 (R-OSSE)` is treated as UI mode selector; it is kept in `param_states` for UI/rules evaluation and omitted from rendered fixed CFG key map.
 - `GCurve.Type` uses explicit UI modes: `no GCurve` (`unset`), `Superellipse` (`1`), `Superformula` (`2`).

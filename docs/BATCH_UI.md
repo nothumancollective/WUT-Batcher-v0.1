@@ -151,6 +151,12 @@ Behavior:
 - `version_count_preview` is forced to `0`
 - issue is surfaced in validation summary state
 
+## Troubleshooting
+- If the app crashes directly at startup with a theme token error like:
+  - `KeyError: 'warning_text'`
+- use the fixed theme mapping in `ui/theme.py` (`warning_text_muted`), then restart via:
+  - `python -m app gui`
+
 ## Batch Action Policy
 - Save: allowed when no `fatal` issues exist.
 - Run: allowed only when no `fatal` and no `incomplete` issues exist.
