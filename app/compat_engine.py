@@ -432,16 +432,23 @@ def _fallback_sweepable_keys(
     return fallback
 
 
-_UI_SWEEP_CONTROLLER_KEYS: Set[str] = {"Throat.Profile", "GCurve.Type", "Morph.TargetShape"}
+_UI_SWEEP_CONTROLLER_KEYS: Set[str] = {"Throat.Profile", "GCurve.Type", "Morph.TargetShape", "Mesh.Enclosure"}
 
 
-def _apply_batch_sweep_policy(*, sweepable: Set[str], visible: Set[str]) -> Set[str]:
+def _apply_batch_sweep_policy(
+    *,
+    sweepable: Set[str],
+    visible: Set[str],
+    bundle: AthKnowledgeBundle,
+) -> Set[str]:
     adjusted = {str(key) for key in list(sweepable or [])}
+    # Always add scalar fallback sweepability for currently visible parameters so
+    # sweep controls do not collapse to basic-only rows when rules are sparse.
+    adjusted.update(_fallback_sweepable_keys(bundle=bundle, visible=visible))
     # Temporarily disable mesh sweeps in Batch UI flow.
     adjusted = {key for key in adjusted if not str(key).startswith("Mesh.")}
-    for key in _UI_SWEEP_CONTROLLER_KEYS:
-        if key in visible:
-            adjusted.add(key)
+    # Controller/button selectors must not be sweep targets.
+    adjusted.difference_update(_UI_SWEEP_CONTROLLER_KEYS)
     return adjusted
 
 
@@ -602,7 +609,7 @@ def sweepable_params(
     if not sweepable:
         sweepable = _fallback_sweepable_keys(bundle=bundle, visible=visible)
         _apply_runner_restrictions(visible, sweepable, values, ruleset, runner_mode)
-    sweepable = _apply_batch_sweep_policy(sweepable=sweepable, visible=visible)
+    sweepable = _apply_batch_sweep_policy(sweepable=sweepable, visible=visible, bundle=bundle)
     return _sorted_keys(sweepable, keys)
 
 
@@ -621,7 +628,7 @@ def validity_report(
     sweepable = _apply_sweepability_rules(rules, values, visible)
     if not sweepable:
         sweepable = _fallback_sweepable_keys(bundle=bundle, visible=visible)
-    sweepable = _apply_batch_sweep_policy(sweepable=sweepable, visible=visible)
+    sweepable = _apply_batch_sweep_policy(sweepable=sweepable, visible=visible, bundle=bundle)
     issues = _build_validity_issues(rules, values)
     issues.extend(_build_semantic_issues(rules, values))
     issues.extend(_apply_runner_restrictions(visible, sweepable, values, ruleset, runner_mode))

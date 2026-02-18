@@ -157,8 +157,6 @@ class BatchParameterForm(QWidget):
     blocked_interaction = Signal(str, str, str)
 
     _GROUP_ORDER = ["Basics", "Throat Profile", "GCurve", "Morph", "Mesh", "Enclosure"]
-    _CONTROLLER_SWEEP_KEYS = {"Throat.Profile", "GCurve.Type", "Morph.TargetShape"}
-
     def __init__(self, schema: Optional[FormSchema] = None, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.schema = schema or build_project_form_schema()
@@ -239,8 +237,8 @@ class BatchParameterForm(QWidget):
         key = str(field.key)
         if key.startswith("Mesh."):
             return False
-        if key in cls._CONTROLLER_SWEEP_KEYS:
-            return True
+        if key in {"Throat.Profile", "GCurve.Type", "Morph.TargetShape", "Mesh.Enclosure"}:
+            return False
         if field.widget_kind in {"float", "int", "expr", "ex"}:
             return True
         return False

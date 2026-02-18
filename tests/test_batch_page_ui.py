@@ -266,7 +266,7 @@ class BatchPageUiTests(unittest.TestCase):
         expected = max(240, summary_width)
         self.assertAlmostEqual(page.batch_name.width(), expected, delta=5)
 
-    def test_controller_keys_are_sweepable_and_mesh_keys_are_not(self) -> None:
+    def test_controller_keys_are_not_sweepable_and_mesh_keys_are_not(self) -> None:
         page = BatchPage()
         state = self._compat_state()
         page.apply_compatibility(state)
@@ -274,14 +274,29 @@ class BatchPageUiTests(unittest.TestCase):
             row = page.parameter_form._rows.get(key)
             self.assertIsNotNone(row, f"Missing controller row: {key}")
             assert row is not None
-            self.assertTrue(row.sweep_capable)
-            self.assertFalse(row.sweep_toggle.isHidden())
-            self.assertTrue(row.sweep_toggle.isEnabled())
+            self.assertFalse(row.sweep_capable)
+            self.assertTrue(row.sweep_toggle.isHidden())
         mesh_row = page.parameter_form._rows.get("Mesh.AngularSegments")
         self.assertIsNotNone(mesh_row)
         assert mesh_row is not None
         self.assertFalse(mesh_row.sweep_capable)
         self.assertFalse(mesh_row.sweep_toggle.isVisible())
+
+    def test_non_basic_group_numeric_field_can_be_swept_when_visible(self) -> None:
+        page = BatchPage()
+        # Select profile so throat profile sub-parameters become visible.
+        selected = {"Throat.Profile": 1}
+        state = self._compat_state(selected_params=selected)
+        page.parameter_form.set_selected_params(selected)
+        page.apply_compatibility(state)
+        candidate = "Term.s"
+        row = page.parameter_form._rows.get(candidate)
+        self.assertIsNotNone(row)
+        assert row is not None
+        self.assertFalse(row.container.isHidden())
+        self.assertTrue(row.sweep_capable)
+        self.assertFalse(row.sweep_toggle.isHidden())
+        self.assertTrue(row.sweep_toggle.isEnabled())
 
     def test_gcurve_subgroup_headers_hidden_for_no_gcurve(self) -> None:
         page = BatchPage()
