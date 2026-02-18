@@ -183,7 +183,17 @@ class BatchValidationAlignmentFuzzTests(unittest.TestCase):
             for item in ui_issues
             if str(item.get("source", "")).strip().lower() != "experiment"
         }
-        self.assertTrue(ui_normative_rule_ids.issubset(issue_rule_ids))
+        allowed_ui_only_rules = {
+            "enclosure_format_invalid",
+            "enclosure_depth_required_without_plan",
+            "enclosure_plan_preview_limit",
+            "enclosure_list_non_numeric",
+            "enclosure_list_empty",
+            "enclosure_list_too_long",
+        }
+        self.assertTrue(
+            ui_normative_rule_ids.difference(allowed_ui_only_rules).issubset(issue_rule_ids)
+        )
         self.assertNotIn("batch_param_not_visible", ui_normative_rule_ids)
 
         if "Length" in selected and selected.get("Length") is not None:

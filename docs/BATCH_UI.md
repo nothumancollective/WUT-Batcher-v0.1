@@ -39,6 +39,9 @@ Behavior:
   - highlights the sweep button with active style
   - locks/dims the base editor (`baseLockedBySweep=true`)
   - shows inline sweep inputs
+- sweep coverage:
+  - controller rows are sweep-capable: `Throat.Profile`, `GCurve.Type`, `Morph.TargetShape`
+  - mesh rows are intentionally not sweep-capable for now (`Mesh.*`)
 - default on first sweep activation:
   - if base is set and `start/end` empty, both initialize from base value
   - `steps` defaults to `3`
@@ -49,6 +52,9 @@ Compatibility gating:
 - hidden for project-fixed keys (`fixed_params`, `limits`, and set `param_states`)
 - disabled when key is in `locked_keys`
 - sweep button disabled when key is not in `sweepable_keys`
+- enum sweep safety:
+  - enum sweeps only emit payload when `start/end` match allowed enum values
+  - invalid enum ranges stay in UI but are withheld from payload until corrected
 
 Payload API:
 - `selected_params_payload() -> Dict[str, Any]`
@@ -224,6 +230,12 @@ Behavior:
 - Run button is interactable once batch name is set.
 - Run execution still goes through validation and can be blocked by fatal issues.
 - Incomplete/warning guidance remains visible in summary/fields.
+- Save/Run buttons remain clickable (with name set) so validation blockers are communicated explicitly via status/dialog/tooltips.
+
+## Warning Summary UX
+- Top-right validation card shows sorted issue snippets (up to 3 lines) instead of a single generic counter.
+- Hover tooltip on that card shows the extended sorted list.
+- Field-level warning hover helpers are applied in batch form (base control + sweep button).
 
 ## Sweepability Fallback
 - In baseline drafts some rulesets may return empty `sweepable_keys`.

@@ -1,5 +1,39 @@
 ﻿# DEVLOG
 
+## 2026-02-18
+### Update: Final UI Optimization Pass (Project Manager / Batch / Preview)
+#### Done
+- Project Manager tile selection polish:
+  - removed bright selection fill artifacts by forcing transparent selection highlight and preserving border-only active state.
+- Batch top-right validation UX:
+  - warning/error snippets now sorted and shown as multi-line teaser.
+  - hover tooltip shows extended sorted issue list.
+- Batch warning hover helpers:
+  - field-level warnings now append structured hover helper text on affected controls (including sweep button).
+- Batch layout tuning:
+  - batch name width now matches summary-card width.
+  - right column ratio updated: larger preview area, reduced export card height.
+- Sweep behavior updates:
+  - enabled controller sweeps for `Throat.Profile`, `GCurve.Type`, `Morph.TargetShape`.
+  - disabled mesh sweeps (`Mesh.*`) for current iteration.
+  - added enum-sweep guardrails (only allowed enum boundary values are emitted).
+- Preview robustness:
+  - controller inference for partial drafts in preview normalization (`Throat.Profile`, `GCurve.Type`, `Morph.TargetShape`) to reduce false OS-SE preview failures when controller is temporarily unset.
+- Save/Run usability:
+  - Save/Run remain clickable once batch name is set; blocker reasons are communicated via tooltip/dialog instead of silent disablement.
+- Startup glitch mitigation:
+  - removed splash titlebar dark-mode call (frameless splash).
+  - added `CREATE_NO_WINDOW` for doctor/version subprocess calls on Windows to suppress transient console-window flicker.
+- Dashboard constraint-card redraw stabilization:
+  - avoided unnecessary full grid rebuilds on unchanged width/content to reduce visual blinking.
+
+#### Tests
+- `tests/test_batch_page_ui.py`
+- `tests/test_project_manager_ui.py`
+- `tests/test_preview_pipeline.py`
+- `tests/test_batch_export_panel.py`
+- `tests/test_gui_project_fixed_keys.py`
+- `tests/test_service_export.py`
 ## 2026-02-17
 ### Update: Batch Run/Preview Reliability + Enclosure Input Hardening
 #### Done
@@ -2528,5 +2562,4 @@ Validation executed:
 - `python -m compileall app/services.py app/gui.py ui/batch_preview_placeholder.py ui/stl_preview_widget.py`
 - `python -m pytest tests/test_preview_pipeline.py -q`
 - `python -m pytest tests/test_batch_page_ui.py tests/test_service_export.py -q`
-
 

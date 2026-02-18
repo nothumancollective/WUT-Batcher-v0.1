@@ -262,10 +262,26 @@ class BatchPageUiTests(unittest.TestCase):
         page.resize(1500, 900)
         page.show()
         self.app.processEvents()
-        margins = page._root_layout.contentsMargins()
-        available = int(page.width() - margins.left() - margins.right())
-        expected = max(240, available // 3)
+        summary_width = int(page.summary_left_card.width())
+        expected = max(240, summary_width)
         self.assertAlmostEqual(page.batch_name.width(), expected, delta=5)
+
+    def test_controller_keys_are_sweepable_and_mesh_keys_are_not(self) -> None:
+        page = BatchPage()
+        state = self._compat_state()
+        page.apply_compatibility(state)
+        for key in ("Throat.Profile", "GCurve.Type", "Morph.TargetShape"):
+            row = page.parameter_form._rows.get(key)
+            self.assertIsNotNone(row, f"Missing controller row: {key}")
+            assert row is not None
+            self.assertTrue(row.sweep_capable)
+            self.assertFalse(row.sweep_toggle.isHidden())
+            self.assertTrue(row.sweep_toggle.isEnabled())
+        mesh_row = page.parameter_form._rows.get("Mesh.AngularSegments")
+        self.assertIsNotNone(mesh_row)
+        assert mesh_row is not None
+        self.assertFalse(mesh_row.sweep_capable)
+        self.assertFalse(mesh_row.sweep_toggle.isVisible())
 
     def test_gcurve_subgroup_headers_hidden_for_no_gcurve(self) -> None:
         page = BatchPage()
@@ -423,6 +439,35 @@ class BatchPageUiTests(unittest.TestCase):
         assert editor is not None
         self.assertEqual(str(editor.property("fieldState")), "warn")
         self.assertIn("Warnings present", page.action_status_pill.text())
+
+    def test_warning_summary_sorts_messages_and_sets_hover_tooltip(self) -> None:
+        page = BatchPage()
+        state = self._compat_state()
+        page.apply_compatibility(state)
+        page.apply_ui_risks(
+            [
+                {
+                    "field_key": "Length",
+                    "severity": "warn",
+                    "rule_id": "warn_b",
+                    "message": "Zulu warning",
+                    "source": "experiment",
+                },
+                {
+                    "field_key": "Length",
+                    "severity": "warn",
+                    "rule_id": "warn_a",
+                    "message": "Alpha warning",
+                    "source": "experiment",
+                },
+            ]
+        )
+        text = str(page.summary_issue_hint.text())
+        self.assertTrue(text.startswith("Alpha warning"))
+        self.assertIn("Zulu warning", text)
+        tooltip = str(page.summary_issue_hint.toolTip() or "")
+        self.assertIn("1. Alpha warning", tooltip)
+        self.assertIn("2. Zulu warning", tooltip)
 
     def test_hidden_field_value_is_cleared_after_visibility_change(self) -> None:
         page = BatchPage()
