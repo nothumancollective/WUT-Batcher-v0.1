@@ -606,6 +606,7 @@ class BatchParameterForm(QWidget):
                 self._mesh_advanced_button.clicked.connect(self.open_mesh_advanced_dialog)
                 advanced_layout.addWidget(self._mesh_advanced_button, 0, Qt.AlignRight)
                 field_grid.add_full_width(advanced_wrap)
+        self._detach_remaining_mesh_advanced_rows()
         self._update_group_reset_buttons()
         self._refresh_group_headers()
         self._refresh_visibility()
@@ -736,6 +737,19 @@ class BatchParameterForm(QWidget):
             if row is None:
                 continue
             grid.remove_widget(row.container)
+            self._detached_rows_layout.addWidget(row.container)
+            row.container.setProperty("meshAdvancedDetached", "true")
+
+    def _detach_remaining_mesh_advanced_rows(self) -> None:
+        for key in list(self._mesh_advanced_row_keys):
+            row = self._rows.get(str(key))
+            if row is None:
+                continue
+            if str(row.container.property("meshAdvancedDetached") or "false").lower() == "true":
+                continue
+            parent = row.container.parentWidget()
+            if parent is not None and parent.layout() is not None:
+                parent.layout().removeWidget(row.container)
             self._detached_rows_layout.addWidget(row.container)
             row.container.setProperty("meshAdvancedDetached", "true")
 
