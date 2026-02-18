@@ -195,6 +195,30 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         font-size: 13px;
         font-weight: 700;
     }}
+    QPushButton#AccordionHeaderResetButton {{
+        background: transparent;
+        border: 1px solid transparent;
+        border-radius: {r['sm']}px;
+        color: {c['muted']};
+        min-width: 22px;
+        max-width: 22px;
+        min-height: 22px;
+        max-height: 22px;
+        padding: 0px;
+        font-size: 13px;
+        font-weight: 700;
+    }}
+    QPushButton#AccordionHeaderResetButton[canReset="false"] {{
+        color: #6f6f6f;
+    }}
+    QPushButton#AccordionHeaderResetButton[canReset="true"] {{
+        color: {c['muted']};
+    }}
+    QPushButton#AccordionHeaderResetButton:hover {{
+        color: {c['accent']};
+        border-color: {c['border']};
+        background-color: #1f1f1f;
+    }}
     QLabel#AccordionChip {{
         background-color: #262626;
         color: {c['muted']};
@@ -342,6 +366,26 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     }}
     QLineEdit[severity="warn"], QTextEdit[severity="warn"], QPlainTextEdit[severity="warn"] {{
         border: 1px solid {c['warning']};
+    }}
+    QSlider:horizontal {{
+        min-height: 16px;
+    }}
+    QSlider::groove:horizontal {{
+        height: 4px;
+        background: #2b2b2b;
+        border: 1px solid {c['border']};
+        border-radius: 2px;
+    }}
+    QSlider::sub-page:horizontal {{
+        background: #4f4f4f;
+        border-radius: 2px;
+    }}
+    QSlider::handle:horizontal {{
+        width: 12px;
+        margin: -5px 0;
+        background: #d0d0d0;
+        border: 1px solid #6a6a6a;
+        border-radius: 6px;
     }}
     QLineEdit[severity="fatal"], QTextEdit[severity="fatal"], QPlainTextEdit[severity="fatal"] {{
         border: 1px solid {c['danger']};
@@ -973,15 +1017,15 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     QScrollArea#BatchVariableScroll QScrollBar:vertical,
     QScrollArea#BatchAdvancedScroll QScrollBar:vertical {{
         background: transparent;
-        width: 10px;
-        margin: 2px 4px 2px 0px;
+        width: 6px;
+        margin: 2px 2px 2px 2px;
         border: none;
     }}
     QScrollArea#BatchVariableScroll QScrollBar::handle:vertical,
     QScrollArea#BatchAdvancedScroll QScrollBar::handle:vertical {{
-        background: rgba(255, 255, 255, 0.26);
-        border-radius: 5px;
-        min-height: 28px;
+        background: rgba(255, 255, 255, 0.3);
+        border-radius: 3px;
+        min-height: 24px;
     }}
     QScrollArea#BatchVariableScroll QScrollBar::handle:vertical:hover,
     QScrollArea#BatchAdvancedScroll QScrollBar::handle:vertical:hover {{

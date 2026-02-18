@@ -1,6 +1,37 @@
 ﻿# DEVLOG
 
 ## 2026-02-18
+### Update: Batch UI Corrections A–J (header reset, card reduction, advanced popups)
+#### Done
+- Replaced per-card text reset rows with header-level reset action icon:
+  - reset action now sits in accordion header near chips/status.
+  - removed vertical control rows (`Reset overrides in this block` / large `Advanced...`) from expanded cards.
+- Batch card density updates:
+  - reduced intra-row gaps and increased inter-column spacing in parameter grids.
+  - removed extra section labels in mode-heavy cards (Throat Profile / GCurve).
+  - mode controller labels normalized to `Mode` in expanded rows.
+- Throat Profile behavior:
+  - R-OSSE visibility is now controller-driven by `Throat.Profile=R-OSSE` (no advanced toggle dependency).
+  - R-OSSE editor rendered as compact two-column inline controls (no extra details frame).
+- GCurve behavior:
+  - removed explicit card-level advanced toggle; superformula mode now drives advanced parameter visibility.
+- Mesh behavior:
+  - mesh advanced parameters removed from main card surface and moved to a dedicated advanced dialog.
+  - added compact in-card `Advanced` action button to open that dialog.
+  - moved `Mesh.InterfaceOffset` into mesh advanced dialog scope.
+- Enclosure restructuring:
+  - removed Enclosure card from main batch parameter surface.
+  - added `Simulate Enclosure` button in Exports section to open enclosure dialog.
+- Validation/summary refinements:
+  - warning presentation remains in top-right validation card with full warning text retained.
+  - error/incomplete counts surfaced in center estimate card.
+- Preview/action polish:
+  - preview loader roundness increased and slider visuals aligned with dark UI language.
+  - batch scrollbars made thinner.
+
+#### Validation
+- `python -m compileall app ui`
+
 ### Update: Batch UI Follow-up Corrections (layout, validation surfacing, action bar)
 #### Done
 - Batch segment rows:
