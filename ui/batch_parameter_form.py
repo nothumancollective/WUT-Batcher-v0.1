@@ -23,12 +23,14 @@ try:
     from PySide6.QtCore import QPoint, Qt, QTimer, Signal
     from PySide6.QtGui import QDoubleValidator, QIntValidator
     from PySide6.QtWidgets import (
+        QComboBox,
         QFrame,
         QGridLayout,
         QHBoxLayout,
         QLabel,
         QLineEdit,
         QPushButton,
+        QSizePolicy,
         QScrollArea,
         QVBoxLayout,
         QWidget,
@@ -170,7 +172,7 @@ class _ResponsiveFieldGrid(QWidget):
         self._items: List[Tuple[str, QWidget]] = []
         self._grid = QGridLayout(self)
         self._grid.setContentsMargins(0, 0, 0, 0)
-        self._grid.setHorizontalSpacing(max(12, int(FORM_METRICS.column_gap)))
+        self._grid.setHorizontalSpacing(max(34, int(FORM_METRICS.column_gap) + 14))
         self._grid.setVerticalSpacing(max(8, int(FORM_METRICS.row_gap) + 1))
         self._min_three_width = 1500
 
@@ -293,6 +295,7 @@ class BatchParameterForm(QWidget):
         self._advanced_expanded_by_group: Dict[str, bool] = {}
         self._group_grids: Dict[str, _ResponsiveFieldGrid] = {}
         self._policy_default_suggestions: Dict[str, Any] = {}
+        self._latest_issues_by_key: Dict[str, List[Dict[str, Any]]] = {}
         self._control_height = int(FORM_METRICS.control_height)
 
         root = QVBoxLayout(self)
@@ -583,6 +586,7 @@ class BatchParameterForm(QWidget):
             advanced_btn.setVisible(has_advanced)
             advanced_btn.setEnabled(has_advanced)
         self._update_group_reset_buttons()
+        self._refresh_group_headers()
         self._refresh_visibility()
 
     def _build_row(self, grid: _ResponsiveFieldGrid, field: FieldSpec, group_name: str) -> None:
@@ -591,17 +595,19 @@ class BatchParameterForm(QWidget):
         row_wrap.setObjectName("BatchFieldCell")
         row_root = QVBoxLayout(row_wrap)
         row_root.setContentsMargins(0, 0, 0, 0)
-        row_root.setSpacing(max(2, int(FORM_METRICS.row_gap) - 1))
+        row_root.setSpacing(1)
 
         row = QWidget()
         row_layout = QHBoxLayout(row)
-        row_layout.setContentsMargins(0, 0, 10, 0)
-        row_layout.setSpacing(int(FORM_METRICS.label_to_input_gap))
+        row_layout.setContentsMargins(0, 0, 6, 0)
+        row_layout.setSpacing(2)
 
         base_editor = self._make_base_editor(field)
         is_tall_control = self._is_tall_scalar_editor(base_editor)
-        if isinstance(base_editor, ScalarFieldEditor) and not is_tall_control:
-            base_editor.setFixedWidth(int(FORM_METRICS.editor_total_width))
+        wide_button_row = self._is_button_layout(field) and self._segment_option_count(base_editor) >= 3
+        if isinstance(base_editor, ScalarFieldEditor) and not is_tall_control and not wide_button_row:
+            compact_width = max(232, int(FORM_METRICS.editor_total_width) - 16)
+            base_editor.setFixedWidth(compact_width)
         if hasattr(base_editor, "changed"):
             base_editor.changed.connect(lambda *_ignored, row_key=key: self._on_field_edited(row_key))  # type: ignore[attr-defined]
 
@@ -644,8 +650,19 @@ class BatchParameterForm(QWidget):
                 row_layout.addWidget(sweep_toggle, 0, Qt.AlignLeft | Qt.AlignTop)
             else:
                 sweep_toggle.setVisible(False)
+        elif wide_button_row:
+            row_wrap.setProperty("buttonRow", "true")
+            label_width = max(124, int(FORM_METRICS.label_width) - 30)
+            label = ElidedFixedLabel(str(field.label), label_width)
+            label.setMinimumHeight(self._control_height)
+            row_layout.addWidget(label, 0, Qt.AlignVCenter)
+            if hasattr(base_editor, "setSizePolicy"):
+                base_editor.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            row_layout.addWidget(base_editor, 1, Qt.AlignLeft | Qt.AlignVCenter)
+            sweep_toggle.setVisible(False)
         else:
-            label = ElidedFixedLabel(str(field.label), int(FORM_METRICS.label_width))
+            label_width = max(130, int(FORM_METRICS.label_width) - 26)
+            label = ElidedFixedLabel(str(field.label), label_width)
             label.setMinimumHeight(self._control_height)
             row_layout.addWidget(label, 0, Qt.AlignVCenter)
             row_layout.addWidget(base_editor, 0, Qt.AlignLeft | Qt.AlignVCenter)
@@ -660,7 +677,7 @@ class BatchParameterForm(QWidget):
         helper.setWordWrap(True)
         row_root.addWidget(helper)
 
-        if field.widget_kind == "object" or is_tall_control:
+        if field.widget_kind == "object" or is_tall_control or wide_button_row:
             grid.add_full_width(row_wrap)
         else:
             grid.add_cell(row_wrap)
@@ -680,6 +697,8 @@ class BatchParameterForm(QWidget):
             sweep_capable=self._supports_sweep(field),
         )
         self._rows[key] = row_data
+        self._mark_batch_widget_tree(row_wrap)
+        self._apply_segment_compact_mode(row_data)
         self._wire_row_blocked_interactions(key)
         sweep_toggle.clicked.connect(lambda checked, row_key=key: self._on_sweep_clicked(row_key, bool(checked)))
         sweep_toggle.toggled.connect(lambda enabled, row_key=key: self._on_sweep_toggled(row_key, enabled))
@@ -1057,6 +1076,7 @@ class BatchParameterForm(QWidget):
             self._active_group_name = row.group_name
         self._sync_interface_list_lengths(str(key))
         self._update_group_reset_buttons()
+        self._refresh_group_headers()
         self.changed.emit()
 
     @staticmethod
@@ -1126,6 +1146,7 @@ class BatchParameterForm(QWidget):
 
     def apply_ui_risks(self, issues: List[Dict[str, Any]]) -> None:
         self._clear_ui_risks()
+        self._latest_issues_by_key = {}
         grouped: Dict[str, List[Dict[str, Any]]] = {}
         for issue in list(issues or []):
             if not isinstance(issue, Mapping):
@@ -1134,6 +1155,7 @@ class BatchParameterForm(QWidget):
             if not key or key not in self._rows:
                 continue
             grouped.setdefault(key, []).append(dict(issue))
+            self._latest_issues_by_key.setdefault(key, []).append(dict(issue))
 
         for key, row_issues in grouped.items():
             if not row_issues:
@@ -1170,6 +1192,7 @@ class BatchParameterForm(QWidget):
                     f"{base_sweep_tip}\n\n{sweep_tip}".strip() if base_sweep_tip else sweep_tip
                 )
             self._repolish(row.sweep_toggle)
+        self._refresh_group_headers()
 
     def set_project_fixed_keys(self, keys: Sequence[str]) -> None:
         self._project_fixed_keys = {str(item) for item in list(keys or []) if str(item).strip()}
@@ -1333,6 +1356,7 @@ class BatchParameterForm(QWidget):
                 self._accordion_sync = False
             keep.set_collapsed(False)
         self._update_group_reset_buttons()
+        self._refresh_group_headers()
         return effective_visible, changed_hidden
 
     def _apply_blocked_option_state(self) -> None:
@@ -1454,6 +1478,7 @@ class BatchParameterForm(QWidget):
             self._set_editor_value(row, raw.get(key))
         self._sync_interface_list_lengths("Mesh.SubdomainSlices")
         self._update_group_reset_buttons()
+        self._refresh_group_headers()
         self.clear_manual_highlights()
 
     def set_sweeps(self, payload: Dict[str, Any]) -> None:
@@ -1472,6 +1497,7 @@ class BatchParameterForm(QWidget):
             steps = spec.get("steps", 3)
             row.steps_edit.setText("" if steps is None else str(steps))
         self._update_group_reset_buttons()
+        self._refresh_group_headers()
         self.clear_manual_highlights()
 
     @staticmethod
@@ -1509,6 +1535,117 @@ class BatchParameterForm(QWidget):
                 row.helper_label.setText("")
                 row.helper_label.setVisible(False)
                 self._repolish(row.helper_label)
+
+    @staticmethod
+    def _segment_option_count(editor: QWidget) -> int:
+        if isinstance(editor, ScalarFieldEditor):
+            value_widget = editor.value_widget()
+            if isinstance(value_widget, SegmentedEnumInput):
+                return len(list(getattr(value_widget, "_buttons", []) or []))
+            maybe = getattr(value_widget, "segment", None)
+            if isinstance(maybe, SegmentedEnumInput):
+                return len(list(getattr(maybe, "_buttons", []) or []))
+        if isinstance(editor, ObjectFieldEditor) and isinstance(editor.toggle, SegmentedEnumInput):
+            return len(list(getattr(editor.toggle, "_buttons", []) or []))
+        return 0
+
+    def _apply_segment_compact_mode(self, row: _FieldRow) -> None:
+        for segment in self._row_segments(row):
+            buttons = [btn for btn in list(getattr(segment, "_buttons", []) or []) if isinstance(btn, QPushButton)]
+            for button in buttons:
+                button.setMinimumWidth(40)
+                button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
+    @staticmethod
+    def _mark_batch_widget_tree(root: QWidget) -> None:
+        widgets = [root, *root.findChildren(QWidget)]
+        for widget in widgets:
+            widget.setProperty("batchField", "true")
+            if isinstance(widget, QComboBox):
+                widget.setObjectName("BatchFieldCombo")
+
+    @staticmethod
+    def _enum_label(mapping: Mapping[int, str], value: Any, fallback: str) -> str:
+        try:
+            token = int(float(value))
+        except Exception:
+            return fallback
+        return str(mapping.get(token, fallback))
+
+    def _field_value(self, key: str) -> tuple[bool, Any]:
+        row = self._rows.get(str(key))
+        if row is None:
+            return (False, None)
+        return self._current_state(row)
+
+    def _chips_for_group(self, group_name: str) -> List[str]:
+        chips: List[str] = []
+        title = str(group_name).strip()
+        if title == "Throat Profile":
+            is_set, value = self._field_value("Throat.Profile")
+            if is_set:
+                chips.append(self._enum_label({1: "OS-SE", 2: "R-OSSE", 3: "Circular Arc"}, value, "unset"))
+        elif title == "GCurve":
+            is_set, value = self._field_value("GCurve.Type")
+            if not is_set:
+                chips.append("No GCurve")
+            else:
+                chips.append(self._enum_label({0: "No GCurve", 1: "Superellipse", 2: "Superformula"}, value, "No GCurve"))
+        elif title == "Morph":
+            is_set, value = self._field_value("Morph.TargetShape")
+            target = value if is_set else 0
+            chips.append(self._enum_label({0: "Original", 1: "Rectangle", 2: "Circle"}, target, "Original"))
+        elif title == "Mesh":
+            is_set, value = self._field_value("Mesh.Quadrants")
+            if is_set and value is not None:
+                chips.append(f"Quadrants={value}")
+        elif title == "Enclosure":
+            is_set, _value = self._field_value("Mesh.Enclosure")
+            chips.append("enabled" if is_set else "disabled")
+        elif title == "Basics":
+            d_set, d_value = self._field_value("Throat.Diameter")
+            l_set, l_value = self._field_value("Length")
+            if d_set and d_value is not None:
+                chips.append(f"Throat={d_value}")
+            if l_set and l_value is not None:
+                chips.append(f"Length={l_value}")
+        return chips
+
+    def _refresh_group_headers(self) -> None:
+        for group_name, box in self._group_boxes.items():
+            group_keys = [key for key, row in self._rows.items() if str(row.group_name) == str(group_name)]
+            compatible_keys = [
+                key
+                for key in group_keys
+                if str(self._rows[key].container.property("compatVisible") or "false").lower() == "true"
+            ]
+            active_count = sum(1 for key in compatible_keys if self._field_is_set(key))
+            total_fields = len(compatible_keys)
+            warn_count = 0
+            fatal_count = 0
+            incomplete_count = 0
+            for key in compatible_keys:
+                for issue in list(self._latest_issues_by_key.get(key, [])):
+                    severity = str(issue.get("severity", "")).strip().lower()
+                    if severity == "warn":
+                        warn_count += 1
+                    elif severity == "incomplete":
+                        incomplete_count += 1
+                    elif severity == "fatal":
+                        if self._field_is_set(key):
+                            fatal_count += 1
+                        else:
+                            incomplete_count += 1
+            ok_count = active_count if (warn_count == 0 and fatal_count == 0 and incomplete_count == 0) else 0
+            box.set_summary_chips(self._chips_for_group(str(group_name)))
+            box.set_status_counts(
+                ok_count=int(ok_count),
+                warn_count=int(warn_count),
+                fatal_count=int(fatal_count),
+                incomplete_count=int(incomplete_count),
+                active_count=int(active_count),
+                total_fields=int(total_fields),
+            )
 
     def highlight_policy_missing_keys(self, keys: Sequence[str]) -> List[str]:
         self.clear_manual_highlights()

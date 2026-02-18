@@ -427,6 +427,15 @@ class BatchExportPanel(QFrame):
         self.mesh_frequency = QLineEdit("")
         self.mesh_frequency.setValidator(QIntValidator(1, 1_000_000, self.mesh_frequency))
         self.mesh_frequency.setPlaceholderText("optional")
+        for field in (
+            self.simulation_mode,
+            self.sweep_mode,
+            self.freq_start,
+            self.freq_end,
+            self.num_points,
+            self.mesh_frequency,
+        ):
+            field.setProperty("batchField", "true")
 
         settings_grid.addWidget(self._field_stack("Simulation Mode", self.simulation_mode), 0, 0)
         settings_grid.addWidget(self._field_stack("Sweep Mode", self.sweep_mode), 0, 1)
@@ -475,7 +484,7 @@ class BatchExportPanel(QFrame):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
         text = QLabel(str(label))
-        text.setObjectName("SummaryMeta")
+        text.setObjectName("BatchSummaryMeta")
         layout.addWidget(text)
         widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         if hasattr(widget, "setFixedHeight"):

@@ -876,8 +876,8 @@ class NullableSliderNumericInput(QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(6)
         unit_text = str(unit or "")
-        self._slider_width = 96
-        min_edit_width = 54
+        self._slider_width = 72
+        min_edit_width = 72
         self.unit_label = QLabel(unit_text)
         self.unit_label.setObjectName("InputUnit")
         unit_width = max(UNIT_LABEL_WIDTH, self.unit_label.fontMetrics().horizontalAdvance(unit_text) + 6)
@@ -1519,6 +1519,7 @@ class SegmentedEnumInput(QWidget):
             button.setProperty("segment", "true")
             button.setMinimumHeight(CONTROL_HEIGHT)
             button.setMinimumWidth(max(56, int(button.fontMetrics().horizontalAdvance(str(label)) + 16)))
+            button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             self.group.addButton(button, index)
             self._values_by_id[index] = value
             if value is None:
