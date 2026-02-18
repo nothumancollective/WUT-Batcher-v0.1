@@ -7,7 +7,6 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from ui.form_builder import (
     AccordionGroupBox,
-    ContextFrame,
     ElidedFixedLabel,
     NullableCodeEditorInput,
     NullableListTableInput,
@@ -24,6 +23,7 @@ try:
     from PySide6.QtGui import QDoubleValidator, QIntValidator
     from PySide6.QtWidgets import (
         QComboBox,
+        QDialog,
         QFrame,
         QGridLayout,
         QHBoxLayout,
@@ -99,24 +99,34 @@ class _SingleColumnObjectEditor(QWidget):
         self.property_editors: Dict[str, ScalarFieldEditor] = {}
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
-        root.setSpacing(6)
+        root.setSpacing(4)
 
-        frame = ContextFrame("Details")
         grid = QGridLayout()
         grid.setContentsMargins(0, 0, 0, 0)
-        grid.setHorizontalSpacing(8)
-        grid.setVerticalSpacing(4)
+        grid.setHorizontalSpacing(max(18, int(FORM_METRICS.column_gap) - 2))
+        grid.setVerticalSpacing(2)
+        left_slot = True
+        row_cursor = 0
         for row_index, property_field in enumerate(list(field.object_properties)):
             label = QLabel(str(property_field.label))
-            label.setMinimumWidth(120)
+            label.setFixedWidth(max(130, int(FORM_METRICS.label_width) - 30))
             editor = ScalarFieldEditor(property_field)
             editor.changed.connect(self.changed.emit)
             editor.set_is_set(False)
-            grid.addWidget(label, row_index, 0, 1, 1, Qt.AlignVCenter)
-            grid.addWidget(editor, row_index, 1, 1, 1, Qt.AlignLeft | Qt.AlignVCenter)
+            if left_slot:
+                grid.addWidget(label, row_cursor, 0, 1, 1, Qt.AlignVCenter)
+                grid.addWidget(editor, row_cursor, 1, 1, 1, Qt.AlignLeft | Qt.AlignVCenter)
+                left_slot = False
+            else:
+                grid.addWidget(label, row_cursor, 3, 1, 1, Qt.AlignVCenter)
+                grid.addWidget(editor, row_cursor, 4, 1, 1, Qt.AlignLeft | Qt.AlignVCenter)
+                row_cursor += 1
+                left_slot = True
             self.property_editors[property_field.key] = editor
-        frame.content_layout.addLayout(grid)
-        root.addWidget(frame)
+        if not left_slot:
+            row_cursor += 1
+        grid.setColumnMinimumWidth(2, max(14, int(FORM_METRICS.column_gap) - 4))
+        root.addLayout(grid)
 
     def current_state(self) -> Any:
         value: Dict[str, Any] = {}
@@ -182,6 +192,11 @@ class _ResponsiveFieldGrid(QWidget):
 
     def add_full_width(self, widget: QWidget) -> None:
         self._items.append(("full", widget))
+        self._relayout()
+
+    def remove_widget(self, widget: QWidget) -> None:
+        target_id = id(widget)
+        self._items = [(kind, item) for kind, item in self._items if id(item) != target_id]
         self._relayout()
 
     def resizeEvent(self, event) -> None:  # type: ignore[override]
@@ -289,13 +304,19 @@ class BatchParameterForm(QWidget):
         self._risk_original_tooltips: Dict[int, str] = {}
         self._subgroup_headers: List[_SubgroupHeader] = []
         self._blink_tokens_by_key: Dict[str, int] = {}
-        self._group_reset_buttons: Dict[str, QPushButton] = {}
-        self._group_advanced_buttons: Dict[str, QPushButton] = {}
         self._advanced_keys_by_group: Dict[str, set[str]] = {}
-        self._advanced_expanded_by_group: Dict[str, bool] = {}
         self._group_grids: Dict[str, _ResponsiveFieldGrid] = {}
         self._policy_default_suggestions: Dict[str, Any] = {}
         self._latest_issues_by_key: Dict[str, List[Dict[str, Any]]] = {}
+        self._detached_rows_host = QWidget(self)
+        self._detached_rows_host.hide()
+        self._detached_rows_layout = QVBoxLayout(self._detached_rows_host)
+        self._detached_rows_layout.setContentsMargins(0, 0, 0, 0)
+        self._detached_rows_layout.setSpacing(0)
+        self._enclosure_box: Optional[AccordionGroupBox] = None
+        self._enclosure_box_home: Optional[QVBoxLayout] = None
+        self._mesh_advanced_button: Optional[QPushButton] = None
+        self._mesh_advanced_row_keys: List[str] = []
         self._control_height = int(FORM_METRICS.control_height)
 
         root = QVBoxLayout(self)
@@ -506,41 +527,23 @@ class BatchParameterForm(QWidget):
         for group_name in self._ordered_group_names(grouped):
             box = AccordionGroupBox(group_name)
             box.set_collapsed(True)
-            self._register_box(box)
+            if str(group_name) != "Enclosure":
+                self._register_box(box)
             self._group_boxes[group_name] = box
-            self.content_layout.addWidget(box)
+            if str(group_name) == "Enclosure":
+                self._detached_rows_layout.addWidget(box)
+                self._enclosure_box = box
+                self._enclosure_box_home = self._detached_rows_layout
+            else:
+                self.content_layout.addWidget(box)
+            box.reset_requested.connect(
+                lambda target_group=str(group_name): self.reset_overrides_in_block(target_group)
+            )
 
             group_fields = list(grouped.get(group_name, []))
             self._advanced_keys_by_group[str(group_name)] = {
                 str(field.key) for field in group_fields if bool(getattr(field, "advanced", False))
             }
-            self._advanced_expanded_by_group.setdefault(str(group_name), False)
-
-            controls_wrap = QWidget()
-            controls_layout = QHBoxLayout(controls_wrap)
-            controls_layout.setContentsMargins(0, 0, 0, 0)
-            controls_layout.setSpacing(6)
-            controls_layout.addStretch(1)
-            advanced_btn = QPushButton("Advanced...")
-            advanced_btn.setProperty("segment", "true")
-            advanced_btn.setCheckable(True)
-            advanced_btn.setChecked(False)
-            advanced_btn.setFixedWidth(max(96, int(FORM_METRICS.action_width * 2)))
-            advanced_btn.setMinimumHeight(self._control_height)
-            advanced_btn.toggled.connect(
-                lambda enabled, target_group=str(group_name): self._on_group_advanced_toggled(target_group, bool(enabled))
-            )
-            controls_layout.addWidget(advanced_btn, 0, Qt.AlignRight)
-            reset_btn = QPushButton("Reset overrides in this block")
-            reset_btn.setProperty("segment", "true")
-            reset_btn.setMinimumHeight(self._control_height)
-            reset_btn.clicked.connect(
-                lambda _checked=False, target_group=str(group_name): self.reset_overrides_in_block(target_group)
-            )
-            controls_layout.addWidget(reset_btn, 0, Qt.AlignRight)
-            box.body_layout().addWidget(controls_wrap)
-            self._group_reset_buttons[str(group_name)] = reset_btn
-            self._group_advanced_buttons[str(group_name)] = advanced_btn
 
             field_grid = _ResponsiveFieldGrid()
             box.body_layout().addWidget(field_grid)
@@ -566,7 +569,12 @@ class BatchParameterForm(QWidget):
             for field in ordered_fields:
                 subgroup_order, subgroup_name = self._subgroup_for_field(field, group_name)
                 _ = subgroup_order
-                if subgroup_name != "General" and subgroup_name != last_subgroup:
+                skip_subgroup_heading = (
+                    (str(group_name) == "Throat Profile" and subgroup_name in {"Mode", "OS-SE", "R-OSSE", "Circular Arc"})
+                    or (str(group_name) == "GCurve" and subgroup_name in {"Mode", "Superformula", "Superellipse"})
+                    or (str(group_name) == "Mesh" and subgroup_name == "Advanced")
+                )
+                if subgroup_name != "General" and subgroup_name != last_subgroup and not skip_subgroup_heading:
                     subgroup_label = QLabel(subgroup_name)
                     subgroup_label.setObjectName("IssuesPanelGroupTitle")
                     field_grid.add_full_width(subgroup_label)
@@ -582,15 +590,31 @@ class BatchParameterForm(QWidget):
                 if subgroup_name == "General":
                     last_subgroup = "General"
                 self._build_row(field_grid, field, group_name)
-            has_advanced = bool(self._advanced_keys_by_group.get(str(group_name)))
-            advanced_btn.setVisible(has_advanced)
-            advanced_btn.setEnabled(has_advanced)
+            if str(group_name) == "Mesh":
+                self._mesh_advanced_row_keys = sorted(
+                    set(str(key) for key in list(self._advanced_keys_by_group.get("Mesh", set()))) | {"Mesh.InterfaceOffset"}
+                )
+                self._detach_mesh_advanced_rows(field_grid)
+                advanced_wrap = QWidget()
+                advanced_layout = QHBoxLayout(advanced_wrap)
+                advanced_layout.setContentsMargins(0, 0, 0, 0)
+                advanced_layout.setSpacing(0)
+                advanced_layout.addStretch(1)
+                self._mesh_advanced_button = QPushButton("Advanced")
+                self._mesh_advanced_button.setObjectName("StatusActionButton")
+                self._mesh_advanced_button.setFixedHeight(max(26, self._control_height - 4))
+                self._mesh_advanced_button.clicked.connect(self.open_mesh_advanced_dialog)
+                advanced_layout.addWidget(self._mesh_advanced_button, 0, Qt.AlignRight)
+                field_grid.add_full_width(advanced_wrap)
         self._update_group_reset_buttons()
         self._refresh_group_headers()
         self._refresh_visibility()
 
     def _build_row(self, grid: _ResponsiveFieldGrid, field: FieldSpec, group_name: str) -> None:
         key = str(field.key)
+        display_label = str(field.label)
+        if key in {"Throat.Profile", "GCurve.Type"}:
+            display_label = "Mode"
         row_wrap = QWidget()
         row_wrap.setObjectName("BatchFieldCell")
         row_root = QVBoxLayout(row_wrap)
@@ -641,9 +665,9 @@ class BatchParameterForm(QWidget):
 
         if is_tall_control:
             row_wrap.setProperty("tallControl", "true")
-            top_label = QLabel(str(field.label))
+            top_label = QLabel(display_label)
             top_label.setObjectName("ContextTitle")
-            top_label.setToolTip(str(field.label or ""))
+            top_label.setToolTip(str(display_label or ""))
             row_root.addWidget(top_label, 0, Qt.AlignLeft)
             row_layout.addWidget(base_editor, 0, Qt.AlignLeft | Qt.AlignTop)
             if self._supports_sweep(field):
@@ -653,7 +677,7 @@ class BatchParameterForm(QWidget):
         elif wide_button_row:
             row_wrap.setProperty("buttonRow", "true")
             label_width = max(124, int(FORM_METRICS.label_width) - 30)
-            label = ElidedFixedLabel(str(field.label), label_width)
+            label = ElidedFixedLabel(display_label, label_width)
             label.setMinimumHeight(self._control_height)
             row_layout.addWidget(label, 0, Qt.AlignVCenter)
             if hasattr(base_editor, "setSizePolicy"):
@@ -662,7 +686,7 @@ class BatchParameterForm(QWidget):
             sweep_toggle.setVisible(False)
         else:
             label_width = max(130, int(FORM_METRICS.label_width) - 26)
-            label = ElidedFixedLabel(str(field.label), label_width)
+            label = ElidedFixedLabel(display_label, label_width)
             label.setMinimumHeight(self._control_height)
             row_layout.addWidget(label, 0, Qt.AlignVCenter)
             row_layout.addWidget(base_editor, 0, Qt.AlignLeft | Qt.AlignVCenter)
@@ -683,7 +707,7 @@ class BatchParameterForm(QWidget):
             grid.add_cell(row_wrap)
         row_data = _FieldRow(
             field=field,
-            label=str(field.label),
+            label=str(display_label),
             group_name=group_name,
             container=row_wrap,
             base_editor=base_editor,
@@ -702,6 +726,103 @@ class BatchParameterForm(QWidget):
         self._wire_row_blocked_interactions(key)
         sweep_toggle.clicked.connect(lambda checked, row_key=key: self._on_sweep_clicked(row_key, bool(checked)))
         sweep_toggle.toggled.connect(lambda enabled, row_key=key: self._on_sweep_toggled(row_key, enabled))
+
+    def _detach_mesh_advanced_rows(self, grid: _ResponsiveFieldGrid) -> None:
+        detach_keys = [key for key in list(self._mesh_advanced_row_keys) if key in self._rows]
+        if not detach_keys:
+            return
+        for key in detach_keys:
+            row = self._rows.get(str(key))
+            if row is None:
+                continue
+            grid.remove_widget(row.container)
+            self._detached_rows_layout.addWidget(row.container)
+            row.container.setProperty("meshAdvancedDetached", "true")
+
+    @staticmethod
+    def _move_widgets_to_layout(widgets: Sequence[QWidget], layout: QVBoxLayout) -> None:
+        for widget in list(widgets):
+            parent = widget.parentWidget()
+            if parent is not None and parent.layout() is not None:
+                parent.layout().removeWidget(widget)
+            layout.addWidget(widget)
+
+    def open_mesh_advanced_dialog(self) -> None:
+        rows = [self._rows[key].container for key in list(self._mesh_advanced_row_keys) if key in self._rows]
+        if not rows:
+            return
+        dialog = QDialog(self.window())
+        dialog.setWindowTitle("Mesh Advanced")
+        dialog.setModal(True)
+        dialog.resize(980, 620)
+        root = QVBoxLayout(dialog)
+        root.setContentsMargins(12, 10, 12, 10)
+        root.setSpacing(8)
+        title = QLabel("Mesh Advanced")
+        title.setObjectName("SectionTitle")
+        root.addWidget(title)
+        scroll = QScrollArea()
+        scroll.setObjectName("BatchAdvancedScroll")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        host = QWidget()
+        host_layout = QVBoxLayout(host)
+        host_layout.setContentsMargins(0, 0, 0, 0)
+        host_layout.setSpacing(4)
+        self._move_widgets_to_layout(rows, host_layout)
+        host_layout.addStretch(1)
+        scroll.setWidget(host)
+        root.addWidget(scroll, 1)
+        close_btn = QPushButton("Close")
+        close_btn.setObjectName("BatchSecondaryButton")
+        close_btn.clicked.connect(dialog.accept)
+        close_row = QHBoxLayout()
+        close_row.setContentsMargins(0, 0, 0, 0)
+        close_row.addStretch(1)
+        close_row.addWidget(close_btn)
+        root.addLayout(close_row)
+        dialog.exec()
+        self._move_widgets_to_layout(rows, self._detached_rows_layout)
+
+    def open_enclosure_dialog(self) -> None:
+        box = self._enclosure_box
+        home_layout = self._enclosure_box_home
+        if box is None or home_layout is None:
+            return
+        dialog = QDialog(self.window())
+        dialog.setWindowTitle("Simulate Enclosure")
+        dialog.setModal(True)
+        dialog.resize(960, 620)
+        root = QVBoxLayout(dialog)
+        root.setContentsMargins(12, 10, 12, 10)
+        root.setSpacing(8)
+        title = QLabel("Simulate Enclosure")
+        title.setObjectName("SectionTitle")
+        root.addWidget(title)
+        body = QScrollArea()
+        body.setObjectName("BatchAdvancedScroll")
+        body.setWidgetResizable(True)
+        body.setFrameShape(QFrame.NoFrame)
+        container = QWidget()
+        container_layout = QVBoxLayout(container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(0)
+        if box.parentWidget() is not None and box.parentWidget().layout() is not None:
+            box.parentWidget().layout().removeWidget(box)
+        container_layout.addWidget(box)
+        body.setWidget(container)
+        root.addWidget(body, 1)
+        close_btn = QPushButton("Close")
+        close_btn.setObjectName("BatchSecondaryButton")
+        close_btn.clicked.connect(dialog.accept)
+        close_row = QHBoxLayout()
+        close_row.setContentsMargins(0, 0, 0, 0)
+        close_row.addStretch(1)
+        close_row.addWidget(close_btn)
+        root.addLayout(close_row)
+        dialog.exec()
+        container_layout.removeWidget(box)
+        home_layout.addWidget(box)
 
     def _open_first_visible_group(self) -> None:
         visible_boxes = [box for box in self._accordion_boxes if box.isVisible()]
@@ -802,10 +923,9 @@ class BatchParameterForm(QWidget):
         return False
 
     def _update_group_reset_buttons(self) -> None:
-        for group_name, button in self._group_reset_buttons.items():
+        for group_name, box in self._group_boxes.items():
             enabled = self._group_has_overrides(group_name)
-            button.setEnabled(enabled)
-            button.setVisible(True)
+            box.set_header_reset_available(bool(enabled))
 
     def reset_overrides_in_block(self, group_name: str) -> None:
         changed = False
@@ -1038,10 +1158,11 @@ class BatchParameterForm(QWidget):
         else:
             message = f"Diese Auswahl blendet aus: Karten [{cards_text}] - Parameter [{params_text}]"
 
-        trigger.helper_label.setText(message)
-        trigger.helper_label.setProperty("severity", "info")
-        trigger.helper_label.setVisible(True)
-        self._repolish(trigger.helper_label)
+        if str(trigger.group_name) not in {"Throat Profile", "GCurve", "Morph"}:
+            trigger.helper_label.setText(message)
+            trigger.helper_label.setProperty("severity", "info")
+            trigger.helper_label.setVisible(True)
+            self._repolish(trigger.helper_label)
 
         for widget in self._iter_hint_targets(trigger):
             widget.setProperty("disclosureHint", "true")
@@ -1049,9 +1170,8 @@ class BatchParameterForm(QWidget):
             self._hint_widgets.append(widget)
 
     def _on_group_advanced_toggled(self, group_name: str, enabled: bool) -> None:
-        self._advanced_expanded_by_group[str(group_name)] = bool(enabled)
-        _current, _changed_hidden = self._refresh_visibility()
-        self.changed.emit()
+        _ = (group_name, enabled)
+        return
 
     def _on_sweep_clicked(self, key: str, checked: bool) -> None:
         if not checked:
@@ -1273,6 +1393,7 @@ class BatchParameterForm(QWidget):
 
     def _refresh_visibility(self) -> tuple[set[str], bool]:
         throat_mode = self._controller_value("Throat.Profile")
+        gcurve_mode = self._controller_value("GCurve.Type")
         effective_visible: set[str] = set()
         changed_hidden = False
         group_has_compatible_rows: Dict[str, bool] = {}
@@ -1286,9 +1407,15 @@ class BatchParameterForm(QWidget):
             if allowed:
                 group_has_compatible_rows[str(row.group_name)] = True
             advanced_keys = self._advanced_keys_by_group.get(str(row.group_name), set())
-            advanced_visible = bool(
-                (key not in advanced_keys) or self._advanced_expanded_by_group.get(str(row.group_name), False)
-            )
+            group_name = str(row.group_name)
+            if key in set(self._mesh_advanced_row_keys):
+                advanced_visible = False
+            elif group_name == "Throat Profile" and key in advanced_keys:
+                advanced_visible = bool(throat_mode == 2)
+            elif group_name == "GCurve" and key in advanced_keys:
+                advanced_visible = bool(gcurve_mode == 2)
+            else:
+                advanced_visible = True
             is_visible = bool(allowed and advanced_visible)
             is_locked = bool(key in self._locked_keys or key in self._blocked_keys)
             row.container.setVisible(is_visible)
@@ -1320,20 +1447,15 @@ class BatchParameterForm(QWidget):
                 effective_visible.add(key)
 
         for group_name, box in self._group_boxes.items():
+            if str(group_name) == "Enclosure":
+                box.setVisible(False)
+                continue
             any_visible = any(
                 (row.group_name == group_name)
                 and (str(row.container.property("rowVisible") or "false").lower() == "true")
                 for row in self._rows.values()
             )
             box.setVisible(bool(any_visible or group_has_compatible_rows.get(str(group_name), False)))
-            advanced_btn = self._group_advanced_buttons.get(str(group_name))
-            if advanced_btn is not None:
-                has_advanced = bool(self._advanced_keys_by_group.get(str(group_name)))
-                advanced_btn.blockSignals(True)
-                advanced_btn.setChecked(bool(self._advanced_expanded_by_group.get(str(group_name), False)))
-                advanced_btn.blockSignals(False)
-                advanced_btn.setVisible(bool(has_advanced))
-                advanced_btn.setEnabled(bool(has_advanced))
         for header in self._subgroup_headers:
             visible = any(
                 (key in self._rows)
@@ -1836,7 +1958,12 @@ class BatchParameterForm(QWidget):
         return None if row is None else row.group_name
 
     def block_reset_button_for_group(self, group_name: str) -> Optional[QPushButton]:
-        return self._group_reset_buttons.get(str(group_name))
+        box = self._group_boxes.get(str(group_name))
+        if box is None:
+            return None
+        header = box.header_row()
+        buttons = header.findChildren(QPushButton, "AccordionHeaderResetButton")
+        return buttons[0] if buttons else None
 
     def last_changed_key(self) -> Optional[str]:
         value = str(self._last_changed_key or "").strip()

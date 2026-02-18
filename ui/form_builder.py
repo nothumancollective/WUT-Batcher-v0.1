@@ -320,6 +320,7 @@ class CollapsibleSection(QWidget):
 
 class AccordionHeaderRow(QFrame):
     clicked = Signal()
+    reset_clicked = Signal()
 
     def __init__(self, title: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -347,6 +348,14 @@ class AccordionHeaderRow(QFrame):
         self._title = QLabel(title)
         self._title.setObjectName("AccordionHeaderTitle")
         content_layout.addWidget(self._title, 0, Qt.AlignVCenter)
+
+        self._reset_btn = QPushButton("\u27f2")
+        self._reset_btn.setObjectName("AccordionHeaderResetButton")
+        self._reset_btn.setToolTip("Reset overrides in this block")
+        self._reset_btn.setVisible(False)
+        self._reset_btn.setEnabled(False)
+        self._reset_btn.clicked.connect(self.reset_clicked.emit)
+        content_layout.addWidget(self._reset_btn, 0, Qt.AlignVCenter)
 
         self._chips_wrap = QWidget()
         self._chips_wrap.setObjectName("AccordionChipWrap")
@@ -379,6 +388,15 @@ class AccordionHeaderRow(QFrame):
     def set_summary_chips(self, chips: Sequence[str]) -> None:
         self._chips = [str(item).strip() for item in chips if str(item).strip()]
         self._render_chips()
+
+    def set_reset_available(self, available: bool) -> None:
+        enabled = bool(available)
+        self._reset_btn.setVisible(True)
+        self._reset_btn.setEnabled(enabled)
+        self._reset_btn.setProperty("canReset", "true" if enabled else "false")
+        self._reset_btn.style().unpolish(self._reset_btn)
+        self._reset_btn.style().polish(self._reset_btn)
+        self._reset_btn.update()
 
     def set_expanded(self, expanded: bool) -> None:
         self._expanded = bool(expanded)
@@ -480,6 +498,7 @@ class AccordionHeaderRow(QFrame):
 
 class AccordionGroupBox(QGroupBox):
     toggled = Signal(bool)
+    reset_requested = Signal()
 
     def __init__(self, title: str, parent: QWidget | None = None) -> None:
         super().__init__(title, parent)
@@ -492,6 +511,7 @@ class AccordionGroupBox(QGroupBox):
 
         self._header = AccordionHeaderRow(title)
         self._header.clicked.connect(lambda: self.set_collapsed(not self._collapsed))
+        self._header.reset_clicked.connect(self.reset_requested.emit)
         root.addWidget(self._header)
 
         self._body = QWidget(self)
@@ -588,6 +608,9 @@ class AccordionGroupBox(QGroupBox):
 
     def set_summary_chips(self, chips: Sequence[str]) -> None:
         self._header.set_summary_chips(chips)
+
+    def set_header_reset_available(self, available: bool) -> None:
+        self._header.set_reset_available(bool(available))
 
     def set_status_counts(
         self,
