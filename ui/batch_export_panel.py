@@ -390,6 +390,7 @@ class _AdvancedDialog(QDialog):
 
 class BatchExportPanel(QFrame):
     changed = Signal()
+    open_enclosure = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -457,6 +458,11 @@ class BatchExportPanel(QFrame):
         presets_row.addWidget(self.preset_spl)
         presets_row.addWidget(self.preset_impedance)
         presets_row.addWidget(self.preset_polar)
+        self.enclosure_btn = QPushButton("Simulate Enclosure")
+        self.enclosure_btn.setObjectName("BatchSecondaryButton")
+        self.enclosure_btn.setFixedHeight(30)
+        self.enclosure_btn.setMinimumWidth(152)
+        presets_row.addWidget(self.enclosure_btn)
         presets_row.addStretch(1)
         self.advanced_btn = QPushButton("Advanced")
         self.advanced_btn.setProperty("segment", "true")
@@ -476,6 +482,7 @@ class BatchExportPanel(QFrame):
         self.preset_impedance.toggled.connect(lambda _checked: self.changed.emit())
         self.preset_polar.toggled.connect(lambda _checked: self.changed.emit())
         self.advanced_btn.clicked.connect(self._open_advanced)
+        self.enclosure_btn.clicked.connect(self.open_enclosure.emit)
 
     @staticmethod
     def _field_stack(label: str, widget: QWidget) -> QWidget:

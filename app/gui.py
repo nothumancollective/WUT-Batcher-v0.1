@@ -1946,6 +1946,7 @@ class BatchPage(QWidget):
         self.parameter_form.changed.connect(self._emit_draft_changed)
         self.parameter_form.blocked_interaction.connect(self.blocked_interaction.emit)
         self.export_panel.changed.connect(self._emit_draft_changed)
+        self.export_panel.open_enclosure.connect(self.parameter_form.open_enclosure_dialog)
         self.batch_name.textChanged.connect(self._emit_draft_changed)
 
         self._summary_strip_layout = summary_strip_layout
