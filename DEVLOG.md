@@ -1,6 +1,32 @@
 ﻿# DEVLOG
 
 ## 2026-02-18
+### Update: Run-Pipeline Integration (per-version cleanup contract + sync gate)
+#### Done
+- Runtime pipeline (`app/runtime_orchestrator.py`) now creates a dedicated per-version runtime CFG:
+  - `<project>/versions/<V>/cfg/<project>_<batch>_<version>_<run8>.cfg`
+  - canonical snapshot `cfg/input.cfg` remains for traceability.
+- Version state now records run-manifest data:
+  - `run_cfg_path`, `ath_export_dir`, parameter/constraint/sweep snapshots.
+- Added persistence sync gate for version finalization:
+  - if SQL dual-write reports `global_synced=false`, version is marked failed and cleanup is skipped.
+- Cleanup policy changed to version-scoped targets only:
+  - runtime cfg file cleanup
+  - ATH export subfolder cleanup (`<ath_export_root>/<runtime_cfg_stem>`)
+  - no destructive broad cleanup.
+- CLI run-sample cleanup validation aligned with new artifact model.
+
+#### Tests
+- `tests/test_runtime_orchestrator.py` extended:
+  - dry-run manifest coverage
+  - runtime cfg + ATH export subfolder cleanup coverage.
+- Regression:
+  - `tests/test_service_export.py`
+  - `tests/test_cli_run_sample.py`
+  - `tests/test_sql_dataset_store.py`
+  - `tests/test_version_resolver.py`
+  - `tests/test_project_storage_and_tidy.py`
+
 ### Update: Final UI Optimization Pass (Project Manager / Batch / Preview)
 #### Done
 - Project Manager tile selection polish:

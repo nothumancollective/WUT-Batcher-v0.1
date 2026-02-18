@@ -128,7 +128,7 @@ VACS TXT ingestion details:
 - writes graph metadata (`graphs`), per-series metadata (`graph_series`) and tidy points (`graph_points`)
 - if VACS stage succeeds but no TXT files are found or parse errors occur, version is marked `vacs_failed`
 
-## Cleanup Policy (Guarded ATH Workdir Delete)
+## Cleanup Policy (Per-Version Runtime Artifacts)
 Implemented in `app/safe_cleanup.py`, invoked from runtime pipeline after successful integration.
 
 Rules:
@@ -140,10 +140,13 @@ Rules:
 - if any guard fails: deletion is refused and reason is recorded
 
 Scope of deletion:
-- only version-local `ath_work` directory
+- version-local runtime CFG file:
+  - `<project>/versions/<version_id>/cfg/<runtime_cfg>.cfg`
+- version-local ATH export subfolder:
+  - `<ath_export_root>/<runtime_cfg_stem>`
 - never global ATH folders, library root, or broad parent directories
 - dry-run support:
-  - `guarded_delete_tree(..., perform_delete=False)` executes guardrails without deleting
+  - guarded cleanup APIs run with `perform_delete=False`
   - runtime dry-run uses this mode to validate cleanup policy deterministically
 
 ## Export Regeneration Logic (Dashboard Export)
