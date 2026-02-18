@@ -1,6 +1,35 @@
 ﻿# DEVLOG
 
 ## 2026-02-18
+### Update: Batch UI Follow-up Corrections (layout, validation surfacing, action bar)
+#### Done
+- Batch segment rows:
+  - removed extra per-row headings for wide segmented controls.
+  - tightened internal row spacing and increased inter-column gap in sub-block grids.
+  - kept segmented controller rows full-width to avoid clipping under 1920x1080.
+- Batch validation surfacing:
+  - moved warning emphasis into the top-right `Validation` card with dedicated batch styling.
+  - warning text keeps full message content (not shortened teaser only).
+  - moved `Errors` and `Incomplete` counters into the center `Estimate` card line.
+- Batch top summary layout:
+  - moved `Version preview · Export specs · Mode` line into the center `Estimate` card (first line under title).
+  - removed `Variable Parameters` heading above the parameter area.
+  - increased top summary card height and tightened vertical page spacing.
+- Batch bottom bar:
+  - removed duplicated warning/status messaging from bottom bar.
+  - added `Project Manager` button on the bottom-left (moved from status bar).
+  - reordered right-side actions to: `Back to Dashboard`, `Save Batch`, `Run Batch`.
+  - `Run Batch` now receives a subtle green ready-state when configuration is runnable.
+- Batch control styling:
+  - adjusted batch combo popup styling and dropdown arrows.
+  - adjusted spinner arrow rendering/size for better visibility.
+  - rounded preview loader appearance to match batch theme language.
+- Preview framing:
+  - tightened initial camera distance (roughly 2x closer than previous state).
+
+#### Validation
+- `python -m compileall app ui`
+
 ### Update: Robustness Hotfixes (STL hook, foreground API, preview/run diagnostics)
 #### Done
 - Removed deprecated Qt foreground API usage in `app/gui.py`:

@@ -1423,7 +1423,7 @@ class ProjectPage(QWidget):
         super().__init__()
         root = QVBoxLayout(self)
         root.setContentsMargins(20, 12, 20, 14)
-        root.setSpacing(10)
+        root.setSpacing(8)
         title = QLabel("PROJECT")
         title.setObjectName("PageTitle")
         root.addWidget(title)
@@ -1789,6 +1789,7 @@ class BatchPage(QWidget):
     save_batch = Signal(dict)
     run_batch = Signal(dict)
     back_to_dashboard = Signal()
+    open_project_manager = Signal()
     draft_changed = Signal(dict)
     blocked_interaction = Signal(str, str, str)
 
@@ -1820,7 +1821,7 @@ class BatchPage(QWidget):
 
         self.summary_left_card = QFrame()
         self.summary_left_card.setObjectName("ProjectSummaryPanel")
-        self.summary_left_card.setFixedHeight(118)
+        self.summary_left_card.setFixedHeight(126)
         left_card_layout = QVBoxLayout(self.summary_left_card)
         left_card_layout.setContentsMargins(10, 8, 10, 8)
         left_card_layout.setSpacing(2)
@@ -1835,21 +1836,21 @@ class BatchPage(QWidget):
         self.summary_line_2.setObjectName("SummaryText")
         self.summary_line_2.setWordWrap(True)
         left_card_layout.addWidget(self.summary_line_2)
-        self.summary_meta_versions = QLabel("Version preview: 0 · Export specs: 0 · Mode: single")
-        self.summary_meta_versions.setObjectName("SummaryMeta")
-        left_card_layout.addWidget(self.summary_meta_versions)
         left_card_layout.addStretch(1)
         summary_strip_layout.addWidget(self.summary_left_card, 1)
 
         self.summary_center_card = QFrame()
         self.summary_center_card.setObjectName("ProjectSummaryPanel")
-        self.summary_center_card.setFixedHeight(118)
+        self.summary_center_card.setFixedHeight(126)
         center_card_layout = QVBoxLayout(self.summary_center_card)
         center_card_layout.setContentsMargins(10, 8, 10, 8)
         center_card_layout.setSpacing(2)
         summary_center_title = QLabel("Estimate")
         summary_center_title.setObjectName("SummaryTitle")
         center_card_layout.addWidget(summary_center_title)
+        self.summary_meta_versions = QLabel("Version preview: 0 · Export specs: 0 · Mode: single")
+        self.summary_meta_versions.setObjectName("SummaryMeta")
+        center_card_layout.addWidget(self.summary_meta_versions)
         self.summary_meta_counts = QLabel("Visible variable params: 0 · Active sweeps: 0")
         self.summary_meta_counts.setObjectName("SummaryMeta")
         center_card_layout.addWidget(self.summary_meta_counts)
@@ -1864,7 +1865,7 @@ class BatchPage(QWidget):
 
         self.summary_right_card = QFrame()
         self.summary_right_card.setObjectName("ProjectSummaryPanel")
-        self.summary_right_card.setFixedHeight(118)
+        self.summary_right_card.setFixedHeight(126)
         right_card_layout = QVBoxLayout(self.summary_right_card)
         right_card_layout.setContentsMargins(10, 8, 10, 8)
         right_card_layout.setSpacing(2)
@@ -1872,7 +1873,7 @@ class BatchPage(QWidget):
         summary_issue_title.setObjectName("SummaryTitle")
         right_card_layout.addWidget(summary_issue_title)
         self.summary_issue_hint = QLabel("No validation issues.")
-        self.summary_issue_hint.setObjectName("IssueHint")
+        self.summary_issue_hint.setObjectName("BatchValidationHint")
         self.summary_issue_hint.setWordWrap(True)
         right_card_layout.addWidget(self.summary_issue_hint)
         right_card_layout.addStretch(1)
@@ -1889,23 +1890,20 @@ class BatchPage(QWidget):
 
         body = QHBoxLayout()
         body.setContentsMargins(0, 0, 0, 0)
-        body.setSpacing(10)
+        body.setSpacing(8)
 
         left_panel = QFrame()
         left_panel.setObjectName("ProjectIssuesPanel")
         left_layout = QVBoxLayout(left_panel)
         left_layout.setContentsMargins(0, 0, 0, 0)
-        left_layout.setSpacing(6)
-        params_title = QLabel("Variable Parameters")
-        params_title.setObjectName("IssuesPanelTitle")
-        left_layout.addWidget(params_title)
+        left_layout.setSpacing(2)
         left_layout.addWidget(self.parameter_form, 1)
         body.addWidget(left_panel, 3)
 
         right_panel = QWidget()
         right_layout = QVBoxLayout(right_panel)
         right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.setSpacing(10)
+        right_layout.setSpacing(8)
         right_layout.addWidget(self.preview_panel, 3)
         right_layout.addWidget(self.export_panel, 1, Qt.AlignBottom)
         body.addWidget(right_panel, 2)
@@ -1915,32 +1913,35 @@ class BatchPage(QWidget):
         self.compat_panel.setVisible(False)
 
         self.action_bar = QFrame()
-        self.action_bar.setObjectName("ProjectActionBar")
-        self.action_bar.setFixedHeight(58)
+        self.action_bar.setObjectName("BatchActionBar")
+        self.action_bar.setFixedHeight(52)
         action_layout = QHBoxLayout(self.action_bar)
-        action_layout.setContentsMargins(10, 8, 10, 8)
+        action_layout.setContentsMargins(10, 6, 10, 6)
         action_layout.setSpacing(10)
-        self.action_status_pill = QLabel("Ready to save batch.")
-        self.action_status_pill.setObjectName("ProjectStatusPill")
-        self.action_status_pill.setProperty("severity", "ok")
-        action_layout.addWidget(self.action_status_pill, 0, Qt.AlignVCenter)
-        self.action_hint = QLabel("0 errors · 0 warnings")
-        self.action_hint.setObjectName("ProjectStatusHint")
-        action_layout.addWidget(self.action_hint, 0, Qt.AlignVCenter)
+        self.project_manager_btn = QPushButton("Project Manager")
+        self.project_manager_btn.setObjectName("StatusActionButton")
+        self.project_manager_btn.setMinimumWidth(148)
+        self.project_manager_btn.setMaximumWidth(186)
+        self.project_manager_btn.setFixedHeight(30)
+        action_layout.addWidget(self.project_manager_btn, 0, Qt.AlignLeft | Qt.AlignVCenter)
         action_layout.addStretch(1)
-
-        self.save_btn = QPushButton("Save Batch")
-        self.save_btn.setObjectName("PrimaryButton")
-        self.run_btn = QPushButton("Run Batch")
         self.back_btn = QPushButton("Back to Dashboard")
+        self.back_btn.setObjectName("BatchGhostButton")
+        self.save_btn = QPushButton("Save Batch")
+        self.save_btn.setObjectName("BatchPrimaryButton")
+        self.run_btn = QPushButton("Run Batch")
+        self.run_btn.setObjectName("BatchRunButton")
+        for button in (self.save_btn, self.run_btn, self.back_btn):
+            button.setMinimumWidth(128)
+        action_layout.addWidget(self.back_btn)
         action_layout.addWidget(self.save_btn)
         action_layout.addWidget(self.run_btn)
-        action_layout.addWidget(self.back_btn)
         root.addWidget(self.action_bar)
 
         self.save_btn.clicked.connect(lambda: self.save_batch.emit(self._payload()))
         self.run_btn.clicked.connect(lambda: self.run_batch.emit(self._payload()))
         self.back_btn.clicked.connect(self.back_to_dashboard.emit)
+        self.project_manager_btn.clicked.connect(self.open_project_manager.emit)
 
         self.parameter_form.changed.connect(self._emit_draft_changed)
         self.parameter_form.blocked_interaction.connect(self.blocked_interaction.emit)
@@ -2128,12 +2129,8 @@ class BatchPage(QWidget):
         active_sweeps = int(self.parameter_form.active_sweep_count())
         version_preview = int(self._compat_state.get("version_count_preview", 0) or 0)
         export_specs = int(self.export_panel.export_spec_count())
-        self.summary_meta_counts.setText(
-            f"Visible variable params: {visible_count} · Active sweeps: {active_sweeps}"
-        )
         selected = self.parameter_form.selected_params_payload()
         defined_vars = sum(1 for value in selected.values() if value is not None)
-        self.summary_defined_vars.setText(f"Defined variables: {defined_vars}")
         mode = self.export_panel.sweep_mode_value()
         self.summary_meta_versions.setText(
             f"Version preview: {version_preview} · Export specs: {export_specs} · Mode: {mode}"
@@ -2167,52 +2164,46 @@ class BatchPage(QWidget):
             return (3, str(raw.get("message", "")))
 
         sorted_issues = sorted([dict(item) for item in issues], key=_issue_rank)
+        self.summary_meta_counts.setText(
+            f"Visible variable params: {visible_count} · Active sweeps: {active_sweeps}"
+        )
+        self.summary_defined_vars.setText(
+            f"Defined variables: {defined_vars} · Errors: {fatal_count} · Incomplete: {incomplete_count}"
+        )
 
-        teaser_message = ""
         issue_lines: List[str] = []
         for issue in sorted_issues:
             msg = str(issue.get("message", "")).strip()
             if not msg:
                 continue
             issue_lines.append(msg)
-        if issue_lines:
-            teaser_message = issue_lines[0]
-            if len(teaser_message) > 120:
-                teaser_message = teaser_message[:117].rstrip() + "..."
         tooltip_lines = [f"{index + 1}. {line}" for index, line in enumerate(issue_lines)]
         summary_tooltip = "\n".join(tooltip_lines[:12]).strip()
         if fatal_count > 0:
-            severity = "fatal"
-            self.action_status_pill.setText("Fix validation errors before save/run.")
-            preview_lines = [line for line in issue_lines[:3] if line]
-            self.summary_issue_hint.setText("\n".join(preview_lines) or f"{fatal_count} fatal issue(s), {warn_count} warning(s).")
+            self.summary_issue_hint.setText(
+                "\n".join([line for line in issue_lines[:3] if line])
+                or f"{fatal_count} fatal issue(s), {warn_count} warning(s)."
+            )
+            self.summary_issue_hint.setProperty("severity", "fatal")
         elif incomplete_count > 0:
-            severity = "neutral"
-            self.action_status_pill.setText("Configuration incomplete. Save is allowed, run is blocked.")
             self.summary_issue_hint.setText("Define required values to run this batch.")
+            self.summary_issue_hint.setProperty("severity", "")
         elif warn_count > 0:
-            severity = "warn"
-            self.action_status_pill.setText("Warnings present. Review before save/run.")
             warning_lines = [
                 str(issue.get("message", "")).strip()
                 for issue in sorted_issues
                 if str(issue.get("severity", "")).strip().lower() == "warn"
             ]
-            warning_lines = [line for line in warning_lines if line][:3]
-            self.summary_issue_hint.setText("\n".join(warning_lines) or teaser_message or f"{warn_count} warning(s) in current draft.")
+            warning_lines = [line for line in warning_lines if line]
+            self.summary_issue_hint.setText(warning_lines[0] if warning_lines else f"{warn_count} warning(s) in current draft.")
+            self.summary_issue_hint.setProperty("severity", "warn")
         else:
-            severity = "ok"
-            self.action_status_pill.setText("Ready to save batch.")
             self.summary_issue_hint.setText("No validation issues.")
+            self.summary_issue_hint.setProperty("severity", "")
         self.summary_issue_hint.setToolTip(summary_tooltip)
-        self.summary_issue_hint.setProperty("severity", severity if severity in {"fatal", "warn"} else "")
         self.summary_issue_hint.style().unpolish(self.summary_issue_hint)
         self.summary_issue_hint.style().polish(self.summary_issue_hint)
 
-        self.action_hint.setText(f"{fatal_count} errors · {warn_count} warnings · {incomplete_count} incomplete")
-        self.action_status_pill.setProperty("severity", severity)
-        self.action_status_pill.style().unpolish(self.action_status_pill)
-        self.action_status_pill.style().polish(self.action_status_pill)
         has_name = bool(self.batch_name.text().strip())
         can_save = has_name
         # Keep run button interactive once a name is present; run-time validation
@@ -2234,6 +2225,10 @@ class BatchPage(QWidget):
             self.run_btn.setToolTip("Resolve fatal validation issues before running.")
         else:
             self.run_btn.setToolTip("")
+        run_ready = bool(has_name and fatal_count == 0 and incomplete_count == 0)
+        self.run_btn.setProperty("runReady", "true" if run_ready else "false")
+        self.run_btn.style().unpolish(self.run_btn)
+        self.run_btn.style().polish(self.run_btn)
 
 
 class RunPage(QWidget):
@@ -2492,14 +2487,6 @@ class MainWindow(QMainWindow):
         self.status_message.clicked.connect(self._show_status_detail)
         bar.addWidget(self.status_message, 1)
 
-        self.project_manager_btn = QPushButton("Project Manager")
-        self.project_manager_btn.setObjectName("StatusActionButton")
-        self.project_manager_btn.setFixedHeight(28)
-        self.project_manager_btn.setMinimumWidth(148)
-        self.project_manager_btn.setMaximumWidth(178)
-        self.project_manager_btn.clicked.connect(self._open_project_manager)
-        bar.addPermanentWidget(self.project_manager_btn)
-
         self.brand = ClickableLabel("WUT BATCHER")
         self.brand.setObjectName("StatusBrand")
         self.brand.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
@@ -2529,6 +2516,7 @@ class MainWindow(QMainWindow):
         self.batch_page.save_batch.connect(self._save_batch)
         self.batch_page.run_batch.connect(self._run_batch)
         self.batch_page.back_to_dashboard.connect(self.show_dashboard)
+        self.batch_page.open_project_manager.connect(self._open_project_manager)
         self.batch_page.draft_changed.connect(self._queue_batch_draft_changed)
         self.batch_page.blocked_interaction.connect(self._on_batch_blocked_interaction)
         self.batch_page.compat_panel.request_show_details.connect(
