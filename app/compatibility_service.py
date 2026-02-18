@@ -86,6 +86,7 @@ class CompatibilityService:
             if isinstance(item, dict)
         )
         self._rule_evidence_type = self._build_evidence_type_map(self.ruleset)
+        self._controller_sweep_keys = {"Throat.Profile", "GCurve.Type", "Morph.TargetShape"}
 
     def _resolve_sweepable_keys(
         self,
@@ -102,12 +103,19 @@ class CompatibilityService:
             if str(item).strip() and str(item) in visible_set and str(item) not in locked_set
         }
         if sweepable_set:
+            sweepable_set = {key for key in sweepable_set if not str(key).startswith("Mesh.")}
+            for key in list(self._controller_sweep_keys):
+                if key in visible_set and key not in locked_set:
+                    sweepable_set.add(str(key))
             return _sorted_unique(sweepable_set)
         fallback = {
             key
             for key in visible_set
-            if key in self._fallback_sweepable_keys and key not in locked_set
+            if key in self._fallback_sweepable_keys and key not in locked_set and (not str(key).startswith("Mesh."))
         }
+        for key in list(self._controller_sweep_keys):
+            if key in visible_set and key not in locked_set:
+                fallback.add(str(key))
         return _sorted_unique(fallback)
 
     def _build_evidence_type_map(self, ruleset: Dict[str, Any]) -> Dict[str, str]:

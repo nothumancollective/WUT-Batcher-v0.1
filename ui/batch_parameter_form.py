@@ -55,6 +55,19 @@ def _as_float(value: Any) -> Optional[float]:
         return None
 
 
+def _enum_numeric_options(field: FieldSpec) -> List[int]:
+    values: List[int] = []
+    for item in list(field.enum_options or []):
+        raw = getattr(item, "value", None)
+        if raw is None:
+            continue
+        try:
+            values.append(int(float(raw)))
+        except Exception:
+            continue
+    return sorted(set(values))
+
+
 def _extract_mode_tag_value(ui_mode_tags: Sequence[str], controller_key: str) -> Optional[str]:
     prefix = f"{controller_key}="
     for raw in list(ui_mode_tags or []):
@@ -128,6 +141,7 @@ class _FieldRow:
     steps_edit: QLineEdit
     helper_label: QLabel
     button_layout: bool
+    sweep_capable: bool
 
 
 @dataclass
@@ -143,6 +157,7 @@ class BatchParameterForm(QWidget):
     blocked_interaction = Signal(str, str, str)
 
     _GROUP_ORDER = ["Basics", "Throat Profile", "GCurve", "Morph", "Mesh", "Enclosure"]
+    _CONTROLLER_SWEEP_KEYS = {"Throat.Profile", "GCurve.Type", "Morph.TargetShape"}
 
     def __init__(self, schema: Optional[FormSchema] = None, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -170,6 +185,7 @@ class BatchParameterForm(QWidget):
         self._blocked_keys: set[str] = set()
         self._hidden_ui_keys: set[str] = set()
         self._risk_targets_by_key: Dict[str, List[QWidget]] = {}
+        self._risk_original_tooltips: Dict[int, str] = {}
         self._subgroup_headers: List[_SubgroupHeader] = []
         self._blink_tokens_by_key: Dict[str, int] = {}
         self._control_height = 30
@@ -216,6 +232,17 @@ class BatchParameterForm(QWidget):
             if field.key == "Mesh.Enclosure.EdgeType":
                 return False
             return 1 < len(list(field.enum_options)) <= 4
+        return False
+
+    @classmethod
+    def _supports_sweep(cls, field: FieldSpec) -> bool:
+        key = str(field.key)
+        if key.startswith("Mesh."):
+            return False
+        if key in cls._CONTROLLER_SWEEP_KEYS:
+            return True
+        if field.widget_kind in {"float", "int", "expr", "ex"}:
+            return True
         return False
 
     def _make_base_editor(self, field: FieldSpec) -> QWidget:
@@ -458,6 +485,10 @@ class BatchParameterForm(QWidget):
         steps_edit.setVisible(False)
         steps_edit.textChanged.connect(lambda _text, row_key=key: self._on_field_edited(row_key))
         row_layout.addWidget(steps_edit, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        enum_options = _enum_numeric_options(field)
+        if enum_options:
+            start_edit.setValidator(QIntValidator(int(min(enum_options)), int(max(enum_options)), start_edit))
+            end_edit.setValidator(QIntValidator(int(min(enum_options)), int(max(enum_options)), end_edit))
         row_layout.addStretch(1)
         row_root.addWidget(row)
 
@@ -481,6 +512,7 @@ class BatchParameterForm(QWidget):
             steps_edit=steps_edit,
             helper_label=helper,
             button_layout=self._is_button_layout(field),
+            sweep_capable=self._supports_sweep(field),
         )
         self._rows[key] = row_data
         self._wire_row_blocked_interactions(key)
@@ -787,9 +819,32 @@ class BatchParameterForm(QWidget):
             for target in self._risk_targets_for_key(key):
                 target.setProperty("fieldState", "neutral")
                 target.setProperty("riskLevel", "")
+                target_id = id(target)
+                if target_id in self._risk_original_tooltips:
+                    target.setToolTip(self._risk_original_tooltips[target_id])
                 self._repolish(target)
             row.sweep_toggle.setProperty("riskLevel", "")
+            sweep_id = id(row.sweep_toggle)
+            if sweep_id in self._risk_original_tooltips:
+                row.sweep_toggle.setToolTip(self._risk_original_tooltips[sweep_id])
             self._repolish(row.sweep_toggle)
+        self._risk_original_tooltips.clear()
+
+    @staticmethod
+    def _risk_tooltip(issues: List[Dict[str, Any]]) -> str:
+        lines: List[str] = []
+        for item in list(issues or []):
+            severity = str(item.get("severity", "")).strip().lower()
+            marker = "Warning"
+            if severity == "fatal":
+                marker = "Error"
+            elif severity == "incomplete":
+                marker = "Incomplete"
+            message = str(item.get("message", "")).strip()
+            if not message:
+                continue
+            lines.append(f"{marker}: {message}")
+        return "\n".join(lines[:8]).strip()
 
     def apply_ui_risks(self, issues: List[Dict[str, Any]]) -> None:
         self._clear_ui_risks()
@@ -818,10 +873,24 @@ class BatchParameterForm(QWidget):
             if hasattr(row.base_editor, "set_field_state_visual"):
                 row.base_editor.set_field_state_visual("ok" if highest == "incomplete" else highest)  # type: ignore[attr-defined]
             for target in self._risk_targets_for_key(key):
+                target_id = id(target)
+                self._risk_original_tooltips.setdefault(target_id, target.toolTip())
                 target.setProperty("fieldState", visual)
                 target.setProperty("riskLevel", visual)
+                tooltip = self._risk_tooltip(row_issues)
+                if tooltip:
+                    base_tooltip = self._risk_original_tooltips.get(target_id, "")
+                    target.setToolTip(f"{base_tooltip}\n\n{tooltip}".strip() if base_tooltip else tooltip)
                 self._repolish(target)
             row.sweep_toggle.setProperty("riskLevel", "warn" if highest == "warn" else "")
+            sweep_id = id(row.sweep_toggle)
+            self._risk_original_tooltips.setdefault(sweep_id, row.sweep_toggle.toolTip())
+            sweep_tip = self._risk_tooltip(row_issues)
+            if sweep_tip:
+                base_sweep_tip = self._risk_original_tooltips.get(sweep_id, "")
+                row.sweep_toggle.setToolTip(
+                    f"{base_sweep_tip}\n\n{sweep_tip}".strip() if base_sweep_tip else sweep_tip
+                )
             self._repolish(row.sweep_toggle)
 
     def set_project_fixed_keys(self, keys: Sequence[str]) -> None:
@@ -915,9 +984,9 @@ class BatchParameterForm(QWidget):
             row.container.setVisible(is_visible)
             row.base_editor.setProperty("compatBlocked", "true" if key in self._blocked_keys else "false")
             self._repolish(row.base_editor)
-            can_sweep = bool(allowed and (key in self._sweepable_keys) and (not is_locked) and (not row.button_layout))
+            can_sweep = bool(allowed and row.sweep_capable and (key in self._sweepable_keys) and (not is_locked))
 
-            row.sweep_toggle.setVisible(not row.button_layout)
+            row.sweep_toggle.setVisible(bool(row.sweep_capable))
             row.sweep_toggle.setEnabled(can_sweep)
             row.sweep_toggle.setProperty("sweepActive", bool(row.sweep_toggle.isChecked() and can_sweep))
             self._repolish(row.sweep_toggle)
@@ -995,11 +1064,18 @@ class BatchParameterForm(QWidget):
         if can_show:
             _is_set, current_value = self._current_state(row)
             base = _as_float(current_value)
+            enum_values = _enum_numeric_options(row.field) if str(row.field.ath_type).strip().lower() == "enum" else []
             if base is not None:
                 if not row.start_edit.text().strip():
-                    row.start_edit.setText(str(base))
+                    if enum_values:
+                        row.start_edit.setText(str(int(round(base))))
+                    else:
+                        row.start_edit.setText(str(base))
                 if not row.end_edit.text().strip():
-                    row.end_edit.setText(str(base))
+                    if enum_values:
+                        row.end_edit.setText(str(int(round(base))))
+                    else:
+                        row.end_edit.setText(str(base))
             else:
                 self._blink_base_editor(row, str(key))
             if not row.steps_edit.text().strip():
@@ -1053,6 +1129,14 @@ class BatchParameterForm(QWidget):
             if start is None or end is None or steps is None or int(steps) < 1:
                 # Keep sweep UI active, but suppress invalid draft payloads until fields are complete.
                 continue
+            if str(row.field.ath_type).strip().lower() == "enum":
+                start_i = int(round(start))
+                end_i = int(round(end))
+                enum_values = _enum_numeric_options(row.field)
+                if enum_values and (start_i not in enum_values or end_i not in enum_values):
+                    continue
+                start = float(start_i)
+                end = float(end_i)
             payload[key] = {
                 "start": float(start),
                 "end": float(end),

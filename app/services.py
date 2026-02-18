@@ -112,6 +112,7 @@ def _detect_git_commit() -> Optional[str]:
             errors="replace",
             timeout=2,
             check=False,
+            creationflags=(getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0),
         )
     except Exception:
         return None
@@ -817,6 +818,34 @@ def _normalize_preview_render_parameters(
         if not key_s or value is None:
             continue
         normalized[key_s] = value
+
+    # Infer controller defaults from block-specific values so preview remains stable
+    # even when UI controllers are currently unset in a partial draft.
+    if "Throat.Profile" not in normalized:
+        if isinstance(normalized.get("R-OSSE"), Mapping):
+            normalized["Throat.Profile"] = 2
+        elif any(key in normalized for key in ("CircArc.Radius", "CircArc.TermAngle")):
+            normalized["Throat.Profile"] = 3
+        elif any(key in normalized for key in ("Term.s", "Term.n", "Term.q", "Term.k")):
+            normalized["Throat.Profile"] = 1
+    if "GCurve.Type" not in normalized:
+        if any(str(key).startswith("GCurve.SF.") for key in normalized.keys()):
+            normalized["GCurve.Type"] = 2
+        elif "GCurve.SE.n" in normalized:
+            normalized["GCurve.Type"] = 1
+    if "Morph.TargetShape" not in normalized:
+        if any(
+            key in normalized
+            for key in (
+                "Morph.TargetWidth",
+                "Morph.TargetHeight",
+                "Morph.CornerRadius",
+                "Morph.FixedPart",
+                "Morph.Rate",
+                "Morph.AllowShrinkage",
+            )
+        ):
+            normalized["Morph.TargetShape"] = 1
 
     throat_profile_value = normalized.get("Throat.Profile")
     rosse_mode = str(throat_profile_value).strip() in {"2", "2.0"}
