@@ -63,3 +63,38 @@
   - geloescht: `0`
   - behalten: `0`
   - unklar/manuell: `0`
+
+## UI E2E Stress (Interactive)
+### Durchlauf 1
+- Flow: Project Manager -> New Project -> Constraints -> Create -> New Batch -> 2 Sweeps -> Preview (2 Updates) -> Run.
+- Ergebnis: erfolgreich.
+- Nachweise:
+  - Run-Status `succeeded`
+  - persistierte `run_versions` in Projekt-DB und Global-DB
+  - per-version Cleanup von Runtime-CFG + ATH-Export-Subfolder.
+
+### Durchlauf 2
+- Gleiches End-to-End Muster mit neuem Projekt und neuem Batch.
+- Ergebnis: erfolgreich.
+- Nachweise:
+  - Preview erneut aktualisiert
+  - konsistente Version-IDs und Statuskette je Version.
+
+### Durchlauf 3
+- Gleiches End-to-End Muster mit drittem Projekt/Batch.
+- Ergebnis: erfolgreich.
+- Nachweise:
+  - `run_status=succeeded`
+  - keine DB-Inkonsistenz
+  - Cleanup-Regeln eingehalten.
+
+### Gefundene Probleme und Fix
+- Problem: Windows-Dateilock im Test-Teardown auf `global.sqlite` (Temp-Workspace).
+- Fix: deterministischer UI-Teardown im E2E-Stresstest (`preview worker stop`, Widget cleanup, retry-cleanup).
+
+### Stability
+- Status: **GREEN**
+- Kriterien erfuellt:
+  - 3 vollstaendige UI-E2E Runs hintereinander ohne funktionale Fehler
+  - Persistenz/Versionen-Loop/Cleanup pro Version validiert
+  - Preview mehrfach erfolgreich aktualisiert.

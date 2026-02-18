@@ -18,3 +18,10 @@
 
 ### Tests
 - Runtime-Orchestrator um neue Integrations- und Cleanup-Regressionstests erweitert.
+- Neuer interaktiver UI-E2E-Stresstest:
+  - `tests/test_ui_e2e_stress_runs.py`
+  - fuehrt 3 vollstaendige UI-Runs (Project->Batch->Preview->Run) durch
+  - validiert Persistenz in Projekt-/Global-DB und per-version Cleanup-Invarianten.
+
+### Stabilitaet
+- UI-E2E-Zyklen laufen jetzt reproduzierbar mit automatisiertem Dialog-Handling und robustem Teardown.
