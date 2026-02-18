@@ -9,11 +9,122 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from app.models import Batch, ParamSelection, Project, ProjectConstraints, SimExportSettings
+from app.models import Batch, ParamSelection, Project, ProjectConstraints, SimExportSettings, SweepSpec
 from app.runtime_orchestrator import run_batch_pipeline
 
 
 class RuntimeOrchestratorTests(unittest.TestCase):
+    def test_pipeline_dry_run_records_version_runtime_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            projects_root = Path(tmp_dir) / "projects"
+            project = Project(
+                project_id="P001",
+                name="Runtime Manifest Test",
+                root_path=str(projects_root / "P001"),
+                constraints=ProjectConstraints(
+                    project_id="P001",
+                    fixed_params={"Length": 120},
+                    limits={},
+                    runner_mode="AthGuidePreview",
+                ),
+            )
+            batch = Batch(
+                batch_id="B001",
+                project_id="P001",
+                selected_params={"Throat.Diameter": ParamSelection(value=30.0)},
+                sweeps={"Coverage.Angle": SweepSpec(key="Coverage.Angle", start=40.0, end=50.0, steps=2)},
+                sweep_mode="single",
+                runner_mode="AthGuidePreview",
+            )
+
+            summary = run_batch_pipeline(
+                project=project,
+                batch=batch,
+                projects_root=projects_root,
+                dry_run=True,
+                run_id="RUN_DETERMINISTIC",
+            )
+
+            self.assertEqual(summary.versions, ["V001", "V002"])
+            for version_id in summary.versions:
+                payload = json.loads(
+                    (Path(summary.project_root) / "versions" / version_id / "version.json").read_text(encoding="utf-8-sig")
+                )
+                self.assertEqual(str(payload.get("run_id")), "RUN_DETERMINISTIC")
+                self.assertIsInstance(payload.get("parameter_snapshot"), dict)
+                params = dict(payload.get("parameter_snapshot", {}) or {})
+                self.assertIn("Length", params)
+                self.assertIn("Throat.Diameter", params)
+                self.assertIn("Coverage.Angle", params)
+                run_cfg_path = Path(str(payload.get("run_cfg_path")))
+                self.assertTrue(run_cfg_path.exists())
+                self.assertEqual(run_cfg_path.suffix.lower(), ".cfg")
+
+    def test_pipeline_cleans_runtime_cfg_and_ath_export_subdir_after_success(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            projects_root = Path(tmp_dir) / "projects"
+            ath_export_root = Path(tmp_dir) / "ath_export"
+            ath_export_root.mkdir(parents=True, exist_ok=True)
+            project = Project(
+                project_id="P001",
+                name="Runtime Cleanup Test",
+                root_path=str(projects_root / "P001"),
+                constraints=ProjectConstraints(
+                    project_id="P001",
+                    fixed_params={"Length": 120},
+                    limits={},
+                    runner_mode="AthGuidePreview",
+                ),
+            )
+            batch = Batch(
+                batch_id="B001",
+                project_id="P001",
+                selected_params={"Throat.Diameter": ParamSelection(value=30.0)},
+                sweep_mode="single",
+                runner_mode="AthGuidePreview",
+            )
+            ath_script = (
+                "from pathlib import Path; import sys; "
+                f"root=Path(r'{str(ath_export_root)}'); "
+                "cfg=Path(sys.argv[-1]); "
+                "sub=root/cfg.stem; sub.mkdir(parents=True, exist_ok=True); "
+                "(sub/'mesh.stl').write_text('solid m\\nendsolid m\\n', encoding='utf-8'); "
+                "print('Length=111 Width=222 Height=333')"
+            )
+
+            summary = run_batch_pipeline(
+                project=project,
+                batch=batch,
+                projects_root=projects_root,
+                ath_executable=sys.executable,
+                ath_base_args=["-c", ath_script],
+                continue_on_error=True,
+                ath_export_root=ath_export_root,
+            )
+            self.assertEqual(str(summary.run_status), "succeeded")
+            version_payload = json.loads(
+                (Path(summary.project_root) / "versions" / summary.versions[0] / "version.json").read_text(encoding="utf-8-sig")
+            )
+            run_cfg_path = Path(str(version_payload.get("run_cfg_path")))
+            ath_export_dir = Path(str(version_payload.get("ath_export_dir")))
+            self.assertFalse(run_cfg_path.exists())
+            self.assertFalse(ath_export_dir.exists())
+
+            cfg_cleanup = [
+                row for row in summary.cleanup_results if row.get("artifact") == "cfg" and row.get("version_id") == summary.versions[0]
+            ]
+            export_cleanup = [
+                row
+                for row in summary.cleanup_results
+                if row.get("artifact") == "ath_export_subdir" and row.get("version_id") == summary.versions[0]
+            ]
+            self.assertEqual(len(cfg_cleanup), 1)
+            self.assertEqual(str(cfg_cleanup[0].get("reason")), "deleted")
+            self.assertTrue(bool(cfg_cleanup[0].get("deleted")))
+            self.assertEqual(len(export_cleanup), 1)
+            self.assertEqual(str(export_cleanup[0].get("reason")), "deleted")
+            self.assertTrue(bool(export_cleanup[0].get("deleted")))
+
     def test_pipeline_runs_ath_stage_and_writes_dimensions(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             projects_root = Path(tmp_dir) / "projects"
@@ -51,8 +162,13 @@ class RuntimeOrchestratorTests(unittest.TestCase):
             self.assertEqual(len(summary.stage_results), 1)
             self.assertEqual(summary.stage_results[0].stage, "ath")
             self.assertEqual(summary.stage_results[0].status, "ok")
-            self.assertEqual(len(summary.cleanup_results), 1)
-            self.assertEqual(summary.cleanup_results[0]["reason"], "deleted")
+            cfg_cleanup = [row for row in summary.cleanup_results if row.get("artifact") == "cfg"]
+            export_cleanup = [row for row in summary.cleanup_results if row.get("artifact") == "ath_export_subdir"]
+            self.assertEqual(len(cfg_cleanup), 1)
+            self.assertTrue(bool(cfg_cleanup[0]["deleted"]))
+            self.assertEqual(str(cfg_cleanup[0]["reason"]), "deleted")
+            self.assertEqual(len(export_cleanup), 1)
+            self.assertIn(str(export_cleanup[0]["reason"]), {"target_missing", "deleted", "ath_export_root_unset"})
 
             project_root = Path(summary.project_root)
             project_db = project_root / "dataset" / "project.sqlite"
@@ -153,7 +269,10 @@ class RuntimeOrchestratorTests(unittest.TestCase):
             self.assertTrue(summary.dry_run)
             self.assertEqual(len(summary.stage_results), 1)
             self.assertEqual(summary.stage_results[0].stage, "dry_run")
-            self.assertEqual(summary.cleanup_results[0]["reason"], "dry_run_no_delete")
+            self.assertTrue(summary.cleanup_results)
+            for row in summary.cleanup_results:
+                if row.get("artifact") == "cfg":
+                    self.assertEqual(str(row.get("reason")), "dry_run_no_delete")
 
             project_root = Path(summary.project_root)
             ath_work_dir = project_root / "versions" / summary.versions[0] / "ath_work"

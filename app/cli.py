@@ -256,12 +256,16 @@ def cmd_run_sample(args: argparse.Namespace) -> int:
     cleanup_ok = False
     if dry_run:
         cleanup_ok = bool(summary.cleanup_results) and all(
-            result.get("reason") == "dry_run_no_delete" for result in summary.cleanup_results
+            result.get("reason") in {"dry_run_no_delete", "ath_export_root_unset"} for result in summary.cleanup_results
         )
     else:
-        cleanup_ok = bool(summary.cleanup_results) and all(
-            bool(result.get("deleted")) and result.get("reason") == "deleted" for result in summary.cleanup_results
+        cfg_rows = [row for row in summary.cleanup_results if str(row.get("artifact")) == "cfg"]
+        export_rows = [row for row in summary.cleanup_results if str(row.get("artifact")) == "ath_export_subdir"]
+        cfg_ok = bool(cfg_rows) and all(bool(row.get("deleted")) and row.get("reason") == "deleted" for row in cfg_rows)
+        export_ok = bool(export_rows) and all(
+            row.get("reason") in {"deleted", "target_missing", "ath_export_root_unset"} for row in export_rows
         )
+        cleanup_ok = cfg_ok and export_ok
 
     artifacts_ok = True
     artifact_issues: list[str] = []

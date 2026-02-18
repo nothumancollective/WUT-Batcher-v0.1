@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+import re
 import time
 import uuid
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -13,9 +14,10 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 from app.batch_orchestrator import materialize_batch_plan
 from app.ath_driver_assets import repair_post_ath_le_binding
 from app.cfg_renderer import render_cfg_text
+from app.constants import ATH_PREVIEW_EXPORT_ROOT
 from app.export_specs import parse_export_specs
 from app.models import Batch, Project
-from app.safe_cleanup import guarded_delete_tree
+from app.safe_cleanup import guarded_delete_file_in_workspace, guarded_delete_tree
 from app.runners import AkabakRunner, AthRunner, RunnerResult, VacsRunner, parse_ath_dimensions
 from app.tidy_dataset import TidyDatasetWriter
 from app.vacs_export_pipeline import VacsExportPipelineError, run_vacs_export_specs
@@ -70,6 +72,22 @@ def _version_cfg_path(project_root: Path, version_id: str) -> Path:
     return project_root / "versions" / version_id / "cfg" / "input.cfg"
 
 
+def _runtime_cfg_basename(*, project_id: str, batch_id: str, version_id: str, run_id: str) -> str:
+    token = "_".join([str(project_id), str(batch_id), str(version_id), str(run_id)[:8]])
+    cleaned = re.sub(r"[^A-Za-z0-9_.-]+", "_", token).strip("._")
+    return cleaned or f"run_{version_id}"
+
+
+def _version_runtime_cfg_path(project_root: Path, version_id: str, cfg_basename: str) -> Path:
+    return project_root / "versions" / version_id / "cfg" / f"{cfg_basename}.cfg"
+
+
+def _planned_ath_export_dir(ath_export_root: Path | None, run_cfg_path: Path) -> Optional[Path]:
+    if ath_export_root is None:
+        return None
+    return ath_export_root / run_cfg_path.stem
+
+
 def _version_abec_path(project_root: Path, version_id: str) -> Path:
     return project_root / "versions" / version_id / "abec" / "Project.abec"
 
@@ -115,6 +133,40 @@ def _path_key(path: Path) -> str:
         return str(path.resolve()).lower()
     except Exception:
         return str(path).lower()
+
+
+def _is_global_synced(result: Dict[str, Any] | None) -> bool:
+    if not isinstance(result, dict):
+        return True
+    return bool(result.get("global_synced", True))
+
+
+def _append_cleanup_skip(
+    cleanup_results: List[Dict[str, Any]],
+    *,
+    version_id: str,
+    run_cfg_path: Path,
+    ath_export_dir: Optional[Path],
+    reason: str,
+) -> None:
+    cleanup_results.append(
+        {
+            "version_id": version_id,
+            "artifact": "cfg",
+            "target": str(run_cfg_path),
+            "deleted": False,
+            "reason": reason,
+        }
+    )
+    cleanup_results.append(
+        {
+            "version_id": version_id,
+            "artifact": "ath_export_subdir",
+            "target": str(ath_export_dir) if ath_export_dir is not None else "",
+            "deleted": False,
+            "reason": reason if ath_export_dir is not None else "ath_export_root_unset",
+        }
+    )
 
 
 def _extract_export_contracts(
@@ -340,14 +392,19 @@ def run_batch_pipeline(
     git_commit: Optional[str] = None,
     app_version: Optional[str] = "0.1-rebuild",
     settings_hash: Optional[str] = None,
+    ath_export_root: str | Path | None = ATH_PREVIEW_EXPORT_ROOT,
 ) -> RuntimeSummary:
     planning_summary = materialize_batch_plan(project=project, batch=batch, projects_root=projects_root)
     project_root = Path(planning_summary.project_root)
     template_text = _load_template_text(template_cfg_path)
     writer = TidyDatasetWriter(project_root)
     effective_run_id = run_id or str(uuid.uuid4())
+    ath_export_root_path: Optional[Path] = None
+    if ath_export_root is not None:
+        ath_export_root_path = Path(str(ath_export_root)).expanduser()
 
-    writer.create_run(
+    bootstrap_sync_errors: List[str] = []
+    create_run_result = writer.create_run(
         run_id=effective_run_id,
         project_id=project.project_id,
         batch_id=batch.batch_id,
@@ -356,7 +413,9 @@ def run_batch_pipeline(
         app_version=app_version,
         settings_hash=settings_hash,
     )
-    writer.write_run_versions(
+    if not _is_global_synced(create_run_result):
+        bootstrap_sync_errors.append("create_run")
+    write_run_versions_result = writer.write_run_versions(
         [
             {
                 "run_id": effective_run_id,
@@ -368,6 +427,8 @@ def run_batch_pipeline(
             for version_id in planning_summary.version_ids
         ]
     )
+    if not _is_global_synced(write_run_versions_result):
+        bootstrap_sync_errors.append("write_run_versions")
 
     sim_export_payload = batch.sim_export_settings.to_dict()
     export_specs = parse_export_specs(sim_export_payload)
@@ -381,9 +442,8 @@ def run_batch_pipeline(
     stage_results: List[StageExecution] = []
     ath_dimension_rows = 0
     cleanup_results: List[Dict[str, Any]] = []
-    versions_root = project_root / "versions"
-    run_status = "succeeded"
-    run_error_summary: Optional[str] = None
+    run_status = "failed" if bootstrap_sync_errors else "succeeded"
+    run_error_summary: Optional[str] = None if not bootstrap_sync_errors else ", ".join(bootstrap_sync_errors)
 
     try:
         for version_id in planning_summary.version_ids:
@@ -391,8 +451,17 @@ def run_batch_pipeline(
             version_payload = _read_json(_version_json_path(project_root, version_id))
             version_params = dict(version_payload.get("parameters", {}) or {})
             runner_mode = str(batch.runner_mode or project.constraints.runner_mode)
+            persist_sync_errors: List[str] = []
 
             cfg_path = _version_cfg_path(project_root, version_id)
+            cfg_basename = _runtime_cfg_basename(
+                project_id=project.project_id,
+                batch_id=batch.batch_id,
+                version_id=version_id,
+                run_id=effective_run_id,
+            )
+            run_cfg_path = _version_runtime_cfg_path(project_root, version_id, cfg_basename)
+            ath_export_dir = _planned_ath_export_dir(ath_export_root_path, run_cfg_path)
             cfg_text = render_cfg_text(
                 template_text=template_text,
                 parameters=version_params,
@@ -401,6 +470,23 @@ def run_batch_pipeline(
             )
             cfg_path.parent.mkdir(parents=True, exist_ok=True)
             cfg_path.write_text(cfg_text, encoding="utf-8")
+            run_cfg_path.write_text(cfg_text, encoding="utf-8")
+            _update_version_state(
+                project_root,
+                version_id,
+                {
+                    "run_id": effective_run_id,
+                    "run_cfg_path": str(run_cfg_path),
+                    "ath_export_dir": str(ath_export_dir) if ath_export_dir is not None else None,
+                    "parameter_snapshot": version_params,
+                    "constraints_snapshot": project.constraints.to_dict(),
+                    "sweep_parameters_snapshot": dict(version_payload.get("sweep_parameters", {}) or {}),
+                },
+            )
+
+            def _track_sync(operation_name: str, result: Dict[str, Any] | None) -> None:
+                if not _is_global_synced(result):
+                    persist_sync_errors.append(operation_name)
 
             if dry_run:
                 elapsed = time.perf_counter() - version_started
@@ -425,27 +511,20 @@ def run_batch_pipeline(
                         "duration_seconds": elapsed,
                     },
                 )
-                writer.update_version_status(
+                dry_status = writer.update_version_status(
                     version_id,
                     status="dry_run_completed",
                     run_id=effective_run_id,
                     duration_seconds=elapsed,
                     finished_at=_now_iso(),
                 )
-                cleanup_result = guarded_delete_tree(
-                    _version_ath_work_path(project_root, version_id),
-                    allowed_root=versions_root,
-                    expected_dir_name="ath_work",
-                    perform_delete=False,
-                    deny_paths=(project_root, project_root.parent, versions_root),
-                )
-                cleanup_results.append(
-                    {
-                        "version_id": version_id,
-                        "target": cleanup_result.target,
-                        "deleted": cleanup_result.deleted,
-                        "reason": cleanup_result.reason,
-                    }
+                _track_sync("update_version_status.dry_run_completed", dry_status)
+                _append_cleanup_skip(
+                    cleanup_results,
+                    version_id=version_id,
+                    run_cfg_path=run_cfg_path,
+                    ath_export_dir=ath_export_dir,
+                    reason="dry_run_no_delete",
                 )
                 continue
 
@@ -457,7 +536,7 @@ def run_batch_pipeline(
                 ath_work_dir = _version_ath_work_path(project_root, version_id)
                 ath_work_dir.mkdir(parents=True, exist_ok=True)
                 ath_result = ath_runner.run_cfg(
-                    cfg_path,
+                    run_cfg_path,
                     version_logs_dir=_version_logs_dir(project_root, version_id),
                     workdir=ath_work_dir,
                 )
@@ -477,17 +556,18 @@ def run_batch_pipeline(
                         },
                     },
                 )
-                writer.update_version_status(
+                ath_status = writer.update_version_status(
                     version_id,
                     status="ath_ok" if ath_result.ok else "ath_failed",
                     run_id=effective_run_id,
                 )
+                _track_sync("update_version_status.ath", ath_status)
                 ath_stage_ok = ath_result.ok
 
                 ath_stdout = Path(ath_result.stdout_log).read_text(encoding="utf-8")
                 dims = parse_ath_dimensions(ath_stdout)
                 if dims.raw_line:
-                    writer.write_ath_dimensions(
+                    dims_result = writer.write_ath_dimensions(
                         [
                             {
                                 "project_id": project.project_id,
@@ -502,10 +582,11 @@ def run_batch_pipeline(
                             }
                         ]
                     )
+                    _track_sync("write_ath_dimensions", dims_result)
                     ath_dimension_rows += 1
                 if not ath_result.ok and not continue_on_error:
                     elapsed = time.perf_counter() - version_started
-                    writer.update_version_status(
+                    failed_update = writer.update_version_status(
                         version_id,
                         status="failed",
                         run_id=effective_run_id,
@@ -513,13 +594,13 @@ def run_batch_pipeline(
                         finished_at=_now_iso(),
                         error_summary="ath_failed",
                     )
-                    cleanup_results.append(
-                        {
-                            "version_id": version_id,
-                            "target": str(_version_ath_work_path(project_root, version_id)),
-                            "deleted": False,
-                            "reason": "skipped_due_to_failure",
-                        }
+                    _track_sync("update_version_status.failed_ath", failed_update)
+                    _append_cleanup_skip(
+                        cleanup_results,
+                        version_id=version_id,
+                        run_cfg_path=run_cfg_path,
+                        ath_export_dir=ath_export_dir,
+                        reason="skipped_due_to_failure",
                     )
                     run_status = "failed"
                     continue
@@ -548,7 +629,7 @@ def run_batch_pipeline(
                     )
                     if not driver_sync.ok:
                         elapsed = time.perf_counter() - version_started
-                        writer.update_version_status(
+                        failed_update = writer.update_version_status(
                             version_id,
                             status="failed",
                             run_id=effective_run_id,
@@ -556,13 +637,13 @@ def run_batch_pipeline(
                             finished_at=_now_iso(),
                             error_summary="post_ath_le_repair_failed",
                         )
-                        cleanup_results.append(
-                            {
-                                "version_id": version_id,
-                                "target": str(_version_ath_work_path(project_root, version_id)),
-                                "deleted": False,
-                                "reason": "skipped_due_to_failure",
-                            }
+                        _track_sync("update_version_status.failed_post_ath", failed_update)
+                        _append_cleanup_skip(
+                            cleanup_results,
+                            version_id=version_id,
+                            run_cfg_path=run_cfg_path,
+                            ath_export_dir=ath_export_dir,
+                            reason="skipped_due_to_failure",
                         )
                         run_status = "failed"
                         continue
@@ -586,15 +667,16 @@ def run_batch_pipeline(
                         },
                     },
                 )
-                writer.update_version_status(
+                akabak_status = writer.update_version_status(
                     version_id,
                     status="akabak_ok" if akabak_result.ok else "akabak_failed",
                     run_id=effective_run_id,
                 )
+                _track_sync("update_version_status.akabak", akabak_status)
                 akabak_stage_ok = akabak_result.ok
                 if not akabak_result.ok and not continue_on_error:
                     elapsed = time.perf_counter() - version_started
-                    writer.update_version_status(
+                    failed_update = writer.update_version_status(
                         version_id,
                         status="failed",
                         run_id=effective_run_id,
@@ -602,13 +684,13 @@ def run_batch_pipeline(
                         finished_at=_now_iso(),
                         error_summary="akabak_failed",
                     )
-                    cleanup_results.append(
-                        {
-                            "version_id": version_id,
-                            "target": str(_version_ath_work_path(project_root, version_id)),
-                            "deleted": False,
-                            "reason": "skipped_due_to_failure",
-                        }
+                    _track_sync("update_version_status.failed_akabak", failed_update)
+                    _append_cleanup_skip(
+                        cleanup_results,
+                        version_id=version_id,
+                        run_cfg_path=run_cfg_path,
+                        ath_export_dir=ath_export_dir,
+                        reason="skipped_due_to_failure",
                     )
                     run_status = "failed"
                     continue
@@ -648,10 +730,11 @@ def run_batch_pipeline(
                         },
                     },
                 )
-                writer.update_version_status(version_id, status="vacs_failed", run_id=effective_run_id)
+                vacs_status_result = writer.update_version_status(version_id, status="vacs_failed", run_id=effective_run_id)
+                _track_sync("update_version_status.vacs_missing_exe", vacs_status_result)
                 if not continue_on_error:
                     elapsed = time.perf_counter() - version_started
-                    writer.update_version_status(
+                    failed_update = writer.update_version_status(
                         version_id,
                         status="failed",
                         run_id=effective_run_id,
@@ -659,13 +742,13 @@ def run_batch_pipeline(
                         finished_at=_now_iso(),
                         error_summary="vacs_executable_missing",
                     )
-                    cleanup_results.append(
-                        {
-                            "version_id": version_id,
-                            "target": str(_version_ath_work_path(project_root, version_id)),
-                            "deleted": False,
-                            "reason": "skipped_due_to_failure",
-                        }
+                    _track_sync("update_version_status.failed_vacs_missing_exe", failed_update)
+                    _append_cleanup_skip(
+                        cleanup_results,
+                        version_id=version_id,
+                        run_cfg_path=run_cfg_path,
+                        ath_export_dir=ath_export_dir,
+                        reason="skipped_due_to_failure",
                     )
                     run_status = "failed"
                     continue
@@ -730,7 +813,13 @@ def run_batch_pipeline(
                             "vacs_export_pipeline": vacs_export_summary,
                         },
                     )
-                    writer.update_version_status(version_id, status=vacs_status, run_id=effective_run_id)
+                    vacs_state_result = writer.update_version_status(version_id, status=vacs_status, run_id=effective_run_id)
+                    _track_sync("update_version_status.vacs_export_specs", vacs_state_result)
+                    write_result = vacs_ingest.get("write_result")
+                    if int(vacs_ingest.get("rows_prepared", 0) or 0) > 0 and not _is_global_synced(
+                        write_result if isinstance(write_result, dict) else None
+                    ):
+                        persist_sync_errors.append("write_measurements")
                 except (VacsExportPipelineError, Exception) as exc:
                     vacs_stage_ok = False
                     _write_json(vacs_summary_path, {"error": str(exc), "vacs_version": vacs_version})
@@ -758,15 +847,16 @@ def run_batch_pipeline(
                             },
                         },
                     )
-                    writer.update_version_status(
+                    vacs_failed_result = writer.update_version_status(
                         version_id,
                         status="vacs_failed",
                         run_id=effective_run_id,
                         error_summary=str(exc),
                     )
+                    _track_sync("update_version_status.vacs_failed", vacs_failed_result)
                     if not continue_on_error:
                         elapsed = time.perf_counter() - version_started
-                        writer.update_version_status(
+                        failed_update = writer.update_version_status(
                             version_id,
                             status="failed",
                             run_id=effective_run_id,
@@ -774,13 +864,13 @@ def run_batch_pipeline(
                             finished_at=_now_iso(),
                             error_summary="vacs_export_failed",
                         )
-                        cleanup_results.append(
-                            {
-                                "version_id": version_id,
-                                "target": str(_version_ath_work_path(project_root, version_id)),
-                                "deleted": False,
-                                "reason": "skipped_due_to_failure",
-                            }
+                        _track_sync("update_version_status.failed_vacs_export", failed_update)
+                        _append_cleanup_skip(
+                            cleanup_results,
+                            version_id=version_id,
+                            run_cfg_path=run_cfg_path,
+                            ath_export_dir=ath_export_dir,
+                            reason="skipped_due_to_failure",
                         )
                         run_status = "failed"
                         continue
@@ -827,11 +917,17 @@ def run_batch_pipeline(
                         "vacs_export_ingest": vacs_ingest,
                     },
                 )
-                writer.update_version_status(version_id, status=vacs_status, run_id=effective_run_id)
+                vacs_result_status = writer.update_version_status(version_id, status=vacs_status, run_id=effective_run_id)
+                _track_sync("update_version_status.vacs_runner", vacs_result_status)
+                if int(vacs_ingest.get("rows_prepared", 0) or 0) > 0:
+                    write_result = vacs_ingest.get("write_result")
+                    if not _is_global_synced(write_result if isinstance(write_result, dict) else None):
+                        persist_sync_errors.append("write_measurements")
 
             elapsed = time.perf_counter() - version_started
-            final_ok = ath_stage_ok and akabak_stage_ok and vacs_stage_ok
+            final_ok = ath_stage_ok and akabak_stage_ok and vacs_stage_ok and not persist_sync_errors
             final_status = "success" if final_ok else "failed"
+            final_error = None if final_ok else ("global_sync_pending" if persist_sync_errors else "version_stage_failed")
             _update_version_state(
                 project_root,
                 version_id,
@@ -840,40 +936,91 @@ def run_batch_pipeline(
                     "run_id": effective_run_id,
                     "finished_at": _now_iso(),
                     "duration_seconds": elapsed,
+                    "persist_sync_errors": list(persist_sync_errors),
                 },
             )
-            writer.update_version_status(
+            final_result = writer.update_version_status(
                 version_id,
                 status=final_status,
                 run_id=effective_run_id,
                 duration_seconds=elapsed,
                 finished_at=_now_iso(),
-                error_summary=None if final_ok else "version_stage_failed",
+                error_summary=final_error,
             )
+            if not _is_global_synced(final_result):
+                persist_sync_errors.append("update_version_status.final")
+                final_ok = False
+                final_status = "failed"
+                _update_version_state(
+                    project_root,
+                    version_id,
+                    {
+                        "status": "failed",
+                        "persist_sync_errors": list(persist_sync_errors),
+                    },
+                )
+                fallback_result = writer.update_version_status(
+                    version_id,
+                    status="failed",
+                    run_id=effective_run_id,
+                    duration_seconds=elapsed,
+                    finished_at=_now_iso(),
+                    error_summary="global_sync_pending",
+                )
+                _track_sync("update_version_status.fallback_failed", fallback_result)
 
             if final_ok:
-                cleanup_result = guarded_delete_tree(
-                    _version_ath_work_path(project_root, version_id),
-                    allowed_root=versions_root,
-                    expected_dir_name="ath_work",
-                    deny_paths=(project_root, project_root.parent, versions_root),
+                cfg_cleanup = guarded_delete_file_in_workspace(
+                    run_cfg_path,
+                    workspace_root=project_root,
+                    expected_parent_name="cfg",
+                    perform_delete=True,
+                    deny_paths=(project_root, project_root.parent),
                 )
                 cleanup_results.append(
                     {
                         "version_id": version_id,
-                        "target": cleanup_result.target,
-                        "deleted": cleanup_result.deleted,
-                        "reason": cleanup_result.reason,
+                        "artifact": "cfg",
+                        "target": cfg_cleanup.target,
+                        "deleted": cfg_cleanup.deleted,
+                        "reason": cfg_cleanup.reason,
                     }
                 )
+                if ath_export_dir is not None and ath_export_root_path is not None:
+                    export_cleanup = guarded_delete_tree(
+                        ath_export_dir,
+                        allowed_root=ath_export_root_path,
+                        expected_dir_name=ath_export_dir.name,
+                        perform_delete=True,
+                        deny_paths=(ath_export_root_path, ath_export_root_path.parent),
+                    )
+                    cleanup_results.append(
+                        {
+                            "version_id": version_id,
+                            "artifact": "ath_export_subdir",
+                            "target": export_cleanup.target,
+                            "deleted": export_cleanup.deleted,
+                            "reason": export_cleanup.reason,
+                        }
+                    )
+                else:
+                    cleanup_results.append(
+                        {
+                            "version_id": version_id,
+                            "artifact": "ath_export_subdir",
+                            "target": str(ath_export_dir) if ath_export_dir is not None else "",
+                            "deleted": False,
+                            "reason": "ath_export_root_unset",
+                        }
+                    )
             else:
-                cleanup_results.append(
-                    {
-                        "version_id": version_id,
-                        "target": str(_version_ath_work_path(project_root, version_id)),
-                        "deleted": False,
-                        "reason": "skipped_due_to_failure",
-                    }
+                reason = "persist_not_synced" if persist_sync_errors else "skipped_due_to_failure"
+                _append_cleanup_skip(
+                    cleanup_results,
+                    version_id=version_id,
+                    run_cfg_path=run_cfg_path,
+                    ath_export_dir=ath_export_dir,
+                    reason=reason,
                 )
                 run_status = "failed"
     except Exception as exc:

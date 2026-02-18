@@ -1873,6 +1873,7 @@ class OrchestratorService:
             git_commit=_detect_git_commit(),
             app_version="0.1-rebuild",
             settings_hash=_settings_hash(self.settings),
+            ath_export_root=ATH_PREVIEW_EXPORT_ROOT,
         )
 
     def export_version(
