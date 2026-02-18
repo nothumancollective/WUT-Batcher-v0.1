@@ -1,6 +1,27 @@
 ﻿# DEVLOG
 
 ## 2026-02-18
+### Update: Robustness Hotfixes (STL hook, foreground API, preview/run diagnostics)
+#### Done
+- Removed deprecated Qt foreground API usage in `app/gui.py`:
+  - dropped `QApplication.setActiveWindow(...)` calls from window focus helpers.
+- Hardened preview worker diagnostics in `app/gui.py`:
+  - preview cancel/start termination failures are now logged (debug), not silently swallowed.
+  - startup preview-cache cleanup errors are now logged as warnings.
+- Switched STL export hook to deterministic default in `app/services.py`:
+  - `ATH_STL_EXPORT_DIRECTIVE` now defaults to `Output.STL = 1`.
+  - removed inactive TODO-block fallback insertion for STL export hook.
+  - idempotent hook behavior remains intact.
+- Improved run-adjacent exception visibility in `app/services.py`:
+  - process termination fallback now logs debug/warn details.
+  - preview runtime cfg backup/restore/unlink failures now emit warnings.
+
+#### Tests
+- `tests/test_service_export.py`
+- `tests/test_preview_pipeline.py`
+- `tests/test_runtime_orchestrator.py`
+- `tests/test_ui_e2e_stress_runs.py`
+
 ### Update: Run-Pipeline Integration (per-version cleanup contract + sync gate)
 #### Done
 - Runtime pipeline (`app/runtime_orchestrator.py`) now creates a dedicated per-version runtime CFG:

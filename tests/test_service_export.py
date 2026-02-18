@@ -120,10 +120,10 @@ class ServiceExportTests(unittest.TestCase):
         cfg = "Length = 100\n"
         first, first_todo = _apply_stl_export_hook(cfg)
         second, second_todo = _apply_stl_export_hook(first)
-        self.assertTrue(first_todo)
-        self.assertTrue(second_todo)
+        self.assertFalse(first_todo)
+        self.assertFalse(second_todo)
         self.assertEqual(first, second)
-        self.assertEqual(first.count("STL export hook (TODO)"), 1)
+        self.assertEqual(first.count("Output.STL = 1"), 1)
 
     def test_sync_global_db_returns_summary(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

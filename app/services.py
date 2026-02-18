@@ -6,6 +6,7 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 import json
 import hashlib
+import logging
 import os
 import re
 import statistics
@@ -38,6 +39,8 @@ from app.settings_store import SettingsStore, UserSettings
 from app.tidy_dataset import TidyDatasetWriter
 from app.version_resolver import resolve_versions
 
+LOGGER = logging.getLogger(__name__)
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
@@ -55,24 +58,16 @@ def _next_prefixed_id(existing_ids: List[str], prefix: str) -> str:
     return f"{prefix}{max_num + 1:03d}"
 
 
-ATH_STL_EXPORT_DIRECTIVE: Optional[str] = None
+ATH_STL_EXPORT_DIRECTIVE: Optional[str] = "Output.STL = 1"
 
 
 def _apply_stl_export_hook(cfg_text: str) -> tuple[str, bool]:
-    if ATH_STL_EXPORT_DIRECTIVE:
-        directive_line = ATH_STL_EXPORT_DIRECTIVE.strip()
-        if directive_line and directive_line not in cfg_text:
-            return (cfg_text.rstrip() + f"\n{directive_line}\n", False)
-        return (cfg_text, False)
-
-    block = (
-        "\n; --- STL export hook (TODO) ---\n"
-        "; TODO: Set ATH_STL_EXPORT_DIRECTIVE in app/services.py once verified.\n"
-        "; Example placeholder (inactive): ; Export.STL = 1\n"
-    )
-    if "STL export hook (TODO)" in cfg_text:
-        return (cfg_text, True)
-    return (cfg_text + block, True)
+    directive_line = str(ATH_STL_EXPORT_DIRECTIVE or "").strip()
+    if not directive_line:
+        directive_line = "Output.STL = 1"
+    if directive_line and directive_line not in cfg_text:
+        return (cfg_text.rstrip() + f"\n{directive_line}\n", False)
+    return (cfg_text, False)
 
 
 def _select_generated_abec(export_dir: Path) -> Optional[Path]:
@@ -418,10 +413,11 @@ def _terminate_process(proc: subprocess.Popen[str]) -> None:
             proc.wait(timeout=3.0)
             return
         except Exception:
-            pass
+            LOGGER.debug("Preview process did not terminate gracefully; escalating to kill.")
         proc.kill()
         proc.wait(timeout=2.0)
-    except Exception:
+    except Exception as exc:
+        LOGGER.warning("Failed to terminate preview process cleanly: %s", exc)
         return
 
 
@@ -1473,7 +1469,8 @@ class OrchestratorService:
         if had_runtime_cfg:
             try:
                 shutil.copy2(runtime_cfg_path, backup_path)
-            except Exception:
+            except Exception as exc:
+                LOGGER.warning("Failed to backup ATH runtime cfg at %s: %s", runtime_cfg_path, exc)
                 had_runtime_cfg = False
 
         existing_mesh_cmd = _extract_mesh_cmd_from_runtime_cfg(runtime_cfg_path)
@@ -1540,18 +1537,18 @@ class OrchestratorService:
             if had_runtime_cfg and backup_path.exists():
                 try:
                     shutil.copy2(backup_path, runtime_cfg_path)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    LOGGER.warning("Failed to restore ATH runtime cfg from backup %s: %s", backup_path, exc)
             elif (not had_runtime_cfg) and runtime_cfg_path.exists():
                 try:
                     runtime_cfg_path.unlink()
-                except Exception:
-                    pass
+                except Exception as exc:
+                    LOGGER.warning("Failed to remove temporary ATH runtime cfg %s: %s", runtime_cfg_path, exc)
             if backup_path.exists():
                 try:
                     backup_path.unlink()
-                except Exception:
-                    pass
+                except Exception as exc:
+                    LOGGER.warning("Failed to remove ATH runtime cfg backup %s: %s", backup_path, exc)
 
         if exit_code != 0:
             raise RuntimeError(f"ATH preview run failed (exit_code={exit_code}).")
