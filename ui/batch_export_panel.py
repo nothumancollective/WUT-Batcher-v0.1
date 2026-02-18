@@ -395,7 +395,8 @@ class BatchExportPanel(QFrame):
         super().__init__(parent)
         self.setObjectName("ProjectSummaryPanel")
         self._advanced_state = _AdvancedState.defaults()
-        self.setMinimumHeight(320)
+        self.setMinimumHeight(240)
+        self.setMaximumHeight(260)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(10, 10, 10, 10)

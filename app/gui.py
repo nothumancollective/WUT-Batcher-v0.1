@@ -27,7 +27,7 @@ from ui.theme import apply_theme, apply_windows_dark_titlebar, configure_windows
 
 try:
     from PySide6.QtCore import QEasingCurve, QPoint, QPropertyAnimation, QEvent, QObject, Qt, QThread, QTimer, Signal, QSize
-    from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPixmap, QIcon
+    from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPixmap, QIcon, QPalette
     from PySide6.QtWidgets import (
         QAbstractItemView,
         QApplication,
@@ -962,6 +962,8 @@ class ConstraintSummaryGrid(QFrame):
         super().__init__(parent)
         self.setObjectName("ProjectSummaryPanel")
         self._entries: List[tuple[str, str]] = []
+        self._last_render_cols: Optional[int] = None
+        self._last_render_signature: Optional[tuple[tuple[str, str], ...]] = None
         root = QVBoxLayout(self)
         root.setContentsMargins(10, 10, 10, 10)
         root.setSpacing(8)
@@ -1015,14 +1017,24 @@ class ConstraintSummaryGrid(QFrame):
         self._entries = entries
         self._rebuild_grid()
 
+    def _target_cols(self) -> int:
+        width = max(int(self.width()), 1)
+        return 1 if width < 620 else (2 if width < 980 else 3)
+
     def _rebuild_grid(self) -> None:
+        signature = tuple((str(key), str(value)) for key, value in list(self._entries))
+        cols = self._target_cols()
+        if self._last_render_cols == cols and self._last_render_signature == signature:
+            return
+        self._last_render_cols = cols
+        self._last_render_signature = signature
+        self.setUpdatesEnabled(False)
         self._clear_grid()
         if not self._entries:
             self._empty.setVisible(True)
+            self.setUpdatesEnabled(True)
             return
         self._empty.setVisible(False)
-        width = max(int(self.width()), 1)
-        cols = 1 if width < 620 else (2 if width < 980 else 3)
         for index, (key, value) in enumerate(list(self._entries)):
             row = index // cols
             col = index % cols
@@ -1041,6 +1053,7 @@ class ConstraintSummaryGrid(QFrame):
             self._grid.addWidget(card, row, col)
         for col in range(cols):
             self._grid.setColumnStretch(col, 1)
+        self.setUpdatesEnabled(True)
 
     def resizeEvent(self, event) -> None:  # type: ignore[override]
         super().resizeEvent(event)
@@ -1870,6 +1883,10 @@ class BatchPage(QWidget):
         self.parameter_form = BatchParameterForm(build_project_form_schema())
         self.export_panel = BatchExportPanel()
         self.preview_panel = BatchPreviewPlaceholder()
+        self.preview_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.export_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.export_panel.setMinimumHeight(240)
+        self.export_panel.setMaximumHeight(260)
 
         body = QHBoxLayout()
         body.setContentsMargins(0, 0, 0, 0)
@@ -1890,8 +1907,8 @@ class BatchPage(QWidget):
         right_layout = QVBoxLayout(right_panel)
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(10)
-        right_layout.addWidget(self.preview_panel, 1)
-        right_layout.addWidget(self.export_panel, 1)
+        right_layout.addWidget(self.preview_panel, 3)
+        right_layout.addWidget(self.export_panel, 1, Qt.AlignBottom)
         body.addWidget(right_panel, 2)
         root.addLayout(body, 1)
 
@@ -1968,6 +1985,7 @@ class BatchPage(QWidget):
         self._right_panel.setMaximumWidth(right_width)
 
         name_width = max(240, available_width // 3)
+        name_width = max(int(summary_width), 240)
         self.batch_name.setMinimumWidth(name_width)
         self.batch_name.setMaximumWidth(name_width)
 
@@ -2135,16 +2153,36 @@ class BatchPage(QWidget):
                 incomplete_count += 1
             else:
                 fatal_count += 1
+        def _issue_rank(raw: Dict[str, Any]) -> tuple[int, str]:
+            sev = str(raw.get("severity", "")).strip().lower()
+            if sev == "fatal":
+                return (0, str(raw.get("message", "")))
+            if sev == "warn":
+                return (1, str(raw.get("message", "")))
+            if sev == "incomplete":
+                return (2, str(raw.get("message", "")))
+            return (3, str(raw.get("message", "")))
+
+        sorted_issues = sorted([dict(item) for item in issues], key=_issue_rank)
+
         teaser_message = ""
-        if issues:
-            top_issue = issues[0]
-            teaser_message = str(top_issue.get("message", "")).strip()
+        issue_lines: List[str] = []
+        for issue in sorted_issues:
+            msg = str(issue.get("message", "")).strip()
+            if not msg:
+                continue
+            issue_lines.append(msg)
+        if issue_lines:
+            teaser_message = issue_lines[0]
             if len(teaser_message) > 120:
                 teaser_message = teaser_message[:117].rstrip() + "..."
+        tooltip_lines = [f"{index + 1}. {line}" for index, line in enumerate(issue_lines)]
+        summary_tooltip = "\n".join(tooltip_lines[:12]).strip()
         if fatal_count > 0:
             severity = "fatal"
             self.action_status_pill.setText("Fix validation errors before save/run.")
-            self.summary_issue_hint.setText(teaser_message or f"{fatal_count} fatal issue(s), {warn_count} warning(s).")
+            preview_lines = [line for line in issue_lines[:3] if line]
+            self.summary_issue_hint.setText("\n".join(preview_lines) or f"{fatal_count} fatal issue(s), {warn_count} warning(s).")
         elif incomplete_count > 0:
             severity = "neutral"
             self.action_status_pill.setText("Configuration incomplete. Save is allowed, run is blocked.")
@@ -2152,11 +2190,18 @@ class BatchPage(QWidget):
         elif warn_count > 0:
             severity = "warn"
             self.action_status_pill.setText("Warnings present. Review before save/run.")
-            self.summary_issue_hint.setText(teaser_message or f"{warn_count} warning(s) in current draft.")
+            warning_lines = [
+                str(issue.get("message", "")).strip()
+                for issue in sorted_issues
+                if str(issue.get("severity", "")).strip().lower() == "warn"
+            ]
+            warning_lines = [line for line in warning_lines if line][:3]
+            self.summary_issue_hint.setText("\n".join(warning_lines) or teaser_message or f"{warn_count} warning(s) in current draft.")
         else:
             severity = "ok"
             self.action_status_pill.setText("Ready to save batch.")
             self.summary_issue_hint.setText("No validation issues.")
+        self.summary_issue_hint.setToolTip(summary_tooltip)
         self.summary_issue_hint.setProperty("severity", severity if severity in {"fatal", "warn"} else "")
         self.summary_issue_hint.style().unpolish(self.summary_issue_hint)
         self.summary_issue_hint.style().polish(self.summary_issue_hint)
@@ -2166,12 +2211,18 @@ class BatchPage(QWidget):
         self.action_status_pill.style().unpolish(self.action_status_pill)
         self.action_status_pill.style().polish(self.action_status_pill)
         has_name = bool(self.batch_name.text().strip())
-        can_save = fatal_count == 0 and has_name
+        can_save = has_name
         # Keep run button interactive once a name is present; run-time validation
         # dialog explains blockers/default options without silently disabling action.
         can_run = has_name
         self.save_btn.setEnabled(can_save)
         self.run_btn.setEnabled(can_run)
+        if not has_name:
+            self.save_btn.setToolTip("Provide a batch name first.")
+        elif fatal_count > 0:
+            self.save_btn.setToolTip("Resolve fatal validation issues before saving.")
+        else:
+            self.save_btn.setToolTip("")
         if not has_name:
             self.run_btn.setToolTip("Provide a batch name first.")
         elif incomplete_count > 0:
@@ -2266,6 +2317,10 @@ class ProjectManagerWindow(QMainWindow):
         self.project_list.setGridSize(QSize(210, 170))
         self.project_list.setWordWrap(True)
         self.project_list.setSelectionRectVisible(False)
+        list_palette = self.project_list.palette()
+        list_palette.setColor(QPalette.Highlight, QColor(0, 0, 0, 0))
+        list_palette.setColor(QPalette.HighlightedText, QColor("#F1F1F1"))
+        self.project_list.setPalette(list_palette)
         root.addWidget(self.project_list, 1)
 
         buttons = QHBoxLayout()
@@ -2855,7 +2910,7 @@ class MainWindow(QMainWindow):
         block_count = int(counts.get("fatal", 0))
         if for_run:
             block_count += int(counts.get("incomplete", 0))
-        should_prompt = not for_run or int(counts.get("fatal", 0)) > 0
+        should_prompt = int(counts.get("fatal", 0)) > 0
         if should_prompt:
             if not self._present_validation_summary(
                 title="Batch Validation Summary",
@@ -3269,12 +3324,13 @@ class MainWindow(QMainWindow):
             sample_count=int(estimate.get("sample_count", 0) or 0),
             median_seconds=estimate.get("median_seconds_per_version"),
         )
-        self._queue_batch_preview_update(
-            {
-                "selected_params": selected_params,
-                "sweep_mode": sweep_mode,
-            }
-        )
+        if self.isVisible() and self.stack.currentWidget() is self.batch_page:
+            self._queue_batch_preview_update(
+                {
+                    "selected_params": selected_params,
+                    "sweep_mode": sweep_mode,
+                }
+            )
         self.batch_page.set_preview_parameters(selected_params)
 
 
@@ -3378,6 +3434,7 @@ def _run_doctor_for_splash(service: OrchestratorService) -> Dict[str, object]:
                 errors="replace",
                 timeout=4,
                 check=False,
+                creationflags=(getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0),
             )
             text = (result.stdout or result.stderr or "").strip().splitlines()
             if text:
@@ -3398,7 +3455,6 @@ def launch_gui() -> int:
 
     service = OrchestratorService()
     splash = _make_splash(app)
-    apply_windows_dark_titlebar(splash)
     doctor_payload = _run_doctor_for_splash(service)
     controller = GuiController(service)
     doctor_status = str(doctor_payload["overall_status"]).lower()

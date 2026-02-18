@@ -823,6 +823,8 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     QListWidget#ProjectTileList {{
         border: none;
         background: transparent;
+        outline: none;
+        selection-background-color: transparent;
     }}
     QListWidget#ProjectTileList::item {{
         border: 1px solid {c['border']};
@@ -834,6 +836,12 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     QListWidget#ProjectTileList::item:selected {{
         border: 2px solid {c['accent']};
         background: transparent;
+        color: {c['text']};
+    }}
+    QListWidget#ProjectTileList::item:selected:active,
+    QListWidget#ProjectTileList::item:selected:!active {{
+        background: transparent;
+        color: {c['text']};
     }}
     QListWidget#ProjectTileList::item:hover {{
         border-color: {c['accent']};

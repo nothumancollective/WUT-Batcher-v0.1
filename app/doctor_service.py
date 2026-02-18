@@ -33,6 +33,12 @@ class DoctorReport:
     checks: List[DoctorCheck]
 
 
+def _no_window_creationflags() -> int:
+    if os.name != "nt":
+        return 0
+    return int(getattr(subprocess, "CREATE_NO_WINDOW", 0))
+
+
 def _overall_status(checks: List[DoctorCheck]) -> str:
     if any(check.status == STATUS_FAIL for check in checks):
         return STATUS_FAIL
@@ -287,6 +293,7 @@ def _list_windows_processes() -> Optional[Set[str]]:
         stderr=subprocess.PIPE,
         text=True,
         check=False,
+        creationflags=_no_window_creationflags(),
     )
     if result.returncode != 0:
         return None
@@ -342,6 +349,7 @@ def _check_zombies(kill_zombies: bool) -> DoctorCheck:
             stderr=subprocess.PIPE,
             text=True,
             check=False,
+            creationflags=_no_window_creationflags(),
         )
         if result.returncode != 0:
             failures.append(name)
