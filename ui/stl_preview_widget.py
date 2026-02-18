@@ -454,7 +454,7 @@ class StlPreviewWidget(QWidget):
 
         self._camera = self._view.camera()
         self._camera.lens().setPerspectiveProjection(45.0, 16.0 / 9.0, 0.01, 10000.0)
-        self._camera.setPosition(QVector3D(0.0, 0.0, 220.0))
+        self._camera.setPosition(QVector3D(0.0, 0.0, 80.0))
         self._camera.setViewCenter(QVector3D(0.0, 0.0, 0.0))
 
         self._orbit = QOrbitCameraController(self._root_entity)
@@ -589,7 +589,7 @@ class StlPreviewWidget(QWidget):
         size_y = max(0.001, max_y - min_y)
         size_z = max(0.001, max_z - min_z)
         radius = max(size_x, size_y, size_z) * 0.75
-        distance = max(80.0, radius * 3.2)
+        distance = max(26.0, radius * 1.125)
 
         self._camera.setViewCenter(center)
         self._camera.setPosition(QVector3D(center.x(), center.y(), center.z() + distance))

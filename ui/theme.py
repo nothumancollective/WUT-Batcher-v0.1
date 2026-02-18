@@ -282,44 +282,61 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         image: none;
         width: 0px;
         height: 0px;
-        border-left: 4px solid transparent;
-        border-right: 4px solid transparent;
-        border-bottom: 6px solid {c['muted']};
+        border-left: 5px solid transparent;
+        border-right: 5px solid transparent;
+        border-bottom: 7px solid {c['muted']};
     }}
     QSpinBox::down-arrow, QDoubleSpinBox::down-arrow, QAbstractSpinBox::down-arrow {{
         image: none;
         width: 0px;
         height: 0px;
-        border-left: 4px solid transparent;
-        border-right: 4px solid transparent;
-        border-top: 6px solid {c['muted']};
+        border-left: 5px solid transparent;
+        border-right: 5px solid transparent;
+        border-top: 7px solid {c['muted']};
     }}
-    QComboBox#BatchExportCombo {{
+    QComboBox#BatchExportCombo, QComboBox#BatchFieldCombo {{
         padding-right: 24px;
     }}
-    QComboBox#BatchExportCombo::drop-down {{
-        border: none;
+    QComboBox#BatchExportCombo::drop-down, QComboBox#BatchFieldCombo::drop-down {{
+        border-left: 1px solid {c['border']};
         width: 22px;
-        background: transparent;
+        background-color: #232323;
+        border-top-right-radius: {r['md']}px;
+        border-bottom-right-radius: {r['md']}px;
     }}
-    QComboBox#BatchExportCombo::down-arrow {{
+    QComboBox#BatchExportCombo::down-arrow, QComboBox#BatchFieldCombo::down-arrow {{
         image: none;
         width: 0px;
         height: 0px;
         border-left: 5px solid transparent;
         border-right: 5px solid transparent;
-        border-top: 6px solid {c['muted']};
-        margin-right: 6px;
+        border-top: 7px solid {c['muted']};
+        margin-right: 5px;
     }}
-    QComboBox#BatchExportCombo QAbstractItemView {{
+    QSpinBox[batchField="true"], QDoubleSpinBox[batchField="true"], QAbstractSpinBox[batchField="true"] {{
+        padding-right: 24px;
+    }}
+    QSpinBox[batchField="true"]::up-button, QSpinBox[batchField="true"]::down-button,
+    QDoubleSpinBox[batchField="true"]::up-button, QDoubleSpinBox[batchField="true"]::down-button,
+    QAbstractSpinBox[batchField="true"]::up-button, QAbstractSpinBox[batchField="true"]::down-button {{
+        width: 20px;
+    }}
+    QComboBox#BatchExportCombo QAbstractItemView, QComboBox#BatchFieldCombo QAbstractItemView {{
         background-color: #1b1b1b;
         color: {c['text']};
         border: 1px solid {c['border']};
+        border-radius: {r['sm']}px;
         outline: 0px;
         selection-background-color: #2a2a2a;
         selection-color: {c['text']};
+        padding: 2px;
     }}
-    QComboBox#BatchExportCombo:disabled {{
+    QComboBox#BatchExportCombo QAbstractItemView::item, QComboBox#BatchFieldCombo QAbstractItemView::item {{
+        min-height: 24px;
+        padding: 4px 8px;
+        border-radius: {r['sm']}px;
+    }}
+    QComboBox#BatchExportCombo:disabled, QComboBox#BatchFieldCombo:disabled {{
         color: {c['muted']};
         background-color: #1a1a1a;
     }}
@@ -337,6 +354,23 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     }}
     QLabel#IssueHint[severity="ok"] {{
         color: {c['success']};
+    }}
+    QLabel#BatchValidationHint {{
+        color: {c['muted']};
+        border: 1px solid {c['border']};
+        border-radius: {r['sm']}px;
+        background-color: #202020;
+        padding: 6px 8px;
+    }}
+    QLabel#BatchValidationHint[severity="warn"] {{
+        color: {c['warning_border']};
+        border: 1px solid #4a3d23;
+        background-color: rgba(125, 91, 34, 0.15);
+    }}
+    QLabel#BatchValidationHint[severity="fatal"] {{
+        color: {c['danger_border']};
+        border: 1px solid #4d2d2d;
+        background-color: rgba(110, 50, 50, 0.16);
     }}
     QLineEdit[fieldState="warn"], QComboBox[fieldState="warn"],
     QTextEdit[fieldState="warn"], QPlainTextEdit[fieldState="warn"] {{
@@ -456,7 +490,8 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         min-height: 28px;
         max-height: 28px;
         padding: 0px;
-        font-size: 12px;
+        font-size: 15px;
+        font-weight: 700;
     }}
     QPushButton#FieldResetButton[canReset="false"] {{
         color: transparent;
@@ -552,6 +587,11 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         font-size: 11px;
         font-weight: 600;
     }}
+    QLabel#BatchSummaryMeta {{
+        color: {c['muted']};
+        font-size: 11px;
+        font-weight: 600;
+    }}
     QLabel#SummaryChip {{
         background-color: #262626;
         color: {c['muted']};
@@ -563,6 +603,11 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     QFrame#ProjectActionBar {{
         background-color: #1a1a1a;
         border-top: 1px solid {c['border']};
+        border-radius: {r['md']}px;
+    }}
+    QFrame#BatchActionBar {{
+        background-color: #171717;
+        border: 1px solid {c['border']};
         border-radius: {r['md']}px;
     }}
     QLabel#ProjectStatusPill {{
@@ -595,6 +640,10 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         border: 1px solid {c['accent']};
     }}
     QLabel#ProjectStatusHint {{
+        color: {c['muted']};
+        font-size: 11px;
+    }}
+    QLabel#BatchActionHint {{
         color: {c['muted']};
         font-size: 11px;
     }}
@@ -766,6 +815,10 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         border: 1px solid #a9a9a9;
         color: #ffffff;
     }}
+    QPushButton[segment=\"true\"][batchField="true"] {{
+        min-height: 30px;
+        padding: 0px {max(int(s['sm']) + 1, 4)}px;
+    }}
     QPushButton#SweepButton[sweepActive="true"] {{
         border: 1px solid #4f8cff;
         color: #d9e7ff;
@@ -803,6 +856,68 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         border-color: {c['accent']};
         background-color: {c['surface']};
     }}
+    QPushButton#BatchPrimaryButton {{
+        background-color: #2a2a2a;
+        color: {c['text']};
+        border: 1px solid #555555;
+        border-radius: {r['md']}px;
+        min-height: 30px;
+        padding: 0px {s['md']}px;
+        font-weight: 700;
+    }}
+    QPushButton#BatchPrimaryButton:hover {{
+        border-color: {c['accent']};
+        background-color: #303030;
+    }}
+    QPushButton#BatchSecondaryButton {{
+        background-color: #222222;
+        color: {c['text']};
+        border: 1px solid {c['border']};
+        border-radius: {r['md']}px;
+        min-height: 30px;
+        padding: 0px {s['md']}px;
+        font-weight: 600;
+    }}
+    QPushButton#BatchSecondaryButton:hover {{
+        border-color: {c['accent']};
+        background-color: #272727;
+    }}
+    QPushButton#BatchRunButton {{
+        background-color: #222222;
+        color: {c['text']};
+        border: 1px solid {c['border']};
+        border-radius: {r['md']}px;
+        min-height: 30px;
+        padding: 0px {s['md']}px;
+        font-weight: 600;
+    }}
+    QPushButton#BatchRunButton:hover {{
+        border-color: {c['accent']};
+        background-color: #272727;
+    }}
+    QPushButton#BatchRunButton[runReady="true"] {{
+        background-color: #213327;
+        border: 1px solid #4f7f5c;
+        color: #d9f0de;
+    }}
+    QPushButton#BatchRunButton[runReady="true"]:hover {{
+        background-color: #27402f;
+        border-color: #5a8f69;
+    }}
+    QPushButton#BatchGhostButton {{
+        background-color: transparent;
+        color: {c['muted']};
+        border: 1px solid {c['border']};
+        border-radius: {r['md']}px;
+        min-height: 30px;
+        padding: 0px {s['md']}px;
+        font-weight: 600;
+    }}
+    QPushButton#BatchGhostButton:hover {{
+        color: {c['text']};
+        border-color: {c['accent']};
+        background-color: #1f1f1f;
+    }}
     QToolButton#ClearValueButton {{
         background-color: {c['surface2']};
         color: {c['muted']};
@@ -827,6 +942,15 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     QProgressBar::chunk {{
         background-color: {c['button_bg']};
         border-radius: {r['sm']}px;
+    }}
+    QProgressBar#BatchPreviewLoader {{
+        background-color: #1a1a1a;
+        border: 1px solid {c['border']};
+        border-radius: 999px;
+    }}
+    QProgressBar#BatchPreviewLoader::chunk {{
+        background-color: #4b4b4b;
+        border-radius: 999px;
     }}
     QStatusBar {{
         background-color: {c['sidebar']};
