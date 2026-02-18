@@ -5,11 +5,22 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
-from ui.form_builder import AccordionGroupBox, ContextFrame, ObjectFieldEditor, ScalarFieldEditor, SegmentedEnumInput
+from ui.form_builder import (
+    AccordionGroupBox,
+    ContextFrame,
+    ElidedFixedLabel,
+    NullableCodeEditorInput,
+    NullableListTableInput,
+    NullableVector4Input,
+    ObjectFieldEditor,
+    ScalarFieldEditor,
+    SegmentedEnumInput,
+)
+from ui.form_metrics import FORM_METRICS
 from ui.form_schema import FieldSpec, FormSchema, ModeStackSpec, build_project_form_schema, field_display_priority
 
 try:
-    from PySide6.QtCore import Qt, QTimer, Signal
+    from PySide6.QtCore import QPoint, Qt, QTimer, Signal
     from PySide6.QtGui import QDoubleValidator, QIntValidator
     from PySide6.QtWidgets import (
         QFrame,
@@ -139,6 +150,7 @@ class _FieldRow:
     start_edit: QLineEdit
     end_edit: QLineEdit
     steps_edit: QLineEdit
+    sweep_popup: QWidget
     helper_label: QLabel
     button_layout: bool
     sweep_capable: bool
@@ -150,6 +162,94 @@ class _SubgroupHeader:
     subgroup_name: str
     label: QLabel
     keys: set[str]
+
+
+class _ResponsiveFieldGrid(QWidget):
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._items: List[Tuple[str, QWidget]] = []
+        self._grid = QGridLayout(self)
+        self._grid.setContentsMargins(0, 0, 0, 0)
+        self._grid.setHorizontalSpacing(max(12, int(FORM_METRICS.column_gap)))
+        self._grid.setVerticalSpacing(max(8, int(FORM_METRICS.row_gap) + 1))
+        self._min_three_width = 1500
+
+    def add_cell(self, widget: QWidget) -> None:
+        self._items.append(("cell", widget))
+        self._relayout()
+
+    def add_full_width(self, widget: QWidget) -> None:
+        self._items.append(("full", widget))
+        self._relayout()
+
+    def resizeEvent(self, event) -> None:  # type: ignore[override]
+        super().resizeEvent(event)
+        self._relayout()
+
+    def _relayout(self) -> None:
+        while self._grid.count():
+            item = self._grid.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.setParent(self)
+        if not self._items:
+            return
+        cols = 3 if int(self.width()) >= int(self._min_three_width) else 2
+        row = 0
+        col = 0
+        for kind, widget in self._items:
+            if kind == "full":
+                if col != 0:
+                    row += 1
+                    col = 0
+                self._grid.addWidget(widget, row, 0, 1, cols)
+                row += 1
+                continue
+            self._grid.addWidget(widget, row, col)
+            col += 1
+            if col >= cols:
+                row += 1
+                col = 0
+        for index in range(max(cols, 1)):
+            self._grid.setColumnStretch(index, 1)
+
+
+class _SweepPopover(QFrame):
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent, Qt.Popup | Qt.FramelessWindowHint)
+        self.setObjectName("SweepPopover")
+        root = QVBoxLayout(self)
+        root.setContentsMargins(10, 8, 10, 10)
+        root.setSpacing(6)
+        title = QLabel("Sweep range")
+        title.setObjectName("IssuesPanelGroupTitle")
+        root.addWidget(title)
+        self._grid = QGridLayout()
+        self._grid.setContentsMargins(0, 0, 0, 0)
+        self._grid.setHorizontalSpacing(6)
+        self._grid.setVerticalSpacing(4)
+        root.addLayout(self._grid)
+
+    def bind_inputs(self, *, start: QLineEdit, end: QLineEdit, steps: QLineEdit) -> None:
+        start_label = QLabel("start")
+        end_label = QLabel("end")
+        steps_label = QLabel("steps")
+        for widget in (start, end, steps):
+            widget.setMinimumHeight(int(FORM_METRICS.control_height))
+            widget.setFixedWidth(max(88, int(FORM_METRICS.input_width // 2)))
+        self._grid.addWidget(start_label, 0, 0)
+        self._grid.addWidget(end_label, 0, 1)
+        self._grid.addWidget(steps_label, 0, 2)
+        self._grid.addWidget(start, 1, 0)
+        self._grid.addWidget(end, 1, 1)
+        self._grid.addWidget(steps, 1, 2)
+
+    def open_for(self, anchor: QWidget) -> None:
+        self.adjustSize()
+        pos = anchor.mapToGlobal(QPoint(0, anchor.height() + 6))
+        self.move(pos)
+        self.show()
+        self.raise_()
 
 
 class BatchParameterForm(QWidget):
@@ -179,6 +279,7 @@ class BatchParameterForm(QWidget):
         self._prev_visible_keys: set[str] = set()
         self._hint_widgets: List[QWidget] = []
         self._manual_highlight_widgets: List[QWidget] = []
+        self._manual_hint_restore: Dict[int, str] = {}
         self._compat_ui_state: Dict[str, Any] = {}
         self._blocked_keys: set[str] = set()
         self._hidden_ui_keys: set[str] = set()
@@ -186,7 +287,13 @@ class BatchParameterForm(QWidget):
         self._risk_original_tooltips: Dict[int, str] = {}
         self._subgroup_headers: List[_SubgroupHeader] = []
         self._blink_tokens_by_key: Dict[str, int] = {}
-        self._control_height = 30
+        self._group_reset_buttons: Dict[str, QPushButton] = {}
+        self._group_advanced_buttons: Dict[str, QPushButton] = {}
+        self._advanced_keys_by_group: Dict[str, set[str]] = {}
+        self._advanced_expanded_by_group: Dict[str, bool] = {}
+        self._group_grids: Dict[str, _ResponsiveFieldGrid] = {}
+        self._policy_default_suggestions: Dict[str, Any] = {}
+        self._control_height = int(FORM_METRICS.control_height)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -249,6 +356,13 @@ class BatchParameterForm(QWidget):
                 return _SingleColumnObjectEditor(field)
             return ObjectFieldEditor(field, use_toggle=(field.key == "Mesh.Enclosure"))
         return ScalarFieldEditor(field)
+
+    @staticmethod
+    def _is_tall_scalar_editor(editor: QWidget) -> bool:
+        if not isinstance(editor, ScalarFieldEditor):
+            return False
+        value_widget = editor.value_widget()
+        return isinstance(value_widget, (NullableVector4Input, NullableListTableInput, NullableCodeEditorInput))
 
     def _sweep_control_size(self, base_editor: QWidget) -> tuple[int, int]:
         width = 0
@@ -393,6 +507,42 @@ class BatchParameterForm(QWidget):
             self._group_boxes[group_name] = box
             self.content_layout.addWidget(box)
 
+            group_fields = list(grouped.get(group_name, []))
+            self._advanced_keys_by_group[str(group_name)] = {
+                str(field.key) for field in group_fields if bool(getattr(field, "advanced", False))
+            }
+            self._advanced_expanded_by_group.setdefault(str(group_name), False)
+
+            controls_wrap = QWidget()
+            controls_layout = QHBoxLayout(controls_wrap)
+            controls_layout.setContentsMargins(0, 0, 0, 0)
+            controls_layout.setSpacing(6)
+            controls_layout.addStretch(1)
+            advanced_btn = QPushButton("Advanced...")
+            advanced_btn.setProperty("segment", "true")
+            advanced_btn.setCheckable(True)
+            advanced_btn.setChecked(False)
+            advanced_btn.setFixedWidth(max(96, int(FORM_METRICS.action_width * 2)))
+            advanced_btn.setMinimumHeight(self._control_height)
+            advanced_btn.toggled.connect(
+                lambda enabled, target_group=str(group_name): self._on_group_advanced_toggled(target_group, bool(enabled))
+            )
+            controls_layout.addWidget(advanced_btn, 0, Qt.AlignRight)
+            reset_btn = QPushButton("Reset overrides in this block")
+            reset_btn.setProperty("segment", "true")
+            reset_btn.setMinimumHeight(self._control_height)
+            reset_btn.clicked.connect(
+                lambda _checked=False, target_group=str(group_name): self.reset_overrides_in_block(target_group)
+            )
+            controls_layout.addWidget(reset_btn, 0, Qt.AlignRight)
+            box.body_layout().addWidget(controls_wrap)
+            self._group_reset_buttons[str(group_name)] = reset_btn
+            self._group_advanced_buttons[str(group_name)] = advanced_btn
+
+            field_grid = _ResponsiveFieldGrid()
+            box.body_layout().addWidget(field_grid)
+            self._group_grids[str(group_name)] = field_grid
+
             last_subgroup = None
             ordered_fields = sorted(
                 grouped.get(group_name, []),
@@ -416,7 +566,7 @@ class BatchParameterForm(QWidget):
                 if subgroup_name != "General" and subgroup_name != last_subgroup:
                     subgroup_label = QLabel(subgroup_name)
                     subgroup_label.setObjectName("IssuesPanelGroupTitle")
-                    box.body_layout().addWidget(subgroup_label)
+                    field_grid.add_full_width(subgroup_label)
                     self._subgroup_headers.append(
                         _SubgroupHeader(
                             group_name=str(group_name),
@@ -428,65 +578,78 @@ class BatchParameterForm(QWidget):
                     last_subgroup = subgroup_name
                 if subgroup_name == "General":
                     last_subgroup = "General"
-                self._build_row(box, field, group_name)
+                self._build_row(field_grid, field, group_name)
+            has_advanced = bool(self._advanced_keys_by_group.get(str(group_name)))
+            advanced_btn.setVisible(has_advanced)
+            advanced_btn.setEnabled(has_advanced)
+        self._update_group_reset_buttons()
+        self._refresh_visibility()
 
-    def _build_row(self, box: AccordionGroupBox, field: FieldSpec, group_name: str) -> None:
+    def _build_row(self, grid: _ResponsiveFieldGrid, field: FieldSpec, group_name: str) -> None:
         key = str(field.key)
         row_wrap = QWidget()
+        row_wrap.setObjectName("BatchFieldCell")
         row_root = QVBoxLayout(row_wrap)
         row_root.setContentsMargins(0, 0, 0, 0)
-        row_root.setSpacing(2)
+        row_root.setSpacing(max(2, int(FORM_METRICS.row_gap) - 1))
 
         row = QWidget()
         row_layout = QHBoxLayout(row)
-        row_layout.setContentsMargins(0, 0, 0, 0)
-        row_layout.setSpacing(8)
-
-        label = QLabel(str(field.label))
-        label.setMinimumWidth(250)
-        label.setWordWrap(False)
-        label.setMinimumHeight(self._control_height)
-        row_layout.addWidget(label, 0, Qt.AlignVCenter)
+        row_layout.setContentsMargins(0, 0, 10, 0)
+        row_layout.setSpacing(int(FORM_METRICS.label_to_input_gap))
 
         base_editor = self._make_base_editor(field)
+        is_tall_control = self._is_tall_scalar_editor(base_editor)
+        if isinstance(base_editor, ScalarFieldEditor) and not is_tall_control:
+            base_editor.setFixedWidth(int(FORM_METRICS.editor_total_width))
         if hasattr(base_editor, "changed"):
             base_editor.changed.connect(lambda *_ignored, row_key=key: self._on_field_edited(row_key))  # type: ignore[attr-defined]
-        row_layout.addWidget(base_editor, 0, Qt.AlignLeft | Qt.AlignVCenter)
-        sweep_width, sweep_height = self._sweep_control_size(base_editor)
 
-        sweep_toggle = QPushButton("Sweep")
+        sweep_toggle = QPushButton("\u2195")
+        sweep_toggle.setObjectName("SweepButton")
         sweep_toggle.setProperty("segment", "true")
         sweep_toggle.setCheckable(True)
-        sweep_toggle.setFixedSize(sweep_width, sweep_height)
-        row_layout.addWidget(sweep_toggle, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        sweep_toggle.setFixedSize(int(FORM_METRICS.action_width), self._control_height)
+        sweep_toggle.setToolTip("Sweep range")
 
+        sweep_popup = _SweepPopover(self)
         start_edit = QLineEdit()
         start_edit.setPlaceholderText("start")
-        start_edit.setFixedSize(sweep_width, sweep_height)
         start_edit.setValidator(QDoubleValidator(start_edit))
-        start_edit.setVisible(False)
         start_edit.textChanged.connect(lambda _text, row_key=key: self._on_field_edited(row_key))
-        row_layout.addWidget(start_edit, 0, Qt.AlignLeft | Qt.AlignVCenter)
 
         end_edit = QLineEdit()
         end_edit.setPlaceholderText("end")
-        end_edit.setFixedSize(sweep_width, sweep_height)
         end_edit.setValidator(QDoubleValidator(end_edit))
-        end_edit.setVisible(False)
         end_edit.textChanged.connect(lambda _text, row_key=key: self._on_field_edited(row_key))
-        row_layout.addWidget(end_edit, 0, Qt.AlignLeft | Qt.AlignVCenter)
 
         steps_edit = QLineEdit("3")
         steps_edit.setPlaceholderText("steps")
-        steps_edit.setFixedSize(sweep_width, sweep_height)
         steps_edit.setValidator(QIntValidator(1, 9999, steps_edit))
-        steps_edit.setVisible(False)
         steps_edit.textChanged.connect(lambda _text, row_key=key: self._on_field_edited(row_key))
-        row_layout.addWidget(steps_edit, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        sweep_popup.bind_inputs(start=start_edit, end=end_edit, steps=steps_edit)
         enum_options = _enum_numeric_options(field)
         if enum_options:
             start_edit.setValidator(QIntValidator(int(min(enum_options)), int(max(enum_options)), start_edit))
             end_edit.setValidator(QIntValidator(int(min(enum_options)), int(max(enum_options)), end_edit))
+
+        if is_tall_control:
+            row_wrap.setProperty("tallControl", "true")
+            top_label = QLabel(str(field.label))
+            top_label.setObjectName("ContextTitle")
+            top_label.setToolTip(str(field.label or ""))
+            row_root.addWidget(top_label, 0, Qt.AlignLeft)
+            row_layout.addWidget(base_editor, 0, Qt.AlignLeft | Qt.AlignTop)
+            if self._supports_sweep(field):
+                row_layout.addWidget(sweep_toggle, 0, Qt.AlignLeft | Qt.AlignTop)
+            else:
+                sweep_toggle.setVisible(False)
+        else:
+            label = ElidedFixedLabel(str(field.label), int(FORM_METRICS.label_width))
+            label.setMinimumHeight(self._control_height)
+            row_layout.addWidget(label, 0, Qt.AlignVCenter)
+            row_layout.addWidget(base_editor, 0, Qt.AlignLeft | Qt.AlignVCenter)
+            row_layout.addWidget(sweep_toggle, 0, Qt.AlignLeft | Qt.AlignVCenter)
         row_layout.addStretch(1)
         row_root.addWidget(row)
 
@@ -497,7 +660,10 @@ class BatchParameterForm(QWidget):
         helper.setWordWrap(True)
         row_root.addWidget(helper)
 
-        box.body_layout().addWidget(row_wrap)
+        if field.widget_kind == "object" or is_tall_control:
+            grid.add_full_width(row_wrap)
+        else:
+            grid.add_cell(row_wrap)
         row_data = _FieldRow(
             field=field,
             label=str(field.label),
@@ -508,12 +674,14 @@ class BatchParameterForm(QWidget):
             start_edit=start_edit,
             end_edit=end_edit,
             steps_edit=steps_edit,
+            sweep_popup=sweep_popup,
             helper_label=helper,
             button_layout=self._is_button_layout(field),
             sweep_capable=self._supports_sweep(field),
         )
         self._rows[key] = row_data
         self._wire_row_blocked_interactions(key)
+        sweep_toggle.clicked.connect(lambda checked, row_key=key: self._on_sweep_clicked(row_key, bool(checked)))
         sweep_toggle.toggled.connect(lambda enabled, row_key=key: self._on_sweep_toggled(row_key, enabled))
 
     def _open_first_visible_group(self) -> None:
@@ -591,6 +759,46 @@ class BatchParameterForm(QWidget):
         if hasattr(editor, "set_value"):
             editor.set_value(value)  # type: ignore[attr-defined]
 
+    def _clear_row_override(self, row: _FieldRow) -> bool:
+        was_set, _value = self._current_state(row)
+        changed = bool(was_set)
+        editor = row.base_editor
+        editor.blockSignals(True)
+        try:
+            if hasattr(editor, "set_is_set"):
+                editor.set_is_set(False)  # type: ignore[attr-defined]
+            elif hasattr(editor, "clear"):
+                editor.clear()  # type: ignore[attr-defined]
+        finally:
+            editor.blockSignals(False)
+        return changed
+
+    def _group_has_overrides(self, group_name: str) -> bool:
+        for row in self._rows.values():
+            if str(row.group_name) != str(group_name):
+                continue
+            is_set, _value = self._current_state(row)
+            if is_set:
+                return True
+        return False
+
+    def _update_group_reset_buttons(self) -> None:
+        for group_name, button in self._group_reset_buttons.items():
+            enabled = self._group_has_overrides(group_name)
+            button.setEnabled(enabled)
+            button.setVisible(True)
+
+    def reset_overrides_in_block(self, group_name: str) -> None:
+        changed = False
+        for row in self._rows.values():
+            if str(row.group_name) != str(group_name):
+                continue
+            changed = self._clear_row_override(row) or changed
+        self._update_group_reset_buttons()
+        if changed:
+            self.clear_manual_highlights()
+            self.changed.emit()
+
     def _set_editor_locked(self, row: _FieldRow, locked: bool) -> None:
         editor = row.base_editor
         if isinstance(editor, ScalarFieldEditor):
@@ -608,10 +816,14 @@ class BatchParameterForm(QWidget):
             value_widget = editor.value_widget()
             if isinstance(value_widget, QWidget):
                 targets.append(value_widget)
-            for attr in ("edit", "combo", "segment"):
+            for attr in ("edit", "combo", "segment", "spin", "table"):
                 maybe = getattr(value_widget, attr, None)
                 if isinstance(maybe, QWidget):
                     targets.append(maybe)
+                if attr == "spin" and hasattr(maybe, "lineEdit"):
+                    line_edit = maybe.lineEdit()
+                    if isinstance(line_edit, QWidget):
+                        targets.append(line_edit)
         for widget in self._dedup_widgets(targets):
             widget.setProperty("baseLockedBySweep", bool(active))
             self._repolish(widget)
@@ -706,6 +918,18 @@ class BatchParameterForm(QWidget):
                 maybe = getattr(value_widget, "segment")
                 if isinstance(maybe, QWidget):
                     targets.extend(self._segment_hint_targets(maybe))
+            if hasattr(value_widget, "spin"):
+                maybe = getattr(value_widget, "spin")
+                if isinstance(maybe, QWidget):
+                    targets.append(maybe)
+                    if hasattr(maybe, "lineEdit"):
+                        line_edit = maybe.lineEdit()
+                        if isinstance(line_edit, QWidget):
+                            targets.append(line_edit)
+            if hasattr(value_widget, "table"):
+                maybe = getattr(value_widget, "table")
+                if isinstance(maybe, QWidget):
+                    targets.append(maybe)
         elif isinstance(editor, ObjectFieldEditor):
             targets.append(editor)
             if isinstance(editor.toggle, QWidget):
@@ -717,6 +941,38 @@ class BatchParameterForm(QWidget):
                 if isinstance(maybe, QWidget):
                     targets.extend(self._segment_hint_targets(maybe))
         return self._dedup_widgets(targets)
+
+    def _list_widget_for_key(self, key: str) -> Optional[NullableListTableInput]:
+        row = self._rows.get(str(key))
+        if row is None:
+            return None
+        if not isinstance(row.base_editor, ScalarFieldEditor):
+            return None
+        value_widget = row.base_editor.value_widget()
+        if isinstance(value_widget, NullableListTableInput):
+            return value_widget
+        return None
+
+    def _sync_interface_list_lengths(self, changed_key: str) -> None:
+        keys = ("Mesh.SubdomainSlices", "Mesh.InterfaceOffset", "Mesh.InterfaceDraw")
+        trigger = str(changed_key or "").strip()
+        if trigger not in keys:
+            return
+        widgets = {key: self._list_widget_for_key(key) for key in keys}
+        lengths = [widget.entry_count() for widget in widgets.values() if widget is not None]
+        if not lengths:
+            return
+        target = max(int(length) for length in lengths)
+        if target <= 0:
+            return
+        for key, widget in widgets.items():
+            if widget is None or key == trigger:
+                continue
+            widget.blockSignals(True)
+            try:
+                widget.set_entry_count(target)
+            finally:
+                widget.blockSignals(False)
 
     @staticmethod
     def _repolish(widget: QWidget) -> None:
@@ -773,12 +1029,34 @@ class BatchParameterForm(QWidget):
             self._repolish(widget)
             self._hint_widgets.append(widget)
 
+    def _on_group_advanced_toggled(self, group_name: str, enabled: bool) -> None:
+        self._advanced_expanded_by_group[str(group_name)] = bool(enabled)
+        _current, _changed_hidden = self._refresh_visibility()
+        self.changed.emit()
+
+    def _on_sweep_clicked(self, key: str, checked: bool) -> None:
+        if not checked:
+            return
+        row = self._rows.get(str(key))
+        if row is None:
+            return
+        # Defer popup opening until after the click event completes; otherwise
+        # Qt.Popup can immediately close due to the same mouse event.
+        QTimer.singleShot(0, lambda r=row: self._open_sweep_popup(r))
+
+    def _open_sweep_popup(self, row: _FieldRow) -> None:
+        popup = row.sweep_popup
+        if isinstance(popup, _SweepPopover):
+            popup.open_for(row.sweep_toggle)
+
     def _on_field_edited(self, key: str) -> None:
         self.clear_manual_highlights()
         row = self._rows.get(str(key))
         if row is not None:
             self._last_changed_key = str(key)
             self._active_group_name = row.group_name
+        self._sync_interface_list_lengths(str(key))
+        self._update_group_reset_buttons()
         self.changed.emit()
 
     @staticmethod
@@ -788,7 +1066,9 @@ class BatchParameterForm(QWidget):
 
     def _field_is_set(self, key: str) -> bool:
         row = self._rows.get(str(key))
-        if row is None or row.container.isHidden():
+        if row is None:
+            return False
+        if str(row.container.property("compatVisible") or "false").lower() != "true":
             return False
         is_set, _value = self._current_state(row)
         return bool(is_set)
@@ -934,6 +1214,8 @@ class BatchParameterForm(QWidget):
 
     def _clear_hidden_row_state(self, row: _FieldRow, key: str) -> bool:
         changed = False
+        if row.sweep_popup.isVisible():
+            row.sweep_popup.hide()
         row.sweep_toggle.blockSignals(True)
         if row.sweep_toggle.isChecked():
             changed = True
@@ -970,6 +1252,7 @@ class BatchParameterForm(QWidget):
         throat_mode = self._controller_value("Throat.Profile")
         effective_visible: set[str] = set()
         changed_hidden = False
+        group_has_compatible_rows: Dict[str, bool] = {}
 
         for key, row in self._rows.items():
             allowed = (not self._visible_keys or key in self._visible_keys) and key not in self._project_fixed_keys
@@ -977,9 +1260,17 @@ class BatchParameterForm(QWidget):
                 allowed = False
             if key == "R-OSSE":
                 allowed = bool(allowed and throat_mode == 2)
-            is_visible = bool(allowed)
+            if allowed:
+                group_has_compatible_rows[str(row.group_name)] = True
+            advanced_keys = self._advanced_keys_by_group.get(str(row.group_name), set())
+            advanced_visible = bool(
+                (key not in advanced_keys) or self._advanced_expanded_by_group.get(str(row.group_name), False)
+            )
+            is_visible = bool(allowed and advanced_visible)
             is_locked = bool(key in self._locked_keys or key in self._blocked_keys)
             row.container.setVisible(is_visible)
+            row.container.setProperty("rowVisible", "true" if is_visible else "false")
+            row.container.setProperty("compatVisible", "true" if allowed else "false")
             row.base_editor.setProperty("compatBlocked", "true" if key in self._blocked_keys else "false")
             self._repolish(row.base_editor)
             can_sweep = bool(allowed and row.sweep_capable and (key in self._sweepable_keys) and (not is_locked))
@@ -991,27 +1282,40 @@ class BatchParameterForm(QWidget):
             if not can_sweep and row.sweep_toggle.isChecked():
                 row.sweep_toggle.setChecked(False)
 
-            show_sweep_inputs = bool(row.sweep_toggle.isChecked() and can_sweep)
-            self._set_editor_locked(row, bool(is_locked or show_sweep_inputs))
-            self._set_editor_sweep_visual(row, show_sweep_inputs)
-            row.start_edit.setVisible(show_sweep_inputs)
-            row.end_edit.setVisible(show_sweep_inputs)
-            row.steps_edit.setVisible(show_sweep_inputs)
-            row.start_edit.setEnabled(show_sweep_inputs)
-            row.end_edit.setEnabled(show_sweep_inputs)
-            row.steps_edit.setEnabled(show_sweep_inputs)
+            sweep_active = bool(row.sweep_toggle.isChecked() and can_sweep)
+            self._set_editor_locked(row, bool(is_locked or sweep_active))
+            self._set_editor_sweep_visual(row, sweep_active)
+            row.start_edit.setEnabled(can_sweep)
+            row.end_edit.setEnabled(can_sweep)
+            row.steps_edit.setEnabled(can_sweep)
+            if (not is_visible) or (not can_sweep):
+                row.sweep_popup.hide()
 
-            if not is_visible:
+            if not bool(allowed):
                 changed_hidden = self._clear_hidden_row_state(row, key) or changed_hidden
             if allowed and is_visible:
                 effective_visible.add(key)
 
         for group_name, box in self._group_boxes.items():
-            any_visible = any((row.group_name == group_name) and (not row.container.isHidden()) for row in self._rows.values())
-            box.setVisible(any_visible)
+            any_visible = any(
+                (row.group_name == group_name)
+                and (str(row.container.property("rowVisible") or "false").lower() == "true")
+                for row in self._rows.values()
+            )
+            box.setVisible(bool(any_visible or group_has_compatible_rows.get(str(group_name), False)))
+            advanced_btn = self._group_advanced_buttons.get(str(group_name))
+            if advanced_btn is not None:
+                has_advanced = bool(self._advanced_keys_by_group.get(str(group_name)))
+                advanced_btn.blockSignals(True)
+                advanced_btn.setChecked(bool(self._advanced_expanded_by_group.get(str(group_name), False)))
+                advanced_btn.blockSignals(False)
+                advanced_btn.setVisible(bool(has_advanced))
+                advanced_btn.setEnabled(bool(has_advanced))
         for header in self._subgroup_headers:
             visible = any(
-                (key in self._rows) and (not self._rows[key].container.isHidden()) for key in list(header.keys or set())
+                (key in self._rows)
+                and (str(self._rows[key].container.property("rowVisible") or "false").lower() == "true")
+                for key in list(header.keys or set())
             )
             header.label.setVisible(bool(visible))
 
@@ -1028,6 +1332,7 @@ class BatchParameterForm(QWidget):
             finally:
                 self._accordion_sync = False
             keep.set_collapsed(False)
+        self._update_group_reset_buttons()
         return effective_visible, changed_hidden
 
     def _apply_blocked_option_state(self) -> None:
@@ -1050,12 +1355,9 @@ class BatchParameterForm(QWidget):
         can_show = bool(enabled and row.sweep_toggle.isEnabled() and not row.container.isHidden())
         row.sweep_toggle.setProperty("sweepActive", bool(can_show))
         self._repolish(row.sweep_toggle)
-        row.start_edit.setVisible(can_show)
-        row.end_edit.setVisible(can_show)
-        row.steps_edit.setVisible(can_show)
-        row.start_edit.setEnabled(can_show)
-        row.end_edit.setEnabled(can_show)
-        row.steps_edit.setEnabled(can_show)
+        row.start_edit.setEnabled(row.sweep_toggle.isEnabled())
+        row.end_edit.setEnabled(row.sweep_toggle.isEnabled())
+        row.steps_edit.setEnabled(row.sweep_toggle.isEnabled())
         row_locked = key in self._locked_keys
         self._set_editor_locked(row, bool(row_locked or can_show))
         self._set_editor_sweep_visual(row, can_show)
@@ -1081,6 +1383,7 @@ class BatchParameterForm(QWidget):
         else:
             self._blink_tokens_by_key[str(key)] = int(self._blink_tokens_by_key.get(str(key), 0)) + 1
             self._set_blink_state(row, False)
+            row.sweep_popup.hide()
         self.changed.emit()
 
     def _blink_base_editor(self, row: _FieldRow, key: str) -> None:
@@ -1110,7 +1413,7 @@ class BatchParameterForm(QWidget):
     def selected_params_payload(self) -> Dict[str, Any]:
         payload: Dict[str, Any] = {}
         for key, row in self._rows.items():
-            if row.container.isHidden():
+            if str(row.container.property("compatVisible") or "false").lower() != "true":
                 continue
             is_set, value = self._current_state(row)
             payload[key] = value if is_set else None
@@ -1119,7 +1422,9 @@ class BatchParameterForm(QWidget):
     def sweeps_payload(self) -> Dict[str, Dict[str, Any]]:
         payload: Dict[str, Dict[str, Any]] = {}
         for key, row in self._rows.items():
-            if row.container.isHidden() or row.sweep_toggle.isHidden() or not row.sweep_toggle.isChecked():
+            if str(row.container.property("compatVisible") or "false").lower() != "true":
+                continue
+            if row.sweep_toggle.isHidden() or not row.sweep_toggle.isChecked():
                 continue
             start = _to_float(row.start_edit.text())
             end = _to_float(row.end_edit.text())
@@ -1147,6 +1452,8 @@ class BatchParameterForm(QWidget):
         raw = dict(payload or {})
         for key, row in self._rows.items():
             self._set_editor_value(row, raw.get(key))
+        self._sync_interface_list_lengths("Mesh.SubdomainSlices")
+        self._update_group_reset_buttons()
         self.clear_manual_highlights()
 
     def set_sweeps(self, payload: Dict[str, Any]) -> None:
@@ -1164,6 +1471,7 @@ class BatchParameterForm(QWidget):
             row.end_edit.setText("" if spec.get("end") is None else str(spec.get("end")))
             steps = spec.get("steps", 3)
             row.steps_edit.setText("" if steps is None else str(steps))
+        self._update_group_reset_buttons()
         self.clear_manual_highlights()
 
     @staticmethod
@@ -1191,9 +1499,11 @@ class BatchParameterForm(QWidget):
 
     def clear_manual_highlights(self) -> None:
         for widget in list(self._manual_highlight_widgets):
-            widget.setProperty("compatCauseFlash", "false")
+            restore_value = self._manual_hint_restore.get(id(widget), "false")
+            widget.setProperty("disclosureHint", restore_value)
             self._repolish(widget)
         self._manual_highlight_widgets = []
+        self._manual_hint_restore = {}
         for row in self._rows.values():
             if row.helper_label.isVisible() and "Use defaults" in str(row.helper_label.text() or ""):
                 row.helper_label.setText("")
@@ -1212,7 +1522,10 @@ class BatchParameterForm(QWidget):
                 continue
             targets = self._iter_hint_targets(row) or [row.base_editor]
             for widget in targets:
-                widget.setProperty("compatCauseFlash", "true")
+                widget_id = id(widget)
+                if widget_id not in self._manual_hint_restore:
+                    self._manual_hint_restore[widget_id] = str(widget.property("disclosureHint") or "false")
+                widget.setProperty("disclosureHint", "true")
                 self._repolish(widget)
                 self._manual_highlight_widgets.append(widget)
             row.helper_label.setText("Use defaults available for run.")
@@ -1263,6 +1576,50 @@ class BatchParameterForm(QWidget):
                 merged[key] = raw_value
         self.set_selected_params(merged)
 
+    @staticmethod
+    def _flatten_policy_default_values(defaults: Mapping[str, Any]) -> Dict[str, Any]:
+        flat: Dict[str, Any] = {}
+        for raw_key, raw_value in dict(defaults or {}).items():
+            key = str(raw_key).strip()
+            if not key:
+                continue
+            if key in {"R-OSSE", "Mesh.Enclosure"} and isinstance(raw_value, Mapping):
+                for sub_key, sub_value in dict(raw_value).items():
+                    token = f"{key}.{str(sub_key).strip()}"
+                    if token.strip("."):
+                        flat[token] = sub_value
+                continue
+            flat[key] = raw_value
+        return flat
+
+    def _apply_policy_default_suggestions(self) -> None:
+        for key, row in self._rows.items():
+            editor = row.base_editor
+            if isinstance(editor, ScalarFieldEditor):
+                if key in self._policy_default_suggestions:
+                    editor.set_policy_suggested_default(self._policy_default_suggestions[key], source="policy_minimal")
+                else:
+                    editor.clear_policy_suggested_default()
+                continue
+            property_editors = getattr(editor, "property_editors", None)
+            if not isinstance(property_editors, dict):
+                continue
+            for property_key, property_editor in property_editors.items():
+                if not isinstance(property_editor, ScalarFieldEditor):
+                    continue
+                p_key = str(property_key)
+                if p_key in self._policy_default_suggestions:
+                    property_editor.set_policy_suggested_default(
+                        self._policy_default_suggestions[p_key],
+                        source="policy_minimal",
+                    )
+                else:
+                    property_editor.clear_policy_suggested_default()
+
+    def set_policy_default_suggestions(self, defaults: Mapping[str, Any]) -> None:
+        self._policy_default_suggestions = self._flatten_policy_default_values(defaults)
+        self._apply_policy_default_suggestions()
+
     def set_from_batch(self, batch: Any) -> None:
         selected_payload: Dict[str, Any] = {}
         for key, selection in dict(getattr(batch, "selected_params", {}) or {}).items():
@@ -1296,6 +1653,14 @@ class BatchParameterForm(QWidget):
                 return value_widget.edit  # type: ignore[attr-defined]
         return None
 
+    def value_widget_for_key(self, key: str) -> Optional[QWidget]:
+        row = self._rows.get(str(key))
+        if row is None:
+            return None
+        if isinstance(row.base_editor, ScalarFieldEditor):
+            return row.base_editor.value_widget()
+        return row.base_editor
+
     def field_label_map(self) -> Dict[str, str]:
         return {key: row.label for key, row in self._rows.items()}
 
@@ -1307,7 +1672,7 @@ class BatchParameterForm(QWidget):
         row = self._rows.get(str(key))
         if row is None:
             return None
-        return row.start_edit
+        return row.sweep_popup
 
     def sweep_inputs_for_key(self, key: str) -> Optional[Dict[str, QLineEdit]]:
         row = self._rows.get(str(key))
@@ -1332,6 +1697,9 @@ class BatchParameterForm(QWidget):
     def group_name_for_key(self, key: str) -> Optional[str]:
         row = self._rows.get(str(key))
         return None if row is None else row.group_name
+
+    def block_reset_button_for_group(self, group_name: str) -> Optional[QPushButton]:
+        return self._group_reset_buttons.get(str(group_name))
 
     def last_changed_key(self) -> Optional[str]:
         value = str(self._last_changed_key or "").strip()

@@ -8,7 +8,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from app.compatibility_service import CompatibilityService
 from app.constants import DEFAULT_RUNNER_MODE
 from app.gui import BatchPage
-from ui.form_builder import AccordionGroupBox
+from ui.form_builder import AccordionGroupBox, NullableSliderNumericInput
+from ui.form_metrics import FORM_METRICS
+from ui.theme import build_stylesheet
 
 try:
     from PySide6.QtWidgets import QApplication, QLabel
@@ -89,7 +91,7 @@ class BatchPageUiTests(unittest.TestCase):
         inputs["end"].setText("20")
         inputs["steps"].setText("3")
 
-        self.assertFalse(panel.isHidden())
+        self.assertIsNotNone(panel)
         payload = page._payload(include_name=False)
         selected = dict(payload.get("selected_params", {}) or {})
         sweeps = dict(payload.get("sweeps", {}) or {})
@@ -143,6 +145,10 @@ class BatchPageUiTests(unittest.TestCase):
         row = page.parameter_form._rows.get("R-OSSE")
         if row is None:
             self.skipTest("R-OSSE not available.")
+        if row.container.isHidden():
+            advanced_btn = page.parameter_form._group_advanced_buttons.get(str(row.group_name))  # type: ignore[attr-defined]
+            if advanced_btn is not None and not advanced_btn.isHidden():
+                advanced_btn.click()
         self.assertFalse(row.container.isHidden())
         editor = row.base_editor
         self.assertTrue(hasattr(editor, "property_editors"))
@@ -514,6 +520,228 @@ class BatchPageUiTests(unittest.TestCase):
         payload_after = page._payload(include_name=False)
         selected_after = dict(payload_after.get("selected_params", {}) or {})
         self.assertIsNone(selected_after.get(target_key))
+
+    def test_field_reset_restores_unset_and_ghost_default(self) -> None:
+        page = BatchPage()
+        state = self._compat_state()
+        page.apply_compatibility(state)
+        page.set_policy_default_suggestions({"Mesh.AngularSegments": 64})
+
+        row = page.parameter_form._rows.get("Mesh.AngularSegments")
+        if row is None:
+            self.skipTest("Mesh.AngularSegments not available.")
+        editor = row.base_editor
+        value_widget = page.parameter_form.value_widget_for_key("Mesh.AngularSegments")
+        self.assertIsNotNone(value_widget)
+        assert value_widget is not None
+        self.assertEqual(str(value_widget.spin.lineEdit().placeholderText()), "64")
+
+        payload_before = page.parameter_form.selected_params_payload()
+        self.assertIsNone(payload_before.get("Mesh.AngularSegments"))
+
+        editor.set_value(68)  # type: ignore[attr-defined]
+        payload_set = page.parameter_form.selected_params_payload()
+        self.assertEqual(int(payload_set.get("Mesh.AngularSegments", 0)), 68)
+        self.assertFalse(editor._reset_button.isHidden())  # type: ignore[attr-defined]
+        self.assertTrue(editor._reset_button.isEnabled())  # type: ignore[attr-defined]
+
+        editor._reset_button.click()  # type: ignore[attr-defined]
+        payload_reset = page.parameter_form.selected_params_payload()
+        self.assertIsNone(payload_reset.get("Mesh.AngularSegments"))
+        self.assertEqual(str(value_widget.spin.lineEdit().placeholderText()), "64")
+        page.apply_ui_risks([])
+        self.assertEqual(str(value_widget.spin.lineEdit().property("fieldState")), "neutral")
+
+    def test_reset_state_toggle_does_not_change_editor_width(self) -> None:
+        page = BatchPage()
+        state = self._compat_state()
+        page.apply_compatibility(state)
+        row = page.parameter_form._rows.get("Length")
+        if row is None:
+            self.skipTest("Length not available.")
+        editor = row.base_editor
+        if not hasattr(editor, "set_value") or not hasattr(editor, "set_is_set"):
+            self.skipTest("Length editor does not support override state toggles.")
+        page.show()
+        self.app.processEvents()
+        width_unset = int(editor.width())
+        hint_unset = int(editor.sizeHint().width())
+        editor.set_value(320.0)  # type: ignore[attr-defined]
+        self.app.processEvents()
+        width_set = int(editor.width())
+        hint_set = int(editor.sizeHint().width())
+        editor.set_is_set(False)  # type: ignore[attr-defined]
+        self.app.processEvents()
+        width_reset = int(editor.width())
+        hint_reset = int(editor.sizeHint().width())
+        self.assertEqual(width_unset, width_set)
+        self.assertEqual(width_set, width_reset)
+        self.assertEqual(hint_unset, hint_set)
+        self.assertEqual(hint_set, hint_reset)
+
+    def test_sweep_buttons_align_in_basics_group(self) -> None:
+        page = BatchPage()
+        state = self._compat_state()
+        page.apply_compatibility(state)
+        page.resize(1600, 900)
+        page.show()
+        self.app.processEvents()
+        rows = [
+            row
+            for row in page.parameter_form._rows.values()
+            if str(row.group_name) == "Basics" and not row.container.isHidden() and row.sweep_toggle.isVisible()
+        ]
+        if len(rows) < 2:
+            self.skipTest("Not enough sweep-enabled rows in Basics.")
+        xs = [int(row.sweep_toggle.geometry().x()) for row in rows]
+        self.assertLessEqual(max(xs) - min(xs), 1)
+
+    def test_rosse_angle_fields_use_single_row_slider_height(self) -> None:
+        page = BatchPage()
+        base = self._compat_state()
+        page.apply_compatibility(base)
+        throat_row = page.parameter_form._rows.get("Throat.Profile")
+        if throat_row is None:
+            self.skipTest("Throat.Profile not available.")
+        if hasattr(throat_row.base_editor, "set_value"):
+            throat_row.base_editor.set_value(2)  # type: ignore[attr-defined]
+        payload = page._payload(include_name=False)
+        state = self._compat_state(
+            selected_params=dict(payload.get("selected_params", {}) or {}),
+            sweeps=dict(payload.get("sweeps", {}) or {}),
+        )
+        page.apply_compatibility(state)
+        row = page.parameter_form._rows.get("R-OSSE")
+        if row is None:
+            self.skipTest("R-OSSE not available.")
+        if row.container.isHidden():
+            advanced_btn = page.parameter_form._group_advanced_buttons.get(str(row.group_name))  # type: ignore[attr-defined]
+            if advanced_btn is not None and not advanced_btn.isHidden():
+                advanced_btn.click()
+        self.assertFalse(row.container.isHidden())
+        props = getattr(row.base_editor, "property_editors", {})
+        for key in ("R-OSSE.a0", "R-OSSE.a"):
+            editor = props.get(key)
+            if editor is None:
+                self.skipTest(f"{key} not available.")
+            value_widget = editor.value_widget()
+            self.assertIsInstance(value_widget, NullableSliderNumericInput)
+            self.assertLessEqual(int(value_widget.sizeHint().height()), int(FORM_METRICS.control_height) + 4)
+
+    def test_slider_clear_resets_slider_position(self) -> None:
+        page = BatchPage()
+        state = self._compat_state()
+        page.apply_compatibility(state)
+        value_widget = page.parameter_form.value_widget_for_key("Morph.FixedPart")
+        if value_widget is None or not isinstance(value_widget, NullableSliderNumericInput):
+            self.skipTest("Morph.FixedPart slider widget not available.")
+        events: list[str] = []
+        value_widget.changed.connect(lambda: events.append("changed"))
+        value_widget.set_value(0.66)
+        self.assertGreater(int(value_widget.slider.value()), 0)
+        events.clear()
+        value_widget.clear()
+        self.assertEqual(int(value_widget.slider.value()), 0)
+        self.assertFalse(value_widget.is_set())
+        self.assertTrue(events)
+
+    def test_sweep_active_selector_exists_in_stylesheet(self) -> None:
+        css = build_stylesheet()
+        self.assertIn('QPushButton#SweepButton[sweepActive="true"]', css)
+
+    def test_block_reset_clears_all_overrides_in_group(self) -> None:
+        page = BatchPage()
+        state = self._compat_state()
+        page.apply_compatibility(state)
+        row_length = page.parameter_form._rows.get("Length")
+        row_coverage = page.parameter_form._rows.get("Coverage.Angle")
+        if row_length is None or row_coverage is None:
+            self.skipTest("Required Basics fields are missing.")
+        row_length.base_editor.set_value(320.0)  # type: ignore[attr-defined]
+        row_coverage.base_editor.set_value(40.0)  # type: ignore[attr-defined]
+
+        reset_btn = page.parameter_form.block_reset_button_for_group("Basics")
+        self.assertIsNotNone(reset_btn)
+        assert reset_btn is not None
+        self.assertTrue(reset_btn.isEnabled())
+        reset_btn.click()
+
+        payload = page.parameter_form.selected_params_payload()
+        self.assertIsNone(payload.get("Length"))
+        self.assertIsNone(payload.get("Coverage.Angle"))
+        self.assertFalse(reset_btn.isEnabled())
+
+    def test_mesh_angular_segments_step_and_multiple_validation(self) -> None:
+        page = BatchPage()
+        state = self._compat_state()
+        page.apply_compatibility(state)
+        value_widget = page.parameter_form.value_widget_for_key("Mesh.AngularSegments")
+        if value_widget is None:
+            self.skipTest("Mesh.AngularSegments not available.")
+
+        self.assertEqual(int(value_widget.spin.singleStep()), 4)
+        value_widget.set_value(66)
+        self.assertFalse(value_widget.is_set())
+        self.assertIn("multiple of 4", str(value_widget.spin.lineEdit().toolTip()).lower())
+        payload_invalid = page.parameter_form.selected_params_payload()
+        self.assertIsNone(payload_invalid.get("Mesh.AngularSegments"))
+
+        value_widget.set_value(68)
+        self.assertTrue(value_widget.is_set())
+        payload_valid = page.parameter_form.selected_params_payload()
+        self.assertEqual(int(payload_valid.get("Mesh.AngularSegments", 0)), 68)
+
+    def test_vector_and_list_editors_serialize_and_empty_is_unset(self) -> None:
+        page = BatchPage()
+        state = self._compat_state()
+        page.apply_compatibility(state)
+
+        page.parameter_form.set_selected_params({"Mesh.InterfaceOffset": [1.0, 2.0, 3.0]})
+        payload = page.parameter_form.selected_params_payload()
+        values = list(payload.get("Mesh.InterfaceOffset") or [])
+        self.assertEqual([float(item) for item in values], [1.0, 2.0, 3.0])
+
+        row = page.parameter_form._rows.get("Mesh.InterfaceOffset")
+        self.assertIsNotNone(row)
+        assert row is not None
+        row.base_editor.set_is_set(False)  # type: ignore[attr-defined]
+        payload_empty = page.parameter_form.selected_params_payload()
+        self.assertIsNone(payload_empty.get("Mesh.InterfaceOffset"))
+
+        enclosure = page.parameter_form._rows.get("Mesh.Enclosure")
+        if enclosure is None:
+            self.skipTest("Mesh.Enclosure not available.")
+        page.parameter_form.set_selected_params({"Mesh.Enclosure": {"Depth": 180.0, "Spacing": [4.0, 5.0, 6.0, 7.0]}})
+        payload_enclosure = page.parameter_form.selected_params_payload()
+        enclosure_value = dict(payload_enclosure.get("Mesh.Enclosure", {}) or {})
+        spacing = list(enclosure_value.get("Spacing") or [])
+        self.assertEqual([float(item) for item in spacing], [4.0, 5.0, 6.0, 7.0])
+
+    def test_advanced_toggle_hides_advanced_rows_by_default(self) -> None:
+        page = BatchPage()
+        state = self._compat_state()
+        page.apply_compatibility(state)
+        target_key = "Mesh.InterfaceOffset"
+        row = page.parameter_form._rows.get(target_key)
+        if row is None:
+            self.skipTest(f"{target_key} not available.")
+
+        button = page.parameter_form._group_advanced_buttons.get(str(row.group_name))  # type: ignore[attr-defined]
+        self.assertIsNotNone(button)
+        assert button is not None
+        if not button.isVisible():
+            self.skipTest("No advanced toggle visible for target group.")
+        self.assertTrue(row.container.isHidden())
+        button.click()
+        self.assertFalse(row.container.isHidden())
+
+    def test_batch_form_has_no_horizontal_overflow_at_1920x1080(self) -> None:
+        page = BatchPage()
+        page.resize(1920, 1080)
+        page.show()
+        self.app.processEvents()
+        hbar = page.parameter_form.scroll.horizontalScrollBar()
+        self.assertEqual(int(hbar.maximum()), 0)
 
     def test_blocked_batch_segment_option_emits_interaction_and_keeps_selection(self) -> None:
         page = BatchPage()

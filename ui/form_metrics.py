@@ -12,12 +12,16 @@ except ImportError as exc:  # pragma: no cover
 
 @dataclass(frozen=True)
 class FormMetrics:
-    label_width: int = 148
-    input_width: int = 116
-    unit_label_width: int = 60
-    label_to_input_gap: int = 6
-    column_gap: int = 24
-    row_gap: int = 8
+    # Shared form geometry for 1920x1080 @ 100% scaling.
+    label_width: int = 170
+    input_width: int = 180
+    editor_total_width: int = 264
+    unit_label_width: int = 40
+    action_width: int = 44
+    control_height: int = 32
+    label_to_input_gap: int = 8
+    column_gap: int = 20
+    row_gap: int = 7
     margin_left: int = 10
     margin_top: int = 8
     margin_right: int = 10

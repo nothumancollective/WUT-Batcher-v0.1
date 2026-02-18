@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 import json
+import logging
 from pathlib import Path
 import subprocess
 import sys
@@ -24,6 +25,8 @@ from ui.form_builder import ParameterForm
 from ui.form_metrics import FORM_METRICS
 from ui.form_schema import build_project_form_schema
 from ui.theme import apply_theme, apply_windows_dark_titlebar, configure_windows_qt_darkmode_env
+
+LOGGER = logging.getLogger(__name__)
 
 try:
     from PySide6.QtCore import QEasingCurve, QPoint, QPropertyAnimation, QEvent, QObject, Qt, QThread, QTimer, Signal, QSize
@@ -126,7 +129,8 @@ class _BatchPreviewWorker(QObject):
         try:
             if proc.poll() is None:
                 proc.terminate()
-        except Exception:
+        except Exception as exc:
+            LOGGER.debug("Preview worker cancel terminate failed: %s", exc)
             return
 
     def _cancel_check(self) -> bool:
@@ -138,7 +142,8 @@ class _BatchPreviewWorker(QObject):
             try:
                 if process.poll() is None:
                     process.terminate()
-            except Exception:
+            except Exception as exc:
+                LOGGER.debug("Preview worker post-start terminate failed: %s", exc)
                 return
 
     def run(self) -> None:
@@ -278,9 +283,6 @@ def _ensure_maximized_foreground(window: QWidget) -> None:
     window.showMaximized()
     window.raise_()
     window.activateWindow()
-    app = QApplication.instance()
-    if app is not None:
-        app.setActiveWindow(window)
     _win32_force_foreground(window)
 
 
@@ -293,9 +295,6 @@ def _ensure_normal_foreground(window: QWidget) -> None:
     window.showNormal()
     window.raise_()
     window.activateWindow()
-    app = QApplication.instance()
-    if app is not None:
-        app.setActiveWindow(window)
     _win32_force_foreground(window)
 
 
@@ -2026,6 +2025,9 @@ class BatchPage(QWidget):
             self._suspend_draft_events = False
         self._emit_draft_changed()
 
+    def set_policy_default_suggestions(self, defaults: Dict[str, Any]) -> None:
+        self.parameter_form.set_policy_default_suggestions(dict(defaults or {}))
+
     def set_eta(self, eta_seconds: Optional[float], *, sample_count: int, median_seconds: Optional[float]) -> None:
         self._eta_seconds = eta_seconds
         self._eta_sample_count = max(int(sample_count), 0)
@@ -2096,6 +2098,7 @@ class BatchPage(QWidget):
             self.export_panel.set_sweep_mode("single")
             self.parameter_form.set_selected_params({})
             self.parameter_form.set_sweeps({})
+            self.parameter_form.set_policy_default_suggestions({})
             self.export_panel.set_from_payload({})
             self.set_eta(None, sample_count=0, median_seconds=None)
             self.preview_panel.set_busy(False)
@@ -2475,9 +2478,9 @@ class MainWindow(QMainWindow):
         self._connect_page_signals()
         try:
             self.service.cleanup_preview_cache()
-        except Exception:
+        except Exception as exc:
             # Non-critical startup maintenance; runtime preview requests handle errors explicitly.
-            pass
+            LOGGER.warning("Startup preview cache cleanup failed: %s", exc)
         self.show_dashboard()
 
     def _build_statusbar(self) -> None:
@@ -2563,6 +2566,7 @@ class MainWindow(QMainWindow):
         if self.current_project is None:
             self.batch_page.set_preview_busy(False)
             self.batch_page.set_preview_error("Open a project before generating preview.")
+            self.batch_page.set_policy_default_suggestions({})
             return
 
         self._stop_preview_worker()
@@ -2615,6 +2619,7 @@ class MainWindow(QMainWindow):
             self._preview_thread = None
             return
         self.batch_page.set_preview_busy(False)
+        self.batch_page.set_policy_default_suggestions(dict(result.get("policy_default_values", {}) or {}))
         self.set_status("Preview updated.", detail=json.dumps(result, indent=2, ensure_ascii=False))
         self._preview_worker = None
         self._preview_thread = None
@@ -2624,6 +2629,7 @@ class MainWindow(QMainWindow):
             return
         self.batch_page.set_preview_busy(False)
         self.batch_page.set_preview_error(str(message or "Preview generation failed."))
+        self.batch_page.set_policy_default_suggestions({})
         self.set_status("Preview generation failed.", detail=str(message or "unknown error"))
         self._preview_worker = None
         self._preview_thread = None
@@ -2633,6 +2639,7 @@ class MainWindow(QMainWindow):
             return
         self.batch_page.set_preview_busy(False)
         self.batch_page.preview_panel.set_info_message("Preview update canceled.")
+        self.batch_page.set_policy_default_suggestions({})
         self._preview_worker = None
         self._preview_thread = None
 

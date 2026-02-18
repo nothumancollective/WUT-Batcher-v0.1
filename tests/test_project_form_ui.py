@@ -604,6 +604,26 @@ class ProjectFormUiTests(unittest.TestCase):
         assert isinstance(shrink_editor, NullableBoolInput)
         self.assertIsInstance(shrink_editor.segment, SegmentedEnumInput)
 
+    def test_morph_target_shape_labels_are_not_clipped(self) -> None:
+        editor = self.form.editor_for_key("Morph.TargetShape")
+        self.assertIsNotNone(editor)
+        assert editor is not None
+        value_widget = editor.value_widget()  # type: ignore[attr-defined]
+        self.assertIsInstance(value_widget, SegmentedEnumInput)
+        assert isinstance(value_widget, SegmentedEnumInput)
+        self.form.show()
+        self.app.processEvents()
+        labels = []
+        for button in value_widget.findChildren(QPushButton):
+            if button.property("segment") != "true":
+                continue
+            labels.append(button.text().strip())
+            needed = int(button.fontMetrics().horizontalAdvance(button.text()) + 10)
+            self.assertGreaterEqual(int(button.width()), needed)
+        self.assertIn("Original", labels)
+        self.assertIn("Rectangle", labels)
+        self.assertIn("Circle", labels)
+
     def test_context_frames_exist_for_conditional_sections(self) -> None:
         frames = [
             frame
@@ -820,14 +840,35 @@ class ProjectFormUiTests(unittest.TestCase):
         self.assertTrue(all(not label.isVisible() for label in headings))
 
     def test_input_widths_are_uniform_with_and_without_unit(self) -> None:
-        with_unit = self.form.value_widget_for_key("Throat.Angle")
-        without_unit = self.form.value_widget_for_key("Length")
+        with_unit = self.form.value_widget_for_key("Throat.Diameter")
+        without_unit = self.form.value_widget_for_key("Term.q")
         self.assertIsNotNone(with_unit)
         self.assertIsNotNone(without_unit)
         assert with_unit is not None and without_unit is not None
         with_edit = getattr(with_unit, "edit")
         without_edit = getattr(without_unit, "edit")
         self.assertEqual(with_edit.width(), without_edit.width())
+
+    def test_reset_state_toggle_does_not_change_project_editor_width(self) -> None:
+        editor = self.form.editor_for_key("Length")
+        self.assertIsNotNone(editor)
+        assert editor is not None
+        self.form.show()
+        self.app.processEvents()
+        width_unset = int(editor.width())
+        hint_unset = int(editor.sizeHint().width())
+        editor.set_value(420.0)  # type: ignore[attr-defined]
+        self.app.processEvents()
+        width_set = int(editor.width())
+        hint_set = int(editor.sizeHint().width())
+        editor.set_is_set(False)  # type: ignore[attr-defined]
+        self.app.processEvents()
+        width_reset = int(editor.width())
+        hint_reset = int(editor.sizeHint().width())
+        self.assertEqual(width_unset, width_set)
+        self.assertEqual(width_set, width_reset)
+        self.assertEqual(hint_unset, hint_set)
+        self.assertEqual(hint_set, hint_reset)
 
     def test_project_action_bar_contains_primary_cta(self) -> None:
         page = ProjectPage()

@@ -253,9 +253,46 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         color: {c['text']};
         border: 1px solid {c['border']};
         border-radius: {r['md']}px;
-        padding: {s['sm']}px;
+        padding: {max(int(s['sm']) - 3, 0)}px {max(int(s['sm']) - 1, 2)}px;
         selection-background-color: {c['selection']};
         selection-color: {c['button_text']};
+    }}
+    QSpinBox, QDoubleSpinBox {{
+        padding-right: 22px;
+    }}
+    QSpinBox::up-button, QSpinBox::down-button,
+    QDoubleSpinBox::up-button, QDoubleSpinBox::down-button,
+    QAbstractSpinBox::up-button, QAbstractSpinBox::down-button {{
+        width: 18px;
+        border-left: 1px solid {c['border']};
+        background-color: #232323;
+    }}
+    QSpinBox::up-button, QDoubleSpinBox::up-button, QAbstractSpinBox::up-button {{
+        subcontrol-origin: padding;
+        subcontrol-position: top right;
+        border-top-right-radius: {r['md']}px;
+        border-bottom: 1px solid {c['border']};
+    }}
+    QSpinBox::down-button, QDoubleSpinBox::down-button, QAbstractSpinBox::down-button {{
+        subcontrol-origin: padding;
+        subcontrol-position: bottom right;
+        border-bottom-right-radius: {r['md']}px;
+    }}
+    QSpinBox::up-arrow, QDoubleSpinBox::up-arrow, QAbstractSpinBox::up-arrow {{
+        image: none;
+        width: 0px;
+        height: 0px;
+        border-left: 4px solid transparent;
+        border-right: 4px solid transparent;
+        border-bottom: 6px solid {c['muted']};
+    }}
+    QSpinBox::down-arrow, QDoubleSpinBox::down-arrow, QAbstractSpinBox::down-arrow {{
+        image: none;
+        width: 0px;
+        height: 0px;
+        border-left: 4px solid transparent;
+        border-right: 4px solid transparent;
+        border-top: 6px solid {c['muted']};
     }}
     QComboBox#BatchExportCombo {{
         padding-right: 24px;
@@ -408,6 +445,53 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     }}
     QLabel#FieldStateBadge[severity="fatal"] {{
         color: {c['danger_border']};
+    }}
+    QPushButton#FieldResetButton {{
+        background: transparent;
+        border: 1px solid transparent;
+        border-radius: {r['sm']}px;
+        color: {c['muted']};
+        min-width: 28px;
+        max-width: 28px;
+        min-height: 28px;
+        max-height: 28px;
+        padding: 0px;
+        font-size: 12px;
+    }}
+    QPushButton#FieldResetButton[canReset="false"] {{
+        color: transparent;
+        border-color: transparent;
+        background-color: transparent;
+    }}
+    QPushButton#FieldResetButton[canReset="true"] {{
+        color: {c['muted']};
+    }}
+    QPushButton#FieldResetButton:hover {{
+        color: {c['accent']};
+        border-color: {c['border']};
+        background-color: #1f1f1f;
+    }}
+    QPushButton#SweepButton {{
+        background-color: {c['surface2']};
+        color: {c['text']};
+        border: 1px solid {c['border']};
+        border-radius: {r['md']}px;
+        padding: 0px;
+        font-weight: 700;
+    }}
+    QPushButton#SweepButton:hover {{
+        border-color: {c['accent']};
+    }}
+    QFrame#SweepPopover {{
+        background-color: {c['surface']};
+        border: 1px solid {c['border']};
+        border-radius: {r['sm']}px;
+    }}
+    QWidget#BatchFieldCell {{
+        background: transparent;
+    }}
+    QLineEdit[invalidMultiple="true"] {{
+        border: 1px solid {c['warning_border']};
     }}
     QFrame#ProjectSummaryPanel {{
         background-color: #1f1f1f;
@@ -623,7 +707,7 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         color: {c['button_text']};
         border: 1px solid {c['button_border']};
         border-radius: {r['md']}px;
-        padding: {s['sm']}px {s['md']}px;
+        padding: {max(int(s['sm']) - 2, 0)}px {s['md']}px;
         font-weight: 600;
         min-height: 30px;
     }}
@@ -666,9 +750,9 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         color: {c['text']};
         border: 1px solid {c['border']};
         border-radius: {r['md']}px;
-        padding: {s['sm']}px {s['md']}px;
+        padding: {max(int(s['sm']) - 2, 0)}px {max(int(s['sm']) + 2, 4)}px;
         font-weight: 500;
-        min-height: 30px;
+        min-height: 32px;
     }}
     QPushButton[segment=\"true\"]:hover {{
         background-color: {c['surface']};
@@ -682,13 +766,15 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         border: 1px solid #a9a9a9;
         color: #ffffff;
     }}
-    QPushButton[segment=\"true\"][sweepActive="true"] {{
-        border: 1px solid {c['risk_ok']};
-        color: {c['risk_ok']};
+    QPushButton#SweepButton[sweepActive="true"] {{
+        border: 1px solid #4f8cff;
+        color: #d9e7ff;
+        background-color: rgba(79, 140, 255, 0.22);
     }}
-    QPushButton[segment=\"true\"][sweepActive="true"][riskLevel="warn"] {{
+    QPushButton#SweepButton[sweepActive="true"][riskLevel="warn"] {{
         border: 1px solid {c['warning_border']};
         color: {c['warning_text_muted']};
+        background-color: rgba(125, 91, 34, 0.2);
     }}
     QPushButton[segment=\"true\"][disclosureHint="true"] {{
         border: 1px solid {c['accent']};

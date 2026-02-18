@@ -22,21 +22,30 @@ try:
         Qt,
         Signal,
     )
-    from PySide6.QtGui import QGuiApplication, QRegularExpressionValidator
+    from PySide6.QtGui import QFontDatabase, QGuiApplication, QRegularExpressionValidator
     from PySide6.QtWidgets import (
+        QApplication,
+        QAbstractItemView,
         QButtonGroup,
+        QCheckBox,
         QComboBox,
         QFrame,
         QGraphicsOpacityEffect,
         QGridLayout,
         QGroupBox,
+        QHeaderView,
         QHBoxLayout,
         QLabel,
         QLineEdit,
+        QPlainTextEdit,
         QPushButton,
         QScrollArea,
+        QSlider,
+        QSpinBox,
         QSizePolicy,
         QStackedWidget,
+        QTableWidget,
+        QTableWidgetItem,
         QToolTip,
         QToolButton,
         QVBoxLayout,
@@ -47,9 +56,27 @@ except ImportError as exc:  # pragma: no cover
 
 
 INPUT_TOTAL_WIDTH = FORM_METRICS.input_width
+EDITOR_TOTAL_WIDTH = FORM_METRICS.editor_total_width
 UNIT_LABEL_WIDTH = FORM_METRICS.unit_label_width
 LABEL_COLUMN_WIDTH = FORM_METRICS.label_width
+CONTROL_HEIGHT = FORM_METRICS.control_height
+RESET_CONTROL_WIDTH = 28
+STATE_BADGE_WIDTH = 14
 _HELPER_NUMBER_RE = re.compile(r"(?<![A-Za-z0-9_])[-+]?\d+(?:[.,]\d+)?(?:[eE][-+]?\d+)?")
+
+
+def _format_default_value(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, float):
+        return f"{value:.6g}"
+    if isinstance(value, list):
+        return ", ".join(_format_default_value(item) for item in value)
+    if isinstance(value, tuple):
+        return ", ".join(_format_default_value(item) for item in list(value))
+    if isinstance(value, Mapping):
+        return "{...}"
+    return str(value)
 
 
 @dataclass(frozen=True)
@@ -601,24 +628,29 @@ class NullableNumericInput(QWidget):
         self._decimals = int(decimals if is_float else 0)
         self._minimum = minimum
         self._maximum = maximum
+        self._base_placeholder = str(placeholder or "")
 
         root = QHBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(6)
-        self.setFixedWidth(INPUT_TOTAL_WIDTH)
+        base_width = INPUT_TOTAL_WIDTH
+        self.setFixedWidth(base_width)
 
         self.edit = QLineEdit()
         self.edit.setObjectName("NullableInput")
         self.edit.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.edit.setFixedWidth(INPUT_TOTAL_WIDTH)
-        self.edit.setPlaceholderText(placeholder)
+        self.edit.setMinimumHeight(CONTROL_HEIGHT)
+        self.edit.setPlaceholderText(self._base_placeholder)
         self.edit.setClearButtonEnabled(False)
         root.addWidget(self.edit, 0, Qt.AlignLeft)
 
         self.unit_label = QLabel(str(unit or ""))
         self.unit_label.setObjectName("InputUnit")
-        self.unit_label.setFixedWidth(UNIT_LABEL_WIDTH)
-        self.edit.setFixedWidth(INPUT_TOTAL_WIDTH - UNIT_LABEL_WIDTH - 6)
+        unit_width = max(UNIT_LABEL_WIDTH, self.unit_label.fontMetrics().horizontalAdvance(str(unit or "")) + 6)
+        self.unit_label.setFixedWidth(unit_width)
+        self.setFixedWidth(base_width + max(0, unit_width - UNIT_LABEL_WIDTH))
+        self.edit.setFixedWidth(base_width - UNIT_LABEL_WIDTH - 6)
         root.addWidget(self.unit_label, 0, Qt.AlignLeft)
         self._install_validator()
         self.edit.textChanged.connect(self._on_text_changed)
@@ -700,6 +732,12 @@ class NullableNumericInput(QWidget):
         self.edit.setEnabled(not locked)
         self.unit_label.setEnabled(not locked)
 
+    def set_suggested_text(self, text: str) -> None:
+        self.edit.setPlaceholderText(str(text or self._base_placeholder))
+
+    def clear_suggested_text(self) -> None:
+        self.edit.setPlaceholderText(self._base_placeholder)
+
 
 class NullableTextInput(QWidget):
     changed = Signal()
@@ -715,24 +753,29 @@ class NullableTextInput(QWidget):
     ) -> None:
         super().__init__(parent)
         self._value_parser = value_parser
+        self._base_placeholder = str(placeholder or "")
 
         root = QHBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(6)
+        base_width = int(width or INPUT_TOTAL_WIDTH)
 
         self.edit = QLineEdit()
         self.edit.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.edit.setClearButtonEnabled(False)
-        self.setFixedWidth(int(width or INPUT_TOTAL_WIDTH))
-        self.edit.setFixedWidth(int(width or INPUT_TOTAL_WIDTH))
-        if placeholder:
-            self.edit.setPlaceholderText(placeholder)
+        self.setFixedWidth(base_width)
+        self.edit.setFixedWidth(base_width)
+        self.edit.setMinimumHeight(CONTROL_HEIGHT)
+        if self._base_placeholder:
+            self.edit.setPlaceholderText(self._base_placeholder)
         root.addWidget(self.edit, 0, Qt.AlignLeft)
 
         self.unit_label = QLabel(str(unit or ""))
         self.unit_label.setObjectName("InputUnit")
-        self.unit_label.setFixedWidth(UNIT_LABEL_WIDTH)
-        self.edit.setFixedWidth(int(width or INPUT_TOTAL_WIDTH) - UNIT_LABEL_WIDTH - 6)
+        unit_width = max(UNIT_LABEL_WIDTH, self.unit_label.fontMetrics().horizontalAdvance(str(unit or "")) + 6)
+        self.unit_label.setFixedWidth(unit_width)
+        self.setFixedWidth(base_width + max(0, unit_width - UNIT_LABEL_WIDTH))
+        self.edit.setFixedWidth(base_width - UNIT_LABEL_WIDTH - 6)
         root.addWidget(self.unit_label, 0, Qt.AlignLeft)
 
         self.edit.textChanged.connect(lambda *_: self.changed.emit())
@@ -763,6 +806,647 @@ class NullableTextInput(QWidget):
     def set_locked(self, locked: bool) -> None:
         self.edit.setEnabled(not locked)
         self.unit_label.setEnabled(not locked)
+
+    def set_suggested_text(self, text: str) -> None:
+        self.edit.setPlaceholderText(str(text or self._base_placeholder))
+
+    def clear_suggested_text(self) -> None:
+        self.edit.setPlaceholderText(self._base_placeholder)
+
+
+class _ModifierAwareSlider(QSlider):
+    def __init__(self, orientation: Qt.Orientation, parent: QWidget | None = None) -> None:
+        super().__init__(orientation, parent)
+        self._base_step = 10
+
+    def set_base_step(self, step: int) -> None:
+        self._base_step = max(1, int(step))
+
+    def _step_for_modifiers(self) -> int:
+        mods = QApplication.keyboardModifiers()
+        if mods & Qt.ShiftModifier:
+            return max(1, int(self._base_step * 10))
+        if mods & Qt.ControlModifier:
+            return max(1, int(round(self._base_step / 10)))
+        return max(1, self._base_step)
+
+    def wheelEvent(self, event) -> None:  # type: ignore[override]
+        delta = int(event.angleDelta().y())
+        if delta == 0:
+            super().wheelEvent(event)
+            return
+        step = self._step_for_modifiers()
+        direction = 1 if delta > 0 else -1
+        self.setValue(self.value() + (direction * step))
+        event.accept()
+
+    def keyPressEvent(self, event) -> None:  # type: ignore[override]
+        if event.key() in {Qt.Key_Left, Qt.Key_Down, Qt.Key_Right, Qt.Key_Up}:
+            direction = -1 if event.key() in {Qt.Key_Left, Qt.Key_Down} else 1
+            self.setValue(self.value() + (direction * self._step_for_modifiers()))
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+
+class NullableSliderNumericInput(QWidget):
+    changed = Signal()
+
+    def __init__(
+        self,
+        *,
+        minimum: float,
+        maximum: float,
+        decimals: int = 3,
+        placeholder: str = "",
+        unit: str | None = None,
+        slider_resolution: int = 1000,
+        base_slider_step: int = 10,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._minimum = float(minimum)
+        self._maximum = float(maximum)
+        self._decimals = max(0, int(decimals))
+        self._slider_resolution = max(10, int(slider_resolution))
+        self._base_placeholder = str(placeholder or "")
+        self._syncing = False
+
+        root = QHBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(6)
+        unit_text = str(unit or "")
+        self._slider_width = 96
+        min_edit_width = 54
+        self.unit_label = QLabel(unit_text)
+        self.unit_label.setObjectName("InputUnit")
+        unit_width = max(UNIT_LABEL_WIDTH, self.unit_label.fontMetrics().horizontalAdvance(unit_text) + 6)
+        base_width = max(INPUT_TOTAL_WIDTH, unit_width + self._slider_width + min_edit_width + 12)
+        self.setFixedWidth(base_width)
+
+        self.edit = QLineEdit()
+        self.edit.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.edit.setPlaceholderText(self._base_placeholder)
+        self.edit.setMinimumHeight(CONTROL_HEIGHT)
+        regex = QRegularExpression(rf"^-?\d*(?:[.,]\d{{0,{max(self._decimals, 0)}}})?$")
+        self.edit.setValidator(QRegularExpressionValidator(regex, self.edit))
+        self.unit_label.setFixedWidth(unit_width)
+        self.edit.setFixedWidth(base_width - unit_width - self._slider_width - 12)
+        root.addWidget(self.edit, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        root.addWidget(self.unit_label, 0, Qt.AlignLeft | Qt.AlignVCenter)
+
+        self.slider = _ModifierAwareSlider(Qt.Horizontal)
+        self.slider.setRange(0, self._slider_resolution)
+        self.slider.set_base_step(int(base_slider_step))
+        self.slider.setToolTip("Ctrl=fine, Shift=coarse")
+        self.slider.setFixedWidth(self._slider_width)
+        self.slider.setMinimumHeight(CONTROL_HEIGHT)
+        root.addWidget(self.slider, 0, Qt.AlignLeft | Qt.AlignVCenter)
+
+        self.edit.textChanged.connect(self._on_text_changed)
+        self.slider.valueChanged.connect(self._on_slider_changed)
+
+    def _to_slider(self, value: float) -> int:
+        if self._maximum <= self._minimum:
+            return 0
+        ratio = (float(value) - self._minimum) / (self._maximum - self._minimum)
+        ratio = max(0.0, min(1.0, ratio))
+        return int(round(ratio * self._slider_resolution))
+
+    def _from_slider(self, raw: int) -> float:
+        if self._slider_resolution <= 0:
+            return self._minimum
+        ratio = float(raw) / float(self._slider_resolution)
+        return self._minimum + ((self._maximum - self._minimum) * ratio)
+
+    def _parse(self, text: str) -> Optional[float]:
+        token = str(text or "").strip().replace(",", ".")
+        if not token:
+            return None
+        try:
+            value = float(token)
+        except ValueError:
+            return None
+        if value < self._minimum or value > self._maximum:
+            return None
+        return value
+
+    def _format(self, value: float) -> str:
+        text = f"{float(value):.{self._decimals}f}".rstrip("0").rstrip(".")
+        return text if text else "0"
+
+    def _on_text_changed(self, _text: str) -> None:
+        if self._syncing:
+            return
+        parsed = self._parse(self.edit.text())
+        self._syncing = True
+        try:
+            if parsed is not None:
+                self.slider.setValue(self._to_slider(parsed))
+        finally:
+            self._syncing = False
+        self.changed.emit()
+
+    def _on_slider_changed(self, raw: int) -> None:
+        if self._syncing:
+            return
+        self._syncing = True
+        try:
+            value = self._from_slider(raw)
+            self.edit.setText(self._format(value))
+        finally:
+            self._syncing = False
+        self.changed.emit()
+
+    def is_set(self) -> bool:
+        return self._parse(self.edit.text()) is not None
+
+    def clear(self) -> None:
+        previous_text = self.edit.text()
+        previous_slider = int(self.slider.value())
+        self._syncing = True
+        edit_blocked = self.edit.blockSignals(True)
+        slider_blocked = self.slider.blockSignals(True)
+        try:
+            self.edit.clear()
+            self.slider.setValue(0)
+        finally:
+            self.edit.blockSignals(edit_blocked)
+            self.slider.blockSignals(slider_blocked)
+            self._syncing = False
+        if previous_text.strip() or previous_slider != 0:
+            self.changed.emit()
+
+    def value(self) -> Optional[float]:
+        return self._parse(self.edit.text())
+
+    def set_value(self, value: Any) -> None:
+        if value is None:
+            self.clear()
+            return
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            self.clear()
+            return
+        clamped = min(max(parsed, self._minimum), self._maximum)
+        self._syncing = True
+        try:
+            self.edit.setText(self._format(clamped))
+            self.slider.setValue(self._to_slider(clamped))
+        finally:
+            self._syncing = False
+
+    def set_locked(self, locked: bool) -> None:
+        self.edit.setEnabled(not locked)
+        self.slider.setEnabled(not locked)
+        self.unit_label.setEnabled(not locked)
+
+    def set_suggested_text(self, text: str) -> None:
+        self.edit.setPlaceholderText(str(text or self._base_placeholder))
+
+    def clear_suggested_text(self) -> None:
+        self.edit.setPlaceholderText(self._base_placeholder)
+
+
+class NullableIntSpinInput(QWidget):
+    changed = Signal()
+
+    def __init__(
+        self,
+        *,
+        minimum: Optional[int] = None,
+        maximum: Optional[int] = None,
+        step: int = 1,
+        placeholder: str = "",
+        unit: Optional[str] = None,
+        multiple_of: Optional[int] = None,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._base_placeholder = str(placeholder or "")
+        self._multiple_of = int(multiple_of) if multiple_of is not None and int(multiple_of) > 1 else None
+        self._is_set = False
+        self._base_tooltip = ""
+
+        root = QHBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(6)
+        base_width = INPUT_TOTAL_WIDTH
+        self.setFixedWidth(base_width)
+
+        self.spin = QSpinBox()
+        min_value = int(minimum) if minimum is not None else -1_000_000
+        max_value = int(maximum) if maximum is not None else 1_000_000
+        self.spin.setRange(min_value, max_value)
+        self.spin.setSingleStep(max(1, int(step)))
+        self.unit_label = QLabel(str(unit or ""))
+        self.unit_label.setObjectName("InputUnit")
+        unit_width = max(UNIT_LABEL_WIDTH, self.unit_label.fontMetrics().horizontalAdvance(str(unit or "")) + 6)
+        self.unit_label.setFixedWidth(unit_width)
+        self.setFixedWidth(base_width + max(0, unit_width - UNIT_LABEL_WIDTH))
+        self.spin.setFixedWidth(base_width - UNIT_LABEL_WIDTH - 6)
+        self.spin.setMinimumHeight(CONTROL_HEIGHT)
+        self.spin.setAccelerated(True)
+        self.spin.lineEdit().setPlaceholderText(self._base_placeholder)
+        root.addWidget(self.spin, 0, Qt.AlignLeft)
+        root.addWidget(self.unit_label, 0, Qt.AlignLeft)
+
+        self.spin.valueChanged.connect(self._on_spin_changed)
+        self.spin.lineEdit().textChanged.connect(self._on_line_text_changed)
+
+    def _invalid_hint(self) -> str:
+        if self._multiple_of is None:
+            return ""
+        return f"Value must be a multiple of {self._multiple_of}."
+
+    def _valid_multiple(self, raw: str) -> bool:
+        if self._multiple_of is None:
+            return True
+        token = str(raw or "").strip()
+        if not token:
+            return False
+        try:
+            value = int(token)
+        except ValueError:
+            return False
+        return int(value) % int(self._multiple_of) == 0
+
+    def _refresh_validity_state(self) -> None:
+        text = str(self.spin.lineEdit().text() or "").strip()
+        valid = bool(text) and self._valid_multiple(text)
+        self.spin.lineEdit().setProperty("invalidMultiple", "false" if valid or not text else "true")
+        tooltip_parts = [part for part in [self._base_tooltip.strip(), self._invalid_hint() if text and not valid else ""] if part]
+        self.spin.lineEdit().setToolTip("\n\n".join(tooltip_parts))
+        self.spin.lineEdit().style().unpolish(self.spin.lineEdit())
+        self.spin.lineEdit().style().polish(self.spin.lineEdit())
+        self.spin.lineEdit().update()
+
+    def _on_spin_changed(self, _value: int) -> None:
+        self._is_set = True
+        self._refresh_validity_state()
+        self.changed.emit()
+
+    def _on_line_text_changed(self, text: str) -> None:
+        if not str(text or "").strip():
+            self._is_set = False
+        self._refresh_validity_state()
+        self.changed.emit()
+
+    def is_set(self) -> bool:
+        if not self._is_set:
+            return False
+        text = str(self.spin.lineEdit().text() or "").strip()
+        if not text:
+            return False
+        return self._valid_multiple(text)
+
+    def clear(self) -> None:
+        self._is_set = False
+        self.spin.lineEdit().clear()
+        self._refresh_validity_state()
+
+    def value(self) -> Optional[int]:
+        return int(self.spin.value()) if self.is_set() else None
+
+    def set_value(self, value: Any) -> None:
+        if value is None:
+            self.clear()
+            return
+        try:
+            parsed = int(float(value))
+        except (TypeError, ValueError):
+            self.clear()
+            return
+        self._is_set = True
+        self.spin.setValue(parsed)
+        self._refresh_validity_state()
+
+    def set_locked(self, locked: bool) -> None:
+        self.spin.setEnabled(not locked)
+        self.unit_label.setEnabled(not locked)
+
+    def set_suggested_text(self, text: str) -> None:
+        self.spin.lineEdit().setPlaceholderText(str(text or self._base_placeholder))
+
+    def clear_suggested_text(self) -> None:
+        self.spin.lineEdit().setPlaceholderText(self._base_placeholder)
+
+    def set_base_tooltip(self, text: str) -> None:
+        self._base_tooltip = str(text or "")
+        self._refresh_validity_state()
+
+
+class NullableVector4Input(QWidget):
+    changed = Signal()
+
+    def __init__(
+        self,
+        *,
+        labels: Sequence[str],
+        placeholder: str = "",
+        unit: str | None = None,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._labels = [str(item).strip() or f"V{index + 1}" for index, item in enumerate(list(labels)[:4])]
+        while len(self._labels) < 4:
+            self._labels.append(f"V{len(self._labels) + 1}")
+        self._base_placeholder = str(placeholder or "")
+        self._link_updates = False
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(4)
+        self.setFixedWidth(INPUT_TOTAL_WIDTH + 120)
+
+        self.link_all = QCheckBox("Link all")
+        root.addWidget(self.link_all, 0, Qt.AlignLeft)
+
+        grid = QGridLayout()
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(4)
+        grid.setVerticalSpacing(2)
+        self._edits: List[QLineEdit] = []
+        for index, label_text in enumerate(self._labels):
+            label = QLabel(label_text)
+            label.setObjectName("InputUnit")
+            grid.addWidget(label, 0, index)
+            edit = QLineEdit()
+            edit.setFixedWidth(58)
+            edit.setPlaceholderText(self._base_placeholder)
+            regex = QRegularExpression(r"^-?\d*(?:[.,]\d{0,6})?$")
+            edit.setValidator(QRegularExpressionValidator(regex, edit))
+            edit.textChanged.connect(lambda text, idx=index: self._on_text_changed(idx, text))
+            self._edits.append(edit)
+            grid.addWidget(edit, 1, index)
+
+        unit_label = QLabel(str(unit or ""))
+        unit_label.setObjectName("InputUnit")
+        grid.addWidget(unit_label, 1, 4)
+        root.addLayout(grid)
+
+    def _parse_token(self, text: str) -> Optional[float]:
+        token = str(text or "").strip().replace(",", ".")
+        if not token:
+            return None
+        try:
+            return float(token)
+        except ValueError:
+            return None
+
+    def _on_text_changed(self, index: int, text: str) -> None:
+        if self._link_updates:
+            self.changed.emit()
+            return
+        if self.link_all.isChecked():
+            normalized = str(text or "")
+            self._link_updates = True
+            try:
+                for idx, edit in enumerate(self._edits):
+                    if idx == index:
+                        continue
+                    edit.setText(normalized)
+            finally:
+                self._link_updates = False
+        self.changed.emit()
+
+    def is_set(self) -> bool:
+        tokens = [self._parse_token(edit.text()) for edit in self._edits]
+        return all(value is not None for value in tokens)
+
+    def clear(self) -> None:
+        for edit in self._edits:
+            edit.clear()
+
+    def value(self) -> Optional[List[float]]:
+        if not self.is_set():
+            return None
+        return [float(self._parse_token(edit.text()) or 0.0) for edit in self._edits]
+
+    def set_value(self, value: Any) -> None:
+        if value is None:
+            self.clear()
+            return
+        values: List[Any]
+        if isinstance(value, (list, tuple)):
+            values = list(value)[:4]
+        else:
+            values = [value]
+        while len(values) < 4:
+            values.append(None)
+        for index, edit in enumerate(self._edits):
+            token = values[index]
+            if token is None:
+                edit.clear()
+                continue
+            try:
+                parsed = float(token)
+            except (TypeError, ValueError):
+                edit.clear()
+                continue
+            edit.setText(f"{parsed:.6g}")
+
+    def set_locked(self, locked: bool) -> None:
+        self.link_all.setEnabled(not locked)
+        for edit in self._edits:
+            edit.setEnabled(not locked)
+
+    def set_suggested_text(self, text: str) -> None:
+        values = [item.strip() for item in str(text or "").split(",")]
+        for index, edit in enumerate(self._edits):
+            hint = values[index] if index < len(values) and values[index] else self._base_placeholder
+            edit.setPlaceholderText(hint)
+
+    def clear_suggested_text(self) -> None:
+        for edit in self._edits:
+            edit.setPlaceholderText(self._base_placeholder)
+
+
+class NullableListTableInput(QWidget):
+    changed = Signal()
+
+    def __init__(
+        self,
+        *,
+        parse_int: bool,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._parse_int = bool(parse_int)
+        self._suggested_tooltip = ""
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(4)
+        self.setFixedWidth(INPUT_TOTAL_WIDTH + 120)
+
+        buttons = QHBoxLayout()
+        buttons.setContentsMargins(0, 0, 0, 0)
+        buttons.setSpacing(4)
+        self.add_btn = QPushButton("+")
+        self.add_btn.setFixedWidth(28)
+        self.remove_btn = QPushButton("-")
+        self.remove_btn.setFixedWidth(28)
+        buttons.addWidget(self.add_btn)
+        buttons.addWidget(self.remove_btn)
+        buttons.addStretch(1)
+        root.addLayout(buttons)
+
+        self.table = QTableWidget(0, 1)
+        self.table.setHorizontalHeaderLabels(["Value"])
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.table.verticalHeader().setVisible(True)
+        self.table.setSelectionMode(QAbstractItemView.NoSelection)
+        self.table.setEditTriggers(QAbstractItemView.AllEditTriggers)
+        self.table.setFixedHeight(108)
+        root.addWidget(self.table)
+
+        self.add_btn.clicked.connect(self._add_row)
+        self.remove_btn.clicked.connect(self._remove_row)
+        self.table.itemChanged.connect(lambda *_: self.changed.emit())
+
+    def _add_row(self) -> None:
+        row = self.table.rowCount()
+        self.table.insertRow(row)
+        self.table.setItem(row, 0, QTableWidgetItem(""))
+        self.changed.emit()
+
+    def _remove_row(self) -> None:
+        row_count = self.table.rowCount()
+        if row_count <= 0:
+            return
+        self.table.removeRow(row_count - 1)
+        self.changed.emit()
+
+    def _parse_token(self, raw: str) -> Optional[float | int]:
+        token = str(raw or "").strip().replace(",", ".")
+        if not token:
+            return None
+        try:
+            if self._parse_int:
+                return int(float(token))
+            return float(token)
+        except ValueError:
+            return None
+
+    def _row_text(self, row: int) -> str:
+        item = self.table.item(row, 0)
+        return "" if item is None else str(item.text() or "")
+
+    def is_set(self) -> bool:
+        return any(bool(self._row_text(row).strip()) for row in range(self.table.rowCount()))
+
+    def clear(self) -> None:
+        self.table.setRowCount(0)
+
+    def value(self) -> Optional[List[float | int]]:
+        if not self.is_set():
+            return None
+        parsed: List[float | int] = []
+        for row in range(self.table.rowCount()):
+            raw = self._row_text(row)
+            value = self._parse_token(raw)
+            if value is None:
+                if raw.strip():
+                    return None
+                value = 0 if self._parse_int else 0.0
+            parsed.append(value)
+        return parsed
+
+    def set_value(self, value: Any) -> None:
+        if value is None:
+            self.clear()
+            return
+        values = list(value) if isinstance(value, (list, tuple)) else [value]
+        self.table.setRowCount(0)
+        for row, item in enumerate(values):
+            self.table.insertRow(row)
+            text = ""
+            if item is not None:
+                try:
+                    text = str(int(float(item)) if self._parse_int else float(item))
+                except (TypeError, ValueError):
+                    text = ""
+            self.table.setItem(row, 0, QTableWidgetItem(text))
+
+    def set_locked(self, locked: bool) -> None:
+        self.add_btn.setEnabled(not locked)
+        self.remove_btn.setEnabled(not locked)
+        self.table.setEnabled(not locked)
+
+    def set_suggested_text(self, text: str) -> None:
+        self._suggested_tooltip = str(text or "")
+        self.table.setToolTip(self._suggested_tooltip)
+
+    def clear_suggested_text(self) -> None:
+        self._suggested_tooltip = ""
+        self.table.setToolTip("")
+
+    def entry_count(self) -> int:
+        return int(self.table.rowCount())
+
+    def set_entry_count(self, count: int) -> None:
+        target = max(0, int(count))
+        current = int(self.table.rowCount())
+        if target == current:
+            return
+        if target < current:
+            while self.table.rowCount() > target:
+                self.table.removeRow(self.table.rowCount() - 1)
+            self.changed.emit()
+            return
+        while self.table.rowCount() < target:
+            row = self.table.rowCount()
+            self.table.insertRow(row)
+            self.table.setItem(row, 0, QTableWidgetItem(""))
+        self.changed.emit()
+
+
+class NullableCodeEditorInput(QWidget):
+    changed = Signal()
+
+    def __init__(self, *, placeholder: str = "", parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._base_placeholder = str(placeholder or "")
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+        self.setFixedWidth(INPUT_TOTAL_WIDTH + 160)
+
+        self.edit = QPlainTextEdit()
+        self.edit.setPlaceholderText(self._base_placeholder)
+        self.edit.setFixedHeight(108)
+        fixed_font = QFontDatabase.systemFont(QFontDatabase.FixedFont)
+        self.edit.setFont(fixed_font)
+        self.edit.textChanged.connect(lambda *_: self.changed.emit())
+        root.addWidget(self.edit)
+
+    def is_set(self) -> bool:
+        return bool(str(self.edit.toPlainText() or "").strip())
+
+    def clear(self) -> None:
+        self.edit.clear()
+
+    def value(self) -> Optional[str]:
+        if not self.is_set():
+            return None
+        return str(self.edit.toPlainText() or "").strip()
+
+    def set_value(self, value: Any) -> None:
+        if value is None:
+            self.clear()
+            return
+        self.edit.setPlainText(str(value))
+
+    def set_locked(self, locked: bool) -> None:
+        self.edit.setEnabled(not locked)
+
+    def set_suggested_text(self, text: str) -> None:
+        self.edit.setPlaceholderText(str(text or self._base_placeholder))
+
+    def clear_suggested_text(self) -> None:
+        self.edit.setPlaceholderText(self._base_placeholder)
+
 
 class NullableBoolInput(QWidget):
     changed = Signal()
@@ -833,6 +1517,8 @@ class SegmentedEnumInput(QWidget):
             button = QPushButton(label)
             button.setCheckable(True)
             button.setProperty("segment", "true")
+            button.setMinimumHeight(CONTROL_HEIGHT)
+            button.setMinimumWidth(max(56, int(button.fontMetrics().horizontalAdvance(str(label)) + 16)))
             self.group.addButton(button, index)
             self._values_by_id[index] = value
             if value is None:
@@ -977,6 +1663,7 @@ class NullableEnumComboInput(QWidget):
 
         self.combo = QComboBox()
         self.combo.setFixedWidth(INPUT_TOTAL_WIDTH)
+        self.combo.setMinimumHeight(CONTROL_HEIGHT)
         self.combo.addItem("-", None)
         for label, value in options:
             self.combo.addItem(label, value)
@@ -1013,26 +1700,48 @@ class ScalarFieldEditor(QWidget):
         self.field = field
         self._value_widget: QWidget
         self._state_badge: QLabel
+        self._reset_button: QPushButton
+        self._locked = False
+        self._base_tooltip = str(field.tooltip or "")
+        self._policy_suggested_default: Any = None
+        self._policy_suggested_source = "policy_minimal"
+        self._fixed_editor_width = False
 
         root = QHBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(8)
 
         self._value_widget = self._build_value_widget()
-        root.addWidget(self._value_widget, 1)
+        key = str(self.field.key).strip()
+        self._fixed_editor_width = (
+            (self.field.widget_kind in {"float", "int", "expr", "ex"})
+            or (key == "Morph.FixedPart")
+            or self._is_angle_key(key)
+        )
+        if self._fixed_editor_width:
+            self.setFixedWidth(int(EDITOR_TOTAL_WIDTH))
+        root.addWidget(self._value_widget, 0, Qt.AlignLeft | Qt.AlignVCenter)
+
+        self._reset_button = QPushButton("\u27f2")
+        self._reset_button.setObjectName("FieldResetButton")
+        self._reset_button.setToolTip("Reset override")
+        self._reset_button.setProperty("canReset", "false")
+        self._reset_button.setFixedSize(RESET_CONTROL_WIDTH, RESET_CONTROL_WIDTH)
+        self._reset_button.clicked.connect(self._on_reset_clicked)
+        root.addWidget(self._reset_button, 0, Qt.AlignRight)
 
         # Fixed-width badge avoids layout shifts when state changes.
         self._state_badge = QLabel("")
         self._state_badge.setObjectName("FieldStateBadge")
-        self._state_badge.setFixedWidth(14)
+        self._state_badge.setFixedWidth(STATE_BADGE_WIDTH)
         self._state_badge.setAlignment(Qt.AlignCenter)
         self._state_badge.setProperty("severity", "neutral")
         self._state_badge.setVisible(True)
         root.addWidget(self._state_badge, 0, Qt.AlignRight)
 
-        if field.tooltip:
-            self.setToolTip(field.tooltip)
-            self._value_widget.setToolTip(field.tooltip)
+        if self._base_tooltip:
+            self.setToolTip(self._base_tooltip)
+            self._value_widget.setToolTip(self._base_tooltip)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self._wire_signals()
 
@@ -1046,12 +1755,92 @@ class ScalarFieldEditor(QWidget):
             self.set_value(0)
         else:
             self.set_is_set(False)
+        self._sync_override_state()
+        self._refresh_suggested_default_visuals()
 
     def _wire_signals(self) -> None:
         if hasattr(self._value_widget, "changed"):
-            self._value_widget.changed.connect(lambda *_: self.changed.emit())  # type: ignore[attr-defined]
+            self._value_widget.changed.connect(self._on_value_widget_changed)  # type: ignore[attr-defined]
+
+    def _on_value_widget_changed(self, *_: Any) -> None:
+        self._sync_override_state()
+        self._refresh_suggested_default_visuals()
+        self.changed.emit()
+
+    def _on_reset_clicked(self) -> None:
+        self.set_is_set(False)
+        self.changed.emit()
+
+    @staticmethod
+    def _is_angle_key(key: str) -> bool:
+        token = str(key).strip()
+        return token in {
+            "Throat.Angle",
+            "Throat.Ext.Angle",
+            "Coverage.Angle",
+            "CircArc.TermAngle",
+            "Rot",
+            "GCurve.Rot",
+            "R-OSSE.a0",
+            "R-OSSE.a",
+        }
+
+    @staticmethod
+    def _angle_bounds_for_key(key: str) -> tuple[float, float]:
+        token = str(key).strip()
+        if token in {"Rot", "GCurve.Rot"}:
+            return (-180.0, 180.0)
+        if token in {"R-OSSE.a0", "R-OSSE.a", "Throat.Angle", "Throat.Ext.Angle", "Coverage.Angle"}:
+            return (0.0, 90.0)
+        return (0.0, 180.0)
 
     def _build_value_widget(self) -> QWidget:
+        key = str(self.field.key).strip()
+        if key == "Morph.FixedPart":
+            return NullableSliderNumericInput(
+                minimum=0.0,
+                maximum=1.0,
+                decimals=3,
+                placeholder=self.field.placeholder or "0..1",
+                unit=self.field.unit,
+                slider_resolution=1000,
+                base_slider_step=10,
+            )
+        if self._is_angle_key(key):
+            angle_min, angle_max = self._angle_bounds_for_key(key)
+            return NullableSliderNumericInput(
+                minimum=angle_min,
+                maximum=angle_max,
+                decimals=2,
+                placeholder=self.field.placeholder or "0",
+                unit=self.field.unit,
+                slider_resolution=720,
+                base_slider_step=6,
+            )
+        if key == "Mesh.AngularSegments":
+            return NullableIntSpinInput(
+                minimum=4,
+                maximum=int(self.field.maximum) if self.field.maximum is not None else 4096,
+                step=4,
+                multiple_of=4,
+                placeholder=self.field.placeholder or "multiple of 4",
+                unit=self.field.unit,
+            )
+        if key in {"Mesh.LengthSegments", "Mesh.CornerSegments", "Mesh.ThroatSegments"}:
+            return NullableIntSpinInput(
+                minimum=1 if self.field.minimum is None else int(self.field.minimum),
+                maximum=int(self.field.maximum) if self.field.maximum is not None else 4096,
+                step=1,
+                placeholder=self.field.placeholder or "0",
+                unit=self.field.unit,
+            )
+        if key in {"Mesh.Enclosure.Spacing", "Mesh.Enclosure.FrontResolution", "Mesh.Enclosure.BackResolution"}:
+            labels = ("L", "T", "R", "B") if key == "Mesh.Enclosure.Spacing" else ("Q1", "Q2", "Q3", "Q4")
+            return NullableVector4Input(labels=labels, placeholder=self.field.placeholder or "0", unit=self.field.unit)
+        if key in {"Mesh.SubdomainSlices", "Mesh.InterfaceOffset", "Mesh.InterfaceDraw"}:
+            return NullableListTableInput(parse_int=(key == "Mesh.SubdomainSlices"))
+        if key == "Mesh.Enclosure.Plan":
+            return NullableCodeEditorInput(placeholder=self.field.placeholder or "Plan script / layout")
         if self.field.key == "Rollback":
             return SegmentedEnumInput(
                 options=[("disabled", 0), ("enabled", 1)],
@@ -1135,17 +1924,77 @@ class ScalarFieldEditor(QWidget):
             return False
         return bool(self._value_widget.is_set())  # type: ignore[attr-defined]
 
+    def _sync_override_state(self) -> None:
+        can_reset = bool(self.is_set() and not self._locked)
+        self._reset_button.setEnabled(can_reset)
+        self._reset_button.setProperty("canReset", "true" if can_reset else "false")
+        self._reset_button.style().unpolish(self._reset_button)
+        self._reset_button.style().polish(self._reset_button)
+        self._reset_button.update()
+
+    def _default_hint(self) -> tuple[Any, str]:
+        if self._policy_suggested_default is not None:
+            return (self._policy_suggested_default, str(self._policy_suggested_source or "policy_minimal"))
+        if self.field.default is not None:
+            return (self.field.default, "catalog")
+        return (None, "")
+
+    def _refresh_suggested_default_visuals(self) -> None:
+        value, source = self._default_hint()
+        text = _format_default_value(value)
+        tooltip_parts: List[str] = []
+        if self._base_tooltip:
+            tooltip_parts.append(self._base_tooltip)
+        if (not self.is_set()) and text:
+            tooltip_parts.append(f"Default (source={source}): {text}")
+            self._apply_suggested_text(text)
+        else:
+            self._clear_suggested_text()
+        tooltip = "\n\n".join(tooltip_parts).strip()
+        self.setToolTip(tooltip)
+        self._value_widget.setToolTip(tooltip)
+        if isinstance(self._value_widget, NullableIntSpinInput):
+            self._value_widget.set_base_tooltip(tooltip)
+
+    def _apply_suggested_text(self, text: str) -> None:
+        if hasattr(self._value_widget, "set_suggested_text"):
+            self._value_widget.set_suggested_text(text)  # type: ignore[attr-defined]
+            return
+        edit = getattr(self._value_widget, "edit", None)
+        if isinstance(edit, (QLineEdit, QPlainTextEdit)):
+            edit.setPlaceholderText(str(text))
+
+    def _clear_suggested_text(self) -> None:
+        if hasattr(self._value_widget, "clear_suggested_text"):
+            self._value_widget.clear_suggested_text()  # type: ignore[attr-defined]
+            return
+
     def set_is_set(self, enabled: bool) -> None:
         if enabled:
             if not self.is_set() and self.field.default is not None:
                 self.set_value(self.field.default)
+            self._sync_override_state()
+            self._refresh_suggested_default_visuals()
             return
         if hasattr(self._value_widget, "clear"):
             self._value_widget.clear()  # type: ignore[attr-defined]
+        self._sync_override_state()
+        self._refresh_suggested_default_visuals()
 
     def set_value(self, value: Any) -> None:
         if hasattr(self._value_widget, "set_value"):
             self._value_widget.set_value(value)  # type: ignore[attr-defined]
+        self._sync_override_state()
+        self._refresh_suggested_default_visuals()
+
+    def set_policy_suggested_default(self, value: Any, *, source: str = "policy_minimal") -> None:
+        self._policy_suggested_default = value
+        self._policy_suggested_source = str(source or "policy_minimal")
+        self._refresh_suggested_default_visuals()
+
+    def clear_policy_suggested_default(self) -> None:
+        self._policy_suggested_default = None
+        self._refresh_suggested_default_visuals()
 
     def current_state(self) -> FieldState:
         if not self.is_set():
@@ -1155,12 +2004,16 @@ class ScalarFieldEditor(QWidget):
         return FieldState(is_set=False, value=None)
 
     def set_locked(self, locked: bool) -> None:
+        self._locked = bool(locked)
         if locked:
             self.setToolTip("Locked by runner mode.")
         if hasattr(self._value_widget, "set_locked"):
             self._value_widget.set_locked(locked)  # type: ignore[attr-defined]
         else:
             self._value_widget.setEnabled(not locked)
+        self._sync_override_state()
+        if not locked:
+            self._refresh_suggested_default_visuals()
 
     def set_helper_message(self, message: str, severity: str) -> None:
         # Legacy hook retained for compatibility; helper text is now shown in the
@@ -1186,12 +2039,19 @@ class ScalarFieldEditor(QWidget):
 class ObjectFieldEditor(QWidget):
     changed = Signal()
 
+    @staticmethod
+    def _is_tall_property_editor(editor: ScalarFieldEditor) -> bool:
+        value_widget = editor.value_widget()
+        return isinstance(value_widget, (NullableVector4Input, NullableListTableInput, NullableCodeEditorInput))
+
     def __init__(self, field: FieldSpec, *, use_toggle: bool, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.field = field
         self._use_toggle = use_toggle
         self.property_editors: Dict[str, ScalarFieldEditor] = {}
         self._state_badge: QLabel
+        self._reset_button: QPushButton
+        self._locked = False
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
 
         root = QVBoxLayout(self)
@@ -1202,9 +2062,16 @@ class ObjectFieldEditor(QWidget):
         badge_row.setContentsMargins(0, 0, 0, 0)
         badge_row.setSpacing(0)
         badge_row.addStretch(1)
+        self._reset_button = QPushButton("\u27f2")
+        self._reset_button.setObjectName("FieldResetButton")
+        self._reset_button.setToolTip("Reset override")
+        self._reset_button.setProperty("canReset", "false")
+        self._reset_button.setFixedSize(RESET_CONTROL_WIDTH, RESET_CONTROL_WIDTH)
+        self._reset_button.clicked.connect(self._on_reset_clicked)
+        badge_row.addWidget(self._reset_button, 0, Qt.AlignRight)
         self._state_badge = QLabel("")
         self._state_badge.setObjectName("FieldStateBadge")
-        self._state_badge.setFixedWidth(14)
+        self._state_badge.setFixedWidth(STATE_BADGE_WIDTH)
         self._state_badge.setAlignment(Qt.AlignCenter)
         self._state_badge.setProperty("severity", "neutral")
         badge_row.addWidget(self._state_badge, 0, Qt.AlignRight)
@@ -1231,21 +2098,48 @@ class ObjectFieldEditor(QWidget):
         else:
             configure_two_column_grid(props_grid)
 
-        for index, property_field in enumerate(field.object_properties):
-            label = QLabel(property_field.label)
-            label.setWordWrap(False)
-            label.setToolTip(str(property_field.label or ""))
-            label.setFixedWidth(max(122, LABEL_COLUMN_WIDTH - 16) if use_rosse_three_column else LABEL_COLUMN_WIDTH)
+        grid_row = 0
+        left_slot = True
+        for property_field in field.object_properties:
             editor = ScalarFieldEditor(property_field)
             editor.changed.connect(self._on_child_changed)
-            editor.set_is_set(False)
             if use_rosse_three_column and compact_grid is not None:
+                label = QLabel(property_field.label)
+                label.setWordWrap(False)
+                label.setToolTip(str(property_field.label or ""))
+                label.setFixedWidth(max(122, LABEL_COLUMN_WIDTH - 16))
                 compact_grid.add_cell(label, editor)
             else:
-                row = index // 2
-                label_col, input_col = _two_column_positions(index % 2)
-                props_grid.addWidget(label, row, label_col)
-                props_grid.addWidget(editor, row, input_col, 1, 1, alignment=Qt.AlignLeft)
+                if self._is_tall_property_editor(editor):
+                    if not left_slot:
+                        grid_row += 1
+                        left_slot = True
+                    tall_row = QWidget()
+                    tall_layout = QVBoxLayout(tall_row)
+                    tall_layout.setContentsMargins(0, 0, 0, 0)
+                    tall_layout.setSpacing(3)
+                    tall_label = QLabel(property_field.label)
+                    tall_label.setObjectName("ContextTitle")
+                    tall_label.setToolTip(str(property_field.label or ""))
+                    tall_layout.addWidget(tall_label, 0, Qt.AlignLeft)
+                    tall_layout.addWidget(editor, 0, Qt.AlignLeft)
+                    props_grid.addWidget(tall_row, grid_row, 0, 1, 5)
+                    grid_row += 1
+                    left_slot = True
+                else:
+                    label = QLabel(property_field.label)
+                    label.setWordWrap(False)
+                    label.setToolTip(str(property_field.label or ""))
+                    label.setFixedWidth(LABEL_COLUMN_WIDTH)
+                    slot_index = 0 if left_slot else 1
+                    label_col, input_col = _two_column_positions(slot_index)
+                    props_grid.addWidget(label, grid_row, label_col)
+                    props_grid.addWidget(editor, grid_row, input_col, 1, 1, alignment=Qt.AlignLeft)
+                    if left_slot:
+                        left_slot = False
+                    else:
+                        left_slot = True
+                        grid_row += 1
             self.property_editors[property_field.key] = editor
 
         if use_rosse_three_column and compact_grid is not None:
@@ -1262,6 +2156,7 @@ class ObjectFieldEditor(QWidget):
             self.toggle.changed.connect(self._on_toggle_changed)
             self.toggle.set_value(0)
         self._apply_enabled_state()
+        self._sync_override_state()
 
     def _toggle_enabled(self) -> bool:
         if self.toggle is None:
@@ -1269,17 +2164,31 @@ class ObjectFieldEditor(QWidget):
         value = self.toggle.value()
         return bool(value == 1)
 
+    def _sync_override_state(self) -> None:
+        can_reset = bool(self.is_set() and not self._locked)
+        self._reset_button.setEnabled(can_reset)
+        self._reset_button.setProperty("canReset", "true" if can_reset else "false")
+        self._reset_button.style().unpolish(self._reset_button)
+        self._reset_button.style().polish(self._reset_button)
+        self._reset_button.update()
+
+    def _on_reset_clicked(self) -> None:
+        self.set_is_set(False)
+        self.changed.emit()
+
     def _on_toggle_changed(self) -> None:
         if not self._toggle_enabled():
             for editor in self.property_editors.values():
                 editor.set_is_set(False)
         self._apply_enabled_state()
+        self._sync_override_state()
         self.changed.emit()
 
     def _on_child_changed(self) -> None:
         if self.toggle is not None and any(editor.is_set() for editor in self.property_editors.values()):
             if not self._toggle_enabled():
                 self.toggle.set_value(1)
+        self._sync_override_state()
         self.changed.emit()
 
     def _apply_enabled_state(self) -> None:
@@ -1295,15 +2204,22 @@ class ObjectFieldEditor(QWidget):
 
     def set_is_set(self, enabled: bool) -> None:
         if self.toggle is not None:
-            self.toggle.set_value(1 if enabled else 0)
-            self._apply_enabled_state()
+            currently_enabled = self._toggle_enabled()
+            target_value = 1 if enabled else 0
+            if currently_enabled != bool(enabled):
+                self.toggle.set_value(target_value)
+                self._apply_enabled_state()
             if not enabled:
-                for editor in self.property_editors.values():
-                    editor.set_is_set(False)
+                has_overrides = any(editor.is_set() for editor in self.property_editors.values())
+                if has_overrides:
+                    for editor in self.property_editors.values():
+                        editor.set_is_set(False)
+            self._sync_override_state()
             return
         if not enabled:
             for editor in self.property_editors.values():
                 editor.set_is_set(False)
+        self._sync_override_state()
 
     def current_state(self) -> FieldState:
         if self.toggle is not None and not self._toggle_enabled():
@@ -1324,12 +2240,14 @@ class ObjectFieldEditor(QWidget):
         return FieldState(is_set=True, value=value)
 
     def set_locked(self, locked: bool) -> None:
+        self._locked = bool(locked)
         if self.toggle is not None:
             self.toggle.set_locked(locked)
         for editor in self.property_editors.values():
             editor.set_locked(locked)
         if locked:
             self.setToolTip("Locked by runner mode.")
+        self._sync_override_state()
 
     def set_helper_message(self, message: str, severity: str) -> None:
         _ = (message, severity)
@@ -1394,6 +2312,7 @@ class ParameterForm(QWidget):
         self._rollback_detail_keys: Tuple[str, ...] = ("Rollback.Angle", "Rollback.Exp", "Rollback.StartAt")
         self._coverage_angle_key = "Coverage.Angle"
         self._suspend_emit = False
+        self._handling_field_change = False
         self._last_changed_key: Optional[str] = None
         self._compat_ui_state: Dict[str, Any] = {}
         self._compat_hidden_keys: set[str] = set()
@@ -2205,23 +3124,27 @@ class ParameterForm(QWidget):
     def _sync_mode_side_effects(self) -> None:
         profile_value = self._controller_value("Throat.Profile")
         rosse_editor = self._field_editors.get("R-OSSE")
-        if rosse_editor is None or not hasattr(rosse_editor, "set_is_set"):
+        if rosse_editor is None or not hasattr(rosse_editor, "set_is_set") or not hasattr(rosse_editor, "is_set"):
             return
-        if profile_value == 2:
-            rosse_editor.set_is_set(True)  # type: ignore[attr-defined]
-        else:
-            rosse_editor.set_is_set(False)  # type: ignore[attr-defined]
+        should_enable = bool(profile_value == 2)
+        current_enabled = bool(rosse_editor.is_set())  # type: ignore[attr-defined]
+        if should_enable != current_enabled:
+            rosse_editor.set_is_set(should_enable)  # type: ignore[attr-defined]
 
     def _on_any_field_changed(self, *_: Any, changed_key: Optional[str] = None) -> None:
-        if self._suspend_emit:
+        if self._suspend_emit or self._handling_field_change:
             return
-        if changed_key:
-            self._last_changed_key = str(changed_key)
-        self._refresh_mode_stacks()
-        self._sync_mode_side_effects()
-        self._apply_local_disclosure()
-        self._refresh_section_headers()
-        self.changed.emit(self.payload())
+        self._handling_field_change = True
+        try:
+            if changed_key:
+                self._last_changed_key = str(changed_key)
+            self._refresh_mode_stacks()
+            self._sync_mode_side_effects()
+            self._apply_local_disclosure()
+            self._refresh_section_headers()
+            self.changed.emit(self.payload())
+        finally:
+            self._handling_field_change = False
 
     def _rollback_enabled(self) -> bool:
         editor = self._field_editors.get("Rollback")

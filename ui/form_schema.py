@@ -390,6 +390,23 @@ def _gcurve_options(options: Tuple[EnumSpec, ...]) -> Tuple[EnumSpec, ...]:
     return tuple(merged)
 
 
+def _morph_target_shape_options(options: Tuple[EnumSpec, ...]) -> Tuple[EnumSpec, ...]:
+    label_override = {
+        0: "Original",
+        1: "Rectangle",
+        2: "Circle",
+    }
+    merged: List[EnumSpec] = []
+    for option in options:
+        token = option.value
+        try:
+            token = int(float(option.value))  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            token = option.value
+        merged.append(EnumSpec(label=label_override.get(token, option.label), value=option.value))
+    return tuple(merged)
+
+
 def _ui_mode_tags_for_key(
     key: str,
     visibility_map: Mapping[str, Mapping[int, set[str]]],
@@ -484,6 +501,8 @@ def build_project_form_schema(bundle: AthKnowledgeBundle | None = None) -> FormS
             enum_options = _append_rosse_option(enum_options)
         if key == "GCurve.Type":
             enum_options = _gcurve_options(enum_options)
+        if key == "Morph.TargetShape":
+            enum_options = _morph_target_shape_options(enum_options)
 
         field = FieldSpec(
             key=key,
