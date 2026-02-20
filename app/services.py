@@ -92,6 +92,7 @@ def _settings_hash(settings: UserSettings) -> str:
         "akabak_exe": settings.akabak_exe,
         "vacs_exe": settings.vacs_exe,
         "template_cfg": settings.template_cfg,
+        "background_automation_mode": bool(getattr(settings, "background_automation_mode", True)),
     }
     canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()

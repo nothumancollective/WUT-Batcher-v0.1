@@ -8,6 +8,7 @@ import logging
 from pathlib import Path
 import subprocess
 import sys
+import traceback
 from typing import Any, Callable, Dict, List, Mapping, Optional
 
 from app.doctor_service import run_doctor_checks
@@ -163,6 +164,37 @@ class _BatchPreviewWorker(QObject):
             self.failed.emit(self._request_id, str(exc))
             return
         self.finished.emit(self._request_id, dict(result))
+
+
+class _BatchRunWorker(QObject):
+    finished = Signal(str, dict)
+    failed = Signal(str, str)
+
+    def __init__(
+        self,
+        *,
+        service: OrchestratorService,
+        project_id: str,
+        batch_id: str,
+        continue_on_error: bool,
+    ) -> None:
+        super().__init__()
+        self._service = service
+        self._project_id = str(project_id)
+        self._batch_id = str(batch_id)
+        self._continue_on_error = bool(continue_on_error)
+
+    def run(self) -> None:
+        try:
+            summary = self._service.run_batch(
+                self._project_id,
+                self._batch_id,
+                continue_on_error=self._continue_on_error,
+            )
+            payload = asdict(summary)
+            self.finished.emit(self._batch_id, payload)
+        except Exception:
+            self.failed.emit(self._batch_id, traceback.format_exc())
 
 
 def _severity_rank(value: str) -> int:
@@ -674,6 +706,10 @@ class SettingsDialog(QDialog):
         self.akabak_exe = QLineEdit()
         self.vacs_exe = QLineEdit()
         self.template_cfg = QLineEdit()
+        self.background_automation_mode = QCheckBox("Enable Background Automation Mode")
+        self.background_automation_mode.setToolTip(
+            "When enabled, the RUN screen stays in front while AKABAK/VACS automation runs in the background."
+        )
 
         form = QFormLayout()
         form.addRow("Library Folder", self.library_root)
@@ -681,6 +717,7 @@ class SettingsDialog(QDialog):
         form.addRow("AKABAK", self.akabak_exe)
         form.addRow("VACS", self.vacs_exe)
         form.addRow("Template CFG", self.template_cfg)
+        form.addRow("Automation", self.background_automation_mode)
 
         save_btn = QPushButton("Save")
         save_btn.setObjectName("PrimaryButton")
@@ -706,6 +743,7 @@ class SettingsDialog(QDialog):
         self.akabak_exe.setText(settings.akabak_exe or "")
         self.vacs_exe.setText(settings.vacs_exe or "")
         self.template_cfg.setText(settings.template_cfg or "")
+        self.background_automation_mode.setChecked(bool(getattr(settings, "background_automation_mode", True)))
 
     def _save(self) -> None:
         settings = UserSettings(
@@ -714,6 +752,7 @@ class SettingsDialog(QDialog):
             akabak_exe=self.akabak_exe.text().strip() or None,
             vacs_exe=self.vacs_exe.text().strip() or None,
             template_cfg=self.template_cfg.text().strip() or None,
+            background_automation_mode=bool(self.background_automation_mode.isChecked()),
         )
         result = self.service.save_settings(settings)
         issues = result.get("validation", {})
@@ -2299,12 +2338,12 @@ class RunPage(QWidget):
         title.setObjectName("PageTitle")
         shell_layout.addWidget(title, 0, Qt.AlignLeft | Qt.AlignVCenter)
 
-        hint = QLabel(
+        self.hint_label = QLabel(
             "AKABAK/VACS are driven via UI automation. This screen stays in front until the run finishes."
         )
-        hint.setObjectName("SummaryText")
-        hint.setWordWrap(True)
-        shell_layout.addWidget(hint)
+        self.hint_label.setObjectName("SummaryText")
+        self.hint_label.setWordWrap(True)
+        shell_layout.addWidget(self.hint_label)
 
         self.progress = QProgressBar()
         self.progress.setObjectName("RunProgressBar")
@@ -2341,6 +2380,16 @@ class RunPage(QWidget):
         self.mode_label.setText("Mode: running...")
         self.eta_label.setText("ETA: calculating...")
         self.back_btn.setEnabled(False)
+
+    def set_background_mode(self, enabled: bool) -> None:
+        if enabled:
+            self.hint_label.setText(
+                "AKABAK/VACS are driven via UI automation. This screen stays in front until the run finishes."
+            )
+        else:
+            self.hint_label.setText(
+                "AKABAK/VACS are driven via UI automation. Background mode is disabled; tool windows may come to front."
+            )
 
     def set_finished_state(self, *, version_count: int, dry_run: bool) -> None:
         count = max(int(version_count), 0)
@@ -2564,6 +2613,8 @@ class MainWindow(QMainWindow):
         self._preview_request_id = 0
         self._preview_thread: Optional[QThread] = None
         self._preview_worker: Optional[_BatchPreviewWorker] = None
+        self._batch_run_thread: Optional[QThread] = None
+        self._batch_run_worker: Optional[_BatchRunWorker] = None
         self._preview_update_debounce_ms = 280
         self._pending_preview_payload: Optional[Dict[str, object]] = None
         self._preview_update_timer = QTimer(self)
@@ -2650,6 +2701,13 @@ class MainWindow(QMainWindow):
         self.run_page.back_to_dashboard.connect(self.show_dashboard)
 
     def _enter_run_presentation(self) -> None:
+        if not self._background_automation_enabled():
+            self._run_foreground_timer.stop()
+            self._run_fullscreen_active = False
+            if self.statusBar() is not None:
+                self.statusBar().setVisible(True)
+            self.show()
+            return
         if not self._run_fullscreen_active:
             self._window_state_before_run = self.windowState()
             self._window_topmost_before_run = bool(self.windowFlags() & Qt.WindowStaysOnTopHint)
@@ -2685,6 +2743,21 @@ class MainWindow(QMainWindow):
             return
         _ensure_fullscreen_foreground(self)
 
+    def _background_automation_enabled(self) -> bool:
+        return bool(getattr(self.service.settings, "background_automation_mode", True))
+
+    def closeEvent(self, event) -> None:  # type: ignore[override]
+        if self._run_in_progress():
+            QMessageBox.warning(
+                self,
+                "Run in progress",
+                "A run is still in progress. Please wait until it finishes.",
+            )
+            event.ignore()
+            return
+        self._stop_preview_worker()
+        super().closeEvent(event)
+
     def _stop_preview_worker(self) -> None:
         self._cancel_pending_preview_update()
         worker = self._preview_worker
@@ -2696,6 +2769,59 @@ class MainWindow(QMainWindow):
             thread.wait(1800)
         self._preview_worker = None
         self._preview_thread = None
+
+    def _run_in_progress(self) -> bool:
+        thread = self._batch_run_thread
+        return bool(thread is not None and thread.isRunning())
+
+    def _clear_batch_run_worker_refs(self, thread: Optional[QThread] = None) -> None:
+        if thread is None:
+            self._batch_run_thread = None
+            self._batch_run_worker = None
+            return
+        if self._batch_run_thread is thread:
+            self._batch_run_thread = None
+            self._batch_run_worker = None
+
+    def _start_batch_run_worker(self, *, project_id: str, batch_id: str, continue_on_error: bool) -> None:
+        worker = _BatchRunWorker(
+            service=self.service,
+            project_id=project_id,
+            batch_id=batch_id,
+            continue_on_error=continue_on_error,
+        )
+        thread = QThread(self)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(self._on_batch_run_finished)
+        worker.failed.connect(self._on_batch_run_failed)
+        worker.finished.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(lambda: self._clear_batch_run_worker_refs(thread))
+        self._batch_run_worker = worker
+        self._batch_run_thread = thread
+        thread.start()
+
+    def _on_batch_run_finished(self, batch_id: str, summary_payload: Dict[str, Any]) -> None:
+        version_count = len(list(summary_payload.get("versions", []) or []))
+        dry_run = bool(summary_payload.get("dry_run", False))
+        self.run_page.set_finished_state(version_count=version_count, dry_run=dry_run)
+        self.set_status(
+            f"Run finished for {batch_id}",
+            detail=json.dumps(summary_payload, indent=2, ensure_ascii=False),
+        )
+        self.refresh_dashboard()
+        self._exit_run_presentation()
+
+    def _on_batch_run_failed(self, batch_id: str, detail: str) -> None:
+        self.run_page.set_failed_state()
+        self.set_status(
+            f"Run failed for {batch_id}",
+            detail=str(detail or "unknown error"),
+        )
+        self._exit_run_presentation()
 
     def _cancel_pending_preview_update(self) -> None:
         self._pending_preview_payload = None
@@ -3016,6 +3142,7 @@ class MainWindow(QMainWindow):
     def show_run(self) -> None:
         self._stop_preview_worker()
         self.stack.setCurrentWidget(self.run_page)
+        self.run_page.set_background_mode(self._background_automation_enabled())
         self._enter_run_presentation()
 
     def _create_project(self, project_name: str, constraints: Dict[str, object]) -> None:
@@ -3167,6 +3294,9 @@ class MainWindow(QMainWindow):
         return next_payload
 
     def _run_batch(self, payload: Dict[str, object]) -> None:
+        if self._run_in_progress():
+            self.set_status("Run already in progress.")
+            return
         self._stop_preview_worker()
         run_payload = self._resolve_run_policy_defaults(dict(payload))
         if run_payload is None:
@@ -3177,21 +3307,13 @@ class MainWindow(QMainWindow):
         self._ensure_project_preview_thumbnail()
         self.show_run()
         self.run_page.set_running_state()
+        self.set_status(f"Run started for {batch_id}")
         QApplication.processEvents()
-        try:
-            summary = self.service.run_batch(self.current_project.project_id, batch_id, continue_on_error=True)
-        except Exception as exc:
-            self.run_page.set_failed_state()
-            self.set_status(f"Run failed for {batch_id}", detail=str(exc))
-            self._exit_run_presentation()
-            return
-        self.run_page.set_finished_state(version_count=len(summary.versions), dry_run=summary.dry_run)
-        self.set_status(
-            f"Run finished for {batch_id}",
-            detail=json.dumps(asdict(summary), indent=2, ensure_ascii=False),
+        self._start_batch_run_worker(
+            project_id=self.current_project.project_id,
+            batch_id=batch_id,
+            continue_on_error=True,
         )
-        self.refresh_dashboard()
-        self._exit_run_presentation()
 
     def _ensure_project_preview_thumbnail(self) -> None:
         if self.current_project is None:

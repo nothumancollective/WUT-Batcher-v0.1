@@ -129,6 +129,7 @@ def cmd_dataset_sync_global(args: argparse.Namespace) -> int:
             akabak_exe=settings.akabak_exe,
             vacs_exe=settings.vacs_exe,
             template_cfg=settings.template_cfg,
+            background_automation_mode=bool(getattr(settings, "background_automation_mode", True)),
         )
         settings_store.save(settings)
     service = OrchestratorService(settings_store=settings_store)
@@ -181,6 +182,7 @@ def cmd_run_sample(args: argparse.Namespace) -> int:
             akabak_exe=settings.akabak_exe,
             vacs_exe=settings.vacs_exe,
             template_cfg=settings.template_cfg,
+            background_automation_mode=bool(getattr(settings, "background_automation_mode", True)),
         )
         settings_store.save(settings)
     service = OrchestratorService(settings_store=settings_store)
@@ -332,6 +334,7 @@ def cmd_compat_verify(args: argparse.Namespace) -> int:
             akabak_exe=settings.akabak_exe,
             vacs_exe=settings.vacs_exe,
             template_cfg=settings.template_cfg,
+            background_automation_mode=bool(getattr(settings, "background_automation_mode", True)),
         )
         settings_store.save(settings)
     service = OrchestratorService(settings_store=settings_store)
@@ -467,6 +470,7 @@ def cmd_ath_experiments_minimal_completion_search(args: argparse.Namespace) -> i
         akabak_exe=loaded.akabak_exe,
         vacs_exe=loaded.vacs_exe,
         template_cfg=(args.template_cfg or loaded.template_cfg),
+        background_automation_mode=bool(getattr(loaded, "background_automation_mode", True)),
     )
     summary = run_minimal_completion_search(
         settings=settings,

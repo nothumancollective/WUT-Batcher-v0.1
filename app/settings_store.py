@@ -16,6 +16,19 @@ def _default_settings_path() -> Path:
     return Path.home() / ".wut_batcher" / "config.json"
 
 
+def _as_bool(value: object, *, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    text = str(value or "").strip().lower()
+    if text in {"1", "true", "yes", "on"}:
+        return True
+    if text in {"0", "false", "no", "off"}:
+        return False
+    return bool(default)
+
+
 @dataclass
 class UserSettings:
     library_root: str = _default_library_root()
@@ -23,6 +36,7 @@ class UserSettings:
     akabak_exe: Optional[str] = None
     vacs_exe: Optional[str] = None
     template_cfg: Optional[str] = None
+    background_automation_mode: bool = True
 
     def to_dict(self) -> Dict[str, object]:
         return {
@@ -31,6 +45,7 @@ class UserSettings:
             "akabak_exe": self.akabak_exe,
             "vacs_exe": self.vacs_exe,
             "template_cfg": self.template_cfg,
+            "background_automation_mode": bool(self.background_automation_mode),
         }
 
     @classmethod
@@ -41,6 +56,7 @@ class UserSettings:
             akabak_exe=str(payload["akabak_exe"]) if payload.get("akabak_exe") else None,
             vacs_exe=str(payload["vacs_exe"]) if payload.get("vacs_exe") else None,
             template_cfg=str(payload["template_cfg"]) if payload.get("template_cfg") else None,
+            background_automation_mode=_as_bool(payload.get("background_automation_mode"), default=True),
         )
 
 
