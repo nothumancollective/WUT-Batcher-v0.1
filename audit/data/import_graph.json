@@ -1,0 +1,985 @@
+{
+  "generated_at": "2026-02-20T14:29:28Z",
+  "python_file_count": 135,
+  "module_count": 135,
+  "import_edge_count": 252,
+  "layer_counts": {
+    "app": 64,
+    "scripts": 3,
+    "tests": 55,
+    "ui": 13
+  },
+  "top_in_degree": [
+    {
+      "module": "app.models",
+      "count": 23
+    },
+    {
+      "module": "app.constants",
+      "count": 17
+    },
+    {
+      "module": "app.ath_knowledge",
+      "count": 11
+    },
+    {
+      "module": "app.settings_store",
+      "count": 10
+    },
+    {
+      "module": "app.export_specs",
+      "count": 9
+    },
+    {
+      "module": "app.compatibility_service",
+      "count": 8
+    },
+    {
+      "module": "app.gui",
+      "count": 8
+    },
+    {
+      "module": "app.services",
+      "count": 8
+    },
+    {
+      "module": "ui.form_schema",
+      "count": 8
+    },
+    {
+      "module": "app.tidy_dataset",
+      "count": 7
+    },
+    {
+      "module": "app.version_resolver",
+      "count": 7
+    },
+    {
+      "module": "app.cfg_renderer",
+      "count": 6
+    },
+    {
+      "module": "app.compat_engine",
+      "count": 6
+    },
+    {
+      "module": "app.compat_schema",
+      "count": 5
+    },
+    {
+      "module": "app.runners",
+      "count": 5
+    },
+    {
+      "module": "app.ui_automation.waits",
+      "count": 5
+    },
+    {
+      "module": "app.vacs_graph_catalog",
+      "count": 5
+    },
+    {
+      "module": "app.runtime_orchestrator",
+      "count": 4
+    },
+    {
+      "module": "app.safe_cleanup",
+      "count": 4
+    },
+    {
+      "module": "app.ui_automation.session",
+      "count": 4
+    },
+    {
+      "module": "app.ui_contracts.window_signatures",
+      "count": 4
+    },
+    {
+      "module": "ui.form_builder",
+      "count": 4
+    },
+    {
+      "module": "app.ath_driver_assets",
+      "count": 3
+    },
+    {
+      "module": "app.batch_orchestrator",
+      "count": 3
+    },
+    {
+      "module": "app.batch_planner",
+      "count": 3
+    },
+    {
+      "module": "app.compare_policy",
+      "count": 3
+    },
+    {
+      "module": "app.projectpage_ath_test",
+      "count": 3
+    },
+    {
+      "module": "app.runner_test_db",
+      "count": 3
+    },
+    {
+      "module": "app.ui_automation.inspector",
+      "count": 3
+    },
+    {
+      "module": "app.ui_automation.recipes",
+      "count": 3
+    }
+  ],
+  "top_out_degree": [
+    {
+      "module": "app.cli",
+      "count": 20
+    },
+    {
+      "module": "app.runner_test_harness",
+      "count": 17
+    },
+    {
+      "module": "app.services",
+      "count": 13
+    },
+    {
+      "module": "app.projectpage_ath_test",
+      "count": 10
+    },
+    {
+      "module": "app.minimal_completion_search",
+      "count": 7
+    },
+    {
+      "module": "app.compatibility_service",
+      "count": 6
+    },
+    {
+      "module": "app.projectpage_ath_experiment",
+      "count": 6
+    },
+    {
+      "module": "app.vacs_driver",
+      "count": 6
+    },
+    {
+      "module": "tests.test_batch_page_ui",
+      "count": 6
+    },
+    {
+      "module": "app.akabak_driver",
+      "count": 5
+    },
+    {
+      "module": "tests.test_batch_validation_alignment_fuzz",
+      "count": 5
+    },
+    {
+      "module": "tests.test_project_form_ui",
+      "count": 5
+    },
+    {
+      "module": "app.batch_orchestrator",
+      "count": 4
+    },
+    {
+      "module": "app.vacs_export_pipeline",
+      "count": 4
+    },
+    {
+      "module": "app.vacs_exporters.registry",
+      "count": 4
+    },
+    {
+      "module": "tests.test_compat_ui_adapter",
+      "count": 4
+    },
+    {
+      "module": "app.cfg_renderer",
+      "count": 3
+    },
+    {
+      "module": "app.compat_engine",
+      "count": 3
+    },
+    {
+      "module": "app.compat_verification",
+      "count": 3
+    },
+    {
+      "module": "app.vacs_exporters.builtin",
+      "count": 3
+    },
+    {
+      "module": "app.version_resolver",
+      "count": 3
+    },
+    {
+      "module": "ui.batch_parameter_form",
+      "count": 3
+    },
+    {
+      "module": "tests.test_eta_estimator",
+      "count": 3
+    },
+    {
+      "module": "tests.test_m5_planner_renderer",
+      "count": 3
+    },
+    {
+      "module": "tests.test_minimal_completion_search",
+      "count": 3
+    },
+    {
+      "module": "tests.test_preview_pipeline",
+      "count": 3
+    },
+    {
+      "module": "tests.test_project_storage_and_tidy",
+      "count": 3
+    },
+    {
+      "module": "tests.test_project_validation_alignment_fuzz",
+      "count": 3
+    },
+    {
+      "module": "tests.test_runner_test_harness",
+      "count": 3
+    },
+    {
+      "module": "tests.test_ui_automation_contracts",
+      "count": 3
+    }
+  ],
+  "edges": [
+    {
+      "from": "app.__main__",
+      "to": [
+        "app.cli"
+      ]
+    },
+    {
+      "from": "app.akabak_driver",
+      "to": [
+        "app.ui_automation.session",
+        "app.ui_automation.step_logger",
+        "app.ui_automation.waits",
+        "app.ui_automation.watchdog",
+        "app.ui_contracts.window_signatures"
+      ]
+    },
+    {
+      "from": "app.batch_orchestrator",
+      "to": [
+        "app.models",
+        "app.project_storage",
+        "app.tidy_dataset",
+        "app.version_resolver"
+      ]
+    },
+    {
+      "from": "app.batch_planner",
+      "to": [
+        "app.models"
+      ]
+    },
+    {
+      "from": "app.cfg_renderer",
+      "to": [
+        "app.ath_knowledge",
+        "app.compare_policy",
+        "app.constants"
+      ]
+    },
+    {
+      "from": "app.cli",
+      "to": [
+        "app.batch_orchestrator",
+        "app.batch_planner",
+        "app.compat_verification",
+        "app.contextual_range_analysis",
+        "app.dataset_pipeline",
+        "app.doctor_service",
+        "app.gui",
+        "app.minimal_completion_search",
+        "app.models",
+        "app.projectpage_ath_experiment",
+        "app.projectpage_ath_test",
+        "app.runner_test_harness",
+        "app.runtime_orchestrator",
+        "app.services",
+        "app.settings_store",
+        "app.ui_automation.discover",
+        "app.ui_automation.inspector",
+        "app.ui_automation.recipes",
+        "app.vacs_graph_catalog",
+        "ui.theme_preview"
+      ]
+    },
+    {
+      "from": "app.compat_engine",
+      "to": [
+        "app.ath_knowledge",
+        "app.compat_schema",
+        "app.constants"
+      ]
+    },
+    {
+      "from": "app.compat_rules",
+      "to": [
+        "app.ath_knowledge",
+        "app.compat_schema"
+      ]
+    },
+    {
+      "from": "app.compat_verification",
+      "to": [
+        "app.ath_knowledge",
+        "app.compat_schema",
+        "app.tidy_dataset"
+      ]
+    },
+    {
+      "from": "app.compatibility_service",
+      "to": [
+        "app.ath_knowledge",
+        "app.compat_engine",
+        "app.compat_schema",
+        "app.constants",
+        "app.models",
+        "app.version_resolver"
+      ]
+    },
+    {
+      "from": "app.doctor_service",
+      "to": [
+        "app.models"
+      ]
+    },
+    {
+      "from": "app.gui_theme",
+      "to": [
+        "ui.theme",
+        "ui.theme_tokens"
+      ]
+    },
+    {
+      "from": "app.minimal_completion_search",
+      "to": [
+        "app.ath_knowledge",
+        "app.cfg_renderer",
+        "app.compat_engine",
+        "app.constants",
+        "app.services",
+        "app.settings_store",
+        "ui.form_schema"
+      ]
+    },
+    {
+      "from": "app.models",
+      "to": [
+        "app.constants",
+        "app.export_specs"
+      ]
+    },
+    {
+      "from": "app.path_resolver",
+      "to": [
+        "app.models"
+      ]
+    },
+    {
+      "from": "app.project_storage",
+      "to": [
+        "app.models",
+        "app.version_resolver"
+      ]
+    },
+    {
+      "from": "app.projectpage_ath_experiment",
+      "to": [
+        "app.cfg_renderer",
+        "app.constants",
+        "app.projectpage_ath_test",
+        "app.runners",
+        "app.safe_cleanup",
+        "app.settings_store"
+      ]
+    },
+    {
+      "from": "app.projectpage_ath_test",
+      "to": [
+        "app.cfg_renderer",
+        "app.compare_policy",
+        "app.compatibility_service",
+        "app.constants",
+        "app.models",
+        "app.runners",
+        "app.settings_store",
+        "app.version_resolver",
+        "ui.form_builder",
+        "ui.form_schema"
+      ]
+    },
+    {
+      "from": "app.runner_test_harness",
+      "to": [
+        "app.akabak_driver",
+        "app.ath_driver_assets",
+        "app.cfg_renderer",
+        "app.export_specs",
+        "app.le_driver_registry",
+        "app.models",
+        "app.runner_test_db",
+        "app.runner_test_profiles",
+        "app.runner_test_workspace",
+        "app.runners",
+        "app.runtime_orchestrator",
+        "app.safe_cleanup",
+        "app.ui_automation.discover",
+        "app.ui_automation.waits",
+        "app.vacs_export_pipeline",
+        "app.vacs_txt_parser",
+        "app.version_resolver"
+      ]
+    },
+    {
+      "from": "app.runner_test_profiles",
+      "to": [
+        "app.ath_knowledge"
+      ]
+    },
+    {
+      "from": "app.services",
+      "to": [
+        "app.ath_driver_assets",
+        "app.ath_knowledge",
+        "app.batch_orchestrator",
+        "app.cfg_renderer",
+        "app.compatibility_service",
+        "app.constants",
+        "app.models",
+        "app.project_storage",
+        "app.runners",
+        "app.runtime_orchestrator",
+        "app.settings_store",
+        "app.tidy_dataset",
+        "app.version_resolver"
+      ]
+    },
+    {
+      "from": "app.storage_migrations",
+      "to": [
+        "app.constants"
+      ]
+    },
+    {
+      "from": "app.tidy_dataset",
+      "to": [
+        "app.sql_dataset_store"
+      ]
+    },
+    {
+      "from": "app.ui_automation.discover",
+      "to": [
+        "app.ui_automation.session"
+      ]
+    },
+    {
+      "from": "app.ui_automation.inspector",
+      "to": [
+        "app.ui_automation.session"
+      ]
+    },
+    {
+      "from": "app.ui_automation.session",
+      "to": [
+        "app.ui_automation.waits"
+      ]
+    },
+    {
+      "from": "app.ui_risk_layer",
+      "to": [
+        "app.compat_engine"
+      ]
+    },
+    {
+      "from": "app.ui_validation",
+      "to": [
+        "app.ath_knowledge"
+      ]
+    },
+    {
+      "from": "app.vacs_driver",
+      "to": [
+        "app.ui_automation.recipes",
+        "app.ui_automation.session",
+        "app.ui_automation.step_logger",
+        "app.ui_automation.waits",
+        "app.ui_automation.watchdog",
+        "app.ui_contracts.window_signatures"
+      ]
+    },
+    {
+      "from": "app.vacs_export_pipeline",
+      "to": [
+        "app.export_specs",
+        "app.vacs_driver",
+        "app.vacs_exporters.registry",
+        "app.vacs_graph_catalog"
+      ]
+    },
+    {
+      "from": "app.vacs_exporters.base",
+      "to": [
+        "app.export_specs",
+        "app.vacs_graph_catalog"
+      ]
+    },
+    {
+      "from": "app.vacs_exporters.builtin",
+      "to": [
+        "app.export_specs",
+        "app.vacs_exporters.base",
+        "app.vacs_graph_catalog"
+      ]
+    },
+    {
+      "from": "app.vacs_exporters.registry",
+      "to": [
+        "app.export_specs",
+        "app.vacs_exporters.base",
+        "app.vacs_exporters.builtin",
+        "app.vacs_graph_catalog"
+      ]
+    },
+    {
+      "from": "app.vacs_graph_catalog",
+      "to": [
+        "app.export_specs"
+      ]
+    },
+    {
+      "from": "app.version_resolver",
+      "to": [
+        "app.batch_planner",
+        "app.compat_engine",
+        "app.models"
+      ]
+    },
+    {
+      "from": "scripts.vacs_interim_reimport",
+      "to": [
+        "app.ui_contracts.window_signatures"
+      ]
+    },
+    {
+      "from": "tests.test_ath_driver_assets",
+      "to": [
+        "app.ath_driver_assets"
+      ]
+    },
+    {
+      "from": "tests.test_batch_export_panel",
+      "to": [
+        "ui.batch_export_panel"
+      ]
+    },
+    {
+      "from": "tests.test_batch_page_ui",
+      "to": [
+        "app.compatibility_service",
+        "app.constants",
+        "app.gui",
+        "ui.form_builder",
+        "ui.form_metrics",
+        "ui.theme"
+      ]
+    },
+    {
+      "from": "tests.test_batch_validation_alignment_fuzz",
+      "to": [
+        "app.constants",
+        "app.gui",
+        "app.models",
+        "app.services",
+        "app.settings_store"
+      ]
+    },
+    {
+      "from": "tests.test_cli_vacs_tools",
+      "to": [
+        "app.cli"
+      ]
+    },
+    {
+      "from": "tests.test_compare_policy",
+      "to": [
+        "app.compare_policy"
+      ]
+    },
+    {
+      "from": "tests.test_compat_engine_dsl",
+      "to": [
+        "app.compat_engine"
+      ]
+    },
+    {
+      "from": "tests.test_compat_rules",
+      "to": [
+        "app.compat_rules"
+      ]
+    },
+    {
+      "from": "tests.test_compat_schema",
+      "to": [
+        "app.ath_knowledge",
+        "app.compat_schema"
+      ]
+    },
+    {
+      "from": "tests.test_compat_ui_adapter",
+      "to": [
+        "app.compatibility_service",
+        "app.constants",
+        "ui.compat_ui_adapter",
+        "ui.form_schema"
+      ]
+    },
+    {
+      "from": "tests.test_compat_verification",
+      "to": [
+        "app.compat_verification"
+      ]
+    },
+    {
+      "from": "tests.test_compatibility_service",
+      "to": [
+        "app.compatibility_service",
+        "app.constants"
+      ]
+    },
+    {
+      "from": "tests.test_compatibility_service_batch_sweep_validation",
+      "to": [
+        "app.compatibility_service",
+        "app.constants"
+      ]
+    },
+    {
+      "from": "tests.test_compatibility_service_batch_ui_separation",
+      "to": [
+        "app.compatibility_service",
+        "app.constants"
+      ]
+    },
+    {
+      "from": "tests.test_contextual_range_analysis",
+      "to": [
+        "app.contextual_range_analysis"
+      ]
+    },
+    {
+      "from": "tests.test_doctor_service",
+      "to": [
+        "app.doctor_service",
+        "app.models"
+      ]
+    },
+    {
+      "from": "tests.test_eta_estimator",
+      "to": [
+        "app.services",
+        "app.settings_store",
+        "app.tidy_dataset"
+      ]
+    },
+    {
+      "from": "tests.test_export_specs",
+      "to": [
+        "app.export_specs"
+      ]
+    },
+    {
+      "from": "tests.test_gui_project_fixed_keys",
+      "to": [
+        "app.gui",
+        "app.models"
+      ]
+    },
+    {
+      "from": "tests.test_m2_compat_engine",
+      "to": [
+        "app.compat_engine"
+      ]
+    },
+    {
+      "from": "tests.test_m5_planner_renderer",
+      "to": [
+        "app.batch_planner",
+        "app.cfg_renderer",
+        "app.models"
+      ]
+    },
+    {
+      "from": "tests.test_minimal_completion_search",
+      "to": [
+        "app.minimal_completion_search",
+        "app.settings_store",
+        "ui.form_schema"
+      ]
+    },
+    {
+      "from": "tests.test_preview_pipeline",
+      "to": [
+        "app.models",
+        "app.services",
+        "ui.stl_preview_widget"
+      ]
+    },
+    {
+      "from": "tests.test_project_form_ui",
+      "to": [
+        "app.compatibility_service",
+        "app.constants",
+        "app.gui",
+        "ui.form_builder",
+        "ui.form_schema"
+      ]
+    },
+    {
+      "from": "tests.test_project_issue_model",
+      "to": [
+        "app.project_issue_model"
+      ]
+    },
+    {
+      "from": "tests.test_project_manager_ui",
+      "to": [
+        "app.gui",
+        "app.models"
+      ]
+    },
+    {
+      "from": "tests.test_project_storage_and_tidy",
+      "to": [
+        "app.batch_orchestrator",
+        "app.models",
+        "app.tidy_dataset"
+      ]
+    },
+    {
+      "from": "tests.test_project_validation_alignment_fuzz",
+      "to": [
+        "app.constants",
+        "app.gui",
+        "app.services"
+      ]
+    },
+    {
+      "from": "tests.test_projectpage_ath_experiment",
+      "to": [
+        "app.projectpage_ath_experiment"
+      ]
+    },
+    {
+      "from": "tests.test_projectpage_ath_test",
+      "to": [
+        "app.projectpage_ath_test"
+      ]
+    },
+    {
+      "from": "tests.test_runner_test_db",
+      "to": [
+        "app.runner_test_db"
+      ]
+    },
+    {
+      "from": "tests.test_runner_test_harness",
+      "to": [
+        "app.runner_test_db",
+        "app.runner_test_harness",
+        "app.vacs_txt_parser"
+      ]
+    },
+    {
+      "from": "tests.test_runner_test_profiles",
+      "to": [
+        "app.runner_test_profiles"
+      ]
+    },
+    {
+      "from": "tests.test_runner_test_workspace",
+      "to": [
+        "app.runner_test_workspace",
+        "app.safe_cleanup"
+      ]
+    },
+    {
+      "from": "tests.test_runners",
+      "to": [
+        "app.runners"
+      ]
+    },
+    {
+      "from": "tests.test_runs_governance",
+      "to": [
+        "app.models",
+        "app.tidy_dataset"
+      ]
+    },
+    {
+      "from": "tests.test_runtime_orchestrator",
+      "to": [
+        "app.models",
+        "app.runtime_orchestrator"
+      ]
+    },
+    {
+      "from": "tests.test_safe_cleanup",
+      "to": [
+        "app.safe_cleanup"
+      ]
+    },
+    {
+      "from": "tests.test_service_export",
+      "to": [
+        "app.services",
+        "app.settings_store"
+      ]
+    },
+    {
+      "from": "tests.test_sim_export_settings",
+      "to": [
+        "app.models"
+      ]
+    },
+    {
+      "from": "tests.test_sql_dataset_store",
+      "to": [
+        "app.models",
+        "app.tidy_dataset"
+      ]
+    },
+    {
+      "from": "tests.test_ui_automation_contracts",
+      "to": [
+        "app.ui_automation.inspector",
+        "app.ui_automation.recipes",
+        "app.ui_contracts.window_signatures"
+      ]
+    },
+    {
+      "from": "tests.test_ui_automation_integration_optional",
+      "to": [
+        "app.ui_automation.inspector"
+      ]
+    },
+    {
+      "from": "tests.test_ui_e2e_stress_runs",
+      "to": [
+        "app.gui",
+        "app.services",
+        "app.settings_store"
+      ]
+    },
+    {
+      "from": "tests.test_ui_risk_layer",
+      "to": [
+        "app.ui_risk_layer"
+      ]
+    },
+    {
+      "from": "tests.test_ui_validation_candidates",
+      "to": [
+        "app.ui_validation"
+      ]
+    },
+    {
+      "from": "tests.test_ui_validation_normative_visibility",
+      "to": [
+        "app.ui_validation"
+      ]
+    },
+    {
+      "from": "tests.test_ui_validation_ranges",
+      "to": [
+        "app.ui_validation"
+      ]
+    },
+    {
+      "from": "tests.test_ui_waits",
+      "to": [
+        "app.ui_automation.waits"
+      ]
+    },
+    {
+      "from": "tests.test_vacs_export_pipeline",
+      "to": [
+        "app.export_specs",
+        "app.vacs_export_pipeline"
+      ]
+    },
+    {
+      "from": "tests.test_vacs_txt_parser",
+      "to": [
+        "app.vacs_txt_parser"
+      ]
+    },
+    {
+      "from": "tests.test_version_resolver",
+      "to": [
+        "app.models",
+        "app.version_resolver"
+      ]
+    },
+    {
+      "from": "ui.batch_parameter_form",
+      "to": [
+        "ui.form_builder",
+        "ui.form_metrics",
+        "ui.form_schema"
+      ]
+    },
+    {
+      "from": "ui.batch_preview_placeholder",
+      "to": [
+        "ui.stl_preview_widget"
+      ]
+    },
+    {
+      "from": "ui.compat_ui_adapter",
+      "to": [
+        "ui.form_schema"
+      ]
+    },
+    {
+      "from": "ui.form_builder",
+      "to": [
+        "ui.form_metrics",
+        "ui.form_schema"
+      ]
+    },
+    {
+      "from": "ui.form_schema",
+      "to": [
+        "app.ath_knowledge",
+        "ui.hints"
+      ]
+    },
+    {
+      "from": "ui.theme",
+      "to": [
+        "ui.theme_tokens"
+      ]
+    },
+    {
+      "from": "ui.theme_preview",
+      "to": [
+        "ui.theme"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,875 @@
+{
+  "generated_at": "2026-02-20T14:29:28Z",
+  "sqlite_file_count": 58,
+  "sqlite_files": [
+    {
+      "path": "manual_runtime_check/projects/global.sqlite",
+      "size_bytes": 204800,
+      "tables": [
+        "ath_dimensions",
+        "batches",
+        "compat_verification_results",
+        "federation_export_jobs",
+        "federation_profile",
+        "federation_sync_state",
+        "federation_tombstones",
+        "graph_points",
+        "graph_series",
+        "graphs",
+        "projects",
+        "replication_queue",
+        "run_versions",
+        "runs",
+        "sqlite_sequence",
+        "version_params",
+        "versions"
+      ]
+    },
+    {
+      "path": "manual_runtime_check/projects/P_MANUAL_FASTCHECK/dataset/project.sqlite",
+      "size_bytes": 204800,
+      "tables": [
+        "ath_dimensions",
+        "batches",
+        "compat_verification_results",
+        "federation_export_jobs",
+        "federation_profile",
+        "federation_sync_state",
+        "federation_tombstones",
+        "graph_points",
+        "graph_series",
+        "graphs",
+        "projects",
+        "replication_queue",
+        "run_versions",
+        "runs",
+        "sqlite_sequence",
+        "version_params",
+        "versions"
+      ]
+    },
+    {
+      "path": "manual_runtime_check_low/projects/global.sqlite",
+      "size_bytes": 217088,
+      "tables": [
+        "ath_dimensions",
+        "batches",
+        "compat_verification_results",
+        "federation_export_jobs",
+        "federation_profile",
+        "federation_sync_state",
+        "federation_tombstones",
+        "graph_points",
+        "graph_series",
+        "graphs",
+        "projects",
+        "replication_queue",
+        "run_versions",
+        "runs",
+        "sqlite_sequence",
+        "version_params",
+        "versions"
+      ]
+    },
+    {
+      "path": "manual_runtime_check_low/projects/P_MANUAL_FASTCHECK_LOW/dataset/project.sqlite",
+      "size_bytes": 217088,
+      "tables": [
+        "ath_dimensions",
+        "batches",
+        "compat_verification_results",
+        "federation_export_jobs",
+        "federation_profile",
+        "federation_sync_state",
+        "federation_tombstones",
+        "graph_points",
+        "graph_series",
+        "graphs",
+        "projects",
+        "replication_queue",
+        "run_versions",
+        "runs",
+        "sqlite_sequence",
+        "version_params",
+        "versions"
+      ]
+    },
+    {
+      "path": "reports/ath_experiments/ath_experiments.sqlite",
+      "size_bytes": 1316659200,
+      "tables": [
+        "experiment_compare",
+        "experiment_metrics",
+        "experiment_params",
+        "experiment_runs"
+      ]
+    },
+    {
+      "path": "reports/minimal_completion_false_neg_debug/oracle_cache.sqlite",
+      "size_bytes": 12288,
+      "tables": [
+        "oracle_cache"
+      ]
+    },
+    {
+      "path": "reports/minimal_completion_false_neg_debug2/oracle_cache.sqlite",
+      "size_bytes": 12288,
+      "tables": [
+        "oracle_cache"
+      ]
+    },
+    {
+      "path": "reports/minimal_completion_meshcmd_check/oracle_cache.sqlite",
+      "size_bytes": 12288,
+      "tables": [
+        "oracle_cache"
+      ]
+    },
+    {
+      "path": "reports/minimal_completion_meshfix_check/oracle_cache.sqlite",
+      "size_bytes": 61440,
+      "tables": [
+        "oracle_cache"
+      ]
+    },
+    {
+      "path": "reports/minimal_completion_meshfix_check_complex/oracle_cache.sqlite",
+      "size_bytes": 45056,
+      "tables": [
+        "oracle_cache"
+      ]
+    },
+    {
+      "path": "reports/minimal_completion_meshfix_quick_gcurve/oracle_cache.sqlite",
+      "size_bytes": 28672,
+      "tables": [
+        "oracle_cache"
+      ]
+    },
+    {
+      "path": "reports/minimal_completion_meshfix_quick_gcurve_v2/oracle_cache.sqlite",
+      "size_bytes": 28672,
+      "tables": [
+        "oracle_cache"
+      ]
+    },
+    {
+      "path": "reports/minimal_completion_phase1/oracle_cache.sqlite",
+      "size_bytes": 126976,
+      "tables": [
+        "oracle_cache"
+      ]
+    },
+    {
+      "path": "reports/minimal_completion_validation_pass1/s2_profile1_basic_mesh/oracle_cache.sqlite",
+      "size_bytes": 28672,
+      "tables": [
+        "oracle_cache"
+      ]
+    },
+    {
+      "path": "reports/minimal_completion_validation_pass1/s2_profile2_basic_mesh/oracle_cache.sqlite",
+      "size_bytes": 28672,
+      "tables": [
+        "oracle_cache"
+      ]
+    },
+    {
+      "path": "reports/minimal_completion_validation_pass1/s2_profile3_basic_mesh/oracle_cache.sqlite",
+      "size_bytes": 28672,
+      "tables": [
+        "oracle_cache"
+      ]
+    },
+    {
+      "path": "reports/minimal_completion_validation_pass1/s3_profile1_basic_mesh_morph1/oracle_cache.sqlite",
+      "size_bytes": 28672,
+      "tables": [
+        "oracle_cache"
+      ]
+    },
+    {
+      "path": "reports/minimal_completion_validation_pass1/s3_profile1_basic_mesh_morph2/oracle_cache.sqlite",
+      "size_bytes": 28672,
+      "tables": [
+        "oracle_cache"
+      ]
+    },
+    {
+      "path": "reports/minimal_completion_validation_pass1/s3_profile2_basic_mesh_morph1/oracle_cache.sqlite",
+      "size_bytes": 24576,
+      "tables": [
+        "oracle_cache"
+      ]
+    },
+    {
+      "path": "reports/minimal_completion_validation_pass1/s3_profile2_basic_mesh_morph2/oracle_cache.sqlite",
+      "size_bytes": 28672,
+      "tables": [
+        "oracle_cache"
+      ]
+    },
+    {
+      "path": "reports/minimal_completion_validation_pass1/s3_profile3_basic_mesh_morph1/oracle_cache.sqlite",
+      "size_bytes": 28672,
+      "tables": [
+        "oracle_cache"
+      ]
+    },
+    {
+      "path": "reports/minimal_completion_validation_pass1/s3_profile3_basic_mesh_morph2/oracle_cache.sqlite",
+      "size_bytes": 28672,
+      "tables": [
+        "oracle_cache"
+      ]
+    },
+    {
+      "path": "reports/minimal_completion_validation_pass1/s4_profile1_basic_mesh_gcurve1/oracle_cache.sqlite",
+      "size_bytes": 28672,
+      "tables": [
+        "oracle_cache"
+      ]
+    },
+    {
+      "path": "reports/minimal_completion_validation_pass1/s4_profile1_basic_mesh_gcurve2/oracle_cache.sqlite",
+      "size_bytes": 28672,
+      "tables": [
+        "oracle_cache"
+      ]
+    },
+    {
+      "path": "reports/minimal_completion_validation_pass1/s4_profile2_basic_mesh_gcurve1/oracle_cache.sqlite",
+      "size_bytes": 28672,
+      "tables": [
+        "oracle_cache"
+      ]
+    },
+    {
+      "path": "reports/minimal_completion_validation_pass1/s4_profile2_basic_mesh_gcurve2/oracle_cache.sqlite",
+      "size_bytes": 28672,
+      "tables": [
+        "oracle_cache"
+      ]
+    },
+    {
+      "path": "reports/minimal_completion_validation_pass1/s4_profile3_basic_mesh_gcurve1/oracle_cache.sqlite",
+      "size_bytes": 24576,
+      "tables": [
+        "oracle_cache"
+      ]
+    },
+    {
+      "path": "reports/minimal_completion_validation_pass1/s4_profile3_basic_mesh_gcurve2/oracle_cache.sqlite",
+      "size_bytes": 24576,
+      "tables": [
+        "oracle_cache"
+      ]
+    },
+    {
+      "path": "reports/minimal_completion_validation_pass1/s5_profile1_basic_mesh_enclosure/oracle_cache.sqlite",
+      "size_bytes": 24576,
+      "tables": [
+        "oracle_cache"
+      ]
+    },
+    {
+      "path": "reports/minimal_completion_validation_pass1/s5_profile2_basic_mesh_enclosure/oracle_cache.sqlite",
+      "size_bytes": 24576,
+      "tables": [
+        "oracle_cache"
+      ]
+    },
+    {
+      "path": "reports/minimal_completion_validation_pass1/s5_profile3_basic_mesh_enclosure/oracle_cache.sqlite",
+      "size_bytes": 32768,
+      "tables": [
+        "oracle_cache"
+      ]
+    },
+    {
+      "path": "reports/minimal_completion_validation_pass1/s6_profile1_basic_mesh_morph1_gcurve1/oracle_cache.sqlite",
+      "size_bytes": 28672,
+      "tables": [
+        "oracle_cache"
+      ]
+    },
+    {
+      "path": "reports/minimal_completion_validation_pass1/s6_profile1_basic_mesh_morph2_gcurve2/oracle_cache.sqlite",
+      "size_bytes": 28672,
+      "tables": [
+        "oracle_cache"
+      ]
+    },
+    {
+      "path": "reports/minimal_completion_validation_pass1/s6_profile2_basic_mesh_morph1_gcurve1/oracle_cache.sqlite",
+      "size_bytes": 24576,
+      "tables": [
+        "oracle_cache"
+      ]
+    },
+    {
+      "path": "reports/minimal_completion_validation_pass1/s6_profile2_basic_mesh_morph2_gcurve2/oracle_cache.sqlite",
+      "size_bytes": 28672,
+      "tables": [
+        "oracle_cache"
+      ]
+    },
+    {
+      "path": "reports/minimal_completion_validation_pass1/s6_profile3_basic_mesh_morph1_gcurve1/oracle_cache.sqlite",
+      "size_bytes": 24576,
+      "tables": [
+        "oracle_cache"
+      ]
+    },
+    {
+      "path": "reports/minimal_completion_validation_pass1/s6_profile3_basic_mesh_morph2_gcurve2/oracle_cache.sqlite",
+      "size_bytes": 24576,
+      "tables": [
+        "oracle_cache"
+      ]
+    },
+    {
+      "path": "runner_test_workspace/db/runner_test.sqlite",
+      "size_bytes": 5943296,
+      "tables": [
+        "artifacts",
+        "ath_dimensions",
+        "graph_points",
+        "graph_series",
+        "graphs",
+        "run_versions",
+        "runs",
+        "sqlite_sequence",
+        "test_cases",
+        "test_run_steps",
+        "test_runs",
+        "ui_observations",
+        "validations",
+        "versions"
+      ]
+    },
+    {
+      "path": "runner_test_workspace/real_runtime_e2e/global.sqlite",
+      "size_bytes": 212992,
+      "tables": [
+        "ath_dimensions",
+        "batches",
+        "compat_verification_results",
+        "federation_export_jobs",
+        "federation_profile",
+        "federation_sync_state",
+        "federation_tombstones",
+        "graph_points",
+        "graph_series",
+        "graphs",
+        "projects",
+        "replication_queue",
+        "run_versions",
+        "runs",
+        "sqlite_sequence",
+        "version_params",
+        "versions"
+      ]
+    },
+    {
+      "path": "runner_test_workspace/real_runtime_e2e/P001/dataset/project.sqlite",
+      "size_bytes": 212992,
+      "tables": [
+        "ath_dimensions",
+        "batches",
+        "compat_verification_results",
+        "federation_export_jobs",
+        "federation_profile",
+        "federation_sync_state",
+        "federation_tombstones",
+        "graph_points",
+        "graph_series",
+        "graphs",
+        "projects",
+        "replication_queue",
+        "run_versions",
+        "runs",
+        "sqlite_sequence",
+        "version_params",
+        "versions"
+      ]
+    },
+    {
+      "path": "runner_test_workspace/real_runtime_e2e2/global.sqlite",
+      "size_bytes": 212992,
+      "tables": [
+        "ath_dimensions",
+        "batches",
+        "compat_verification_results",
+        "federation_export_jobs",
+        "federation_profile",
+        "federation_sync_state",
+        "federation_tombstones",
+        "graph_points",
+        "graph_series",
+        "graphs",
+        "projects",
+        "replication_queue",
+        "run_versions",
+        "runs",
+        "sqlite_sequence",
+        "version_params",
+        "versions"
+      ]
+    },
+    {
+      "path": "runner_test_workspace/real_runtime_e2e2/P001/dataset/project.sqlite",
+      "size_bytes": 212992,
+      "tables": [
+        "ath_dimensions",
+        "batches",
+        "compat_verification_results",
+        "federation_export_jobs",
+        "federation_profile",
+        "federation_sync_state",
+        "federation_tombstones",
+        "graph_points",
+        "graph_series",
+        "graphs",
+        "projects",
+        "replication_queue",
+        "run_versions",
+        "runs",
+        "sqlite_sequence",
+        "version_params",
+        "versions"
+      ]
+    },
+    {
+      "path": "runner_test_workspace/real_runtime_e2e3/global.sqlite",
+      "size_bytes": 212992,
+      "tables": [
+        "ath_dimensions",
+        "batches",
+        "compat_verification_results",
+        "federation_export_jobs",
+        "federation_profile",
+        "federation_sync_state",
+        "federation_tombstones",
+        "graph_points",
+        "graph_series",
+        "graphs",
+        "projects",
+        "replication_queue",
+        "run_versions",
+        "runs",
+        "sqlite_sequence",
+        "version_params",
+        "versions"
+      ]
+    },
+    {
+      "path": "runner_test_workspace/real_runtime_e2e3/P001/dataset/project.sqlite",
+      "size_bytes": 212992,
+      "tables": [
+        "ath_dimensions",
+        "batches",
+        "compat_verification_results",
+        "federation_export_jobs",
+        "federation_profile",
+        "federation_sync_state",
+        "federation_tombstones",
+        "graph_points",
+        "graph_series",
+        "graphs",
+        "projects",
+        "replication_queue",
+        "run_versions",
+        "runs",
+        "sqlite_sequence",
+        "version_params",
+        "versions"
+      ]
+    },
+    {
+      "path": "runner_test_workspace/real_runtime_e2e4/global.sqlite",
+      "size_bytes": 204800,
+      "tables": [
+        "ath_dimensions",
+        "batches",
+        "compat_verification_results",
+        "federation_export_jobs",
+        "federation_profile",
+        "federation_sync_state",
+        "federation_tombstones",
+        "graph_points",
+        "graph_series",
+        "graphs",
+        "projects",
+        "replication_queue",
+        "run_versions",
+        "runs",
+        "sqlite_sequence",
+        "version_params",
+        "versions"
+      ]
+    },
+    {
+      "path": "runner_test_workspace/real_runtime_e2e4/P001/dataset/project.sqlite",
+      "size_bytes": 204800,
+      "tables": [
+        "ath_dimensions",
+        "batches",
+        "compat_verification_results",
+        "federation_export_jobs",
+        "federation_profile",
+        "federation_sync_state",
+        "federation_tombstones",
+        "graph_points",
+        "graph_series",
+        "graphs",
+        "projects",
+        "replication_queue",
+        "run_versions",
+        "runs",
+        "sqlite_sequence",
+        "version_params",
+        "versions"
+      ]
+    },
+    {
+      "path": "runner_test_workspace/real_runtime_e2e5/global.sqlite",
+      "size_bytes": 204800,
+      "tables": [
+        "ath_dimensions",
+        "batches",
+        "compat_verification_results",
+        "federation_export_jobs",
+        "federation_profile",
+        "federation_sync_state",
+        "federation_tombstones",
+        "graph_points",
+        "graph_series",
+        "graphs",
+        "projects",
+        "replication_queue",
+        "run_versions",
+        "runs",
+        "sqlite_sequence",
+        "version_params",
+        "versions"
+      ]
+    },
+    {
+      "path": "runner_test_workspace/real_runtime_e2e5/P001/dataset/project.sqlite",
+      "size_bytes": 204800,
+      "tables": [
+        "ath_dimensions",
+        "batches",
+        "compat_verification_results",
+        "federation_export_jobs",
+        "federation_profile",
+        "federation_sync_state",
+        "federation_tombstones",
+        "graph_points",
+        "graph_series",
+        "graphs",
+        "projects",
+        "replication_queue",
+        "run_versions",
+        "runs",
+        "sqlite_sequence",
+        "version_params",
+        "versions"
+      ]
+    },
+    {
+      "path": "runner_test_workspace/real_runtime_e2e6/global.sqlite",
+      "size_bytes": 204800,
+      "tables": [
+        "ath_dimensions",
+        "batches",
+        "compat_verification_results",
+        "federation_export_jobs",
+        "federation_profile",
+        "federation_sync_state",
+        "federation_tombstones",
+        "graph_points",
+        "graph_series",
+        "graphs",
+        "projects",
+        "replication_queue",
+        "run_versions",
+        "runs",
+        "sqlite_sequence",
+        "version_params",
+        "versions"
+      ]
+    },
+    {
+      "path": "runner_test_workspace/real_runtime_e2e6/P001/dataset/project.sqlite",
+      "size_bytes": 204800,
+      "tables": [
+        "ath_dimensions",
+        "batches",
+        "compat_verification_results",
+        "federation_export_jobs",
+        "federation_profile",
+        "federation_sync_state",
+        "federation_tombstones",
+        "graph_points",
+        "graph_series",
+        "graphs",
+        "projects",
+        "replication_queue",
+        "run_versions",
+        "runs",
+        "sqlite_sequence",
+        "version_params",
+        "versions"
+      ]
+    },
+    {
+      "path": "runner_test_workspace/real_runtime_e2e7/global.sqlite",
+      "size_bytes": 286720,
+      "tables": [
+        "ath_dimensions",
+        "batches",
+        "compat_verification_results",
+        "federation_export_jobs",
+        "federation_profile",
+        "federation_sync_state",
+        "federation_tombstones",
+        "graph_points",
+        "graph_series",
+        "graphs",
+        "projects",
+        "replication_queue",
+        "run_versions",
+        "runs",
+        "sqlite_sequence",
+        "version_params",
+        "versions"
+      ]
+    },
+    {
+      "path": "runner_test_workspace/real_runtime_e2e7/P001/dataset/project.sqlite",
+      "size_bytes": 204800,
+      "tables": [
+        "ath_dimensions",
+        "batches",
+        "compat_verification_results",
+        "federation_export_jobs",
+        "federation_profile",
+        "federation_sync_state",
+        "federation_tombstones",
+        "graph_points",
+        "graph_series",
+        "graphs",
+        "projects",
+        "replication_queue",
+        "run_versions",
+        "runs",
+        "sqlite_sequence",
+        "version_params",
+        "versions"
+      ]
+    },
+    {
+      "path": "runner_test_workspace/real_runtime_e2e7/P002/dataset/project.sqlite",
+      "size_bytes": 286720,
+      "tables": [
+        "ath_dimensions",
+        "batches",
+        "compat_verification_results",
+        "federation_export_jobs",
+        "federation_profile",
+        "federation_sync_state",
+        "federation_tombstones",
+        "graph_points",
+        "graph_series",
+        "graphs",
+        "projects",
+        "replication_queue",
+        "run_versions",
+        "runs",
+        "sqlite_sequence",
+        "version_params",
+        "versions"
+      ]
+    },
+    {
+      "path": "runner_test_workspace/real_runtime_e2e8/global.sqlite",
+      "size_bytes": 212992,
+      "tables": [
+        "ath_dimensions",
+        "batches",
+        "compat_verification_results",
+        "federation_export_jobs",
+        "federation_profile",
+        "federation_sync_state",
+        "federation_tombstones",
+        "graph_points",
+        "graph_series",
+        "graphs",
+        "projects",
+        "replication_queue",
+        "run_versions",
+        "runs",
+        "sqlite_sequence",
+        "version_params",
+        "versions"
+      ]
+    },
+    {
+      "path": "runner_test_workspace/real_runtime_e2e8/P001/dataset/project.sqlite",
+      "size_bytes": 212992,
+      "tables": [
+        "ath_dimensions",
+        "batches",
+        "compat_verification_results",
+        "federation_export_jobs",
+        "federation_profile",
+        "federation_sync_state",
+        "federation_tombstones",
+        "graph_points",
+        "graph_series",
+        "graphs",
+        "projects",
+        "replication_queue",
+        "run_versions",
+        "runs",
+        "sqlite_sequence",
+        "version_params",
+        "versions"
+      ]
+    },
+    {
+      "path": "runner_test_workspace/real_runtime_e2e9/global.sqlite",
+      "size_bytes": 1167360,
+      "tables": [
+        "ath_dimensions",
+        "batches",
+        "compat_verification_results",
+        "federation_export_jobs",
+        "federation_profile",
+        "federation_sync_state",
+        "federation_tombstones",
+        "graph_points",
+        "graph_series",
+        "graphs",
+        "projects",
+        "replication_queue",
+        "run_versions",
+        "runs",
+        "sqlite_sequence",
+        "version_params",
+        "versions"
+      ]
+    },
+    {
+      "path": "runner_test_workspace/real_runtime_e2e9/P001/dataset/project.sqlite",
+      "size_bytes": 1167360,
+      "tables": [
+        "ath_dimensions",
+        "batches",
+        "compat_verification_results",
+        "federation_export_jobs",
+        "federation_profile",
+        "federation_sync_state",
+        "federation_tombstones",
+        "graph_points",
+        "graph_series",
+        "graphs",
+        "projects",
+        "replication_queue",
+        "run_versions",
+        "runs",
+        "sqlite_sequence",
+        "version_params",
+        "versions"
+      ]
+    },
+    {
+      "path": "runner_test_workspace/runner_test.sqlite",
+      "size_bytes": 0,
+      "tables": []
+    }
+  ],
+  "schema_sources": [
+    {
+      "path": "app/sql_dataset_store.py",
+      "tables_declared": [
+        "ath_dimensions",
+        "ath_dimensions_new",
+        "batches",
+        "compat_verification_results",
+        "federation_export_jobs",
+        "federation_profile",
+        "federation_sync_state",
+        "federation_tombstones",
+        "graph_points",
+        "graph_points_new",
+        "graph_series",
+        "graphs",
+        "projects",
+        "replication_queue",
+        "run_versions",
+        "runs",
+        "version_params",
+        "versions"
+      ],
+      "table_count": 18
+    },
+    {
+      "path": "app/runner_test_db.py",
+      "tables_declared": [
+        "artifacts",
+        "ath_dimensions",
+        "graph_points",
+        "graph_series",
+        "graphs",
+        "run_versions",
+        "runs",
+        "test_cases",
+        "test_run_steps",
+        "test_runs",
+        "ui_observations",
+        "validations",
+        "versions"
+      ],
+      "table_count": 13
+    },
+    {
+      "path": "app/projectpage_ath_experiment.py",
+      "tables_declared": [
+        "experiment_compare",
+        "experiment_metrics",
+        "experiment_params",
+        "experiment_runs"
+      ],
+      "table_count": 4
+    },
+    {
+      "path": "app/dataset_pipeline.py",
+      "tables_declared": [
+        "measurement_meta",
+        "measurements",
+        "versions"
+      ],
+      "table_count": 3
+    }
+  ],
+  "doc_mismatches": [
+    {
+      "doc": "docs/ChatGPT_Context.md",
+      "doc_token": "Runner/",
+      "missing_path": "Runner"
+    },
+    {
+      "doc": "docs/ChatGPT_Context.md",
+      "doc_token": "run_full_batch_v5.py",
+      "missing_path": "run_full_batch_v5.py"
+    },
+    {
+      "doc": "docs/ChatGPT_Context.md",
+      "doc_token": "start_gui.ps1",
+      "missing_path": "start_gui.ps1"
+    }
+  ]
+}

@@ -1,0 +1,493 @@
+{
+  "generated_at": "2026-02-20T14:29:28Z",
+  "main_candidates": [
+    {
+      "path": "app/__main__.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "app/cli.py",
+      "has_main_guard": false,
+      "has_main_def": true
+    },
+    {
+      "path": "app/gui.py",
+      "has_main_guard": false,
+      "has_main_def": true
+    },
+    {
+      "path": "scripts/vacs_export_dialog_rounds.py",
+      "has_main_guard": true,
+      "has_main_def": true
+    },
+    {
+      "path": "scripts/vacs_export_save_all.py",
+      "has_main_guard": true,
+      "has_main_def": true
+    },
+    {
+      "path": "scripts/vacs_interim_reimport.py",
+      "has_main_guard": true,
+      "has_main_def": true
+    },
+    {
+      "path": "tests/test_ath_driver_assets.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "tests/test_batch_export_panel.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "tests/test_batch_page_ui.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "tests/test_batch_validation_alignment_fuzz.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "tests/test_cli_run_sample.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "tests/test_cli_runner_test.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "tests/test_cli_runs_tools.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "tests/test_cli_vacs_tools.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "tests/test_compare_policy.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "tests/test_compat_engine_dsl.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "tests/test_compat_rules.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "tests/test_compat_schema.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "tests/test_compat_verification.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "tests/test_compatibility_service.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "tests/test_compatibility_service_batch_sweep_validation.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "tests/test_compatibility_service_batch_ui_separation.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "tests/test_contextual_range_analysis.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "tests/test_doctor_service.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "tests/test_eta_estimator.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "tests/test_export_specs.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "tests/test_m2_compat_engine.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "tests/test_m5_planner_renderer.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "tests/test_minimal_completion_search.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "tests/test_project_form_ui.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "tests/test_project_issue_model.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "tests/test_project_manager_ui.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "tests/test_project_storage_and_tidy.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "tests/test_project_validation_alignment_fuzz.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "tests/test_projectpage_ath_experiment.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "tests/test_projectpage_ath_test.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "tests/test_runner_test_db.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "tests/test_runner_test_harness.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "tests/test_runner_test_profiles.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "tests/test_runner_test_workspace.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "tests/test_runners.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "tests/test_runs_governance.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "tests/test_runtime_orchestrator.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "tests/test_safe_cleanup.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "tests/test_service_export.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "tests/test_sim_export_settings.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "tests/test_sql_dataset_store.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "tests/test_ui_automation_contracts.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "tests/test_ui_automation_integration_optional.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "tests/test_ui_e2e_stress_runs.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "tests/test_ui_risk_layer.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "tests/test_ui_validation_candidates.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "tests/test_ui_validation_ranges.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "tests/test_ui_waits.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "tests/test_vacs_export_pipeline.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "tests/test_vacs_txt_parser.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "tests/test_version_resolver.py",
+      "has_main_guard": true,
+      "has_main_def": false
+    },
+    {
+      "path": "ui/theme_preview.py",
+      "has_main_guard": true,
+      "has_main_def": true
+    }
+  ],
+  "cli_parsers": [
+    {
+      "name": "doctor",
+      "help": "Run environment checks."
+    },
+    {
+      "name": "batch",
+      "help": "Batch utilities."
+    },
+    {
+      "name": "job-count",
+      "help": "Compute job_count from batch.json + constraints.json."
+    },
+    {
+      "name": "dataset",
+      "help": "Dataset import utilities."
+    },
+    {
+      "name": "build",
+      "help": "(Re)build dataset.sqlite from Result_*.txt files."
+    },
+    {
+      "name": "update",
+      "help": "Incrementally update dataset.sqlite based on manifest."
+    },
+    {
+      "name": "sync-global",
+      "help": "Replay pending project DB writes into global.sqlite."
+    },
+    {
+      "name": "plan",
+      "help": "Project/batch planning utilities."
+    },
+    {
+      "name": "materialize",
+      "help": "Resolve versions from project+batch and materialize project structure and tidy metadata outputs."
+    },
+    {
+      "name": "run",
+      "help": "Runtime execution utilities."
+    },
+    {
+      "name": "pipeline",
+      "help": "Run staged ATH->AKABAK->VACS pipeline for all resolved versions."
+    },
+    {
+      "name": "gui",
+      "help": "Launch PySide6 orchestrator GUI."
+    },
+    {
+      "name": "run-sample",
+      "help": "Run and verify a minimal one-version sample batch."
+    },
+    {
+      "name": "runner-test",
+      "help": "Isolated runner test harness."
+    },
+    {
+      "name": "run",
+      "help": "Run isolated harness case (ATH -> AKABAK -> VACS) with persistent Runner_Test DB logging."
+    },
+    {
+      "name": "radimp-driving-matrix",
+      "help": "Run a controlled Driving_Values/DrvType hypothesis matrix for RadImp diagnostics."
+    },
+    {
+      "name": "radimp-3scope-matrix",
+      "help": "Run combined CFG/observation/driving hypothesis matrix for RadImp diagnostics."
+    },
+    {
+      "name": "le-proof-matrix",
+      "help": "Run composite LE integration proof matrix (control vs mutation profiles)."
+    },
+    {
+      "name": "open-dialog-only",
+      "help": "Micro-harness for AKABAK open-file dialog determinism (start -> open dialog -> set path -> confirm -> close)."
+    },
+    {
+      "name": "import-start-apply-only",
+      "help": "Micro-harness for AKABAK interpreter flow (open project -> Start Importing -> Apply -> verify postcondition)."
+    },
+    {
+      "name": "le-repair-import-only",
+      "help": "Micro-harness for post-ATH LE repair + AKABAK import flow (copy generic25, patch Project.abec LESCript, Start Importing -> Apply)."
+    },
+    {
+      "name": "theme",
+      "help": "Theme tooling."
+    },
+    {
+      "name": "preview",
+      "help": "Open visual preview window for current theme."
+    },
+    {
+      "name": "compat",
+      "help": "Compatibility verification tooling."
+    },
+    {
+      "name": "verify",
+      "help": "Run semantic fact verification harness and persist results."
+    },
+    {
+      "name": "projectpage-ath-test",
+      "help": "Run isolated PROJECT-page -> CFG -> ATH -> export config consistency tests."
+    },
+    {
+      "name": "projectpage-ath-experiment",
+      "help": "Run large PROJECT-page ATH experiment suite and persist reports."
+    },
+    {
+      "name": "ath-experiments",
+      "help": "ATH experiment DB maintenance utilities."
+    },
+    {
+      "name": "backfill-subkeys",
+      "help": "Backfill flattened subkeys for object/list experiment params (idempotent)."
+    },
+    {
+      "name": "split-unknown",
+      "help": "Refine unknown ATH errors into compare_mismatch_exit0 or ath_runtime_unknown."
+    },
+    {
+      "name": "refined-reports",
+      "help": "Write timestamped refined summary and mode error matrix using refined error patterns."
+    },
+    {
+      "name": "analyze-compare-mismatch",
+      "help": "Classify and inventory compare_mismatch_exit0 rows with key-level breakdown."
+    },
+    {
+      "name": "minimal-completion-search",
+      "help": "Search minimal per-card parameter configurations (minXY) for STL-feasible ATH geometry using experiment DB seeds and optional ATH verification."
+    },
+    {
+      "name": "contextual-ranges",
+      "help": "Compute context-stratified safe-range suggestions from ath_experiments.sqlite (profile/gcurve/morph/enclosure)."
+    },
+    {
+      "name": "ui",
+      "help": "UI automation inspection utilities."
+    },
+    {
+      "name": "inspect-akabak",
+      "help": "Start/connect AKABAK and dump top-level windows + UIA tree to ui_maps/"
+    },
+    {
+      "name": "inspect-vacs",
+      "help": "Start/connect VACS and dump top-level windows + UIA tree to ui_maps/"
+    },
+    {
+      "name": "vacs",
+      "help": "VACS graph catalog and export mapping tools."
+    },
+    {
+      "name": "discover-graphs",
+      "help": "Best-effort discovery and graph catalog skeleton generation for a VACS version."
+    },
+    {
+      "name": "ui-discover",
+      "help": "PID-scoped UIA discovery dump (top windows + shallow tree)."
+    },
+    {
+      "name": "runs",
+      "help": "Run pinning and cleanup utilities."
+    },
+    {
+      "name": "pin",
+      "help": "Pin a run to keep it during cleanup."
+    },
+    {
+      "name": "unpin",
+      "help": "Remove pin from a run."
+    },
+    {
+      "name": "cleanup-testdata",
+      "help": "Delete all unpinned runs (test data) with optional export file deletion."
+    }
+  ],
+  "primary": [
+    {
+      "id": "app_module",
+      "command": "python -m app",
+      "path": "app/__main__.py",
+      "dispatch": "app.cli.main"
+    },
+    {
+      "id": "gui_via_cli",
+      "command": "python -m app gui",
+      "path": "app/cli.py",
+      "dispatch": "cmd_gui -> app.gui.launch_gui"
+    },
+    {
+      "id": "theme_preview",
+      "command": "python -m app theme preview",
+      "path": "app/cli.py",
+      "dispatch": "cmd_theme_preview -> ui.theme_preview.launch_preview"
+    }
+  ]
+}
