@@ -11,7 +11,6 @@ import json
 from pathlib import Path
 import re
 import subprocess
-import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.ui_automation.session import UiaSession, UiaSessionError
@@ -36,8 +35,6 @@ SMTO_ABORTIFHUNG = 0x0002
 VK_SPACE = 0x20
 VK_RETURN = 0x0D
 VK_F4 = 0x73
-VK_F5 = 0x74
-VK_F7 = 0x76
 IDOK = 1
 BN_CLICKED = 0
 CBN_SELCHANGE = 1
@@ -66,13 +63,11 @@ class AkabakDriver:
         log_dir: str | Path,
         startup_timeout_s: int = 20,
         step_timeout_s: int = 90,
-        prefer_background_automation: bool = True,
     ) -> None:
         self.executable = str(executable)
         self.log_dir = Path(log_dir)
         self.startup_timeout_s = max(5, int(startup_timeout_s))
         self.step_timeout_s = max(1, int(step_timeout_s))
-        self.prefer_background_automation = bool(prefer_background_automation)
         self.state = "init"
         self.current_project: Optional[str] = None
         self.session = UiaSession(
@@ -89,14 +84,6 @@ class AkabakDriver:
         self.last_import_diagnostics_path: Optional[str] = None
         self.last_solve_diagnostics_path: Optional[str] = None
         self.solve_context: Dict[str, Any] = {}
-
-    def _try_foreground_hotkey(self, *, window: Any, key_literal: str) -> Tuple[bool, str]:
-        try:
-            window.set_focus()
-            window.type_keys(str(key_literal), set_foreground=True)
-            return True, ""
-        except Exception as exc:
-            return False, repr(exc)
 
     def _log(self, *, level: str, step: str, event: str, payload: Dict[str, Any]) -> None:
         self.logger.write(level=level, step=step, event=event, payload=payload)
@@ -156,21 +143,12 @@ class AkabakDriver:
         user32.PostMessageW(hwnd, WM_KEYDOWN, VK_RETURN, 0)
         user32.PostMessageW(hwnd, WM_KEYUP, VK_RETURN, 0)
 
-    def _send_key_vk(self, hwnd: int, vk_code: int) -> None:
+    def _send_key_f4(self, hwnd: int) -> None:
         if hwnd <= 0:
             return
         user32 = self._user32()
-        user32.PostMessageW(hwnd, WM_KEYDOWN, int(vk_code), 0)
-        user32.PostMessageW(hwnd, WM_KEYUP, int(vk_code), 0)
-
-    def _send_key_f4(self, hwnd: int) -> None:
-        self._send_key_vk(hwnd, VK_F4)
-
-    def _send_key_f5(self, hwnd: int) -> None:
-        self._send_key_vk(hwnd, VK_F5)
-
-    def _send_key_f7(self, hwnd: int) -> None:
-        self._send_key_vk(hwnd, VK_F7)
+        user32.PostMessageW(hwnd, WM_KEYDOWN, VK_F4, 0)
+        user32.PostMessageW(hwnd, WM_KEYUP, VK_F4, 0)
 
     def _list_process_ids_by_image(self, image_name: str) -> List[int]:
         target = str(image_name or "").strip().lower()
@@ -1317,34 +1295,6 @@ class AkabakDriver:
         self._log(level="info", step=step, event="open_dialog_opened_via_main_menu", payload={"menu_path": "File->Open project..."})
         return file_dialog
 
-    def _trigger_solve_via_main_menu(self, *, main_window: Any, step: str) -> str:
-        hwnd = self._window_handle(main_window)
-        if hwnd <= 0:
-            return ""
-        try:
-            from pywinauto import Desktop
-        except Exception:
-            return ""
-        try:
-            win32_main = Desktop(backend="win32").window(handle=hwnd)
-        except Exception:
-            return ""
-        menu_candidates = (
-            "Solve->Run",
-            "Solve->Start",
-            "Calculation->Run",
-            "Calculate->Run",
-            "Run->Solve",
-        )
-        for menu_path in menu_candidates:
-            try:
-                win32_main.menu_select(menu_path)
-                self._log(level="info", step=step, event="solve_triggered_via_main_menu", payload={"menu_path": menu_path})
-                return str(menu_path)
-            except Exception:
-                continue
-        return ""
-
     def _send_import_command(self, *, main_window: Any, step: str) -> None:
         hwnd = self._window_handle(main_window)
         self._require(hwnd > 0, "AKABAK main window handle unavailable.", step)
@@ -1601,16 +1551,11 @@ class AkabakDriver:
                         iface_value.SetValue(str(project_path))
                         set_method = "uia_value_pattern"
             self._require(bool(set_method), "Open dialog filename edit control unavailable for Tier A.", step)
+            path_written_once = True
             readback_before_submit = _readback_snapshot()
             readback_match = _path_matches(readback_before_submit.get("edit", "")) or _path_matches(
                 readback_before_submit.get("dialog", "")
             )
-            self._require(
-                bool(readback_match),
-                "Tier A filename readback mismatch; escalating to fallback.",
-                step,
-            )
-            path_written_once = True
             confirm_method = _confirm_open_dialog(prefer_uia=True)
             self._require(bool(confirm_method), "Open dialog confirm failed in Tier A.", step)
             state_snapshot: Dict[str, Any] = {}
@@ -1719,24 +1664,20 @@ class AkabakDriver:
         # Tier B: Win32 fallback.
         try:
             set_method = ""
-            set_ok = bool(user32.SetDlgItemTextW(dialog_handle, OPEN_FILE_NAME_CONTROL_ID, str(project_path)))
-            if set_ok:
-                set_method = "SetDlgItemTextW_id1148"
-            if not set_method and edit_handle > 0:
+            if edit_handle > 0:
                 user32.SendMessageW(edit_handle, WM_SETTEXT, 0, str(project_path))
                 set_method = "WM_SETTEXT_edit_handle"
             if not set_method and combo_handle > 0:
                 user32.SendMessageW(combo_handle, WM_SETTEXT, 0, str(project_path))
                 set_method = "WM_SETTEXT_combo_handle"
+            if not set_method:
+                set_ok = bool(user32.SetDlgItemTextW(dialog_handle, OPEN_FILE_NAME_CONTROL_ID, str(project_path)))
+                if set_ok:
+                    set_method = "SetDlgItemTextW_id1148"
             self._require(bool(set_method), "Unable to write project path into Dateiname field (Tier B).", step)
             readback_before_submit = _readback_snapshot()
             readback_match = _path_matches(readback_before_submit.get("edit", "")) or _path_matches(
                 readback_before_submit.get("dialog", "")
-            )
-            self._require(
-                bool(readback_match),
-                "Tier B filename readback mismatch; escalating to fallback.",
-                step,
             )
             confirm_method = _confirm_open_dialog(prefer_uia=False)
             self._require(bool(confirm_method), "Unable to confirm open dialog (Tier B).", step)
@@ -1797,11 +1738,6 @@ class AkabakDriver:
             self._require(has_focus, "Filename edit does not have keyboard focus for Tier C.", step)
             filename_edit.type_keys("^a{BACKSPACE}", set_foreground=True)
             filename_edit.type_keys(str(project_path), with_spaces=True, set_foreground=True)
-            typed_readback = _readback_snapshot()
-            typed_match = _path_matches(typed_readback.get("edit", "")) or _path_matches(
-                typed_readback.get("dialog", "")
-            )
-            self._require(bool(typed_match), "Tier C filename readback mismatch.", step)
             self._send_key_enter(dialog_handle)
             state_snapshot: Dict[str, Any] = {}
             ok = False
@@ -1821,9 +1757,6 @@ class AkabakDriver:
                     "tier": "C_SCOPED_KEYS",
                     "set_method": "type_keys_on_focused_edit",
                     "invoke_method": "enter_key",
-                    "readback_edit": str(typed_readback.get("edit", "")),
-                    "readback_dialog": str(typed_readback.get("dialog", "")),
-                    "readback_match": bool(typed_match),
                     "readback": self._dialog_filename_readback(dialog_handle),
                     "focus_verified": has_focus,
                     "result": "ok" if ok else "postcondition_failed",
@@ -2072,9 +2005,8 @@ class AkabakDriver:
             attempt_trace.append({"phase": "apply", **apply_action})
             attempt_trace.append(self._confirm_after_interpreter_action(main_window=main_window, step=step, phase="confirm_after_apply"))
 
-            # Keep this bounded but less aggressive: complex imports need a few
-            # seconds before interpreter state changes become observable.
-            post_apply_timeout_s = min(8.0, max(3.0, float(self.step_timeout_s) / 20.0))
+            # Only a short settle window after Apply; close/confirm path handles late transitions.
+            post_apply_timeout_s = min(3.0, max(1.5, float(self.step_timeout_s) / 60.0))
             post_apply: Dict[str, Any] = {}
             post_status = "unknown"
             try:
@@ -2212,7 +2144,7 @@ class AkabakDriver:
         }
         trigger_attempts: List[Dict[str, Any]] = []
 
-        def _started_state(*, allow_weak_vacs_start: bool) -> Tuple[bool, Dict[str, Any]]:
+        def _started_state() -> Tuple[bool, Dict[str, Any]]:
             if self.watchdog:
                 handled = self.watchdog.run_watch(step_name=f"{step}_startup_watch", timeout_s=1)
                 if handled:
@@ -2227,9 +2159,7 @@ class AkabakDriver:
                         f"AKABAK solve fatal modal ({fatal_modal})"
                         f" dismissed={bool(dismissed)} details={modal_details}"
                     )
-            # Include VACS UI metrics in the start snapshot so we do not treat a
-            # freshly opened empty "VacsViewer - (new)" window as a valid solve start.
-            snapshot = self._solve_signal_snapshot(include_vacs_ui=True)
+            snapshot = self._solve_signal_snapshot(include_vacs_ui=False)
             baseline_akabak = {int(pid) for pid in baseline.get("akabak_pids", [])}
             baseline_vacs = {int(pid) for pid in baseline.get("vacs_pids", [])}
             new_akabak = [pid for pid in snapshot.get("akabak_pids", []) if int(pid) not in baseline_akabak]
@@ -2243,41 +2173,26 @@ class AkabakDriver:
                 snapshot["start_signal"] = "akabak_worker_process_started"
                 return True, snapshot
             if new_vacs:
-                vacs_ui = dict(snapshot.get("vacs_ui", {}))
-                max_controls = int(vacs_ui.get("max_controls_count", 0) or 0)
-                max_graph_hits = int(vacs_ui.get("max_graph_keyword_hits", 0) or 0)
-                vacs_graph_signal = bool(max_controls >= 80 or max_graph_hits >= 5)
-                snapshot["vacs_graph_signal"] = vacs_graph_signal
-                snapshot["vacs_max_controls_count"] = max_controls
-                snapshot["vacs_max_graph_keyword_hits"] = max_graph_hits
-                if vacs_graph_signal:
-                    snapshot["start_signal"] = "vacs_process_started_with_graph_signal"
-                    return True, snapshot
-                snapshot["start_signal"] = "vacs_process_started_without_graph_signal"
-                return bool(allow_weak_vacs_start), snapshot
+                snapshot["start_signal"] = "vacs_process_started"
+                return True, snapshot
             snapshot["start_signal"] = "not_started"
             return False, snapshot
 
         try:
-            # Start ladder:
-            # 1) F4 (legacy combined solve/handoff path)
-            # 2) F5 (explicit solve trigger fallback)
-            # 3) Solve menu command fallback
-            # 4) F4 retry (final compatibility retry)
-            if not self.prefer_background_automation:
-                ok_fg_f4, fg_f4_error = self._try_foreground_hotkey(window=main_window, key_literal="{F4}")
-                if ok_fg_f4:
-                    trigger_attempts.append({"trigger": "uia_type_keys_f4", "status": "sent"})
-                else:
-                    trigger_attempts.append({"trigger": "uia_type_keys_f4", "status": "error", "error": fg_f4_error})
-            else:
-                trigger_attempts.append({"trigger": "uia_type_keys_f4", "status": "skipped_background_preferred"})
+            # Fast dual-trigger: UIA F4 plus hwnd F4, then fast start wait with
+            # an extended fallback window to avoid false negatives on slower hosts.
+            try:
+                main_window.set_focus()
+                main_window.type_keys("{F4}", set_foreground=True)
+                trigger_attempts.append({"trigger": "uia_type_keys_f4", "status": "sent"})
+            except Exception as exc:
+                trigger_attempts.append({"trigger": "uia_type_keys_f4", "status": "error", "error": repr(exc)})
             self._send_key_f4(main_handle)
             trigger_attempts.append({"trigger": "hwnd_postmessage_f4", "status": "sent", "main_handle": main_handle})
             started: Dict[str, Any]
             try:
                 started = wait_until(
-                    predicate=lambda: _started_state(allow_weak_vacs_start=False),
+                    predicate=_started_state,
                     timeout_s=min(6.0, float(self.step_timeout_s)),
                     initial_interval_s=0.05,
                     max_interval_s=0.3,
@@ -2286,94 +2201,24 @@ class AkabakDriver:
                 trigger_attempts.append({"trigger": "wait_tier_fast", "status": "started"})
             except TimeoutError:
                 trigger_attempts.append({"trigger": "wait_tier_fast", "status": "timeout"})
-                if self.prefer_background_automation:
-                    ok_fg_f4, fg_f4_error = self._try_foreground_hotkey(window=main_window, key_literal="{F4}")
-                    if ok_fg_f4:
-                        trigger_attempts.append({"trigger": "uia_type_keys_f4_timeout_fallback", "status": "sent"})
-                    else:
-                        trigger_attempts.append(
-                            {"trigger": "uia_type_keys_f4_timeout_fallback", "status": "error", "error": fg_f4_error}
-                        )
-                if not self.prefer_background_automation:
-                    ok_fg_f5, fg_f5_error = self._try_foreground_hotkey(window=main_window, key_literal="{F5}")
-                    if ok_fg_f5:
-                        trigger_attempts.append({"trigger": "uia_type_keys_f5", "status": "sent"})
-                    else:
-                        trigger_attempts.append({"trigger": "uia_type_keys_f5", "status": "error", "error": fg_f5_error})
-                else:
-                    trigger_attempts.append({"trigger": "uia_type_keys_f5", "status": "skipped_background_preferred"})
-                self._send_key_f5(main_handle)
-                trigger_attempts.append({"trigger": "hwnd_postmessage_f5", "status": "sent", "main_handle": main_handle})
                 try:
-                    started = wait_until(
-                        predicate=lambda: _started_state(allow_weak_vacs_start=False),
-                        timeout_s=min(20.0, float(self.step_timeout_s)),
-                        initial_interval_s=0.08,
-                        max_interval_s=0.45,
-                        backoff_factor=1.8,
-                    )
-                    trigger_attempts.append({"trigger": "wait_tier_f5", "status": "started"})
-                except TimeoutError:
-                    trigger_attempts.append({"trigger": "wait_tier_f5", "status": "timeout"})
-                    menu_path = self._trigger_solve_via_main_menu(main_window=main_window, step=step)
-                    if menu_path:
-                        trigger_attempts.append(
-                            {"trigger": "win32_menu_solve_run", "status": "sent", "menu_path": str(menu_path)}
-                        )
-                        try:
-                            started = wait_until(
-                                predicate=lambda: _started_state(allow_weak_vacs_start=False),
-                                timeout_s=min(20.0, float(self.step_timeout_s)),
-                                initial_interval_s=0.08,
-                                max_interval_s=0.45,
-                                backoff_factor=1.8,
-                            )
-                            trigger_attempts.append({"trigger": "wait_tier_menu", "status": "started"})
-                            self.solve_context = {"baseline": baseline, "started": started, "trigger_attempts": trigger_attempts}
-                            self.state = "running"
-                            self._log(
-                                level="info",
-                                step=step,
-                                event="solve_started",
-                                payload={"state": self.state, "trigger_attempts": trigger_attempts, "started": started},
-                            )
-                            return AkabakDriverResult(
-                                ok=True,
-                                status=self.state,
-                                details={"started": started, "trigger_attempts": trigger_attempts},
-                            )
-                        except TimeoutError:
-                            trigger_attempts.append({"trigger": "wait_tier_menu", "status": "timeout"})
-                    ok_fg_f4_retry, fg_f4_retry_error = self._try_foreground_hotkey(window=main_window, key_literal="{F4}")
-                    if ok_fg_f4_retry:
-                        trigger_attempts.append({"trigger": "uia_type_keys_f4_retry", "status": "sent"})
-                    else:
-                        trigger_attempts.append(
-                            {"trigger": "uia_type_keys_f4_retry", "status": "error", "error": fg_f4_retry_error}
-                        )
-                    self._send_key_f4(main_handle)
+                    main_window.set_focus()
+                    main_window.type_keys("{F4}", set_foreground=True)
+                    trigger_attempts.append({"trigger": "uia_type_keys_f4_retry", "status": "sent"})
+                except Exception as retry_exc:
                     trigger_attempts.append(
-                        {"trigger": "hwnd_postmessage_f4_retry", "status": "sent", "main_handle": main_handle}
+                        {"trigger": "uia_type_keys_f4_retry", "status": "error", "error": repr(retry_exc)}
                     )
-                    try:
-                        started = wait_until(
-                            predicate=lambda: _started_state(allow_weak_vacs_start=False),
-                            timeout_s=min(30.0, float(self.step_timeout_s)),
-                            initial_interval_s=0.08,
-                            max_interval_s=0.45,
-                            backoff_factor=1.8,
-                        )
-                        trigger_attempts.append({"trigger": "wait_tier_extended", "status": "started"})
-                    except TimeoutError:
-                        trigger_attempts.append({"trigger": "wait_tier_extended", "status": "timeout"})
-                        started = wait_until(
-                            predicate=lambda: _started_state(allow_weak_vacs_start=True),
-                            timeout_s=min(8.0, float(self.step_timeout_s)),
-                            initial_interval_s=0.08,
-                            max_interval_s=0.45,
-                            backoff_factor=1.6,
-                        )
-                        trigger_attempts.append({"trigger": "wait_tier_weak_vacs_start", "status": "started"})
+                self._send_key_f4(main_handle)
+                trigger_attempts.append({"trigger": "hwnd_postmessage_f4_retry", "status": "sent", "main_handle": main_handle})
+                started = wait_until(
+                    predicate=_started_state,
+                    timeout_s=min(30.0, float(self.step_timeout_s)),
+                    initial_interval_s=0.08,
+                    max_interval_s=0.45,
+                    backoff_factor=1.8,
+                )
+                trigger_attempts.append({"trigger": "wait_tier_extended", "status": "started"})
             self.solve_context = {"baseline": baseline, "started": started, "trigger_attempts": trigger_attempts}
             self.state = "running"
             self._log(
@@ -2409,52 +2254,6 @@ class AkabakDriver:
         start_vacs_ui = dict(start_snapshot.get("vacs_ui", {}))
         start_controls = int(start_vacs_ui.get("max_controls_count", 0) or 0)
         start_graph_hits = int(start_vacs_ui.get("max_graph_keyword_hits", 0) or 0)
-        wait_started = time.perf_counter()
-        handoff_triggered = False
-        handoff_count = 0
-        last_handoff_elapsed_s = -1.0
-
-        def _trigger_vacs_handoff_once() -> bool:
-            nonlocal handoff_triggered, handoff_count, last_handoff_elapsed_s
-            if handoff_count >= 6:
-                return False
-            main_window = self.session.find_window(
-                title_regex=AKABAK_MAIN_WINDOW.title_regex,
-                class_name_regex=AKABAK_MAIN_WINDOW.class_name_regex,
-            )
-            if main_window is None:
-                return False
-            main_handle = self._window_handle(main_window)
-            if main_handle <= 0:
-                return False
-            foreground_attempted = False
-            foreground_ok = False
-            foreground_error = ""
-            if (not self.prefer_background_automation) or handoff_count >= 2:
-                foreground_attempted = True
-                foreground_ok, foreground_error = self._try_foreground_hotkey(
-                    window=main_window,
-                    key_literal="{F7}",
-                )
-            self._send_key_f7(main_handle)
-            handoff_triggered = True
-            handoff_count += 1
-            last_handoff_elapsed_s = round(max(0.0, time.perf_counter() - wait_started), 3)
-            self._log(
-                level="info",
-                step=step,
-                event="vacs_handoff_triggered",
-                payload={
-                    "hotkey": "F7",
-                    "main_handle": main_handle,
-                    "handoff_count": handoff_count,
-                    "prefer_background_automation": bool(self.prefer_background_automation),
-                    "foreground_attempted": bool(foreground_attempted),
-                    "foreground_ok": bool(foreground_ok),
-                    "foreground_error": str(foreground_error),
-                },
-            )
-            return True
 
         def _completed() -> Tuple[bool, Dict[str, Any]]:
             if self.watchdog:
@@ -2485,10 +2284,6 @@ class AkabakDriver:
             snapshot["max_graph_keyword_hits"] = max_graph_hits
             snapshot["controls_growth"] = controls_growth
             snapshot["graph_hits_growth"] = graph_hits_growth
-            snapshot["wait_elapsed_s"] = round(max(0.0, time.perf_counter() - wait_started), 3)
-            snapshot["vacs_handoff_triggered"] = bool(handoff_triggered)
-            snapshot["vacs_handoff_count"] = int(handoff_count)
-            snapshot["last_vacs_handoff_elapsed_s"] = float(last_handoff_elapsed_s)
 
             if not bool(require_vacs_graph_import):
                 snapshot["status"] = "completed_no_vacs_signal_required"
@@ -2498,47 +2293,9 @@ class AkabakDriver:
                 if graphs_imported:
                     snapshot["status"] = "completed_vacs_graphs_imported"
                     return True, snapshot
-                if snapshot["wait_elapsed_s"] >= 1.5 and not handoff_triggered:
-                    _trigger_vacs_handoff_once()
-                    snapshot["vacs_handoff_triggered"] = bool(handoff_triggered)
-                    snapshot["status"] = "waiting_vacs_graph_import_after_handoff"
-                    return False, snapshot
-                if (
-                    handoff_triggered
-                    and handoff_count < 6
-                    and (snapshot["wait_elapsed_s"] - float(last_handoff_elapsed_s)) >= 8.0
-                ):
-                    _trigger_vacs_handoff_once()
-                    snapshot["vacs_handoff_count"] = int(handoff_count)
-                    snapshot["last_vacs_handoff_elapsed_s"] = float(last_handoff_elapsed_s)
-                    snapshot["status"] = "waiting_vacs_graph_import_after_handoff_retry"
-                    return False, snapshot
-                if handoff_triggered and snapshot["wait_elapsed_s"] >= 180.0:
-                    raise RuntimeError(
-                        "VACS graph import signal missing 180s after F7 handoff trigger."
-                    )
                 snapshot["status"] = "waiting_vacs_graph_import"
                 return False, snapshot
 
-            if snapshot["wait_elapsed_s"] >= 1.5 and not handoff_triggered:
-                _trigger_vacs_handoff_once()
-                snapshot["vacs_handoff_triggered"] = bool(handoff_triggered)
-                snapshot["status"] = "waiting_vacs_after_solve_start_after_handoff"
-                return False, snapshot
-            if (
-                handoff_triggered
-                and handoff_count < 6
-                and (snapshot["wait_elapsed_s"] - float(last_handoff_elapsed_s)) >= 8.0
-            ):
-                _trigger_vacs_handoff_once()
-                snapshot["vacs_handoff_count"] = int(handoff_count)
-                snapshot["last_vacs_handoff_elapsed_s"] = float(last_handoff_elapsed_s)
-                snapshot["status"] = "waiting_vacs_after_solve_start_after_handoff_retry"
-                return False, snapshot
-            if handoff_triggered and snapshot["wait_elapsed_s"] >= 180.0:
-                raise RuntimeError(
-                    "VACS graph import signal missing 180s after F7 handoff trigger."
-                )
             snapshot["status"] = "waiting_vacs_after_solve_start"
             return False, snapshot
 

@@ -1,37 +1,6 @@
 ﻿# DEVLOG
 
 ## 2026-02-20
-### Update: Background-Automation fuer AKABAK/VACS (Foreground nur als Fallback)
-#### Ziel
-- AKABAK und VACS waehrend des Runs moeglichst im Hintergrund halten (kein permanentes Vorholen in den Vordergrund).
-
-#### Umsetzung
-- `app/akabak_driver.py`
-  - Neuer Schalter `prefer_background_automation` (Default `True`).
-  - `run_solve` nutzt jetzt primaer `PostMessage`-Hotkeys (F4/F5) ohne Foreground-Fokus.
-  - Foreground-Hotkeys bleiben als spaete Fallback-Stufe aktiv.
-  - F7-Handoff in `wait_for_completion` startet bevorzugt im Hintergrund; Foreground-Versuch erst als spaeter Retry.
-- `app/runtime_orchestrator.py`
-  - AKABAK-UI-Driver-Stage reicht die Background-Praeferenz durch.
-  - Summary-Log ergaenzt um `prefer_background_automation`.
-- `scripts/vacs_export_save_all.py`
-  - Neuer Modus-Schalter `--foreground-mode` (Default ist Background-Praferenz).
-  - Fast/Safe Export aktivieren Graphfenster per MDI-Activate statt `SetForegroundWindow` (wenn Background aktiv).
-  - Save-Ladder/Save-As-Fluss background-first, Foreground nur als interner Fallback.
-  - Logs enthalten `background_mode` und fokussierte Aktionen (`background_activate`).
-
-#### Tests
-- `python -m py_compile app/akabak_driver.py app/runtime_orchestrator.py scripts/vacs_export_save_all.py app/vacs_export_pipeline.py`
-- `python -m pytest tests/test_vacs_export_pipeline.py tests/test_runtime_orchestrator.py -q` -> `23 passed`
-
-#### Real E2E
-- Run: `P001/B010_FASTCHECK`
-  - `run_id=fa7ea205-f51f-4f2a-a80b-d9bbeda04aeb`
-  - `run_status=succeeded`
-  - VACS Export Summary: `background_mode=true`, Graphfokus durchgaengig `background_activate`, Exporte erfolgreich (`4` Dateien).
-  - AKABAK Driver Summary: `prefer_background_automation=true`.
-
-## 2026-02-20
 ### Update: Fallback-Audit (Real-E2E) + deaktivierter non-funktionaler Interim-Rescue-Branch
 #### Ziel
 - Ermitteln, wie oft Fallbacks im normalen Runner-Ablauf wirklich genutzt werden.
@@ -2981,7 +2950,6 @@ Validation executed:
 - `python -m compileall app ui`
 - `python -m pytest tests/test_project_manager_ui.py tests/test_project_form_ui.py -q`
 - `python -m pytest tests/test_batch_page_ui.py -q` (known pre-existing failures in current branch; unrelated to this pass)
-
 
 
 
