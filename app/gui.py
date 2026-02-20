@@ -298,6 +298,18 @@ def _ensure_normal_foreground(window: QWidget) -> None:
     _win32_force_foreground(window)
 
 
+def _ensure_fullscreen_foreground(window: QWidget) -> None:
+    if window is None:
+        return
+    state = window.windowState()
+    state = (state | Qt.WindowFullScreen) & ~Qt.WindowMinimized
+    window.setWindowState(state)
+    window.showFullScreen()
+    window.raise_()
+    window.activateWindow()
+    _win32_force_foreground(window)
+
+
 def _center_window(window: QWidget) -> None:
     app = QApplication.instance()
     if app is None:
@@ -1071,6 +1083,8 @@ class DashboardPage(QWidget):
     def __init__(self) -> None:
         super().__init__()
         root = QVBoxLayout(self)
+        root.setContentsMargins(20, 12, 20, 14)
+        root.setSpacing(10)
 
         title = QLabel("DASHBOARD")
         title.setObjectName("PageTitle")
@@ -1079,33 +1093,65 @@ class DashboardPage(QWidget):
         self.constraints_summary = ConstraintSummaryGrid()
         root.addWidget(self.constraints_summary)
 
+        batch_card = QFrame()
+        batch_card.setObjectName("ProjectSummaryPanel")
+        batch_layout = QVBoxLayout(batch_card)
+        batch_layout.setContentsMargins(10, 8, 10, 10)
+        batch_layout.setSpacing(8)
+        batch_title = QLabel("Batches")
+        batch_title.setObjectName("SummaryTitle")
+        batch_layout.addWidget(batch_title)
         self.batch_list = QListWidget()
         self.batch_list.setObjectName("DashboardBatchList")
-        root.addWidget(self.batch_list, 1)
+        batch_layout.addWidget(self.batch_list, 1)
+        root.addWidget(batch_card, 1)
 
-        actions = QHBoxLayout()
+        actions_shell = QFrame()
+        actions_shell.setObjectName("BatchActionBar")
+        actions_shell.setFixedHeight(56)
+        actions = QHBoxLayout(actions_shell)
+        actions.setContentsMargins(10, 8, 10, 8)
+        actions.setSpacing(10)
         self.new_batch_btn = QPushButton("New Batch")
+        self.new_batch_btn.setObjectName("BatchSecondaryButton")
         self.edit_batch_btn = QPushButton("Edit Batch")
+        self.edit_batch_btn.setObjectName("BatchSecondaryButton")
         self.clone_batch_btn = QPushButton("Clone Batch")
+        self.clone_batch_btn.setObjectName("BatchSecondaryButton")
         actions.addWidget(self.new_batch_btn)
         actions.addWidget(self.edit_batch_btn)
         actions.addWidget(self.clone_batch_btn)
         actions.addStretch(1)
-        root.addLayout(actions)
+        root.addWidget(actions_shell)
 
-        export_box = QGroupBox("Export")
-        export_grid = QGridLayout(export_box)
+        export_box = QFrame()
+        export_box.setObjectName("ProjectSummaryPanel")
+        export_root = QVBoxLayout(export_box)
+        export_root.setContentsMargins(10, 8, 10, 10)
+        export_root.setSpacing(8)
+        export_title = QLabel("Export")
+        export_title.setObjectName("SummaryTitle")
+        export_root.addWidget(export_title)
+        export_grid = QGridLayout()
+        export_grid.setContentsMargins(0, 0, 0, 0)
+        export_grid.setHorizontalSpacing(8)
+        export_grid.setVerticalSpacing(8)
         self.export_btn = QPushButton("Open Export Dialog")
+        self.export_btn.setObjectName("BatchPrimaryButton")
         self.manage_runs_btn = QPushButton("Runs verwalten...")
+        self.manage_runs_btn.setObjectName("BatchSecondaryButton")
         self.cleanup_testdata_btn = QPushButton("Testdaten aufraeumen...")
+        self.cleanup_testdata_btn.setObjectName("BatchSecondaryButton")
         export_grid.addWidget(self.export_btn, 0, 0)
         export_grid.addWidget(self.manage_runs_btn, 0, 1)
         export_grid.addWidget(self.cleanup_testdata_btn, 0, 2)
+        export_root.addLayout(export_grid)
         root.addWidget(export_box)
 
         footer = QHBoxLayout()
         footer.addStretch(1)
         self.settings_btn = QPushButton("Settings")
+        self.settings_btn.setObjectName("BatchGhostButton")
         footer.addWidget(self.settings_btn)
         root.addLayout(footer)
 
@@ -1530,7 +1576,7 @@ class ProjectPage(QWidget):
         action_layout.addStretch(1)
 
         self.create_btn = QPushButton("Create Project")
-        self.create_btn.setObjectName("PrimaryButton")
+        self.create_btn.setObjectName("BatchPrimaryButton")
         action_layout.addWidget(self.create_btn, 0, Qt.AlignRight | Qt.AlignVCenter)
         root.addWidget(self.action_bar)
 
@@ -2233,31 +2279,91 @@ class BatchPage(QWidget):
 
 
 class RunPage(QWidget):
+    back_to_dashboard = Signal()
+
     def __init__(self) -> None:
         super().__init__()
         root = QVBoxLayout(self)
+        root.setContentsMargins(28, 20, 28, 20)
+        root.setSpacing(0)
+        root.addStretch(1)
+
+        shell = QFrame()
+        shell.setObjectName("RunScreenShell")
+        shell.setMaximumWidth(860)
+        shell_layout = QVBoxLayout(shell)
+        shell_layout.setContentsMargins(24, 20, 24, 20)
+        shell_layout.setSpacing(12)
+
         title = QLabel("RUN")
         title.setObjectName("PageTitle")
-        root.addWidget(title)
+        shell_layout.addWidget(title, 0, Qt.AlignLeft | Qt.AlignVCenter)
 
         hint = QLabel(
-            "AKABAK/VACS are driven via UI automation. Do not close this window while a run is active."
+            "AKABAK/VACS are driven via UI automation. This screen stays in front until the run finishes."
         )
+        hint.setObjectName("SummaryText")
         hint.setWordWrap(True)
-        root.addWidget(hint)
+        shell_layout.addWidget(hint)
 
         self.progress = QProgressBar()
-        self.progress.setRange(0, 100)
-        self.progress.setValue(0)
-        root.addWidget(self.progress)
+        self.progress.setObjectName("RunProgressBar")
+        self.progress.setRange(0, 0)
+        self.progress.setTextVisible(False)
+        self.progress.setFixedHeight(12)
+        shell_layout.addWidget(self.progress)
 
         self.version_label = QLabel("Version 0/0")
+        self.version_label.setObjectName("SummaryMeta")
         self.mode_label = QLabel("Mode: --")
+        self.mode_label.setObjectName("SummaryMeta")
         self.eta_label = QLabel("ETA: --")
-        root.addWidget(self.version_label)
-        root.addWidget(self.mode_label)
-        root.addWidget(self.eta_label)
+        self.eta_label.setObjectName("SummaryMeta")
+        shell_layout.addWidget(self.version_label)
+        shell_layout.addWidget(self.mode_label)
+        shell_layout.addWidget(self.eta_label)
+        shell_layout.addSpacing(6)
+
+        self.back_btn = QPushButton("Back to Dashboard")
+        self.back_btn.setObjectName("BatchSecondaryButton")
+        self.back_btn.setEnabled(False)
+        self.back_btn.clicked.connect(self.back_to_dashboard.emit)
+        shell_layout.addWidget(self.back_btn, 0, Qt.AlignRight)
+
+        root.addWidget(shell, 0, Qt.AlignHCenter | Qt.AlignVCenter)
         root.addStretch(1)
+
+    def set_running_state(self) -> None:
+        self.progress.setRange(0, 0)
+        self.progress.setValue(0)
+        self.progress.setTextVisible(False)
+        self.version_label.setText("Version 0/0")
+        self.mode_label.setText("Mode: running...")
+        self.eta_label.setText("ETA: calculating...")
+        self.back_btn.setEnabled(False)
+
+    def set_finished_state(self, *, version_count: int, dry_run: bool) -> None:
+        count = max(int(version_count), 0)
+        self.progress.setRange(0, 100)
+        self.progress.setValue(100)
+        self.progress.setTextVisible(True)
+        self.format_progress_label()
+        self.version_label.setText(f"Version {count}/{count}")
+        self.mode_label.setText("Mode: dry-run" if dry_run else "Mode: real")
+        self.eta_label.setText("ETA: done")
+        self.back_btn.setEnabled(True)
+
+    def set_failed_state(self) -> None:
+        self.progress.setRange(0, 100)
+        self.progress.setValue(100)
+        self.progress.setTextVisible(True)
+        self.progress.setFormat("Run failed")
+        self.mode_label.setText("Mode: failed")
+        self.eta_label.setText("ETA: --")
+        self.back_btn.setEnabled(True)
+
+    def format_progress_label(self) -> None:
+        self.progress.setFormat("Run complete")
 
 
 class ProjectManagerWindow(QMainWindow):
@@ -2324,8 +2430,11 @@ class ProjectManagerWindow(QMainWindow):
 
         buttons = QHBoxLayout()
         open_btn = QPushButton("Open Project")
+        open_btn.setObjectName("ProjectManagerButton")
         new_btn = QPushButton("New Project")
+        new_btn.setObjectName("ProjectManagerButton")
         refresh_btn = QPushButton("Refresh")
+        refresh_btn.setObjectName("ProjectManagerButton")
         buttons.addWidget(open_btn)
         buttons.addWidget(new_btn)
         buttons.addWidget(refresh_btn)
@@ -2370,14 +2479,22 @@ class ProjectManagerWindow(QMainWindow):
         image_path = self.service.project_preview_image_path(project_id)
         preview = QPixmap(str(image_path)) if image_path.exists() else QPixmap()
         if not preview.isNull():
-            clipped = preview.scaled(
+            zoom_factor = 1.8
+            crop_w = max(1, int(preview.width() / zoom_factor))
+            crop_h = max(1, int(preview.height() / zoom_factor))
+            crop_x = max(0, (preview.width() - crop_w) // 2)
+            crop_y = max(0, (preview.height() - crop_h) // 2)
+            cropped = preview.copy(crop_x, crop_y, crop_w, crop_h)
+            clipped = cropped.scaled(
                 thumbnail_rect[2],
                 thumbnail_rect[3],
                 Qt.KeepAspectRatioByExpanding,
                 Qt.SmoothTransformation,
             )
+            draw_x = thumbnail_rect[0] - max(0, (clipped.width() - thumbnail_rect[2]) // 2)
+            draw_y = thumbnail_rect[1] - max(0, (clipped.height() - thumbnail_rect[3]) // 2)
             painter.setClipRect(*thumbnail_rect)
-            painter.drawPixmap(thumbnail_rect[0], thumbnail_rect[1], clipped)
+            painter.drawPixmap(draw_x, draw_y, clipped)
             painter.setClipping(False)
             painter.setPen(QColor("#323941"))
             painter.drawRoundedRect(*thumbnail_rect, 8, 8)
@@ -2453,6 +2570,13 @@ class MainWindow(QMainWindow):
         self._preview_update_timer.setSingleShot(True)
         self._preview_update_timer.setInterval(self._preview_update_debounce_ms)
         self._preview_update_timer.timeout.connect(self._flush_batch_preview_update)
+        self._run_foreground_timer = QTimer(self)
+        self._run_foreground_timer.setSingleShot(False)
+        self._run_foreground_timer.setInterval(850)
+        self._run_foreground_timer.timeout.connect(self._enforce_run_foreground)
+        self._run_fullscreen_active = False
+        self._window_state_before_run = Qt.WindowNoState
+        self._window_topmost_before_run = False
 
         self.setWindowTitle("WUT Batcher")
         self.setMinimumSize(1280, 800)
@@ -2523,6 +2647,43 @@ class MainWindow(QMainWindow):
         self.batch_page.compat_panel.request_show_details.connect(
             lambda: self._show_validation_details(self.batch_page.compat_panel.issues(), "Batch Validation Details")
         )
+        self.run_page.back_to_dashboard.connect(self.show_dashboard)
+
+    def _enter_run_presentation(self) -> None:
+        if not self._run_fullscreen_active:
+            self._window_state_before_run = self.windowState()
+            self._window_topmost_before_run = bool(self.windowFlags() & Qt.WindowStaysOnTopHint)
+        self.setWindowFlag(Qt.WindowStaysOnTopHint, True)
+        self.show()
+        if self.statusBar() is not None:
+            self.statusBar().setVisible(False)
+        self._run_fullscreen_active = True
+        _ensure_fullscreen_foreground(self)
+        self._run_foreground_timer.start()
+
+    def _exit_run_presentation(self) -> None:
+        if not self._run_fullscreen_active:
+            return
+        self._run_foreground_timer.stop()
+        self._run_fullscreen_active = False
+        self.setWindowFlag(Qt.WindowStaysOnTopHint, self._window_topmost_before_run)
+        self.show()
+        if self.statusBar() is not None:
+            self.statusBar().setVisible(True)
+        previous_state = self._window_state_before_run
+        if bool(previous_state & Qt.WindowMaximized):
+            _ensure_maximized_foreground(self)
+        elif bool(previous_state & Qt.WindowFullScreen):
+            _ensure_fullscreen_foreground(self)
+        else:
+            _ensure_normal_foreground(self)
+
+    def _enforce_run_foreground(self) -> None:
+        if not self._run_fullscreen_active:
+            return
+        if self.stack.currentWidget() is not self.run_page:
+            return
+        _ensure_fullscreen_foreground(self)
 
     def _stop_preview_worker(self) -> None:
         self._cancel_pending_preview_update()
@@ -2837,14 +2998,17 @@ class MainWindow(QMainWindow):
 
     def show_dashboard(self) -> None:
         self._stop_preview_worker()
+        self._exit_run_presentation()
         self.stack.setCurrentWidget(self.dashboard_page)
 
     def show_project(self) -> None:
         self._stop_preview_worker()
+        self._exit_run_presentation()
         self._on_project_draft_changed(self.project_page._raw_constraints_payload())
         self.stack.setCurrentWidget(self.project_page)
 
     def show_batch(self) -> None:
+        self._exit_run_presentation()
         self.batch_page.reset_draft()
         self._on_batch_draft_changed(self.batch_page._payload(include_name=False))
         self.stack.setCurrentWidget(self.batch_page)
@@ -2852,6 +3016,7 @@ class MainWindow(QMainWindow):
     def show_run(self) -> None:
         self._stop_preview_worker()
         self.stack.setCurrentWidget(self.run_page)
+        self._enter_run_presentation()
 
     def _create_project(self, project_name: str, constraints: Dict[str, object]) -> None:
         self.project_page.set_creating(True)
@@ -3011,22 +3176,22 @@ class MainWindow(QMainWindow):
             return
         self._ensure_project_preview_thumbnail()
         self.show_run()
-        self.run_page.version_label.setText("Version 0/0")
-        self.run_page.mode_label.setText("Mode: running...")
+        self.run_page.set_running_state()
+        QApplication.processEvents()
         try:
             summary = self.service.run_batch(self.current_project.project_id, batch_id, continue_on_error=True)
         except Exception as exc:
+            self.run_page.set_failed_state()
             self.set_status(f"Run failed for {batch_id}", detail=str(exc))
+            self._exit_run_presentation()
             return
-        self.run_page.progress.setValue(100)
-        self.run_page.version_label.setText(f"Version {len(summary.versions)}/{len(summary.versions)}")
-        self.run_page.mode_label.setText("Mode: dry-run" if summary.dry_run else "Mode: real")
-        self.run_page.eta_label.setText("ETA: done")
+        self.run_page.set_finished_state(version_count=len(summary.versions), dry_run=summary.dry_run)
         self.set_status(
             f"Run finished for {batch_id}",
             detail=json.dumps(asdict(summary), indent=2, ensure_ascii=False),
         )
         self.refresh_dashboard()
+        self._exit_run_presentation()
 
     def _ensure_project_preview_thumbnail(self) -> None:
         if self.current_project is None:

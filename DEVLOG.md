@@ -2851,6 +2851,29 @@ Validation executed:
 - `python -m pytest tests/test_preview_pipeline.py -q`
 - `python -m pytest tests/test_batch_page_ui.py tests/test_service_export.py -q`
 
+## 2026-02-20
+### Update 76 (Cross-Page UI Language Alignment + Run Fullscreen)
+#### Done
+- Applied Batch-style visual language to Dashboard and Project pages while keeping the Project two-column form layout intact.
+  - Dashboard now uses card/action-bar composition and button hierarchy (`BatchPrimaryButton`, `BatchSecondaryButton`, `BatchGhostButton`).
+  - Project action CTA now follows the Batch primary button style.
+- Updated Project Manager interaction styling to remove blue accents:
+  - tile hover now uses thicker neutral border only (no white/filled hover)
+  - selected tile border moved to neutral gray
+  - action buttons use dedicated neutral style (`ProjectManagerButton`).
+- Improved Project Manager horn thumbnail framing:
+  - preview tiles now use center-cropped zoom rendering for a closer default horn view.
+- Reworked Run page presentation and run flow behavior:
+  - run screen redesigned as centered dark shell with cleaner status hierarchy
+  - run starts in true fullscreen presentation mode
+  - window is forced topmost/foreground at run start and restored after run
+  - run state helpers added (`running`, `finished`, `failed`) and back-to-dashboard action enabled after completion.
+
+#### Validation
+- `python -m compileall app ui`
+- `python -m pytest tests/test_project_manager_ui.py tests/test_project_form_ui.py -q`
+- `python -m pytest tests/test_batch_page_ui.py -q` (known pre-existing failures in current branch; unrelated to this pass)
+
 
 
 

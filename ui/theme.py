@@ -577,6 +577,16 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         border: 1px solid {c['border']};
         border-radius: {r['md']}px;
     }}
+    QFrame#ConstraintCard {{
+        background-color: #1c1c1c;
+        border: 1px solid {c['border']};
+        border-radius: {r['sm']}px;
+    }}
+    QFrame#RunScreenShell {{
+        background-color: #1a1a1a;
+        border: 1px solid {c['border']};
+        border-radius: {r['lg']}px;
+    }}
     QWidget#SummaryIssuesDock {{
         background-color: transparent;
     }}
@@ -996,6 +1006,17 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         background-color: #4b4b4b;
         border-radius: 999px;
     }}
+    QProgressBar#RunProgressBar {{
+        background-color: #1f1f1f;
+        border: 1px solid {c['border']};
+        border-radius: 999px;
+        text-align: center;
+        color: {c['muted']};
+    }}
+    QProgressBar#RunProgressBar::chunk {{
+        background-color: #5a5a5a;
+        border-radius: 999px;
+    }}
     QStatusBar {{
         background-color: {c['sidebar']};
         border-top: 1px solid {c['border']};
@@ -1088,7 +1109,7 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         background: transparent;
     }}
     QListWidget#ProjectTileList::item:selected {{
-        border: 2px solid {c['accent']};
+        border: 2px solid #8d8d8d;
         background: transparent;
         color: {c['text']};
     }}
@@ -1098,7 +1119,28 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         color: {c['text']};
     }}
     QListWidget#ProjectTileList::item:hover {{
-        border-color: {c['accent']};
+        border: 2px solid #7d7d7d;
+        background: transparent;
+    }}
+    QPushButton#ProjectManagerButton {{
+        background-color: #222222;
+        color: {c['text']};
+        border: 1px solid {c['border']};
+        border-radius: {r['md']}px;
+        min-height: 30px;
+        padding: 0px {s['md']}px;
+        font-weight: 600;
+    }}
+    QPushButton#ProjectManagerButton:hover {{
+        background-color: #232323;
+        border: 2px solid #7f7f7f;
+    }}
+    QPushButton#ProjectManagerButton:pressed {{
+        background-color: #252525;
+        border: 2px solid #9a9a9a;
+    }}
+    QPushButton#ProjectManagerButton:focus {{
+        border: 1px solid #7f7f7f;
     }}
     QListWidget#DashboardBatchList::item {{
         border: 1px solid {c['border']};
