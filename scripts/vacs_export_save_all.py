@@ -60,6 +60,10 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _background_mode_enabled(args: argparse.Namespace) -> bool:
+    return not bool(getattr(args, "foreground_mode", False))
+
+
 def _sig(ctrl: Any) -> Dict[str, Any]:
     info = getattr(ctrl, "element_info", None)
     def _safe_attr(name: str, default: Any = "") -> Any:
@@ -1002,7 +1006,13 @@ def _find_save_as_dialog_fast(target_pid: int, timeout_s: float) -> Optional[Any
     return None
 
 
-def _set_save_path(dialog: Any, full_target_path: Path, *, quick: bool = False) -> Dict[str, Any]:
+def _set_save_path(
+    dialog: Any,
+    full_target_path: Path,
+    *,
+    quick: bool = False,
+    background_mode: bool = True,
+) -> Dict[str, Any]:
     target = str(full_target_path)
     user32 = ctypes.windll.user32
     result: Dict[str, Any] = {"target": target}
@@ -1036,7 +1046,7 @@ def _set_save_path(dialog: Any, full_target_path: Path, *, quick: bool = False) 
             edits = [c for c in dialog.descendants() if str(_sig(c).get("control_type", "")) == "Edit"]
         except Exception:
             edits = []
-        if edits:
+        if edits and not bool(background_mode):
             edit = edits[0]
             try:
                 edit.set_focus()
@@ -1052,7 +1062,10 @@ def _set_save_path(dialog: Any, full_target_path: Path, *, quick: bool = False) 
             except Exception as exc:
                 result["filename_uia"] = f"error:{exc!r}"
         else:
-            result["filename_uia"] = "missing_edit"
+            if edits and bool(background_mode):
+                result["filename_uia"] = "skipped_background_mode"
+            else:
+                result["filename_uia"] = "missing_edit"
 
     # click Save button (primary: common dialog command id 1, locale-agnostic)
     save_clicked = False
@@ -1085,17 +1098,26 @@ def _set_save_path(dialog: Any, full_target_path: Path, *, quick: bool = False) 
                     break
         except Exception:
             continue
-    if not save_clicked:
+    if not save_clicked and not bool(background_mode):
         try:
             dialog.type_keys("{ENTER}")
             save_clicked = True
             result["save_action"] = {"method": "enter_fallback"}
         except Exception as exc:
             result["save_action"] = {"method": "failed", "error": repr(exc)}
+    elif not save_clicked:
+        result["save_action"] = {"method": "enter_skipped_background_mode"}
     return result
 
 
-def _activate_save_ladder(export_dialog: Any, save_handle: int, vacs_pid: int, main_handle: int) -> List[Dict[str, Any]]:
+def _activate_save_ladder(
+    export_dialog: Any,
+    save_handle: int,
+    vacs_pid: int,
+    main_handle: int,
+    *,
+    background_mode: bool = True,
+) -> List[Dict[str, Any]]:
     attempts: List[Dict[str, Any]] = []
     dialog_handle = int(_sig(export_dialog).get("handle", 0) or 0)
     user32 = ctypes.windll.user32
@@ -1174,23 +1196,42 @@ def _activate_save_ladder(export_dialog: Any, save_handle: int, vacs_pid: int, m
                 else:
                     attempts.append({"method": method, "status": "skipped", "ctrl_id": ctrl_id})
             elif method == "alt_s":
-                export_dialog.type_keys("%s", set_foreground=True)
-                attempts.append({"method": method, "status": "ok"})
+                try:
+                    export_dialog.type_keys("%s", set_foreground=False)
+                    attempts.append({"method": method, "status": "ok"})
+                except Exception:
+                    export_dialog.type_keys("%s", set_foreground=True)
+                    attempts.append({"method": f"{method}_foreground_fallback", "status": "ok"})
             else:
-                export_dialog.type_keys("{ENTER}", set_foreground=True)
-                attempts.append({"method": method, "status": "ok"})
+                try:
+                    export_dialog.type_keys("{ENTER}", set_foreground=False)
+                    attempts.append({"method": method, "status": "ok"})
+                except Exception:
+                    export_dialog.type_keys("{ENTER}", set_foreground=True)
+                    attempts.append({"method": f"{method}_foreground_fallback", "status": "ok"})
         except Exception as exc:
             attempts.append({"method": method, "status": "error", "error": repr(exc)})
             return False
         return True
 
-    for method in ("win32_click", "bm_click", "wm_command_bn_clicked", "alt_s", "enter"):
+    methods = ["win32_click", "bm_click", "wm_command_bn_clicked"]
+    if not bool(background_mode):
+        methods.extend(["alt_s", "enter"])
+    for method in methods:
         ran = _run_one(method)
         if not ran:
             continue
         if _save_as_now_visible():
             attempts.append({"method": method, "postcheck": "save_as_visible"})
             break
+    if bool(background_mode) and not _save_as_now_visible(wait_s=0.18):
+        for method in ("alt_s", "enter"):
+            ran = _run_one(method)
+            if not ran:
+                continue
+            if _save_as_now_visible():
+                attempts.append({"method": method, "postcheck": "save_as_visible"})
+                break
     return attempts
 
 
@@ -1294,17 +1335,20 @@ def _is_graph_child_open(vacs_pid: int, child_handle: int) -> bool:
     return any(int(_sig(g).get("handle", 0) or 0) == int(child_handle) for g in _graph_children(main))
 
 
-def _issue_child_close(child_handle: int, main_handle: int) -> List[Dict[str, Any]]:
+def _issue_child_close(child_handle: int, main_handle: int, *, background_mode: bool = True) -> List[Dict[str, Any]]:
     attempts: List[Dict[str, Any]] = []
     def _closed_now() -> bool:
         return not _is_window_alive(int(child_handle))
 
-    try:
-        child_uia = Desktop(backend="uia").window(handle=int(child_handle))
-        child_uia.set_focus()
-        attempts.append({"method": "uia_child_focus", "status": "ok"})
-    except Exception as exc:
-        attempts.append({"method": "uia_child_focus", "status": "error", "error": repr(exc)})
+    if not bool(background_mode):
+        try:
+            child_uia = Desktop(backend="uia").window(handle=int(child_handle))
+            child_uia.set_focus()
+            attempts.append({"method": "uia_child_focus", "status": "ok"})
+        except Exception as exc:
+            attempts.append({"method": "uia_child_focus", "status": "error", "error": repr(exc)})
+    else:
+        attempts.append({"method": "uia_child_focus", "status": "skipped_background_mode"})
     # Try explicit child close buttons first (X/Close/Schliessen) before message-based close.
     try:
         child_uia = Desktop(backend="uia").window(handle=int(child_handle))
@@ -1336,17 +1380,20 @@ def _issue_child_close(child_handle: int, main_handle: int) -> List[Dict[str, An
                 time.sleep(0.04)
     except Exception as exc:
         attempts.append({"method": "uia_child_close_button", "status": "error", "error": repr(exc)})
-    try:
-        child_uia = Desktop(backend="uia").window(handle=int(child_handle))
-        child_uia.type_keys("%{F4}", set_foreground=True)
-        attempts.append({"method": "uia_child_alt_f4", "status": "ok"})
-        t0 = time.perf_counter()
-        while time.perf_counter() - t0 < 0.35:
-            if _closed_now():
-                return attempts
-            time.sleep(0.04)
-    except Exception as exc:
-        attempts.append({"method": "uia_child_alt_f4", "status": "error", "error": repr(exc)})
+    if not bool(background_mode):
+        try:
+            child_uia = Desktop(backend="uia").window(handle=int(child_handle))
+            child_uia.type_keys("%{F4}", set_foreground=True)
+            attempts.append({"method": "uia_child_alt_f4", "status": "ok"})
+            t0 = time.perf_counter()
+            while time.perf_counter() - t0 < 0.35:
+                if _closed_now():
+                    return attempts
+                time.sleep(0.04)
+        except Exception as exc:
+            attempts.append({"method": "uia_child_alt_f4", "status": "error", "error": repr(exc)})
+    else:
+        attempts.append({"method": "uia_child_alt_f4", "status": "skipped_background_mode"})
     try:
         ctypes.windll.user32.PostMessageW(int(child_handle), WM_CLOSE, 0, 0)
         attempts.append({"method": "wm_close_post", "status": "ok"})
@@ -1371,9 +1418,19 @@ def _issue_child_close(child_handle: int, main_handle: int) -> List[Dict[str, An
     return attempts
 
 
-def _close_child_and_context(child_handle: int, vacs_pid: int, main_handle: int) -> Dict[str, Any]:
+def _close_child_and_context(
+    child_handle: int,
+    vacs_pid: int,
+    main_handle: int,
+    *,
+    background_mode: bool = True,
+) -> Dict[str, Any]:
     result: Dict[str, Any] = {"child_handle": int(child_handle)}
-    result["close_attempts"] = _issue_child_close(int(child_handle), int(main_handle))
+    result["close_attempts"] = _issue_child_close(
+        int(child_handle),
+        int(main_handle),
+        background_mode=bool(background_mode),
+    )
     handled: List[Dict[str, Any]] = []
     deadline = time.perf_counter() + 5.0
     retries = 0
@@ -1384,7 +1441,16 @@ def _close_child_and_context(child_handle: int, vacs_pid: int, main_handle: int)
         if not dialogs:
             if retries < 2:
                 retries += 1
-                handled.append({"retry_close": retries, "attempts": _issue_child_close(int(child_handle), int(main_handle))})
+                handled.append(
+                    {
+                        "retry_close": retries,
+                        "attempts": _issue_child_close(
+                            int(child_handle),
+                            int(main_handle),
+                            background_mode=bool(background_mode),
+                        ),
+                    }
+                )
                 time.sleep(0.2)
                 continue
             break
@@ -1412,7 +1478,16 @@ def _close_child_and_context(child_handle: int, vacs_pid: int, main_handle: int)
         if not any_action:
             if retries < 2:
                 retries += 1
-                handled.append({"retry_close": retries, "attempts": _issue_child_close(int(child_handle), int(main_handle))})
+                handled.append(
+                    {
+                        "retry_close": retries,
+                        "attempts": _issue_child_close(
+                            int(child_handle),
+                            int(main_handle),
+                            background_mode=bool(background_mode),
+                        ),
+                    }
+                )
             else:
                 break
         time.sleep(0.15)
@@ -1424,6 +1499,7 @@ def _close_child_and_context(child_handle: int, vacs_pid: int, main_handle: int)
 def run_once_safe(args: argparse.Namespace) -> Dict[str, Any]:
     export_root = Path(args.export_dir).resolve()
     export_root.mkdir(parents=True, exist_ok=True)
+    background_mode = _background_mode_enabled(args)
     run_id = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     out_dir = Path(args.output_dir).resolve() / f"run_{run_id}"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -1433,6 +1509,7 @@ def run_once_safe(args: argparse.Namespace) -> Dict[str, Any]:
         "run_id": run_id,
         "started_at": _now_iso(),
         "export_root": str(export_root),
+        "background_mode": bool(background_mode),
         "steps": [],
         "trace_file": str(trace_file),
     }
@@ -1483,6 +1560,7 @@ def run_once_safe(args: argparse.Namespace) -> Dict[str, Any]:
         return log
     main_sig = _sig(main)
     main_handle = int(main_sig.get("handle", 0) or 0)
+    mdi_handle = _find_mdi_client_handle(int(main_handle))
     step("vacs_main", signature=main_sig)
 
     exported_files: List[Dict[str, Any]] = []
@@ -1526,8 +1604,14 @@ def run_once_safe(args: argparse.Namespace) -> Dict[str, Any]:
         step("graph_target_selected", loop=loop_idx, target=t_sig)
 
         try:
-            ok = bool(ctypes.windll.user32.SetForegroundWindow(int(t_handle)))
-            row["focus"] = "ok" if ok else "set_foreground_false"
+            user32 = ctypes.windll.user32
+            if mdi_handle > 0 and t_handle > 0:
+                user32.SendMessageW(int(mdi_handle), WM_MDIACTIVATE, int(t_handle), 0)
+            if bool(background_mode):
+                row["focus"] = "background_activate"
+            else:
+                ok = bool(user32.SetForegroundWindow(int(t_handle)))
+                row["focus"] = "ok" if ok else "set_foreground_false"
             step("graph_target_focused", loop=loop_idx, handle=t_handle, focus=row["focus"])
         except Exception as exc:
             row["focus"] = f"error:{exc!r}"
@@ -1597,7 +1681,13 @@ def run_once_safe(args: argparse.Namespace) -> Dict[str, Any]:
             break
 
         save_handle = int(save_ctrl.get("handle", 0) or 0)
-        save_attempts = _activate_save_ladder(export_dialog, save_handle, vacs_pid=vacs_pid, main_handle=int(main_handle))
+        save_attempts = _activate_save_ladder(
+            export_dialog,
+            save_handle,
+            vacs_pid=vacs_pid,
+            main_handle=int(main_handle),
+            background_mode=bool(background_mode),
+        )
         row["save_click"] = {"handle": save_handle, "attempts": save_attempts}
         step("graph_save_invoked", loop=loop_idx, save_handle=save_handle, attempts=save_attempts)
 
@@ -1663,7 +1753,7 @@ def run_once_safe(args: argparse.Namespace) -> Dict[str, Any]:
             if not safe_name:
                 safe_name = f"graph_{loop_idx}"
             target_file = _unique_export_path(export_root, run_id, loop_idx, safe_name)
-            set_path_res = _set_save_path(save_as, target_file)
+            set_path_res = _set_save_path(save_as, target_file, background_mode=bool(background_mode))
             row["save_as_set_path"] = set_path_res
             step("graph_save_as_path_set", loop=loop_idx, target=str(target_file), set_path=set_path_res)
 
@@ -1703,7 +1793,12 @@ def run_once_safe(args: argparse.Namespace) -> Dict[str, Any]:
             step("graph_quiescence_after_export_timeout", loop=loop_idx, details=row["dialog_quiescence_after_export"])
 
         # Close target child window with context handling.
-        row["close_child"] = _close_child_and_context(t_handle, vacs_pid, int(main_handle))
+        row["close_child"] = _close_child_and_context(
+            t_handle,
+            vacs_pid,
+            int(main_handle),
+            background_mode=bool(background_mode),
+        )
         step("graph_child_closed_request", loop=loop_idx, close_child=row["close_child"])
         row["post_close_all_export_dialogs"] = _close_all_export_dialogs(vacs_pid, int(main_handle), timeout_s=0.9)
         if row["post_close_all_export_dialogs"]:
@@ -1757,6 +1852,7 @@ def _copy_args_with(args: argparse.Namespace, **overrides: Any) -> argparse.Name
 def run_once_fast(args: argparse.Namespace) -> Dict[str, Any]:
     export_root = Path(args.export_dir).resolve()
     export_root.mkdir(parents=True, exist_ok=True)
+    background_mode = _background_mode_enabled(args)
     run_id = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     out_dir = Path(args.output_dir).resolve() / f"run_{run_id}"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -1767,6 +1863,7 @@ def run_once_fast(args: argparse.Namespace) -> Dict[str, Any]:
         "run_id": run_id,
         "started_at": _now_iso(),
         "export_root": str(export_root),
+        "background_mode": bool(background_mode),
         "steps": [],
         "trace_file": str(trace_file),
     }
@@ -1956,8 +2053,11 @@ def run_once_fast(args: argparse.Namespace) -> Dict[str, Any]:
         try:
             if mdi_handle > 0 and t_handle > 0:
                 user32.SendMessageW(int(mdi_handle), WM_MDIACTIVATE, int(t_handle), 0)
-            user32.SetForegroundWindow(int(t_handle))
-            row["focus"] = "ok"
+            if bool(background_mode):
+                row["focus"] = "background_activate"
+            else:
+                user32.SetForegroundWindow(int(t_handle))
+                row["focus"] = "ok"
         except Exception as exc:
             row["focus"] = f"error:{exc!r}"
         step("graph_target_focused", loop=loop_idx, handle=t_handle, focus=row["focus"])
@@ -2007,18 +2107,13 @@ def run_once_fast(args: argparse.Namespace) -> Dict[str, Any]:
             break
 
         save_handle = int(save_ctrl.get("handle", 0) or 0)
-        save_attempts: List[Dict[str, Any]] = []
-        try:
-            w = Desktop(backend="win32").window(handle=int(save_handle))
-            w.click()
-            save_attempts.append({"method": "primary_save_handle_win32_click", "status": "ok", "button_handle": int(save_handle)})
-        except Exception as exc:
-            save_attempts.append({"method": "primary_save_handle_win32_click", "status": "error", "error": repr(exc), "button_handle": int(save_handle)})
-            try:
-                user32.SendMessageW(int(save_handle), BM_CLICK, 0, 0)
-                save_attempts.append({"method": "primary_save_handle_bm_click", "status": "ok", "button_handle": int(save_handle)})
-            except Exception as exc2:
-                save_attempts.append({"method": "primary_save_handle_bm_click", "status": "error", "error": repr(exc2), "button_handle": int(save_handle)})
+        save_attempts = _activate_save_ladder(
+            export_dialog,
+            save_handle,
+            vacs_pid=vacs_pid,
+            main_handle=int(main_handle),
+            background_mode=bool(background_mode),
+        )
         row["save_click"] = {"handle": save_handle, "attempts": save_attempts}
         step("graph_save_invoked", loop=loop_idx, save_handle=save_handle, attempts=save_attempts)
 
@@ -2041,7 +2136,7 @@ def run_once_fast(args: argparse.Namespace) -> Dict[str, Any]:
         if not safe_name:
             safe_name = f"graph_{loop_idx}"
         target_file = _unique_export_path(export_root, run_id, loop_idx, safe_name)
-        set_path_res = _set_save_path(save_as, target_file, quick=True)
+        set_path_res = _set_save_path(save_as, target_file, quick=True, background_mode=bool(background_mode))
         row["save_as_set_path"] = set_path_res
         step("graph_save_as_path_set", loop=loop_idx, target=str(target_file), set_path=set_path_res)
 
@@ -2202,6 +2297,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--allow-interim-rescue",
         action="store_true",
         help="Allow final auto-mode rescue branch that disables --assume-vacs-ready and runs interim reimport.",
+    )
+    p.add_argument(
+        "--foreground-mode",
+        action="store_true",
+        help="Disable background automation preference and allow foreground-focused UI actions.",
     )
     p.add_argument("--export-dir", required=True, help="Target folder under C:\\Horns\\... for this version")
     p.add_argument("--output-dir", default="runner_test_workspace/logs/vacs_export_save_all")

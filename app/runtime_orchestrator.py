@@ -312,7 +312,7 @@ def _default_polar_export_specs() -> List[ExportSpec]:
             id="default_polar_spl_h",
             tool="vacs",
             graph_kind="polar",
-            variant="main",
+            variant="spl_h",
             format="txt",
             options={
                 **base_options,
@@ -325,7 +325,7 @@ def _default_polar_export_specs() -> List[ExportSpec]:
             id="default_polar_spl_v",
             tool="vacs",
             graph_kind="polar",
-            variant="main",
+            variant="spl_v",
             format="txt",
             options={
                 **base_options,
@@ -339,7 +339,7 @@ def _default_polar_export_specs() -> List[ExportSpec]:
             id="default_polar_spl_d",
             tool="vacs",
             graph_kind="polar",
-            variant="main",
+            variant="spl_d",
             format="txt",
             options={
                 **base_options,
@@ -359,6 +359,22 @@ def _resolve_export_specs(sim_export_payload: Dict[str, Any]) -> List[ExportSpec
     if bool(sim_export_payload.get("auto_default_polar_exports", False)):
         return _default_polar_export_specs()
     return []
+
+
+def _enforce_free_standing_for_runtime(sim_export_payload: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    payload = dict(sim_export_payload or {})
+    requested_mode = str(payload.get("simulation_mode", "free_standing") or "free_standing").strip().lower()
+    if requested_mode not in {"free_standing", "infinite_baffle"}:
+        requested_mode = "free_standing"
+    forced = bool(requested_mode != "free_standing")
+    payload["simulation_mode"] = "free_standing"
+    guard = {
+        "requested_simulation_mode": requested_mode,
+        "effective_simulation_mode": "free_standing",
+        "forced_free_standing": forced,
+        "reason": "infinite_baffle_position_not_defined_in_test_flow",
+    }
+    return payload, guard
 
 
 def _best_mesh_cmd_for_runtime(ath_executable: str | Path | None) -> str:
@@ -899,6 +915,7 @@ def _run_akabak_ui_driver_stage(
     version_logs_dir: Path,
     require_vacs_graph_import: bool,
     preserve_vacs_for_export: bool = False,
+    prefer_background_automation: bool = True,
 ) -> Tuple[StageExecution, Dict[str, Any], bool]:
     if AkabakDriver is None:
         raise RuntimeError("AkabakDriver unavailable (UI automation dependencies missing).")
@@ -908,6 +925,7 @@ def _run_akabak_ui_driver_stage(
     driver_log_dir = version_logs_dir / "akabak_driver"
     payload: Dict[str, Any] = {
         "mode": "uia_driver",
+        "prefer_background_automation": bool(prefer_background_automation),
         "version_id": version_id,
         "abec_project_path": str(abec_project_path),
         "started_at": _now_iso(),
@@ -929,7 +947,14 @@ def _run_akabak_ui_driver_stage(
         "pre_stage": vacs_pre_cleanup,
     }
     try:
-        driver = AkabakDriver(executable=str(executable), log_dir=driver_log_dir)
+        try:
+            driver = AkabakDriver(
+                executable=str(executable),
+                log_dir=driver_log_dir,
+                prefer_background_automation=bool(prefer_background_automation),
+            )
+        except TypeError:
+            driver = AkabakDriver(executable=str(executable), log_dir=driver_log_dir)
         opened = driver.open_project(abec_project_path)
         payload["steps"]["open_project"] = {"ok": bool(opened.ok), "status": str(opened.status)}
 
@@ -1075,16 +1100,21 @@ def _extract_export_contracts(
         expected_files.append(output_path)
         spec = row.get("spec") if isinstance(row.get("spec"), dict) else {}
         entry = row.get("entry") if isinstance(row.get("entry"), dict) else {}
+        spec_id = str(spec.get("id", "") or "").strip()
+        variant_raw = str(
+            spec.get("variant")
+            or entry.get("graph_variant")
+            or entry.get("variant")
+            or ""
+        ).strip()
+        if not variant_raw:
+            variant_raw = spec_id or str(entry.get("export_id", "") or "").strip() or "default"
+        if variant_raw.lower() == "default" and spec_id:
+            variant_raw = spec_id
         contracts[_path_key(output_path)] = {
-            "spec_id": str(spec.get("id", "") or ""),
+            "spec_id": spec_id,
             "graph_kind": str(spec.get("graph_kind", "") or str(entry.get("graph_kind", "") or "")).strip(),
-            "variant": str(
-                spec.get("variant")
-                or entry.get("graph_variant")
-                or entry.get("variant")
-                or "default"
-            ).strip()
-            or "default",
+            "variant": variant_raw or "default",
             "spec": spec,
             "entry": entry,
             "plugin_id": row.get("plugin_id"),
@@ -1314,7 +1344,9 @@ def run_batch_pipeline(
     if not _is_global_synced(write_run_versions_result):
         bootstrap_sync_errors.append("write_run_versions")
 
-    sim_export_payload = batch.sim_export_settings.to_dict()
+    sim_export_payload, simulation_mode_guard = _enforce_free_standing_for_runtime(
+        batch.sim_export_settings.to_dict()
+    )
     export_specs = _resolve_export_specs(sim_export_payload)
     vacs_required = bool(export_specs)
     needs_abec_artifact = bool(akabak_executable) or vacs_required
@@ -1383,6 +1415,7 @@ def run_batch_pipeline(
                     "run_cfg_path": str(run_cfg_path),
                     "ath_export_dir": str(ath_export_dir) if ath_export_dir is not None else None,
                     "parameter_snapshot": version_params,
+                    "simulation_mode_guard": simulation_mode_guard,
                     "constraints_snapshot": project.constraints.to_dict(),
                     "sweep_parameters_snapshot": dict(version_payload.get("sweep_parameters", {}) or {}),
                     "template_cfg_path_effective": template_cfg_effective,
