@@ -182,16 +182,17 @@ def _build_external_any_graph_exports(
             path=str(source),
             metadata=metadata,
         )
+        inferred_variant = f"external_{index:02d}"
         exports.append(
             {
                 "spec": {
                     "id": f"external_any_{index:02d}",
                     "tool": "vacs",
                     "graph_kind": inferred_kind,
-                    "variant": "main",
+                    "variant": inferred_variant,
                     "format": "txt",
                 },
-                "entry": {"graph_kind": inferred_kind, "graph_variant": "main", "format": "txt"},
+                "entry": {"graph_kind": inferred_kind, "graph_variant": inferred_variant, "format": "txt"},
                 "plugin_id": "external_vacs_export_save_all",
                 "output_path": str(output_path),
                 "details": {
@@ -273,6 +274,9 @@ def run_vacs_export_specs(
                     "backend": "external_script",
                     "started_process": False,
                     "external_run_id": external.get("run_id"),
+                    "external_mode": str(external.get("mode", "") or ""),
+                    "external_fallback_used": bool(external.get("fallback_used", False)),
+                    "external_fallback_reason": str(external.get("fallback_reason", "") or ""),
                 },
                 "export_count": len(exports),
                 "exports": exports,
@@ -376,6 +380,9 @@ def run_vacs_export_specs(
                 "backend": "external_script",
                 "started_process": False,
                 "external_run_id": external.get("run_id"),
+                "external_mode": str(external.get("mode", "") or ""),
+                "external_fallback_used": bool(external.get("fallback_used", False)),
+                "external_fallback_reason": str(external.get("fallback_reason", "") or ""),
             },
             "export_count": len(exports),
             "exports": exports,
