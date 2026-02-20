@@ -20,18 +20,14 @@ class BatchExportPanelTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.app = QApplication.instance() or QApplication([])
 
-    def test_presets_are_buttons(self) -> None:
+    def test_panel_exposes_advanced_button(self) -> None:
         panel = BatchExportPanel()
-        self.assertIsInstance(panel.preset_spl, QPushButton)
-        self.assertIsInstance(panel.preset_impedance, QPushButton)
-        self.assertIsInstance(panel.preset_polar, QPushButton)
-        self.assertTrue(panel.preset_spl.isCheckable())
-        self.assertTrue(panel.preset_impedance.isCheckable())
-        self.assertTrue(panel.preset_polar.isCheckable())
+        self.assertIsInstance(panel.advanced_btn, QPushButton)
+        self.assertEqual(str(panel.advanced_btn.text()), "Advanced")
 
     def test_payload_contains_mesh_frequency_and_structured_specs(self) -> None:
         panel = BatchExportPanel()
-        panel.preset_spl.setChecked(True)
+        panel._advanced_state.spl.enabled = True  # type: ignore[attr-defined]
         panel.freq_start.setText("600")
         panel.freq_end.setText("14000")
         panel.num_points.setText("24")
@@ -41,10 +37,19 @@ class BatchExportPanelTests(unittest.TestCase):
         self.assertEqual(float(payload["freq_end_hz"]), 14000.0)
         self.assertEqual(int(payload["num_points"]), 24)
         self.assertEqual(float(payload["mesh_frequency"]), 1200.0)
+        self.assertTrue(bool(payload.get("auto_default_polar_exports")))
         specs = list(payload.get("export_specs", []))
         self.assertEqual(len(specs), 1)
         self.assertEqual(str(specs[0].get("graph_kind")), "spl")
         self.assertEqual(str(specs[0].get("format")), "txt")
+
+    def test_payload_uses_default_polar_flag_when_no_manual_specs(self) -> None:
+        panel = BatchExportPanel()
+        payload = panel.sim_export_params_payload()
+        specs = list(payload.get("export_specs", []))
+        self.assertEqual(specs, [])
+        self.assertTrue(bool(payload.get("auto_default_polar_exports")))
+        self.assertEqual(panel.export_spec_count(), 3)
 
     def test_sweep_mode_roundtrip(self) -> None:
         panel = BatchExportPanel()

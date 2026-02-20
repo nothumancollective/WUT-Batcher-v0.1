@@ -449,27 +449,24 @@ class BatchExportPanel(QFrame):
         settings_grid.setColumnStretch(2, 1)
         root.addLayout(settings_grid)
 
-        presets_row = QHBoxLayout()
-        presets_row.setContentsMargins(0, 0, 0, 0)
-        presets_row.setSpacing(8)
-        self.preset_spl = self._make_preset_button("SPL")
-        self.preset_impedance = self._make_preset_button("Impedance")
-        self.preset_polar = self._make_preset_button("Polar")
-        presets_row.addWidget(self.preset_spl)
-        presets_row.addWidget(self.preset_impedance)
-        presets_row.addWidget(self.preset_polar)
+        actions_row = QHBoxLayout()
+        actions_row.setContentsMargins(0, 0, 0, 0)
+        actions_row.setSpacing(8)
+        default_hint = QLabel("Default export: Polars SPL_H, SPL_V, SPL_D")
+        default_hint.setObjectName("BatchSummaryMeta")
+        actions_row.addWidget(default_hint)
         self.enclosure_btn = QPushButton("Simulate Enclosure")
         self.enclosure_btn.setObjectName("BatchSecondaryButton")
         self.enclosure_btn.setFixedHeight(30)
         self.enclosure_btn.setMinimumWidth(152)
-        presets_row.addWidget(self.enclosure_btn)
-        presets_row.addStretch(1)
+        actions_row.addWidget(self.enclosure_btn)
+        actions_row.addStretch(1)
         self.advanced_btn = QPushButton("Advanced")
         self.advanced_btn.setProperty("segment", "true")
         self.advanced_btn.setFixedHeight(32)
         self.advanced_btn.setMinimumWidth(92)
-        presets_row.addWidget(self.advanced_btn, 0, Qt.AlignRight)
-        root.addLayout(presets_row)
+        actions_row.addWidget(self.advanced_btn, 0, Qt.AlignRight)
+        root.addLayout(actions_row)
         root.addStretch(1)
 
         self.sweep_mode.currentTextChanged.connect(lambda _value: self.changed.emit())
@@ -478,9 +475,6 @@ class BatchExportPanel(QFrame):
         self.freq_end.textChanged.connect(lambda _value: self.changed.emit())
         self.num_points.textChanged.connect(lambda _value: self.changed.emit())
         self.mesh_frequency.textChanged.connect(lambda _value: self.changed.emit())
-        self.preset_spl.toggled.connect(lambda _checked: self.changed.emit())
-        self.preset_impedance.toggled.connect(lambda _checked: self.changed.emit())
-        self.preset_polar.toggled.connect(lambda _checked: self.changed.emit())
         self.advanced_btn.clicked.connect(self._open_advanced)
         self.enclosure_btn.clicked.connect(self.open_enclosure.emit)
 
@@ -499,26 +493,11 @@ class BatchExportPanel(QFrame):
         layout.addWidget(widget)
         return box
 
-    @staticmethod
-    def _make_preset_button(label: str) -> QPushButton:
-        button = QPushButton(str(label))
-        button.setCheckable(True)
-        button.setProperty("segment", "true")
-        button.setFixedHeight(32)
-        return button
-
     def _open_advanced(self) -> None:
         dialog = _AdvancedDialog(self._advanced_state, parent=self.window())
         if dialog.exec() != QDialog.Accepted:
             return
-        touched = dialog.touched_graphs()
         self._advanced_state = dialog.state()
-        if "spl" in touched:
-            self.preset_spl.setChecked(False)
-        if "impedance" in touched:
-            self.preset_impedance.setChecked(False)
-        if "polar" in touched:
-            self.preset_polar.setChecked(False)
         self.changed.emit()
 
     def sweep_mode_value(self) -> str:
@@ -536,52 +515,55 @@ class BatchExportPanel(QFrame):
         index = self.simulation_mode.findData(target)
         self.simulation_mode.setCurrentIndex(index if index >= 0 else 0)
 
-    def _preset_specs(self) -> List[Dict[str, Any]]:
-        specs: List[Dict[str, Any]] = []
-        if self.preset_spl.isChecked():
-            specs.append(
-                {
-                    "id": "preset_spl",
-                    "tool": "vacs",
-                    "graph_kind": "spl",
-                    "variant": "main",
-                    "format": "txt",
-                    "options": {},
-                    "output_name_template": "{version_id}_{graph_kind}.{format}",
-                }
-            )
-        if self.preset_impedance.isChecked():
-            specs.append(
-                {
-                    "id": "preset_impedance",
-                    "tool": "vacs",
-                    "graph_kind": "impedance",
-                    "variant": "main",
-                    "format": "txt",
-                    "options": {},
-                    "output_name_template": "{version_id}_{graph_kind}.{format}",
-                }
-            )
-        if self.preset_polar.isChecked():
-            specs.append(
-                {
-                    "id": "preset_polar",
-                    "tool": "vacs",
-                    "graph_kind": "polar",
-                    "variant": "main",
-                    "format": "txt",
-                    "options": {
-                        "polar_name": "SPL_V",
-                        "map_angle_range": [0, 90, 19],
-                        "distance_m": 2.0,
-                        "offset": 145,
-                        "inclination": 90,
-                        "norm_angle": 0,
-                    },
-                    "output_name_template": "{version_id}_{graph_kind}.{format}",
-                }
-            )
-        return specs
+    @staticmethod
+    def _default_polar_specs() -> List[Dict[str, Any]]:
+        base_options = {
+            "map_angle_range": [0, 90, 19],
+            "distance_m": 2.0,
+        }
+        return [
+            {
+                "id": "default_polar_spl_h",
+                "tool": "vacs",
+                "graph_kind": "polar",
+                "variant": "main",
+                "format": "txt",
+                "options": {
+                    **base_options,
+                    "polar_name": "SPL_H",
+                    "offset": 145,
+                },
+                "output_name_template": "{version_id}_{graph_kind}_{export_id}.{format}",
+            },
+            {
+                "id": "default_polar_spl_v",
+                "tool": "vacs",
+                "graph_kind": "polar",
+                "variant": "main",
+                "format": "txt",
+                "options": {
+                    **base_options,
+                    "polar_name": "SPL_V",
+                    "offset_from_length_mm": 40,
+                    "inclination": 90,
+                },
+                "output_name_template": "{version_id}_{graph_kind}_{export_id}.{format}",
+            },
+            {
+                "id": "default_polar_spl_d",
+                "tool": "vacs",
+                "graph_kind": "polar",
+                "variant": "main",
+                "format": "txt",
+                "options": {
+                    **base_options,
+                    "polar_name": "SPL_D",
+                    "offset_from_length_mm": 40,
+                    "inclination": 42,
+                },
+                "output_name_template": "{version_id}_{graph_kind}_{export_id}.{format}",
+            },
+        ]
 
     def _advanced_specs(self) -> List[Dict[str, Any]]:
         specs: List[Dict[str, Any]] = []
@@ -676,7 +658,7 @@ class BatchExportPanel(QFrame):
         return issues
 
     def sim_export_params_payload(self) -> Dict[str, Any]:
-        specs = self._dedupe_specs_by_graph([*self._preset_specs(), *self._advanced_specs()])
+        specs = self._dedupe_specs_by_graph(self._advanced_specs())
         exports: Dict[str, Dict[str, Any]] = {}
         for spec in list(specs):
             graph_kind = str(spec.get("graph_kind", "")).strip().lower()
@@ -690,6 +672,7 @@ class BatchExportPanel(QFrame):
             "num_points": _int_or_default(self.num_points.text(), 16),
             "mesh_frequency": None if mesh_freq is None else float(mesh_freq),
             "simulation_mode": self.simulation_mode_value(),
+            "auto_default_polar_exports": True,
             "exports": exports,
             "export_specs": specs,
         }
@@ -698,15 +681,6 @@ class BatchExportPanel(QFrame):
         self._advanced_state = _AdvancedState.defaults()
 
     def _set_from_specs(self, specs: Sequence[Dict[str, Any]]) -> None:
-        self.preset_spl.blockSignals(True)
-        self.preset_impedance.blockSignals(True)
-        self.preset_polar.blockSignals(True)
-        self.preset_spl.setChecked(False)
-        self.preset_impedance.setChecked(False)
-        self.preset_polar.setChecked(False)
-        self.preset_spl.blockSignals(False)
-        self.preset_impedance.blockSignals(False)
-        self.preset_polar.blockSignals(False)
         self._reset_advanced()
 
         polar_slot = 0
@@ -716,19 +690,10 @@ class BatchExportPanel(QFrame):
             graph_kind = str(spec.get("graph_kind", "")).strip().lower()
             spec_id = str(spec.get("id", "")).strip().lower()
             options = dict(spec.get("options", {}) or {})
-            if spec_id == "preset_spl":
-                self.preset_spl.setChecked(True)
-                continue
-            if spec_id == "preset_impedance":
-                self.preset_impedance.setChecked(True)
-                continue
-            if spec_id == "preset_polar":
-                self.preset_polar.setChecked(True)
-                continue
-            if graph_kind == "spl":
+            if spec_id == "preset_spl" or graph_kind == "spl":
                 self._advanced_state.spl.enabled = True
                 continue
-            if graph_kind == "impedance":
+            if spec_id == "preset_impedance" or graph_kind == "impedance":
                 self._advanced_state.impedance.enabled = True
                 continue
             if graph_kind == "polar" and polar_slot < len(self._advanced_state.polars):
@@ -775,4 +740,7 @@ class BatchExportPanel(QFrame):
         self.set_from_payload({})
 
     def export_spec_count(self) -> int:
-        return len(list(self.sim_export_params_payload().get("export_specs", []) or []))
+        specs = list(self.sim_export_params_payload().get("export_specs", []) or [])
+        if specs:
+            return len(specs)
+        return len(self._default_polar_specs())

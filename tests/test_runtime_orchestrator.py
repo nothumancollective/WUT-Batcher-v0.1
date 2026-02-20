@@ -6,14 +6,400 @@ from pathlib import Path
 import sqlite3
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
 from app.models import Batch, ParamSelection, Project, ProjectConstraints, SimExportSettings, SweepSpec
-from app.runtime_orchestrator import run_batch_pipeline
+from app.runtime_orchestrator import (
+    StageExecution,
+    _apply_sim_export_settings_to_cfg,
+    _run_akabak_ui_driver_stage,
+    _sync_generated_abec,
+    run_batch_pipeline,
+)
 
 
 class RuntimeOrchestratorTests(unittest.TestCase):
+    def test_apply_sim_export_settings_injects_polar_block(self) -> None:
+        base = "Output.ABECProject = 1\nOutput.STL = 0\n"
+        spec = SimpleNamespace(
+            graph_kind="polar",
+            options={
+                "polar_name": "SPL_V",
+                "map_angle_range": [0, 90, 19],
+                "distance_m": 2.0,
+                "offset": 145,
+                "inclination": 90,
+            },
+        )
+        text = _apply_sim_export_settings_to_cfg(
+            base,
+            sim_export_settings={
+                "freq_start_hz": 500.0,
+                "freq_end_hz": 15000.0,
+                "num_points": 16,
+                "mesh_frequency": None,
+                "simulation_mode": "free_standing",
+            },
+            export_specs=[spec],
+        )
+        self.assertIn("ABEC.SimType = 2", text)
+        self.assertIn("ABEC.f1 = 500", text)
+        self.assertIn("ABEC.f2 = 15000", text)
+        self.assertIn("ABEC.NumFrequencies = 16", text)
+        self.assertIn("ABEC.Polars:SPL_V = {", text)
+        self.assertIn("MapAngleRange = 0,90,19", text)
+        self.assertIn("Distance = 2", text)
+        self.assertIn("Offset = 145", text)
+        self.assertIn("Inclination = 90", text)
+
+    def test_akabak_stage_preserves_vacs_for_export_when_requested(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            logs_dir = Path(tmp_dir) / "logs"
+            abec_path = Path(tmp_dir) / "Project.abec"
+            abec_path.write_text("stub", encoding="utf-8")
+
+            class _FakeAkabakDriver:
+                def __init__(self, *, executable: str, log_dir: Path) -> None:
+                    self.watchdog_events: list[dict] = []
+                    self.last_open_dialog_diagnostics_path = ""
+                    self.last_import_diagnostics_path = ""
+                    self.last_solve_diagnostics_path = ""
+
+                def open_project(self, abec_project_path: Path):
+                    return SimpleNamespace(ok=True, status="project_open")
+
+                def import_if_needed(self):
+                    return SimpleNamespace(ok=True, status="project_open")
+
+                def run_solve(self):
+                    return SimpleNamespace(ok=True, status="running")
+
+                def wait_for_completion(self, timeout_s: int = 300, require_vacs_graph_import: bool = False):
+                    return SimpleNamespace(ok=True, status="completed")
+
+                def close(self):
+                    return SimpleNamespace(ok=True, status="closed")
+
+            with patch("app.runtime_orchestrator.AkabakDriver", _FakeAkabakDriver):
+                with patch(
+                    "app.runtime_orchestrator._list_vacs_process_ids",
+                    side_effect=[[111], [222]],
+                ):
+                    with patch(
+                        "app.runtime_orchestrator._terminate_process_ids",
+                        return_value={"requested": [111], "terminated": [111], "failed": []},
+                    ) as terminate_mock:
+                        stage, payload, ok = _run_akabak_ui_driver_stage(
+                            version_id="V001",
+                            executable="C:\\Tools\\AKABAK\\AKABAK.exe",
+                            abec_project_path=abec_path,
+                            version_logs_dir=logs_dir,
+                            require_vacs_graph_import=True,
+                            preserve_vacs_for_export=True,
+                        )
+
+            self.assertTrue(ok)
+            self.assertEqual(stage.status, "ok")
+            self.assertEqual(terminate_mock.call_count, 1)
+            self.assertEqual(str(payload.get("summary_log")), str(stage.summary_log))
+            summary_payload = json.loads(Path(stage.summary_log).read_text(encoding="utf-8-sig"))
+            cleanup = dict(summary_payload.get("vacs_cleanup", {}) or {})
+            self.assertEqual(cleanup.get("before_stage_pids"), [111])
+            self.assertEqual(cleanup.get("after_stage_pids"), [222])
+            post = dict(cleanup.get("post_stage", {}) or {})
+            self.assertTrue(bool(post.get("skipped")))
+            self.assertEqual(str(post.get("reason")), "preserve_for_vacs_export")
+
+    def test_sync_generated_abec_copies_referenced_sidecars(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            source_dir = root / "ath_out" / "ABEC_FreeStanding"
+            source_dir.mkdir(parents=True, exist_ok=True)
+            source_abec = source_dir / "Project.abec"
+            source_abec.write_text(
+                "\n".join(
+                    [
+                        "[Project]",
+                        "Scriptname_InfoFile=",
+                        "[Solving]",
+                        "Scriptname_Solving=solving.txt",
+                        "[LEScript]",
+                        "Scriptname_LEScript=generic25.txt",
+                        "[Observation]",
+                        "C0=observation.txt",
+                        "[MeshFiles]",
+                        "C0=sample_mesh.msh,M1",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            (source_dir / "solving.txt").write_text("solve\n", encoding="utf-8")
+            (source_dir / "observation.txt").write_text("observe\n", encoding="utf-8")
+            (source_dir / "generic25.txt").write_text("driver\n", encoding="utf-8")
+            (source_dir / "sample_mesh.msh").write_text("mesh\n", encoding="utf-8")
+
+            target_abec = root / "project" / "versions" / "V001" / "abec" / "Project.abec"
+            result = _sync_generated_abec(
+                target_abec=target_abec,
+                search_roots=[root / "ath_out"],
+                logs_dir=root / "logs",
+            )
+
+            self.assertTrue(result.get("ok"))
+            self.assertTrue(target_abec.exists())
+            self.assertTrue((target_abec.parent / "solving.txt").exists())
+            self.assertTrue((target_abec.parent / "observation.txt").exists())
+            self.assertTrue((target_abec.parent / "generic25.txt").exists())
+            self.assertTrue((target_abec.parent / "sample_mesh.msh").exists())
+            self.assertEqual(result.get("sidecar_missing"), [])
+            self.assertEqual(result.get("sidecar_copy_errors"), [])
+
+    def test_pipeline_wires_post_ath_repair_with_diagnostics(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            projects_root = Path(tmp_dir) / "projects"
+            project = Project(
+                project_id="P001",
+                name="Runtime LE Profile Test",
+                root_path=str(projects_root / "P001"),
+                constraints=ProjectConstraints(
+                    project_id="P001",
+                    fixed_params={"Length": 120},
+                    limits={},
+                    runner_mode="AthGuidePreview",
+                ),
+            )
+            batch = Batch(
+                batch_id="B001",
+                project_id="P001",
+                selected_params={"Throat.Diameter": ParamSelection(value=30.0)},
+                sweep_mode="single",
+                runner_mode="AthGuidePreview",
+            )
+            repair_calls: list[dict] = []
+
+            class _FakeRepairResult:
+                ok = True
+                status = "ok"
+                diagnostics_path = ""
+                abec_path = ""
+                error = None
+
+                def to_dict(self):
+                    return {"status": "ok"}
+
+            def _fake_repair(**kwargs):
+                repair_calls.append(dict(kwargs))
+                return _FakeRepairResult()
+
+            fake_stage = StageExecution(
+                version_id="V001",
+                stage="akabak",
+                status="ok",
+                exit_code=0,
+                timed_out=False,
+                summary_log="fake",
+            )
+            ath_export_root = Path(tmp_dir) / "ath_export"
+            ath_export_root.mkdir(parents=True, exist_ok=True)
+            ath_script = (
+                "from pathlib import Path; import sys; "
+                f"root=Path(r'{str(ath_export_root)}'); "
+                "cfg=Path(sys.argv[-1]); "
+                "sub=root/cfg.stem/'ABEC_FreeStanding'; sub.mkdir(parents=True, exist_ok=True); "
+                "(sub/'Project.abec').write_text('[LEScript]\\nScriptname_LEScript=\\n', encoding='utf-8'); "
+                "print('Length=111 Width=222 Height=333')"
+            )
+
+            with patch("app.runtime_orchestrator.AkabakDriver", object()):
+                with patch("app.runtime_orchestrator.repair_post_ath_le_binding", side_effect=_fake_repair):
+                    with patch(
+                        "app.runtime_orchestrator._assess_pre_akabak_le_driving_contract",
+                        return_value={"ok": True, "violations": []},
+                    ):
+                        with patch(
+                            "app.runtime_orchestrator._parse_abec_mesh_requirements",
+                            return_value={"section_present": True, "required_mesh_files": [], "missing_mesh_files": []},
+                        ):
+                            with patch(
+                                "app.runtime_orchestrator._run_akabak_ui_driver_stage",
+                                return_value=(fake_stage, {"mode": "uia_driver", "summary_log": "fake", "exit_code": 0}, True),
+                            ):
+                                summary = run_batch_pipeline(
+                                    project=project,
+                                    batch=batch,
+                                    projects_root=projects_root,
+                                    ath_executable=sys.executable,
+                                    ath_base_args=["-c", ath_script],
+                                    akabak_executable="C:\\Tools\\AKABAK\\AKABAK.exe",
+                                    ath_export_root=ath_export_root,
+                                    continue_on_error=True,
+                                )
+
+            self.assertEqual(summary.run_status, "succeeded")
+            self.assertEqual(len(repair_calls), 1)
+            self.assertNotIn("le_patch_profile", repair_calls[0])
+            self.assertTrue(str(repair_calls[0].get("diagnostics_dir", "")).endswith("\\logs"))
+
+    def test_pipeline_uses_akabak_ui_driver_when_available(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            projects_root = Path(tmp_dir) / "projects"
+            project = Project(
+                project_id="P001",
+                name="Runtime AKABAK Driver Test",
+                root_path=str(projects_root / "P001"),
+                constraints=ProjectConstraints(
+                    project_id="P001",
+                    fixed_params={"Length": 120},
+                    limits={},
+                    runner_mode="AthGuidePreview",
+                ),
+            )
+            batch = Batch(
+                batch_id="B001",
+                project_id="P001",
+                selected_params={"Throat.Diameter": ParamSelection(value=30.0)},
+                sweep_mode="single",
+                runner_mode="AthGuidePreview",
+            )
+
+            class _FakeAkabakDriver:
+                calls: list[str] = []
+
+                def __init__(self, *, executable: str, log_dir: Path) -> None:
+                    _FakeAkabakDriver.calls.append("init")
+                    self.executable = executable
+                    self.log_dir = log_dir
+                    self.watchdog_events: list[dict] = []
+                    self.last_open_dialog_diagnostics_path = ""
+                    self.last_import_diagnostics_path = ""
+                    self.last_solve_diagnostics_path = ""
+
+                def open_project(self, abec_project_path: Path):
+                    _FakeAkabakDriver.calls.append("open_project")
+                    return SimpleNamespace(ok=True, status="project_open")
+
+                def import_if_needed(self):
+                    _FakeAkabakDriver.calls.append("import_if_needed")
+                    return SimpleNamespace(ok=True, status="project_open")
+
+                def run_solve(self):
+                    _FakeAkabakDriver.calls.append("run_solve")
+                    return SimpleNamespace(ok=True, status="running")
+
+                def wait_for_completion(self, timeout_s: int = 300):
+                    _FakeAkabakDriver.calls.append("wait_for_completion")
+                    return SimpleNamespace(ok=True, status="completed")
+
+                def close(self):
+                    _FakeAkabakDriver.calls.append("close")
+                    return SimpleNamespace(ok=True, status="closed")
+
+            with patch("app.runtime_orchestrator.AkabakDriver", _FakeAkabakDriver):
+                summary = run_batch_pipeline(
+                    project=project,
+                    batch=batch,
+                    projects_root=projects_root,
+                    akabak_executable="C:\\Tools\\AKABAK\\AKABAK.exe",
+                    continue_on_error=True,
+                )
+
+            self.assertEqual(summary.run_status, "succeeded")
+            self.assertEqual(len(summary.stage_results), 1)
+            self.assertEqual(summary.stage_results[0].stage, "akabak")
+            self.assertEqual(summary.stage_results[0].status, "ok")
+            self.assertEqual(
+                _FakeAkabakDriver.calls,
+                ["init", "open_project", "import_if_needed", "run_solve", "wait_for_completion", "close"],
+            )
+
+            version_payload = json.loads(
+                (Path(summary.project_root) / "versions" / summary.versions[0] / "version.json").read_text(encoding="utf-8-sig")
+            )
+            akabak_result = dict(version_payload.get("akabak_result", {}) or {})
+            self.assertEqual(str(akabak_result.get("mode")), "uia_driver")
+
+    def test_pipeline_skips_legacy_vacs_stage_without_export_specs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            projects_root = Path(tmp_dir) / "projects"
+            project = Project(
+                project_id="P001",
+                name="Runtime Skip Legacy VACS Test",
+                root_path=str(projects_root / "P001"),
+                constraints=ProjectConstraints(
+                    project_id="P001",
+                    fixed_params={"Length": 120},
+                    limits={},
+                    runner_mode="AthGuidePreview",
+                ),
+            )
+            batch = Batch(
+                batch_id="B001",
+                project_id="P001",
+                selected_params={"Throat.Diameter": ParamSelection(value=30.0)},
+                sweep_mode="single",
+                runner_mode="AthGuidePreview",
+            )
+
+            with patch("app.runtime_orchestrator.VacsRunner.run_export", side_effect=AssertionError("must_not_run")):
+                summary = run_batch_pipeline(
+                    project=project,
+                    batch=batch,
+                    projects_root=projects_root,
+                    vacs_executable=sys.executable,
+                    continue_on_error=True,
+                )
+
+            self.assertEqual(summary.run_status, "succeeded")
+            self.assertEqual(len(summary.stage_results), 0)
+            version_payload = json.loads(
+                (Path(summary.project_root) / "versions" / summary.versions[0] / "version.json").read_text(encoding="utf-8-sig")
+            )
+            self.assertNotIn("vacs_result", version_payload)
+
+    def test_pipeline_skips_akabak_stage_when_ath_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            projects_root = Path(tmp_dir) / "projects"
+            project = Project(
+                project_id="P001",
+                name="Runtime ATH Fail Skip Test",
+                root_path=str(projects_root / "P001"),
+                constraints=ProjectConstraints(
+                    project_id="P001",
+                    fixed_params={"Length": 120},
+                    limits={},
+                    runner_mode="AthGuidePreview",
+                ),
+            )
+            batch = Batch(
+                batch_id="B001",
+                project_id="P001",
+                selected_params={"Throat.Diameter": ParamSelection(value=30.0)},
+                sweep_mode="single",
+                runner_mode="AthGuidePreview",
+            )
+
+            with patch("app.runtime_orchestrator.AkabakDriver", object()):
+                with patch(
+                    "app.runtime_orchestrator._run_akabak_ui_driver_stage",
+                    side_effect=AssertionError("must_not_run"),
+                ):
+                    summary = run_batch_pipeline(
+                        project=project,
+                        batch=batch,
+                        projects_root=projects_root,
+                        ath_executable=sys.executable,
+                        ath_base_args=["-c", "import sys; sys.exit(1)"],
+                        akabak_executable="C:\\Tools\\AKABAK\\AKABAK.exe",
+                        continue_on_error=True,
+                    )
+
+            self.assertEqual(summary.run_status, "failed")
+            self.assertTrue(any(stage.stage == "ath" and stage.status == "failed" for stage in summary.stage_results))
+            self.assertFalse(any(stage.stage == "akabak" for stage in summary.stage_results))
+
     def test_pipeline_dry_run_records_version_runtime_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             projects_root = Path(tmp_dir) / "projects"
@@ -386,6 +772,7 @@ class RuntimeOrchestratorTests(unittest.TestCase):
             )
 
             def _fake_run_vacs_export_specs(**kwargs):
+                self.assertTrue(bool(kwargs.get("allow_graph_kind_fallback")))
                 export_dir = Path(str(kwargs["export_dir"]))
                 output_file = export_dir / "mapped_spl.txt"
                 output_file.parent.mkdir(parents=True, exist_ok=True)

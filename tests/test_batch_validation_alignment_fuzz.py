@@ -149,8 +149,8 @@ class BatchValidationAlignmentFuzzTests(unittest.TestCase):
         panel.freq_end.setText(str(float(rng.choice([8000, 10000, 15000, 20000]))))
         panel.num_points.setText(str(int(rng.choice([8, 16, 24, 32, 48]))))
         panel.mesh_frequency.setText(rng.choice(["", "1500", "2200", "3000"]))
-        panel.preset_spl.setChecked(bool(rng.choice([True, False])))
-        panel.preset_impedance.setChecked(bool(rng.choice([True, False])))
+        panel._advanced_state.spl.enabled = bool(rng.choice([True, False]))  # type: ignore[attr-defined]
+        panel._advanced_state.impedance.enabled = bool(rng.choice([True, False]))  # type: ignore[attr-defined]
 
     def _assert_batch_alignment(self, window: MainWindow, project: Project) -> None:
         payload = window.batch_page._payload(include_name=False)

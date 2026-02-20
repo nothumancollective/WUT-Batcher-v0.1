@@ -10,6 +10,7 @@ from unittest.mock import patch
 from app.export_specs import ExportSpec
 from app.vacs_export_pipeline import (
     VacsExportPipelineError,
+    _run_external_vacs_export_save_all,
     _graph_kind_match_score,
     run_vacs_export_specs,
 )
@@ -47,6 +48,34 @@ class _FakeVacsDriver:
 
 
 class VacsExportPipelineTests(unittest.TestCase):
+    def test_external_runner_uses_assume_ready_auto_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            captured: dict = {}
+
+            class _Proc:
+                returncode = 0
+                stdout = json.dumps({"ok": True, "run_id": "r1", "exported_files": []})
+                stderr = ""
+
+            def _fake_run(cmd, capture_output, text, check):  # type: ignore[no-untyped-def]
+                captured["cmd"] = list(cmd)
+                return _Proc()
+
+            with patch("app.vacs_export_pipeline.subprocess.run", side_effect=_fake_run):
+                payload = _run_external_vacs_export_save_all(
+                    executable="C:\\Tools\\VACS\\vacsviewer_32.exe",
+                    akabak_executable="C:\\Tools\\AKABAK\\AKABAK.exe",
+                    export_dir=root / "exports",
+                    log_dir=root / "logs",
+                )
+
+            self.assertTrue(bool(payload.get("ok")))
+            cmd = list(captured.get("cmd", []))
+            self.assertIn("--mode", cmd)
+            self.assertIn("auto", cmd)
+            self.assertIn("--assume-vacs-ready", cmd)
+
     def _write_catalog(self, root: Path, *, entries: list[dict]) -> None:
         path = root / "default" / "graph_catalog.json"
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -242,6 +271,117 @@ class VacsExportPipelineTests(unittest.TestCase):
             text = str(ctx.exception)
             self.assertIn("available_graphs=", text)
             self.assertIn("SoundPressure", text)
+
+    def test_external_any_graph_fallback_accepts_any_exported_graph(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            source_a = root / "raw_graph_a.txt"
+            source_b = root / "raw_graph_b.txt"
+            source_a.write_text(
+                "\n".join(
+                    [
+                        "SourceDesc=VACS_Data_Text",
+                        "Data_LevelType=SoundPressure",
+                        "Data_Legend='SPL curve'",
+                        "StartString_Data=Data",
+                        "EndString_Data=Data_End",
+                        "Data",
+                        "100 1.0",
+                        "Data_End",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            source_b.write_text(
+                "\n".join(
+                    [
+                        "SourceDesc=VACS_Data_Text",
+                        "Data_LevelType=Impedance10",
+                        "Data_Legend='Radiation_Impedance #5'",
+                        "StartString_Data=Data",
+                        "EndString_Data=Data_End",
+                        "Data",
+                        "100 0.0 0.0",
+                        "Data_End",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            spec = ExportSpec(id="only_one_requested", tool="vacs", graph_kind="spl", format="txt")
+            with patch(
+                "app.vacs_export_pipeline._run_external_vacs_export_save_all",
+                return_value={
+                    "ok": True,
+                    "run_id": "run_x",
+                    "exported_files": [
+                        {"graph": {"title": "Mic Polar - BE_Spectrum #2"}, "path": str(source_a)},
+                        {"graph": {"title": "Graph #2"}, "path": str(source_b)},
+                    ],
+                    "summary_file": str(root / "summary.json"),
+                },
+            ):
+                result = run_vacs_export_specs(
+                    executable="C:\\Tools\\VACS\\vacsviewer_32.exe",
+                    vacs_version="default",
+                    project_id="P001",
+                    batch_id="B001",
+                    version_id="V001",
+                    abec_path=root / "Project.abec",
+                    export_specs=[spec],
+                    export_dir=root / "exports",
+                    log_dir=root / "logs",
+                    akabak_executable="C:\\Tools\\AKABAK\\AKABAK.exe",
+                    allow_graph_kind_fallback=True,
+                )
+
+            self.assertTrue(result["executed"])
+            self.assertEqual(str(result.get("mapping_mode", "")), "any_graph")
+            self.assertEqual(int(result["export_count"]), 2)
+            exports = list(result.get("exports", []) or [])
+            self.assertEqual(len(exports), 2)
+            kinds = {str((row.get("spec", {}) or {}).get("graph_kind", "") or "") for row in exports}
+            self.assertIn("spl", kinds)
+            self.assertIn("impedance", kinds)
+            for row in exports:
+                details = dict(row.get("details", {}) or {})
+                self.assertEqual(str(details.get("mapping_mode", "")), "any_graph")
+                self.assertEqual(
+                    str(details.get("inferred_graph_kind", "") or ""),
+                    str((row.get("spec", {}) or {}).get("graph_kind", "") or ""),
+                )
+                self.assertIn("only_one_requested", list(details.get("requested_spec_ids", []) or []))
+                self.assertTrue(Path(str(row.get("output_path", ""))).exists())
+
+    def test_external_any_graph_fallback_requires_at_least_one_graph(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            spec = ExportSpec(id="only_one_requested", tool="vacs", graph_kind="spl", format="txt")
+            with patch(
+                "app.vacs_export_pipeline._run_external_vacs_export_save_all",
+                return_value={
+                    "ok": True,
+                    "run_id": "run_x",
+                    "exported_files": [],
+                    "summary_file": str(root / "summary.json"),
+                },
+            ):
+                with self.assertRaises(VacsExportPipelineError) as ctx:
+                    run_vacs_export_specs(
+                        executable="C:\\Tools\\VACS\\vacsviewer_32.exe",
+                        vacs_version="default",
+                        project_id="P001",
+                        batch_id="B001",
+                        version_id="V001",
+                        abec_path=root / "Project.abec",
+                        export_specs=[spec],
+                        export_dir=root / "exports",
+                        log_dir=root / "logs",
+                        akabak_executable="C:\\Tools\\AKABAK\\AKABAK.exe",
+                        allow_graph_kind_fallback=True,
+                    )
+            self.assertIn("no usable graph files", str(ctx.exception))
 
 
 if __name__ == "__main__":

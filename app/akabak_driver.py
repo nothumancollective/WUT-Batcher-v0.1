@@ -44,6 +44,8 @@ IMPORT_ABEC_COMMAND_ID = 113
 AKABAK_IMAGE_NAME = "akabak.exe"
 VACS_IMAGE_CANDIDATES = ("vacsviewer_32.exe", "vacsviewer.exe")
 VACS_GRAPH_KEYWORDS = ("graph", "impedance", "spl", "phase", "radiation", "polar", "directivity")
+MESH_FILE_MISSING_RE = re.compile(r"cannot\s+find\s+mesh[-\s]*file", re.IGNORECASE)
+ALL_SOURCES_MUTED_RE = re.compile(r"all\s+sources\s+muted", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -642,6 +644,35 @@ class AkabakDriver:
         details["message"] = " | ".join(messages[:4])
         return details
 
+    def _classify_fatal_modal(self, modal_details: Dict[str, Any]) -> Optional[str]:
+        title = str(modal_details.get("title", "") or "")
+        message = str(modal_details.get("message", "") or "")
+        blob = f"{title} {message}".strip()
+        if not blob:
+            return None
+        if MESH_FILE_MISSING_RE.search(blob):
+            return "mesh_file_missing"
+        if ALL_SOURCES_MUTED_RE.search(blob):
+            return "all_sources_muted"
+        return None
+
+    def _find_main_process_modal(self) -> Optional[Any]:
+        process_id = int(self.session.process_id or 0)
+        if process_id <= 0:
+            return None
+        for window in self._process_top_level_windows(process_id=process_id):
+            row = self._window_signature_row(window)
+            class_name = str(row.get("class_name", "") or "")
+            title = str(row.get("title", "") or "")
+            is_modal_class = class_name == "#32770" or bool(re.search(r"(dialog|message)", class_name, re.IGNORECASE))
+            is_modal_title = bool(re.search(r"(error|warning|warnung|meldung|message)", title, re.IGNORECASE))
+            if not (is_modal_class or is_modal_title):
+                continue
+            if self._is_main_window_row(row) or self._is_interpreter_window_row(row):
+                continue
+            return window
+        return None
+
     def _invoke_modal_primary(self, *, modal_window: Any, step: str) -> bool:
         # Deterministic non-visual modal handling: prefer explicit button invoke on OK/Yes.
         target = self._find_first_control(
@@ -691,12 +722,13 @@ class AkabakDriver:
         step: str,
         phase: str,
         allow_enter_fallback: bool = True,
+        watchdog_timeout_s: float = 0.9,
     ) -> Dict[str, Any]:
         row: Dict[str, Any] = {"phase": str(phase), "method": None, "allow_enter_fallback": bool(allow_enter_fallback)}
 
         # Always sweep global/top-level modals first so close/apply confirmations
         # are handled even if the interpreter window already disappeared.
-        watchdog_row = self._run_watchdog_modal_sweep(step=step, phase=phase, timeout_s=3.0)
+        watchdog_row = self._run_watchdog_modal_sweep(step=step, phase=phase, timeout_s=max(0.6, float(watchdog_timeout_s)))
         row["watchdog"] = watchdog_row
         if int(watchdog_row.get("handled", 0)) > 0:
             row["status"] = "watchdog_handled"
@@ -725,7 +757,11 @@ class AkabakDriver:
             self._send_key_enter(interpreter_handle)
             row["method"] = "interpreter_enter"
             row["status"] = "enter_sent"
-            watchdog_after_enter = self._run_watchdog_modal_sweep(step=step, phase=f"{phase}_after_enter", timeout_s=3.0)
+            watchdog_after_enter = self._run_watchdog_modal_sweep(
+                step=step,
+                phase=f"{phase}_after_enter",
+                timeout_s=max(0.6, float(watchdog_timeout_s)),
+            )
             row["watchdog_after_enter"] = watchdog_after_enter
             return row
 
@@ -1340,6 +1376,8 @@ class AkabakDriver:
         combo_handle = self._window_handle(filename_combo) if filename_combo is not None else 0
         attempts: List[Dict[str, Any]] = []
         path_written_once = False
+        dialog_close_wait_s = min(1.2, max(0.6, float(self.step_timeout_s) / 90.0))
+        postcondition_timeout_s = min(float(self.step_timeout_s), 12.0)
 
         def _wait_for_postcondition(timeout_s: float) -> Dict[str, Any]:
             return wait_until(
@@ -1441,7 +1479,7 @@ class AkabakDriver:
             for action_name, action in actions:
                 try:
                     action()
-                    if _wait_dialog_closed(timeout_s=2.5):
+                    if _wait_dialog_closed(timeout_s=dialog_close_wait_s):
                         return action_name
                 except Exception:
                     continue
@@ -1483,7 +1521,7 @@ class AkabakDriver:
             for action_name, action in actions:
                 try:
                     action()
-                    if _wait_dialog_closed(timeout_s=2.5):
+                    if _wait_dialog_closed(timeout_s=dialog_close_wait_s):
                         return action_name
                 except Exception:
                     continue
@@ -1524,7 +1562,7 @@ class AkabakDriver:
             ok = False
             error_text = ""
             try:
-                state_snapshot = _wait_for_postcondition(timeout_s=min(float(self.step_timeout_s), 20.0))
+                state_snapshot = _wait_for_postcondition(timeout_s=postcondition_timeout_s)
                 ok = bool(state_snapshot.get("ok", False))
             except Exception as exc:
                 error_text = repr(exc)
@@ -1564,7 +1602,7 @@ class AkabakDriver:
             retry_ok = False
             retry_error = ""
             try:
-                retry_snapshot = _wait_for_postcondition(timeout_s=min(float(self.step_timeout_s), 20.0))
+                retry_snapshot = _wait_for_postcondition(timeout_s=postcondition_timeout_s)
                 retry_ok = bool(retry_snapshot.get("ok", False))
             except Exception as exc:
                 retry_error = repr(exc)
@@ -1647,7 +1685,7 @@ class AkabakDriver:
             ok = False
             error_text = ""
             try:
-                state_snapshot = _wait_for_postcondition(timeout_s=min(float(self.step_timeout_s), 20.0))
+                state_snapshot = _wait_for_postcondition(timeout_s=postcondition_timeout_s)
                 ok = bool(state_snapshot.get("ok", False))
             except Exception as exc:
                 error_text = repr(exc)
@@ -1705,7 +1743,7 @@ class AkabakDriver:
             ok = False
             error_text = ""
             try:
-                state_snapshot = _wait_for_postcondition(timeout_s=min(float(self.step_timeout_s), 20.0))
+                state_snapshot = _wait_for_postcondition(timeout_s=postcondition_timeout_s)
                 ok = bool(state_snapshot.get("ok", False))
             except Exception as exc:
                 error_text = repr(exc)
@@ -1819,7 +1857,7 @@ class AkabakDriver:
         self._log(level="info", step=step, event="action_open_project", payload={"project": project_path})
         try:
             # Keep open-dialog wait tight to avoid perceived idle time before filename entry.
-            open_dialog_timeout = min(float(self.step_timeout_s), 8.0)
+            open_dialog_timeout = min(float(self.step_timeout_s), 5.0)
             main_window.set_focus()
             try:
                 file_dialog = self._open_dialog_via_main_menu(
@@ -1846,7 +1884,7 @@ class AkabakDriver:
                         self._find_interpreter_window(main_window=main_window) is not None,
                         self._find_interpreter_window(main_window=main_window),
                     ),
-                    timeout_s=min(float(self.step_timeout_s), 20.0),
+                    timeout_s=min(float(self.step_timeout_s), 10.0),
                 )
                 self._trigger_interpreter_open_button(main_window=main_window, interpreter_window=interpreter, step=step)
                 file_dialog = wait_until(
@@ -1929,9 +1967,19 @@ class AkabakDriver:
             if apply_status == "modal_detected":
                 modal = apply_ready.get("modal_window")
                 modal_details = self._modal_details(modal) if modal is not None else {"title": "unknown", "message": ""}
+                fatal_modal = self._classify_fatal_modal(modal_details)
                 dismissed = bool(modal is not None and self._invoke_modal_primary(modal_window=modal, step=step))
-                attempt_trace.append({"phase": "modal_detected_before_apply", "modal": modal_details, "dismissed": dismissed})
+                attempt_trace.append(
+                    {
+                        "phase": "modal_detected_before_apply",
+                        "modal": modal_details,
+                        "dismissed": dismissed,
+                        "fatal_modal": fatal_modal,
+                    }
+                )
                 self._require(dismissed, f"AKABAK import modal before apply not dismissable: {modal_details}", step)
+                if fatal_modal:
+                    raise RuntimeError(f"AKABAK import fatal modal ({fatal_modal}): {modal_details}")
                 apply_ready = wait_until(
                     predicate=lambda: self._import_apply_ready_state(main_window=main_window),
                     timeout_s=max(10.0, float(self.step_timeout_s)),
@@ -1990,9 +2038,19 @@ class AkabakDriver:
             if post_status == "modal_detected":
                 modal = post_apply.get("modal_window")
                 modal_details = self._modal_details(modal) if modal is not None else {"title": "unknown", "message": ""}
+                fatal_modal = self._classify_fatal_modal(modal_details)
                 dismissed = bool(modal is not None and self._invoke_modal_primary(modal_window=modal, step=step))
-                attempt_trace.append({"phase": "modal_detected_after_apply", "modal": modal_details, "dismissed": dismissed})
+                attempt_trace.append(
+                    {
+                        "phase": "modal_detected_after_apply",
+                        "modal": modal_details,
+                        "dismissed": dismissed,
+                        "fatal_modal": fatal_modal,
+                    }
+                )
                 self._require(dismissed, f"AKABAK import modal after apply not dismissable: {modal_details}", step)
+                if fatal_modal:
+                    raise RuntimeError(f"AKABAK import fatal modal ({fatal_modal}): {modal_details}")
                 post_apply = wait_until(
                     predicate=lambda: self._import_post_apply_state(
                         main_window=main_window,
@@ -2091,6 +2149,16 @@ class AkabakDriver:
                 handled = self.watchdog.run_watch(step_name=f"{step}_startup_watch", timeout_s=1)
                 if handled:
                     self._record_watchdog_events(step=step, events=handled)
+            process_modal = self._find_main_process_modal()
+            if process_modal is not None:
+                modal_details = self._modal_details(process_modal)
+                fatal_modal = self._classify_fatal_modal(modal_details)
+                if fatal_modal:
+                    dismissed = self._invoke_modal_primary(modal_window=process_modal, step=step)
+                    raise RuntimeError(
+                        f"AKABAK solve fatal modal ({fatal_modal})"
+                        f" dismissed={bool(dismissed)} details={modal_details}"
+                    )
             snapshot = self._solve_signal_snapshot(include_vacs_ui=False)
             baseline_akabak = {int(pid) for pid in baseline.get("akabak_pids", [])}
             baseline_vacs = {int(pid) for pid in baseline.get("vacs_pids", [])}
@@ -2172,7 +2240,7 @@ class AkabakDriver:
                 + (f" diagnostics={self.last_solve_diagnostics_path}" if self.last_solve_diagnostics_path else "")
             ) from exc
 
-    def wait_for_completion(self, timeout_s: int = 300) -> AkabakDriverResult:
+    def wait_for_completion(self, timeout_s: int = 300, require_vacs_graph_import: bool = True) -> AkabakDriverResult:
         step = "wait_for_completion"
         self._connect()
         self._require(self.state == "running", "AKABAK solve is not running.", step)
@@ -2216,6 +2284,10 @@ class AkabakDriver:
             snapshot["max_graph_keyword_hits"] = max_graph_hits
             snapshot["controls_growth"] = controls_growth
             snapshot["graph_hits_growth"] = graph_hits_growth
+
+            if not bool(require_vacs_graph_import):
+                snapshot["status"] = "completed_no_vacs_signal_required"
+                return True, snapshot
 
             if new_vacs or snapshot.get("vacs_pids"):
                 if graphs_imported:

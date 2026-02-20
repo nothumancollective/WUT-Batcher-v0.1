@@ -120,7 +120,7 @@ class CompatEngineTests(unittest.TestCase):
         self.assertNotIn("CircArc.TermAngle", visible)
         self.assertNotIn("Morph.TargetWidth", visible)
         self.assertNotIn("Rollback.StartAt", visible)
-        self.assertNotIn("Mesh.InterfaceOffset", visible)
+        self.assertIn("Mesh.InterfaceOffset", visible)
 
     def test_guidingcurve_fields_become_visible_when_type_is_set(self) -> None:
         visible = set(visible_params({"fixed_params": {"Length": 90, "GCurve.Type": 1}}))

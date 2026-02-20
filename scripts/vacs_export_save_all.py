@@ -48,6 +48,12 @@ IDCLOSE = 8
 
 GRAPH_CLASSES = {"TForm_DatGraph", "TForm_DatContour"}
 CHILD_CLASSES = {"TForm_DatGraph", "TForm_DatContour", "TForm_Editor"}
+FAST_PRE_EXPORT_GRAPH_READY_TIMEOUT_S = 0.5
+FAST_PRE_EXPORT_GRAPH_POLL_S = 0.02
+FAST_ASSUME_READY_TIMEOUT_S = 1.4
+FAST_GRAPH_STABILIZE_TIMEOUT_S = 1.6
+FAST_GRAPH_STABLE_FOR_S = 0.25
+FAST_GRAPH_STABILIZE_POLL_S = 0.03
 
 
 def _now_iso() -> str:
@@ -106,6 +112,13 @@ def _find_main(pid: int) -> Optional[Any]:
     return None
 
 
+def _find_main_fast(pid: int) -> Optional[Any]:
+    for w in _top_windows_for_pid_fast(int(pid)):
+        if str(_sig(w).get("class_name", "") or "") == "TForm_DatMain":
+            return w
+    return _find_main(int(pid))
+
+
 def _graph_children(main: Any) -> List[Any]:
     rows: Dict[int, Any] = {}
     for c in main.descendants():
@@ -123,6 +136,94 @@ def _graph_children(main: Any) -> List[Any]:
         if h > 0:
             rows[h] = c
     return list(rows.values())
+
+
+def _graph_children_fast(pid: int, *, main_hint: Optional[Any] = None) -> List[Any]:
+    rows: Dict[int, Any] = {}
+    main_handle = int(_sig(main_hint).get("handle", 0) or 0) if main_hint is not None else 0
+    for w in _top_windows_for_pid_fast(int(pid)):
+        s = _sig(w)
+        class_name = str(s.get("class_name", "") or "")
+        if class_name not in GRAPH_CLASSES:
+            continue
+        h = int(s.get("handle", 0) or 0)
+        if h <= 0 or (main_handle > 0 and h == main_handle):
+            continue
+        title = str(s.get("title", "") or "")
+        if re.match(r"^\s*Editor\s+\d+\s*$", title, re.IGNORECASE):
+            continue
+        rows[h] = w
+    if rows:
+        return list(rows.values())
+
+    # Fallback to UIA main window for reliable descendant enumeration.
+    uia_main = _find_main(int(pid))
+    if uia_main is not None:
+        return _graph_children(uia_main)
+    if main_hint is not None:
+        return _graph_children(main_hint)
+    main = _find_main_fast(int(pid))
+    if main is None:
+        return []
+    return _graph_children(main)
+
+
+def _wait_initial_graphs_fast(vacs_pid: int, *, timeout_s: float) -> Dict[str, Any]:
+    deadline = time.perf_counter() + max(0.05, float(timeout_s))
+    main = _find_main_fast(int(vacs_pid))
+    while time.perf_counter() < deadline:
+        main = main or _find_main_fast(int(vacs_pid))
+        if main is None:
+            time.sleep(FAST_PRE_EXPORT_GRAPH_POLL_S)
+            continue
+        graphs = _graph_children_fast(int(vacs_pid), main_hint=main)
+        if graphs:
+            return {"main": main, "graphs": graphs}
+        time.sleep(FAST_PRE_EXPORT_GRAPH_POLL_S)
+    return {"main": main, "graphs": []}
+
+
+def _collect_graphs_until_stable_fast(
+    vacs_pid: int,
+    *,
+    main_hint: Optional[Any],
+    initial_graphs: Optional[List[Any]],
+    timeout_s: float,
+    stable_for_s: float,
+) -> Dict[str, Any]:
+    deadline = time.perf_counter() + max(0.1, float(timeout_s))
+    stable_for = max(0.05, float(stable_for_s))
+    main = main_hint
+    rows: Dict[int, Any] = {}
+    observed_counts: List[int] = []
+    for g in list(initial_graphs or []):
+        h = int(_sig(g).get("handle", 0) or 0)
+        if h > 0:
+            rows[h] = g
+    last_growth_at = time.perf_counter()
+    while time.perf_counter() < deadline:
+        main = main or _find_main_fast(int(vacs_pid))
+        if main is None:
+            time.sleep(FAST_GRAPH_STABILIZE_POLL_S)
+            continue
+        current = _graph_children_fast(int(vacs_pid), main_hint=main)
+        seen_before = len(rows)
+        for g in current:
+            h = int(_sig(g).get("handle", 0) or 0)
+            if h > 0:
+                rows[h] = g
+        observed_counts.append(int(len(rows)))
+        if len(rows) > seen_before:
+            last_growth_at = time.perf_counter()
+        elif rows and (time.perf_counter() - last_growth_at) >= stable_for:
+            break
+        time.sleep(FAST_GRAPH_STABILIZE_POLL_S)
+    return {
+        "main": main,
+        "graphs": list(rows.values()),
+        "observed_counts": observed_counts[-20:],
+        "stable_elapsed_s": max(0.0, time.perf_counter() - last_growth_at),
+    }
 
 
 def _dialog_candidates(pid: int, main_handle: int) -> List[Any]:
@@ -194,28 +295,40 @@ def _running_vacs_pids() -> List[int]:
     return sorted(set(rows))
 
 
-def _select_ready_vacs_pid() -> Dict[str, Any]:
-    candidates: List[Dict[str, Any]] = []
-    for pid in _running_vacs_pids():
-        main = _find_main(int(pid))
-        if main is None:
-            candidates.append({"pid": int(pid), "main_present": False, "graph_count": 0})
-            continue
-        graphs = _graph_children(main)
-        candidates.append(
-            {
-                "pid": int(pid),
-                "main_present": True,
-                "graph_count": int(len(graphs)),
-                "main_signature": _sig(main),
+def _select_ready_vacs_pid(*, timeout_s: float = 0.0, poll_s: float = 0.05) -> Dict[str, Any]:
+    deadline = time.perf_counter() + max(0.0, float(timeout_s))
+    last_candidates: List[Dict[str, Any]] = []
+    while True:
+        candidates: List[Dict[str, Any]] = []
+        for pid in _running_vacs_pids():
+            main = _find_main_fast(int(pid))
+            if main is None:
+                candidates.append({"pid": int(pid), "main_present": False, "graph_count": 0})
+                continue
+            graphs = _graph_children_fast(int(pid), main_hint=main)
+            candidates.append(
+                {
+                    "pid": int(pid),
+                    "main_present": True,
+                    "graph_count": int(len(graphs)),
+                    "graph_titles_preview": [str(_sig(g).get("title", "") or "") for g in list(graphs)[:6]],
+                    "main_signature": _sig(main),
+                }
+            )
+        ready = [row for row in candidates if bool(row.get("main_present")) and int(row.get("graph_count", 0)) > 0]
+        selected = sorted(ready, key=lambda row: int(row.get("graph_count", 0)), reverse=True)[:1]
+        if selected:
+            return {
+                "candidates": candidates,
+                "selected": selected[0],
             }
-        )
-    ready = [row for row in candidates if bool(row.get("main_present")) and int(row.get("graph_count", 0)) > 0]
-    selected = sorted(ready, key=lambda row: int(row.get("graph_count", 0)), reverse=True)[:1]
-    return {
-        "candidates": candidates,
-        "selected": selected[0] if selected else None,
-    }
+        last_candidates = candidates
+        if time.perf_counter() >= deadline:
+            return {
+                "candidates": last_candidates,
+                "selected": None,
+            }
+        time.sleep(max(0.01, float(poll_s)))
 
 
 def _run_interim(args: argparse.Namespace) -> Dict[str, Any]:
@@ -1336,7 +1449,7 @@ def run_once_safe(args: argparse.Namespace) -> Dict[str, Any]:
 
     vacs_pid = 0
     if bool(getattr(args, "assume_vacs_ready", False)):
-        ready = _select_ready_vacs_pid()
+        ready = _select_ready_vacs_pid(timeout_s=min(3.0, float(getattr(args, "save_as_timeout_s", 8.0) or 8.0)))
         step("assume_vacs_ready_scan", **ready)
         selected = dict(ready.get("selected") or {})
         vacs_pid = int(selected.get("pid", 0) or 0)
@@ -1669,7 +1782,10 @@ def run_once_fast(args: argparse.Namespace) -> Dict[str, Any]:
 
     vacs_pid = 0
     if bool(getattr(args, "assume_vacs_ready", False)):
-        ready = _select_ready_vacs_pid()
+        ready = _select_ready_vacs_pid(
+            timeout_s=max(FAST_PRE_EXPORT_GRAPH_READY_TIMEOUT_S, FAST_ASSUME_READY_TIMEOUT_S),
+            poll_s=FAST_PRE_EXPORT_GRAPH_POLL_S,
+        )
         step("assume_vacs_ready_scan", **ready)
         selected = dict(ready.get("selected") or {})
         vacs_pid = int(selected.get("pid", 0) or 0)
@@ -1716,12 +1832,11 @@ def run_once_fast(args: argparse.Namespace) -> Dict[str, Any]:
             vacs_pid_hint = int(parsed.get("vacs_pid", 0) or 0)
             graph_count_hint = 0
             if vacs_pid_hint > 0:
-                main_hint = _find_main(vacs_pid_hint)
-                if main_hint is not None:
-                    try:
-                        graph_count_hint = len(_graph_children(main_hint))
-                    except Exception:
-                        graph_count_hint = 0
+                main_hint = _find_main_fast(vacs_pid_hint)
+                try:
+                    graph_count_hint = len(_graph_children_fast(vacs_pid_hint, main_hint=main_hint))
+                except Exception:
+                    graph_count_hint = 0
             if graph_count_hint > 0:
                 parsed["ok"] = True
                 parsed["accepted_existing_graphs"] = True
@@ -1749,12 +1864,11 @@ def run_once_fast(args: argparse.Namespace) -> Dict[str, Any]:
             vacs_pid_hint = int(parsed.get("vacs_pid", 0) or 0)
             graph_count_hint = 0
             if vacs_pid_hint > 0:
-                main_hint = _find_main(vacs_pid_hint)
-                if main_hint is not None:
-                    try:
-                        graph_count_hint = len(_graph_children(main_hint))
-                    except Exception:
-                        graph_count_hint = 0
+                main_hint = _find_main_fast(vacs_pid_hint)
+                try:
+                    graph_count_hint = len(_graph_children_fast(vacs_pid_hint, main_hint=main_hint))
+                except Exception:
+                    graph_count_hint = 0
             if graph_count_hint > 0:
                 parsed["ok"] = True
                 parsed["accepted_existing_graphs"] = True
@@ -1775,7 +1889,7 @@ def run_once_fast(args: argparse.Namespace) -> Dict[str, Any]:
             return log
 
         vacs_pid = int(parsed.get("vacs_pid", 0) or 0)
-    main = _find_main(vacs_pid)
+    main = _find_main_fast(vacs_pid)
     if main is None:
         log["ok"] = False
         log["error"] = "vacs_main_missing"
@@ -1787,10 +1901,36 @@ def run_once_fast(args: argparse.Namespace) -> Dict[str, Any]:
     main_handle = int(main_sig.get("handle", 0) or 0)
     step("vacs_main", signature=main_sig)
 
-    main = _find_main(vacs_pid)
-    graphs = _graph_children(main) if main is not None else []
+    ready_state = _wait_initial_graphs_fast(
+        int(vacs_pid),
+        timeout_s=min(FAST_PRE_EXPORT_GRAPH_READY_TIMEOUT_S, float(getattr(args, "dialog_timeout_s", 5.0) or 5.0)),
+    )
+    main = ready_state.get("main") or main
+    graphs = list(ready_state.get("graphs", []) or [])
+    if not graphs and main is not None:
+        graphs = _graph_children_fast(int(vacs_pid), main_hint=main)
+    stabilized = _collect_graphs_until_stable_fast(
+        int(vacs_pid),
+        main_hint=main,
+        initial_graphs=graphs,
+        timeout_s=min(FAST_GRAPH_STABILIZE_TIMEOUT_S, max(0.6, float(getattr(args, "dialog_timeout_s", 5.0) or 5.0))),
+        stable_for_s=FAST_GRAPH_STABLE_FOR_S,
+    )
+    main = stabilized.get("main") or main
+    graphs = list(stabilized.get("graphs", []) or graphs)
     graphs_sorted = sorted(graphs, key=lambda g: str(_sig(g).get("title", "")).lower())
-    step("graph_snapshot_initial", count=len(graphs_sorted), graphs=[_sig(g) for g in graphs_sorted])
+    step(
+        "graph_snapshot_stabilized",
+        count=len(graphs_sorted),
+        observed_counts=list(stabilized.get("observed_counts", []) or []),
+        stable_elapsed_s=float(stabilized.get("stable_elapsed_s", 0.0) or 0.0),
+        graph_titles=[str(_sig(g).get("title", "") or "") for g in list(graphs_sorted)[:12]],
+    )
+    step(
+        "graph_snapshot_initial",
+        count=len(graphs_sorted),
+        graph_titles=[str(_sig(g).get("title", "") or "") for g in list(graphs_sorted)[:12]],
+    )
     if not graphs_sorted:
         log["ok"] = False
         log["error"] = "no_graph_windows"
@@ -1959,9 +2099,14 @@ def run_once_fast(args: argparse.Namespace) -> Dict[str, Any]:
 
         per_graph.append(row)
 
-    main_end = _find_main(vacs_pid)
-    remaining = [_sig(g) for g in _graph_children(main_end)] if main_end is not None else []
-    step("remaining_graphs", count=len(remaining), graphs=remaining)
+    main_end = _find_main_fast(vacs_pid)
+    remaining_graphs = _graph_children_fast(int(vacs_pid), main_hint=main_end) if main_end is not None else []
+    remaining = [_sig(g) for g in remaining_graphs]
+    step(
+        "remaining_graphs",
+        count=len(remaining),
+        graph_titles=[str(row.get("title", "") or "") for row in remaining[:12]],
+    )
     log["per_graph"] = per_graph
     log["exported_files"] = exported_files
     log["remaining_graphs"] = remaining
@@ -1987,8 +2132,47 @@ def run_once(args: argparse.Namespace) -> Dict[str, Any]:
     if bool(fast.get("ok")):
         fast["fallback_used"] = False
         return fast
-    safe = run_once_safe(args)
+    safe_primary_args = _copy_args_with(args, mode="safe")
+    safe = run_once_safe(safe_primary_args)
+    if bool(safe.get("ok")):
+        safe["fallback_used"] = True
+        safe["fallback_reason"] = "fast_mode_failed"
+        safe["safe_args_overrides"] = {"mode": "safe"}
+        safe["fast_failure"] = {
+            "error": fast.get("error"),
+            "summary_file": fast.get("summary_file"),
+            "run_id": fast.get("run_id"),
+        }
+        return safe
+
+    # Optional rescue: only try full reimport path when caller started in assume-ready mode.
+    if bool(getattr(args, "assume_vacs_ready", False)):
+        rescue_args = _copy_args_with(args, mode="safe", assume_vacs_ready=False)
+        rescue = run_once_safe(rescue_args)
+        if bool(rescue.get("ok")):
+            rescue["fallback_used"] = True
+            rescue["fallback_reason"] = "fast_mode_failed_then_safe_rescue"
+            rescue["safe_args_overrides"] = {"mode": "safe", "assume_vacs_ready": False}
+            rescue["fast_failure"] = {
+                "error": fast.get("error"),
+                "summary_file": fast.get("summary_file"),
+                "run_id": fast.get("run_id"),
+            }
+            rescue["safe_primary_failure"] = {
+                "error": safe.get("error"),
+                "summary_file": safe.get("summary_file"),
+                "run_id": safe.get("run_id"),
+            }
+            return rescue
+        safe["safe_rescue_failure"] = {
+            "error": rescue.get("error"),
+            "summary_file": rescue.get("summary_file"),
+            "run_id": rescue.get("run_id"),
+        }
+
     safe["fallback_used"] = True
+    safe["fallback_reason"] = "fast_mode_failed"
+    safe["safe_args_overrides"] = {"mode": "safe"}
     safe["fast_failure"] = {
         "error": fast.get("error"),
         "summary_file": fast.get("summary_file"),

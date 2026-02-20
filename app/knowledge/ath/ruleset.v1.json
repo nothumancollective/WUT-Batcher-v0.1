@@ -239,22 +239,22 @@
     {
       "id": "visibility_mesh_interfaceoffset_off",
       "scope": "visibility",
-      "when": "!isDefined(Mesh.Enclosure)",
+      "when": "false",
       "then": [
         "hide(Mesh.InterfaceOffset)"
       ],
       "severity": "info",
-      "rationale": "Interface offset only applies when enclosure mesh is used."
+      "rationale": "Disabled: InterfaceOffset should not be force-hidden by enclosure state."
     },
     {
       "id": "visibility_mesh_interfaceoffset_on",
       "scope": "visibility",
-      "when": "isDefined(Mesh.Enclosure)",
+      "when": "true",
       "then": [
         "show(Mesh.InterfaceOffset)"
       ],
       "severity": "info",
-      "rationale": "Enable interface offset with enclosure mesh."
+      "rationale": "InterfaceOffset is generally available; interpretation depends on subdomain/interface usage."
     },
     {
       "id": "sweepability_numeric_baseline",

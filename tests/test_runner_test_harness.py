@@ -13,6 +13,7 @@ from app.runner_test_harness import (
     _patch_cfg_le_profile,
     _patch_observation_radimp_profile,
     _parse_abec_mesh_requirements,
+    _resolve_meshcmd_rhs,
     run_runner_test_le_proof_matrix,
     run_runner_test_radimp_3scope_matrix,
     run_runner_test_radimp_driving_matrix,
@@ -346,7 +347,7 @@ class RunnerTestHarnessTests(unittest.TestCase):
             self.assertEqual(db.count_rows("test_cases"), 1)
             self.assertEqual(db.count_rows("test_run_steps"), 5)
             self.assertEqual(db.count_rows("artifacts"), 1)
-            self.assertEqual(db.count_rows("validations"), 2)
+            self.assertEqual(db.count_rows("validations"), 3)
             self.assertEqual(db.count_rows("versions"), 1)
             self.assertEqual(db.count_rows("run_versions"), 1)
 
@@ -439,6 +440,44 @@ class RunnerTestHarnessTests(unittest.TestCase):
             self.assertTrue(parsed["section_present"])
             self.assertEqual(len(parsed["required_mesh_files"]), 2)
             self.assertEqual(len(parsed["missing_mesh_files"]), 1)
+
+    def test_resolve_meshcmd_rhs_normalizes_bare_gmsh_from_ath_cfg(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            ath_exe = root / "ath.exe"
+            gmsh_exe = root / "gmsh.exe"
+            ath_cfg = root / "ath.cfg"
+            ath_exe.write_text("", encoding="utf-8")
+            gmsh_exe.write_text("", encoding="utf-8")
+            ath_cfg.write_text(f'MeshCmd = "{gmsh_exe}"\n', encoding="utf-8")
+
+            meshcmd = _resolve_meshcmd_rhs(
+                ath_executable=ath_exe,
+                meshcmd_override=None,
+            )
+
+            self.assertEqual(meshcmd["source"], "ath_cfg")
+            self.assertTrue(bool(meshcmd["meshcmd_executable_exists"]))
+            self.assertTrue(bool(meshcmd["meshcmd_rhs_normalized"]))
+            self.assertEqual(str(meshcmd["meshcmd_rhs_normalization_reason"]), "append_placeholder_for_gmsh")
+            self.assertIn("%f -", str(meshcmd["meshcmd_rhs"]))
+
+    def test_resolve_meshcmd_rhs_normalizes_bare_gmsh_override(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            gmsh_exe = root / "gmsh.exe"
+            gmsh_exe.write_text("", encoding="utf-8")
+
+            meshcmd = _resolve_meshcmd_rhs(
+                ath_executable=None,
+                meshcmd_override=str(gmsh_exe),
+            )
+
+            self.assertEqual(meshcmd["source"], "override")
+            self.assertTrue(bool(meshcmd["meshcmd_executable_exists"]))
+            self.assertTrue(bool(meshcmd["meshcmd_rhs_normalized"]))
+            self.assertEqual(str(meshcmd["meshcmd_rhs_normalization_reason"]), "append_placeholder_for_gmsh")
+            self.assertIn("%f -", str(meshcmd["meshcmd_rhs"]))
 
     def test_open_dialog_only_dry_run_writes_db_records(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

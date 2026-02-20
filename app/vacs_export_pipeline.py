@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -88,6 +89,27 @@ def _graph_kind_match_score(
     return score
 
 
+def _infer_graph_kind_for_any_mapping(
+    *,
+    title: str,
+    path: str,
+    metadata: Dict[str, str] | None = None,
+) -> str:
+    best_kind = ""
+    best_score = 0
+    for kind in ("impedance", "spl", "polar"):
+        score = _graph_kind_match_score(
+            graph_kind=kind,
+            title=title,
+            path=path,
+            metadata=metadata,
+        )
+        if score > best_score:
+            best_score = score
+            best_kind = kind
+    return best_kind
+
+
 def _run_external_vacs_export_save_all(
     *,
     executable: str | Path,
@@ -105,7 +127,7 @@ def _run_external_vacs_export_save_all(
         sys.executable,
         str(script_path),
         "--mode",
-        "fast",
+        "auto",
         "--assume-vacs-ready",
         "--akabak-exe",
         str(akabak_executable),
@@ -134,6 +156,59 @@ def _run_external_vacs_export_save_all(
     return payload
 
 
+def _build_external_any_graph_exports(
+    *,
+    exported_files: Iterable[Dict[str, Any]],
+    export_root: Path,
+    version_id: str,
+    requested_specs: Iterable[ExportSpec],
+) -> List[Dict[str, Any]]:
+    exports: List[Dict[str, Any]] = []
+    requested_ids = [str(spec.id or "").strip() for spec in list(requested_specs or []) if str(spec.id or "").strip()]
+    for index, row in enumerate(list(exported_files or []), start=1):
+        source = Path(str(row.get("path", "") or "")).resolve()
+        if not source.exists() or not source.is_file():
+            continue
+        title = str((row.get("graph", {}) or {}).get("title", "") or "").strip() or source.stem
+        safe_title = re.sub(r"[^A-Za-z0-9_.-]+", "_", title).strip("._")
+        if not safe_title:
+            safe_title = f"graph_{index:02d}"
+        output_path = export_root / f"{version_id}_anygraph_{index:02d}_{safe_title}.txt"
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, output_path)
+        metadata = _read_vacs_export_metadata(source)
+        inferred_kind = _infer_graph_kind_for_any_mapping(
+            title=title,
+            path=str(source),
+            metadata=metadata,
+        )
+        exports.append(
+            {
+                "spec": {
+                    "id": f"external_any_{index:02d}",
+                    "tool": "vacs",
+                    "graph_kind": inferred_kind,
+                    "variant": "main",
+                    "format": "txt",
+                },
+                "entry": {"graph_kind": inferred_kind, "graph_variant": "main", "format": "txt"},
+                "plugin_id": "external_vacs_export_save_all",
+                "output_path": str(output_path),
+                "details": {
+                    "source_file": str(source),
+                    "source_title": title,
+                    "source_data_level_type": str(metadata.get("Data_LevelType", "") or ""),
+                    "source_data_legend": str(metadata.get("Data_Legend", "") or ""),
+                    "inferred_graph_kind": inferred_kind,
+                    "mapping_mode": "any_graph",
+                    "requested_spec_ids": requested_ids,
+                    "bytes": int(source.stat().st_size),
+                },
+            }
+        )
+    return exports
+
+
 def _render_output_path(
     *,
     export_dir: Path,
@@ -159,6 +234,7 @@ def run_vacs_export_specs(
     log_dir: str | Path,
     catalog_root: str | Path = "ui_maps/vacs",
     akabak_executable: str | Path | None = None,
+    allow_graph_kind_fallback: bool = False,
 ) -> Dict[str, Any]:
     specs = [spec for spec in list(export_specs) if str(spec.tool).lower() == "vacs"]
     if not specs:
@@ -180,6 +256,29 @@ def run_vacs_export_specs(
             log_dir=log_root,
         )
         exported_files = list(external.get("exported_files", []) or [])
+        if allow_graph_kind_fallback:
+            exports = _build_external_any_graph_exports(
+                exported_files=exported_files,
+                export_root=export_root,
+                version_id=version_id,
+                requested_specs=specs,
+            )
+            if not exports:
+                raise VacsExportPipelineError("external vacs export produced no usable graph files")
+            return {
+                "executed": True,
+                "catalog_path": None,
+                "driver": {
+                    "process_id": None,
+                    "backend": "external_script",
+                    "started_process": False,
+                    "external_run_id": external.get("run_id"),
+                },
+                "export_count": len(exports),
+                "exports": exports,
+                "external_export_summary_file": external.get("summary_file"),
+                "mapping_mode": "any_graph",
+            }
         used_indices = set()
         exports: List[Dict[str, Any]] = []
         metadata_cache: Dict[int, Dict[str, str]] = {}

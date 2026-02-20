@@ -257,6 +257,7 @@ class SimExportSettings:
     num_points: int = 16
     mesh_frequency: Optional[float] = None
     simulation_mode: str = "free_standing"
+    auto_default_polar_exports: bool = False
     exports: Dict[str, ExportOption] = field(default_factory=dict)
     export_specs: List[Dict[str, Any]] = field(default_factory=list)
 
@@ -279,6 +280,7 @@ class SimExportSettings:
                 if str(data.get("simulation_mode", "free_standing")).strip().lower() in {"free_standing", "infinite_baffle"}
                 else "free_standing"
             ),
+            auto_default_polar_exports=bool(data.get("auto_default_polar_exports", False)),
             exports=exports,
             export_specs=specs,
         )
@@ -290,6 +292,7 @@ class SimExportSettings:
             "num_points": self.num_points,
             "mesh_frequency": self.mesh_frequency,
             "simulation_mode": self.simulation_mode,
+            "auto_default_polar_exports": bool(self.auto_default_polar_exports),
             "exports": {k: v.to_dict() for k, v in self.exports.items()},
             "export_specs": list(self.export_specs),
         }

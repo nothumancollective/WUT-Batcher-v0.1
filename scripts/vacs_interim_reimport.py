@@ -32,6 +32,7 @@ WM_KEYUP = 0x0101
 VK_F7 = 0x76
 
 GRAPH_KEYWORDS = ("graph", "impedance", "spl", "phase", "radiation", "polar", "directivity")
+GRAPH_WINDOW_CLASSES = {"TForm_DatGraph", "TForm_DatContour"}
 
 
 def _now_iso() -> str:
@@ -487,10 +488,23 @@ def _vacs_metrics(vacs_pid: int) -> Dict[str, Any]:
         max_controls = max(max_controls, controls)
         max_hits = max(max_hits, hits)
         rows.append({"title": title, "class_name": class_name, "controls_count": controls, "graph_keyword_hits": hits})
+    graph_window_count = 0
+    try:
+        for window in Desktop(backend="win32").windows(process=int(vacs_pid)):
+            try:
+                class_name = str(getattr(window.element_info, "class_name", "") or "")
+            except Exception:
+                continue
+            if class_name in GRAPH_WINDOW_CLASSES:
+                graph_window_count += 1
+    except Exception:
+        graph_window_count = 0
+
     return {
         "pid": int(vacs_pid),
         "max_controls_count": int(max_controls),
         "max_graph_keyword_hits": int(max_hits),
+        "graph_window_count": int(graph_window_count),
         "windows": rows,
     }
 
@@ -761,6 +775,7 @@ def run_interim(args: argparse.Namespace) -> Dict[str, Any]:
         metrics = _vacs_metrics(vacs_pid)
         controls = int(metrics.get("max_controls_count", 0) or 0)
         hits = int(metrics.get("max_graph_keyword_hits", 0) or 0)
+        graph_window_count = int(metrics.get("graph_window_count", 0) or 0)
         baseline_controls = int(baseline.get("max_controls_count", 0) or 0)
         baseline_hits = int(baseline.get("max_graph_keyword_hits", 0) or 0)
         controls_growth = controls - baseline_controls
@@ -773,16 +788,19 @@ def run_interim(args: argparse.Namespace) -> Dict[str, Any]:
                 "vacs_metrics_change",
                 controls=controls,
                 graph_keyword_hits=hits,
+                graph_window_count=graph_window_count,
                 controls_growth=controls_growth,
                 graph_hits_growth=hits_growth,
             )
 
         graphs_imported = bool(
+            graph_window_count > 0
+            or
             controls >= 80
             or hits >= 5
             or (controls_growth >= 40 and hits_growth >= 2)
         )
-        activity_seen = bool(controls_growth > 0 or hits_growth > 0 or edge_confirmations or baseline_fresh)
+        activity_seen = bool(graph_window_count > 0 or controls_growth > 0 or hits_growth > 0 or edge_confirmations or baseline_fresh)
         if graphs_imported and activity_seen:
             log("reimport_complete", metrics=metrics, controls_growth=controls_growth, graph_hits_growth=hits_growth)
             close_result = {}
@@ -840,7 +858,7 @@ def run_interim(args: argparse.Namespace) -> Dict[str, Any]:
                     log("f7_retry_triggered", method="hwnd_postmessage_f7")
 
         time.sleep(poll_interval)
-        poll_interval = min(1.0, poll_interval * 1.2)
+        poll_interval = min(0.35, poll_interval * 1.2)
 
 
 def build_parser() -> argparse.ArgumentParser:

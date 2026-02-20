@@ -41,6 +41,7 @@ FAST_PROFILE = RunnerTestProfile(
         "freq_start_hz": 800.0,
         "freq_end_hz": 4000.0,
         "num_points": 6,
+        "simulation_mode": "free_standing",
     },
     rationale=(
         "Reduce mesh density and frequency sampling for harness runs so the ATH->AKABAK->VACS cycle "

@@ -1,5 +1,186 @@
 ﻿# DEVLOG
 
+## 2026-02-20
+### Update: Harness-CFG an Runtime angeglichen + Free-Standing Default erzwungen
+#### Ursache
+- Runner-Harness hat die Sim/Export-Settings nicht in die CFG angereichert (anders als Runtime), dadurch fehlten Polar-Bloecke trotz `auto_default_polar_exports`.
+- In einzelnen Testkontexten konnte weiterhin `infinite_baffle` auftauchen.
+
+#### Fix
+- `app/runner_test_harness.py`:
+  - nutzt jetzt `_apply_sim_export_settings_to_cfg(...)` beim CFG-Bau (inkl. Polar-Bloecke aus ExportSpecs).
+  - erzwingt fuer Harness-Tests `simulation_mode=free_standing` via `_enforce_free_standing_for_tests(...)`.
+  - `simulation_mode_guard` loggt jetzt zusaetzlich `profile_effective_simulation_mode`.
+
+#### Verifikation (real)
+- Test-Run `8cdb1842-4f00-41c6-bf63-2bfd0d78b554`:
+  - `generate_cfg`: `cfg_export_specs_count=3`, `effective_simulation_mode=free_standing`
+  - VACS Fast-Export Snapshot: `graph_count=4` (3x Polar + 1x RadImp)
+  - Run-Status: `succeeded`
+## 2026-02-20
+### Update: Fast-Mode Stabilitaet + Laufzeit (Graph-Vollstaendigkeit / Wartezeiten)
+#### Ursache
+- Fast-Export hat die Graph-Liste zu frueh einmalig gesnapshottet; spaet erscheinende Polars konnten fehlen (z. B. nur 1 Polar + RadImp).
+- Interim-Reimport wartete auf heuristische Control-/Keyword-Grenzwerte, obwohl Graph-Fenster bereits vorhanden waren.
+- AKABAK Open/Import hatte unnoetig lange Confirm-/Postcondition-Waits im haeufigen Erfolgsfall.
+
+#### Fix
+- `scripts/vacs_export_save_all.py`:
+  - Fast-Mode ergaenzt um Graph-Stabilisierung (`_collect_graphs_until_stable_fast`) vor dem Export.
+  - `assume_vacs_ready`-Scan mit kurzer Poll-Phase statt sofortigem fruehen Abbruch.
+  - Logging ergaenzt (`graph_snapshot_stabilized`, `observed_counts`, `stable_elapsed_s`).
+- `scripts/vacs_interim_reimport.py`:
+  - Neue Metrik `graph_window_count` (direkte Erkennung von `TForm_DatGraph`/`TForm_DatContour`).
+  - Reimport gilt als erfolgreich, sobald echte Graph-Fenster sichtbar sind.
+  - Poll-Backoff gedeckelt (`<=0.35s`) fuer schnelleren Uebergang in den Export.
+- `app/akabak_driver.py`:
+  - Kuerzere Watchdog-Confirm-Wartezeit nach Interpreter-Aktionen.
+  - Kuerzere Open-Dialog Close-/Postcondition-Waits.
+  - Kuerzeres Open-Dialog Timeout im Primaerpfad.
+
+#### Tests
+- `python -m py_compile scripts/vacs_export_save_all.py scripts/vacs_interim_reimport.py app/akabak_driver.py app/vacs_export_pipeline.py`
+- `python -m pytest tests/test_vacs_export_pipeline.py -q` -> `8 passed`
+- `python -m pytest tests/test_runtime_orchestrator.py -q` -> `15 passed`
+- `python -m pytest tests/test_runner_test_harness.py -q` -> `21 passed`
+## 2026-02-19
+### Update: Runner-Tests erzwingen vorerst `free_standing` (Infinite Baffle guard)
+#### Ursache
+- In Runner-Tests mit `simulation_mode=infinite_baffle` erzeugte AKABAK Fehler, weil die Position der Infinite Baffle im Test-Flow nicht definiert ist.
+
+#### Fix
+- `app/runner_test_profiles.py`:
+  - Fast-Testprofil setzt `sim_export_overrides.simulation_mode = free_standing`.
+- `app/runner_test_harness.py`:
+  - Neues Validation-Logging `simulation_mode_guard` mit:
+    - requested/effective Simulation Mode
+    - Flag `forced_free_standing`
+    - Grund `infinite_baffle_position_not_defined_in_test_flow`
+
+#### Hinweis
+- Infinite Baffle bleibt für den Produktionspfad unangetastet und wird später separat implementiert.
+## 2026-02-19
+### Update: Run-Abbruch behoben (VACS-Export + minimales Run-Template)
+#### Ursache
+- Nach Umstellung auf minimales `template_run.cfg` traten zwei Folgefehler in Real-Runs auf:
+  - `run_id=26d5cbcf-c850-4990-86b6-9611944c9d7f`: externer VACS-Exporter scheiterte mit `AKABAK not attachable` (weil AKABAK bereits geschlossen war).
+  - `run_id=b7aed416-aaa8-481b-b5fa-e71fb755c8f9`: VACS-Export lief, aber Mapping schlug fehl (`graph_kind=polar` erwartet, nur `Radiation Impedance` vorhanden).
+- Root Cause:
+  - Lifecycle-Konflikt zwischen AKABAK-Stage und externem VACS-Exporter.
+  - Mit minimalem Template fehlten ABEC/Polar-Simulationsblöcke in der Run-CFG, daher wurde kein Polar-Graph erzeugt.
+
+#### Fix
+- `app/runtime_orchestrator.py`:
+  - AKABAK-UI-Stage erweitert um `preserve_vacs_for_export`:
+    - VACS wird nach Solve nicht sofort beendet, wenn direkt danach VACS-Export folgt.
+  - Neue CFG-Anreicherung aus `sim_export_settings` + `export_specs`:
+    - `ABEC.SimType`, `ABEC.f1`, `ABEC.f2`, `ABEC.NumFrequencies`, optional `ABEC.MeshFrequency`.
+    - Polar-Blocks `ABEC.Polars:<polar_name>` inkl. `MapAngleRange`, `Distance`, `Offset`, `Inclination`.
+- `app/vacs_export_pipeline.py`:
+  - Externer Export wieder im `fast + --assume-vacs-ready` Pfad (passt nun zum erhaltenen VACS-Prozess zwischen AKABAK und Export).
+
+#### Tests
+- `python -m pytest tests/test_runtime_orchestrator.py tests/test_vacs_export_pipeline.py -q`
+  - `21 passed`
+- `python -m pytest tests/test_cli_run_sample.py tests/test_ath_driver_assets.py -q`
+  - `9 passed`
+
+#### Real E2E Verifikation
+- Erfolgreicher Real-Run mit Default-Mesh/Export-Setup auf `P001/B003`:
+  - `run_id=2b786edf-d2eb-41f8-8bb6-631e882ee50c`
+  - `run_status=succeeded`
+  - Versionen `V024`, `V025`, `V026`: ATH/AKABAK/VACS jeweils `ok`.
+- Logbeleg: VACS wurde für Export erhalten und danach beendet (`kill_vacs_final` im externen Export-Summary).
+
+## 2026-02-19
+### Update: Run-Template auf `template_run.cfg` umgestellt (ohne Preview-Änderung)
+#### Done
+- Neue Datei `C:\Tools\ATH\template_run.cfg` angelegt mit minimalem Run-Block:
+  - `Output.ABECProject = 1`
+  - `Output.STL = 0`
+  - `ABEC.AkabakMode = 1`
+  - `LE = generic25`
+  - `LE.Voltage = 1.0`
+  - `LE.System = S1`
+  - `LE.Driver = D1`
+- Runtime-Template-Resolver in `app/runtime_orchestrator.py` angepasst:
+  - Fallback-Reihenfolge beginnt jetzt mit `template_run.cfg` vor `test.cfg`.
+- Preview-Template-Logik bleibt unverändert (`app/services.py`), d. h. kein Eingriff in den Preview-Pfad.
+
+#### Validation
+- `_resolve_template_cfg_path(None, ath_executable="C:\\Tools\\ATH\\ath.exe")` -> `C:\Tools\ATH\template_run.cfg`.
+- `python -m pytest tests/test_runtime_orchestrator.py -q` -> `13 passed`.
+
+## 2026-02-19
+### Update: Incident Analyse `8386434c-a51f-4e01-82d3-21249f28e444` (VACS-Import Crash/Abbruch + Preview-Abweichung)
+#### Befund (ohne Fix)
+- Betroffener Run: `runner_test_workspace/real_runtime_e2e9/P001`, Batch `B003`, Status bleibt in DB auf `running`.
+- Versionstand im Run: `V015` steht auf `akabak_ok`; nach AKABAK wurde VACS-Export nicht erfolgreich abgeschlossen.
+- Externer VACS-Export meldet in `external_vacs_export_save_all/run_20260219_141822/summary.json`:
+  - `ok = false`
+  - `error = vacs_not_ready_after_f4`
+  - `assume_vacs_ready_scan.candidates = []`.
+- Gleichzeitig zeigt `akabak.driver.summary.json` für `V015`:
+  - `vacs_cleanup.after_stage_pids = [1232]`
+  - `vacs_cleanup.post_stage.terminated = [1232]`.
+- Damit ist die unmittelbare Ursache konsistent: der Exportpfad erwartet eine bereits offene VACS-Instanz (`--assume-vacs-ready`), aber die AKABAK-Stage beendet VACS vorher deterministisch.
+
+#### Preview vs. AKABAK-Mesh (Ursache der optischen Abweichung)
+- Preview lief über `C:\Tools\ATH\preview_current.cfg` (UI-Preview), Run über versionierte CFG `P001_B003_V015_8386434c.cfg`.
+- Die beiden CFGs sind fachlich nicht identisch:
+  - Preview nutzt Fallback-Template `; autogenerated template` (bei `template_cfg = null`).
+  - Batch-Run nutzt als effektives Template `C:\Tools\ATH\test.cfg`.
+- Zusätzliche Drift im konkreten Fall:
+  - Preview zeigt `Slot.Length = 10` (Draft-Wert),
+  - Version `V015` lief mit Sweep-Wert `Slot.Length = 9`.
+- ATH-stdout bestätigt unterschiedliche effektive Geometrie/Interpretation:
+  - Preview: `fixed length: 120 mm`
+  - Run V015: `fixed length: 135 mm`.
+
+#### Antwort auf die 4 Fragen
+- `1) Einstellungen korrekt übernommen?`
+  - In die Run-CFG geschrieben: ja. Effektiv in ATH: teilweise anders wirksam durch anderes Template + Sweep-Versionierung.
+- `2) Wer nutzt wirklich Defaults + deine Settings?`
+  - Für echten Batchlauf: die versionierte Run-CFG + effektives Run-Template (`test.cfg`) + Sweep-Auflösung pro Version.
+  - Für Preview: separater Preview-Pfad mit eigenem Fallback-Template/Minimal-Completion und STL-Flags.
+- `3) Warum Darstellung unterschiedlich?`
+  - Unterschiedlicher Templatepfad + unterschiedlicher Sweep-Stand + anderer Output-Modus (Preview STL vs. Run ABEC/Mesh).
+- `4) Ursache für Absturz?`
+  - VACS-Export startet im `assume-vacs-ready`-Modus, findet aber keine laufende/graph-befüllte VACS-Instanz mehr (`vacs_not_ready_after_f4`).
+
+#### Vorschläge (noch ohne Implementierung)
+- Export-Handshake vereinheitlichen: Entweder VACS nach AKABAK nicht sofort terminieren, oder Exporter ohne `--assume-vacs-ready` starten (interim/open-flow).
+- Preview/Run-Template vereinheitlichen: Preview soll denselben effektiven Template-Resolver verwenden wie Runtime (`test.cfg`/`Tritonia.cfg` Auswahl).
+- Preview klar als Draft-Version kennzeichnen: Anzeige, auf welchem Sweep-Punkt die Vorschau basiert (z. B. Draft vs. V015=Slot.Length 9).
+- Robustheits-Guard für Run-Status: Wenn VACS-Export fehlschlägt, Run/Version deterministisch auf `vacs_failed/failed` finalisieren (kein `running`-Zombie).
+
+## 2026-02-19
+### Update: Incident Analyse `09d793e7-e49d-4bba-960e-809cbaa2e64d` (AKABAK Stop/Restart Loop)
+#### Befund (Root Cause)
+- Der Fehl-Run trat in `runner_test_workspace/real_runtime_e2e7/P002` auf.
+- Nicht ATH/CFG/LE war die Primärursache, sondern ein bereits offener/stale `VACSVIEWER` Prozess.
+- In beiden Fehl-Versionen (`V005`, `V006`) zeigt `solve_failure_*.json`:
+  - `reason = solve_not_started`
+  - `baseline.vacs_pids = [1820]` bereits vor neuem Solve
+  - VACS-Fenster `VacsViewer - (new)` war schon vorhanden.
+- Dadurch konnte der Start-Detektor keinen neuen Solve-Start eindeutig erkennen; der Lauf lief in Timeout und die Orchestrierung startete die nächste Version.
+
+#### Verifikation der 4 Kernfragen
+- `1) Batch-Settings übernommen?`
+  - Für Geometrie/Mesh-Overrides: ja (z. B. `Slot.Length=10`, `Mesh.Quadrants=1`, `Mesh.ThroatResolution=5`, `Mesh.MouthResolution=10`, `Length=120` in `P002_B001_V005_09d793e7.cfg`).
+- `2) ATH-Skript/CFG korrekt (Defaults + Overrides)?`
+  - Ja: Template-Defaults blieben erhalten, Batch-Overrides wurden korrekt appended.
+  - ATH-Lauf war erfolgreich (`ath_result.exit_code = 0`), Mesh/ABEC-Artefakte wurden erzeugt und synchronisiert.
+  - LE-Binding war intakt (`le_driver_sync.status = ok`, `pre_akabak_le_driving_contract.ok = true`).
+- `3) Keine Graph-Exports ausgewählt?`
+  - Ja: `sim_export_settings.export_specs = []` (Batch `B001` in diesem Incident).
+- `4) Warum bricht Simulation direkt ab?`
+  - Technisch nicht "Solver-Crash", sondern Start-Erkennung schlägt fehl, weil stale VACS bereits offen war (`solve_not_started` + Timeout).
+
+#### Fix-Status
+- In `app/runtime_orchestrator.py` wurde ein deterministisches VACS-Cleanup vor und nach jedem AKABAK-UI-Stage ergänzt (`VACS_IMAGE_CANDIDATES`, `_list_process_ids_by_image`, `_terminate_process_ids`, `vacs_cleanup`).
+- Re-Run derselben Serie nach Fix (`run_id=44063158-e674-4d50-bb49-8b119237e977`) lief für alle Versionen erfolgreich durch.
+
 ## 2026-02-18
 ### Update: Batch UI Corrections A–J (header reset, card reduction, advanced popups)
 #### Done
@@ -2669,4 +2850,8 @@ Validation executed:
 - `python -m compileall app/services.py app/gui.py ui/batch_preview_placeholder.py ui/stl_preview_widget.py`
 - `python -m pytest tests/test_preview_pipeline.py -q`
 - `python -m pytest tests/test_batch_page_ui.py tests/test_service_export.py -q`
+
+
+
+
 

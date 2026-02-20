@@ -27,7 +27,7 @@ from app.ath_driver_assets import (
     repair_post_ath_le_binding,
 )
 from app.cfg_renderer import render_cfg_text
-from app.export_specs import parse_export_specs
+from app.export_specs import ExportSpec, parse_export_specs
 from app.models import Batch, ParamSelection, Project, ProjectConstraints, SweepSpec
 from app.runner_test_db import RunnerTestDb
 from app.runner_test_profiles import apply_runner_test_profile
@@ -38,6 +38,7 @@ from app.safe_cleanup import (
     guarded_delete_tree_in_workspace,
 )
 from app.le_driver_registry import load_le_driver_registry
+from app.runtime_orchestrator import _apply_sim_export_settings_to_cfg
 from app.ui_automation.waits import wait_until
 from app.ui_automation.discover import discover_app_ui
 from app.vacs_export_pipeline import VacsExportPipelineError, run_vacs_export_specs
@@ -260,6 +261,61 @@ def _version_config_hash(parameters: Dict[str, Any], unset_parameters: Sequence[
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _default_polar_export_specs_for_harness() -> List[ExportSpec]:
+    base_options = {
+        "map_angle_range": [0, 90, 19],
+        "distance_m": 2.0,
+    }
+    return [
+        ExportSpec(
+            id="default_polar_spl_h",
+            tool="vacs",
+            graph_kind="polar",
+            variant="main",
+            format="txt",
+            options={**base_options, "polar_name": "SPL_H", "offset": 145},
+            output_name_template="{version_id}_{graph_kind}_{export_id}.{format}",
+        ),
+        ExportSpec(
+            id="default_polar_spl_v",
+            tool="vacs",
+            graph_kind="polar",
+            variant="main",
+            format="txt",
+            options={**base_options, "polar_name": "SPL_V", "offset_from_length_mm": 40, "inclination": 90},
+            output_name_template="{version_id}_{graph_kind}_{export_id}.{format}",
+        ),
+        ExportSpec(
+            id="default_polar_spl_d",
+            tool="vacs",
+            graph_kind="polar",
+            variant="main",
+            format="txt",
+            options={**base_options, "polar_name": "SPL_D", "offset_from_length_mm": 40, "inclination": 42},
+            output_name_template="{version_id}_{graph_kind}_{export_id}.{format}",
+        ),
+    ]
+
+
+def _resolve_export_specs_for_harness(sim_export_payload: Dict[str, Any]) -> List[ExportSpec]:
+    specs = parse_export_specs(sim_export_payload)
+    if specs:
+        return specs
+    if bool(sim_export_payload.get("auto_default_polar_exports", False)):
+        return _default_polar_export_specs_for_harness()
+    return []
+
+
+def _enforce_free_standing_for_tests(sim_export_settings: Dict[str, Any]) -> Tuple[Dict[str, Any], str, bool]:
+    merged = dict(sim_export_settings or {})
+    profile_sim_mode = str(merged.get("simulation_mode", "free_standing") or "free_standing").strip().lower()
+    if profile_sim_mode not in {"free_standing", "infinite_baffle"}:
+        profile_sim_mode = "free_standing"
+    forced = bool(profile_sim_mode != "free_standing")
+    merged["simulation_mode"] = "free_standing"
+    return merged, profile_sim_mode, forced
+
+
 def _load_json(path: Path) -> Dict[str, Any]:
     payload = json.loads(path.read_text(encoding="utf-8-sig"))
     if not isinstance(payload, dict):
@@ -431,6 +487,32 @@ def _split_meshcmd_rhs(rhs_value: str) -> Tuple[str, str]:
     return exe_candidate, rhs
 
 
+def _normalize_meshcmd_rhs(
+    *,
+    meshcmd_executable: str,
+    meshcmd_rhs: str,
+) -> Dict[str, Any]:
+    executable = str(meshcmd_executable or "").strip()
+    rhs = str(meshcmd_rhs or "").strip()
+    normalized = rhs
+    changed = False
+    reason = ""
+    try:
+        name = Path(executable).name.lower()
+    except Exception:
+        name = ""
+    # ATH often forwards the current .geo via "%f". Bare gmsh.exe opens GUI and can stall runs.
+    if name == "gmsh.exe" and normalized and "%f" not in normalized.lower():
+        normalized = f"{executable} %f -".strip()
+        changed = True
+        reason = "append_placeholder_for_gmsh"
+    return {
+        "meshcmd_rhs": normalized,
+        "normalized": changed,
+        "reason": reason,
+    }
+
+
 def _ath_cfg_from_executable(ath_executable: Optional[str | Path]) -> Optional[Path]:
     if not ath_executable:
         return None
@@ -452,12 +534,16 @@ def _resolve_meshcmd_rhs(
 ) -> Dict[str, Any]:
     if meshcmd_override:
         exe_path, normalized = _split_meshcmd_rhs(str(meshcmd_override))
+        normalized_info = _normalize_meshcmd_rhs(meshcmd_executable=exe_path, meshcmd_rhs=normalized)
+        normalized_rhs = str(normalized_info.get("meshcmd_rhs", normalized) or "").strip()
         exists = bool(exe_path and Path(exe_path).exists())
         return {
             "source": "override",
-            "meshcmd_rhs": normalized,
+            "meshcmd_rhs": normalized_rhs,
             "meshcmd_executable": exe_path,
             "meshcmd_executable_exists": exists,
+            "meshcmd_rhs_normalized": bool(normalized_info.get("normalized")),
+            "meshcmd_rhs_normalization_reason": str(normalized_info.get("reason", "") or ""),
             "ath_cfg_source": None,
         }
 
@@ -469,11 +555,15 @@ def _resolve_meshcmd_rhs(
             rhs = str(match.group(1) or "").strip()
             exe_path, normalized = _split_meshcmd_rhs(rhs)
             if exe_path and Path(exe_path).exists():
+                normalized_info = _normalize_meshcmd_rhs(meshcmd_executable=exe_path, meshcmd_rhs=normalized)
+                normalized_rhs = str(normalized_info.get("meshcmd_rhs", normalized) or "").strip()
                 return {
                     "source": "ath_cfg",
-                    "meshcmd_rhs": normalized,
+                    "meshcmd_rhs": normalized_rhs,
                     "meshcmd_executable": exe_path,
                     "meshcmd_executable_exists": True,
+                    "meshcmd_rhs_normalized": bool(normalized_info.get("normalized")),
+                    "meshcmd_rhs_normalization_reason": str(normalized_info.get("reason", "") or ""),
                     "ath_cfg_source": str(ath_cfg),
                 }
 
@@ -488,6 +578,8 @@ def _resolve_meshcmd_rhs(
                 "meshcmd_rhs": f"{candidate} %f -",
                 "meshcmd_executable": str(candidate),
                 "meshcmd_executable_exists": True,
+                "meshcmd_rhs_normalized": False,
+                "meshcmd_rhs_normalization_reason": "",
                 "ath_cfg_source": str(ath_cfg) if ath_cfg is not None else None,
             }
 
@@ -496,6 +588,8 @@ def _resolve_meshcmd_rhs(
         "meshcmd_rhs": "",
         "meshcmd_executable": None,
         "meshcmd_executable_exists": False,
+        "meshcmd_rhs_normalized": False,
+        "meshcmd_rhs_normalization_reason": "",
         "ath_cfg_source": str(ath_cfg) if ath_cfg is not None else None,
     }
 
@@ -1879,12 +1973,36 @@ def run_runner_test_harness(
                 parameters=version.parameters,
                 sim_export_settings=version.sim_export_settings,
             )
+            effective_sim_settings, profile_sim_mode, forced_by_harness_guard = _enforce_free_standing_for_tests(
+                effective_sim_settings
+            )
+            requested_sim_mode = str(version.sim_export_settings.get("simulation_mode", "free_standing") or "free_standing")
+            effective_sim_mode = str(effective_sim_settings.get("simulation_mode", "free_standing") or "free_standing").strip().lower()
+            forced_free_standing = bool(
+                requested_sim_mode.strip().lower() == "infinite_baffle"
+                or forced_by_harness_guard
+            )
             db.add_validation(
                 test_run_id=test_run_id,
                 validation_name="test_profile_applied",
                 status="ok",
                 metrics=profile_meta,
                 message="runner test profile applied in harness context",
+            )
+            db.add_validation(
+                test_run_id=test_run_id,
+                validation_name="simulation_mode_guard",
+                status="ok",
+                metrics={
+                    "requested_simulation_mode": requested_sim_mode,
+                    "profile_effective_simulation_mode": profile_sim_mode,
+                    "effective_simulation_mode": effective_sim_mode,
+                    "forced_free_standing": forced_free_standing,
+                    "reason": "infinite_baffle_position_not_defined_in_test_flow",
+                },
+                message="simulation mode forced to free_standing for test runs"
+                if forced_free_standing
+                else "simulation mode accepted for test run",
             )
             db.add_test_run_step(
                 test_run_id=test_run_id,
@@ -1910,6 +2028,13 @@ def run_runner_test_harness(
                 version_id=version.version_id,
                 runner_mode=batch.runner_mode,
                 omit_keys=version.unset_parameters,
+            )
+            cfg_export_specs = _resolve_export_specs_for_harness(effective_sim_settings)
+            cfg_text = _apply_sim_export_settings_to_cfg(
+                cfg_text,
+                sim_export_settings=effective_sim_settings,
+                export_specs=cfg_export_specs,
+                runtime_parameters=effective_params,
             )
             cfg_path = workspace.cfg_dir / f"{test_run_id}_{version.version_id}.cfg"
             cfg_path.write_text(cfg_text, encoding="utf-8")
@@ -1989,6 +2114,8 @@ def run_runner_test_harness(
                     "cfg_path": str(cfg_path),
                     "cfg_sha256": cfg_sha,
                     "cfg_le_profile": cfg_patch.to_dict(),
+                    "cfg_export_specs_count": int(len(cfg_export_specs)),
+                    "effective_simulation_mode": str(effective_sim_settings.get("simulation_mode", "")),
                 },
             )
 
@@ -2373,7 +2500,10 @@ def run_runner_test_harness(
                     _register_akabak_pid()
                     akabak_driver.import_if_needed()
                     akabak_driver.run_solve()
-                    akabak_driver.wait_for_completion(timeout_s=600)
+                    try:
+                        akabak_driver.wait_for_completion(timeout_s=600, require_vacs_graph_import=True)
+                    except TypeError:
+                        akabak_driver.wait_for_completion(timeout_s=600)
                     akabak_watchdog_events = list(getattr(akabak_driver, "watchdog_events", []) or [])
                     windows = [item.to_dict() for item in akabak_driver.session.list_top_windows()]
                     db.add_ui_observation(
@@ -2477,7 +2607,8 @@ def run_runner_test_harness(
                 effective_batch_payload = batch.to_dict()
                 effective_batch_payload["sim_export_settings"] = effective_sim_settings
                 effective_batch = Batch.from_dict(effective_batch_payload)
-                export_specs = parse_export_specs(effective_batch.sim_export_settings.to_dict())
+                sim_export_payload = effective_batch.sim_export_settings.to_dict()
+                export_specs = _resolve_export_specs_for_harness(sim_export_payload)
                 if not export_specs:
                     notes = "no export specs configured for VACS stage"
                     raise RuntimeError("no export specs configured")
@@ -2507,6 +2638,7 @@ def run_runner_test_harness(
                         export_dir=exports_run_dir,
                         log_dir=workspace.logs_dir / test_run_id / "vacs",
                         akabak_executable=str(akabak_executable) if akabak_executable else None,
+                        allow_graph_kind_fallback=True,
                     )
                 except Exception:
                     vacs_pids_after = set(_list_running_vacs_pids())
@@ -2597,10 +2729,23 @@ def run_runner_test_harness(
                 ingest_rows: List[Dict[str, Any]] = []
                 validation_failed = False
                 export_diagnostics: List[Dict[str, Any]] = []
+                requested_export_kinds = {
+                    str(spec.graph_kind or "").strip().lower()
+                    for spec in list(export_specs or [])
+                    if str(spec.graph_kind or "").strip()
+                }
                 for export_item in export_items:
                     output_path = Path(str(export_item.get("output_path", ""))).resolve()
                     spec_payload = dict(export_item.get("spec", {}) or {})
                     expected_kind = str(spec_payload.get("graph_kind", "unknown"))
+                    expected_kind_norm = str(expected_kind).strip().lower()
+                    details_payload = dict(export_item.get("details", {}) or {})
+                    mapping_mode = str(details_payload.get("mapping_mode", "")).strip().lower()
+                    is_unrequested_any_graph_fallback = bool(
+                        mapping_mode == "any_graph"
+                        and expected_kind_norm
+                        and expected_kind_norm not in requested_export_kinds
+                    )
                     if not output_path.exists():
                         db.add_validation(
                             test_run_id=test_run_id,
@@ -2637,9 +2782,20 @@ def run_runner_test_harness(
                         expected_kind=expected_kind,
                         file_size_bytes=file_size,
                     )
+                    validation_status = str(validation["status"])
+                    validation_message = str(validation["message"])
+                    validation_metrics = dict(validation.get("metrics", {}) or {})
+                    if is_unrequested_any_graph_fallback and validation_status != "ok":
+                        validation_metrics["fallback_unrequested_any_graph"] = True
+                        validation_metrics["original_status"] = validation_status
+                        validation_metrics["original_message"] = validation_message
+                        validation_status = "ok"
+                        validation_message = (
+                            "accepted any-graph fallback export for unrequested graph kind"
+                        )
                     export_diagnostics.append(
                         {
-                            **dict(validation.get("metrics", {}) or {}),
+                            **validation_metrics,
                             "expected_kind": expected_kind,
                             "parsed_graph_type": parsed.graph_type,
                             "output_path": str(output_path),
@@ -2648,11 +2804,11 @@ def run_runner_test_harness(
                     db.add_validation(
                         test_run_id=test_run_id,
                         validation_name=f"export_quality:{expected_kind}",
-                        status=str(validation["status"]),
-                        metrics=dict(validation["metrics"]),
-                        message=str(validation["message"]),
+                        status=validation_status,
+                        metrics=validation_metrics,
+                        message=validation_message,
                     )
-                    if validation["status"] != "ok":
+                    if validation_status != "ok":
                         validation_failed = True
                     ingest_rows.extend(
                         _rows_from_graph(

@@ -22,6 +22,7 @@ class RunnerTestProfilesTests(unittest.TestCase):
         self.assertEqual(merged_params["Length"], 120)
         self.assertEqual(merged_params["Mesh.AngularSegments"], 24)
         self.assertEqual(merged_sim["num_points"], 6)
+        self.assertEqual(str(merged_sim["simulation_mode"]), "free_standing")
         self.assertEqual(metadata["profile"]["profile_id"], "fast")
         self.assertIn("Mesh.AngularSegments", metadata["applied_parameter_overrides"])
 
