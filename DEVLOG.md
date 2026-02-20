@@ -1,6 +1,83 @@
 ﻿# DEVLOG
 
 ## 2026-02-20
+### Update: Fallback-Audit (Real-E2E) + deaktivierter non-funktionaler Interim-Rescue-Branch
+#### Ziel
+- Ermitteln, wie oft Fallbacks im normalen Runner-Ablauf wirklich genutzt werden.
+- Non-funktionale Fallbacks im Produktionspfad deaktivieren, ohne robuste Fallback-Struktur zu verlieren.
+
+#### Audit-Ergebnis (bestehende Logs)
+- Aggregation ueber `external_vacs_export_save_all/run_*/summary.json`:
+  - `142` Runs gesamt, `134` erfolgreich.
+  - `fallback_used=true`: `0` (im produktiven `assume_vacs_ready`-Pfad kein fast->safe->rescue Treffer).
+  - Runs mit `interim_reimport*`-Steps: `3`.
+  - Diese `3` Interim-Runs waren ausschliesslich mit `assume_vacs_ready=false` und endeten mit `interim_reimport_failed`.
+- Real-Workspace `real_runtime_e2e9/P001`:
+  - `vacs.export_pipeline` zeigt in aktuellen Erfolgslaeufen `external_fallback_used=false`.
+
+#### Real-E2E-Verifikation (neu)
+- `run pipeline` auf `P001/B010_FASTCHECK`:
+  - `run_id=d83d05f7-12a9-4f8d-9b14-185941c470b7`, `run_status=succeeded`, Version `V069`.
+- `run pipeline` auf `P001/B010` (Default):
+  - `run_id=ee1ea180-69dc-4b52-8a77-6385886549c7`, `run_status=succeeded`, Version `V070`.
+- In beiden neuen Laeufen:
+  - VACS-Export im `fast`-Pfad.
+  - Kein Interim-Reimport.
+  - `external_fallback_used=false`.
+
+#### Fix
+- `scripts/vacs_export_save_all.py`:
+  - Auto-Mode-Rescue-Branch (`assume_vacs_ready=True` -> `assume_vacs_ready=False` + Interim-Reimport) ist jetzt standardmaessig deaktiviert.
+  - Neuer opt-in Schalter: `--allow-interim-rescue`.
+  - Wenn deaktiviert, wird explizit geloggt:
+    - `safe_rescue_skipped.reason = "disabled_by_default"`
+    - `safe_rescue_skipped.toggle = "--allow-interim-rescue"`
+
+#### Warum diese Deaktivierung
+- Im finalen Runner ist AKABAK in dieser Phase typischerweise bereits beendet; der Interim-Rescue-Pfad ist daher in diesem Kontext praktisch non-funktional und verlaengert nur die Fehlerlaufzeit.
+- Der robuste Hauptfallback (`fast -> safe` mit `assume_vacs_ready=true`) bleibt erhalten.
+- Fuer gezielte Diagnostik ist der alte Rescue-Weg weiterhin manuell aktivierbar (`--allow-interim-rescue`).
+
+#### Tests
+- `python -m py_compile scripts/vacs_export_save_all.py app/vacs_export_pipeline.py app/runtime_orchestrator.py app/akabak_driver.py`
+- `python -m pytest tests/test_vacs_export_pipeline.py tests/test_runtime_orchestrator.py -q` -> `23 passed`
+- Negativprobe (kein VACS bereit) ohne Rescue:
+  - sauberer Abbruch mit `vacs_not_ready_after_f4` und `safe_rescue_skipped`, ohne Interim-Zweig.
+- Negativprobe mit `--allow-interim-rescue`:
+  - Rescue-Pfad wird wie erwartet wieder versucht (und in diesem Setup erwartbar `interim_reimport_failed`).
+
+## 2026-02-20
+### Update: AKABAK-Solve-Start Hardening (kein 600s-Haenger mehr bei leerem VACS)
+#### Ursache
+- Im Runtime-Flow konnte `run_solve` faelschlich als gestartet gelten, sobald nur `VacsViewer - (new)` erschien.
+- Folge: `wait_for_completion` wartete bis zu 600s auf Graph-Import-Signale, obwohl faktisch kein echter Solve/Handoff lief.
+- Open-Dialog Tier-A konnte ausserdem ohne verifizierten Dateiname als erfolgreich durchgehen.
+
+#### Fix
+- `app/akabak_driver.py`:
+  - Solve-Start ist jetzt mehrstufig und robust:
+    - starke Signale zuerst (`progress_window`, Worker-PID, VACS+Graphsignal)
+    - Trigger-Ladder: `F4 -> F5 -> Solve-Menu (best effort) -> F4`
+    - nur als letzte Stufe schwaches `new_vacs`-Signal.
+  - `wait_for_completion` sendet bei fehlendem VACS-Graph-Handoff wiederholt `F7` (mit Intervall/Max-Versuchen).
+  - Handoff-Stall-Abbruch jetzt bei `180s` statt fruehem Abbruch, damit schwere Defaults nicht falsch als Fehler gewertet werden.
+  - Open-Dialog-Hardening:
+    - Tier-A/Tier-B/Tier-C verlangen jetzt verifizierten Dateiname-Readback, bevor bestaetigt wird.
+    - Tier-B priorisiert `SetDlgItemTextW(...,1148)` vor generischem `WM_SETTEXT` auf unsicheren Controls.
+- `app/runtime_orchestrator.py` / `app/vacs_export_pipeline.py`:
+  - Default-Polar-Exports nutzen eindeutige Varianten (`spl_h/spl_v/spl_d`).
+  - External-`any_graph`-Mapping schreibt eindeutige Varianten (`external_XX`) und verhindert DB-Unique-Konflikte beim Ingest.
+
+#### Verifikation
+- Real-Run manuell (`manual_runtime_check_low`): alter 600s-Stall wurde in klare `solve_not_started`-Diagnose ueberfuehrt (schneller, deterministischer Fehlerpfad).
+- `runner-test run --case test_cfg_baseline --repeats 1 --test-profile fast` bleibt gruen (`succeeded`, ~45s).
+- Real-Run im echten Projektkontext (`real_runtime_e2e9/P001`, Batch `B010_FASTCHECK`) ist E2E gruen:
+  - `run_id=cdaafc5d-ee00-4aa3-b5e3-8b85128f125c` -> `run_status=succeeded`.
+- Real-Run im echten Projektkontext mit Original-Defaults (`real_runtime_e2e9/P001`, Batch `B010`) ist ebenfalls E2E gruen:
+  - `run_id=5bd4076e-a7cf-4971-a1dd-df504b806136` -> `run_status=succeeded`.
+- Unit-Regression:
+  - `python -m pytest tests/test_vacs_export_pipeline.py tests/test_runtime_orchestrator.py -q` -> `23 passed`
+## 2026-02-20
 ### Update: Harness-CFG an Runtime angeglichen + Free-Standing Default erzwungen
 #### Ursache
 - Runner-Harness hat die Sim/Export-Settings nicht in die CFG angereichert (anders als Runtime), dadurch fehlten Polar-Bloecke trotz `auto_default_polar_exports`.
@@ -2873,6 +2950,11 @@ Validation executed:
 - `python -m compileall app ui`
 - `python -m pytest tests/test_project_manager_ui.py tests/test_project_form_ui.py -q`
 - `python -m pytest tests/test_batch_page_ui.py -q` (known pre-existing failures in current branch; unrelated to this pass)
+
+
+
+
+
 
 
 

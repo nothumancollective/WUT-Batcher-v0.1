@@ -50,7 +50,7 @@ GRAPH_CLASSES = {"TForm_DatGraph", "TForm_DatContour"}
 CHILD_CLASSES = {"TForm_DatGraph", "TForm_DatContour", "TForm_Editor"}
 FAST_PRE_EXPORT_GRAPH_READY_TIMEOUT_S = 0.5
 FAST_PRE_EXPORT_GRAPH_POLL_S = 0.02
-FAST_ASSUME_READY_TIMEOUT_S = 1.4
+FAST_ASSUME_READY_TIMEOUT_S = 3.0
 FAST_GRAPH_STABILIZE_TIMEOUT_S = 1.6
 FAST_GRAPH_STABLE_FOR_S = 0.25
 FAST_GRAPH_STABILIZE_POLL_S = 0.03
@@ -2145,8 +2145,10 @@ def run_once(args: argparse.Namespace) -> Dict[str, Any]:
         }
         return safe
 
-    # Optional rescue: only try full reimport path when caller started in assume-ready mode.
-    if bool(getattr(args, "assume_vacs_ready", False)):
+    # Optional rescue: full interim reimport path.
+    # Disabled by default because AKABAK is typically closed at this stage in the
+    # runtime pipeline, so this branch is usually non-functional and only adds delay.
+    if bool(getattr(args, "assume_vacs_ready", False)) and bool(getattr(args, "allow_interim_rescue", False)):
         rescue_args = _copy_args_with(args, mode="safe", assume_vacs_ready=False)
         rescue = run_once_safe(rescue_args)
         if bool(rescue.get("ok")):
@@ -2169,6 +2171,11 @@ def run_once(args: argparse.Namespace) -> Dict[str, Any]:
             "summary_file": rescue.get("summary_file"),
             "run_id": rescue.get("run_id"),
         }
+    elif bool(getattr(args, "assume_vacs_ready", False)):
+        safe["safe_rescue_skipped"] = {
+            "reason": "disabled_by_default",
+            "toggle": "--allow-interim-rescue",
+        }
 
     safe["fallback_used"] = True
     safe["fallback_reason"] = "fast_mode_failed"
@@ -2190,6 +2197,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--assume-vacs-ready",
         action="store_true",
         help="Assume VACS is already opened by AKABAK F4 and skip interim reimport/open flow.",
+    )
+    p.add_argument(
+        "--allow-interim-rescue",
+        action="store_true",
+        help="Allow final auto-mode rescue branch that disables --assume-vacs-ready and runs interim reimport.",
     )
     p.add_argument("--export-dir", required=True, help="Target folder under C:\\Horns\\... for this version")
     p.add_argument("--output-dir", default="runner_test_workspace/logs/vacs_export_save_all")
