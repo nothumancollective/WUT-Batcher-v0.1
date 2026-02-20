@@ -1832,6 +1832,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Optional[list[str]] = None) -> int:
+    from app.audit_mode import enable_audit_mode
+
+    enable_audit_mode(entrypoint="app.cli.main")
     parser = build_parser()
     args = parser.parse_args(argv)
     return int(args.func(args))
