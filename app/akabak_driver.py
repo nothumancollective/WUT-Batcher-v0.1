@@ -11,6 +11,7 @@ import json
 from pathlib import Path
 import re
 import subprocess
+import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.ui_automation.session import UiaSession, UiaSessionError
@@ -1285,13 +1286,35 @@ class AkabakDriver:
             raise RuntimeError(f"pywinauto Desktop unavailable for menu-select: {exc!r}") from exc
         win32_main = Desktop(backend="win32").window(handle=hwnd)
         win32_main.menu_select("File->Open project...")
-        file_dialog = wait_until(
-            predicate=lambda: (
-                self._find_open_file_dialog(main_window=main_window) is not None,
-                self._find_open_file_dialog(main_window=main_window),
-            ),
-            timeout_s=max(2.0, float(timeout_s)),
-        )
+        fast_timeout_s = min(1.0, max(0.35, float(timeout_s) / 6.0))
+        try:
+            file_dialog = wait_until(
+                predicate=lambda: (
+                    self._find_open_file_dialog(main_window=main_window) is not None,
+                    self._find_open_file_dialog(main_window=main_window),
+                ),
+                timeout_s=fast_timeout_s,
+                initial_interval_s=0.03,
+                max_interval_s=0.12,
+                backoff_factor=1.5,
+            )
+        except TimeoutError:
+            self._log(
+                level="info",
+                step=step,
+                event="open_dialog_menu_wait_fallback",
+                payload={"fast_timeout_s": fast_timeout_s, "fallback_timeout_s": max(2.0, float(timeout_s))},
+            )
+            file_dialog = wait_until(
+                predicate=lambda: (
+                    self._find_open_file_dialog(main_window=main_window) is not None,
+                    self._find_open_file_dialog(main_window=main_window),
+                ),
+                timeout_s=max(2.0, float(timeout_s)),
+                initial_interval_s=0.05,
+                max_interval_s=0.3,
+                backoff_factor=1.7,
+            )
         self._log(level="info", step=step, event="open_dialog_opened_via_main_menu", payload={"menu_path": "File->Open project..."})
         return file_dialog
 
@@ -1376,10 +1399,19 @@ class AkabakDriver:
         combo_handle = self._window_handle(filename_combo) if filename_combo is not None else 0
         attempts: List[Dict[str, Any]] = []
         path_written_once = False
-        dialog_close_wait_s = min(1.2, max(0.6, float(self.step_timeout_s) / 90.0))
-        postcondition_timeout_s = min(float(self.step_timeout_s), 12.0)
+        dialog_close_wait_fast_s = min(0.35, max(0.18, float(self.step_timeout_s) / 600.0))
+        dialog_close_wait_fallback_s = min(1.2, max(0.6, float(self.step_timeout_s) / 90.0))
+        postcondition_timeout_fast_s = min(2.0, max(0.5, float(self.step_timeout_s) / 150.0))
+        postcondition_timeout_fallback_total_s = min(float(self.step_timeout_s), 12.0)
 
-        def _wait_for_postcondition(timeout_s: float) -> Dict[str, Any]:
+        def _wait_for_postcondition(timeout_s: float, *, fast_poll: bool = False) -> Dict[str, Any]:
+            kwargs: Dict[str, Any] = {}
+            if fast_poll:
+                kwargs = {
+                    "initial_interval_s": 0.04,
+                    "max_interval_s": 0.2,
+                    "backoff_factor": 1.6,
+                }
             return wait_until(
                 predicate=lambda: self._open_dialog_postcondition(
                     main_window=main_window,
@@ -1387,7 +1419,17 @@ class AkabakDriver:
                     main_title_before=main_title_before,
                 ),
                 timeout_s=timeout_s,
+                **kwargs,
             )
+
+        def _wait_for_postcondition_with_fallback() -> Dict[str, Any]:
+            start = time.perf_counter()
+            try:
+                return _wait_for_postcondition(postcondition_timeout_fast_s, fast_poll=True)
+            except TimeoutError:
+                elapsed = max(0.0, time.perf_counter() - start)
+                remaining = max(0.25, postcondition_timeout_fallback_total_s - elapsed)
+                return _wait_for_postcondition(remaining, fast_poll=False)
 
         def _normalize_path_value(value: str) -> str:
             normalized = str(value or "").strip().strip('"')
@@ -1449,15 +1491,28 @@ class AkabakDriver:
                 details["error"] = repr(exc)
             return details
 
-        def _wait_dialog_closed(timeout_s: float) -> bool:
+        def _wait_dialog_closed(timeout_s: float, *, fast_poll: bool = False) -> bool:
+            kwargs: Dict[str, Any] = {}
+            if fast_poll:
+                kwargs = {
+                    "initial_interval_s": 0.03,
+                    "max_interval_s": 0.1,
+                    "backoff_factor": 1.5,
+                }
             try:
                 wait_until(
                     predicate=lambda: (self._find_open_file_dialog(main_window=main_window) is None, None),
                     timeout_s=timeout_s,
+                    **kwargs,
                 )
             except Exception:
                 return False
             return True
+
+        def _wait_dialog_closed_with_fallback() -> bool:
+            if _wait_dialog_closed(timeout_s=dialog_close_wait_fast_s, fast_poll=True):
+                return True
+            return _wait_dialog_closed(timeout_s=dialog_close_wait_fallback_s, fast_poll=False)
 
         def _confirm_by_enter() -> str:
             actions: List[Tuple[str, Any]] = []
@@ -1479,7 +1534,7 @@ class AkabakDriver:
             for action_name, action in actions:
                 try:
                     action()
-                    if _wait_dialog_closed(timeout_s=dialog_close_wait_s):
+                    if _wait_dialog_closed_with_fallback():
                         return action_name
                 except Exception:
                     continue
@@ -1521,7 +1576,7 @@ class AkabakDriver:
             for action_name, action in actions:
                 try:
                     action()
-                    if _wait_dialog_closed(timeout_s=dialog_close_wait_s):
+                    if _wait_dialog_closed_with_fallback():
                         return action_name
                 except Exception:
                     continue
@@ -1562,7 +1617,7 @@ class AkabakDriver:
             ok = False
             error_text = ""
             try:
-                state_snapshot = _wait_for_postcondition(timeout_s=postcondition_timeout_s)
+                state_snapshot = _wait_for_postcondition_with_fallback()
                 ok = bool(state_snapshot.get("ok", False))
             except Exception as exc:
                 error_text = repr(exc)
@@ -1602,7 +1657,7 @@ class AkabakDriver:
             retry_ok = False
             retry_error = ""
             try:
-                retry_snapshot = _wait_for_postcondition(timeout_s=postcondition_timeout_s)
+                retry_snapshot = _wait_for_postcondition_with_fallback()
                 retry_ok = bool(retry_snapshot.get("ok", False))
             except Exception as exc:
                 retry_error = repr(exc)
@@ -1685,7 +1740,7 @@ class AkabakDriver:
             ok = False
             error_text = ""
             try:
-                state_snapshot = _wait_for_postcondition(timeout_s=postcondition_timeout_s)
+                state_snapshot = _wait_for_postcondition_with_fallback()
                 ok = bool(state_snapshot.get("ok", False))
             except Exception as exc:
                 error_text = repr(exc)
@@ -1743,7 +1798,7 @@ class AkabakDriver:
             ok = False
             error_text = ""
             try:
-                state_snapshot = _wait_for_postcondition(timeout_s=postcondition_timeout_s)
+                state_snapshot = _wait_for_postcondition_with_fallback()
                 ok = bool(state_snapshot.get("ok", False))
             except Exception as exc:
                 error_text = repr(exc)
@@ -2006,7 +2061,7 @@ class AkabakDriver:
             attempt_trace.append(self._confirm_after_interpreter_action(main_window=main_window, step=step, phase="confirm_after_apply"))
 
             # Only a short settle window after Apply; close/confirm path handles late transitions.
-            post_apply_timeout_s = min(3.0, max(1.5, float(self.step_timeout_s) / 60.0))
+            post_apply_timeout_s = min(1.2, max(0.35, float(self.step_timeout_s) / 180.0))
             post_apply: Dict[str, Any] = {}
             post_status = "unknown"
             try:
@@ -2016,6 +2071,9 @@ class AkabakDriver:
                         report_before=report_before_apply,
                     ),
                     timeout_s=post_apply_timeout_s,
+                    initial_interval_s=0.03,
+                    max_interval_s=0.15,
+                    backoff_factor=1.6,
                 )
                 post_status = str(post_apply.get("status", "unknown"))
                 attempt_trace.append(

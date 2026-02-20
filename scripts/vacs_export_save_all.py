@@ -50,7 +50,10 @@ GRAPH_CLASSES = {"TForm_DatGraph", "TForm_DatContour"}
 CHILD_CLASSES = {"TForm_DatGraph", "TForm_DatContour", "TForm_Editor"}
 FAST_PRE_EXPORT_GRAPH_READY_TIMEOUT_S = 0.5
 FAST_PRE_EXPORT_GRAPH_POLL_S = 0.02
+FAST_ASSUME_READY_QUICK_TIMEOUT_S = 0.7
 FAST_ASSUME_READY_TIMEOUT_S = 3.0
+FAST_GRAPH_STABILIZE_QUICK_TIMEOUT_S = 0.35
+FAST_GRAPH_STABLE_FOR_QUICK_S = 0.08
 FAST_GRAPH_STABILIZE_TIMEOUT_S = 1.6
 FAST_GRAPH_STABLE_FOR_S = 0.25
 FAST_GRAPH_STABILIZE_POLL_S = 0.03
@@ -1781,13 +1784,27 @@ def run_once_fast(args: argparse.Namespace) -> Dict[str, Any]:
             pass
 
     vacs_pid = 0
+    ready_selected: Dict[str, Any] = {}
     if bool(getattr(args, "assume_vacs_ready", False)):
-        ready = _select_ready_vacs_pid(
-            timeout_s=max(FAST_PRE_EXPORT_GRAPH_READY_TIMEOUT_S, FAST_ASSUME_READY_TIMEOUT_S),
+        quick_timeout_s = min(
+            FAST_ASSUME_READY_QUICK_TIMEOUT_S,
+            max(FAST_PRE_EXPORT_GRAPH_READY_TIMEOUT_S, float(getattr(args, "save_as_timeout_s", 8.0) or 8.0)),
+        )
+        ready_quick = _select_ready_vacs_pid(
+            timeout_s=quick_timeout_s,
             poll_s=FAST_PRE_EXPORT_GRAPH_POLL_S,
         )
-        step("assume_vacs_ready_scan", **ready)
-        selected = dict(ready.get("selected") or {})
+        step("assume_vacs_ready_scan_quick", timeout_s=quick_timeout_s, **ready_quick)
+        selected = dict(ready_quick.get("selected") or {})
+        if not selected:
+            fallback_timeout_s = max(FAST_PRE_EXPORT_GRAPH_READY_TIMEOUT_S, FAST_ASSUME_READY_TIMEOUT_S)
+            ready = _select_ready_vacs_pid(
+                timeout_s=fallback_timeout_s,
+                poll_s=FAST_PRE_EXPORT_GRAPH_POLL_S,
+            )
+            step("assume_vacs_ready_scan_fallback", timeout_s=fallback_timeout_s, **ready)
+            selected = dict(ready.get("selected") or {})
+        ready_selected = dict(selected)
         vacs_pid = int(selected.get("pid", 0) or 0)
         if vacs_pid <= 0:
             log["ok"] = False
@@ -1901,23 +1918,83 @@ def run_once_fast(args: argparse.Namespace) -> Dict[str, Any]:
     main_handle = int(main_sig.get("handle", 0) or 0)
     step("vacs_main", signature=main_sig)
 
-    ready_state = _wait_initial_graphs_fast(
-        int(vacs_pid),
-        timeout_s=min(FAST_PRE_EXPORT_GRAPH_READY_TIMEOUT_S, float(getattr(args, "dialog_timeout_s", 5.0) or 5.0)),
-    )
-    main = ready_state.get("main") or main
-    graphs = list(ready_state.get("graphs", []) or [])
+    seed_graph_count = int(ready_selected.get("graph_count", 0) or 0)
+    graphs: List[Any] = []
+    if seed_graph_count > 0:
+        try:
+            graphs = _graph_children_fast(int(vacs_pid), main_hint=main)
+        except Exception:
+            graphs = []
+        step(
+            "graph_seed_from_ready_scan",
+            seed_graph_count=seed_graph_count,
+            fetched_count=len(graphs),
+            graph_titles=[str(_sig(g).get("title", "") or "") for g in list(graphs)[:12]],
+        )
+
+    if not graphs:
+        ready_state = _wait_initial_graphs_fast(
+            int(vacs_pid),
+            timeout_s=min(FAST_PRE_EXPORT_GRAPH_READY_TIMEOUT_S, float(getattr(args, "dialog_timeout_s", 5.0) or 5.0)),
+        )
+        main = ready_state.get("main") or main
+        graphs = list(ready_state.get("graphs", []) or [])
     if not graphs and main is not None:
         graphs = _graph_children_fast(int(vacs_pid), main_hint=main)
-    stabilized = _collect_graphs_until_stable_fast(
-        int(vacs_pid),
-        main_hint=main,
-        initial_graphs=graphs,
-        timeout_s=min(FAST_GRAPH_STABILIZE_TIMEOUT_S, max(0.6, float(getattr(args, "dialog_timeout_s", 5.0) or 5.0))),
-        stable_for_s=FAST_GRAPH_STABLE_FOR_S,
-    )
-    main = stabilized.get("main") or main
-    graphs = list(stabilized.get("graphs", []) or graphs)
+
+    stabilized: Dict[str, Any]
+    if seed_graph_count > 0 and graphs:
+        stabilized = {
+            "main": main,
+            "graphs": list(graphs),
+            "observed_counts": [int(len(graphs))],
+            "stable_elapsed_s": 0.0,
+            "seed_shortcut": True,
+        }
+        step(
+            "graph_snapshot_seed_shortcut",
+            count=len(graphs),
+            observed_counts=list(stabilized.get("observed_counts", []) or []),
+            stable_elapsed_s=0.0,
+        )
+    else:
+        quick_stabilized = _collect_graphs_until_stable_fast(
+            int(vacs_pid),
+            main_hint=main,
+            initial_graphs=graphs,
+            timeout_s=min(
+                FAST_GRAPH_STABILIZE_QUICK_TIMEOUT_S,
+                max(0.2, float(getattr(args, "dialog_timeout_s", 5.0) or 5.0)),
+            ),
+            stable_for_s=FAST_GRAPH_STABLE_FOR_QUICK_S,
+        )
+        main = quick_stabilized.get("main") or main
+        graphs = list(quick_stabilized.get("graphs", []) or graphs)
+        step(
+            "graph_snapshot_stabilized_quick",
+            count=len(graphs),
+            observed_counts=list(quick_stabilized.get("observed_counts", []) or []),
+            stable_elapsed_s=float(quick_stabilized.get("stable_elapsed_s", 0.0) or 0.0),
+        )
+        stabilized = quick_stabilized
+
+    if not graphs:
+        stabilized = _collect_graphs_until_stable_fast(
+            int(vacs_pid),
+            main_hint=main,
+            initial_graphs=graphs,
+            timeout_s=min(FAST_GRAPH_STABILIZE_TIMEOUT_S, max(0.6, float(getattr(args, "dialog_timeout_s", 5.0) or 5.0))),
+            stable_for_s=FAST_GRAPH_STABLE_FOR_S,
+        )
+        main = stabilized.get("main") or main
+        graphs = list(stabilized.get("graphs", []) or graphs)
+        step(
+            "graph_snapshot_stabilized_fallback",
+            count=len(graphs),
+            observed_counts=list(stabilized.get("observed_counts", []) or []),
+            stable_elapsed_s=float(stabilized.get("stable_elapsed_s", 0.0) or 0.0),
+        )
+
     graphs_sorted = sorted(graphs, key=lambda g: str(_sig(g).get("title", "")).lower())
     step(
         "graph_snapshot_stabilized",
