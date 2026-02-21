@@ -155,3 +155,11 @@ The Analyzer page is planned with two explicit subviews:
   - medium: Draft + Estimate top row, Validation full-width below
   - narrow: stacked cards
 - Fixed heights and spacer-heavy card interiors were removed to reduce empty space while preserving all summary information.
+
+## Implementation status (UI-1D.6)
+
+- Exports panel footer now presents concise default-export text (`Default exports: Polars (H/V/D)`) with details in tooltip.
+- Footer actions are normalized into one right-aligned action group:
+  - primary: `Simulate Enclosure`
+  - secondary: `Advanced`
+- Footer layout switches between wide and compact rows on narrow widths to avoid awkward wrapping/clipping.

@@ -86,6 +86,20 @@ class BatchExportPanelTests(unittest.TestCase):
         options = dict(polar_specs[0].get("options", {}) or {})
         self.assertEqual(int(options.get("norm_angle")), 35)
 
+    def test_footer_copy_and_action_buttons_are_consistent(self) -> None:
+        panel = BatchExportPanel()
+        self.assertEqual(str(panel.default_export_hint.text()), "Default exports:")
+        self.assertEqual(str(panel.default_export_chip.text()), "Polars (H/V/D)")
+        self.assertEqual(panel.enclosure_btn.objectName(), "BatchPrimaryButton")
+        self.assertEqual(panel.advanced_btn.objectName(), "BatchSecondaryButton")
+        self.assertEqual(panel.enclosure_btn.height(), panel.advanced_btn.height())
+        panel.resize(520, 250)
+        panel._apply_footer_layout_mode()  # type: ignore[attr-defined]
+        self.assertEqual(str(panel._footer_layout_mode), "compact")
+        panel.resize(880, 250)
+        panel._apply_footer_layout_mode()  # type: ignore[attr-defined]
+        self.assertEqual(str(panel._footer_layout_mode), "wide")
+
 
 if __name__ == "__main__":
     unittest.main()

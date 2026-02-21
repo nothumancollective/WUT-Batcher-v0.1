@@ -40,3 +40,6 @@
 
 ## 2026-02-21 (UI-1D.5)
 - UI-1D.5: Reworked Batch summary area into a responsive summary strip (Draft / Estimate / Validation) with reduced dead space and consistent card typography/padding.
+
+## 2026-02-21 (UI-1D.6)
+- UI-1D.6: Cleaned Exports footer copy/layout, switched to concise default-export labeling, and aligned `Simulate Enclosure` + `Advanced` actions with responsive wrapping.
