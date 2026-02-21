@@ -106,6 +106,28 @@ class ElidedTitleLabel(QLabel):
         self._apply_elide()
 
 
+class ElidedToolButton(QToolButton):
+    def __init__(self, text: str = "", parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._full_text = ""
+        self.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.set_full_text(text)
+
+    def set_full_text(self, text: str) -> None:
+        self._full_text = str(text or "")
+        self.setToolTip(self._full_text)
+        self._apply_elide()
+
+    def _apply_elide(self) -> None:
+        available = max(int(self.contentsRect().width()) - 10, 20)
+        self.setText(self.fontMetrics().elidedText(self._full_text, Qt.ElideRight, available))
+
+    def resizeEvent(self, event) -> None:  # type: ignore[override]
+        super().resizeEvent(event)
+        self._apply_elide()
+
+
 class IssueRowButton(QPushButton):
     def __init__(self, full_text: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -3258,20 +3280,24 @@ class MainWindow(QMainWindow):
         top_row.addWidget(self.settings_button, 0, Qt.AlignRight | Qt.AlignVCenter)
 
         self.bottom_mode_bar = QWidget(central)
+        self.bottom_mode_bar.setObjectName("GlobalModeBar")
         self.bottom_mode_bar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.bottom_mode_bar.setMinimumHeight(44)
-        self.bottom_mode_bar.setMaximumHeight(44)
+        self.bottom_mode_bar.setMinimumHeight(38)
+        self.bottom_mode_bar.setMaximumHeight(38)
         mode_row = QHBoxLayout(self.bottom_mode_bar)
-        mode_row.setContentsMargins(10, 6, 10, 6)
-        mode_row.setSpacing(8)
+        mode_row.setContentsMargins(12, 4, 12, 4)
+        mode_row.setSpacing(6)
 
         self.mode_button_group = QButtonGroup(self)
         self.mode_button_group.setExclusive(True)
-        self.project_mode_button = QPushButton("Project")
-        self.batch_mode_button = QPushButton("Batch")
-        self.analyse_mode_button = QPushButton("Analyse")
+        self.project_mode_button = ElidedToolButton("Project")
+        self.batch_mode_button = ElidedToolButton("Batch")
+        self.analyse_mode_button = ElidedToolButton("Analyse")
         for button in (self.project_mode_button, self.batch_mode_button, self.analyse_mode_button):
+            button.setObjectName("ModeBarButton")
             button.setCheckable(True)
+            button.setMinimumHeight(28)
+            button.setMaximumHeight(28)
             button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             self.mode_button_group.addButton(button)
             mode_row.addWidget(button)

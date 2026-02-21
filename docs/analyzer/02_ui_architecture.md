@@ -137,3 +137,8 @@ The Analyzer page is planned with two explicit subviews:
   - no KPI computation
   - no `polar_points` matrix loading yet
   - plot containers are placeholders prepared for future plotting integration.
+
+## Implementation status (UI-1D.3)
+
+- Bottom ModeBar is now a compact segmented switch (`QToolButton`-based, checkable/exclusive) with reduced height and subdued contrast.
+- Layout was adjusted to keep ModeBar visually separated from `QStatusBar`, preventing clipping at small heights.

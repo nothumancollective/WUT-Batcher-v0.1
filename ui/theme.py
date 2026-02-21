@@ -131,6 +131,33 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     QToolButton#TopBarIconButton:pressed {{
         background-color: #1f1f1f;
     }}
+    QWidget#GlobalModeBar {{
+        background-color: #141414;
+        border-top: 1px solid {c['border']};
+    }}
+    QToolButton#ModeBarButton {{
+        background-color: transparent;
+        color: {c['muted']};
+        border: 1px solid transparent;
+        border-radius: {r['sm']}px;
+        padding: 0px {s['sm']}px;
+        font-size: 12px;
+        font-weight: 600;
+        text-align: center;
+    }}
+    QToolButton#ModeBarButton:hover {{
+        color: {c['text']};
+        background-color: #1f1f1f;
+        border-color: {c['border']};
+    }}
+    QToolButton#ModeBarButton:checked {{
+        color: {c['text']};
+        background-color: #202020;
+        border: 1px solid {c['accent']};
+    }}
+    QToolButton#ModeBarButton:pressed {{
+        background-color: #1b1b1b;
+    }}
     QFrame#Card {{
         background-color: {c['surface']};
         border: 1px solid {c['border']};

@@ -31,3 +31,6 @@
 
 ## 2026-02-21 (UI-1D.2)
 - UI-1D.2: Fixed QComboBox/QSpinBox arrow rendering using QRC SVG chevrons and updated theme subcontrols to keep arrow regions visible on Windows HiDPI.
+
+## 2026-02-21 (UI-1D.3)
+- UI-1D.3: Reworked bottom ModeBar into a compact segmented switch with checkable toolbuttons and fixed clipping at the status-bar boundary.
