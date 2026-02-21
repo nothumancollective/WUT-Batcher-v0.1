@@ -77,3 +77,8 @@
 ## 2026-02-21 (Polish A11)
 - Fixed GCurve Superformula alignment by inserting a conditional grid-gap cell between Common and Superformula rows on 3-column layouts.
 - Added focused UI regression coverage for the Superformula gap cell in the GCurve responsive grid.
+
+## 2026-02-21 (Regression fix: project open)
+- Hardened Project Manager open flow by wiring tile double-click directly to the selected item payload and keeping Open button state in sync with selection.
+- Refresh now restores or initializes a valid selection, reducing no-op open attempts.
+- Added guarded error handling for failed project loads so open failures surface clearly instead of silently failing.

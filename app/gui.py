@@ -2939,26 +2939,31 @@ class ProjectManagerWindow(QMainWindow):
         root.addWidget(self.project_list, 1)
 
         buttons = QHBoxLayout()
-        open_btn = QPushButton("Open Project")
-        open_btn.setObjectName("ProjectManagerButton")
-        new_btn = QPushButton("New Project")
-        new_btn.setObjectName("ProjectManagerButton")
-        refresh_btn = QPushButton("Refresh")
-        refresh_btn.setObjectName("ProjectManagerButton")
-        buttons.addWidget(open_btn)
-        buttons.addWidget(new_btn)
-        buttons.addWidget(refresh_btn)
+        self.open_btn = QPushButton("Open Project")
+        self.open_btn.setObjectName("ProjectManagerButton")
+        self.new_btn = QPushButton("New Project")
+        self.new_btn.setObjectName("ProjectManagerButton")
+        self.refresh_btn = QPushButton("Refresh")
+        self.refresh_btn.setObjectName("ProjectManagerButton")
+        buttons.addWidget(self.open_btn)
+        buttons.addWidget(self.new_btn)
+        buttons.addWidget(self.refresh_btn)
         buttons.addStretch(1)
         root.addLayout(buttons)
 
-        open_btn.clicked.connect(self._emit_open)
-        new_btn.clicked.connect(self.create_project.emit)
-        refresh_btn.clicked.connect(self.refresh)
-        self.project_list.itemDoubleClicked.connect(lambda _item: self._emit_open())
+        self.open_btn.clicked.connect(self._emit_open)
+        self.new_btn.clicked.connect(self.create_project.emit)
+        self.refresh_btn.clicked.connect(self.refresh)
+        self.project_list.currentItemChanged.connect(lambda _current, _previous: self._sync_open_enabled())
+        self.project_list.itemSelectionChanged.connect(self._sync_open_enabled)
+        self.project_list.itemDoubleClicked.connect(self._emit_open)
         self.refresh()
 
     def refresh(self) -> None:
+        previous_item = self.project_list.currentItem()
+        previous_id = str(previous_item.data(Qt.UserRole)) if previous_item is not None and previous_item.data(Qt.UserRole) else ""
         self.project_list.clear()
+        selected_index = -1
         for project in self.service.list_projects():
             item = QListWidgetItem()
             item.setIcon(self._project_tile_icon(project.name, project.project_id))
@@ -2966,6 +2971,11 @@ class ProjectManagerWindow(QMainWindow):
             item.setToolTip(f"{project.project_id} | {project.name}")
             item.setData(Qt.UserRole, project.project_id)
             self.project_list.addItem(item)
+            if previous_id and str(project.project_id) == previous_id:
+                selected_index = self.project_list.count() - 1
+        if self.project_list.count() > 0:
+            self.project_list.setCurrentRow(selected_index if selected_index >= 0 else 0)
+        self._sync_open_enabled()
 
     def _project_tile_icon(self, project_name: str, project_id: str) -> QIcon:
         pixmap = QPixmap(170, 120)
@@ -3021,11 +3031,18 @@ class ProjectManagerWindow(QMainWindow):
         painter.end()
         return QIcon(pixmap)
 
-    def _emit_open(self) -> None:
-        item = self.project_list.currentItem()
-        if item is None:
+    def _sync_open_enabled(self) -> None:
+        has_selection = self.project_list.currentItem() is not None or bool(self.project_list.selectedItems())
+        self.open_btn.setEnabled(has_selection)
+
+    def _emit_open(self, item: QListWidgetItem | None = None) -> None:
+        target = item or self.project_list.currentItem()
+        if target is None:
+            selected = self.project_list.selectedItems()
+            target = selected[0] if selected else None
+        if target is None:
             return
-        project_id = item.data(Qt.UserRole)
+        project_id = target.data(Qt.UserRole)
         if project_id:
             self.open_project.emit(str(project_id))
 
@@ -4220,7 +4237,16 @@ class GuiController:
         _ensure_maximized_foreground(window)
 
     def _open_project(self, project_id: str) -> None:
-        project = self.service.repo.load_project(project_id)
+        try:
+            project = self.service.repo.load_project(project_id)
+        except Exception as exc:
+            QMessageBox.warning(
+                self.project_manager,
+                "Open project failed",
+                f"Could not open project '{project_id}'.\n{exc}",
+            )
+            self.project_manager.refresh()
+            return
         self.main_window.load_project(project)
         self._show_main_window_maximized()
         self.project_manager.hide()
