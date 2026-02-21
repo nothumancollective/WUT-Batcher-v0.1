@@ -87,3 +87,10 @@
 - Prevented duplicate project creation by enforcing single in-flight create execution and keeping `Create Project` disabled once project constraints are locked.
 - Hardened project submit handler against re-entry while creation is active.
 - Batch-mode navigation now requires an open project; when none is loaded it keeps the user in Project/Dashboard mode and shows a status prompt.
+
+## 2026-02-21 (Regression tests: project open + batch navigation)
+- Added focused UI regression tests covering:
+  - single-shot project creation behavior on repeated create clicks
+  - Project Manager open-project flow updating MainWindow state
+  - Batch mode navigation via ModeBar and Dashboard `New Batch`
+  - no-project Batch-mode guard behavior.
