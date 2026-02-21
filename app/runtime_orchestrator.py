@@ -1330,17 +1330,30 @@ def _ingest_vacs_exports(
                 polar_result = parse_polar_legacy_complex_txt(path)
             except PolarTxtParseError as exc:
                 remediation = (
-                    "Enable 'Export of parameters' and ensure VACS exports complex frequency-domain "
-                    "polar data (Data_Format=Complex, Data_Domain=Frequency)."
+                    "Ensure VACS exports complex frequency-domain polar data "
+                    "(Data_Format=Complex, Data_Domain=Frequency)."
                 )
+                reason = str(exc.reason)
+                if str(exc.error_code) == "MISSING_HEADER":
+                    missing_keys: List[str] = []
+                    for key in ("Param_Coord_x2", "Param_Coord_x3"):
+                        if not str(metadata.get(key, "") or "").strip():
+                            missing_keys.append(key)
+                    if missing_keys:
+                        missing_text = ", ".join(missing_keys)
+                        remediation = (
+                            "Enable 'Export of Parameters' in VACS export settings; otherwise "
+                            "Param_Coord_x2 / Param_Coord_x3 are missing from the TXT header."
+                        )
+                        reason = f"{exc.reason}; missing_header_keys={missing_text}"
                 detail = f"; detail={exc.detail}" if getattr(exc, "detail", "") else ""
                 parse_errors.append(
-                    f"{path}: polar_parse_error[{exc.error_code}]: {exc.reason}{detail}; remediation={remediation}"
+                    f"{path}: polar_parse_error[{exc.error_code}]: {reason}{detail}; remediation={remediation}"
                 )
                 raise PolarTxtParseError(
                     path=exc.path,
                     error_code=str(exc.error_code),
-                    reason=f"{exc.reason}; remediation={remediation}",
+                    reason=f"{reason}; remediation={remediation}",
                     detail=str(exc.detail or ""),
                 ) from exc
 

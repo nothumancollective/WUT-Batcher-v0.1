@@ -248,7 +248,7 @@ class PolarImporterTests(unittest.TestCase):
         project_root, writer, project, batch = self._prepare_project()
         exports_dir = project_root / "versions" / "V001" / "exports" / "RUN001"
         exports_dir.mkdir(parents=True, exist_ok=True)
-        bad_file = exports_dir / "bad_missing_param_x2.txt"
+        bad_file = exports_dir / "bad_missing_param_coords.txt"
         bad_file.write_text(
             "\n".join(
                 [
@@ -256,7 +256,6 @@ class PolarImporterTests(unittest.TestCase):
                     "EndString_Data=Data_End",
                     "Data_Format=Complex",
                     "Data_Domain=Frequency",
-                    "Param_Coord_x3=0",
                     "Data",
                     "100 1.0 0.1 2.0 0.2",
                     "Data_End",
@@ -293,7 +292,9 @@ class PolarImporterTests(unittest.TestCase):
                 vacs_export_summary=vacs_summary,
             )
         self.assertEqual(ctx.exception.error_code, "MISSING_HEADER")
-        self.assertIn("Enable 'Export of parameters'", ctx.exception.reason)
+        self.assertIn("Export of Parameters", ctx.exception.reason)
+        self.assertIn("Param_Coord_x2", ctx.exception.reason)
+        self.assertIn("Param_Coord_x3", ctx.exception.reason)
 
 
 if __name__ == "__main__":

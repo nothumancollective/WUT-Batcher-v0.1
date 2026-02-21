@@ -134,6 +134,8 @@ Fail-fast behavior:
 - Importer surfaces actionable remediation text, for example:
   - Enable `Export of parameters`
   - Ensure VACS export uses `Data_Format=Complex` and frequency domain output
+- Must-have export setting: VACS export must have `Export of Parameters` enabled so `Param_Coord_x2` and
+  `Param_Coord_x3` are present in the TXT header.
 - No partial `polar_*` writes are performed for the failed file.
 
 ## Replication Integration
