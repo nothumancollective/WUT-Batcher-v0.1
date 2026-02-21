@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import csv
+import hashlib
 import io
 import json
 from pathlib import Path
@@ -25,6 +26,7 @@ from app.models import Batch, Project
 from app.safe_cleanup import guarded_delete_file_in_workspace, guarded_delete_tree
 from app.runners import AkabakRunner, AthRunner, RunnerResult, VacsRunner, parse_ath_dimensions
 from app.tidy_dataset import TidyDatasetWriter
+from app.polar_txt_parser import PolarTxtParseError, normalize_orientation_marker, parse_polar_legacy_complex_txt
 from app.vacs_export_pipeline import VacsExportPipelineError, run_vacs_export_specs
 from app.vacs_txt_parser import parse_vacs_txt_file
 
@@ -1128,6 +1130,129 @@ def _graph_kind_mismatch(*, expected_kind: str, parsed_graph_type: str, parsed_e
     return any(token in hint for token in negative if token)
 
 
+def _parse_decimal(value: Any) -> Optional[float]:
+    text = str(value or "").strip().replace(" ", "")
+    if not text:
+        return None
+    if "," in text and "." in text:
+        if text.rfind(",") > text.rfind("."):
+            text = text.replace(".", "").replace(",", ".")
+        else:
+            text = text.replace(",", "")
+    else:
+        text = text.replace(",", ".")
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            if not chunk:
+                break
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _batch_export_specs(batch: Batch) -> List[Dict[str, Any]]:
+    settings = getattr(batch, "sim_export_settings", None)
+    if settings is None:
+        return []
+    if isinstance(settings, dict):
+        payload = dict(settings)
+    else:
+        to_dict = getattr(settings, "to_dict", None)
+        if not callable(to_dict):
+            return []
+        payload = dict(to_dict() or {})
+    specs = payload.get("export_specs")
+    if not isinstance(specs, list):
+        return []
+    return [item for item in specs if isinstance(item, dict)]
+
+
+def _resolve_norm_angle_deg(
+    *,
+    batch: Batch,
+    contract: Optional[Dict[str, Any]],
+    metadata: Dict[str, Any],
+) -> Tuple[Optional[float], Dict[str, Any]]:
+    contract_row = contract if isinstance(contract, dict) else {}
+    spec_payload = contract_row.get("spec") if isinstance(contract_row.get("spec"), dict) else {}
+    spec_id = str(spec_payload.get("id", "") or contract_row.get("spec_id", "") or "").strip()
+    options = spec_payload.get("options") if isinstance(spec_payload.get("options"), dict) else {}
+    direct_value = _parse_decimal(options.get("norm_angle"))
+    if direct_value is not None:
+        return direct_value, {"source": "contract.spec.options.norm_angle", "spec_id": spec_id}
+
+    batch_specs = _batch_export_specs(batch)
+    if spec_id:
+        for spec in batch_specs:
+            if str(spec.get("id", "") or "").strip() != spec_id:
+                continue
+            spec_options = spec.get("options") if isinstance(spec.get("options"), dict) else {}
+            from_batch = _parse_decimal(spec_options.get("norm_angle"))
+            if from_batch is not None:
+                return from_batch, {"source": "batch.export_specs.options.norm_angle", "spec_id": spec_id}
+
+    polar_with_norm: List[Tuple[str, float]] = []
+    for spec in batch_specs:
+        graph_kind = str(spec.get("graph_kind", "") or "").strip().lower()
+        if graph_kind != "polar":
+            continue
+        spec_options = spec.get("options") if isinstance(spec.get("options"), dict) else {}
+        from_batch = _parse_decimal(spec_options.get("norm_angle"))
+        if from_batch is None:
+            continue
+        polar_with_norm.append((str(spec.get("id", "") or "").strip(), from_batch))
+    if len(polar_with_norm) == 1:
+        spec_token, value = polar_with_norm[0]
+        return value, {"source": "batch.single_polar_norm_angle", "spec_id": spec_token}
+
+    for key, raw in metadata.items():
+        key_token = str(key or "").strip().lower()
+        if "norm" not in key_token or "angle" not in key_token:
+            continue
+        parsed = _parse_decimal(raw)
+        if parsed is not None:
+            return parsed, {"source": "header", "key": str(key)}
+
+    return None, {"source": "none"}
+
+
+def _is_polar_export_candidate(
+    *,
+    path: Path,
+    metadata: Dict[str, Any],
+    contract: Optional[Dict[str, Any]],
+) -> Tuple[bool, Dict[str, Any]]:
+    format_complex = str(metadata.get("Data_Format", "") or "").strip().lower() == "complex"
+    has_angle_list = bool(str(metadata.get("Param_Coord_x2", "") or "").strip())
+    has_orientation = bool(str(metadata.get("Param_Coord_x3", "") or "").strip())
+    header_signal = format_complex and has_angle_list and has_orientation
+
+    contract_kind = ""
+    if isinstance(contract, dict):
+        contract_kind = str(contract.get("graph_kind", "") or "").strip().lower()
+    contract_signal = contract_kind == "polar"
+
+    name_token = path.name.lower()
+    filename_signal = ("mic_polar" in name_token) or ("mic polar" in name_token)
+
+    return (
+        bool(header_signal or contract_signal or filename_signal),
+        {
+            "header_signal": bool(header_signal),
+            "contract_signal": bool(contract_signal),
+            "filename_signal": bool(filename_signal),
+            "contract_kind": contract_kind,
+        },
+    )
+
+
 def _ingest_vacs_exports(
     *,
     writer: TidyDatasetWriter,
@@ -1159,13 +1284,18 @@ def _ingest_vacs_exports(
     parse_errors: List[str] = []
     mapping_errors: List[str] = []
     rows: List[Dict[str, Any]] = []
+    polar_measurements_written = 0
+    polar_points_written = 0
+    polar_duplicates_skipped = 0
+    polar_warnings: List[str] = []
+    write_results: List[Dict[str, Any]] = []
     mapped_file_count = 0
 
     for path in export_files:
         try:
             parsed = parse_vacs_txt_file(path)
         except ValueError as exc:
-            parse_errors.append(f"{path.name}: {exc}")
+            parse_errors.append(f"{path}: {exc}")
             continue
 
         contract = contracts.get(_path_key(path))
@@ -1182,11 +1312,28 @@ def _ingest_vacs_exports(
             parsed_export_meta=parsed.export_meta,
         ):
             mapping_errors.append(
-                f"{path.name}: expected graph_kind '{expected_kind}', parsed hint '{parsed.graph_type}'"
+                f"{path}: expected graph_kind '{expected_kind}', parsed hint '{parsed.graph_type}'"
             )
             continue
 
+        metadata_raw = parsed.export_meta.get("metadata")
+        metadata = metadata_raw if isinstance(metadata_raw, dict) else {}
+        is_polar_candidate, polar_detection = _is_polar_export_candidate(
+            path=path,
+            metadata=metadata,
+            contract=contract,
+        )
+
+        polar_result = None
+        if is_polar_candidate:
+            try:
+                polar_result = parse_polar_legacy_complex_txt(path)
+            except PolarTxtParseError as exc:
+                parse_errors.append(f"{path}: polar_parse_error: {exc.reason}")
+                continue
+
         graph_kind = expected_kind or parsed.graph_type
+        file_rows: List[Dict[str, Any]] = []
         for series in parsed.series:
             variant = variant_from_contract
             metadata = parsed.export_meta.get("metadata")
@@ -1208,7 +1355,7 @@ def _ingest_vacs_exports(
                 }
 
             for point_index, point in enumerate(series.points):
-                rows.append(
+                file_rows.append(
                     {
                         "project_id": project.project_id,
                         "batch_id": batch.batch_id,
@@ -1236,10 +1383,133 @@ def _ingest_vacs_exports(
                         "meta_json": export_meta,
                     }
                 )
+        rows.extend(file_rows)
+
+        if polar_result is None:
+            continue
+
+        file_hash = _sha256_file(path)
+        orientation_raw = polar_result.orientation_raw
+        orientation = normalize_orientation_marker(orientation_raw)
+        existing_polar_id = writer.find_polar_measurement_id(
+            project_id=project.project_id,
+            version_id=version_id,
+            run_id=run_id,
+            orientation=orientation,
+            file_hash=file_hash,
+        )
+        if existing_polar_id:
+            polar_duplicates_skipped += 1
+            continue
+
+        angles_deg = list(polar_result.angles_deg)
+        diffs = [angles_deg[idx] - angles_deg[idx - 1] for idx in range(1, len(angles_deg))]
+        angle_step_deg: Optional[float] = None
+        if diffs:
+            if max(diffs) - min(diffs) <= 1e-6:
+                angle_step_deg = float(diffs[0])
+
+        norm_angle_deg, norm_angle_policy = _resolve_norm_angle_deg(
+            batch=batch,
+            contract=contract,
+            metadata=polar_result.metadata,
+        )
+
+        export_meta = dict(parsed.export_meta)
+        export_meta["polar_import"] = {
+            "file_hash": file_hash,
+            "detection": polar_detection,
+            "norm_angle_policy": norm_angle_policy,
+            "orientation": {
+                "normalized": orientation,
+                "raw": orientation_raw,
+            },
+            "warnings": list(polar_result.warnings),
+        }
+        if contract:
+            export_meta["contract"] = {
+                "spec_id": contract.get("spec_id"),
+                "graph_kind": expected_kind,
+                "variant": variant_from_contract,
+                "plugin_id": contract.get("plugin_id"),
+                "spec": contract.get("spec", {}),
+                "entry": contract.get("entry", {}),
+                "details": contract.get("details", {}),
+            }
+
+        measurement_payload: Dict[str, Any] = {
+            "project_id": project.project_id,
+            "batch_id": batch.batch_id,
+            "version_id": version_id,
+            "run_id": run_id,
+            "graph_id": None,
+            "orientation": orientation,
+            "orientation_raw": orientation_raw,
+            "norm_angle_deg": norm_angle_deg,
+            "data_level_type": str(polar_result.metadata.get("Data_LevelType", "") or ""),
+            "data_base_unit": str(polar_result.metadata.get("Data_BaseUnit", "") or ""),
+            "data_absc_unit": str(polar_result.metadata.get("Data_AbscUnit", "") or ""),
+            "freq_min_hz": min(float(row.freq_hz) for row in polar_result.rows),
+            "freq_max_hz": max(float(row.freq_hz) for row in polar_result.rows),
+            "freq_count": len(polar_result.rows),
+            "angle_min_deg": min(angles_deg),
+            "angle_max_deg": max(angles_deg),
+            "angle_step_deg": angle_step_deg,
+            "angle_count": len(angles_deg),
+            "angles_deg_json": json.dumps(angles_deg, ensure_ascii=False),
+            "source_file": str(path),
+            "file_hash": file_hash,
+            "export_meta_json": json.dumps(export_meta, ensure_ascii=False, sort_keys=True),
+            "created_at": _now_iso(),
+        }
+
+        polar_points: List[Dict[str, Any]] = []
+        for freq_index, row_data in enumerate(polar_result.rows):
+            for angle_index, angle_deg in enumerate(angles_deg):
+                polar_points.append(
+                    {
+                        "freq_index": freq_index,
+                        "angle_index": angle_index,
+                        "freq_hz": float(row_data.freq_hz),
+                        "angle_deg": float(angle_deg),
+                        "re": float(row_data.re_values[angle_index]),
+                        "im": float(row_data.im_values[angle_index]),
+                    }
+                )
+        polar_write = writer.write_polar_measurement(
+            measurement=measurement_payload,
+            points=polar_points,
+        )
+        write_results.append(polar_write)
+        polar_measurements_written += 1
+        polar_points_written += int(polar_write.get("points_written", len(polar_points)))
+        for warning in polar_result.warnings:
+            polar_warnings.append(f"{path.name}: {warning}")
 
     write_result: Dict[str, Any] = {}
     if rows:
         write_result = writer.write_measurements(rows)
+        write_results.append(write_result)
+
+    if write_results:
+        global_synced = all(bool(item.get("global_synced", True)) for item in write_results)
+        queued_retries: List[int] = []
+        for item in write_results:
+            queued_retry = item.get("queued_retry")
+            if queued_retry is not None:
+                queued_retries.append(int(queued_retry))
+            for queue_id in list(item.get("queued_retries", []) or []):
+                queued_retries.append(int(queue_id))
+        write_result = {
+            "project_db_path": str(write_results[0].get("project_db_path", "")),
+            "global_db_path": str(write_results[0].get("global_db_path", "")),
+            "global_synced": global_synced,
+            "queued_retry": queued_retries[-1] if queued_retries else None,
+            "queued_retries": queued_retries,
+            "legacy_rows_written": int(write_result.get("rows_written", 0) or 0),
+            "polar_measurements_written": polar_measurements_written,
+            "polar_points_written": polar_points_written,
+        }
 
     return {
         "export_dir": str(exports_dir),
@@ -1249,6 +1519,10 @@ def _ingest_vacs_exports(
         "missing_contract_files": missing_contract_files,
         "ignored_unmapped_files": ignored_files,
         "rows_prepared": len(rows),
+        "polar_measurements_written": polar_measurements_written,
+        "polar_points_written": polar_points_written,
+        "polar_duplicates_skipped": polar_duplicates_skipped,
+        "polar_warnings": polar_warnings,
         "parse_errors": parse_errors,
         "mapping_errors": mapping_errors,
         "write_result": write_result,

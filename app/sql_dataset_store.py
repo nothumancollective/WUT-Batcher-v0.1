@@ -15,7 +15,7 @@ import uuid
 from app.models import Batch, Project, VersionSpec
 
 
-SCHEMA_VERSION = "2.4"
+SCHEMA_VERSION = "2.5"
 
 
 def _now_iso() -> str:
@@ -88,6 +88,19 @@ def _stable_series_id(
     angle_token = "" if angle_deg is None else f"{float(angle_deg):.6f}"
     raw = "|".join([graph_id, series_kind, angle_token, label])
     return "S" + hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
+
+
+def _stable_polar_id(
+    *,
+    project_id: str,
+    batch_id: str,
+    version_id: str,
+    run_id: Optional[str],
+    orientation: str,
+    file_hash: str,
+) -> str:
+    raw = "|".join([project_id, batch_id, version_id, run_id or "", orientation, file_hash])
+    return "P" + hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
 
 
 class SqlDatasetStore:
@@ -278,6 +291,45 @@ class SqlDatasetStore:
                     FOREIGN KEY (series_id) REFERENCES graph_series(series_id) ON DELETE CASCADE
                 );
 
+                CREATE TABLE IF NOT EXISTS polar_measurements (
+                    polar_id TEXT PRIMARY KEY,
+                    project_id TEXT NOT NULL,
+                    batch_id TEXT NOT NULL,
+                    version_id TEXT NOT NULL,
+                    run_id TEXT,
+                    graph_id TEXT,
+                    orientation TEXT NOT NULL,
+                    orientation_raw REAL,
+                    norm_angle_deg REAL,
+                    data_level_type TEXT,
+                    data_base_unit TEXT,
+                    data_absc_unit TEXT,
+                    freq_min_hz REAL,
+                    freq_max_hz REAL,
+                    freq_count INTEGER NOT NULL,
+                    angle_min_deg REAL,
+                    angle_max_deg REAL,
+                    angle_step_deg REAL,
+                    angle_count INTEGER NOT NULL,
+                    angles_deg_json TEXT NOT NULL,
+                    source_file TEXT NOT NULL,
+                    file_hash TEXT NOT NULL,
+                    export_meta_json TEXT,
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS polar_points (
+                    polar_id TEXT NOT NULL,
+                    freq_index INTEGER NOT NULL,
+                    angle_index INTEGER NOT NULL,
+                    freq_hz REAL NOT NULL,
+                    angle_deg REAL NOT NULL,
+                    re REAL NOT NULL,
+                    im REAL NOT NULL,
+                    PRIMARY KEY (polar_id, freq_index, angle_index),
+                    FOREIGN KEY (polar_id) REFERENCES polar_measurements(polar_id) ON DELETE CASCADE
+                );
+
                 CREATE TABLE IF NOT EXISTS replication_queue (
                     queue_id INTEGER PRIMARY KEY AUTOINCREMENT,
                     operation TEXT NOT NULL,
@@ -348,6 +400,15 @@ class SqlDatasetStore:
                 CREATE INDEX IF NOT EXISTS idx_graphs_version ON graphs(version_id);
                 CREATE INDEX IF NOT EXISTS idx_runs_project_batch ON runs(project_id, batch_id, started_at);
                 CREATE INDEX IF NOT EXISTS idx_run_versions_batch_status ON run_versions(project_id, batch_id, status);
+                CREATE INDEX IF NOT EXISTS idx_polar_meas_version ON polar_measurements(version_id);
+                CREATE INDEX IF NOT EXISTS idx_polar_meas_run ON polar_measurements(run_id);
+                CREATE INDEX IF NOT EXISTS idx_polar_meas_batch ON polar_measurements(project_id, batch_id);
+                CREATE INDEX IF NOT EXISTS idx_polar_meas_orientation ON polar_measurements(orientation);
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_polar_meas_identity ON
+                polar_measurements(project_id, version_id, coalesce(run_id, ''), orientation, file_hash);
+                CREATE INDEX IF NOT EXISTS idx_polar_points_polar_freq ON polar_points(polar_id, freq_hz);
+                CREATE INDEX IF NOT EXISTS idx_polar_points_polar_angle_freq ON polar_points(polar_id, angle_index, freq_hz);
+                CREATE INDEX IF NOT EXISTS idx_polar_points_polar_angle ON polar_points(polar_id, angle_deg);
                 CREATE INDEX IF NOT EXISTS idx_replication_queue_status ON replication_queue(status, queue_id);
                 CREATE INDEX IF NOT EXISTS idx_compat_results_project_fact ON compat_verification_results(project_id, fact_id);
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_federation_tombstones_entity
@@ -657,6 +718,51 @@ class SqlDatasetStore:
         self._migrate_ath_dimensions_schema(conn)
         self._ensure_graphs_columns(conn)
         self._migrate_graph_points_schema(conn)
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS polar_measurements (
+                polar_id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                batch_id TEXT NOT NULL,
+                version_id TEXT NOT NULL,
+                run_id TEXT,
+                graph_id TEXT,
+                orientation TEXT NOT NULL,
+                orientation_raw REAL,
+                norm_angle_deg REAL,
+                data_level_type TEXT,
+                data_base_unit TEXT,
+                data_absc_unit TEXT,
+                freq_min_hz REAL,
+                freq_max_hz REAL,
+                freq_count INTEGER NOT NULL,
+                angle_min_deg REAL,
+                angle_max_deg REAL,
+                angle_step_deg REAL,
+                angle_count INTEGER NOT NULL,
+                angles_deg_json TEXT NOT NULL,
+                source_file TEXT NOT NULL,
+                file_hash TEXT NOT NULL,
+                export_meta_json TEXT,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS polar_points (
+                polar_id TEXT NOT NULL,
+                freq_index INTEGER NOT NULL,
+                angle_index INTEGER NOT NULL,
+                freq_hz REAL NOT NULL,
+                angle_deg REAL NOT NULL,
+                re REAL NOT NULL,
+                im REAL NOT NULL,
+                PRIMARY KEY (polar_id, freq_index, angle_index),
+                FOREIGN KEY (polar_id) REFERENCES polar_measurements(polar_id) ON DELETE CASCADE
+            )
+            """
+        )
         self._ensure_federation_tables(conn)
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_runs_project_batch ON runs(project_id, batch_id, started_at)"
@@ -681,6 +787,31 @@ class SqlDatasetStore:
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_graph_points_series_x ON graph_points(series_id, x_value)"
         )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_polar_meas_version ON polar_measurements(version_id)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_polar_meas_run ON polar_measurements(run_id)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_polar_meas_batch ON polar_measurements(project_id, batch_id)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_polar_meas_orientation ON polar_measurements(orientation)"
+        )
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_polar_meas_identity ON "
+            "polar_measurements(project_id, version_id, coalesce(run_id, ''), orientation, file_hash)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_polar_points_polar_freq ON polar_points(polar_id, freq_hz)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_polar_points_polar_angle_freq ON polar_points(polar_id, angle_index, freq_hz)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_polar_points_polar_angle ON polar_points(polar_id, angle_deg)"
+        )
 
     def persist_schema_descriptor(self) -> None:
         payload = {
@@ -699,6 +830,8 @@ class SqlDatasetStore:
                 "graphs",
                 "graph_series",
                 "graph_points",
+                "polar_measurements",
+                "polar_points",
                 "compat_verification_results",
                 "federation_profile",
                 "federation_sync_state",
@@ -733,6 +866,10 @@ class SqlDatasetStore:
             self._op_upsert_ath_dimensions(conn, payload)
         elif operation == "upsert_graphs":
             self._op_upsert_graphs(conn, payload)
+        elif operation == "upsert_polar_measurement":
+            self._op_upsert_polar_measurement(conn, payload)
+        elif operation == "insert_polar_points_chunk":
+            self._op_insert_polar_points_chunk(conn, payload)
         elif operation == "upsert_run":
             self._op_upsert_run(conn, payload)
         elif operation == "update_run":
@@ -1087,6 +1224,111 @@ class SqlDatasetStore:
                         ),
                     )
 
+    def _op_upsert_polar_measurement(self, conn: sqlite3.Connection, payload: Dict[str, Any]) -> None:
+        row = payload.get("row") if isinstance(payload.get("row"), dict) else payload
+        raw_run_id = row.get("run_id")
+        run_id_value = str(raw_run_id).strip() if raw_run_id is not None else ""
+        if run_id_value:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO runs (
+                    run_id, project_id, batch_id, started_at, status, pinned
+                ) VALUES (?, ?, ?, ?, 'succeeded', 0)
+                """,
+                (
+                    run_id_value,
+                    str(row["project_id"]),
+                    str(row["batch_id"]),
+                    str(row.get("created_at") or _now_iso()),
+                ),
+            )
+        conn.execute(
+            """
+            INSERT INTO polar_measurements (
+                polar_id, project_id, batch_id, version_id, run_id, graph_id, orientation, orientation_raw,
+                norm_angle_deg, data_level_type, data_base_unit, data_absc_unit, freq_min_hz, freq_max_hz,
+                freq_count, angle_min_deg, angle_max_deg, angle_step_deg, angle_count, angles_deg_json,
+                source_file, file_hash, export_meta_json, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(polar_id) DO UPDATE SET
+                project_id=excluded.project_id,
+                batch_id=excluded.batch_id,
+                version_id=excluded.version_id,
+                run_id=excluded.run_id,
+                graph_id=excluded.graph_id,
+                orientation=excluded.orientation,
+                orientation_raw=excluded.orientation_raw,
+                norm_angle_deg=excluded.norm_angle_deg,
+                data_level_type=excluded.data_level_type,
+                data_base_unit=excluded.data_base_unit,
+                data_absc_unit=excluded.data_absc_unit,
+                freq_min_hz=excluded.freq_min_hz,
+                freq_max_hz=excluded.freq_max_hz,
+                freq_count=excluded.freq_count,
+                angle_min_deg=excluded.angle_min_deg,
+                angle_max_deg=excluded.angle_max_deg,
+                angle_step_deg=excluded.angle_step_deg,
+                angle_count=excluded.angle_count,
+                angles_deg_json=excluded.angles_deg_json,
+                source_file=excluded.source_file,
+                file_hash=excluded.file_hash,
+                export_meta_json=excluded.export_meta_json,
+                created_at=excluded.created_at
+            """,
+            (
+                str(row["polar_id"]),
+                str(row["project_id"]),
+                str(row["batch_id"]),
+                str(row["version_id"]),
+                run_id_value or None,
+                str(row.get("graph_id", "") or "") or None,
+                str(row["orientation"]),
+                float(row["orientation_raw"]) if row.get("orientation_raw") is not None else None,
+                float(row["norm_angle_deg"]) if row.get("norm_angle_deg") is not None else None,
+                str(row.get("data_level_type", "") or ""),
+                str(row.get("data_base_unit", "") or ""),
+                str(row.get("data_absc_unit", "") or ""),
+                float(row["freq_min_hz"]) if row.get("freq_min_hz") is not None else None,
+                float(row["freq_max_hz"]) if row.get("freq_max_hz") is not None else None,
+                int(row["freq_count"]),
+                float(row["angle_min_deg"]) if row.get("angle_min_deg") is not None else None,
+                float(row["angle_max_deg"]) if row.get("angle_max_deg") is not None else None,
+                float(row["angle_step_deg"]) if row.get("angle_step_deg") is not None else None,
+                int(row["angle_count"]),
+                str(row["angles_deg_json"]),
+                str(row["source_file"]),
+                str(row["file_hash"]),
+                row.get("export_meta_json"),
+                str(row.get("created_at") or _now_iso()),
+            ),
+        )
+
+    def _op_insert_polar_points_chunk(self, conn: sqlite3.Connection, payload: Dict[str, Any]) -> None:
+        rows = [item for item in list(payload.get("rows", []) or []) if isinstance(item, dict)]
+        if not rows:
+            return
+        values: List[Tuple[Any, ...]] = []
+        for row in rows:
+            values.append(
+                (
+                    str(row["polar_id"]),
+                    int(row["freq_index"]),
+                    int(row["angle_index"]),
+                    float(row["freq_hz"]),
+                    float(row["angle_deg"]),
+                    float(row["re"]),
+                    float(row["im"]),
+                )
+            )
+        conn.executemany(
+            """
+            INSERT OR IGNORE INTO polar_points (
+                polar_id, freq_index, angle_index, freq_hz, angle_deg, re, im
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            values,
+        )
+
     def _op_upsert_run(self, conn: sqlite3.Connection, payload: Dict[str, Any]) -> None:
         conn.execute(
             """
@@ -1189,6 +1431,7 @@ class SqlDatasetStore:
         placeholders = ", ".join("?" for _ in run_ids)
         conn.execute(f"DELETE FROM ath_dimensions WHERE run_id IN ({placeholders})", tuple(run_ids))
         conn.execute(f"DELETE FROM graphs WHERE run_id IN ({placeholders})", tuple(run_ids))
+        conn.execute(f"DELETE FROM polar_measurements WHERE run_id IN ({placeholders})", tuple(run_ids))
         conn.execute(f"DELETE FROM run_versions WHERE run_id IN ({placeholders})", tuple(run_ids))
         conn.execute(f"DELETE FROM runs WHERE run_id IN ({placeholders})", tuple(run_ids))
         self._op_insert_federation_tombstones(conn, {"rows": tombstones})
@@ -1759,6 +2002,135 @@ class SqlDatasetStore:
             "rows_written": point_count,
             "graphs_written": len(graph_payload),
             "series_written": series_count,
+        }
+
+    def find_polar_measurement_id(
+        self,
+        *,
+        project_id: str,
+        version_id: str,
+        run_id: Optional[str],
+        orientation: str,
+        file_hash: str,
+    ) -> Optional[str]:
+        run_token = str(run_id or "").strip()
+        with self._open_conn(self.project_db_path) as conn:
+            row = conn.execute(
+                """
+                SELECT polar_id
+                FROM polar_measurements
+                WHERE project_id = ?
+                  AND version_id = ?
+                  AND coalesce(run_id, '') = ?
+                  AND orientation = ?
+                  AND file_hash = ?
+                LIMIT 1
+                """,
+                (
+                    str(project_id),
+                    str(version_id),
+                    run_token,
+                    str(orientation),
+                    str(file_hash),
+                ),
+            ).fetchone()
+        if row is None:
+            return None
+        return str(row["polar_id"])
+
+    def write_polar_measurement(
+        self,
+        *,
+        measurement: Dict[str, Any],
+        points: Sequence[Dict[str, Any]],
+        point_chunk_size: int = 10_000,
+    ) -> Dict[str, Any]:
+        chunk_size = max(int(point_chunk_size), 1)
+        run_id_value = str(measurement.get("run_id", "") or "").strip()
+        project_id = str(measurement["project_id"])
+        batch_id = str(measurement["batch_id"])
+        version_id = str(measurement["version_id"])
+        orientation = str(measurement["orientation"])
+        file_hash = str(measurement["file_hash"])
+        polar_id = str(
+            measurement.get("polar_id")
+            or _stable_polar_id(
+                project_id=project_id,
+                batch_id=batch_id,
+                version_id=version_id,
+                run_id=run_id_value or None,
+                orientation=orientation,
+                file_hash=file_hash,
+            )
+        )
+        measurement_payload = {
+            "polar_id": polar_id,
+            "project_id": project_id,
+            "batch_id": batch_id,
+            "version_id": version_id,
+            "run_id": run_id_value or None,
+            "graph_id": measurement.get("graph_id"),
+            "orientation": orientation,
+            "orientation_raw": measurement.get("orientation_raw"),
+            "norm_angle_deg": measurement.get("norm_angle_deg"),
+            "data_level_type": measurement.get("data_level_type"),
+            "data_base_unit": measurement.get("data_base_unit"),
+            "data_absc_unit": measurement.get("data_absc_unit"),
+            "freq_min_hz": measurement.get("freq_min_hz"),
+            "freq_max_hz": measurement.get("freq_max_hz"),
+            "freq_count": int(measurement["freq_count"]),
+            "angle_min_deg": measurement.get("angle_min_deg"),
+            "angle_max_deg": measurement.get("angle_max_deg"),
+            "angle_step_deg": measurement.get("angle_step_deg"),
+            "angle_count": int(measurement["angle_count"]),
+            "angles_deg_json": str(measurement["angles_deg_json"]),
+            "source_file": str(measurement["source_file"]),
+            "file_hash": file_hash,
+            "export_meta_json": measurement.get("export_meta_json"),
+            "created_at": str(measurement.get("created_at") or _now_iso()),
+        }
+        metadata_result = self._dual_write("upsert_polar_measurement", {"row": measurement_payload})
+
+        point_rows: List[Dict[str, Any]] = []
+        for row in points:
+            point_rows.append(
+                {
+                    "polar_id": polar_id,
+                    "freq_index": int(row["freq_index"]),
+                    "angle_index": int(row["angle_index"]),
+                    "freq_hz": float(row["freq_hz"]),
+                    "angle_deg": float(row["angle_deg"]),
+                    "re": float(row["re"]),
+                    "im": float(row["im"]),
+                }
+            )
+
+        global_synced = bool(metadata_result.get("global_synced"))
+        queued_retries: List[int] = []
+        queued_retry = metadata_result.get("queued_retry")
+        if queued_retry is not None:
+            queued_retries.append(int(queued_retry))
+        chunks_written = 0
+        for start in range(0, len(point_rows), chunk_size):
+            chunk = point_rows[start : start + chunk_size]
+            if not chunk:
+                continue
+            chunk_result = self._dual_write("insert_polar_points_chunk", {"rows": chunk})
+            chunks_written += 1
+            global_synced = global_synced and bool(chunk_result.get("global_synced"))
+            chunk_queue_id = chunk_result.get("queued_retry")
+            if chunk_queue_id is not None:
+                queued_retries.append(int(chunk_queue_id))
+
+        return {
+            "project_db_path": str(self.project_db_path),
+            "global_db_path": str(self.global_db_path),
+            "global_synced": global_synced,
+            "queued_retry": queued_retries[-1] if queued_retries else None,
+            "queued_retries": queued_retries,
+            "polar_id": polar_id,
+            "points_written": len(point_rows),
+            "chunks_written": chunks_written,
         }
 
     def write_compat_verification_results(self, rows: Sequence[Dict[str, Any]]) -> Dict[str, Any]:

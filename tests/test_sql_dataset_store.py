@@ -257,6 +257,50 @@ class SqlDatasetStoreTests(unittest.TestCase):
             self.assertEqual(str(row[1]), "R001")
             self.assertEqual(str(row[2]), "cleanup_unpinned_runs")
 
+    def test_write_polar_measurement_is_idempotent_for_points(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_root = Path(tmp_dir) / "projects" / "P001"
+            project_root.mkdir(parents=True, exist_ok=True)
+            writer = TidyDatasetWriter(project_root, library_root=project_root.parent)
+            measurement = {
+                "polar_id": "PTEST01",
+                "project_id": "P001",
+                "batch_id": "B001",
+                "version_id": "V001",
+                "run_id": "R001",
+                "orientation": "H",
+                "orientation_raw": 0.0,
+                "norm_angle_deg": None,
+                "data_level_type": "SoundPressure",
+                "data_base_unit": "Pa",
+                "data_absc_unit": "Hz",
+                "freq_min_hz": 100.0,
+                "freq_max_hz": 200.0,
+                "freq_count": 2,
+                "angle_min_deg": 0.0,
+                "angle_max_deg": 30.0,
+                "angle_step_deg": 30.0,
+                "angle_count": 2,
+                "angles_deg_json": "[0.0, 30.0]",
+                "source_file": "sample.txt",
+                "file_hash": "abc123",
+                "export_meta_json": "{}",
+            }
+            points = [
+                {"freq_index": 0, "angle_index": 0, "freq_hz": 100.0, "angle_deg": 0.0, "re": 1.0, "im": 0.1},
+                {"freq_index": 0, "angle_index": 1, "freq_hz": 100.0, "angle_deg": 30.0, "re": 2.0, "im": 0.2},
+                {"freq_index": 1, "angle_index": 0, "freq_hz": 200.0, "angle_deg": 0.0, "re": 1.1, "im": 0.11},
+                {"freq_index": 1, "angle_index": 1, "freq_hz": 200.0, "angle_deg": 30.0, "re": 2.1, "im": 0.21},
+            ]
+            writer.write_polar_measurement(measurement=measurement, points=points)
+            writer.write_polar_measurement(measurement=measurement, points=points)
+
+            with closing(sqlite3.connect(str(project_root / "dataset" / "project.sqlite"))) as conn:
+                meas_count = conn.execute("SELECT COUNT(*) FROM polar_measurements").fetchone()[0]
+                point_count = conn.execute("SELECT COUNT(*) FROM polar_points").fetchone()[0]
+            self.assertEqual(int(meas_count), 1)
+            self.assertEqual(int(point_count), 4)
+
 
 if __name__ == "__main__":
     unittest.main()
