@@ -229,6 +229,16 @@ class BatchPageUiTests(unittest.TestCase):
         assert selected is not None
         self.assertEqual(str(selected.property("disclosureHint")), "true")
 
+    def test_helper_row_component_is_used_for_inline_hints(self) -> None:
+        page = BatchPage()
+        row = page.parameter_form._rows.get("Throat.Profile")
+        if row is None:
+            self.skipTest("Throat.Profile not available.")
+        page.parameter_form._set_row_helper(row, "Test helper", severity="info", icon_text="i")  # type: ignore[attr-defined]
+        self.assertEqual(str(row.helper_row.objectName()), "HelperRow")
+        self.assertFalse(row.helper_row.isHidden())
+        self.assertEqual(str(row.helper_label.text()), "Test helper")
+
     def test_core_group_is_renamed_to_mesh(self) -> None:
         page = BatchPage()
         self.assertEqual(page.parameter_form.group_name_for_key("Mesh.Quadrants"), "Mesh")

@@ -213,3 +213,9 @@ The Analyzer page is planned with two explicit subviews:
 - `Simulate Enclosure` dialog now mounts the existing Batch Enclosure group content with visibility restored for dialog context.
 - `Mesh Advanced` dialog now mounts detached advanced mesh rows with compatibility-aware visibility, instead of opening empty on hidden advanced rows.
 - Both dialogs keep existing Batch field widgets/bindings (same parameter definitions, same sweep/reset behavior), and restore original detached layout state after close.
+
+## Implementation status (Polish A21+A22+A24)
+
+- Global TopBar title allocation now prioritizes center-title width (no symmetric stretch squeeze), reducing unnecessary truncation in normal window sizes.
+- Command-header issue popover now enforces responsive width bounds plus a scrollable message area for long warning lists.
+- Batch inline hint presentation now uses reusable `HelperRow` components (optional icon + wrapped text + subtle surface), replacing plain helper labels while preserving hint logic.

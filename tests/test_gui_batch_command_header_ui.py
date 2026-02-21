@@ -8,10 +8,11 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from app.gui import BatchPage
 
 try:
-    from PySide6.QtWidgets import QApplication, QPushButton
+    from PySide6.QtWidgets import QApplication, QPushButton, QScrollArea
 except ImportError:  # pragma: no cover
     QApplication = None  # type: ignore[assignment]
     QPushButton = None  # type: ignore[assignment]
+    QScrollArea = None  # type: ignore[assignment]
 
 
 @unittest.skipIf(QApplication is None, "PySide6 is required")
@@ -57,7 +58,20 @@ class BatchCommandHeaderUiTests(unittest.TestCase):
         self.assertIn("Warnings:", issue_chip.text())
         self.assertIn("Length warning from test.", issue_chip.toolTip())
 
+    def test_issue_popover_uses_scrollable_body(self) -> None:
+        page = BatchPage()
+        issues = [{"severity": "warn", "field_key": "Length", "message": f"Warning {idx}"} for idx in range(1, 18)]
+        page.apply_ui_risks(issues)
+        page.command_header._show_issue_popover()  # type: ignore[attr-defined]
+        menu = page.command_header._issues_menu  # type: ignore[attr-defined]
+        self.assertIsNotNone(menu)
+        assert menu is not None
+        scroll = menu.findChild(QScrollArea)
+        self.assertIsNotNone(scroll)
+        assert scroll is not None
+        self.assertEqual(int(scroll.maximumHeight()), 320)
+        menu.close()
+
 
 if __name__ == "__main__":
     unittest.main()
-

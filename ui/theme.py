@@ -566,6 +566,24 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         padding-left: 2px;
         margin-top: 1px;
     }}
+    QFrame#HelperRow {{
+        background-color: rgba(255, 255, 255, 0.03);
+        border: 1px solid #2a2a2a;
+        border-radius: {r['sm']}px;
+    }}
+    QFrame#HelperRow[severity="warn"] {{
+        border: 1px solid #4a3d23;
+    }}
+    QFrame#HelperRow[severity="fatal"] {{
+        border: 1px solid #4d2d2d;
+    }}
+    QLabel#HelperRowIcon {{
+        color: {c['accent']};
+        min-width: 12px;
+        max-width: 12px;
+        font-size: 10px;
+        font-weight: 700;
+    }}
     QLabel#FieldStateHint[severity="warn"] {{
         color: {c['warning_text_muted']};
     }}

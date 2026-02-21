@@ -137,3 +137,8 @@
 - `open_enclosure_dialog()` now temporarily restores Enclosure group visibility/expanded state in the dialog, then restores hidden/collapsed state after close.
 - `open_mesh_advanced_dialog()` now temporarily restores compatibility-visible advanced rows in the dialog (instead of empty modal content) and restores detached hidden state on close.
 - Added dialog population regression tests for both Enclosure and Mesh Advanced modal paths.
+
+## 2026-02-21 (Polish A21+A22+A24)
+- TopBar center-title layout was rebalanced (removed symmetric stretch squeeze) so mode titles do not truncate under normal window widths.
+- Issues popover now applies responsive content width bounds and keeps a scrollable body for large warning lists to prevent clipping.
+- Added reusable `HelperRow` primitive and integrated it into Batch field hints (optional icon + wrapped text + subtle background) without changing Batch action button sizes.

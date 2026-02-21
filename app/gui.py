@@ -3276,11 +3276,10 @@ class MainWindow(QMainWindow):
         self.home_button.clicked.connect(self._open_project_manager)
         top_row.addWidget(self.home_button, 0, Qt.AlignLeft | Qt.AlignVCenter)
 
-        top_row.addStretch(1)
         self.page_title_label = ElidedTitleLabel("")
         self.page_title_label.setObjectName("SectionTitle")
-        top_row.addWidget(self.page_title_label, 1, Qt.AlignCenter)
-        top_row.addStretch(1)
+        self.page_title_label.setMinimumWidth(140)
+        top_row.addWidget(self.page_title_label, 1, Qt.AlignVCenter)
 
         self.settings_button = QToolButton(self.top_bar)
         self.settings_button.setObjectName("TopBarIconButton")

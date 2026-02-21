@@ -245,7 +245,11 @@ class CommandHeaderWidget(QFrame):
     def _show_issue_popover(self) -> None:
         menu = QMenu(self)
         menu.setObjectName("CommandIssuesPopover")
+        window_width = int(self.window().width()) if self.window() is not None else int(self.width())
+        content_width = _clamp(280, int(window_width * 0.42), 520)
         content = QWidget(menu)
+        content.setMinimumWidth(content_width)
+        content.setMaximumWidth(content_width)
         content_layout = QVBoxLayout(content)
         content_layout.setContentsMargins(10, 8, 10, 10)
         content_layout.setSpacing(6)
@@ -259,6 +263,7 @@ class CommandHeaderWidget(QFrame):
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setMinimumWidth(max(content_width - 20, 220))
         scroll.setMaximumHeight(320)
 
         body = QWidget(scroll)

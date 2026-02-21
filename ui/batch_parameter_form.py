@@ -15,6 +15,7 @@ from ui.form_builder import (
     ScalarFieldEditor,
     SegmentedEnumInput,
 )
+from ui.helper_row import HelperRow
 from ui.form_metrics import FORM_METRICS
 from ui.form_schema import FieldSpec, FormSchema, ModeStackSpec, build_project_form_schema, field_display_priority
 
@@ -163,6 +164,7 @@ class _FieldRow:
     end_edit: QLineEdit
     steps_edit: QLineEdit
     sweep_popup: QWidget
+    helper_row: HelperRow
     helper_label: QLabel
     button_layout: bool
     sweep_capable: bool
@@ -764,12 +766,9 @@ class BatchParameterForm(QWidget):
         row_layout.addStretch(1)
         row_root.addWidget(row)
 
-        helper = QLabel("")
-        helper.setObjectName("FieldStateHint")
-        helper.setProperty("severity", "info")
-        helper.setVisible(False)
-        helper.setWordWrap(True)
-        row_root.addWidget(helper)
+        helper_row = HelperRow()
+        helper = helper_row.text_label
+        row_root.addWidget(helper_row)
 
         if field.widget_kind == "object" or is_tall_control or wide_button_row:
             grid.add_full_width(row_wrap)
@@ -786,6 +785,7 @@ class BatchParameterForm(QWidget):
             end_edit=end_edit,
             steps_edit=steps_edit,
             sweep_popup=sweep_popup,
+            helper_row=helper_row,
             helper_label=helper,
             button_layout=self._is_button_layout(field),
             sweep_capable=self._supports_sweep(field),
@@ -1244,16 +1244,24 @@ class BatchParameterForm(QWidget):
         widget.style().polish(widget)
         widget.update()
 
+    def _set_row_helper(self, row: _FieldRow, text: str, *, severity: str = "info", icon_text: str | None = None) -> None:
+        if isinstance(row.helper_row, HelperRow):
+            row.helper_row.set_message(str(text or ""), severity=str(severity or "info"), icon_text=icon_text)
+            self._repolish(row.helper_row)
+            self._repolish(row.helper_label)
+            return
+        row.helper_label.setText(str(text or ""))
+        row.helper_label.setProperty("severity", str(severity or "info"))
+        row.helper_label.setVisible(bool(str(text or "").strip()))
+        self._repolish(row.helper_label)
+
     def _clear_disclosure_hints(self) -> None:
         for widget in self._hint_widgets:
             widget.setProperty("disclosureHint", "false")
             self._repolish(widget)
         self._hint_widgets = []
         for row in self._rows.values():
-            row.helper_label.setText("")
-            row.helper_label.setVisible(False)
-            row.helper_label.setProperty("severity", "info")
-            self._repolish(row.helper_label)
+            self._set_row_helper(row, "", severity="info")
 
     def _apply_disclosure_hint(self, previous_visible: set[str], current_visible: set[str]) -> None:
         self._clear_disclosure_hints()
@@ -1284,10 +1292,7 @@ class BatchParameterForm(QWidget):
             message = f"Diese Auswahl blendet aus: Karten [{cards_text}] - Parameter [{params_text}]"
 
         if str(trigger.group_name) not in {"Throat Profile", "GCurve", "Morph"}:
-            trigger.helper_label.setText(message)
-            trigger.helper_label.setProperty("severity", "info")
-            trigger.helper_label.setVisible(True)
-            self._repolish(trigger.helper_label)
+            self._set_row_helper(trigger, message, severity="info", icon_text="i")
 
         for widget in self._iter_hint_targets(trigger):
             widget.setProperty("disclosureHint", "true")
@@ -1804,10 +1809,8 @@ class BatchParameterForm(QWidget):
         self._manual_highlight_widgets = []
         self._manual_hint_restore = {}
         for row in self._rows.values():
-            if row.helper_label.isVisible() and "Use defaults" in str(row.helper_label.text() or ""):
-                row.helper_label.setText("")
-                row.helper_label.setVisible(False)
-                self._repolish(row.helper_label)
+            if "Use defaults" in str(row.helper_label.text() or ""):
+                self._set_row_helper(row, "", severity="info")
 
     @staticmethod
     def _segment_option_count(editor: QWidget) -> int:
@@ -1938,10 +1941,7 @@ class BatchParameterForm(QWidget):
                 widget.setProperty("disclosureHint", "true")
                 self._repolish(widget)
                 self._manual_highlight_widgets.append(widget)
-            row.helper_label.setText("Use defaults available for run.")
-            row.helper_label.setProperty("severity", "info")
-            row.helper_label.setVisible(True)
-            self._repolish(row.helper_label)
+            self._set_row_helper(row, "Use defaults available for run.", severity="info", icon_text="i")
             normalized = self._normalize_policy_key_for_row(key)
             if normalized and normalized not in highlighted:
                 highlighted.append(normalized)

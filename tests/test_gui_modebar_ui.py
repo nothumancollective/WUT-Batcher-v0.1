@@ -47,6 +47,11 @@ class ModeBarUiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="wut_ui1d3_modebar_nav_") as tmp:
             service = _build_service(Path(tmp))
             window = MainWindow(service)
+            project = service.create_project(
+                "ModebarNavProject",
+                {"fixed_params": {}, "limits": {}, "param_states": []},
+            )
+            window.load_project(project)
             window.batch_mode_button.click()
             self.assertIs(window.stack.currentWidget(), window.batch_page)
             self.assertTrue(window.batch_mode_button.isChecked())
