@@ -14,11 +14,15 @@ from ui.form_metrics import FORM_METRICS
 from ui.theme import build_stylesheet
 
 try:
-    from PySide6.QtWidgets import QApplication, QDialog, QLabel
+    from PySide6.QtWidgets import QApplication, QComboBox, QDialog, QLabel, QLineEdit, QPushButton, QWidget
 except ImportError:  # pragma: no cover
     QApplication = None  # type: ignore[assignment]
+    QComboBox = None  # type: ignore[assignment]
     QDialog = None  # type: ignore[assignment]
     QLabel = None  # type: ignore[assignment]
+    QLineEdit = None  # type: ignore[assignment]
+    QPushButton = None  # type: ignore[assignment]
+    QWidget = None  # type: ignore[assignment]
 
 
 @unittest.skipIf(QApplication is None, "PySide6 is required")
@@ -855,28 +859,24 @@ class BatchPageUiTests(unittest.TestCase):
         state = self._compat_state()
         page.apply_compatibility(state)
 
-        target_key = next(
-            (key for key in list(page.parameter_form._mesh_advanced_row_keys) if key in page.parameter_form._rows),  # type: ignore[attr-defined]
-            None,
-        )
-        if target_key is None:
-            self.skipTest("No mesh advanced rows available.")
-        target_row = page.parameter_form._rows.get(target_key)
-        if target_row is None:
-            self.skipTest("Target mesh advanced row unavailable.")
-
-        observed = {"parent_name": "", "hidden": True}
+        observed = {"host_found": False, "controls": 0}
 
         def _fake_exec() -> int:
-            parent = target_row.container.parentWidget()
-            observed["parent_name"] = str(parent.objectName() or "") if parent is not None else ""
-            observed["hidden"] = bool(target_row.container.isHidden())
+            dialogs = [widget for widget in self.app.topLevelWidgets() if isinstance(widget, QDialog)]
+            dialog = dialogs[-1] if dialogs else None
+            if dialog is not None:
+                host = dialog.findChild(QWidget, "MeshAdvancedDialogHost")
+                observed["host_found"] = host is not None
+                if host is not None:
+                    edits = host.findChildren(QLineEdit)
+                    combos = host.findChildren(QComboBox)
+                    observed["controls"] = len(edits) + len(combos)
             return int(QDialog.Accepted)
 
         with patch("ui.batch_parameter_form.QDialog.exec", side_effect=_fake_exec):
             page.parameter_form.open_mesh_advanced_dialog()
-        self.assertEqual(observed["parent_name"], "MeshAdvancedDialogHost")
-        self.assertFalse(observed["hidden"])
+        self.assertTrue(observed["host_found"])
+        self.assertGreater(observed["controls"], 0)
 
     def test_enclosure_dialog_contains_enclosure_group(self) -> None:
         page = BatchPage()
@@ -886,20 +886,30 @@ class BatchPageUiTests(unittest.TestCase):
         if row is None:
             self.skipTest("Mesh.Enclosure row not available.")
 
-        enclosure_box = page.parameter_form._enclosure_box  # type: ignore[attr-defined]
-        if enclosure_box is None:
-            self.skipTest("Enclosure group box missing.")
-        observed = {"hidden": True, "collapsed": True}
+        observed = {"host_found": False, "controls": 0, "enabled_checked": False}
 
         def _fake_exec() -> int:
-            observed["hidden"] = bool(enclosure_box.isHidden())
-            observed["collapsed"] = bool(enclosure_box.is_collapsed())
+            dialogs = [widget for widget in self.app.topLevelWidgets() if isinstance(widget, QDialog)]
+            dialog = dialogs[-1] if dialogs else None
+            if dialog is not None:
+                host = dialog.findChild(QWidget, "EnclosureDialogHost")
+                observed["host_found"] = host is not None
+                if host is not None:
+                    edits = host.findChildren(QLineEdit)
+                    combos = host.findChildren(QComboBox)
+                    observed["controls"] = len(edits) + len(combos)
+                enabled_btn = next(
+                    (button for button in dialog.findChildren(QPushButton) if str(button.text()).strip().lower() == "enabled"),
+                    None,
+                )
+                observed["enabled_checked"] = bool(enabled_btn is not None and enabled_btn.isChecked())
             return int(QDialog.Accepted)
 
         with patch("ui.batch_parameter_form.QDialog.exec", side_effect=_fake_exec):
             page.parameter_form.open_enclosure_dialog()
-        self.assertFalse(observed["hidden"])
-        self.assertFalse(observed["collapsed"])
+        self.assertTrue(observed["host_found"])
+        self.assertGreater(observed["controls"], 0)
+        self.assertIsInstance(observed["enabled_checked"], bool)
 
     def test_batch_form_has_no_horizontal_overflow_at_1920x1080(self) -> None:
         page = BatchPage()

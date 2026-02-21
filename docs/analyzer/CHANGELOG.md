@@ -118,6 +118,14 @@
 ## 2026-02-21 (Polish A16+A17+A23)
 - Header reset visibility logic fixed: reset icon now shows only when a block is collapsed and has overrides.
 - Sweep warning tint override removed; sweep buttons keep primary sweep styling while warnings apply only to inputs.
+
+## 2026-02-22 (Batch UI stabilization regression fix)
+- Corrected chip/titlebar text rendering by normalizing chip values through a shared `safe_text()` helper and replacing corrupted glyph output with safe display tokens.
+- Restored GCurve subgroup ordering so mode selector controls render above the common parameter grid, with mode-specific controls below.
+- Replaced unstable dialog widget-moving flows for `Simulate Enclosure` and `Mesh Advanced` with stable dialog-local editors bound directly to Batch variable parameter updates.
+- Extended warning styling to input widgets (`QLineEdit`/spinbox family) while explicitly pinning sweep buttons to sweep styling so warnings never recolor sweep controls.
+- Added issue-chip click affordance (cursor + chevron cue) and widened top-bar title minimum width to reduce title ellipsis.
+- Verified via targeted UI suite and runtime Batch smoke script (dialogs open/edit/close/reopen without blanking/crash).
 - Warning border selectors now explicitly cover `QSpinBox`/`QDoubleSpinBox`/`QAbstractSpinBox` (including internal line edits) without border-width changes.
 
 ## 2026-02-21 (Polish A13+A15+A18)

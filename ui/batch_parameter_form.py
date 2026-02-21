@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+import re
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from ui.form_builder import (
@@ -18,11 +19,13 @@ from ui.form_builder import (
 from ui.helper_row import HelperRow
 from ui.form_metrics import FORM_METRICS
 from ui.form_schema import FieldSpec, FormSchema, ModeStackSpec, build_project_form_schema, field_display_priority
+from ui.text_utils import safe_text
 
 try:
     from PySide6.QtCore import QPoint, Qt, QTimer, Signal
     from PySide6.QtGui import QDoubleValidator, QIntValidator
     from PySide6.QtWidgets import (
+        QButtonGroup,
         QComboBox,
         QDialog,
         QFrame,
@@ -581,6 +584,14 @@ class BatchParameterForm(QWidget):
             self._group_grids[str(group_name)] = field_grid
             subgroup_target_grids: Dict[str, _ResponsiveFieldGrid] = {}
             if str(group_name) == "GCurve":
+                mode_selector_frame = QFrame()
+                mode_selector_frame.setObjectName("BatchSubgroupFrame")
+                mode_selector_layout = QVBoxLayout(mode_selector_frame)
+                mode_selector_layout.setContentsMargins(0, 0, 0, 0)
+                mode_selector_layout.setSpacing(2)
+                mode_selector_grid = _ResponsiveFieldGrid()
+                mode_selector_layout.addWidget(mode_selector_grid)
+
                 common_frame = QFrame()
                 common_frame.setObjectName("BatchSubgroupFrame")
                 common_layout = QVBoxLayout(common_frame)
@@ -589,29 +600,30 @@ class BatchParameterForm(QWidget):
                 common_grid = _ResponsiveFieldGrid()
                 common_layout.addWidget(common_grid)
 
-                mode_frame = QFrame()
-                mode_frame.setObjectName("BatchSubgroupFrame")
-                mode_layout = QVBoxLayout(mode_frame)
-                mode_layout.setContentsMargins(0, 0, 0, 0)
-                mode_layout.setSpacing(2)
-                mode_grid = _ResponsiveFieldGrid()
-                mode_layout.addWidget(mode_grid)
+                mode_specific_frame = QFrame()
+                mode_specific_frame.setObjectName("BatchSubgroupFrame")
+                mode_specific_layout = QVBoxLayout(mode_specific_frame)
+                mode_specific_layout.setContentsMargins(0, 0, 0, 0)
+                mode_specific_layout.setSpacing(2)
+                mode_specific_grid = _ResponsiveFieldGrid()
+                mode_specific_layout.addWidget(mode_specific_grid)
 
                 divider = QFrame()
                 divider.setObjectName("BatchSubtleDivider")
                 divider.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
                 divider.setFixedHeight(1)
 
+                field_grid.add_full_width(mode_selector_frame)
                 field_grid.add_full_width(common_frame)
                 field_grid.add_full_width(divider)
-                field_grid.add_full_width(mode_frame)
+                field_grid.add_full_width(mode_specific_frame)
                 subgroup_target_grids = {
                     "Common": common_grid,
-                    "Mode": mode_grid,
-                    "Superformula": mode_grid,
-                    "Superellipse": mode_grid,
-                    "Coverage": mode_grid,
-                    "General": mode_grid,
+                    "Mode": mode_selector_grid,
+                    "Superformula": mode_specific_grid,
+                    "Superellipse": mode_specific_grid,
+                    "Coverage": mode_specific_grid,
+                    "General": mode_specific_grid,
                 }
 
             last_subgroup = None
@@ -710,6 +722,7 @@ class BatchParameterForm(QWidget):
         sweep_toggle = QPushButton("\u2195")
         sweep_toggle.setObjectName("SweepButton")
         sweep_toggle.setProperty("segment", "true")
+        sweep_toggle.setProperty("role", "sweep")
         sweep_toggle.setCheckable(True)
         sweep_toggle.setFixedSize(int(FORM_METRICS.action_width), self._control_height)
         sweep_toggle.setToolTip("Sweep range")
@@ -834,29 +847,99 @@ class BatchParameterForm(QWidget):
             row.container.setProperty("meshAdvancedDetached", "true")
 
     @staticmethod
-    def _move_widgets_to_layout(widgets: Sequence[QWidget], layout: QVBoxLayout) -> None:
-        for widget in list(widgets):
-            parent = widget.parentWidget()
-            if parent is not None and parent.layout() is not None:
-                parent.layout().removeWidget(widget)
-            layout.addWidget(widget)
+    def _format_list_text(value: Any) -> str:
+        if isinstance(value, (list, tuple)):
+            return ", ".join(safe_text(item) for item in list(value))
+        return safe_text(value)
+
+    @staticmethod
+    def _parse_list_text(raw_text: str, *, as_int: bool) -> tuple[str, Any]:
+        text = safe_text(raw_text).strip()
+        if not text:
+            return ("unset", None)
+        tokens = [token for token in re.split(r"[,\s;]+", text) if token.strip()]
+        if not tokens:
+            return ("unset", None)
+        values: List[Any] = []
+        for token in tokens:
+            try:
+                parsed = float(token.replace(",", "."))
+                values.append(int(round(parsed)) if as_int else float(parsed))
+            except Exception:
+                return ("invalid", None)
+        return ("set", values)
+
+    def _build_dialog_editor(self, field: FieldSpec, current_value: Any) -> QWidget:
+        if str(field.widget_kind) == "enum":
+            combo = QComboBox()
+            combo.setObjectName("BatchFieldCombo")
+            for option in list(field.enum_options or []):
+                combo.addItem(safe_text(getattr(option, "label", "")), getattr(option, "value", None))
+            if current_value is not None:
+                index = combo.findData(current_value)
+                if index >= 0:
+                    combo.setCurrentIndex(index)
+            return combo
+
+        edit = QLineEdit()
+        if current_value is not None:
+            if str(field.widget_kind) == "list" or str(field.ath_type).startswith("list"):
+                edit.setText(self._format_list_text(current_value))
+            else:
+                edit.setText(safe_text(current_value))
+        if str(field.widget_kind) in {"float", "expr", "ex"}:
+            edit.setValidator(QDoubleValidator(edit))
+        elif str(field.widget_kind) == "int":
+            edit.setValidator(QIntValidator(edit))
+        return edit
+
+    def _dialog_editor_state(self, field: FieldSpec, editor: QWidget) -> tuple[str, Any]:
+        if isinstance(editor, QComboBox):
+            if editor.currentIndex() < 0:
+                return ("unset", None)
+            return ("set", editor.currentData())
+        if not isinstance(editor, QLineEdit):
+            return ("invalid", None)
+        text = safe_text(editor.text()).strip()
+        if not text:
+            return ("unset", None)
+        widget_kind = str(field.widget_kind)
+        ath_type = str(field.ath_type)
+        try:
+            if widget_kind in {"float", "expr", "ex"}:
+                return ("set", float(text.replace(",", ".")))
+            if widget_kind == "int":
+                return ("set", int(float(text.replace(",", "."))))
+            if widget_kind == "list" or ath_type.startswith("list"):
+                return self._parse_list_text(text, as_int=("int" in ath_type))
+            return ("set", text)
+        except Exception:
+            return ("invalid", None)
+
+    def _bind_dialog_editor(self, editor: QWidget, on_change) -> None:
+        if isinstance(editor, QComboBox):
+            editor.currentIndexChanged.connect(lambda _index: on_change())
+            return
+        if isinstance(editor, QLineEdit):
+            editor.editingFinished.connect(on_change)
+
+    def _apply_dialog_field_to_row(self, *, key: str, field: FieldSpec, editor: QWidget) -> None:
+        row = self._rows.get(str(key))
+        if row is None:
+            return
+        state, value = self._dialog_editor_state(field, editor)
+        if state == "invalid":
+            return
+        self._set_editor_value(row, value if state == "set" else None)
+        self._on_field_edited(str(key))
 
     def open_mesh_advanced_dialog(self) -> None:
-        row_widgets: List[tuple[str, QWidget]] = [
-            (str(key), self._rows[str(key)].container)
+        keys = [
+            str(key)
             for key in list(self._mesh_advanced_row_keys)
             if str(key) in self._rows
+            and str(self._rows[str(key)].container.property("compatVisible") or "false").strip().lower() == "true"
         ]
-        if not row_widgets:
-            return
-        hidden_before: Dict[str, bool] = {}
-        rows: List[QWidget] = []
-        for key, widget in list(row_widgets):
-            hidden_before[key] = bool(widget.isHidden())
-            compat_visible = str(widget.property("compatVisible") or "false").strip().lower() == "true"
-            widget.setHidden(not compat_visible)
-            if not widget.isHidden():
-                rows.append(widget)
         dialog = QDialog(self.window())
         dialog.setWindowTitle("Mesh Advanced")
         dialog.setModal(True)
@@ -875,11 +958,37 @@ class BatchParameterForm(QWidget):
         host.setObjectName("MeshAdvancedDialogHost")
         host_layout = QVBoxLayout(host)
         host_layout.setContentsMargins(0, 0, 0, 0)
-        host_layout.setSpacing(4)
-        if rows:
-            self._move_widgets_to_layout(rows, host_layout)
+        host_layout.setSpacing(6)
+        form = QGridLayout()
+        form.setContentsMargins(0, 0, 0, 0)
+        form.setHorizontalSpacing(12)
+        form.setVerticalSpacing(6)
+        has_rows = False
+        for row_index, key in enumerate(keys):
+            row = self._rows.get(str(key))
+            if row is None:
+                continue
+            has_rows = True
+            is_set, value = self._current_state(row)
+            editor = self._build_dialog_editor(row.field, value if is_set else None)
+            label = QLabel(safe_text(row.label))
+            label.setObjectName("BatchSummaryMeta")
+            form.addWidget(label, row_index, 0)
+            form.addWidget(editor, row_index, 1)
+            self._bind_dialog_editor(
+                editor,
+                lambda current_key=str(key), current_field=row.field, current_editor=editor: self._apply_dialog_field_to_row(
+                    key=current_key,
+                    field=current_field,
+                    editor=current_editor,
+                ),
+            )
+        form.setColumnStretch(0, 0)
+        form.setColumnStretch(1, 1)
+        if has_rows:
+            host_layout.addLayout(form)
         else:
-            empty_hint = QLabel("No mesh advanced parameters available for the current compatibility state.")
+            empty_hint = QLabel("No mesh advanced parameters are available for the current compatibility state.")
             empty_hint.setObjectName("SummaryMeta")
             empty_hint.setWordWrap(True)
             host_layout.addWidget(empty_hint)
@@ -895,21 +1004,22 @@ class BatchParameterForm(QWidget):
         close_row.addWidget(close_btn)
         root.addLayout(close_row)
         dialog.exec()
-        if rows:
-            self._move_widgets_to_layout(rows, self._detached_rows_layout)
-        for key, widget in list(row_widgets):
-            widget.setHidden(bool(hidden_before.get(key, False)))
-        self._refresh_visibility()
 
     def open_enclosure_dialog(self) -> None:
-        box = self._enclosure_box
-        home_layout = self._enclosure_box_home
-        if box is None or home_layout is None:
+        row = self._rows.get("Mesh.Enclosure")
+        if row is None:
             return
-        box_hidden_before = bool(box.isHidden())
-        box_collapsed_before = bool(box.is_collapsed())
-        box.setHidden(False)
-        box.set_collapsed(False)
+        object_fields = sorted(list(row.field.object_properties or ()), key=self._field_sort_tuple)
+        extra_keys = [
+            str(key)
+            for key, extra_row in self._rows.items()
+            if str(extra_row.group_name) == "Enclosure"
+            and str(key) != "Mesh.Enclosure"
+            and str(extra_row.container.property("compatVisible") or "false").strip().lower() == "true"
+        ]
+        is_enabled, object_value = self._current_state(row)
+        payload = dict(object_value or {}) if isinstance(object_value, Mapping) else {}
+
         dialog = QDialog(self.window())
         dialog.setWindowTitle("Simulate Enclosure")
         dialog.setModal(True)
@@ -917,9 +1027,33 @@ class BatchParameterForm(QWidget):
         root = QVBoxLayout(dialog)
         root.setContentsMargins(12, 10, 12, 10)
         root.setSpacing(8)
-        title = QLabel("Simulate Enclosure")
+
+        top_row = QWidget()
+        top_layout = QHBoxLayout(top_row)
+        top_layout.setContentsMargins(0, 0, 0, 0)
+        top_layout.setSpacing(8)
+        title = QLabel("Mesh Enclosure")
         title.setObjectName("SectionTitle")
-        root.addWidget(title)
+        top_layout.addWidget(title, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        top_layout.addStretch(1)
+        toggle_group = QButtonGroup(dialog)
+        disable_btn = QPushButton("Disabled")
+        disable_btn.setObjectName("BatchSecondaryButton")
+        disable_btn.setProperty("segment", "true")
+        disable_btn.setCheckable(True)
+        enable_btn = QPushButton("Enabled")
+        enable_btn.setObjectName("BatchPrimaryButton")
+        enable_btn.setProperty("segment", "true")
+        enable_btn.setCheckable(True)
+        toggle_group.addButton(disable_btn)
+        toggle_group.addButton(enable_btn)
+        toggle_group.setExclusive(True)
+        disable_btn.setChecked(not bool(is_enabled))
+        enable_btn.setChecked(bool(is_enabled))
+        top_layout.addWidget(disable_btn)
+        top_layout.addWidget(enable_btn)
+        root.addWidget(top_row)
+
         body = QScrollArea()
         body.setObjectName("BatchAdvancedScroll")
         body.setWidgetResizable(True)
@@ -928,12 +1062,94 @@ class BatchParameterForm(QWidget):
         container.setObjectName("EnclosureDialogHost")
         container_layout = QVBoxLayout(container)
         container_layout.setContentsMargins(0, 0, 0, 0)
-        container_layout.setSpacing(0)
-        if box.parentWidget() is not None and box.parentWidget().layout() is not None:
-            box.parentWidget().layout().removeWidget(box)
-        container_layout.addWidget(box)
+        container_layout.setSpacing(6)
+        form = QGridLayout()
+        form.setContentsMargins(0, 0, 0, 0)
+        form.setHorizontalSpacing(12)
+        form.setVerticalSpacing(6)
+
+        property_editors: Dict[str, QWidget] = {}
+        row_cursor = 0
+        for property_field in object_fields:
+            key_tail = str(property_field.key).rsplit(".", 1)[-1]
+            current_value = payload.get(key_tail, payload.get(str(property_field.key)))
+            editor = self._build_dialog_editor(property_field, current_value)
+            label = QLabel(safe_text(property_field.label))
+            label.setObjectName("BatchSummaryMeta")
+            form.addWidget(label, row_cursor, 0)
+            form.addWidget(editor, row_cursor, 1)
+            property_editors[str(property_field.key)] = editor
+            row_cursor += 1
+
+        extra_editors: Dict[str, QWidget] = {}
+        for key in extra_keys:
+            extra_row = self._rows.get(str(key))
+            if extra_row is None:
+                continue
+            is_set_extra, value_extra = self._current_state(extra_row)
+            editor = self._build_dialog_editor(extra_row.field, value_extra if is_set_extra else None)
+            label = QLabel(safe_text(extra_row.label))
+            label.setObjectName("BatchSummaryMeta")
+            form.addWidget(label, row_cursor, 0)
+            form.addWidget(editor, row_cursor, 1)
+            extra_editors[str(key)] = editor
+            row_cursor += 1
+
+        form.setColumnStretch(0, 0)
+        form.setColumnStretch(1, 1)
+        container_layout.addLayout(form)
+        container_layout.addStretch(1)
         body.setWidget(container)
         root.addWidget(body, 1)
+
+        def _apply_enclosure_settings() -> None:
+            enabled = bool(enable_btn.isChecked())
+            body.setVisible(enabled)
+            if not enabled:
+                self._set_editor_value(row, None)
+                self._on_field_edited("Mesh.Enclosure")
+                return
+
+            merged_payload: Dict[str, Any] = {}
+            current_enabled, current_value = self._current_state(row)
+            if current_enabled and isinstance(current_value, Mapping):
+                merged_payload.update(dict(current_value))
+            for property_field in object_fields:
+                property_key = str(property_field.key)
+                key_tail = property_key.rsplit(".", 1)[-1]
+                editor = property_editors.get(property_key)
+                if editor is None:
+                    continue
+                state, parsed = self._dialog_editor_state(property_field, editor)
+                if state == "set":
+                    merged_payload[key_tail] = parsed
+                elif state == "unset":
+                    merged_payload.pop(key_tail, None)
+            self._set_editor_value(row, merged_payload if merged_payload else {})
+            self._on_field_edited("Mesh.Enclosure")
+
+        for property_field in object_fields:
+            editor = property_editors.get(str(property_field.key))
+            if editor is None:
+                continue
+            self._bind_dialog_editor(editor, _apply_enclosure_settings)
+        for key in extra_keys:
+            extra_row = self._rows.get(str(key))
+            editor = extra_editors.get(str(key))
+            if extra_row is None or editor is None:
+                continue
+            self._bind_dialog_editor(
+                editor,
+                lambda current_key=str(key), current_field=extra_row.field, current_editor=editor: self._apply_dialog_field_to_row(
+                    key=current_key,
+                    field=current_field,
+                    editor=current_editor,
+                ),
+            )
+        enable_btn.clicked.connect(_apply_enclosure_settings)
+        disable_btn.clicked.connect(_apply_enclosure_settings)
+        body.setVisible(bool(enable_btn.isChecked()))
+
         close_btn = QPushButton("Close")
         close_btn.setObjectName("BatchSecondaryButton")
         close_btn.clicked.connect(dialog.accept)
@@ -943,11 +1159,6 @@ class BatchParameterForm(QWidget):
         close_row.addWidget(close_btn)
         root.addLayout(close_row)
         dialog.exec()
-        container_layout.removeWidget(box)
-        box.set_collapsed(box_collapsed_before)
-        box.setHidden(box_hidden_before)
-        home_layout.addWidget(box)
-        self._refresh_visibility()
 
     def _open_first_visible_group(self) -> None:
         visible_boxes = [box for box in self._accordion_boxes if box.isVisible()]
@@ -1367,11 +1578,13 @@ class BatchParameterForm(QWidget):
             for target in self._risk_targets_for_key(key):
                 target.setProperty("fieldState", "neutral")
                 target.setProperty("riskLevel", "")
+                target.setProperty("warn", "false")
                 target_id = id(target)
                 if target_id in self._risk_original_tooltips:
                     target.setToolTip(self._risk_original_tooltips[target_id])
                 self._repolish(target)
             row.sweep_toggle.setProperty("riskLevel", "")
+            row.sweep_toggle.setProperty("warn", "false")
             sweep_id = id(row.sweep_toggle)
             if sweep_id in self._risk_original_tooltips:
                 row.sweep_toggle.setToolTip(self._risk_original_tooltips[sweep_id])
@@ -1427,6 +1640,7 @@ class BatchParameterForm(QWidget):
                 self._risk_original_tooltips.setdefault(target_id, target.toolTip())
                 target.setProperty("fieldState", visual)
                 target.setProperty("riskLevel", visual)
+                target.setProperty("warn", "true" if highest == "warn" else "false")
                 tooltip = self._risk_tooltip(row_issues)
                 if tooltip:
                     base_tooltip = self._risk_original_tooltips.get(target_id, "")
@@ -1434,6 +1648,7 @@ class BatchParameterForm(QWidget):
                 self._repolish(target)
             # Sweep buttons keep their active styling; warnings stay on input controls.
             row.sweep_toggle.setProperty("riskLevel", "")
+            row.sweep_toggle.setProperty("warn", "false")
             sweep_id = id(row.sweep_toggle)
             self._risk_original_tooltips.setdefault(sweep_id, row.sweep_toggle.toolTip())
             sweep_tip = self._risk_tooltip(row_issues)
@@ -1845,8 +2060,8 @@ class BatchParameterForm(QWidget):
         try:
             token = int(float(value))
         except Exception:
-            return fallback
-        return str(mapping.get(token, fallback))
+            return safe_text(fallback)
+        return safe_text(mapping.get(token, fallback))
 
     def _field_value(self, key: str) -> tuple[bool, Any]:
         row = self._rows.get(str(key))

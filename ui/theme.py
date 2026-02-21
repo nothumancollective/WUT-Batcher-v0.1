@@ -482,6 +482,11 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     QAbstractSpinBox[fieldState="ok"] QLineEdit {{
         border: 1px solid {c['risk_ok']};
     }}
+    QLineEdit[warn="true"], QAbstractSpinBox[warn="true"],
+    QSpinBox[warn="true"], QDoubleSpinBox[warn="true"],
+    QAbstractSpinBox[warn="true"] QLineEdit {{
+        border: 1px solid {c['warning_border']};
+    }}
     QLineEdit[disclosureHint="true"], QComboBox[disclosureHint="true"],
     QTextEdit[disclosureHint="true"], QPlainTextEdit[disclosureHint="true"] {{
         border: 1px solid {c['accent']};
@@ -638,6 +643,12 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         border-radius: {r['md']}px;
         padding: 0px;
         font-weight: 700;
+    }}
+    QPushButton#SweepButton[role="sweep"],
+    QPushButton#SweepButton[role="sweep"][warn="true"] {{
+        background-color: {c['surface2']};
+        color: {c['text']};
+        border: 1px solid {c['border']};
     }}
     QPushButton#SweepButton:hover {{
         border-color: {c['accent']};

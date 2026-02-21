@@ -1,6 +1,6 @@
 # Analyzer UI Architecture (Modern, Scalable, MT/HT Workflow)
 
-**Last updated:** 2026-02-21
+**Last updated:** 2026-02-22
 
 This document captures the **UI/navigation decisions** and **implementation constraints** for the Analyzer UI.
 It is written to be actionable for Codex implementation while minimizing risk to existing Batch UI polish.
@@ -210,12 +210,18 @@ The Analyzer page is planned with two explicit subviews:
 
 ## Implementation status (Polish A19+A20)
 
-- `Simulate Enclosure` dialog now mounts the existing Batch Enclosure group content with visibility restored for dialog context.
-- `Mesh Advanced` dialog now mounts detached advanced mesh rows with compatibility-aware visibility, instead of opening empty on hidden advanced rows.
-- Both dialogs keep existing Batch field widgets/bindings (same parameter definitions, same sweep/reset behavior), and restore original detached layout state after close.
+- `Simulate Enclosure` now uses a dialog-local minimal form (enable/disable toggle + scrollable fields) bound to Batch variable parameter updates.
+- `Mesh Advanced` now uses a dialog-local compatibility-filtered editor form bound to Batch variable parameter updates, avoiding runtime re-parent/clear cycles.
+- Both dialogs are built once per open and update values through existing Batch field edit pathways; no card remounting/reparenting is used.
 
 ## Implementation status (Polish A21+A22+A24)
 
 - Global TopBar title allocation now prioritizes center-title width (no symmetric stretch squeeze), reducing unnecessary truncation in normal window sizes.
 - Command-header issue popover now enforces responsive width bounds plus a scrollable message area for long warning lists.
+
+## Implementation status (Batch stabilization follow-up)
+
+- Chip/titlebar text rendering now routes through a shared safe-text normalization helper to avoid mojibake/bytes rendering artifacts.
+- Sweep controls are explicitly marked with `role="sweep"` and excluded from warning-color selectors; warning borders remain on input controls only.
+- GCurve subgroup stacking order is stabilized as `Mode` -> `Common` -> `Mode-specific` for predictable layout and spacing.
 - Batch inline hint presentation now uses reusable `HelperRow` components (optional icon + wrapped text + subtle surface), replacing plain helper labels while preserving hint logic.

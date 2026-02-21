@@ -3278,7 +3278,7 @@ class MainWindow(QMainWindow):
 
         self.page_title_label = ElidedTitleLabel("")
         self.page_title_label.setObjectName("SectionTitle")
-        self.page_title_label.setMinimumWidth(140)
+        self.page_title_label.setMinimumWidth(180)
         top_row.addWidget(self.page_title_label, 1, Qt.AlignVCenter)
 
         self.settings_button = QToolButton(self.top_bar)

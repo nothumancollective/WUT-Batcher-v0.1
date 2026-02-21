@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Sequence
 
 from app.widgets.flow_layout import FlowLayout
+from ui.text_utils import safe_text
 
 try:
     from PySide6.QtCore import QPoint, Qt
@@ -117,6 +118,7 @@ class CommandHeaderWidget(QFrame):
         self.issues_chip = QPushButton("No issues", self)
         self.issues_chip.setObjectName("CommandIssuesChip")
         self.issues_chip.setToolTip("No validation issues.")
+        self.issues_chip.setCursor(Qt.PointingHandCursor)
         self.issues_chip.clicked.connect(self._show_issue_popover)
 
         self.apply_responsive_layout(self._WIDE_BREAKPOINT)
@@ -141,7 +143,7 @@ class CommandHeaderWidget(QFrame):
         self.batch_name_edit.setMaximumWidth(max_width)
 
     def set_estimate_chips(self, chips: Sequence[str]) -> None:
-        cleaned = [str(item).strip() for item in list(chips or []) if str(item).strip()]
+        cleaned = [safe_text(item).strip() for item in list(chips or []) if safe_text(item).strip()]
         self._estimate_chips = cleaned
         self._rebuild_status_chips()
 
@@ -153,7 +155,7 @@ class CommandHeaderWidget(QFrame):
         warn_count: int,
         incomplete_count: int,
     ) -> None:
-        self._issue_messages = [str(item).strip() for item in list(messages or []) if str(item).strip()]
+        self._issue_messages = [safe_text(item).strip() for item in list(messages or []) if safe_text(item).strip()]
         self._fatal_count = max(int(fatal_count), 0)
         self._warn_count = max(int(warn_count), 0)
         self._incomplete_count = max(int(incomplete_count), 0)
@@ -198,7 +200,7 @@ class CommandHeaderWidget(QFrame):
     def _rebuild_status_chips(self) -> None:
         self._clear_status_chip_widgets()
         for text in self._estimate_chips:
-            chip = QLabel(str(text))
+            chip = QLabel(safe_text(text))
             chip.setObjectName("SummaryChip")
             chip.setWordWrap(False)
             self._chips_flow.addWidget(chip)
@@ -215,7 +217,7 @@ class CommandHeaderWidget(QFrame):
             issue_text = f"Incomplete: {self._incomplete_count}"
             severity = "incomplete"
 
-        self.issues_chip.setText(issue_text)
+        self.issues_chip.setText(f"{issue_text} v")
         self.issues_chip.setProperty("severity", severity)
         if self._issue_messages:
             self.issues_chip.setToolTip("\n".join(self._issue_messages[:10]))
