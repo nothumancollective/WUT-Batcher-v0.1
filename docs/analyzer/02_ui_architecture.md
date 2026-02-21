@@ -183,3 +183,8 @@ The Analyzer page is planned with two explicit subviews:
 
 - Right-column action-footer clipping was reduced by replacing fixed-height button constraints with minimum-height layout-driven sizing.
 - Exports footer and Mesh `Advanced` trigger now rely on bottom padding/margins plus non-fixed max heights for safer resize behavior.
+
+## Implementation status (Polish A9)
+
+- Basics card layout now uses the same shared row-grid spec family as the other geometry cards.
+- Change scope stayed layout-only (label width/spacing/alignment); Basics field set and card hierarchy were preserved.

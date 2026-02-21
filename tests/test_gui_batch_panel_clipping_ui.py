@@ -8,8 +8,10 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from app.gui import BatchPage
 
 try:
+    from ui.form_builder import ElidedFixedLabel
     from PySide6.QtWidgets import QApplication
 except ImportError:  # pragma: no cover
+    ElidedFixedLabel = None  # type: ignore[assignment]
     QApplication = None  # type: ignore[assignment]
 
 
@@ -36,7 +38,20 @@ class BatchPanelClippingUiTests(unittest.TestCase):
         self.assertGreaterEqual(button.minimumHeight(), page.parameter_form._control_height)
         self.assertGreater(button.maximumHeight(), button.minimumHeight())
 
+    def test_basics_rows_use_shared_alignment_spec_without_mode_hierarchy_changes(self) -> None:
+        page = BatchPage()
+        basics_spec = page.parameter_form._grid_spec_for_group("Basics")
+        default_spec = page.parameter_form._grid_spec_for_group("Morph")
+        self.assertLessEqual(int(basics_spec.label_width), int(default_spec.label_width))
+        self.assertEqual(page.parameter_form.group_name_for_key("Length"), "Basics")
+        length_row = page.parameter_form._rows.get("Length")
+        self.assertIsNotNone(length_row)
+        assert length_row is not None
+        label = length_row.container.findChild(ElidedFixedLabel)
+        self.assertIsNotNone(label)
+        assert label is not None
+        self.assertEqual(int(label.minimumWidth()), int(basics_spec.label_width))
+
 
 if __name__ == "__main__":
     unittest.main()
-

@@ -176,6 +176,15 @@ class _SubgroupHeader:
     keys: set[str]
 
 
+@dataclass(frozen=True)
+class _FormGridSpec:
+    label_width: int
+    button_label_width: int
+    compact_editor_width: int
+    row_right_margin: int
+    row_spacing: int
+
+
 class _ResponsiveFieldGrid(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -318,6 +327,20 @@ class BatchParameterForm(QWidget):
         self._mesh_advanced_button: Optional[QPushButton] = None
         self._mesh_advanced_row_keys: List[str] = []
         self._control_height = int(FORM_METRICS.control_height)
+        self._default_form_grid_spec = _FormGridSpec(
+            label_width=max(130, int(FORM_METRICS.label_width) - 26),
+            button_label_width=max(124, int(FORM_METRICS.label_width) - 30),
+            compact_editor_width=max(232, int(FORM_METRICS.editor_total_width) - 16),
+            row_right_margin=6,
+            row_spacing=1,
+        )
+        self._basics_form_grid_spec = _FormGridSpec(
+            label_width=max(124, int(FORM_METRICS.label_width) - 30),
+            button_label_width=max(124, int(FORM_METRICS.label_width) - 30),
+            compact_editor_width=max(232, int(FORM_METRICS.editor_total_width) - 16),
+            row_right_margin=6,
+            row_spacing=1,
+        )
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -617,22 +640,23 @@ class BatchParameterForm(QWidget):
         display_label = str(field.label)
         if key in {"Throat.Profile", "GCurve.Type"}:
             display_label = "Mode"
+        grid_spec = self._grid_spec_for_group(group_name)
         row_wrap = QWidget()
         row_wrap.setObjectName("BatchFieldCell")
         row_root = QVBoxLayout(row_wrap)
         row_root.setContentsMargins(0, 0, 0, 0)
-        row_root.setSpacing(1)
+        row_root.setSpacing(int(grid_spec.row_spacing))
 
         row = QWidget()
         row_layout = QHBoxLayout(row)
-        row_layout.setContentsMargins(0, 0, 6, 0)
+        row_layout.setContentsMargins(0, 0, int(grid_spec.row_right_margin), 0)
         row_layout.setSpacing(2)
 
         base_editor = self._make_base_editor(field)
         is_tall_control = self._is_tall_scalar_editor(base_editor)
         wide_button_row = self._is_button_layout(field) and self._segment_option_count(base_editor) >= 3
         if isinstance(base_editor, ScalarFieldEditor) and not is_tall_control and not wide_button_row:
-            compact_width = max(232, int(FORM_METRICS.editor_total_width) - 16)
+            compact_width = int(grid_spec.compact_editor_width)
             base_editor.setFixedWidth(compact_width)
         if hasattr(base_editor, "changed"):
             base_editor.changed.connect(lambda *_ignored, row_key=key: self._on_field_edited(row_key))  # type: ignore[attr-defined]
@@ -678,7 +702,7 @@ class BatchParameterForm(QWidget):
                 sweep_toggle.setVisible(False)
         elif wide_button_row:
             row_wrap.setProperty("buttonRow", "true")
-            label_width = max(124, int(FORM_METRICS.label_width) - 30)
+            label_width = int(grid_spec.button_label_width)
             label = ElidedFixedLabel(display_label, label_width)
             label.setMinimumHeight(self._control_height)
             row_layout.addWidget(label, 0, Qt.AlignVCenter)
@@ -687,7 +711,7 @@ class BatchParameterForm(QWidget):
             row_layout.addWidget(base_editor, 1, Qt.AlignLeft | Qt.AlignVCenter)
             sweep_toggle.setVisible(False)
         else:
-            label_width = max(130, int(FORM_METRICS.label_width) - 26)
+            label_width = int(grid_spec.label_width)
             label = ElidedFixedLabel(display_label, label_width)
             label.setMinimumHeight(self._control_height)
             row_layout.addWidget(label, 0, Qt.AlignVCenter)
@@ -728,6 +752,11 @@ class BatchParameterForm(QWidget):
         self._wire_row_blocked_interactions(key)
         sweep_toggle.clicked.connect(lambda checked, row_key=key: self._on_sweep_clicked(row_key, bool(checked)))
         sweep_toggle.toggled.connect(lambda enabled, row_key=key: self._on_sweep_toggled(row_key, enabled))
+
+    def _grid_spec_for_group(self, group_name: str) -> _FormGridSpec:
+        if str(group_name) == "Basics":
+            return self._basics_form_grid_spec
+        return self._default_form_grid_spec
 
     def _detach_mesh_advanced_rows(self, grid: _ResponsiveFieldGrid) -> None:
         detach_keys = [key for key in list(self._mesh_advanced_row_keys) if key in self._rows]

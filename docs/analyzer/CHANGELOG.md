@@ -64,3 +64,7 @@
   - Exports footer (`Simulate Enclosure`, `Advanced`)
   - Mesh group `Advanced` launcher button.
 - Replaced brittle fixed-height usage with minimum-height + layout-padding constraints.
+
+## 2026-02-21 (Polish A9)
+- Added explicit shared form-grid spacing spec in `BatchParameterForm` and applied it to Basics rows for consistent label/editor alignment.
+- Kept Basics as a regular parameter card (no mode-stack hierarchy changes, no field logic changes).
