@@ -1,0 +1,85 @@
+# Analyzer UI Architecture (Modern, Scalable, MT/HT Workflow)
+
+**Last updated:** 2026-02-21
+
+This document captures the **UI/navigation decisions** and **implementation constraints** for the Analyzer UI.
+It is written to be actionable for Codex implementation while minimizing risk to existing Batch UI polish.
+
+## Non-negotiables (from product requirements)
+
+- Keep **Project Manager** as a persistent launcher window (separate window).
+- Main app uses a **bottom mode bar** (DaVinci-like modes):
+  - Project | Batch | Analyse
+  - (Future: Merge)
+- Global always-visible icon actions:
+  - 🏠 Project Manager
+  - ⚙ Settings / Preferences
+- Page-local actions remain on their pages (e.g., Save/Run within Batch).
+- Future expansion: **Geometry layer**:
+  - Geometry selection will happen on Project page (like Timeline selection in DaVinci’s Edit).
+  - Modes always operate on the currently selected Geometry (future).
+
+## Navigation model
+
+### Global vs page-local actions
+- **Global actions:** apply regardless of current mode/page (Project Manager, Settings).
+- **Page-local actions:** apply only in the current mode/page (Save/Run Batch, Analysis compare/export).
+
+### Proposed frame layout (Qt)
+- QMainWindow
+  - Top context bar (global icons, title; later: project/geometry context)
+  - Central content: existing QStackedWidget pages
+  - Bottom mode bar (Project/Batch/Analyse)
+
+## Design language constraints (match current style)
+
+- Do not “invent” a new style system.
+- Reuse existing components/classes and existing QSS (if present).
+- No large visual refactors of Batch page cards.
+- Icon buttons must follow existing hover/pressed/disabled states.
+
+## Responsiveness rules (prevent glitches on resize)
+
+**Hard rules:**
+- Use Qt layouts only (QVBoxLayout/QHBoxLayout/QGridLayout/QSplitter).
+- No absolute positioning (`move()`, fixed geometries).
+- Avoid fixed widths/heights except for small toolbars/bars.
+- Correct size policies:
+  - bars: fixed height, expanding width
+  - plots/tables: expanding both directions
+- Define sensible minimum window size and minimum widths for critical panels.
+- Use eliding/word wrap for labels where needed; avoid text overlap.
+- Use ScrollArea for long forms rather than squeezing controls.
+
+## Batch page: minimal-invasive changes
+
+Goal: remove the current bottom bar controls without damaging the polished Batch layout.
+
+- Remove: “Back to Dashboard”
+- Move global actions out of the page:
+  - Project Manager becomes 🏠 in the global top bar
+  - Settings becomes ⚙ in the global top bar
+- Keep page-local actions:
+  - Save Batch
+  - Run Batch
+- Integrate Save/Run minimally:
+  - Prefer placing them in a stable header area of the Batch page
+  - Or within the existing “Exports” panel (only if it preserves layout integrity)
+- Do not rearrange the parameter cards and their internal spacing/validation UI.
+
+## Analyse page: initial structure
+
+For UI-1 implementation (structure first):
+- Add Analyse page to the main stacked widget
+- Layout uses QSplitter:
+  - Left: run/batch selection + KPI filters + shortlist (table)
+  - Right: plots (heatmap/beamwidth overlay placeholders)
+- Do not implement KPI math yet unless explicitly scoped.
+
+## Future: geometry layer implications (preview only)
+
+- Geometry selector appears on Project page (timeline-like list).
+- New mode “Merge” appears in bottom bar later.
+- Mode pages always operate on currently selected geometry.
+- This implies future DB changes (e.g., geometry_id) — not in scope now.
+
