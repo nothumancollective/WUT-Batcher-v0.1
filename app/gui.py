@@ -1971,9 +1971,11 @@ class ProjectPage(QWidget):
         self.action_status_hint.setVisible(bool(hint))
         self.action_counts.setText(f"{fatal} errors · {warn} warnings · {incomplete} incomplete")
 
-        enabled = (fatal == 0) and (not self._creating_project)
+        enabled = (fatal == 0) and (not self._creating_project) and (not self._constraints_locked)
         self.create_btn.setEnabled(enabled)
-        if not enabled and fatal > 0:
+        if self._constraints_locked:
+            self.create_btn.setToolTip("Project is already created; constraints are locked.")
+        elif not enabled and fatal > 0:
             self.create_btn.setToolTip("Resolve errors before creating the project.")
         else:
             self.create_btn.setToolTip("")
@@ -1999,7 +2001,7 @@ class ProjectPage(QWidget):
         super().resizeEvent(event)
 
     def _submit(self) -> None:
-        if not self.create_btn.isEnabled():
+        if not self.create_btn.isEnabled() or self._creating_project or self._constraints_locked:
             return
         payload = self._raw_constraints_payload()
         self.submit_project.emit(self.project_name.text().strip(), payload)
@@ -3088,6 +3090,7 @@ class MainWindow(QMainWindow):
         self._batch_validation_timer.setInterval(self._batch_validation_debounce_ms)
         self._batch_validation_timer.timeout.connect(self._flush_batch_draft_validation)
         self._project_manager_handler: Optional[Callable[[], None]] = None
+        self._project_create_in_progress = False
         self._preview_request_id = 0
         self._preview_thread: Optional[QThread] = None
         self._preview_worker: Optional[_BatchPreviewWorker] = None
@@ -3717,6 +3720,11 @@ class MainWindow(QMainWindow):
         self.stack.setCurrentWidget(self.project_page)
 
     def show_batch(self) -> None:
+        if self.current_project is None:
+            self.set_status("Open or create a project before entering Batch mode.")
+            self.show_dashboard()
+            self._sync_navigation_state()
+            return
         self._exit_run_presentation()
         self.batch_page.reset_draft()
         self._on_batch_draft_changed(self.batch_page._payload(include_name=False))
@@ -3736,6 +3744,9 @@ class MainWindow(QMainWindow):
         self._enter_run_presentation()
 
     def _create_project(self, project_name: str, constraints: Dict[str, object]) -> None:
+        if self._project_create_in_progress:
+            return
+        self._project_create_in_progress = True
         self.project_page.set_creating(True)
         try:
             validation = self.service.evaluate_project_constraints(dict(constraints))
@@ -3751,6 +3762,7 @@ class MainWindow(QMainWindow):
             else:
                 self.set_status(f"Project created: {project.project_id}")
         finally:
+            self._project_create_in_progress = False
             self.project_page.set_creating(False)
 
     def _save_batch(self, payload: Dict[str, object], *, for_run: bool = False) -> Optional[str]:

@@ -82,3 +82,8 @@
 - Hardened Project Manager open flow by wiring tile double-click directly to the selected item payload and keeping Open button state in sync with selection.
 - Refresh now restores or initializes a valid selection, reducing no-op open attempts.
 - Added guarded error handling for failed project loads so open failures surface clearly instead of silently failing.
+
+## 2026-02-21 (Regression fix: create + batch nav guard)
+- Prevented duplicate project creation by enforcing single in-flight create execution and keeping `Create Project` disabled once project constraints are locked.
+- Hardened project submit handler against re-entry while creation is active.
+- Batch-mode navigation now requires an open project; when none is loaded it keeps the user in Project/Dashboard mode and shows a status prompt.
