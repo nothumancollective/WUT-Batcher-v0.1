@@ -317,6 +317,39 @@ class BatchPageUiTests(unittest.TestCase):
         # Compact batch layout omits GCurve subgroup titles; mode chips provide the context instead.
         self.assertFalse(headers)
 
+    def test_basics_and_gcurve_share_same_form_grid_spec(self) -> None:
+        page = BatchPage()
+        basics_spec = page.parameter_form._grid_spec_for_group("Basics")  # type: ignore[attr-defined]
+        gcurve_spec = page.parameter_form._grid_spec_for_group("GCurve")  # type: ignore[attr-defined]
+        self.assertEqual(basics_spec, gcurve_spec)
+
+    def test_circular_arc_termangle_and_radius_share_row_alignment(self) -> None:
+        page = BatchPage()
+        state = self._compat_state(selected_params={"Throat.Profile": 3})
+        page.parameter_form.set_selected_params({"Throat.Profile": 3})
+        page.apply_compatibility(state)
+        page.resize(1500, 900)
+        page.show()
+        self.app.processEvents()
+
+        throat_box = page.parameter_form._group_boxes.get("Throat Profile")  # type: ignore[attr-defined]
+        if throat_box is None:
+            self.skipTest("Throat Profile group missing.")
+        throat_box.set_collapsed(False)
+        self.app.processEvents()
+
+        term_row = page.parameter_form._rows.get("CircArc.TermAngle")
+        radius_row = page.parameter_form._rows.get("CircArc.Radius")
+        if term_row is None or radius_row is None:
+            self.skipTest("Circular Arc rows are missing.")
+        self.assertFalse(term_row.container.isHidden())
+        self.assertFalse(radius_row.container.isHidden())
+
+        term_pos = term_row.container.mapToGlobal(term_row.container.rect().topLeft())
+        radius_pos = radius_row.container.mapToGlobal(radius_row.container.rect().topLeft())
+        self.assertLessEqual(abs(int(term_pos.y()) - int(radius_pos.y())), 6)
+        self.assertLess(int(term_pos.x()), int(radius_pos.x()))
+
     def test_sweep_button_locks_base_editor_when_active(self) -> None:
         page = BatchPage()
         state = self._compat_state()

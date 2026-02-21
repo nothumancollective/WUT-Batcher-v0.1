@@ -343,13 +343,6 @@ class BatchParameterForm(QWidget):
             row_right_margin=6,
             row_spacing=1,
         )
-        self._basics_form_grid_spec = _FormGridSpec(
-            label_width=max(124, int(FORM_METRICS.label_width) - 30),
-            button_label_width=max(124, int(FORM_METRICS.label_width) - 30),
-            compact_editor_width=max(232, int(FORM_METRICS.editor_total_width) - 16),
-            row_right_margin=6,
-            row_spacing=1,
-        )
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -442,7 +435,13 @@ class BatchParameterForm(QWidget):
 
     @staticmethod
     def _field_sort_tuple(field: FieldSpec) -> tuple[int, int, str]:
-        return (field_display_priority(str(field.key)), int(field.order), str(field.key))
+        key = str(field.key)
+        # Keep Circular Arc controls aligned left-to-right as TermAngle -> Radius.
+        if key == "CircArc.TermAngle":
+            return (139, int(field.order), key)
+        if key == "CircArc.Radius":
+            return (140, int(field.order), key)
+        return (field_display_priority(key), int(field.order), key)
 
     def _subgroup_for_field(self, field: FieldSpec, group_name: str) -> Tuple[int, str]:
         if field.key in self._mode_stacks:
@@ -578,6 +577,40 @@ class BatchParameterForm(QWidget):
             field_grid = _ResponsiveFieldGrid()
             box.body_layout().addWidget(field_grid)
             self._group_grids[str(group_name)] = field_grid
+            subgroup_target_grids: Dict[str, _ResponsiveFieldGrid] = {}
+            if str(group_name) == "GCurve":
+                common_frame = QFrame()
+                common_frame.setObjectName("BatchSubgroupFrame")
+                common_layout = QVBoxLayout(common_frame)
+                common_layout.setContentsMargins(0, 0, 0, 0)
+                common_layout.setSpacing(2)
+                common_grid = _ResponsiveFieldGrid()
+                common_layout.addWidget(common_grid)
+
+                mode_frame = QFrame()
+                mode_frame.setObjectName("BatchSubgroupFrame")
+                mode_layout = QVBoxLayout(mode_frame)
+                mode_layout.setContentsMargins(0, 0, 0, 0)
+                mode_layout.setSpacing(2)
+                mode_grid = _ResponsiveFieldGrid()
+                mode_layout.addWidget(mode_grid)
+
+                divider = QFrame()
+                divider.setObjectName("BatchSubtleDivider")
+                divider.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+                divider.setFixedHeight(1)
+
+                field_grid.add_full_width(common_frame)
+                field_grid.add_full_width(divider)
+                field_grid.add_full_width(mode_frame)
+                subgroup_target_grids = {
+                    "Common": common_grid,
+                    "Mode": mode_grid,
+                    "Superformula": mode_grid,
+                    "Superellipse": mode_grid,
+                    "Coverage": mode_grid,
+                    "General": mode_grid,
+                }
 
             last_subgroup = None
             ordered_fields = sorted(
@@ -599,15 +632,16 @@ class BatchParameterForm(QWidget):
             for field in ordered_fields:
                 subgroup_order, subgroup_name = self._subgroup_for_field(field, group_name)
                 _ = subgroup_order
+                target_grid = subgroup_target_grids.get(str(subgroup_name), field_grid)
                 skip_subgroup_heading = (
                     (str(group_name) == "Throat Profile" and subgroup_name in {"Mode", "OS-SE", "R-OSSE", "Circular Arc"})
-                    or (str(group_name) == "GCurve" and subgroup_name in {"Mode", "Superformula", "Superellipse"})
+                    or (str(group_name) == "GCurve")
                     or (str(group_name) == "Mesh" and subgroup_name == "Advanced")
                 )
                 if subgroup_name != "General" and subgroup_name != last_subgroup and not skip_subgroup_heading:
                     subgroup_label = QLabel(subgroup_name)
                     subgroup_label.setObjectName("IssuesPanelGroupTitle")
-                    field_grid.add_full_width(subgroup_label)
+                    target_grid.add_full_width(subgroup_label)
                     self._subgroup_headers.append(
                         _SubgroupHeader(
                             group_name=str(group_name),
@@ -619,13 +653,10 @@ class BatchParameterForm(QWidget):
                     last_subgroup = subgroup_name
                 if subgroup_name == "General":
                     last_subgroup = "General"
-                if str(group_name) == "GCurve" and subgroup_name == "Superformula" and str(last_subgroup) == "Common":
-                    field_grid.add_gap(min_cols=3)
-                    last_subgroup = "Superformula"
                 if str(field.key) == "R-OSSE" and str(field.widget_kind) == "object":
-                    self._build_rosse_property_rows(field_grid, field, group_name)
+                    self._build_rosse_property_rows(target_grid, field, group_name)
                     continue
-                self._build_row(field_grid, field, group_name)
+                self._build_row(target_grid, field, group_name)
             if str(group_name) == "Mesh":
                 self._mesh_advanced_row_keys = sorted(
                     set(str(key) for key in list(self._advanced_keys_by_group.get("Mesh", set()))) | {"Mesh.InterfaceOffset"}
@@ -774,8 +805,7 @@ class BatchParameterForm(QWidget):
             self._build_row(grid, synthetic, group_name)
 
     def _grid_spec_for_group(self, group_name: str) -> _FormGridSpec:
-        if str(group_name) == "Basics":
-            return self._basics_form_grid_spec
+        _ = group_name
         return self._default_form_grid_spec
 
     def _detach_mesh_advanced_rows(self, grid: _ResponsiveFieldGrid) -> None:

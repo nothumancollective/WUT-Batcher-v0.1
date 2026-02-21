@@ -119,3 +119,11 @@
 - Header reset visibility logic fixed: reset icon now shows only when a block is collapsed and has overrides.
 - Sweep warning tint override removed; sweep buttons keep primary sweep styling while warnings apply only to inputs.
 - Warning border selectors now explicitly cover `QSpinBox`/`QDoubleSpinBox`/`QAbstractSpinBox` (including internal line edits) without border-width changes.
+
+## 2026-02-21 (Polish A13+A15+A18)
+- Unified Batch form-grid spec across cards, including Basics, to keep label/control spacing consistent without extra vertical gaps.
+- Refactored GCurve card rendering into two structural containers:
+  - `common_frame`: `Dist`, `AspectRatio`, `Width`, `Rot`
+  - `mode_frame`: `Mode` + mode-specific parameters (`Superformula` / `Superellipse`)
+- Added subtle container separation in GCurve without textual subheadings and removed the old gap-cell workaround.
+- Enforced Circular Arc ordering so `CircArc.TermAngle` renders before `CircArc.Radius`, aligning both fields in the same two-column row flow.

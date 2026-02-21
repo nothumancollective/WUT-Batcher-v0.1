@@ -632,6 +632,16 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     QWidget#BatchFieldCell {{
         background: transparent;
     }}
+    QFrame#BatchSubgroupFrame {{
+        background: transparent;
+        border: none;
+    }}
+    QFrame#BatchSubtleDivider {{
+        background-color: #2a2a2a;
+        border: none;
+        min-height: 1px;
+        max-height: 1px;
+    }}
     QLineEdit[invalidMultiple="true"] {{
         border: 1px solid {c['warning_border']};
     }}

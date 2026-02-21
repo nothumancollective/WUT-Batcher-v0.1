@@ -199,3 +199,11 @@ The Analyzer page is planned with two explicit subviews:
 
 - GCurve responsive grid now supports conditional gap cells.
 - Superformula mode uses a 3-column-only gap between `GCurve Rot` and first `GCurve.SF.*` cell, preventing direct adjacency/misalignment in wide layouts.
+
+## Implementation status (Polish A13+A15+A18)
+
+- Batch form rows now use one shared grid-spec family across cards (including Basics) to keep row spacing and label/control alignment consistent.
+- GCurve rendering is split into two internal containers:
+  - common parameters (`Dist`, `AspectRatio`, `Width`, `Rot`)
+  - mode-driven parameters (`Mode`, `Superformula`, `Superellipse`)
+- Circular Arc field ordering in Batch rendering is normalized so `TermAngle` is placed before `Radius` in the two-column row flow.
