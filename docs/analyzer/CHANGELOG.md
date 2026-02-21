@@ -132,3 +132,8 @@
 - Compatibility sweep-key resolution now includes `R-OSSE` when that mode is visible, re-enabling sweep controls for `R-OSSE.*` rows.
 - Added regression coverage to ensure `R-OSSE.R` / `R-OSSE.r0` sweeps become active in R-OSSE mode and serialize into sweep payload.
 - Added UI coverage that group-header reset controls start hidden when no overrides are present.
+
+## 2026-02-21 (Polish A19+A20)
+- `open_enclosure_dialog()` now temporarily restores Enclosure group visibility/expanded state in the dialog, then restores hidden/collapsed state after close.
+- `open_mesh_advanced_dialog()` now temporarily restores compatibility-visible advanced rows in the dialog (instead of empty modal content) and restores detached hidden state on close.
+- Added dialog population regression tests for both Enclosure and Mesh Advanced modal paths.

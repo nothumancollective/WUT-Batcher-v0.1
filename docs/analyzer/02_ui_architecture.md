@@ -207,3 +207,9 @@ The Analyzer page is planned with two explicit subviews:
   - common parameters (`Dist`, `AspectRatio`, `Width`, `Rot`)
   - mode-driven parameters (`Mode`, `Superformula`, `Superellipse`)
 - Circular Arc field ordering in Batch rendering is normalized so `TermAngle` is placed before `Radius` in the two-column row flow.
+
+## Implementation status (Polish A19+A20)
+
+- `Simulate Enclosure` dialog now mounts the existing Batch Enclosure group content with visibility restored for dialog context.
+- `Mesh Advanced` dialog now mounts detached advanced mesh rows with compatibility-aware visibility, instead of opening empty on hidden advanced rows.
+- Both dialogs keep existing Batch field widgets/bindings (same parameter definitions, same sweep/reset behavior), and restore original detached layout state after close.

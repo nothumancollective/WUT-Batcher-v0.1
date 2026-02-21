@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import unittest
+from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -13,9 +14,10 @@ from ui.form_metrics import FORM_METRICS
 from ui.theme import build_stylesheet
 
 try:
-    from PySide6.QtWidgets import QApplication, QLabel
+    from PySide6.QtWidgets import QApplication, QDialog, QLabel
 except ImportError:  # pragma: no cover
     QApplication = None  # type: ignore[assignment]
+    QDialog = None  # type: ignore[assignment]
     QLabel = None  # type: ignore[assignment]
 
 
@@ -837,6 +839,57 @@ class BatchPageUiTests(unittest.TestCase):
         self.assertEqual(str(button.text()).strip().lower(), "advanced")
         self.assertTrue(row.container.isHidden())
         self.assertEqual(str(row.container.property("meshAdvancedDetached") or "false").lower(), "true")
+
+    def test_mesh_advanced_dialog_populates_rows(self) -> None:
+        page = BatchPage()
+        state = self._compat_state()
+        page.apply_compatibility(state)
+
+        target_key = next(
+            (key for key in list(page.parameter_form._mesh_advanced_row_keys) if key in page.parameter_form._rows),  # type: ignore[attr-defined]
+            None,
+        )
+        if target_key is None:
+            self.skipTest("No mesh advanced rows available.")
+        target_row = page.parameter_form._rows.get(target_key)
+        if target_row is None:
+            self.skipTest("Target mesh advanced row unavailable.")
+
+        observed = {"parent_name": "", "hidden": True}
+
+        def _fake_exec() -> int:
+            parent = target_row.container.parentWidget()
+            observed["parent_name"] = str(parent.objectName() or "") if parent is not None else ""
+            observed["hidden"] = bool(target_row.container.isHidden())
+            return int(QDialog.Accepted)
+
+        with patch("ui.batch_parameter_form.QDialog.exec", side_effect=_fake_exec):
+            page.parameter_form.open_mesh_advanced_dialog()
+        self.assertEqual(observed["parent_name"], "MeshAdvancedDialogHost")
+        self.assertFalse(observed["hidden"])
+
+    def test_enclosure_dialog_contains_enclosure_group(self) -> None:
+        page = BatchPage()
+        state = self._compat_state()
+        page.apply_compatibility(state)
+        row = page.parameter_form._rows.get("Mesh.Enclosure")
+        if row is None:
+            self.skipTest("Mesh.Enclosure row not available.")
+
+        enclosure_box = page.parameter_form._enclosure_box  # type: ignore[attr-defined]
+        if enclosure_box is None:
+            self.skipTest("Enclosure group box missing.")
+        observed = {"hidden": True, "collapsed": True}
+
+        def _fake_exec() -> int:
+            observed["hidden"] = bool(enclosure_box.isHidden())
+            observed["collapsed"] = bool(enclosure_box.is_collapsed())
+            return int(QDialog.Accepted)
+
+        with patch("ui.batch_parameter_form.QDialog.exec", side_effect=_fake_exec):
+            page.parameter_form.open_enclosure_dialog()
+        self.assertFalse(observed["hidden"])
+        self.assertFalse(observed["collapsed"])
 
     def test_batch_form_has_no_horizontal_overflow_at_1920x1080(self) -> None:
         page = BatchPage()

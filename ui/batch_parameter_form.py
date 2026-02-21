@@ -842,9 +842,21 @@ class BatchParameterForm(QWidget):
             layout.addWidget(widget)
 
     def open_mesh_advanced_dialog(self) -> None:
-        rows = [self._rows[key].container for key in list(self._mesh_advanced_row_keys) if key in self._rows]
-        if not rows:
+        row_widgets: List[tuple[str, QWidget]] = [
+            (str(key), self._rows[str(key)].container)
+            for key in list(self._mesh_advanced_row_keys)
+            if str(key) in self._rows
+        ]
+        if not row_widgets:
             return
+        hidden_before: Dict[str, bool] = {}
+        rows: List[QWidget] = []
+        for key, widget in list(row_widgets):
+            hidden_before[key] = bool(widget.isHidden())
+            compat_visible = str(widget.property("compatVisible") or "false").strip().lower() == "true"
+            widget.setHidden(not compat_visible)
+            if not widget.isHidden():
+                rows.append(widget)
         dialog = QDialog(self.window())
         dialog.setWindowTitle("Mesh Advanced")
         dialog.setModal(True)
@@ -860,10 +872,17 @@ class BatchParameterForm(QWidget):
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
         host = QWidget()
+        host.setObjectName("MeshAdvancedDialogHost")
         host_layout = QVBoxLayout(host)
         host_layout.setContentsMargins(0, 0, 0, 0)
         host_layout.setSpacing(4)
-        self._move_widgets_to_layout(rows, host_layout)
+        if rows:
+            self._move_widgets_to_layout(rows, host_layout)
+        else:
+            empty_hint = QLabel("No mesh advanced parameters available for the current compatibility state.")
+            empty_hint.setObjectName("SummaryMeta")
+            empty_hint.setWordWrap(True)
+            host_layout.addWidget(empty_hint)
         host_layout.addStretch(1)
         scroll.setWidget(host)
         root.addWidget(scroll, 1)
@@ -876,13 +895,21 @@ class BatchParameterForm(QWidget):
         close_row.addWidget(close_btn)
         root.addLayout(close_row)
         dialog.exec()
-        self._move_widgets_to_layout(rows, self._detached_rows_layout)
+        if rows:
+            self._move_widgets_to_layout(rows, self._detached_rows_layout)
+        for key, widget in list(row_widgets):
+            widget.setHidden(bool(hidden_before.get(key, False)))
+        self._refresh_visibility()
 
     def open_enclosure_dialog(self) -> None:
         box = self._enclosure_box
         home_layout = self._enclosure_box_home
         if box is None or home_layout is None:
             return
+        box_hidden_before = bool(box.isHidden())
+        box_collapsed_before = bool(box.is_collapsed())
+        box.setHidden(False)
+        box.set_collapsed(False)
         dialog = QDialog(self.window())
         dialog.setWindowTitle("Simulate Enclosure")
         dialog.setModal(True)
@@ -898,6 +925,7 @@ class BatchParameterForm(QWidget):
         body.setWidgetResizable(True)
         body.setFrameShape(QFrame.NoFrame)
         container = QWidget()
+        container.setObjectName("EnclosureDialogHost")
         container_layout = QVBoxLayout(container)
         container_layout.setContentsMargins(0, 0, 0, 0)
         container_layout.setSpacing(0)
@@ -916,7 +944,10 @@ class BatchParameterForm(QWidget):
         root.addLayout(close_row)
         dialog.exec()
         container_layout.removeWidget(box)
+        box.set_collapsed(box_collapsed_before)
+        box.setHidden(box_hidden_before)
         home_layout.addWidget(box)
+        self._refresh_visibility()
 
     def _open_first_visible_group(self) -> None:
         visible_boxes = [box for box in self._accordion_boxes if box.isVisible()]
