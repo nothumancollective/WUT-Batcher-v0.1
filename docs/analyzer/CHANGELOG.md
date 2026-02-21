@@ -73,3 +73,7 @@
 - Removed R-OSSE single-object special-case rendering in Batch parameter form.
 - R-OSSE now renders through property rows (`R-OSSE.*`) using the same row renderer as other throat-profile parameters.
 - Sweep controls are now available on R-OSSE property rows, while selected-params payload still normalizes back to `R-OSSE` object shape.
+
+## 2026-02-21 (Polish A11)
+- Fixed GCurve Superformula alignment by inserting a conditional grid-gap cell between Common and Superformula rows on 3-column layouts.
+- Added focused UI regression coverage for the Superformula gap cell in the GCurve responsive grid.

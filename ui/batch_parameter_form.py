@@ -188,7 +188,7 @@ class _FormGridSpec:
 class _ResponsiveFieldGrid(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self._items: List[Tuple[str, QWidget]] = []
+        self._items: List[Tuple[str, QWidget, int]] = []
         self._grid = QGridLayout(self)
         self._grid.setContentsMargins(0, 0, 0, 0)
         self._grid.setHorizontalSpacing(max(34, int(FORM_METRICS.column_gap) + 14))
@@ -196,16 +196,23 @@ class _ResponsiveFieldGrid(QWidget):
         self._min_three_width = 1500
 
     def add_cell(self, widget: QWidget) -> None:
-        self._items.append(("cell", widget))
+        self._items.append(("cell", widget, 1))
         self._relayout()
 
     def add_full_width(self, widget: QWidget) -> None:
-        self._items.append(("full", widget))
+        self._items.append(("full", widget, 1))
+        self._relayout()
+
+    def add_gap(self, *, min_cols: int = 3) -> None:
+        spacer = QWidget(self)
+        spacer.setObjectName("BatchGridGapCell")
+        spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self._items.append(("gap", spacer, max(1, int(min_cols))))
         self._relayout()
 
     def remove_widget(self, widget: QWidget) -> None:
         target_id = id(widget)
-        self._items = [(kind, item) for kind, item in self._items if id(item) != target_id]
+        self._items = [(kind, item, min_cols) for kind, item, min_cols in self._items if id(item) != target_id]
         self._relayout()
 
     def resizeEvent(self, event) -> None:  # type: ignore[override]
@@ -223,7 +230,9 @@ class _ResponsiveFieldGrid(QWidget):
         cols = 3 if int(self.width()) >= int(self._min_three_width) else 2
         row = 0
         col = 0
-        for kind, widget in self._items:
+        for kind, widget, min_cols in self._items:
+            if kind == "gap" and cols < int(min_cols):
+                continue
             if kind == "full":
                 if col != 0:
                     row += 1
@@ -610,6 +619,9 @@ class BatchParameterForm(QWidget):
                     last_subgroup = subgroup_name
                 if subgroup_name == "General":
                     last_subgroup = "General"
+                if str(group_name) == "GCurve" and subgroup_name == "Superformula" and str(last_subgroup) == "Common":
+                    field_grid.add_gap(min_cols=3)
+                    last_subgroup = "Superformula"
                 if str(field.key) == "R-OSSE" and str(field.widget_kind) == "object":
                     self._build_rosse_property_rows(field_grid, field, group_name)
                     continue

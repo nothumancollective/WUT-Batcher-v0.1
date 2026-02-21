@@ -194,3 +194,8 @@ The Analyzer page is planned with two explicit subviews:
 - R-OSSE throat-profile mode no longer uses a dedicated object-only editor path.
 - R-OSSE properties are rendered as normal parameter rows (`R-OSSE.*`) in the same row/sweep system used by other throat-profile mode fields.
 - Selected-parameter payload remains compatible by collapsing visible `R-OSSE.*` row values back into `R-OSSE` object form.
+
+## Implementation status (Polish A11)
+
+- GCurve responsive grid now supports conditional gap cells.
+- Superformula mode uses a 3-column-only gap between `GCurve Rot` and first `GCurve.SF.*` cell, preventing direct adjacency/misalignment in wide layouts.
