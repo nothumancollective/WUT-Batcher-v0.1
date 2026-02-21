@@ -303,6 +303,24 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         selection-background-color: {c['selection']};
         selection-color: {c['button_text']};
     }}
+    QComboBox {{
+        padding-right: 24px;
+    }}
+    QComboBox::drop-down {{
+        subcontrol-origin: padding;
+        subcontrol-position: top right;
+        border-left: 1px solid {c['border']};
+        width: 22px;
+        background-color: #232323;
+        border-top-right-radius: {r['md']}px;
+        border-bottom-right-radius: {r['md']}px;
+    }}
+    QComboBox::down-arrow {{
+        image: url(:/icons/chevron_down.svg);
+        width: 12px;
+        height: 12px;
+        margin-right: 4px;
+    }}
     QSpinBox, QDoubleSpinBox {{
         padding-right: 22px;
     }}
@@ -325,39 +343,17 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         border-bottom-right-radius: {r['md']}px;
     }}
     QSpinBox::up-arrow, QDoubleSpinBox::up-arrow, QAbstractSpinBox::up-arrow {{
-        image: none;
-        width: 0px;
-        height: 0px;
-        border-left: 5px solid transparent;
-        border-right: 5px solid transparent;
-        border-bottom: 7px solid {c['muted']};
+        image: url(:/icons/chevron_up.svg);
+        width: 10px;
+        height: 10px;
     }}
     QSpinBox::down-arrow, QDoubleSpinBox::down-arrow, QAbstractSpinBox::down-arrow {{
-        image: none;
-        width: 0px;
-        height: 0px;
-        border-left: 5px solid transparent;
-        border-right: 5px solid transparent;
-        border-top: 7px solid {c['muted']};
+        image: url(:/icons/chevron_down.svg);
+        width: 10px;
+        height: 10px;
     }}
     QComboBox#BatchExportCombo, QComboBox#BatchFieldCombo {{
         padding-right: 24px;
-    }}
-    QComboBox#BatchExportCombo::drop-down, QComboBox#BatchFieldCombo::drop-down {{
-        border-left: 1px solid {c['border']};
-        width: 22px;
-        background-color: #232323;
-        border-top-right-radius: {r['md']}px;
-        border-bottom-right-radius: {r['md']}px;
-    }}
-    QComboBox#BatchExportCombo::down-arrow, QComboBox#BatchFieldCombo::down-arrow {{
-        image: none;
-        width: 0px;
-        height: 0px;
-        border-left: 5px solid transparent;
-        border-right: 5px solid transparent;
-        border-top: 7px solid {c['muted']};
-        margin-right: 5px;
     }}
     QSpinBox[batchField="true"], QDoubleSpinBox[batchField="true"], QAbstractSpinBox[batchField="true"] {{
         padding-right: 24px;

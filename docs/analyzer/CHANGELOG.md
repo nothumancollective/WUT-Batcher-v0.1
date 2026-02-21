@@ -28,3 +28,6 @@
 
 ## 2026-02-21 (UI-1D.1)
 - UI-1D.1: Added Qt resource icon pipeline (QRC + compiled resource module) and updated global TopBar buttons to Home + Settings SVG icons.
+
+## 2026-02-21 (UI-1D.2)
+- UI-1D.2: Fixed QComboBox/QSpinBox arrow rendering using QRC SVG chevrons and updated theme subcontrols to keep arrow regions visible on Windows HiDPI.
