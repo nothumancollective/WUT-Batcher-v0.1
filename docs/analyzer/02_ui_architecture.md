@@ -188,3 +188,9 @@ The Analyzer page is planned with two explicit subviews:
 
 - Basics card layout now uses the same shared row-grid spec family as the other geometry cards.
 - Change scope stayed layout-only (label width/spacing/alignment); Basics field set and card hierarchy were preserved.
+
+## Implementation status (Polish A10)
+
+- R-OSSE throat-profile mode no longer uses a dedicated object-only editor path.
+- R-OSSE properties are rendered as normal parameter rows (`R-OSSE.*`) in the same row/sweep system used by other throat-profile mode fields.
+- Selected-parameter payload remains compatible by collapsing visible `R-OSSE.*` row values back into `R-OSSE` object form.

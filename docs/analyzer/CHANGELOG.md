@@ -68,3 +68,8 @@
 ## 2026-02-21 (Polish A9)
 - Added explicit shared form-grid spacing spec in `BatchParameterForm` and applied it to Basics rows for consistent label/editor alignment.
 - Kept Basics as a regular parameter card (no mode-stack hierarchy changes, no field logic changes).
+
+## 2026-02-21 (Polish A10)
+- Removed R-OSSE single-object special-case rendering in Batch parameter form.
+- R-OSSE now renders through property rows (`R-OSSE.*`) using the same row renderer as other throat-profile parameters.
+- Sweep controls are now available on R-OSSE property rows, while selected-params payload still normalizes back to `R-OSSE` object shape.

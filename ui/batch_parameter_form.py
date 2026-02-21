@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from ui.form_builder import (
@@ -399,8 +399,6 @@ class BatchParameterForm(QWidget):
 
     def _make_base_editor(self, field: FieldSpec) -> QWidget:
         if field.widget_kind == "object":
-            if str(field.key).strip() == "R-OSSE":
-                return _SingleColumnObjectEditor(field)
             return ObjectFieldEditor(field, use_toggle=(field.key == "Mesh.Enclosure"))
         return ScalarFieldEditor(field)
 
@@ -612,6 +610,9 @@ class BatchParameterForm(QWidget):
                     last_subgroup = subgroup_name
                 if subgroup_name == "General":
                     last_subgroup = "General"
+                if str(field.key) == "R-OSSE" and str(field.widget_kind) == "object":
+                    self._build_rosse_property_rows(field_grid, field, group_name)
+                    continue
                 self._build_row(field_grid, field, group_name)
             if str(group_name) == "Mesh":
                 self._mesh_advanced_row_keys = sorted(
@@ -752,6 +753,13 @@ class BatchParameterForm(QWidget):
         self._wire_row_blocked_interactions(key)
         sweep_toggle.clicked.connect(lambda checked, row_key=key: self._on_sweep_clicked(row_key, bool(checked)))
         sweep_toggle.toggled.connect(lambda enabled, row_key=key: self._on_sweep_toggled(row_key, enabled))
+
+    def _build_rosse_property_rows(self, grid: _ResponsiveFieldGrid, field: FieldSpec, group_name: str) -> None:
+        ui_mode_tags = tuple(field.ui_mode_tags) if field.ui_mode_tags else ("Throat.Profile=2",)
+        properties = sorted(list(field.object_properties or ()), key=self._field_sort_tuple)
+        for property_field in properties:
+            synthetic = replace(property_field, ui_mode_tags=ui_mode_tags)
+            self._build_row(grid, synthetic, group_name)
 
     def _grid_spec_for_group(self, group_name: str) -> _FormGridSpec:
         if str(group_name) == "Basics":
@@ -1443,16 +1451,21 @@ class BatchParameterForm(QWidget):
         group_has_compatible_rows: Dict[str, bool] = {}
 
         for key, row in self._rows.items():
-            allowed = (not self._visible_keys or key in self._visible_keys) and key not in self._project_fixed_keys
+            visible_ok = (not self._visible_keys) or (key in self._visible_keys)
+            if key.startswith("R-OSSE.") and not visible_ok and "R-OSSE" in self._visible_keys:
+                visible_ok = True
+            allowed = bool(visible_ok and key not in self._project_fixed_keys)
             if key in self._hidden_ui_keys:
                 allowed = False
-            if key == "R-OSSE":
+            if key == "R-OSSE" or key.startswith("R-OSSE."):
                 allowed = bool(allowed and throat_mode == 2)
             if allowed:
                 group_has_compatible_rows[str(row.group_name)] = True
             advanced_keys = self._advanced_keys_by_group.get(str(row.group_name), set())
             group_name = str(row.group_name)
-            if key in set(self._mesh_advanced_row_keys):
+            if key.startswith("R-OSSE."):
+                advanced_visible = bool(throat_mode == 2)
+            elif key in set(self._mesh_advanced_row_keys):
                 advanced_visible = False
             elif group_name == "Throat Profile" and key in advanced_keys:
                 advanced_visible = bool(throat_mode == 2)
@@ -1461,13 +1474,19 @@ class BatchParameterForm(QWidget):
             else:
                 advanced_visible = True
             is_visible = bool(allowed and advanced_visible)
-            is_locked = bool(key in self._locked_keys or key in self._blocked_keys)
+            rosse_parent_blocked = bool(key.startswith("R-OSSE.") and "R-OSSE" in self._blocked_keys)
+            rosse_parent_locked = bool(key.startswith("R-OSSE.") and ("R-OSSE" in self._locked_keys or rosse_parent_blocked))
+            is_locked = bool(key in self._locked_keys or key in self._blocked_keys or rosse_parent_locked)
             row.container.setVisible(is_visible)
             row.container.setProperty("rowVisible", "true" if is_visible else "false")
             row.container.setProperty("compatVisible", "true" if allowed else "false")
-            row.base_editor.setProperty("compatBlocked", "true" if key in self._blocked_keys else "false")
+            is_blocked = bool(key in self._blocked_keys or rosse_parent_blocked)
+            row.base_editor.setProperty("compatBlocked", "true" if is_blocked else "false")
             self._repolish(row.base_editor)
-            can_sweep = bool(allowed and row.sweep_capable and (key in self._sweepable_keys) and (not is_locked))
+            sweepable = bool(key in self._sweepable_keys)
+            if key.startswith("R-OSSE.") and not sweepable and "R-OSSE" in self._sweepable_keys:
+                sweepable = True
+            can_sweep = bool(allowed and row.sweep_capable and sweepable and (not is_locked))
 
             row.sweep_toggle.setVisible(bool(row.sweep_capable))
             row.sweep_toggle.setEnabled(can_sweep)
@@ -1602,11 +1621,20 @@ class BatchParameterForm(QWidget):
 
     def selected_params_payload(self) -> Dict[str, Any]:
         payload: Dict[str, Any] = {}
+        rosse_payload: Dict[str, Any] = {}
+        rosse_visible = False
         for key, row in self._rows.items():
             if str(row.container.property("compatVisible") or "false").lower() != "true":
                 continue
             is_set, value = self._current_state(row)
+            if key.startswith("R-OSSE."):
+                rosse_visible = True
+                if is_set:
+                    rosse_payload[key.split(".", 1)[1]] = value
+                continue
             payload[key] = value if is_set else None
+        if rosse_visible:
+            payload["R-OSSE"] = dict(rosse_payload) if rosse_payload else None
         return payload
 
     def sweeps_payload(self) -> Dict[str, Dict[str, Any]]:
@@ -1640,6 +1668,12 @@ class BatchParameterForm(QWidget):
 
     def set_selected_params(self, payload: Dict[str, Any]) -> None:
         raw = dict(payload or {})
+        rosse_value = raw.get("R-OSSE")
+        if isinstance(rosse_value, Mapping):
+            for sub_key, sub_value in dict(rosse_value).items():
+                token = f"R-OSSE.{str(sub_key).strip()}"
+                if token.strip(".") and token not in raw:
+                    raw[token] = sub_value
         for key, row in self._rows.items():
             self._set_editor_value(row, raw.get(key))
         self._sync_interface_list_lengths("Mesh.SubdomainSlices")
@@ -1666,13 +1700,12 @@ class BatchParameterForm(QWidget):
         self._refresh_group_headers()
         self.clear_manual_highlights()
 
-    @staticmethod
-    def _normalize_policy_key_for_row(key: str) -> str:
+    def _normalize_policy_key_for_row(self, key: str) -> str:
         token = str(key or "").strip()
         if not token:
             return ""
         if token.startswith("R-OSSE."):
-            return "R-OSSE"
+            return token if token in self._rows else "R-OSSE"
         if token in {"R-OSSE", "Throat.Profile"}:
             return token
         return token
