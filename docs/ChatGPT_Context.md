@@ -1,7 +1,38 @@
 # WUT Batcher Context (Current)
 
 Canonical context for this repository.  
-Last updated: 2026-02-20
+Last updated: 2026-02-21
+
+## Production Surface
+- Shipping CLI commands:
+  - `python -m app doctor`
+  - `python -m app dataset build`
+  - `python -m app dataset update`
+  - `python -m app dataset sync-global`
+  - `python -m app plan materialize`
+  - `python -m app run pipeline`
+  - `python -m app run-sample`
+  - `python -m app gui`
+  - `python -m app runs pin`
+  - `python -m app runs unpin`
+  - `python -m app runs cleanup-testdata`
+- Shipping GUI entrypoints:
+  - `app/gui.py` -> `main()`, `launch_gui()`
+  - Main operational flows: save batch, run batch, export version.
+
+## Experimental/Tooling
+> WARNING: The commands below are non-shipping surfaces and should be treated as tooling/experimental unless explicitly promoted.
+
+- Experimental examples:
+  - `python -m app projectpage-ath-experiment ...`
+  - `python -m app ath-experiments backfill-subkeys ...`
+  - `python -m app ath-experiments refined-reports ...`
+  - `python -m app compat verify --mode quick ...`
+- Tooling examples:
+  - `python -m app runner-test ...`
+  - `python -m app ui inspect-akabak ...`
+  - `python -m app ui inspect-vacs ...`
+  - `python -m app vacs discover-graphs ...`
 
 ## TL;DR
 - Effective trunk is `wut-batcher/rebuild`.
