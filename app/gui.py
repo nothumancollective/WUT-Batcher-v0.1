@@ -1897,8 +1897,6 @@ class ProjectPage(QWidget):
 class BatchPage(QWidget):
     save_batch = Signal(dict)
     run_batch = Signal(dict)
-    back_to_dashboard = Signal()
-    open_project_manager = Signal()
     draft_changed = Signal(dict)
     blocked_interaction = Signal(str, str, str)
 
@@ -1909,9 +1907,25 @@ class BatchPage(QWidget):
         root.setSpacing(10)
         self._root_layout = root
 
+        header_row = QWidget()
+        header_layout = QHBoxLayout(header_row)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(8)
         title = QLabel("BATCH")
         title.setObjectName("PageTitle")
-        root.addWidget(title)
+        header_layout.addWidget(title, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        header_layout.addStretch(1)
+        self.save_btn = QPushButton("Save Batch")
+        self.save_btn.setObjectName("BatchPrimaryButton")
+        self.run_btn = QPushButton("Run Batch")
+        self.run_btn.setObjectName("BatchRunButton")
+        self.save_btn.setMinimumWidth(120)
+        self.run_btn.setMinimumWidth(120)
+        self.save_btn.setToolTip("Save current batch configuration")
+        self.run_btn.setToolTip("Run simulation batch with current configuration")
+        header_layout.addWidget(self.save_btn, 0, Qt.AlignRight | Qt.AlignVCenter)
+        header_layout.addWidget(self.run_btn, 0, Qt.AlignRight | Qt.AlignVCenter)
+        root.addWidget(header_row)
 
         name_row = QWidget()
         name_layout = QHBoxLayout(name_row)
@@ -2021,36 +2035,8 @@ class BatchPage(QWidget):
         self.compat_panel = CompatibilityPanel("Batch Compatibility")
         self.compat_panel.setVisible(False)
 
-        self.action_bar = QFrame()
-        self.action_bar.setObjectName("BatchActionBar")
-        self.action_bar.setFixedHeight(52)
-        action_layout = QHBoxLayout(self.action_bar)
-        action_layout.setContentsMargins(10, 6, 10, 6)
-        action_layout.setSpacing(10)
-        self.project_manager_btn = QPushButton("Project Manager")
-        self.project_manager_btn.setObjectName("StatusActionButton")
-        self.project_manager_btn.setMinimumWidth(148)
-        self.project_manager_btn.setMaximumWidth(186)
-        self.project_manager_btn.setFixedHeight(30)
-        action_layout.addWidget(self.project_manager_btn, 0, Qt.AlignLeft | Qt.AlignVCenter)
-        action_layout.addStretch(1)
-        self.back_btn = QPushButton("Back to Dashboard")
-        self.back_btn.setObjectName("BatchGhostButton")
-        self.save_btn = QPushButton("Save Batch")
-        self.save_btn.setObjectName("BatchPrimaryButton")
-        self.run_btn = QPushButton("Run Batch")
-        self.run_btn.setObjectName("BatchRunButton")
-        for button in (self.save_btn, self.run_btn, self.back_btn):
-            button.setMinimumWidth(128)
-        action_layout.addWidget(self.back_btn)
-        action_layout.addWidget(self.save_btn)
-        action_layout.addWidget(self.run_btn)
-        root.addWidget(self.action_bar)
-
         self.save_btn.clicked.connect(lambda: self.save_batch.emit(self._payload()))
         self.run_btn.clicked.connect(lambda: self.run_batch.emit(self._payload()))
-        self.back_btn.clicked.connect(self.back_to_dashboard.emit)
-        self.project_manager_btn.clicked.connect(self.open_project_manager.emit)
 
         self.parameter_form.changed.connect(self._emit_draft_changed)
         self.parameter_form.blocked_interaction.connect(self.blocked_interaction.emit)
@@ -2326,7 +2312,7 @@ class BatchPage(QWidget):
         elif fatal_count > 0:
             self.save_btn.setToolTip("Resolve fatal validation issues before saving.")
         else:
-            self.save_btn.setToolTip("")
+            self.save_btn.setToolTip("Save current batch configuration")
         if not has_name:
             self.run_btn.setToolTip("Provide a batch name first.")
         elif incomplete_count > 0:
@@ -2334,7 +2320,7 @@ class BatchPage(QWidget):
         elif fatal_count > 0:
             self.run_btn.setToolTip("Resolve fatal validation issues before running.")
         else:
-            self.run_btn.setToolTip("")
+            self.run_btn.setToolTip("Run simulation batch with current configuration")
         run_ready = bool(has_name and fatal_count == 0 and incomplete_count == 0)
         self.run_btn.setProperty("runReady", "true" if run_ready else "false")
         self.run_btn.style().unpolish(self.run_btn)
@@ -2824,8 +2810,6 @@ class MainWindow(QMainWindow):
 
         self.batch_page.save_batch.connect(self._save_batch)
         self.batch_page.run_batch.connect(self._run_batch)
-        self.batch_page.back_to_dashboard.connect(self.show_dashboard)
-        self.batch_page.open_project_manager.connect(self._open_project_manager)
         self.batch_page.draft_changed.connect(self._queue_batch_draft_changed)
         self.batch_page.blocked_interaction.connect(self._on_batch_blocked_interaction)
         self.batch_page.compat_panel.request_show_details.connect(

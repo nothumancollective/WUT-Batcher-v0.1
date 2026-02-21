@@ -19,3 +19,6 @@
 - UI-1A: Introduced global top bar and bottom mode bar skeleton.
 - Added an `Analyse` placeholder page wired into main stacked navigation.
 - Kept Batch page internals unchanged; no KPI or database logic added.
+
+## 2026-02-21 (UI-1B)
+- UI-1B: Migrated Batch actions (Save/Run) into page header and removed legacy bottom bar.

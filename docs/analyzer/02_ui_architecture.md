@@ -120,3 +120,9 @@ The Analyzer page is planned with two explicit subviews:
 - Deferred to later phases:
   - migration/removal of legacy Batch-local navigation controls
   - Analyzer subview layout (`Batch Review` / `Candidate Pool`) and KPI panels
+
+## Implementation status (UI-1B)
+
+- Batch page legacy bottom action bar was removed (`Project Manager`, `Back to Dashboard`, `Save Batch`, `Run Batch`).
+- `Save Batch` and `Run Batch` now live in the Batch page header row (top-right), preserving existing card/parameter layout.
+- Existing save/run code paths are unchanged; only button placement and wiring surface changed.
