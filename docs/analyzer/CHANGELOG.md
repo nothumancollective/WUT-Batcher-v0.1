@@ -37,3 +37,6 @@
 
 ## 2026-02-21 (UI-1D.4)
 - UI-1D.4: Consolidated Batch header into one compact row (`BATCH + Batch Name + Save + Run`) and removed redundant global TopBar page text for Batch mode.
+
+## 2026-02-21 (UI-1D.5)
+- UI-1D.5: Reworked Batch summary area into a responsive summary strip (Draft / Estimate / Validation) with reduced dead space and consistent card typography/padding.

@@ -147,3 +147,11 @@ The Analyzer page is planned with two explicit subviews:
 
 - Batch page top row is consolidated to `BATCH + Batch Name + Save + Run` within one compact header strip.
 - Global TopBar center text is intentionally blank while Batch page is active to avoid duplicated “Batch” titles.
+
+## Implementation status (UI-1D.5)
+
+- Batch summary section now behaves as a responsive strip:
+  - wide: three side-by-side cards (Draft / Estimate / Validation)
+  - medium: Draft + Estimate top row, Validation full-width below
+  - narrow: stacked cards
+- Fixed heights and spacer-heavy card interiors were removed to reduce empty space while preserving all summary information.

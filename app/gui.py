@@ -2041,16 +2041,19 @@ class BatchPage(QWidget):
         root.addWidget(header_row)
 
         summary_strip = QWidget()
-        summary_strip_layout = QHBoxLayout(summary_strip)
+        summary_strip.setObjectName("BatchSummaryStrip")
+        summary_strip_layout = QGridLayout(summary_strip)
         summary_strip_layout.setContentsMargins(0, 0, 0, 0)
-        summary_strip_layout.setSpacing(10)
+        summary_strip_layout.setHorizontalSpacing(8)
+        summary_strip_layout.setVerticalSpacing(8)
 
         self.summary_left_card = QFrame()
         self.summary_left_card.setObjectName("ProjectSummaryPanel")
-        self.summary_left_card.setFixedHeight(126)
+        self.summary_left_card.setMinimumHeight(92)
+        self.summary_left_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         left_card_layout = QVBoxLayout(self.summary_left_card)
         left_card_layout.setContentsMargins(10, 8, 10, 8)
-        left_card_layout.setSpacing(2)
+        left_card_layout.setSpacing(4)
         summary_title = QLabel("Batch Draft")
         summary_title.setObjectName("SummaryTitle")
         left_card_layout.addWidget(summary_title)
@@ -2062,15 +2065,15 @@ class BatchPage(QWidget):
         self.summary_line_2.setObjectName("SummaryText")
         self.summary_line_2.setWordWrap(True)
         left_card_layout.addWidget(self.summary_line_2)
-        left_card_layout.addStretch(1)
-        summary_strip_layout.addWidget(self.summary_left_card, 1)
+        summary_strip_layout.addWidget(self.summary_left_card, 0, 0)
 
         self.summary_center_card = QFrame()
         self.summary_center_card.setObjectName("ProjectSummaryPanel")
-        self.summary_center_card.setFixedHeight(126)
+        self.summary_center_card.setMinimumHeight(92)
+        self.summary_center_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         center_card_layout = QVBoxLayout(self.summary_center_card)
         center_card_layout.setContentsMargins(10, 8, 10, 8)
-        center_card_layout.setSpacing(2)
+        center_card_layout.setSpacing(4)
         summary_center_title = QLabel("Estimate")
         summary_center_title.setObjectName("SummaryTitle")
         center_card_layout.addWidget(summary_center_title)
@@ -2086,15 +2089,15 @@ class BatchPage(QWidget):
         self.summary_eta_label = QLabel("ETA: unknown")
         self.summary_eta_label.setObjectName("SummaryMeta")
         center_card_layout.addWidget(self.summary_eta_label)
-        center_card_layout.addStretch(1)
-        summary_strip_layout.addWidget(self.summary_center_card, 1)
+        summary_strip_layout.addWidget(self.summary_center_card, 0, 1)
 
         self.summary_right_card = QFrame()
         self.summary_right_card.setObjectName("ProjectSummaryPanel")
-        self.summary_right_card.setFixedHeight(126)
+        self.summary_right_card.setMinimumHeight(92)
+        self.summary_right_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         right_card_layout = QVBoxLayout(self.summary_right_card)
         right_card_layout.setContentsMargins(10, 8, 10, 8)
-        right_card_layout.setSpacing(2)
+        right_card_layout.setSpacing(4)
         summary_issue_title = QLabel("Validation")
         summary_issue_title.setObjectName("SummaryTitle")
         right_card_layout.addWidget(summary_issue_title)
@@ -2102,8 +2105,7 @@ class BatchPage(QWidget):
         self.summary_issue_hint.setObjectName("BatchValidationHint")
         self.summary_issue_hint.setWordWrap(True)
         right_card_layout.addWidget(self.summary_issue_hint)
-        right_card_layout.addStretch(1)
-        summary_strip_layout.addWidget(self.summary_right_card, 1)
+        summary_strip_layout.addWidget(self.summary_right_card, 0, 2)
         root.addWidget(summary_strip)
 
         self.parameter_form = BatchParameterForm(build_project_form_schema())
@@ -2152,6 +2154,7 @@ class BatchPage(QWidget):
         self._body_layout = body
         self._right_panel = right_panel
         self._summary_cards = [self.summary_left_card, self.summary_center_card, self.summary_right_card]
+        self._summary_arrangement_key: Optional[str] = None
 
         self._compat_state: Dict[str, Any] = {"visible_keys": [], "locked_keys": [], "sweepable_keys": [], "issues": []}
         self._latest_field_issues: List[Dict[str, Any]] = []
@@ -2169,13 +2172,7 @@ class BatchPage(QWidget):
     def _apply_equal_widths(self) -> None:
         margins = self._root_layout.contentsMargins()
         available_width = max(int(self.width() - margins.left() - margins.right()), 1)
-        summary_reference = int(self._summary_strip.width()) if self._summary_strip is not None else 0
-        summary_total = max(summary_reference or available_width, 1)
-        summary_spacing = max(int(self._summary_strip_layout.spacing()), 0)
-        summary_width = max((summary_total - (2 * summary_spacing)) // 3, 1)
-        for card in self._summary_cards:
-            card.setMinimumWidth(summary_width)
-            card.setMaximumWidth(summary_width)
+        self._apply_summary_strip_layout(available_width)
 
         body_total = max(available_width, 1)
         body_spacing = max(int(self._body_layout.spacing()), 0)
@@ -2185,6 +2182,46 @@ class BatchPage(QWidget):
 
         self.batch_name.setMinimumWidth(max(260, available_width // 4))
         self.batch_name.setMaximumWidth(16777215)
+
+    def _apply_summary_strip_layout(self, available_width: int) -> None:
+        if available_width >= 1080:
+            arrangement = "triple"
+            placements = [
+                (self.summary_left_card, 0, 0, 1, 1),
+                (self.summary_center_card, 0, 1, 1, 1),
+                (self.summary_right_card, 0, 2, 1, 1),
+            ]
+            for col in range(3):
+                self._summary_strip_layout.setColumnStretch(col, 1)
+        elif available_width >= 760:
+            arrangement = "dual_plus_validation"
+            placements = [
+                (self.summary_left_card, 0, 0, 1, 1),
+                (self.summary_center_card, 0, 1, 1, 1),
+                (self.summary_right_card, 1, 0, 1, 2),
+            ]
+            self._summary_strip_layout.setColumnStretch(0, 1)
+            self._summary_strip_layout.setColumnStretch(1, 1)
+            self._summary_strip_layout.setColumnStretch(2, 0)
+        else:
+            arrangement = "stacked"
+            placements = [
+                (self.summary_left_card, 0, 0, 1, 1),
+                (self.summary_center_card, 1, 0, 1, 1),
+                (self.summary_right_card, 2, 0, 1, 1),
+            ]
+            self._summary_strip_layout.setColumnStretch(0, 1)
+            self._summary_strip_layout.setColumnStretch(1, 0)
+            self._summary_strip_layout.setColumnStretch(2, 0)
+
+        if arrangement == self._summary_arrangement_key:
+            return
+
+        while self._summary_strip_layout.count():
+            self._summary_strip_layout.takeAt(0)
+        for card, row, col, row_span, col_span in placements:
+            self._summary_strip_layout.addWidget(card, row, col, row_span, col_span)
+        self._summary_arrangement_key = arrangement
 
     def _emit_draft_changed(self) -> None:
         if self._suspend_draft_events:
