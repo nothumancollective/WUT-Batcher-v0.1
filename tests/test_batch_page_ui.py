@@ -166,6 +166,29 @@ class BatchPageUiTests(unittest.TestCase):
         self.assertEqual(float(value["R"]), 120.0)
         self.assertEqual(float(value["r0"]), 17.0)
 
+    def test_rosse_property_rows_are_sweepable_in_rosse_mode(self) -> None:
+        page = BatchPage()
+        state = self._compat_state(selected_params={"Throat.Profile": 2})
+        page.parameter_form.set_selected_params({"Throat.Profile": 2})
+        page.apply_compatibility(state)
+        self.assertIn("R-OSSE", set(str(item) for item in list(state.get("sweepable_keys", []) or [])))
+
+        for key in ("R-OSSE.R", "R-OSSE.r0"):
+            row = page.parameter_form._rows.get(key)
+            if row is None:
+                self.skipTest(f"{key} row missing.")
+            self.assertFalse(row.container.isHidden())
+            self.assertTrue(row.sweep_capable)
+            self.assertTrue(row.sweep_toggle.isEnabled())
+            row.sweep_toggle.setChecked(True)
+            row.start_edit.setText("10")
+            row.end_edit.setText("12")
+            row.steps_edit.setText("3")
+
+        sweeps = page.parameter_form.sweeps_payload()
+        self.assertIn("R-OSSE.R", sweeps)
+        self.assertIn("R-OSSE.r0", sweeps)
+
     def test_disclosure_hint_marks_selected_segment_button(self) -> None:
         page = BatchPage()
         initial = self._compat_state()
@@ -741,6 +764,16 @@ class BatchPageUiTests(unittest.TestCase):
 
         reset_btn.click()
         self.app.processEvents()
+        self.assertTrue(reset_btn.isHidden())
+
+    def test_block_reset_button_starts_hidden_without_overrides(self) -> None:
+        page = BatchPage()
+        state = self._compat_state()
+        page.apply_compatibility(state)
+        reset_btn = page.parameter_form.block_reset_button_for_group("Basics")
+        self.assertIsNotNone(reset_btn)
+        assert reset_btn is not None
+        self.assertFalse(reset_btn.isEnabled())
         self.assertTrue(reset_btn.isHidden())
 
     def test_mesh_angular_segments_step_and_multiple_validation(self) -> None:

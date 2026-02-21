@@ -127,3 +127,8 @@
   - `mode_frame`: `Mode` + mode-specific parameters (`Superformula` / `Superellipse`)
 - Added subtle container separation in GCurve without textual subheadings and removed the old gap-cell workaround.
 - Enforced Circular Arc ordering so `CircArc.TermAngle` renders before `CircArc.Radius`, aligning both fields in the same two-column row flow.
+
+## 2026-02-21 (Polish A14)
+- Compatibility sweep-key resolution now includes `R-OSSE` when that mode is visible, re-enabling sweep controls for `R-OSSE.*` rows.
+- Added regression coverage to ensure `R-OSSE.R` / `R-OSSE.r0` sweeps become active in R-OSSE mode and serialize into sweep payload.
+- Added UI coverage that group-header reset controls start hidden when no overrides are present.
