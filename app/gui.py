@@ -44,6 +44,7 @@ try:
         QGraphicsOpacityEffect,
         QGridLayout,
         QGroupBox,
+        QHeaderView,
         QHBoxLayout,
         QInputDialog,
         QLabel,
@@ -57,10 +58,14 @@ try:
         QProgressBar,
         QScrollArea,
         QSizePolicy,
+        QSplitter,
         QSplashScreen,
         QStackedWidget,
         QStatusBar,
         QStyle,
+        QTableWidget,
+        QTableWidgetItem,
+        QTabWidget,
         QTextEdit,
         QToolButton,
         QVBoxLayout,
@@ -219,6 +224,89 @@ class _BatchRunWorker(QObject):
             self.finished.emit(self._batch_id, payload)
         except Exception:
             self.failed.emit(self._batch_id, traceback.format_exc())
+
+
+class _AnalyzerMetadataWorker(QObject):
+    finished = Signal(int, dict)
+    failed = Signal(int, str)
+
+    def __init__(
+        self,
+        *,
+        service: OrchestratorService,
+        request_id: int,
+        source: str,
+        project_id: Optional[str],
+        batch_id: Optional[str],
+        mode: str,
+    ) -> None:
+        super().__init__()
+        self._service = service
+        self._request_id = int(request_id)
+        self._source = str(source or "project")
+        self._project_id = str(project_id or "").strip() or None
+        self._batch_id = str(batch_id or "").strip() or None
+        self._mode = str(mode or "overview")
+
+    def run(self) -> None:
+        try:
+            if self._mode == "runs":
+                if not self._project_id or not self._batch_id:
+                    payload = {
+                        "mode": "runs",
+                        "project_id": self._project_id,
+                        "batch_id": self._batch_id,
+                        "runs": [],
+                    }
+                else:
+                    rows = self._service.analyzer_list_polar_runs(
+                        source=self._source,
+                        project_id=self._project_id,
+                        batch_id=self._batch_id,
+                    )
+                    payload = {
+                        "mode": "runs",
+                        "project_id": self._project_id,
+                        "batch_id": self._batch_id,
+                        "runs": rows,
+                    }
+                self.finished.emit(self._request_id, payload)
+                return
+
+            projects = self._service.analyzer_list_polar_projects(source=self._source, project_id=self._project_id)
+            active_project_id = self._project_id
+            if not active_project_id and projects:
+                active_project_id = str(projects[0].get("project_id") or "").strip() or None
+
+            batches: List[Dict[str, Any]] = []
+            runs: List[Dict[str, Any]] = []
+            active_batch_id = self._batch_id
+            if active_project_id:
+                batches = self._service.analyzer_list_polar_batches(
+                    source=self._source,
+                    project_id=active_project_id,
+                )
+                batch_ids = [str(item.get("batch_id") or "").strip() for item in batches if str(item.get("batch_id") or "").strip()]
+                if not active_batch_id and batch_ids:
+                    active_batch_id = batch_ids[0]
+                if active_batch_id:
+                    runs = self._service.analyzer_list_polar_runs(
+                        source=self._source,
+                        project_id=active_project_id,
+                        batch_id=active_batch_id,
+                    )
+            payload = {
+                "mode": "overview",
+                "source": self._source,
+                "project_id": active_project_id,
+                "batch_id": active_batch_id,
+                "projects": projects,
+                "batches": batches,
+                "runs": runs,
+            }
+            self.finished.emit(self._request_id, payload)
+        except Exception:  # pragma: no cover - integration surface
+            self.failed.emit(self._request_id, traceback.format_exc())
 
 
 def _severity_rank(value: str) -> int:
@@ -2426,17 +2514,464 @@ class RunPage(QWidget):
 
 
 class AnalysePage(QWidget):
-    def __init__(self) -> None:
+    def __init__(self, *, service: OrchestratorService) -> None:
         super().__init__()
+        self.service = service
+        self._project_context_id: Optional[str] = None
+        self._selector_sync_guard = False
+        self._metadata_request_id = 0
+        self._metadata_thread: Optional[QThread] = None
+        self._metadata_worker: Optional[_AnalyzerMetadataWorker] = None
+
         root = QVBoxLayout(self)
-        root.setContentsMargins(24, 24, 24, 24)
-        root.setSpacing(0)
-        root.addStretch(1)
-        hint = QLabel("Analyzer coming soon")
-        hint.setAlignment(Qt.AlignCenter)
-        hint.setObjectName("SummaryText")
-        root.addWidget(hint, 0, Qt.AlignCenter)
-        root.addStretch(1)
+        root.setContentsMargins(20, 12, 20, 14)
+        root.setSpacing(8)
+
+        self.header_row = QWidget()
+        self.header_row.setObjectName("AnalyzerHeaderRow")
+        header_layout = QHBoxLayout(self.header_row)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(8)
+        title = QLabel("ANALYZER")
+        title.setObjectName("PageTitle")
+        header_layout.addWidget(title, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        header_layout.addStretch(1)
+        source_label = QLabel("Data source")
+        source_label.setObjectName("SummaryMeta")
+        header_layout.addWidget(source_label, 0, Qt.AlignRight | Qt.AlignVCenter)
+        self.source_selector = QComboBox()
+        self.source_selector.setObjectName("AnalyzerDataSourceCombo")
+        self.source_selector.addItem("Project", "project")
+        self.source_selector.addItem("Global", "global")
+        self.source_selector.setToolTip("Choose metadata source database.")
+        header_layout.addWidget(self.source_selector, 0, Qt.AlignRight | Qt.AlignVCenter)
+        self.refresh_btn = QPushButton("Refresh")
+        self.refresh_btn.setObjectName("BatchSecondaryButton")
+        self.refresh_btn.setToolTip("Reload Analyzer metadata.")
+        header_layout.addWidget(self.refresh_btn, 0, Qt.AlignRight | Qt.AlignVCenter)
+        root.addWidget(self.header_row)
+
+        self.loading_label = QLabel("Ready.")
+        self.loading_label.setObjectName("SummaryMeta")
+        root.addWidget(self.loading_label, 0, Qt.AlignLeft | Qt.AlignVCenter)
+
+        self.error_label = QLabel("")
+        self.error_label.setObjectName("BatchValidationHint")
+        self.error_label.setWordWrap(True)
+        self.error_label.setVisible(False)
+        root.addWidget(self.error_label, 0, Qt.AlignLeft | Qt.AlignVCenter)
+
+        self.splitter = QSplitter(Qt.Horizontal)
+        self.splitter.setObjectName("AnalyzerSplitter")
+        self.splitter.setChildrenCollapsible(False)
+
+        left = QWidget()
+        left_layout = QVBoxLayout(left)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(8)
+
+        self.selector_panel = QFrame()
+        self.selector_panel.setObjectName("ProjectSummaryPanel")
+        selector_layout = QFormLayout(self.selector_panel)
+        selector_layout.setContentsMargins(10, 8, 10, 8)
+        selector_layout.setSpacing(6)
+        self.project_selector = QComboBox()
+        self.project_selector.setObjectName("AnalyzerProjectCombo")
+        self.project_selector.setToolTip("Project filtered to rows with polar measurements.")
+        self.batch_selector = QComboBox()
+        self.batch_selector.setObjectName("AnalyzerBatchCombo")
+        self.batch_selector.setToolTip("Batches containing imported polar measurements.")
+        selector_layout.addRow("Project", self.project_selector)
+        selector_layout.addRow("Batch", self.batch_selector)
+        left_layout.addWidget(self.selector_panel, 0)
+
+        self.run_table = QTableWidget(0, 10)
+        self.run_table.setObjectName("AnalyzerRunTable")
+        self.run_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.run_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.run_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.run_table.setSortingEnabled(True)
+        self.run_table.setAlternatingRowColors(False)
+        self.run_table.setHorizontalHeaderLabels(
+            [
+                "Run ID",
+                "Version",
+                "Planes",
+                "freq_count",
+                "angle_count",
+                "norm_angle_deg",
+                "imported_at",
+                "created_at",
+                "B_PC (planned)",
+                "E_BW (planned)",
+            ]
+        )
+        header = self.run_table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(5, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(6, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(7, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(8, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(9, QHeaderView.ResizeToContents)
+        left_layout.addWidget(self.run_table, 1)
+
+        right = QWidget()
+        right_layout = QVBoxLayout(right)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(8)
+
+        self.details_panel = QFrame()
+        self.details_panel.setObjectName("ProjectSummaryPanel")
+        details_layout = QFormLayout(self.details_panel)
+        details_layout.setContentsMargins(10, 8, 10, 8)
+        details_layout.setSpacing(6)
+        self._detail_labels: Dict[str, QLabel] = {}
+        for key, label_text in (
+            ("run_id", "Run ID"),
+            ("version_id", "Version"),
+            ("project_id", "Project"),
+            ("batch_id", "Batch"),
+            ("planes", "Planes"),
+            ("freq_count", "freq_count"),
+            ("angle_count", "angle_count"),
+            ("norm_angle_deg", "norm_angle_deg"),
+            ("imported_at", "imported_at"),
+            ("created_at", "created_at"),
+            ("source_files", "source_files"),
+            ("file_hashes", "file_hash"),
+        ):
+            value = QLabel("--")
+            value.setObjectName("SummaryMeta")
+            value.setWordWrap(True)
+            value.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            self._detail_labels[key] = value
+            details_layout.addRow(label_text, value)
+        right_layout.addWidget(self.details_panel, 0)
+
+        self.plot_tabs = QTabWidget()
+        self.plot_tabs.setObjectName("AnalyzerPlotTabs")
+        self.plot_tabs.addTab(
+            self._build_plot_placeholder("Polar Heatmap (placeholder)"),
+            "Polar Heatmap",
+        )
+        self.plot_tabs.addTab(
+            self._build_plot_placeholder("Beamwidth vs Frequency (placeholder)"),
+            "Beamwidth vs Frequency",
+        )
+        self.plot_tabs.addTab(
+            self._build_plot_placeholder("Overlay Compare (placeholder)"),
+            "Overlay Compare",
+        )
+        right_layout.addWidget(self.plot_tabs, 1)
+
+        left.setMinimumWidth(360)
+        right.setMinimumWidth(460)
+        self.splitter.addWidget(left)
+        self.splitter.addWidget(right)
+        self.splitter.setStretchFactor(0, 4)
+        self.splitter.setStretchFactor(1, 6)
+        root.addWidget(self.splitter, 1)
+
+        self.refresh_btn.clicked.connect(self.refresh_data)
+        self.source_selector.currentIndexChanged.connect(self._on_source_changed)
+        self.project_selector.currentIndexChanged.connect(self._on_project_changed)
+        self.batch_selector.currentIndexChanged.connect(self._on_batch_changed)
+        self.run_table.itemSelectionChanged.connect(self._on_run_selection_changed)
+        self._set_details(None)
+
+    def _build_plot_placeholder(self, text: str) -> QWidget:
+        shell = QWidget()
+        layout = QVBoxLayout(shell)
+        layout.setContentsMargins(6, 6, 6, 6)
+        layout.setSpacing(0)
+        frame = QFrame()
+        frame.setObjectName("ProjectIssuesPanel")
+        frame_layout = QVBoxLayout(frame)
+        frame_layout.setContentsMargins(8, 8, 8, 8)
+        frame_layout.setSpacing(0)
+        label = QLabel(str(text))
+        label.setObjectName("SummaryText")
+        label.setAlignment(Qt.AlignCenter)
+        frame_layout.addStretch(1)
+        frame_layout.addWidget(label, 0, Qt.AlignCenter)
+        frame_layout.addStretch(1)
+        layout.addWidget(frame, 1)
+        return shell
+
+    def shutdown(self) -> None:
+        self._stop_metadata_worker()
+
+    def set_project_context(self, project_id: Optional[str]) -> None:
+        token = str(project_id or "").strip() or None
+        self._project_context_id = token
+        if self._source_key() == "project":
+            self.project_selector.setEnabled(not bool(token))
+
+    def refresh_data(self) -> None:
+        self._request_metadata(mode="overview")
+
+    def _source_key(self) -> str:
+        value = str(self.source_selector.currentData() or "project").strip().lower()
+        return value if value in {"project", "global"} else "project"
+
+    def _selected_project_id(self) -> Optional[str]:
+        if self._source_key() == "project" and self._project_context_id:
+            return self._project_context_id
+        token = str(self.project_selector.currentData() or "").strip()
+        return token or None
+
+    def _selected_batch_id(self) -> Optional[str]:
+        token = str(self.batch_selector.currentData() or "").strip()
+        return token or None
+
+    def _set_loading(self, loading: bool, text: Optional[str] = None) -> None:
+        if loading:
+            self.loading_label.setText(str(text or "Loading metadata..."))
+            return
+        self.loading_label.setText(str(text or "Ready."))
+
+    def _set_error(self, message: str) -> None:
+        text = str(message or "").strip()
+        self.error_label.setVisible(bool(text))
+        self.error_label.setText(text)
+
+    def _clear_metadata_worker_refs(self, thread: Optional[QThread] = None) -> None:
+        if thread is None:
+            self._metadata_worker = None
+            self._metadata_thread = None
+            return
+        if self._metadata_thread is thread:
+            self._metadata_worker = None
+            self._metadata_thread = None
+
+    def _stop_metadata_worker(self) -> None:
+        thread = self._metadata_thread
+        if thread is not None and thread.isRunning():
+            thread.quit()
+            thread.wait(1500)
+        self._clear_metadata_worker_refs()
+
+    def _request_metadata(
+        self,
+        *,
+        mode: str,
+        project_id: Optional[str] = None,
+        batch_id: Optional[str] = None,
+    ) -> None:
+        source = self._source_key()
+        project_token = project_id if project_id is not None else self._selected_project_id()
+        batch_token = batch_id if batch_id is not None else self._selected_batch_id()
+        self._stop_metadata_worker()
+        self._metadata_request_id += 1
+        request_id = int(self._metadata_request_id)
+        worker = _AnalyzerMetadataWorker(
+            service=self.service,
+            request_id=request_id,
+            source=source,
+            project_id=project_token,
+            batch_id=batch_token,
+            mode=mode,
+        )
+        thread = QThread(self)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(self._on_metadata_ready)
+        worker.failed.connect(self._on_metadata_failed)
+        worker.finished.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(lambda: self._clear_metadata_worker_refs(thread))
+        self._metadata_worker = worker
+        self._metadata_thread = thread
+        self._set_loading(True, "Loading metadata...")
+        self._set_error("")
+        thread.start()
+
+    def _on_metadata_ready(self, request_id: int, payload: Dict[str, Any]) -> None:
+        if int(request_id) != int(self._metadata_request_id):
+            return
+        mode = str(payload.get("mode", "overview") or "overview")
+        if mode == "runs":
+            self._apply_runs_payload(payload)
+            self._set_loading(False, "Run list updated.")
+            return
+        self._apply_overview_payload(payload)
+        self._set_loading(False, "Metadata loaded.")
+
+    def _on_metadata_failed(self, request_id: int, message: str) -> None:
+        if int(request_id) != int(self._metadata_request_id):
+            return
+        self._set_loading(False, "Metadata load failed.")
+        self._set_error(str(message or "Analyzer metadata query failed."))
+
+    def _apply_overview_payload(self, payload: Dict[str, Any]) -> None:
+        projects = [dict(item) for item in list(payload.get("projects", []) or []) if isinstance(item, dict)]
+        batches = [dict(item) for item in list(payload.get("batches", []) or []) if isinstance(item, dict)]
+        active_project_id = str(payload.get("project_id") or "").strip() or None
+        active_batch_id = str(payload.get("batch_id") or "").strip() or None
+
+        if self._source_key() == "project" and self._project_context_id:
+            found_context = any(str(item.get("project_id") or "").strip() == self._project_context_id for item in projects)
+            if not found_context:
+                projects.insert(
+                    0,
+                    {
+                        "project_id": self._project_context_id,
+                        "measurement_count": 0,
+                        "batch_count": 0,
+                    },
+                )
+            active_project_id = self._project_context_id
+
+        self._selector_sync_guard = True
+        try:
+            self.project_selector.clear()
+            for row in projects:
+                project_id = str(row.get("project_id") or "").strip()
+                if not project_id:
+                    continue
+                batch_count = int(row.get("batch_count") or 0)
+                measurement_count = int(row.get("measurement_count") or 0)
+                label = f"{project_id} ({batch_count} batches, {measurement_count} measurements)"
+                self.project_selector.addItem(label, project_id)
+            if self.project_selector.count() == 0:
+                self.project_selector.addItem("(no polar data)", "")
+            self._set_combo_current_by_data(self.project_selector, active_project_id)
+            self.project_selector.setEnabled(not (self._source_key() == "project" and bool(self._project_context_id)))
+
+            self.batch_selector.clear()
+            for row in batches:
+                batch_id = str(row.get("batch_id") or "").strip()
+                if not batch_id:
+                    continue
+                runs = int(row.get("run_version_count") or 0)
+                measurements = int(row.get("measurement_count") or 0)
+                label = f"{batch_id} ({runs} run/version, {measurements} measurements)"
+                self.batch_selector.addItem(label, batch_id)
+            if self.batch_selector.count() == 0:
+                self.batch_selector.addItem("(no polar batches)", "")
+            self._set_combo_current_by_data(self.batch_selector, active_batch_id)
+        finally:
+            self._selector_sync_guard = False
+        self._apply_runs_payload(payload)
+
+    def _set_combo_current_by_data(self, combo: QComboBox, value: Optional[str]) -> None:
+        token = str(value or "").strip()
+        if not token:
+            if combo.count() > 0:
+                combo.setCurrentIndex(0)
+            return
+        for index in range(combo.count()):
+            if str(combo.itemData(index) or "").strip() == token:
+                combo.setCurrentIndex(index)
+                return
+        if combo.count() > 0:
+            combo.setCurrentIndex(0)
+
+    @staticmethod
+    def _format_angle(value: Any) -> str:
+        if value is None:
+            return "--"
+        try:
+            return f"{float(value):.2f}"
+        except Exception:
+            return str(value)
+
+    def _set_run_table_rows(self, rows: List[Dict[str, Any]]) -> None:
+        self.run_table.setSortingEnabled(False)
+        self.run_table.setRowCount(len(rows))
+        for row_index, row in enumerate(rows):
+            planes = "/".join(str(item) for item in list(row.get("planes", []) or []))
+            values = [
+                str(row.get("run_id") or row.get("run_label") or "--"),
+                str(row.get("version_id") or "--"),
+                planes or "--",
+                str(row.get("freq_count") if row.get("freq_count") is not None else "--"),
+                str(row.get("angle_count") if row.get("angle_count") is not None else "--"),
+                self._format_angle(row.get("norm_angle_deg")),
+                str(row.get("imported_at") or "--"),
+                str(row.get("created_at") or "--"),
+                "--",
+                "--",
+            ]
+            for col_index, value in enumerate(values):
+                item = QTableWidgetItem(value)
+                if col_index == 0:
+                    item.setData(Qt.UserRole, dict(row))
+                self.run_table.setItem(row_index, col_index, item)
+        self.run_table.setSortingEnabled(True)
+        if rows:
+            self.run_table.selectRow(0)
+            self._set_details(dict(rows[0]))
+        else:
+            self._set_details(None)
+
+    def _apply_runs_payload(self, payload: Dict[str, Any]) -> None:
+        rows = [dict(item) for item in list(payload.get("runs", []) or []) if isinstance(item, dict)]
+        self._set_run_table_rows(rows)
+
+    def _on_source_changed(self, _index: int = 0) -> None:
+        if self._selector_sync_guard:
+            return
+        if self._source_key() == "project":
+            self.project_selector.setEnabled(not bool(self._project_context_id))
+        else:
+            self.project_selector.setEnabled(True)
+        self.refresh_data()
+
+    def _on_project_changed(self, _index: int = 0) -> None:
+        if self._selector_sync_guard:
+            return
+        self._request_metadata(mode="overview", project_id=self._selected_project_id(), batch_id=None)
+
+    def _request_runs_for_selected_batch(self) -> None:
+        self._request_metadata(
+            mode="runs",
+            project_id=self._selected_project_id(),
+            batch_id=self._selected_batch_id(),
+        )
+
+    def _on_batch_changed(self, _index: int = 0) -> None:
+        if self._selector_sync_guard:
+            return
+        self._request_runs_for_selected_batch()
+
+    def _on_run_selection_changed(self) -> None:
+        selected_indexes = list(self.run_table.selectionModel().selectedRows()) if self.run_table.selectionModel() else []
+        if not selected_indexes:
+            self._set_details(None)
+            return
+        row_index = int(selected_indexes[0].row())
+        item = self.run_table.item(row_index, 0)
+        payload = dict(item.data(Qt.UserRole) or {}) if item is not None else {}
+        self._set_details(payload if payload else None)
+
+    def _set_details(self, payload: Optional[Dict[str, Any]]) -> None:
+        data = dict(payload or {})
+        planes = "/".join(str(item) for item in list(data.get("planes", []) or []))
+        source_files = "\n".join(str(item) for item in list(data.get("source_files", []) or []))
+        file_hashes = "\n".join(str(item) for item in list(data.get("file_hashes", []) or []))
+        mapping = {
+            "run_id": str(data.get("run_id") or data.get("run_label") or "--"),
+            "version_id": str(data.get("version_id") or "--"),
+            "project_id": str(data.get("project_id") or "--"),
+            "batch_id": str(data.get("batch_id") or "--"),
+            "planes": planes or "--",
+            "freq_count": str(data.get("freq_count") if data.get("freq_count") is not None else "--"),
+            "angle_count": str(data.get("angle_count") if data.get("angle_count") is not None else "--"),
+            "norm_angle_deg": self._format_angle(data.get("norm_angle_deg")),
+            "imported_at": str(data.get("imported_at") or "--"),
+            "created_at": str(data.get("created_at") or "--"),
+            "source_files": source_files or "--",
+            "file_hashes": file_hashes or "--",
+        }
+        for key, label in self._detail_labels.items():
+            label.setText(mapping.get(key, "--"))
 
 
 class ProjectManagerWindow(QMainWindow):
@@ -2662,7 +3197,7 @@ class MainWindow(QMainWindow):
         self.dashboard_page = DashboardPage()
         self.project_page = ProjectPage()
         self.batch_page = BatchPage()
-        self.analyse_page = AnalysePage()
+        self.analyse_page = AnalysePage(service=self.service)
         self.run_page = RunPage()
 
         self.stack.addWidget(self.dashboard_page)
@@ -2872,6 +3407,7 @@ class MainWindow(QMainWindow):
             )
             event.ignore()
             return
+        self.analyse_page.shutdown()
         self._stop_preview_worker()
         super().closeEvent(event)
 
@@ -3220,6 +3756,7 @@ class MainWindow(QMainWindow):
         self.project_page.set_constraints_locked(True)
         fixed_keys = self._project_fixed_keys_from_constraints(project.constraints)
         self.batch_page.set_project_fixed_keys(fixed_keys)
+        self.analyse_page.set_project_context(project.project_id)
         self.refresh_dashboard()
         self._on_project_draft_changed(self.project_page._raw_constraints_payload())
         self._on_batch_draft_changed(self.batch_page._payload(include_name=False))
@@ -3229,6 +3766,7 @@ class MainWindow(QMainWindow):
         if self.current_project is None:
             self.dashboard_page.set_constraints_payload(None)
             self.dashboard_page.batch_list.clear()
+            self.analyse_page.set_project_context(None)
             return
 
         self.dashboard_page.set_constraints_payload(self.current_project.constraints.to_dict())
@@ -3259,6 +3797,8 @@ class MainWindow(QMainWindow):
     def show_analyse(self) -> None:
         self._stop_preview_worker()
         self._exit_run_presentation()
+        self.analyse_page.set_project_context(self.current_project.project_id if self.current_project else None)
+        self.analyse_page.refresh_data()
         self.stack.setCurrentWidget(self.analyse_page)
 
     def show_run(self) -> None:

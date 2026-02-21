@@ -133,6 +133,27 @@ def _percentile(sorted_values: List[float], p: float) -> Optional[float]:
     return float(sorted_values[lower] + ((sorted_values[upper] - sorted_values[lower]) * fraction))
 
 
+def _split_csv_tokens(raw: Optional[str]) -> List[str]:
+    if raw is None:
+        return []
+    return [str(token).strip() for token in str(raw).split(",") if str(token).strip()]
+
+
+def _normalize_orientation_tokens(values: Sequence[str]) -> List[str]:
+    order = {"H": 0, "V": 1, "D": 2}
+    normalized: Dict[str, str] = {}
+    for raw in values:
+        token = str(raw).strip()
+        if not token:
+            continue
+        upper = token.upper()
+        if upper in {"H", "V", "D"}:
+            normalized[upper] = upper
+            continue
+        normalized.setdefault(upper, token)
+    return sorted(normalized.values(), key=lambda token: (order.get(token.upper(), 99), token.upper()))
+
+
 class PreviewGenerationCancelled(RuntimeError):
     """Raised when an in-flight preview generation is cancelled by the UI."""
 
@@ -1753,6 +1774,204 @@ class OrchestratorService:
         project_paths = self.repo.project_paths(project_id, ensure=True)
         dataset = TidyDatasetWriter(project_paths.project_dir, library_root=self.settings.library_root)
         return dataset.list_runs(batch_id=batch_id, status=status)
+
+    def analyzer_list_polar_projects(
+        self,
+        *,
+        source: str = "project",
+        project_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        source_key = str(source or "project").strip().lower()
+        rows: List[Dict[str, Any]] = []
+        if source_key == "global":
+            global_db = Path(self.settings.library_root) / "global.sqlite"
+            if not global_db.exists():
+                return []
+            try:
+                with closing(sqlite3.connect(str(global_db))) as conn:
+                    conn.row_factory = sqlite3.Row
+                    query_rows = conn.execute(
+                        """
+                        SELECT
+                            pm.project_id AS project_id,
+                            COUNT(*) AS measurement_count,
+                            COUNT(DISTINCT pm.batch_id) AS batch_count
+                        FROM polar_measurements pm
+                        GROUP BY pm.project_id
+                        ORDER BY pm.project_id
+                        """
+                    ).fetchall()
+            except sqlite3.Error:
+                return []
+            for row in query_rows:
+                rows.append(
+                    {
+                        "project_id": str(row["project_id"]),
+                        "measurement_count": int(row["measurement_count"] or 0),
+                        "batch_count": int(row["batch_count"] or 0),
+                    }
+                )
+            return rows
+
+        target_ids: List[str]
+        if project_id:
+            target_ids = [str(project_id)]
+        else:
+            target_ids = [str(project.project_id) for project in self.repo.list_projects()]
+        for target_id in sorted(set(target_ids)):
+            project_db = self.repo.project_paths(target_id, ensure=False).dataset_dir / "project.sqlite"
+            if not project_db.exists():
+                continue
+            try:
+                with closing(sqlite3.connect(str(project_db))) as conn:
+                    conn.row_factory = sqlite3.Row
+                    row = conn.execute(
+                        """
+                        SELECT
+                            COUNT(*) AS measurement_count,
+                            COUNT(DISTINCT batch_id) AS batch_count
+                        FROM polar_measurements
+                        WHERE project_id = ?
+                        """,
+                        (target_id,),
+                    ).fetchone()
+            except sqlite3.Error:
+                continue
+            if row is None:
+                continue
+            measurement_count = int(row["measurement_count"] or 0)
+            if measurement_count <= 0:
+                continue
+            rows.append(
+                {
+                    "project_id": target_id,
+                    "measurement_count": measurement_count,
+                    "batch_count": int(row["batch_count"] or 0),
+                }
+            )
+        return rows
+
+    def analyzer_list_polar_batches(
+        self,
+        *,
+        project_id: str,
+        source: str = "project",
+    ) -> List[Dict[str, Any]]:
+        project_token = str(project_id or "").strip()
+        if not project_token:
+            return []
+        source_key = str(source or "project").strip().lower()
+        if source_key == "global":
+            db_path = Path(self.settings.library_root) / "global.sqlite"
+        else:
+            db_path = self.repo.project_paths(project_token, ensure=False).dataset_dir / "project.sqlite"
+        if not db_path.exists():
+            return []
+        try:
+            with closing(sqlite3.connect(str(db_path))) as conn:
+                conn.row_factory = sqlite3.Row
+                query_rows = conn.execute(
+                    """
+                    SELECT
+                        pm.project_id AS project_id,
+                        pm.batch_id AS batch_id,
+                        COUNT(DISTINCT (COALESCE(pm.run_id, '') || '|' || pm.version_id)) AS run_version_count,
+                        COUNT(*) AS measurement_count,
+                        MAX(pm.created_at) AS imported_at
+                    FROM polar_measurements pm
+                    WHERE pm.project_id = ?
+                    GROUP BY pm.project_id, pm.batch_id
+                    ORDER BY pm.batch_id
+                    """,
+                    (project_token,),
+                ).fetchall()
+        except sqlite3.Error:
+            return []
+        return [
+            {
+                "project_id": str(row["project_id"]),
+                "batch_id": str(row["batch_id"]),
+                "run_version_count": int(row["run_version_count"] or 0),
+                "measurement_count": int(row["measurement_count"] or 0),
+                "imported_at": row["imported_at"],
+            }
+            for row in query_rows
+        ]
+
+    def analyzer_list_polar_runs(
+        self,
+        *,
+        project_id: str,
+        batch_id: str,
+        source: str = "project",
+    ) -> List[Dict[str, Any]]:
+        project_token = str(project_id or "").strip()
+        batch_token = str(batch_id or "").strip()
+        if not project_token or not batch_token:
+            return []
+        source_key = str(source or "project").strip().lower()
+        if source_key == "global":
+            db_path = Path(self.settings.library_root) / "global.sqlite"
+        else:
+            db_path = self.repo.project_paths(project_token, ensure=False).dataset_dir / "project.sqlite"
+        if not db_path.exists():
+            return []
+        try:
+            with closing(sqlite3.connect(str(db_path))) as conn:
+                conn.row_factory = sqlite3.Row
+                query_rows = conn.execute(
+                    """
+                    SELECT
+                        pm.project_id AS project_id,
+                        pm.batch_id AS batch_id,
+                        COALESCE(pm.run_id, '') AS run_id,
+                        pm.version_id AS version_id,
+                        GROUP_CONCAT(DISTINCT pm.orientation) AS orientations_csv,
+                        MAX(pm.freq_count) AS freq_count,
+                        MAX(pm.angle_count) AS angle_count,
+                        MAX(pm.norm_angle_deg) AS norm_angle_deg,
+                        MAX(pm.created_at) AS imported_at,
+                        MAX(COALESCE(r.started_at, v.created_at, pm.created_at)) AS created_at,
+                        MAX(r.status) AS run_status,
+                        GROUP_CONCAT(DISTINCT pm.source_file) AS source_files_csv,
+                        GROUP_CONCAT(DISTINCT pm.file_hash) AS file_hashes_csv
+                    FROM polar_measurements pm
+                    LEFT JOIN runs r ON r.run_id = pm.run_id
+                    LEFT JOIN versions v ON v.version_id = pm.version_id
+                    WHERE pm.project_id = ? AND pm.batch_id = ?
+                    GROUP BY pm.project_id, pm.batch_id, COALESCE(pm.run_id, ''), pm.version_id
+                    ORDER BY imported_at DESC, pm.version_id DESC
+                    """,
+                    (project_token, batch_token),
+                ).fetchall()
+        except sqlite3.Error:
+            return []
+
+        result: List[Dict[str, Any]] = []
+        for row in query_rows:
+            planes = _normalize_orientation_tokens(_split_csv_tokens(row["orientations_csv"]))
+            source_files = sorted(set(_split_csv_tokens(row["source_files_csv"])))
+            file_hashes = sorted(set(_split_csv_tokens(row["file_hashes_csv"])))
+            run_id = str(row["run_id"] or "").strip()
+            result.append(
+                {
+                    "project_id": str(row["project_id"]),
+                    "batch_id": str(row["batch_id"]),
+                    "run_id": run_id or None,
+                    "run_label": run_id or "(no run id)",
+                    "version_id": str(row["version_id"]),
+                    "planes": planes,
+                    "freq_count": int(row["freq_count"] or 0),
+                    "angle_count": int(row["angle_count"] or 0),
+                    "norm_angle_deg": row["norm_angle_deg"],
+                    "imported_at": row["imported_at"],
+                    "created_at": row["created_at"],
+                    "run_status": row["run_status"],
+                    "source_files": source_files,
+                    "file_hashes": file_hashes,
+                }
+            )
+        return result
 
     def pin_run(self, *, project_id: str, run_id: str, tag: Optional[str] = None) -> Dict[str, Any]:
         project_paths = self.repo.project_paths(project_id, ensure=True)

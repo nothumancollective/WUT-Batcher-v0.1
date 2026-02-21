@@ -22,3 +22,6 @@
 
 ## 2026-02-21 (UI-1B)
 - UI-1B: Migrated Batch actions (Save/Run) into page header and removed legacy bottom bar.
+
+## 2026-02-21 (UI-1C)
+- UI-1C: Implemented Analyzer MVP layout (split view) with read-only polar run discovery.

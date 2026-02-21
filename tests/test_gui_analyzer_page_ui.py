@@ -1,0 +1,112 @@
+from __future__ import annotations
+
+import os
+from pathlib import Path
+import tempfile
+import unittest
+from unittest.mock import patch
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from app.gui import AnalysePage, MainWindow
+from app.services import OrchestratorService
+from app.settings_store import SettingsStore, UserSettings
+
+try:
+    from PySide6.QtWidgets import QApplication, QComboBox, QTableWidget
+except ImportError:  # pragma: no cover
+    QApplication = None  # type: ignore[assignment]
+    QComboBox = None  # type: ignore[assignment]
+    QTableWidget = None  # type: ignore[assignment]
+
+
+def _build_service(tmp_root: Path) -> OrchestratorService:
+    settings_path = tmp_root / "settings.json"
+    library_root = tmp_root / "library"
+    store = SettingsStore(settings_path)
+    store.save(UserSettings(library_root=str(library_root)))
+    return OrchestratorService(settings_store=store)
+
+
+@unittest.skipIf(QApplication is None, "PySide6 is required")
+class AnalyzerPageUiTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = QApplication.instance() or QApplication([])
+
+    def test_analyse_modebar_opens_analyzer_page(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_ui1c_nav_") as tmp:
+            service = _build_service(Path(tmp))
+            window = MainWindow(service)
+            with patch.object(window.analyse_page, "refresh_data", autospec=True) as refresh_mock:
+                window.analyse_mode_button.click()
+                self.assertIs(window.stack.currentWidget(), window.analyse_page)
+                self.assertTrue(window.analyse_mode_button.isChecked())
+                self.assertEqual(refresh_mock.call_count, 1)
+            window.close()
+
+    def test_left_pane_contains_batch_selector_and_run_table(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_ui1c_layout_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            batch_selector = page.findChild(QComboBox, "AnalyzerBatchCombo")
+            run_table = page.findChild(QTableWidget, "AnalyzerRunTable")
+            self.assertIsNotNone(batch_selector)
+            self.assertIsNotNone(run_table)
+            assert run_table is not None
+            self.assertEqual(run_table.selectionMode(), QTableWidget.ExtendedSelection)
+
+    def test_selecting_batch_requests_background_run_load(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_ui1c_batch_change_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            page._selector_sync_guard = True
+            page.batch_selector.clear()
+            page.batch_selector.addItem("B001", "B001")
+            page.batch_selector.addItem("B002", "B002")
+            page.batch_selector.setCurrentIndex(0)
+            page._selector_sync_guard = False
+            with patch.object(page, "_request_runs_for_selected_batch", autospec=True) as request_mock:
+                page.batch_selector.setCurrentIndex(1)
+                self.assertEqual(request_mock.call_count, 1)
+
+    def test_run_table_populates_from_mocked_worker_payload(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_ui1c_rows_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            page._metadata_request_id = 7
+            payload = {
+                "mode": "runs",
+                "project_id": "P001",
+                "batch_id": "B001",
+                "runs": [
+                    {
+                        "project_id": "P001",
+                        "batch_id": "B001",
+                        "run_id": "R001",
+                        "version_id": "V001",
+                        "planes": ["H", "V", "D"],
+                        "freq_count": 401,
+                        "angle_count": 19,
+                        "norm_angle_deg": 10.0,
+                        "imported_at": "2026-02-21T10:00:00+00:00",
+                        "created_at": "2026-02-21T09:45:00+00:00",
+                        "source_files": ["result_v001polar.txt"],
+                        "file_hashes": ["hash001"],
+                    }
+                ],
+            }
+            page._on_metadata_ready(7, payload)
+            self.assertEqual(page.run_table.rowCount(), 1)
+            run_id_item = page.run_table.item(0, 0)
+            planes_item = page.run_table.item(0, 2)
+            self.assertIsNotNone(run_id_item)
+            self.assertIsNotNone(planes_item)
+            assert run_id_item is not None and planes_item is not None
+            self.assertEqual(run_id_item.text(), "R001")
+            self.assertEqual(planes_item.text(), "H/V/D")
+
+
+if __name__ == "__main__":
+    unittest.main()
+
