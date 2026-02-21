@@ -163,7 +163,7 @@ def _restore_state(backend: Win32UiaExportDialogBackend, control: Any, target_st
 
 
 def _method_sequence_for_probe() -> Tuple[str, ...]:
-    return ("bm_setcheck", "bm_click", "uia_invoke", "uia_toggle")
+    return ("bm_setcheck", "bm_click", "uia_toggle", "uia_invoke")
 
 
 def _probe_control(backend: Win32UiaExportDialogBackend, spec: Any) -> Dict[str, Any]:
@@ -181,12 +181,25 @@ def _probe_control(backend: Win32UiaExportDialogBackend, spec: Any) -> Dict[str,
             "reason": "control_not_found",
         }
 
+    matched_control = {
+        "handle": _safe_int(getattr(control, "handle", 0), 0),
+        "class_name": str(getattr(control, "class_name", "") or ""),
+        "control_type": str(getattr(control, "control_type", "") or ""),
+        "automation_id": str(getattr(control, "automation_id", "") or ""),
+        "title": str(getattr(control, "title", "") or ""),
+        "text": str(getattr(control, "text", "") or ""),
+        "ctrl_id": _safe_int(getattr(control, "ctrl_id", -1), -1),
+        "checkbox_index": getattr(control, "checkbox_index", None),
+        "win32_index": getattr(control, "win32_index", None),
+    }
+
     before_state = backend.read_state(control)
     attempts: List[Dict[str, Any]] = []
     if before_state is None:
         return {
             "purpose": spec.purpose,
             "selector_used": selector_used,
+            "matched_control": matched_control,
             "found": True,
             "before_state": None,
             "after_state": None,
@@ -260,6 +273,7 @@ def _probe_control(backend: Win32UiaExportDialogBackend, spec: Any) -> Dict[str,
     return {
         "purpose": spec.purpose,
         "selector_used": selector_used,
+        "matched_control": matched_control,
         "found": True,
         "before_state": before_state,
         "after_state": after_state,
@@ -294,6 +308,35 @@ def _render_markdown_report(payload: Dict[str, Any]) -> str:
                     _state_label(row.get("before_state")),
                     "SETTABLE" if bool(row.get("settable")) else "NON-SETTABLE",
                     str(row.get("reason") or ""),
+                ]
+            )
+            + " |"
+        )
+    lines.append("")
+    lines.append("## Matched Controls")
+    lines.append("")
+    lines.append("| ControlPurpose | Handle | ClassName | ControlType | AutomationId | CtrlId | CheckboxIndex | Win32Index | Title/Text |")
+    lines.append("|---|---|---|---|---|---|---|---|---|")
+    for row in list(payload.get("controls", []) or []):
+        matched = dict(row.get("matched_control") or {})
+        title = str(matched.get("title", "") or "")
+        text = str(matched.get("text", "") or "")
+        combined = (title + " / " + text).strip(" /")
+        if len(combined) > 80:
+            combined = combined[:77] + "..."
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    str(row.get("purpose", "")),
+                    str(matched.get("handle", "")),
+                    str(matched.get("class_name", "")),
+                    str(matched.get("control_type", "")),
+                    str(matched.get("automation_id", "")),
+                    str(matched.get("ctrl_id", "")),
+                    str(matched.get("checkbox_index", "")),
+                    str(matched.get("win32_index", "")),
+                    combined.replace("|", "/"),
                 ]
             )
             + " |"

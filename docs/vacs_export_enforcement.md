@@ -49,13 +49,20 @@ Selector priority per control:
 - If no method changes state, control is marked `NON-SETTABLE`.
 
 ## Current Probe Summary
-- Run timestamp: `2026-02-21T14:06:56.163690+00:00`
-- Dialog discovery result: `dialog_not_found` in this environment
-- Note: `dialog_not_found` is expected when the VACS export dialog is not reachable; rerun the probe in a live VACS session with `TForm_Export` open.
-- Trigger attempts executed:
-  - `WM_COMMAND(52)` on main window
-  - `F7` on main window
-- Because no `TForm_Export` was reachable, all required controls were classified as `NON-SETTABLE` for this probe run.
+- Successful live probe timestamp: `2026-02-21T14:25:54.800919+00:00`
+- Target process: `VACSVIEWER_32.exe` PID `11740`
+- Dialog discovery: `TForm_Export` found as a child window under `TForm_DatMain` (not only as desktop top-level).
+
+| Purpose | Selector (resolved in live probe) | Settable | Working method |
+|---|---|---|---|
+| `IncludeHeader` | `automation_id=1050536`, fallback `name='Export of parameters'` | `NO` | none |
+| `AbscissaDataBlocks` | `automation_id=2033636`, fallback `name='Abscissa separat'` | `NO` | none |
+| `TryMatrixForm` | fallback `name='Try matrix form'`, `checkbox_index=0` | `NO` | none |
+| `SingleFile` | fallback `name='Single file'`, `checkbox_index=7` | `NO` | none |
+| `ComplexFormat` | `automation_id=788396`, fallback `name='Phase as radiant'` | `NO` | none |
+
+- In this environment, `BM_SETCHECK`, `BM_CLICK`, UIA TogglePattern, and UIA InvokePattern did not change these states.
+- Enforcer behavior remains verify-only for these controls and fails fast if a required state is wrong.
 
 ## Failure Handling
 - Error type: `ExportConfigurationError`

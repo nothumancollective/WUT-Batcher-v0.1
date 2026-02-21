@@ -1,106 +1,278 @@
 {
-  "generated_at": "2026-02-21T14:06:56.163690+00:00",
-  "dialog_found": false,
-  "process_id": 5596,
-  "dialog_signature": null,
+  "generated_at": "2026-02-21T14:25:54.800919+00:00",
+  "dialog_found": true,
+  "process_id": 11740,
+  "dialog_signature": {
+    "handle": 4196276,
+    "title": "Data Export",
+    "class_name": "TForm_Export",
+    "control_type": "Window",
+    "automation_id": "",
+    "process_id": 11740
+  },
   "controls": [
     {
       "purpose": "IncludeHeader",
-      "selector_used": "dialog_missing",
-      "found": false,
-      "before_state": null,
-      "after_state": null,
+      "selector_used": "automation_id=1050536,ctrl_id=1050536,class=TRzCheckBox,name~(export.*parameters|parameter.*export|parameter.*ausgabe),checkbox_index=3,win32_index=6",
+      "matched_control": {
+        "handle": 1050536,
+        "class_name": "TRzCheckBox",
+        "control_type": "Pane",
+        "automation_id": "1050536",
+        "title": "Export of parameters",
+        "text": "Export of parameters",
+        "ctrl_id": 1050536,
+        "checkbox_index": 3,
+        "win32_index": 6
+      },
+      "found": true,
+      "before_state": 1,
+      "after_state": 1,
       "settable": false,
-      "attempts": [],
+      "attempts": [
+        {
+          "method": "bm_setcheck",
+          "before_state": "CHECKED",
+          "after_state": "CHECKED",
+          "success": false
+        },
+        {
+          "method": "bm_click",
+          "before_state": "CHECKED",
+          "after_state": "CHECKED",
+          "success": false
+        },
+        {
+          "method": "uia_toggle",
+          "before_state": "CHECKED",
+          "after_state": "ERROR",
+          "success": false,
+          "error": "NoPatternInterfaceError()"
+        },
+        {
+          "method": "uia_invoke",
+          "before_state": "CHECKED",
+          "after_state": "ERROR",
+          "success": false,
+          "error": "NoPatternInterfaceError()"
+        }
+      ],
       "restore": {
-        "restored": false,
-        "final_state": null,
+        "restored": true,
+        "final_state": 1,
         "attempts": []
       },
-      "reason": "dialog_not_found"
+      "reason": "no_method_changed_state"
     },
     {
       "purpose": "AbscissaDataBlocks",
-      "selector_used": "dialog_missing",
-      "found": false,
-      "before_state": null,
-      "after_state": null,
+      "selector_used": "automation_id=2033636,ctrl_id=2033636,class=TRzCheckBox,name~(abscissa|abzisse|abscissa separat),checkbox_index=5,win32_index=11",
+      "matched_control": {
+        "handle": 2033636,
+        "class_name": "TRzCheckBox",
+        "control_type": "Pane",
+        "automation_id": "2033636",
+        "title": "Abscissa separat",
+        "text": "Abscissa separat",
+        "ctrl_id": 2033636,
+        "checkbox_index": 5,
+        "win32_index": 11
+      },
+      "found": true,
+      "before_state": 0,
+      "after_state": 0,
       "settable": false,
-      "attempts": [],
+      "attempts": [
+        {
+          "method": "bm_setcheck",
+          "before_state": "UNCHECKED",
+          "after_state": "UNCHECKED",
+          "success": false
+        },
+        {
+          "method": "bm_click",
+          "before_state": "UNCHECKED",
+          "after_state": "UNCHECKED",
+          "success": false
+        },
+        {
+          "method": "uia_toggle",
+          "before_state": "UNCHECKED",
+          "after_state": "ERROR",
+          "success": false,
+          "error": "NoPatternInterfaceError()"
+        },
+        {
+          "method": "uia_invoke",
+          "before_state": "UNCHECKED",
+          "after_state": "ERROR",
+          "success": false,
+          "error": "NoPatternInterfaceError()"
+        }
+      ],
       "restore": {
-        "restored": false,
-        "final_state": null,
+        "restored": true,
+        "final_state": 0,
         "attempts": []
       },
-      "reason": "dialog_not_found"
+      "reason": "no_method_changed_state"
     },
     {
       "purpose": "TryMatrixForm",
-      "selector_used": "dialog_missing",
-      "found": false,
-      "before_state": null,
-      "after_state": null,
+      "selector_used": "class=TRzCheckBox,name~(try\\s*matrix\\s*form|matrix\\s*form),checkbox_index=0,win32_index=12",
+      "matched_control": {
+        "handle": 788450,
+        "class_name": "TRzCheckBox",
+        "control_type": "",
+        "automation_id": "",
+        "title": "",
+        "text": "Try matrix form",
+        "ctrl_id": 788450,
+        "checkbox_index": 0,
+        "win32_index": 12
+      },
+      "found": true,
+      "before_state": 0,
+      "after_state": 0,
       "settable": false,
-      "attempts": [],
+      "attempts": [
+        {
+          "method": "bm_setcheck",
+          "before_state": "UNCHECKED",
+          "after_state": "UNCHECKED",
+          "success": false
+        },
+        {
+          "method": "bm_click",
+          "before_state": "UNCHECKED",
+          "after_state": "UNCHECKED",
+          "success": false
+        },
+        {
+          "method": "uia_toggle",
+          "before_state": "UNCHECKED",
+          "after_state": "UNCHECKED",
+          "success": false
+        },
+        {
+          "method": "uia_invoke",
+          "before_state": "UNCHECKED",
+          "after_state": "UNCHECKED",
+          "success": false
+        }
+      ],
       "restore": {
-        "restored": false,
-        "final_state": null,
+        "restored": true,
+        "final_state": 0,
         "attempts": []
       },
-      "reason": "dialog_not_found"
+      "reason": "no_method_changed_state"
     },
     {
       "purpose": "SingleFile",
-      "selector_used": "dialog_missing",
-      "found": false,
-      "before_state": null,
-      "after_state": null,
+      "selector_used": "class=TRzCheckBox,name~(single file|single),checkbox_index=7,win32_index=3",
+      "matched_control": {
+        "handle": 1574358,
+        "class_name": "TRzCheckBox",
+        "control_type": "",
+        "automation_id": "",
+        "title": "",
+        "text": "Single file",
+        "ctrl_id": 1574358,
+        "checkbox_index": 7,
+        "win32_index": 3
+      },
+      "found": true,
+      "before_state": 0,
+      "after_state": 0,
       "settable": false,
-      "attempts": [],
+      "attempts": [
+        {
+          "method": "bm_setcheck",
+          "before_state": "UNCHECKED",
+          "after_state": "UNCHECKED",
+          "success": false
+        },
+        {
+          "method": "bm_click",
+          "before_state": "UNCHECKED",
+          "after_state": "UNCHECKED",
+          "success": false
+        },
+        {
+          "method": "uia_toggle",
+          "before_state": "UNCHECKED",
+          "after_state": "UNCHECKED",
+          "success": false
+        },
+        {
+          "method": "uia_invoke",
+          "before_state": "UNCHECKED",
+          "after_state": "UNCHECKED",
+          "success": false
+        }
+      ],
       "restore": {
-        "restored": false,
-        "final_state": null,
+        "restored": true,
+        "final_state": 0,
         "attempts": []
       },
-      "reason": "dialog_not_found"
+      "reason": "no_method_changed_state"
     },
     {
       "purpose": "ComplexFormat",
-      "selector_used": "dialog_missing",
-      "found": false,
-      "before_state": null,
-      "after_state": null,
+      "selector_used": "automation_id=788396,ctrl_id=788396,class=TRzCheckBox,name~(phase\\s*as\\s*radiant|phase.*radian),checkbox_index=8,win32_index=7",
+      "matched_control": {
+        "handle": 788396,
+        "class_name": "TRzCheckBox",
+        "control_type": "Pane",
+        "automation_id": "788396",
+        "title": "Phase as radiant",
+        "text": "Phase as radiant",
+        "ctrl_id": 788396,
+        "checkbox_index": 8,
+        "win32_index": 7
+      },
+      "found": true,
+      "before_state": 0,
+      "after_state": 0,
       "settable": false,
-      "attempts": [],
+      "attempts": [
+        {
+          "method": "bm_setcheck",
+          "before_state": "UNCHECKED",
+          "after_state": "UNCHECKED",
+          "success": false
+        },
+        {
+          "method": "bm_click",
+          "before_state": "UNCHECKED",
+          "after_state": "UNCHECKED",
+          "success": false
+        },
+        {
+          "method": "uia_toggle",
+          "before_state": "UNCHECKED",
+          "after_state": "ERROR",
+          "success": false,
+          "error": "NoPatternInterfaceError()"
+        },
+        {
+          "method": "uia_invoke",
+          "before_state": "UNCHECKED",
+          "after_state": "ERROR",
+          "success": false,
+          "error": "NoPatternInterfaceError()"
+        }
+      ],
       "restore": {
-        "restored": false,
-        "final_state": null,
+        "restored": true,
+        "final_state": 0,
         "attempts": []
       },
-      "reason": "dialog_not_found"
+      "reason": "no_method_changed_state"
     }
   ],
-  "trigger_attempts": [
-    {
-      "method": "main_wm_command_52",
-      "status": "ok",
-      "main_handle": 722388
-    },
-    {
-      "method": "graph_f7",
-      "status": "skipped",
-      "reason": "handle_missing"
-    },
-    {
-      "method": "main_f7",
-      "status": "ok",
-      "handle": 722388
-    }
-  ],
-  "errors": [
-    {
-      "stage": "find_dialog",
-      "error": "export_dialog_not_found"
-    }
-  ]
+  "trigger_attempts": [],
+  "errors": []
 }

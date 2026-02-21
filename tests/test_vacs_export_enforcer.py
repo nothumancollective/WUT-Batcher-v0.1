@@ -8,8 +8,11 @@ import unittest
 from app.vacs_export_enforcer import (
     BST_CHECKED,
     BST_UNCHECKED,
+    ControlRecord,
     ExportConfigurationError,
+    REQUIRED_EXPORT_CONTROLS,
     RequiredControlSpec,
+    Win32UiaExportDialogBackend,
     enforce_required_controls_with_backend,
     resolve_required_controls,
 )
@@ -109,6 +112,47 @@ class VacsExportEnforcerTests(unittest.TestCase):
             resolved = resolve_required_controls([spec], probe_report_path=report_path)
         self.assertEqual(len(resolved), 1)
         self.assertTrue(resolved[0].settable)
+
+    def test_complex_format_selector_targets_phase_as_radiant(self) -> None:
+        backend = Win32UiaExportDialogBackend.__new__(Win32UiaExportDialogBackend)
+        backend.dialog = None
+        backend._controls = [  # type: ignore[attr-defined]
+            ControlRecord(
+                handle=1902598,
+                class_name="TRzCheckBox",
+                control_type="Pane",
+                automation_id="1902598",
+                title="Preserve continuous phase",
+                text="Preserve continuous phase",
+                ctrl_id=1902598,
+                style=0,
+                win32_index=8,
+                checkbox_index=6,
+                rect_top=0,
+                rect_left=0,
+                wrapper=None,
+            ),
+            ControlRecord(
+                handle=788396,
+                class_name="TRzCheckBox",
+                control_type="Pane",
+                automation_id="788396",
+                title="Phase as radiant",
+                text="Phase as radiant",
+                ctrl_id=788396,
+                style=0,
+                win32_index=7,
+                checkbox_index=8,
+                rect_top=0,
+                rect_left=0,
+                wrapper=None,
+            ),
+        ]
+        spec = next(row for row in REQUIRED_EXPORT_CONTROLS if row.purpose == "ComplexFormat")
+        control, selector = backend.resolve_control(spec)
+        self.assertIsNotNone(control)
+        self.assertEqual(getattr(control, "automation_id", ""), "788396")
+        self.assertIn("automation_id=788396", selector)
 
 
 if __name__ == "__main__":

@@ -105,11 +105,13 @@ REQUIRED_EXPORT_CONTROLS: Tuple[RequiredControlSpec, ...] = (
         expected_state=BST_CHECKED,
         settable=False,
         selector={
-            "automation_ids": (),
-            "ctrl_ids": (),
+            # Probe 2026-02-21 (live VACS): TRzCheckBox "Export of parameters"
+            "automation_ids": ("1050536",),
+            "ctrl_ids": (1050536,),
             "class_name_regex": r"(TRzCheckBox|Button)",
             "name_regex": r"(export.*parameters|parameter.*export|parameter.*ausgabe)",
-            "checkbox_indices": (),
+            "checkbox_indices": (3,),
+            "win32_indices": (6,),
         },
     ),
     RequiredControlSpec(
@@ -117,11 +119,13 @@ REQUIRED_EXPORT_CONTROLS: Tuple[RequiredControlSpec, ...] = (
         expected_state=BST_UNCHECKED,
         settable=False,
         selector={
-            "automation_ids": (),
-            "ctrl_ids": (),
+            # Probe 2026-02-21 (live VACS): TRzCheckBox "Abscissa separat"
+            "automation_ids": ("2033636",),
+            "ctrl_ids": (2033636,),
             "class_name_regex": r"(TRzCheckBox|Button)",
             "name_regex": r"(abscissa|abzisse|abscissa separat)",
-            "checkbox_indices": (),
+            "checkbox_indices": (5,),
+            "win32_indices": (11,),
         },
     ),
     RequiredControlSpec(
@@ -129,11 +133,13 @@ REQUIRED_EXPORT_CONTROLS: Tuple[RequiredControlSpec, ...] = (
         expected_state=BST_UNCHECKED,
         settable=False,
         selector={
+            # Probe 2026-02-21 (live VACS): TRzCheckBox "Try matrix form"
             "automation_ids": (),
             "ctrl_ids": (),
             "class_name_regex": r"(TRzCheckBox|Button)",
-            "name_regex": r"(matrix form|matrix|try matrix)",
-            "checkbox_indices": (),
+            "name_regex": r"(try\s*matrix\s*form|matrix\s*form)",
+            "checkbox_indices": (0,),
+            "win32_indices": (12,),
         },
     ),
     RequiredControlSpec(
@@ -141,11 +147,13 @@ REQUIRED_EXPORT_CONTROLS: Tuple[RequiredControlSpec, ...] = (
         expected_state=BST_UNCHECKED,
         settable=False,
         selector={
+            # Probe 2026-02-21 (live VACS): TRzCheckBox "Single file"
             "automation_ids": (),
             "ctrl_ids": (),
             "class_name_regex": r"(TRzCheckBox|Button)",
             "name_regex": r"(single file|single)",
-            "checkbox_indices": (),
+            "checkbox_indices": (7,),
+            "win32_indices": (3,),
         },
     ),
     RequiredControlSpec(
@@ -153,11 +161,13 @@ REQUIRED_EXPORT_CONTROLS: Tuple[RequiredControlSpec, ...] = (
         expected_state=BST_UNCHECKED,
         settable=False,
         selector={
-            "automation_ids": (),
-            "ctrl_ids": (),
+            # Probe 2026-02-21 (live VACS): TRzCheckBox "Phase as radiant"
+            "automation_ids": ("788396",),
+            "ctrl_ids": (788396,),
             "class_name_regex": r"(TRzCheckBox|Button)",
-            "name_regex": r"(phase as radiant|phase.*radian|phase)",
-            "checkbox_indices": (),
+            "name_regex": r"(phase\s*as\s*radiant|phase.*radian)",
+            "checkbox_indices": (8,),
+            "win32_indices": (7,),
         },
     ),
 )
@@ -444,6 +454,7 @@ class Win32UiaExportDialogBackend:
 def find_export_dialog(*, process_id: Optional[int] = None, timeout_s: float = 3.0) -> Optional[Any]:
     deadline = time.perf_counter() + max(0.1, float(timeout_s))
     while time.perf_counter() < deadline:
+        windows: List[Any]
         try:
             windows = (
                 list(Desktop(backend="uia").windows(process=int(process_id)))
@@ -452,6 +463,35 @@ def find_export_dialog(*, process_id: Optional[int] = None, timeout_s: float = 3
             )
         except Exception:
             windows = []
+
+        # Some VACS builds expose TForm_Export as a child window under TForm_DatMain
+        # instead of a top-level desktop window.
+        descendant_candidates: List[Any] = []
+        for window in list(windows):
+            try:
+                info = getattr(window, "element_info", None)
+                class_name = str(getattr(info, "class_name", "") or "")
+                if class_name != "TForm_DatMain":
+                    continue
+                for child in list(window.descendants()):
+                    child_info = getattr(child, "element_info", None)
+                    if str(getattr(child_info, "control_type", "") or "") != "Window":
+                        continue
+                    handle = int(getattr(child_info, "handle", 0) or 0)
+                    if handle <= 0:
+                        continue
+                    descendant_candidates.append(child)
+            except Exception:
+                continue
+
+        if descendant_candidates:
+            by_handle: Dict[int, Any] = {}
+            for row in list(windows) + list(descendant_candidates):
+                info = getattr(row, "element_info", None)
+                handle = int(getattr(info, "handle", 0) or 0)
+                if handle > 0:
+                    by_handle[handle] = row
+            windows = list(by_handle.values())
         candidates: List[Any] = []
         for window in windows:
             info = getattr(window, "element_info", None)
