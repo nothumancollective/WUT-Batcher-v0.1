@@ -59,9 +59,215 @@ FAST_GRAPH_STABILIZE_TIMEOUT_S = 1.6
 FAST_GRAPH_STABLE_FOR_S = 0.25
 FAST_GRAPH_STABILIZE_POLL_S = 0.03
 
+TOP_LEVEL_HARD_ERRORS = {
+    "vacs_not_ready_after_f4",
+    "interim_reimport_failed",
+    "vacs_main_missing",
+    "no_graph_windows",
+}
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _row_failure_reason(row: Dict[str, Any]) -> str:
+    reason = str(row.get("error", "") or "").strip()
+    if reason:
+        return reason
+    enforcement = dict(row.get("export_config_enforcement") or {})
+    if enforcement and not bool(enforcement.get("ok", False)):
+        return "export_configuration_invalid"
+    file_post = dict(row.get("file_postcondition") or {})
+    if file_post and not bool(file_post.get("ok", False)):
+        return "export_file_missing_or_empty"
+    return ""
+
+
+def _row_affected_item(row: Dict[str, Any]) -> str:
+    file_post = dict(row.get("file_postcondition") or {})
+    path = str(file_post.get("path", "") or "").strip()
+    if path:
+        return path
+    save_as = dict(row.get("save_as_set_path") or {})
+    target = str(save_as.get("target", "") or "").strip()
+    if target:
+        return target
+    target_sig = dict(row.get("target") or {})
+    title = str(target_sig.get("title", "") or "").strip()
+    if title:
+        return title
+    loop = int(row.get("loop", 0) or 0)
+    if loop > 0:
+        return f"loop:{loop}"
+    return "unknown"
+
+
+def build_exit_status(
+    result: Dict[str, Any],
+    *,
+    min_successful_exports: int = 1,
+    required_graph_title_regex: str = "",
+) -> Dict[str, Any]:
+    per_graph = [dict(row or {}) for row in list(result.get("per_graph", []) or [])]
+    exported_files = [dict(row or {}) for row in list(result.get("exported_files", []) or [])]
+    exported_ok_count = int(len(exported_files))
+    exported_failed_count = int(max(0, len(per_graph) - exported_ok_count))
+
+    verification_ok_count = 0
+    verification_failed_count = 0
+    reason_counts: Dict[str, int] = {}
+    reason_files: Dict[str, List[str]] = {}
+    required_graph_failures: List[Dict[str, Any]] = []
+
+    required_pattern = str(required_graph_title_regex or "").strip()
+    required_rx = None
+    required_pattern_error = ""
+    if required_pattern:
+        try:
+            required_rx = re.compile(required_pattern, re.IGNORECASE)
+        except re.error as exc:
+            required_pattern_error = str(exc)
+
+    def _add_reason(reason: str, affected: str) -> None:
+        key = str(reason or "").strip() or "unknown_error"
+        reason_counts[key] = int(reason_counts.get(key, 0) or 0) + 1
+        rows = reason_files.setdefault(key, [])
+        label = str(affected or "").strip() or "unknown"
+        if label and label not in rows:
+            rows.append(label)
+
+    for row in per_graph:
+        reason = _row_failure_reason(row)
+        affected = _row_affected_item(row)
+        if reason:
+            verification_failed_count += 1
+            _add_reason(reason, affected)
+            if required_rx is not None:
+                title = str(dict(row.get("target") or {}).get("title", "") or "")
+                if title and required_rx.search(title):
+                    required_graph_failures.append(
+                        {
+                            "reason": reason,
+                            "title": title,
+                            "affected": affected,
+                        }
+                    )
+            continue
+        file_post = dict(row.get("file_postcondition") or {})
+        if file_post:
+            if bool(file_post.get("ok", False)):
+                verification_ok_count += 1
+            else:
+                verification_failed_count += 1
+                _add_reason("export_file_missing_or_empty", affected)
+        else:
+            verification_failed_count += 1
+            _add_reason("verification_incomplete", affected)
+
+    top_level_error = str(result.get("error", "") or "").strip()
+    if top_level_error:
+        _add_reason(top_level_error, str(result.get("summary_file", "") or "run"))
+    if required_pattern_error:
+        _add_reason("invalid_required_graph_title_regex", required_pattern_error)
+
+    top_failure_reasons: List[Dict[str, Any]] = []
+    for reason, count in sorted(reason_counts.items(), key=lambda item: (-int(item[1]), str(item[0]))):
+        top_failure_reasons.append(
+            {
+                "reason": str(reason),
+                "count": int(count),
+                "affected_files": list(reason_files.get(reason, [])[:3]),
+            }
+        )
+        if len(top_failure_reasons) >= 3:
+            break
+
+    hard_failure_reasons: List[str] = []
+    min_required = int(min_successful_exports or 0)
+    if min_required < 1:
+        min_required = 1
+    if exported_ok_count < min_required:
+        hard_failure_reasons.append(f"missing_required_exports:{exported_ok_count}<{min_required}")
+    if top_level_error in TOP_LEVEL_HARD_ERRORS:
+        hard_failure_reasons.append(f"fatal:{top_level_error}")
+    elif top_level_error and exported_ok_count <= 0:
+        hard_failure_reasons.append(f"fatal:{top_level_error}")
+    if required_graph_failures:
+        hard_failure_reasons.append("required_graph_failed")
+    if required_pattern_error:
+        hard_failure_reasons.append("invalid_required_graph_title_regex")
+
+    return {
+        "exported_ok_count": int(exported_ok_count),
+        "exported_failed_count": int(exported_failed_count),
+        "verification_ok_count": int(verification_ok_count),
+        "verification_failed_count": int(verification_failed_count),
+        "top_failure_reasons": top_failure_reasons,
+        "required_graph_failures": required_graph_failures[:3],
+        "hard_failure_reasons": hard_failure_reasons,
+        "hard_failure": bool(hard_failure_reasons),
+    }
+
+
+def _apply_exit_status(
+    result: Dict[str, Any],
+    *,
+    min_successful_exports: int,
+    required_graph_title_regex: str,
+) -> Dict[str, Any]:
+    summary = build_exit_status(
+        result,
+        min_successful_exports=int(min_successful_exports),
+        required_graph_title_regex=str(required_graph_title_regex or ""),
+    )
+    result["final_summary"] = summary
+    result["ok"] = not bool(summary.get("hard_failure", False))
+    if not bool(result.get("ok", False)) and not str(result.get("error", "") or "").strip():
+        reasons = list(summary.get("hard_failure_reasons", []) or [])
+        if reasons:
+            result["error"] = str(reasons[0])
+    return summary
+
+
+def _print_final_summary(result: Dict[str, Any]) -> None:
+    summary = dict(result.get("final_summary") or {})
+    if not summary:
+        return
+    print("[vacs_export_save_all] final_summary", file=sys.stderr)
+    print(
+        (
+            "[vacs_export_save_all] "
+            f"exported_ok_count={int(summary.get('exported_ok_count', 0) or 0)} "
+            f"exported_failed_count={int(summary.get('exported_failed_count', 0) or 0)}"
+        ),
+        file=sys.stderr,
+    )
+    print(
+        (
+            "[vacs_export_save_all] "
+            f"verification_ok_count={int(summary.get('verification_ok_count', 0) or 0)} "
+            f"verification_failed_count={int(summary.get('verification_failed_count', 0) or 0)}"
+        ),
+        file=sys.stderr,
+    )
+    reasons = list(summary.get("top_failure_reasons", []) or [])
+    if reasons:
+        print("[vacs_export_save_all] top_failure_reasons:", file=sys.stderr)
+        for row in reasons[:3]:
+            reason = str(row.get("reason", "") or "").strip() or "unknown_error"
+            count = int(row.get("count", 0) or 0)
+            affected = ", ".join([str(item) for item in list(row.get("affected_files", []) or [])[:3]])
+            if affected:
+                print(f"[vacs_export_save_all] - {reason} ({count}) :: {affected}", file=sys.stderr)
+            else:
+                print(f"[vacs_export_save_all] - {reason} ({count})", file=sys.stderr)
+    summary_file = str(result.get("summary_file", "") or "").strip()
+    if summary_file:
+        print(f"[vacs_export_save_all] summary_file={summary_file}", file=sys.stderr)
+    trace_file = str(result.get("trace_file", "") or "").strip()
+    if trace_file:
+        print(f"[vacs_export_save_all] trace_file={trace_file}", file=sys.stderr)
 
 
 def _sig(ctrl: Any) -> Dict[str, Any]:
@@ -1773,7 +1979,11 @@ def run_once_safe(args: argparse.Namespace) -> Dict[str, Any]:
     log["per_graph"] = per_graph
     log["exported_files"] = exported_files
     log["remaining_graphs"] = remaining
-    log["ok"] = bool(len(remaining) == 0 and len(exported_files) > 0)
+    _apply_exit_status(
+        log,
+        min_successful_exports=int(getattr(args, "min_successful_exports", 1) or 1),
+        required_graph_title_regex=str(getattr(args, "required_graph_title_regex", "") or ""),
+    )
 
     # close vacs
     _kill_vacs()
@@ -2241,7 +2451,11 @@ def run_once_fast(args: argparse.Namespace) -> Dict[str, Any]:
     log["per_graph"] = per_graph
     log["exported_files"] = exported_files
     log["remaining_graphs"] = remaining
-    log["ok"] = bool(len(exported_files) >= max_graphs and max_graphs > 0)
+    _apply_exit_status(
+        log,
+        min_successful_exports=int(getattr(args, "min_successful_exports", 1) or 1),
+        required_graph_title_regex=str(getattr(args, "required_graph_title_regex", "") or ""),
+    )
 
     _kill_vacs()
     step("kill_vacs_final")
@@ -2342,6 +2556,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--capture-export-controls", action="store_true", help="Capture full Data Export control dumps (slower).")
     p.add_argument("--max-runtime-s", type=float, default=420.0)
     p.add_argument("--max-loops", type=int, default=12)
+    p.add_argument(
+        "--min-successful-exports",
+        type=int,
+        default=1,
+        help="Minimum successful exports required for exit code 0.",
+    )
+    p.add_argument(
+        "--required-graph-title-regex",
+        default="",
+        help="Optional regex for graph titles that are required; failures on these remain hard failures.",
+    )
     p.add_argument("--interim-timeout-s", type=int, default=90)
     p.add_argument("--interim-idle-timeout-s", type=int, default=20)
     p.add_argument("--interim-startup-timeout-s", type=int, default=25)
@@ -2354,6 +2579,19 @@ def main() -> int:
     enable_audit_mode(entrypoint="scripts.vacs_export_save_all.main")
     args = build_parser().parse_args()
     result = run_once(args)
+    _apply_exit_status(
+        result,
+        min_successful_exports=int(getattr(args, "min_successful_exports", 1) or 1),
+        required_graph_title_regex=str(getattr(args, "required_graph_title_regex", "") or ""),
+    )
+    summary_file_raw = str(result.get("summary_file", "") or "").strip()
+    if summary_file_raw:
+        summary_file = Path(summary_file_raw)
+        try:
+            summary_file.write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        except Exception as exc:
+            print(f"[vacs_export_save_all] warning: failed to update summary_file: {exc!r}", file=sys.stderr)
+    _print_final_summary(result)
     print(json.dumps(result, indent=2, ensure_ascii=False))
     return 0 if bool(result.get("ok")) else 1
 

@@ -83,3 +83,17 @@ Selector priority per control:
    - `docs/vacs_export_setter_probe_report.json`
 4. Re-run tests:
    - `python -m pytest -q tests/test_vacs_export_enforcer.py tests/test_vacs_driver_export_enforcement.py`
+
+## External Export Script Exit Codes
+- Script: `scripts/vacs_export_save_all.py`
+- The script always prints a compact final summary to `stderr` before exit:
+  - `exported_ok_count` / `exported_failed_count`
+  - `verification_ok_count` / `verification_failed_count`
+  - top failure reasons (up to 3) with affected files/targets
+  - `summary_file` and `trace_file` paths when available
+- Exit code policy:
+  - `0`: minimum required exports succeeded and no hard failure condition is present
+  - `1`: hard failure (for example startup failures like `vacs_main_missing`, or missing required exports)
+- Optional strictness knobs:
+  - `--min-successful-exports`
+  - `--required-graph-title-regex`
