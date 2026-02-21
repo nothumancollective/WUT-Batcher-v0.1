@@ -106,3 +106,17 @@ The Analyzer page is planned with two explicit subviews:
 - New mode “Merge” appears in bottom bar later.
 - Mode pages always operate on currently selected geometry.
 - This implies future DB changes (e.g., geometry_id) — not in scope now.
+
+## Implementation status (UI-1A)
+
+- Implemented in app shell:
+  - persistent global top bar (`home` + page title + `settings`)
+  - persistent bottom mode bar (`Project | Batch | Analyse`) with exclusive mode switching
+  - empty `Analyse` placeholder page in the main stacked widget
+- Scope intentionally preserved:
+  - no KPI logic
+  - no database/query changes
+  - no structural changes to Batch page internal cards/forms
+- Deferred to later phases:
+  - migration/removal of legacy Batch-local navigation controls
+  - Analyzer subview layout (`Batch Review` / `Candidate Pool`) and KPI panels

@@ -14,3 +14,8 @@
 - Introduced explicit CI fixture constraint: Analyzer CI test batches are capped at max 5 runs.
 - Documented real-world large-batch handling strategy: incremental compute + caching (not heavy full-batch tests).
 - Officially planned cross-batch comparison via `Candidate Pool` (pin/shortlist across batches, lightweight selection behavior).
+
+## 2026-02-21 (UI-1A)
+- UI-1A: Introduced global top bar and bottom mode bar skeleton.
+- Added an `Analyse` placeholder page wired into main stacked navigation.
+- Kept Batch page internals unchanged; no KPI or database logic added.

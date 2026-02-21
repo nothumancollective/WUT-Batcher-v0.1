@@ -35,6 +35,7 @@ try:
     from PySide6.QtWidgets import (
         QAbstractItemView,
         QApplication,
+        QButtonGroup,
         QComboBox,
         QCheckBox,
         QDialog,
@@ -59,6 +60,7 @@ try:
         QSplashScreen,
         QStackedWidget,
         QStatusBar,
+        QStyle,
         QTextEdit,
         QToolButton,
         QVBoxLayout,
@@ -75,6 +77,28 @@ class ClickableLabel(QLabel):
         super().mousePressEvent(event)
         if event.button() == Qt.LeftButton:
             self.clicked.emit()
+
+
+class ElidedTitleLabel(QLabel):
+    def __init__(self, text: str = "", parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._full_text = ""
+        self.setAlignment(Qt.AlignCenter)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.set_full_text(text)
+
+    def set_full_text(self, text: str) -> None:
+        self._full_text = str(text or "")
+        self.setToolTip(self._full_text)
+        self._apply_elide()
+
+    def _apply_elide(self) -> None:
+        available = max(self.contentsRect().width(), 40)
+        self.setText(self.fontMetrics().elidedText(self._full_text, Qt.ElideRight, available))
+
+    def resizeEvent(self, event) -> None:  # type: ignore[override]
+        super().resizeEvent(event)
+        self._apply_elide()
 
 
 class IssueRowButton(QPushButton):
@@ -2415,6 +2439,20 @@ class RunPage(QWidget):
         self.progress.setFormat("Run complete")
 
 
+class AnalysePage(QWidget):
+    def __init__(self) -> None:
+        super().__init__()
+        root = QVBoxLayout(self)
+        root.setContentsMargins(24, 24, 24, 24)
+        root.setSpacing(0)
+        root.addStretch(1)
+        hint = QLabel("Analyzer coming soon")
+        hint.setAlignment(Qt.AlignCenter)
+        hint.setObjectName("SummaryText")
+        root.addWidget(hint, 0, Qt.AlignCenter)
+        root.addStretch(1)
+
+
 class ProjectManagerWindow(QMainWindow):
     open_project = Signal(str)
     create_project = Signal()
@@ -2634,16 +2672,20 @@ class MainWindow(QMainWindow):
         self.resize(1280, 860)
 
         self.stack = QStackedWidget()
+        self.stack.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.dashboard_page = DashboardPage()
         self.project_page = ProjectPage()
         self.batch_page = BatchPage()
+        self.analyse_page = AnalysePage()
         self.run_page = RunPage()
 
         self.stack.addWidget(self.dashboard_page)
         self.stack.addWidget(self.project_page)
         self.stack.addWidget(self.batch_page)
+        self.stack.addWidget(self.analyse_page)
         self.stack.addWidget(self.run_page)
-        self.setCentralWidget(self.stack)
+        self._build_navigation_shell()
+        self.stack.currentChanged.connect(self._on_stack_page_changed)
 
         self._build_statusbar()
         self._connect_page_signals()
@@ -2653,6 +2695,97 @@ class MainWindow(QMainWindow):
             # Non-critical startup maintenance; runtime preview requests handle errors explicitly.
             LOGGER.warning("Startup preview cache cleanup failed: %s", exc)
         self.show_dashboard()
+        self._sync_navigation_state()
+
+    def _build_navigation_shell(self) -> None:
+        central = QWidget(self)
+        root = QVBoxLayout(central)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        self.top_bar = QWidget(central)
+        self.top_bar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.top_bar.setMinimumHeight(44)
+        self.top_bar.setMaximumHeight(44)
+        top_row = QHBoxLayout(self.top_bar)
+        top_row.setContentsMargins(10, 6, 10, 6)
+        top_row.setSpacing(8)
+
+        self.home_button = QToolButton(self.top_bar)
+        self.home_button.setAutoRaise(True)
+        self.home_button.setToolTip("Open Project Manager")
+        self.home_button.setIcon(self.style().standardIcon(QStyle.SP_DirHomeIcon))
+        self.home_button.clicked.connect(self._open_project_manager)
+        top_row.addWidget(self.home_button, 0, Qt.AlignLeft | Qt.AlignVCenter)
+
+        top_row.addStretch(1)
+        self.page_title_label = ElidedTitleLabel("")
+        self.page_title_label.setObjectName("SectionTitle")
+        top_row.addWidget(self.page_title_label, 1, Qt.AlignCenter)
+        top_row.addStretch(1)
+
+        self.settings_button = QToolButton(self.top_bar)
+        self.settings_button.setAutoRaise(True)
+        self.settings_button.setToolTip("Open Settings")
+        self.settings_button.setIcon(self.style().standardIcon(QStyle.SP_FileDialogDetailedView))
+        self.settings_button.clicked.connect(self._open_settings)
+        top_row.addWidget(self.settings_button, 0, Qt.AlignRight | Qt.AlignVCenter)
+
+        self.bottom_mode_bar = QWidget(central)
+        self.bottom_mode_bar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.bottom_mode_bar.setMinimumHeight(44)
+        self.bottom_mode_bar.setMaximumHeight(44)
+        mode_row = QHBoxLayout(self.bottom_mode_bar)
+        mode_row.setContentsMargins(10, 6, 10, 6)
+        mode_row.setSpacing(8)
+
+        self.mode_button_group = QButtonGroup(self)
+        self.mode_button_group.setExclusive(True)
+        self.project_mode_button = QPushButton("Project")
+        self.batch_mode_button = QPushButton("Batch")
+        self.analyse_mode_button = QPushButton("Analyse")
+        for button in (self.project_mode_button, self.batch_mode_button, self.analyse_mode_button):
+            button.setCheckable(True)
+            button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            self.mode_button_group.addButton(button)
+            mode_row.addWidget(button)
+
+        self.project_mode_button.clicked.connect(self.show_dashboard)
+        self.batch_mode_button.clicked.connect(self.show_batch)
+        self.analyse_mode_button.clicked.connect(self.show_analyse)
+
+        root.addWidget(self.top_bar)
+        root.addWidget(self.stack, 1)
+        root.addWidget(self.bottom_mode_bar)
+        self.setCentralWidget(central)
+
+    def _on_stack_page_changed(self, _index: int) -> None:
+        self._sync_navigation_state()
+
+    def _sync_navigation_state(self) -> None:
+        current = self.stack.currentWidget()
+        self.page_title_label.set_full_text(self._title_for_page(current))
+        self._sync_mode_buttons(current)
+
+    def _title_for_page(self, page: QWidget | None) -> str:
+        if page is self.batch_page:
+            return "Batch"
+        if page is self.analyse_page:
+            return "Analyse"
+        if page is self.run_page:
+            return "Run"
+        return "Project"
+
+    def _sync_mode_buttons(self, page: QWidget | None) -> None:
+        target = self.project_mode_button
+        if page is self.batch_page or page is self.run_page:
+            target = self.batch_mode_button
+        elif page is self.analyse_page:
+            target = self.analyse_mode_button
+        for button in (self.project_mode_button, self.batch_mode_button, self.analyse_mode_button):
+            button.blockSignals(True)
+            button.setChecked(button is target)
+            button.blockSignals(False)
 
     def _build_statusbar(self) -> None:
         bar = QStatusBar()
@@ -3138,6 +3271,11 @@ class MainWindow(QMainWindow):
         self.batch_page.reset_draft()
         self._on_batch_draft_changed(self.batch_page._payload(include_name=False))
         self.stack.setCurrentWidget(self.batch_page)
+
+    def show_analyse(self) -> None:
+        self._stop_preview_worker()
+        self._exit_run_presentation()
+        self.stack.setCurrentWidget(self.analyse_page)
 
     def show_run(self) -> None:
         self._stop_preview_worker()
