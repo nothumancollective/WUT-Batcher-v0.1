@@ -47,3 +47,8 @@
 ## 2026-02-21 (Polish A6)
 - Restored TopBar center title to `BATCH` for Batch mode to avoid an empty global header.
 - Removed duplicate in-page `BATCH` text from the Batch header row; the row now starts with Batch Name and actions.
+
+## 2026-02-21 (Polish A7.1)
+- Added reusable header primitives for upcoming Batch upper-region rewrite:
+  - `CommandHeaderWidget` (responsive command bar + status deck shell)
+  - `FlowLayout` (wrap-safe chip row behavior).

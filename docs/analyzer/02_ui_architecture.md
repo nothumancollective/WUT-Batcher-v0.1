@@ -163,3 +163,9 @@ The Analyzer page is planned with two explicit subviews:
   - primary: `Simulate Enclosure`
   - secondary: `Advanced`
 - Footer layout switches between wide and compact rows on narrow widths to avoid awkward wrapping/clipping.
+
+## Implementation status (Polish A7.1)
+
+- Introduced reusable shared UI primitives for the next Batch header integration:
+  - `CommandHeaderWidget`: two-row template (`Command Bar` + `Status Deck`) with deterministic wide/narrow switching.
+  - `FlowLayout`: wrap-safe layout for status chips without fixed positioning.
