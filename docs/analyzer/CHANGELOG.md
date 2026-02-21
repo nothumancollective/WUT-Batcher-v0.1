@@ -43,3 +43,7 @@
 
 ## 2026-02-21 (UI-1D.6)
 - UI-1D.6: Cleaned Exports footer copy/layout, switched to concise default-export labeling, and aligned `Simulate Enclosure` + `Advanced` actions with responsive wrapping.
+
+## 2026-02-21 (Polish A6)
+- Restored TopBar center title to `BATCH` for Batch mode to avoid an empty global header.
+- Removed duplicate in-page `BATCH` text from the Batch header row; the row now starts with Batch Name and actions.

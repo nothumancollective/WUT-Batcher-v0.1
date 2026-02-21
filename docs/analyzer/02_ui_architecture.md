@@ -145,8 +145,8 @@ The Analyzer page is planned with two explicit subviews:
 
 ## Implementation status (UI-1D.4)
 
-- Batch page top row is consolidated to `BATCH + Batch Name + Save + Run` within one compact header strip.
-- Global TopBar center text is intentionally blank while Batch page is active to avoid duplicated “Batch” titles.
+- Batch page top row is consolidated to `Batch Name + Save + Run` within one compact header strip.
+- Global TopBar center text shows `BATCH` while Batch mode is active.
 
 ## Implementation status (UI-1D.5)
 

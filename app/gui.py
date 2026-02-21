@@ -2021,9 +2021,6 @@ class BatchPage(QWidget):
         header_layout = QHBoxLayout(header_row)
         header_layout.setContentsMargins(0, 0, 0, 0)
         header_layout.setSpacing(8)
-        title = QLabel("BATCH")
-        title.setObjectName("SectionTitle")
-        header_layout.addWidget(title, 0, Qt.AlignLeft | Qt.AlignVCenter)
         self.batch_name = QLineEdit()
         self.batch_name.setPlaceholderText("Batch Name")
         self.batch_name.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -3349,7 +3346,7 @@ class MainWindow(QMainWindow):
 
     def _title_for_page(self, page: QWidget | None) -> str:
         if page is self.batch_page:
-            return ""
+            return "BATCH"
         if page is self.analyse_page:
             return "Analyse"
         if page is self.run_page:
