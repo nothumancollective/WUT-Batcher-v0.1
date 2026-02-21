@@ -5,6 +5,7 @@ from pathlib import Path
 import unittest
 
 from app.models import Batch, Project, ProjectConstraints, SimExportSettings, VersionSpec
+from app.polar_txt_parser import PolarTxtParseError
 from app.runtime_orchestrator import _ingest_vacs_exports
 from app.tidy_dataset import TidyDatasetWriter
 
@@ -185,6 +186,114 @@ class PolarImporterTests(unittest.TestCase):
             point_count = conn.execute("SELECT COUNT(*) FROM polar_points").fetchone()[0]
         self.assertEqual(int(meas_count), 1)
         self.assertEqual(int(point_count), 6)
+
+    def test_import_format_b_abscissa_writes_expected_counts(self) -> None:
+        project_root, writer, project, batch = self._prepare_project()
+        exports_dir = project_root / "versions" / "V001" / "exports" / "RUN001"
+        exports_dir.mkdir(parents=True, exist_ok=True)
+        source_file = FIXTURES / "result_v001polar_matrix_small_abscissa.txt"
+        target_file = exports_dir / "20260221_000000_01_Mic_Polar_-_BE_Spectrum_3.txt"
+        target_file.write_text(source_file.read_text(encoding="utf-8-sig"), encoding="utf-8")
+        vacs_summary = {
+            "exports": [
+                {
+                    "spec": {
+                        "id": "polar_spec_1",
+                        "tool": "vacs",
+                        "graph_kind": "polar",
+                        "variant": "main",
+                        "format": "txt",
+                        "options": {"norm_angle": 35},
+                    },
+                    "entry": {"graph_kind": "polar", "graph_variant": "main", "format": "txt"},
+                    "plugin_id": "test",
+                    "output_path": str(target_file),
+                    "details": {},
+                }
+            ]
+        }
+
+        ingest = _ingest_vacs_exports(
+            writer=writer,
+            project=project,
+            batch=batch,
+            run_id="RUN001",
+            version_id="V001",
+            exports_dir=exports_dir,
+            vacs_export_summary=vacs_summary,
+        )
+        self.assertEqual(ingest.get("parse_errors"), [])
+        self.assertEqual(int(ingest.get("polar_measurements_written", 0)), 1)
+        self.assertEqual(int(ingest.get("polar_points_written", 0)), 6)
+
+        project_db = project_root / "dataset" / "project.sqlite"
+        with closing(sqlite3.connect(str(project_db))) as conn:
+            meas = conn.execute(
+                """
+                SELECT orientation, freq_count, angle_count, polar_id
+                FROM polar_measurements
+                LIMIT 1
+                """
+            ).fetchone()
+            point_count = conn.execute(
+                "SELECT COUNT(*) FROM polar_points WHERE polar_id = ?",
+                (str(meas[3]),),
+            ).fetchone()[0]
+        self.assertEqual(str(meas[0]), "H")
+        self.assertEqual(int(meas[1]), 2)
+        self.assertEqual(int(meas[2]), 3)
+        self.assertEqual(int(point_count), 6)
+
+    def test_import_fails_fast_on_missing_required_headers(self) -> None:
+        project_root, writer, project, batch = self._prepare_project()
+        exports_dir = project_root / "versions" / "V001" / "exports" / "RUN001"
+        exports_dir.mkdir(parents=True, exist_ok=True)
+        bad_file = exports_dir / "bad_missing_param_x2.txt"
+        bad_file.write_text(
+            "\n".join(
+                [
+                    "StartString_Data=Data",
+                    "EndString_Data=Data_End",
+                    "Data_Format=Complex",
+                    "Data_Domain=Frequency",
+                    "Param_Coord_x3=0",
+                    "Data",
+                    "100 1.0 0.1 2.0 0.2",
+                    "Data_End",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        vacs_summary = {
+            "exports": [
+                {
+                    "spec": {
+                        "id": "polar_spec_1",
+                        "tool": "vacs",
+                        "graph_kind": "polar",
+                        "variant": "main",
+                        "format": "txt",
+                    },
+                    "entry": {"graph_kind": "polar", "graph_variant": "main", "format": "txt"},
+                    "plugin_id": "test",
+                    "output_path": str(bad_file),
+                    "details": {},
+                }
+            ]
+        }
+        with self.assertRaises(PolarTxtParseError) as ctx:
+            _ingest_vacs_exports(
+                writer=writer,
+                project=project,
+                batch=batch,
+                run_id="RUN001",
+                version_id="V001",
+                exports_dir=exports_dir,
+                vacs_export_summary=vacs_summary,
+            )
+        self.assertEqual(ctx.exception.error_code, "MISSING_HEADER")
+        self.assertIn("Enable 'Export of parameters'", ctx.exception.reason)
 
 
 if __name__ == "__main__":

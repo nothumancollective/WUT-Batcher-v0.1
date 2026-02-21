@@ -1329,8 +1329,20 @@ def _ingest_vacs_exports(
             try:
                 polar_result = parse_polar_legacy_complex_txt(path)
             except PolarTxtParseError as exc:
-                parse_errors.append(f"{path}: polar_parse_error: {exc.reason}")
-                continue
+                remediation = (
+                    "Enable 'Export of parameters' and ensure VACS exports complex frequency-domain "
+                    "polar data (Data_Format=Complex, Data_Domain=Frequency)."
+                )
+                detail = f"; detail={exc.detail}" if getattr(exc, "detail", "") else ""
+                parse_errors.append(
+                    f"{path}: polar_parse_error[{exc.error_code}]: {exc.reason}{detail}; remediation={remediation}"
+                )
+                raise PolarTxtParseError(
+                    path=exc.path,
+                    error_code=str(exc.error_code),
+                    reason=f"{exc.reason}; remediation={remediation}",
+                    detail=str(exc.detail or ""),
+                ) from exc
 
         graph_kind = expected_kind or parsed.graph_type
         file_rows: List[Dict[str, Any]] = []

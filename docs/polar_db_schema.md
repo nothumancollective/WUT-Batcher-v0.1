@@ -99,17 +99,42 @@ If found, import is skipped for that polar file. This prevents duplicates across
 
 ## Validation and Failure Behavior
 
-Expected legacy complex matrix shape:
-- Header includes `Param_Coord_x2` (angle list)
-- Data rows are `frequency + (2 * angle_count)` numeric values (Re/Im pairs)
+Supported polar TXT shapes:
+- Format A (`legacy_with_frequency`)
+  - Required headers include `Param_Coord_x2`, `Param_Coord_x3`
+  - Data block rows are `frequency + (2 * angle_count)` numeric values (Re/Im pairs)
+- Format B (`abscissa_data`)
+  - Required headers include `StartString_Absc`/`EndString_Absc`, `StartString_Data`/`EndString_Data`,
+    `Param_Coord_x2`, `Param_Coord_x3`
+  - Abscissa block contains one frequency per row
+  - Data block rows contain only `(2 * angle_count)` numeric values (Re/Im pairs), mapped by row index
+
+Deterministic format detection:
+1. If `StartString_Absc` and `EndString_Absc` are present, parse as Format B.
+2. Otherwise parse as Format A.
+3. In both cases enforce:
+   - `Data_Format=Complex`
+   - `Data_Domain` contains `Frequency`
 
 Validation rules:
 - `angle_count >= 1`
 - `freq_count >= 1`
-- Every row width must equal `1 + 2*angle_count`
+- Format A row width must equal `1 + 2*angle_count`
+- Format B data-row width must equal `2*angle_count`
+- Format B row counts must match: `len(Abscissa rows) == len(Data rows)`
 - Frequency decreases are flagged as warnings (stored in import metadata)
+- `NaN`/`Inf` values are rejected with row-level parse errors
 
-Malformed polar files raise a structured parse error including file path and reason. Import records that as a parse error and does not write partial `polar_*` rows for that file.
+Fail-fast behavior:
+- Missing required headers (`Param_Coord_x2`, `Param_Coord_x3`, `Data_Format`, `Data_Domain`) or unsupported layout
+  raise structured `PolarTxtParseError` with:
+  - `error_code` (for example `MISSING_HEADER`, `BAD_DIMENSIONS`, `UNSUPPORTED_FORMAT`, `INVALID_NUMERIC`)
+  - `file_path`
+  - detailed expected vs. actual values when applicable
+- Importer surfaces actionable remediation text, for example:
+  - Enable `Export of parameters`
+  - Ensure VACS export uses `Data_Format=Complex` and frequency domain output
+- No partial `polar_*` writes are performed for the failed file.
 
 ## Replication Integration
 

@@ -1,0 +1,34 @@
+SourceDesc=VACS_Data_Text
+Version='2.1.3 b33'
+Author='RDTeam: VacsViewer'
+
+StartString_Absc=Abscissa
+EndString_Absc=Abscissa_End
+StartString_Data=Data
+EndString_Data=Data_End
+
+Data_Format=Complex
+Data_Domain=Frequency
+Data_LevelType=SoundPressure
+Data_AbscUnit=Hz
+Data_BaseUnit=Pa
+Data_Legend='Sound pressure'
+
+Param_Coord_x1=2
+Param_Coord_x2='0,30,60'
+Param_Coord_x3=0
+Param_Drv=0
+Param_Param='1,2,3'
+Param_Coord_Type=Spherical
+Param_Coord_AngularFormat=degree
+Param_DrvIsRms=false
+
+Abscissa
+100
+200
+Abscissa_End
+
+Data
+1.0 0.1 2.0 0.2 3.0 0.3
+1.1 0.11 2.1 0.21 3.1 0.31
+Data_End

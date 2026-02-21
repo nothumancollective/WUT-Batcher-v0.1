@@ -1,19 +1,43 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from pathlib import Path
 import re
 from typing import Dict, List, Optional
 
 
 NUMBER_RE = re.compile(r"[-+]?(?:\d+(?:[.,]\d*)?|[.,]\d+)(?:[eE][-+]?\d+)?")
+NAN_INF_RE = re.compile(r"\b(?:nan|inf|infinity)\b", re.IGNORECASE)
+
+ERROR_MISSING_HEADER = "MISSING_HEADER"
+ERROR_BAD_DIMENSIONS = "BAD_DIMENSIONS"
+ERROR_UNSUPPORTED_FORMAT = "UNSUPPORTED_FORMAT"
+ERROR_INVALID_NUMERIC = "INVALID_NUMERIC"
 
 
 class PolarTxtParseError(ValueError):
-    def __init__(self, *, path: Path, reason: str) -> None:
-        self.path = path
+    def __init__(
+        self,
+        *,
+        path: Path,
+        error_code: str,
+        reason: str,
+        detail: str = "",
+    ) -> None:
+        self.path = Path(path)
+        self.file_path = str(self.path)
+        self.error_code = str(error_code)
         self.reason = reason
-        super().__init__(f"{path}: {reason}")
+        self.detail = str(detail or "")
+        message = f"{self.path}: [{self.error_code}] {self.reason}"
+        if self.detail:
+            message = f"{message} ({self.detail})"
+        super().__init__(message)
+
+
+def _raise_parse(path: Path, *, error_code: str, reason: str, detail: str = "") -> None:
+    raise PolarTxtParseError(path=path, error_code=error_code, reason=reason, detail=detail)
 
 
 @dataclass(frozen=True)
@@ -27,8 +51,9 @@ class PolarMatrixRow:
 class PolarMatrixData:
     path: Path
     metadata: Dict[str, str]
+    format_type: str
     angles_deg: List[float]
-    orientation_raw: Optional[float]
+    orientation_raw: float
     rows: List[PolarMatrixRow]
     warnings: List[str]
 
@@ -87,14 +112,37 @@ def _parse_angle_list(path: Path, value: str) -> List[float]:
             continue
         parsed = _parse_decimal(token)
         if parsed is None:
-            raise PolarTxtParseError(path=path, reason=f"invalid Param_Coord_x2 angle token '{token}'")
+            _raise_parse(
+                path,
+                error_code=ERROR_INVALID_NUMERIC,
+                reason="invalid Param_Coord_x2 angle token",
+                detail=f"token='{token}'",
+            )
+        if not math.isfinite(float(parsed)):
+            _raise_parse(
+                path,
+                error_code=ERROR_INVALID_NUMERIC,
+                reason="non-finite Param_Coord_x2 angle token",
+                detail=f"token='{token}'",
+            )
         angles.append(float(parsed))
     if not angles:
-        raise PolarTxtParseError(path=path, reason="Param_Coord_x2 does not contain any angle bins")
+        _raise_parse(
+            path,
+            error_code=ERROR_BAD_DIMENSIONS,
+            reason="Param_Coord_x2 does not contain any angle bins",
+        )
     return angles
 
 
-def _read_data_block(path: Path, lines: List[str], *, start_token: str, end_token: str) -> List[str]:
+def _read_data_block(
+    path: Path,
+    lines: List[str],
+    *,
+    start_token: str,
+    end_token: str,
+    block_name: str,
+) -> List[str]:
     started = False
     rows: List[str] = []
     for line in lines:
@@ -109,82 +157,244 @@ def _read_data_block(path: Path, lines: List[str], *, start_token: str, end_toke
             continue
         rows.append(line)
     if not started:
-        raise PolarTxtParseError(path=path, reason=f"missing data start marker '{start_token}'")
+        _raise_parse(
+            path,
+            error_code=ERROR_UNSUPPORTED_FORMAT,
+            reason=f"missing {block_name} start marker",
+            detail=f"start_token='{start_token}'",
+        )
     if not rows:
-        raise PolarTxtParseError(path=path, reason="data block is empty")
+        _raise_parse(
+            path,
+            error_code=ERROR_BAD_DIMENSIONS,
+            reason=f"{block_name} block is empty",
+            detail=f"start_token='{start_token}', end_token='{end_token}'",
+        )
     return rows
+
+
+def _parse_numeric_row(path: Path, *, row_label: str, row_index: int, raw_line: str) -> List[float]:
+    if NAN_INF_RE.search(str(raw_line or "")):
+        _raise_parse(
+            path,
+            error_code=ERROR_INVALID_NUMERIC,
+            reason=f"{row_label} row contains non-finite token",
+            detail=f"row_index={row_index + 1}",
+        )
+    tokens = NUMBER_RE.findall(str(raw_line or ""))
+    values: List[float] = []
+    for token in tokens:
+        parsed = _parse_decimal(token)
+        if parsed is None:
+            _raise_parse(
+                path,
+                error_code=ERROR_INVALID_NUMERIC,
+                reason=f"{row_label} row has non-numeric token",
+                detail=f"row_index={row_index + 1}, token='{token}'",
+            )
+        numeric = float(parsed)
+        if not math.isfinite(numeric):
+            _raise_parse(
+                path,
+                error_code=ERROR_INVALID_NUMERIC,
+                reason=f"{row_label} row contains non-finite numeric value",
+                detail=f"row_index={row_index + 1}, token='{token}'",
+            )
+        values.append(numeric)
+    if not values:
+        _raise_parse(
+            path,
+            error_code=ERROR_BAD_DIMENSIONS,
+            reason=f"{row_label} row has no numeric payload",
+            detail=f"row_index={row_index + 1}",
+        )
+    return values
+
+
+def _validate_required_headers(path: Path, metadata: Dict[str, str]) -> tuple[List[float], float]:
+    data_format_raw = str(metadata.get("Data_Format", "") or "").strip()
+    if not data_format_raw:
+        _raise_parse(
+            path,
+            error_code=ERROR_MISSING_HEADER,
+            reason="missing Data_Format header",
+            detail="Enable complex export output in VACS.",
+        )
+    if data_format_raw.lower() != "complex":
+        _raise_parse(
+            path,
+            error_code=ERROR_UNSUPPORTED_FORMAT,
+            reason="unsupported Data_Format",
+            detail=f"expected='Complex', actual='{data_format_raw}'",
+        )
+
+    domain_raw = str(metadata.get("Data_Domain", "") or "").strip()
+    if not domain_raw:
+        _raise_parse(
+            path,
+            error_code=ERROR_MISSING_HEADER,
+            reason="missing Data_Domain header",
+            detail="Enable frequency-domain export in VACS.",
+        )
+    if "frequency" not in domain_raw.lower():
+        _raise_parse(
+            path,
+            error_code=ERROR_UNSUPPORTED_FORMAT,
+            reason="unsupported Data_Domain",
+            detail=f"expected contains 'Frequency', actual='{domain_raw}'",
+        )
+
+    angles_raw = metadata.get("Param_Coord_x2")
+    if not angles_raw:
+        _raise_parse(
+            path,
+            error_code=ERROR_MISSING_HEADER,
+            reason="missing Param_Coord_x2 header",
+            detail="Enable 'Export of parameters' in VACS Data Export.",
+        )
+    angles_deg = _parse_angle_list(path, angles_raw)
+    if len(angles_deg) < 1:
+        _raise_parse(path, error_code=ERROR_BAD_DIMENSIONS, reason="angle_count must be >= 1")
+
+    orientation_text = str(metadata.get("Param_Coord_x3", "") or "").strip()
+    if not orientation_text:
+        _raise_parse(
+            path,
+            error_code=ERROR_MISSING_HEADER,
+            reason="missing Param_Coord_x3 header",
+            detail="Enable 'Export of parameters' in VACS Data Export.",
+        )
+    orientation_raw = _parse_decimal(orientation_text)
+    if orientation_raw is None or not math.isfinite(float(orientation_raw)):
+        _raise_parse(
+            path,
+            error_code=ERROR_INVALID_NUMERIC,
+            reason="Param_Coord_x3 is not numeric",
+            detail=f"value='{orientation_text}'",
+        )
+    return angles_deg, float(orientation_raw)
 
 
 def parse_polar_legacy_complex_txt(path: str | Path) -> PolarMatrixData:
     source_path = Path(path)
     lines = source_path.read_text(encoding="utf-8-sig", errors="replace").splitlines()
     metadata = _parse_metadata(lines)
-    data_format = str(metadata.get("Data_Format", "") or "").strip().lower()
-    if data_format and data_format != "complex":
-        raise PolarTxtParseError(path=source_path, reason=f"unsupported Data_Format '{metadata.get('Data_Format')}'")
-
-    angles_raw = metadata.get("Param_Coord_x2")
-    if not angles_raw:
-        raise PolarTxtParseError(path=source_path, reason="missing Param_Coord_x2 header")
-    angles_deg = _parse_angle_list(source_path, angles_raw)
+    angles_deg, orientation_raw = _validate_required_headers(source_path, metadata)
     angle_count = len(angles_deg)
-    if angle_count < 1:
-        raise PolarTxtParseError(path=source_path, reason="angle_count must be >= 1")
 
-    orientation_raw: Optional[float] = None
-    if "Param_Coord_x3" in metadata:
-        orientation_raw = _parse_decimal(metadata.get("Param_Coord_x3", ""))
-        if orientation_raw is None:
-            raise PolarTxtParseError(path=source_path, reason="Param_Coord_x3 is not numeric")
+    format_type = "legacy_with_frequency"
+    absc_start = str(metadata.get("StartString_Absc", "") or "").strip()
+    absc_end = str(metadata.get("EndString_Absc", "") or "").strip()
+    has_abscissa_markers = bool(absc_start and absc_end)
+    if has_abscissa_markers:
+        format_type = "abscissa_data"
 
-    start_token = metadata.get("StartString_Data", "Data")
-    end_token = metadata.get("EndString_Data", "Data_End")
-    data_rows = _read_data_block(source_path, lines, start_token=start_token, end_token=end_token)
+    start_token = str(metadata.get("StartString_Data", "Data") or "Data").strip()
+    end_token = str(metadata.get("EndString_Data", "Data_End") or "Data_End").strip()
+    data_rows = _read_data_block(
+        source_path,
+        lines,
+        start_token=start_token,
+        end_token=end_token,
+        block_name="data",
+    )
 
-    expected_width = 1 + (2 * angle_count)
     rows: List[PolarMatrixRow] = []
     warnings: List[str] = []
     prev_freq: Optional[float] = None
-    for idx, raw_line in enumerate(data_rows):
-        tokens = NUMBER_RE.findall(str(raw_line or ""))
-        values: List[float] = []
-        for token in tokens:
-            parsed = _parse_decimal(token)
-            if parsed is None:
-                raise PolarTxtParseError(
-                    path=source_path,
-                    reason=f"line {idx + 1} in data block has non-numeric token '{token}'",
-                )
-            values.append(float(parsed))
-        if len(values) != expected_width:
-            raise PolarTxtParseError(
-                path=source_path,
-                reason=(
-                    f"line {idx + 1} has width {len(values)}; expected {expected_width} "
-                    f"(1 + 2*angle_count)"
-                ),
-            )
-        freq = float(values[0])
-        if prev_freq is not None and freq < prev_freq:
-            warnings.append(
-                f"frequency decreased at row {idx + 1}: prev={prev_freq:g}, current={freq:g}"
-            )
-        prev_freq = freq
-        complex_values = values[1:]
-        rows.append(
-            PolarMatrixRow(
-                freq_hz=freq,
-                re_values=[float(item) for item in complex_values[0::2]],
-                im_values=[float(item) for item in complex_values[1::2]],
-            )
+
+    if format_type == "abscissa_data":
+        absc_rows = _read_data_block(
+            source_path,
+            lines,
+            start_token=absc_start,
+            end_token=absc_end,
+            block_name="abscissa",
         )
+        freqs: List[float] = []
+        for idx, raw_line in enumerate(absc_rows):
+            values = _parse_numeric_row(source_path, row_label="abscissa", row_index=idx, raw_line=raw_line)
+            if len(values) != 1:
+                _raise_parse(
+                    source_path,
+                    error_code=ERROR_BAD_DIMENSIONS,
+                    reason="abscissa row width mismatch",
+                    detail=f"row_index={idx + 1}, expected=1, actual={len(values)}",
+                )
+            freq = float(values[0])
+            if prev_freq is not None and freq < prev_freq:
+                warnings.append(
+                    f"frequency decreased at abscissa row {idx + 1}: prev={prev_freq:g}, current={freq:g}"
+                )
+            prev_freq = freq
+            freqs.append(freq)
+
+        if len(freqs) < 1:
+            _raise_parse(source_path, error_code=ERROR_BAD_DIMENSIONS, reason="freq_count must be >= 1")
+        if len(data_rows) != len(freqs):
+            _raise_parse(
+                source_path,
+                error_code=ERROR_BAD_DIMENSIONS,
+                reason="abscissa/data row count mismatch",
+                detail=f"abscissa_rows={len(freqs)}, data_rows={len(data_rows)}",
+            )
+
+        expected_width = 2 * angle_count
+        for idx, raw_line in enumerate(data_rows):
+            values = _parse_numeric_row(source_path, row_label="data", row_index=idx, raw_line=raw_line)
+            if len(values) != expected_width:
+                _raise_parse(
+                    source_path,
+                    error_code=ERROR_BAD_DIMENSIONS,
+                    reason="data row width mismatch for abscissa+data format",
+                    detail=(
+                        f"row_index={idx + 1}, expected={expected_width}, actual={len(values)} "
+                        f"(2*angle_count)"
+                    ),
+                )
+            rows.append(
+                PolarMatrixRow(
+                    freq_hz=float(freqs[idx]),
+                    re_values=[float(item) for item in values[0::2]],
+                    im_values=[float(item) for item in values[1::2]],
+                )
+            )
+    else:
+        expected_width = 1 + (2 * angle_count)
+        for idx, raw_line in enumerate(data_rows):
+            values = _parse_numeric_row(source_path, row_label="data", row_index=idx, raw_line=raw_line)
+            if len(values) != expected_width:
+                _raise_parse(
+                    source_path,
+                    error_code=ERROR_BAD_DIMENSIONS,
+                    reason="data row width mismatch for legacy format",
+                    detail=(
+                        f"row_index={idx + 1}, expected={expected_width}, actual={len(values)} "
+                        f"(1 + 2*angle_count)"
+                    ),
+                )
+            freq = float(values[0])
+            if prev_freq is not None and freq < prev_freq:
+                warnings.append(
+                    f"frequency decreased at row {idx + 1}: prev={prev_freq:g}, current={freq:g}"
+                )
+            prev_freq = freq
+            complex_values = values[1:]
+            rows.append(
+                PolarMatrixRow(
+                    freq_hz=freq,
+                    re_values=[float(item) for item in complex_values[0::2]],
+                    im_values=[float(item) for item in complex_values[1::2]],
+                )
+            )
 
     if not rows:
-        raise PolarTxtParseError(path=source_path, reason="freq_count must be >= 1")
+        _raise_parse(source_path, error_code=ERROR_BAD_DIMENSIONS, reason="freq_count must be >= 1")
 
     return PolarMatrixData(
         path=source_path,
         metadata=metadata,
+        format_type=format_type,
         angles_deg=angles_deg,
         orientation_raw=orientation_raw,
         rows=rows,
