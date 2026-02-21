@@ -94,3 +94,23 @@
   - Project Manager open-project flow updating MainWindow state
   - Batch mode navigation via ModeBar and Dashboard `New Batch`
   - no-project Batch-mode guard behavior.
+
+## 2026-02-21 (Runtime verification: uncaught trace logging)
+- Added deterministic GUI runtime exception logging (`sys.excepthook` + Qt message handler) to:
+  - `%LOCALAPPDATA%\\WUTBatcher\\logs\\ui_runtime_errors.log`
+- Log entries now include timestamp, exception type/message, traceback, and current GUI context (`page`, `mode`, `project_id`).
+- Added because real-run reproduction showed failures not captured by the prior unit/UI suite.
+
+## 2026-02-21 (Runtime fix: CommandHeader widget lifecycle)
+- Real-run trace showed repeated crashes:
+  - `RuntimeError: Internal C++ object (PySide6.QtWidgets.QPushButton) already deleted`
+  - stack rooted in `CommandHeaderWidget._rebuild_status_chips()` and `MainWindow.show_batch()/load_project()`.
+- Fixed command-header lifecycle:
+  - status-chip rebuild now preserves `issues_chip` instead of deleting it via flow clear
+  - command-bar remount now detaches persistent widgets before layout clearing
+  - narrow actions row is persistent (no transient container that could orphan/delete Save/Run buttons).
+- Verified in real runtime session:
+  - existing project open works (Open button + double-click)
+  - newly created project opens
+  - Batch tab and Dashboard `New Batch` both reach Batch page
+  - no unhandled exceptions in `ui_runtime_errors.log` (only non-fatal Qt geometry warnings).

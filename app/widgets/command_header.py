@@ -94,6 +94,10 @@ class CommandHeaderWidget(QFrame):
         self._narrow_layout = QVBoxLayout(self._narrow_page)
         self._narrow_layout.setContentsMargins(0, 0, 0, 0)
         self._narrow_layout.setSpacing(6)
+        self._narrow_actions_row = QWidget(self._narrow_page)
+        self._narrow_actions_layout = QHBoxLayout(self._narrow_actions_row)
+        self._narrow_actions_layout.setContentsMargins(0, 0, 0, 0)
+        self._narrow_actions_layout.setSpacing(0)
 
         self._command_stack.addWidget(self._wide_page)
         self._command_stack.addWidget(self._narrow_page)
@@ -157,10 +161,10 @@ class CommandHeaderWidget(QFrame):
 
     def _mount_command_groups(self, mode: str) -> None:
         target_mode = "narrow" if str(mode) == "narrow" else "wide"
-        self._clear_layout(self._wide_layout)
-        self._clear_layout(self._narrow_layout)
         self._detach_from_parent_layout(self._name_group)
         self._detach_from_parent_layout(self._actions_group)
+        self._clear_layout(self._wide_layout)
+        self._clear_layout(self._narrow_layout)
         if target_mode == "wide":
             self._wide_layout.addWidget(self._name_group, 0, Qt.AlignLeft | Qt.AlignVCenter)
             self._wide_layout.addStretch(1)
@@ -168,13 +172,10 @@ class CommandHeaderWidget(QFrame):
             self._command_stack.setCurrentWidget(self._wide_page)
         else:
             self._narrow_layout.addWidget(self._name_group, 0, Qt.AlignLeft | Qt.AlignVCenter)
-            action_row = QWidget(self._narrow_page)
-            action_row_layout = QHBoxLayout(action_row)
-            action_row_layout.setContentsMargins(0, 0, 0, 0)
-            action_row_layout.setSpacing(0)
-            action_row_layout.addStretch(1)
-            action_row_layout.addWidget(self._actions_group, 0, Qt.AlignRight | Qt.AlignVCenter)
-            self._narrow_layout.addWidget(action_row)
+            self._clear_layout(self._narrow_actions_layout)
+            self._narrow_actions_layout.addStretch(1)
+            self._narrow_actions_layout.addWidget(self._actions_group, 0, Qt.AlignRight | Qt.AlignVCenter)
+            self._narrow_layout.addWidget(self._narrow_actions_row)
             self._command_stack.setCurrentWidget(self._narrow_page)
         self._layout_mode = target_mode
 
@@ -195,7 +196,7 @@ class CommandHeaderWidget(QFrame):
             widget.setParent(None)
 
     def _rebuild_status_chips(self) -> None:
-        self._chips_flow.clear()
+        self._clear_status_chip_widgets()
         for text in self._estimate_chips:
             chip = QLabel(str(text))
             chip.setObjectName("SummaryChip")
@@ -227,6 +228,19 @@ class CommandHeaderWidget(QFrame):
         self.issues_chip.update()
         self._chips_flow.addWidget(self.issues_chip)
         self.updateGeometry()
+
+    def _clear_status_chip_widgets(self) -> None:
+        while self._chips_flow.count():
+            item = self._chips_flow.takeAt(0)
+            if item is None:
+                continue
+            widget = item.widget()
+            if widget is None:
+                continue
+            if widget is self.issues_chip:
+                widget.setParent(self)
+                continue
+            widget.deleteLater()
 
     def _show_issue_popover(self) -> None:
         menu = QMenu(self)

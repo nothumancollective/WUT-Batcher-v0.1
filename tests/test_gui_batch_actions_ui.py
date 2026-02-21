@@ -84,6 +84,33 @@ class BatchActionsUiTests(unittest.TestCase):
                 self.assertEqual(str(run_args[1].get("batch_name")), "UI-1B-Wiring")
                 window.close()
 
+    def test_command_header_issues_chip_survives_repeated_runtime_updates(self) -> None:
+        page = BatchPage()
+        page.batch_name.setText("Runtime-Header-Rebuild")
+        self.app.processEvents()
+
+        page.set_eta(None, sample_count=0, median_seconds=None)
+        self.app.processEvents()
+        page.apply_ui_risks(
+            [
+                {
+                    "severity": "warn",
+                    "field_key": "Length",
+                    "message": "Runtime warning for header rebuild.",
+                }
+            ]
+        )
+        self.app.processEvents()
+        page.set_project_fixed_keys(["Length"])
+        self.app.processEvents()
+        page.set_eta(75.0, sample_count=3, median_seconds=22.5)
+        self.app.processEvents()
+
+        issue_chip = page.command_header.issues_chip
+        self.assertEqual(issue_chip.objectName(), "CommandIssuesChip")
+        self.assertTrue(bool(issue_chip.text().strip()))
+        self.assertIn("warning", issue_chip.toolTip().lower())
+
 
 if __name__ == "__main__":
     unittest.main()

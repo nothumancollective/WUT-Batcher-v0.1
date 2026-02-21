@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from datetime import datetime, timezone
 import json
 import logging
+import os
 from pathlib import Path
 import subprocess
 import sys
+import threading
 import traceback
 from typing import Any, Callable, Dict, List, Mapping, Optional
 
@@ -30,9 +33,118 @@ from ui.form_schema import build_project_form_schema
 from ui.theme import apply_theme, apply_windows_dark_titlebar, configure_windows_qt_darkmode_env
 
 LOGGER = logging.getLogger(__name__)
+_RUNTIME_LOG_LOCK = threading.Lock()
+_RUNTIME_LOG_INSTALLED = False
+_PREVIOUS_QT_MESSAGE_HANDLER = None
+_RUNTIME_CONTEXT_PROVIDER: Callable[[], Dict[str, Any]] | None = None
+
+
+def _runtime_log_path() -> Path:
+    local_app_data = str(os.environ.get("LOCALAPPDATA") or "").strip()
+    base = Path(local_app_data) if local_app_data else (Path.home() / "AppData" / "Local")
+    path = base / "WUTBatcher" / "logs"
+    path.mkdir(parents=True, exist_ok=True)
+    return path / "ui_runtime_errors.log"
+
+
+def _append_runtime_log(lines: List[str]) -> None:
+    try:
+        payload = "\n".join(lines).rstrip() + "\n\n"
+        log_path = _runtime_log_path()
+        with _RUNTIME_LOG_LOCK:
+            with log_path.open("a", encoding="utf-8") as handle:
+                handle.write(payload)
+    except Exception:
+        # Logging should never crash the app flow.
+        pass
+
+
+def _install_runtime_exception_logging(*, context_provider: Callable[[], Dict[str, Any]] | None = None) -> None:
+    global _RUNTIME_LOG_INSTALLED, _PREVIOUS_QT_MESSAGE_HANDLER, _RUNTIME_CONTEXT_PROVIDER
+    if callable(context_provider):
+        _RUNTIME_CONTEXT_PROVIDER = context_provider
+    if _RUNTIME_LOG_INSTALLED:
+        return
+    _RUNTIME_LOG_INSTALLED = True
+
+    previous_hook = sys.excepthook
+
+    def _safe_context() -> Dict[str, Any]:
+        provider = _RUNTIME_CONTEXT_PROVIDER
+        if not callable(provider):
+            return {}
+        try:
+            raw = provider() or {}
+            if isinstance(raw, dict):
+                return raw
+            return {"context_provider_value": str(raw)}
+        except Exception as exc:
+            return {"context_provider_error": str(exc)}
+
+    def _exception_hook(exc_type, exc_value, exc_tb) -> None:
+        context = _safe_context()
+        lines = [
+            f"[{datetime.now(timezone.utc).isoformat()}] Unhandled Python exception",
+            f"type: {getattr(exc_type, '__name__', str(exc_type))}",
+            f"message: {exc_value}",
+            f"context: {json.dumps(context, ensure_ascii=False)}",
+            "traceback:",
+            "".join(traceback.format_exception(exc_type, exc_value, exc_tb)).rstrip(),
+        ]
+        _append_runtime_log(lines)
+        try:
+            previous_hook(exc_type, exc_value, exc_tb)
+        except Exception:
+            pass
+
+    sys.excepthook = _exception_hook
+
+    try:
+        qt_levels = {
+            int(QtMsgType.QtDebugMsg): "DEBUG",
+            int(QtMsgType.QtInfoMsg): "INFO",
+            int(QtMsgType.QtWarningMsg): "WARNING",
+            int(QtMsgType.QtCriticalMsg): "CRITICAL",
+            int(QtMsgType.QtFatalMsg): "FATAL",
+        }
+
+        def _qt_message_handler(msg_type, context, message) -> None:
+            level = qt_levels.get(int(msg_type), str(int(msg_type)))
+            file_name = getattr(context, "file", "") or "<unknown>"
+            line_no = int(getattr(context, "line", 0) or 0)
+            function_name = getattr(context, "function", "") or "<unknown>"
+            lines = [
+                f"[{datetime.now(timezone.utc).isoformat()}] Qt message",
+                f"level: {level}",
+                f"location: {file_name}:{line_no} ({function_name})",
+                f"message: {message}",
+            ]
+            _append_runtime_log(lines)
+            if callable(_PREVIOUS_QT_MESSAGE_HANDLER):
+                try:
+                    _PREVIOUS_QT_MESSAGE_HANDLER(msg_type, context, message)
+                except Exception:
+                    pass
+
+        _PREVIOUS_QT_MESSAGE_HANDLER = qInstallMessageHandler(_qt_message_handler)
+    except Exception:
+        _PREVIOUS_QT_MESSAGE_HANDLER = None
 
 try:
-    from PySide6.QtCore import QEasingCurve, QPoint, QPropertyAnimation, QEvent, QObject, Qt, QThread, QTimer, Signal, QSize
+    from PySide6.QtCore import (
+        QEasingCurve,
+        QPoint,
+        QPropertyAnimation,
+        QEvent,
+        QObject,
+        Qt,
+        QtMsgType,
+        QThread,
+        QTimer,
+        Signal,
+        QSize,
+        qInstallMessageHandler,
+    )
     from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPixmap, QIcon, QPalette
     from PySide6.QtWidgets import (
         QAbstractItemView,
@@ -4347,10 +4459,30 @@ def launch_gui() -> int:
     app = QApplication.instance() or QApplication([])
     apply_theme(app)
 
+    _install_runtime_exception_logging()
     service = OrchestratorService()
     splash = _make_splash(app)
     doctor_payload = _run_doctor_for_splash(service)
     controller = GuiController(service)
+    _install_runtime_exception_logging(
+        context_provider=lambda: {
+            "page": type(controller.main_window.stack.currentWidget()).__name__,
+            "mode": (
+                "project"
+                if controller.main_window.project_mode_button.isChecked()
+                else "batch"
+                if controller.main_window.batch_mode_button.isChecked()
+                else "analyse"
+                if controller.main_window.analyse_mode_button.isChecked()
+                else "unknown"
+            ),
+            "project_id": (
+                controller.main_window.current_project.project_id
+                if controller.main_window.current_project is not None
+                else None
+            ),
+        }
+    )
     doctor_status = str(doctor_payload["overall_status"]).lower()
     if doctor_status in {"fail", "warn"}:
         controller.main_window.set_status(
