@@ -248,29 +248,29 @@ class BatchPageUiTests(unittest.TestCase):
         text_candidates = [label.text() for label in row.container.findChildren(QLabel)]
         self.assertTrue(any(str(text).strip() == "Length" for text in text_candidates))
 
-    def test_summary_cards_and_right_column_use_thirds(self) -> None:
+    def test_command_header_layout_and_right_column_use_thirds(self) -> None:
         page = BatchPage()
         page.resize(1500, 900)
         page.show()
         self.app.processEvents()
-        widths = [page.summary_left_card.width(), page.summary_center_card.width(), page.summary_right_card.width()]
-        self.assertTrue(all(width > 0 for width in widths))
-        self.assertAlmostEqual(widths[0], widths[1], delta=3)
-        self.assertAlmostEqual(widths[1], widths[2], delta=3)
+        self.assertTrue(hasattr(page, "command_header"))
+        self.assertFalse(hasattr(page, "summary_left_card"))
+        self.assertEqual(page.command_header.objectName(), "CommandHeaderWidget")
 
         margins = page._root_layout.contentsMargins()
         available = int(page.width() - margins.left() - margins.right())
         expected_right = max((available - int(page._body_layout.spacing())) // 3, 1)
         self.assertAlmostEqual(page._right_panel.width(), expected_right, delta=5)
 
-    def test_batch_name_input_uses_one_third_width(self) -> None:
+    def test_batch_name_input_uses_responsive_soft_cap(self) -> None:
         page = BatchPage()
         page.resize(1500, 900)
         page.show()
         self.app.processEvents()
-        summary_width = int(page.summary_left_card.width())
-        expected = max(240, summary_width)
-        self.assertAlmostEqual(page.batch_name.width(), expected, delta=5)
+        margins = page._root_layout.contentsMargins()
+        available = int(page.width() - margins.left() - margins.right())
+        expected_max = max(320, min(int(available * 0.45), 720))
+        self.assertEqual(int(page.batch_name.maximumWidth()), expected_max)
 
     def test_controller_keys_are_not_sweepable_and_mesh_keys_are_not(self) -> None:
         page = BatchPage()
@@ -409,7 +409,7 @@ class BatchPageUiTests(unittest.TestCase):
         self.assertEqual(float(enclosure.get("Depth", 0.0)), 180.0)
         self.assertEqual(int(enclosure.get("EdgeType", 0)), 1)
 
-    def test_sweep_remains_enabled_under_warning_and_turns_warn_tint(self) -> None:
+    def test_sweep_remains_enabled_under_warning_without_warn_tint(self) -> None:
         page = BatchPage()
         state = self._compat_state()
         page.apply_compatibility(state)
@@ -437,7 +437,7 @@ class BatchPageUiTests(unittest.TestCase):
         )
         self.assertTrue(toggle.isEnabled())
         toggle.setChecked(True)
-        self.assertEqual(str(toggle.property("riskLevel")), "warn")
+        self.assertEqual(str(toggle.property("riskLevel") or ""), "")
 
     def test_batch_ui_risks_colorize_fields_and_warn_summary(self) -> None:
         page = BatchPage()
@@ -459,7 +459,8 @@ class BatchPageUiTests(unittest.TestCase):
         assert editor is not None
         self.assertEqual(str(editor.property("fieldState")), "warn")
         self.assertEqual(str(page.summary_issue_hint.property("severity")), "warn")
-        self.assertIn("Length outside safe range.", page.summary_issue_hint.text())
+        self.assertIn("Warnings: 1", page.summary_issue_hint.text())
+        self.assertIn("Length outside safe range.", str(page.summary_issue_hint.toolTip() or ""))
 
     def test_warning_summary_sorts_messages_and_sets_hover_tooltip(self) -> None:
         page = BatchPage()
@@ -484,11 +485,11 @@ class BatchPageUiTests(unittest.TestCase):
             ]
         )
         text = str(page.summary_issue_hint.text())
-        self.assertTrue(text.startswith("Alpha warning"))
-        self.assertIn("Zulu warning", text)
+        self.assertTrue(text.startswith("Warnings:"))
         tooltip = str(page.summary_issue_hint.toolTip() or "")
-        self.assertIn("1. Alpha warning", tooltip)
-        self.assertIn("2. Zulu warning", tooltip)
+        self.assertIn("Alpha warning", tooltip)
+        self.assertIn("Zulu warning", tooltip)
+        self.assertLess(tooltip.index("Alpha warning"), tooltip.index("Zulu warning"))
 
     def test_hidden_field_value_is_cleared_after_visibility_change(self) -> None:
         page = BatchPage()
@@ -649,6 +650,12 @@ class BatchPageUiTests(unittest.TestCase):
         css = build_stylesheet()
         self.assertIn('QPushButton#SweepButton[sweepActive="true"]', css)
 
+    def test_warning_stylesheet_covers_spinboxes_without_sweep_warn_tint(self) -> None:
+        css = build_stylesheet()
+        self.assertIn('QSpinBox[fieldState="warn"]', css)
+        self.assertIn('QSpinBox[riskLevel="warn"]', css)
+        self.assertNotIn('QPushButton#SweepButton[sweepActive="true"][riskLevel="warn"]', css)
+
     def test_block_reset_clears_all_overrides_in_group(self) -> None:
         page = BatchPage()
         state = self._compat_state()
@@ -670,6 +677,38 @@ class BatchPageUiTests(unittest.TestCase):
         self.assertIsNone(payload.get("Length"))
         self.assertIsNone(payload.get("Coverage.Angle"))
         self.assertFalse(reset_btn.isEnabled())
+
+    def test_block_reset_button_visible_only_when_collapsed_and_overridden(self) -> None:
+        page = BatchPage()
+        state = self._compat_state()
+        page.apply_compatibility(state)
+        row = page.parameter_form._rows.get("Length")
+        if row is None:
+            self.skipTest("Length row not available.")
+        row.base_editor.set_value(320.0)  # type: ignore[attr-defined]
+        page.parameter_form._update_group_reset_buttons()  # type: ignore[attr-defined]
+
+        reset_btn = page.parameter_form.block_reset_button_for_group("Basics")
+        self.assertIsNotNone(reset_btn)
+        assert reset_btn is not None
+        basics_box = page.parameter_form._group_boxes.get("Basics")  # type: ignore[attr-defined]
+        self.assertIsNotNone(basics_box)
+        assert basics_box is not None
+
+        # Expanded block with overrides: reset action stays hidden in header.
+        basics_box.set_collapsed(False)
+        self.app.processEvents()
+        self.assertTrue(reset_btn.isEnabled())
+        self.assertTrue(reset_btn.isHidden())
+
+        # Collapsed + overrides: reset action becomes visible.
+        basics_box.set_collapsed(True)
+        self.app.processEvents()
+        self.assertFalse(reset_btn.isHidden())
+
+        reset_btn.click()
+        self.app.processEvents()
+        self.assertTrue(reset_btn.isHidden())
 
     def test_mesh_angular_segments_step_and_multiple_validation(self) -> None:
         page = BatchPage()

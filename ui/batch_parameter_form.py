@@ -1366,7 +1366,8 @@ class BatchParameterForm(QWidget):
                     base_tooltip = self._risk_original_tooltips.get(target_id, "")
                     target.setToolTip(f"{base_tooltip}\n\n{tooltip}".strip() if base_tooltip else tooltip)
                 self._repolish(target)
-            row.sweep_toggle.setProperty("riskLevel", "warn" if highest == "warn" else "")
+            # Sweep buttons keep their active styling; warnings stay on input controls.
+            row.sweep_toggle.setProperty("riskLevel", "")
             sweep_id = id(row.sweep_toggle)
             self._risk_original_tooltips.setdefault(sweep_id, row.sweep_toggle.toolTip())
             sweep_tip = self._risk_tooltip(row_issues)

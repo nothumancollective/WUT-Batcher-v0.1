@@ -462,15 +462,24 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         background-color: rgba(110, 50, 50, 0.16);
     }}
     QLineEdit[fieldState="warn"], QComboBox[fieldState="warn"],
-    QTextEdit[fieldState="warn"], QPlainTextEdit[fieldState="warn"] {{
+    QTextEdit[fieldState="warn"], QPlainTextEdit[fieldState="warn"],
+    QSpinBox[fieldState="warn"], QDoubleSpinBox[fieldState="warn"], QAbstractSpinBox[fieldState="warn"],
+    QSpinBox[fieldState="warn"] QLineEdit, QDoubleSpinBox[fieldState="warn"] QLineEdit,
+    QAbstractSpinBox[fieldState="warn"] QLineEdit {{
         border: 1px solid {c['warning_border']};
     }}
     QLineEdit[fieldState="fatal"], QComboBox[fieldState="fatal"],
-    QTextEdit[fieldState="fatal"], QPlainTextEdit[fieldState="fatal"] {{
+    QTextEdit[fieldState="fatal"], QPlainTextEdit[fieldState="fatal"],
+    QSpinBox[fieldState="fatal"], QDoubleSpinBox[fieldState="fatal"], QAbstractSpinBox[fieldState="fatal"],
+    QSpinBox[fieldState="fatal"] QLineEdit, QDoubleSpinBox[fieldState="fatal"] QLineEdit,
+    QAbstractSpinBox[fieldState="fatal"] QLineEdit {{
         border: 1px solid {c['danger_border']};
     }}
     QLineEdit[fieldState="ok"], QComboBox[fieldState="ok"],
-    QTextEdit[fieldState="ok"], QPlainTextEdit[fieldState="ok"] {{
+    QTextEdit[fieldState="ok"], QPlainTextEdit[fieldState="ok"],
+    QSpinBox[fieldState="ok"], QDoubleSpinBox[fieldState="ok"], QAbstractSpinBox[fieldState="ok"],
+    QSpinBox[fieldState="ok"] QLineEdit, QDoubleSpinBox[fieldState="ok"] QLineEdit,
+    QAbstractSpinBox[fieldState="ok"] QLineEdit {{
         border: 1px solid {c['risk_ok']};
     }}
     QLineEdit[disclosureHint="true"], QComboBox[disclosureHint="true"],
@@ -531,15 +540,24 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     }}
     /* Backward compatibility for legacy riskLevel property. */
     QLineEdit[riskLevel="warn"], QComboBox[riskLevel="warn"],
-    QTextEdit[riskLevel="warn"], QPlainTextEdit[riskLevel="warn"] {{
+    QTextEdit[riskLevel="warn"], QPlainTextEdit[riskLevel="warn"],
+    QSpinBox[riskLevel="warn"], QDoubleSpinBox[riskLevel="warn"], QAbstractSpinBox[riskLevel="warn"],
+    QSpinBox[riskLevel="warn"] QLineEdit, QDoubleSpinBox[riskLevel="warn"] QLineEdit,
+    QAbstractSpinBox[riskLevel="warn"] QLineEdit {{
         border: 1px solid {c['warning_border']};
     }}
     QLineEdit[riskLevel="fatal"], QComboBox[riskLevel="fatal"],
-    QTextEdit[riskLevel="fatal"], QPlainTextEdit[riskLevel="fatal"] {{
+    QTextEdit[riskLevel="fatal"], QPlainTextEdit[riskLevel="fatal"],
+    QSpinBox[riskLevel="fatal"], QDoubleSpinBox[riskLevel="fatal"], QAbstractSpinBox[riskLevel="fatal"],
+    QSpinBox[riskLevel="fatal"] QLineEdit, QDoubleSpinBox[riskLevel="fatal"] QLineEdit,
+    QAbstractSpinBox[riskLevel="fatal"] QLineEdit {{
         border: 1px solid {c['danger_border']};
     }}
     QLineEdit[riskLevel="ok"], QComboBox[riskLevel="ok"],
-    QTextEdit[riskLevel="ok"], QPlainTextEdit[riskLevel="ok"] {{
+    QTextEdit[riskLevel="ok"], QPlainTextEdit[riskLevel="ok"],
+    QSpinBox[riskLevel="ok"], QDoubleSpinBox[riskLevel="ok"], QAbstractSpinBox[riskLevel="ok"],
+    QSpinBox[riskLevel="ok"] QLineEdit, QDoubleSpinBox[riskLevel="ok"] QLineEdit,
+    QAbstractSpinBox[riskLevel="ok"] QLineEdit {{
         border: 1px solid {c['risk_ok']};
     }}
     QLabel#FieldStateHint {{
@@ -976,11 +994,6 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         border: 1px solid #4f8cff;
         color: #d9e7ff;
         background-color: rgba(79, 140, 255, 0.22);
-    }}
-    QPushButton#SweepButton[sweepActive="true"][riskLevel="warn"] {{
-        border: 1px solid {c['warning_border']};
-        color: {c['warning_text_muted']};
-        background-color: rgba(125, 91, 34, 0.2);
     }}
     QPushButton[segment=\"true\"][disclosureHint="true"] {{
         border: 1px solid {c['accent']};

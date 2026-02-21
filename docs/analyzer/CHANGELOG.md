@@ -114,3 +114,8 @@
   - newly created project opens
   - Batch tab and Dashboard `New Batch` both reach Batch page
   - no unhandled exceptions in `ui_runtime_errors.log` (only non-fatal Qt geometry warnings).
+
+## 2026-02-21 (Polish A16+A17+A23)
+- Header reset visibility logic fixed: reset icon now shows only when a block is collapsed and has overrides.
+- Sweep warning tint override removed; sweep buttons keep primary sweep styling while warnings apply only to inputs.
+- Warning border selectors now explicitly cover `QSpinBox`/`QDoubleSpinBox`/`QAbstractSpinBox` (including internal line edits) without border-width changes.
