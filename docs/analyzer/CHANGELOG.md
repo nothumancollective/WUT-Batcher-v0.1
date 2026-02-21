@@ -8,3 +8,9 @@
   - KPI scoring scaffold
   - Future geometry layer planning
 - Restored repo-grounded Analyzer UI plan artifacts (md+json) for traceability.
+
+## 2026-02-21 (Roadmap update)
+- Added `docs/analyzer/ROADMAP.md` with phased plan A-G (Navigation Skeleton -> Geometry Layer) and acceptance criteria.
+- Introduced explicit CI fixture constraint: Analyzer CI test batches are capped at max 5 runs.
+- Documented real-world large-batch handling strategy: incremental compute + caching (not heavy full-batch tests).
+- Officially planned cross-batch comparison via `Candidate Pool` (pin/shortlist across batches, lightweight selection behavior).

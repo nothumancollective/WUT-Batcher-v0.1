@@ -76,10 +76,33 @@ For UI-1 implementation (structure first):
   - Right: plots (heatmap/beamwidth overlay placeholders)
 - Do not implement KPI math yet unless explicitly scoped.
 
+## Analyzer subviews (planned before implementation)
+
+The Analyzer page is planned with two explicit subviews:
+
+1. `Batch Review`
+- Focus: one batch at a time.
+- Purpose:
+  - inspect runs within a selected batch
+  - apply filter/sort/rank controls
+  - open per-run visual diagnostics
+- Performance rule:
+  - selection and sort/filter interactions must stay lightweight
+  - expensive KPI work must run incrementally in background workers
+
+2. `Candidate Pool`
+- Focus: cross-batch comparison.
+- Purpose:
+  - pin/shortlist runs across multiple batches
+  - compare pinned runs side-by-side in Analyzer
+- Core behavior:
+  - pinning is metadata/selection management first
+  - selecting pinned runs must **not** trigger heavy full recompute
+  - use cached metrics/results where available; defer expensive compute on-demand only
+
 ## Future: geometry layer implications (preview only)
 
 - Geometry selector appears on Project page (timeline-like list).
 - New mode “Merge” appears in bottom bar later.
 - Mode pages always operate on currently selected geometry.
 - This implies future DB changes (e.g., geometry_id) — not in scope now.
-
