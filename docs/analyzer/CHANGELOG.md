@@ -7,4 +7,4 @@
   - UI architecture decisions
   - KPI scoring scaffold
   - Future geometry layer planning
-
+- Restored repo-grounded Analyzer UI plan artifacts (md+json) for traceability.

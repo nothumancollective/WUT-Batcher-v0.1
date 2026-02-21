@@ -1,0 +1,253 @@
+{
+  "meta": {
+    "phase": "UI-0",
+    "type": "discovery_and_structure_only",
+    "base_branch": "wut-batcher/rebuild",
+    "working_branch": "feature/polar-analyzer-ui",
+    "datasource_default": "project.sqlite",
+    "datasource_optional": "global.sqlite"
+  },
+  "pages": [
+    {
+      "id": "analyzer",
+      "title": "Analyzer",
+      "placement": {
+        "shell": "MainWindow.QStackedWidget",
+        "entry_points": [
+          "Dashboard action button: Open Analyzer",
+          "Programmatic navigation method: show_analyzer()"
+        ],
+        "exit_points": [
+          "Back to Dashboard button"
+        ]
+      },
+      "panels": [
+        {
+          "id": "control_bar",
+          "purpose": "batch selection, stage mode, datasource, normalization, frequency band, refresh/cancel"
+        },
+        {
+          "id": "candidate_table",
+          "purpose": "sortable/filterable run/version list with MVP KPI columns"
+        },
+        {
+          "id": "polar_heatmap",
+          "purpose": "plane heatmap/contour for selected run and plane"
+        },
+        {
+          "id": "beamwidth_plot",
+          "purpose": "beamwidth vs frequency with target and tolerance band"
+        },
+        {
+          "id": "kpi_diagnostics_compare",
+          "purpose": "kpi click-through diagnostics, overlays, shortlist actions"
+        }
+      ],
+      "data_requirements_per_panel": {
+        "control_bar": [
+          "batches with polar availability",
+          "stage mode options",
+          "normalization mode options",
+          "datasource state"
+        ],
+        "candidate_table": [
+          "run/version rows with plane metadata",
+          "run status and timing",
+          "MVP KPI scalars",
+          "pin/tag shortlist state"
+        ],
+        "polar_heatmap": [
+          "selected run plane metadata",
+          "selected plane matrix (freq_index, angle_index, freq_hz, angle_deg, re, im)",
+          "downsampled render matrix cache"
+        ],
+        "beamwidth_plot": [
+          "beamwidth curves per plane",
+          "target beamwidth profile",
+          "tolerance band"
+        ],
+        "kpi_diagnostics_compare": [
+          "selected KPI values",
+          "selected run ids for overlay",
+          "diagnostic markers by frequency band"
+        ]
+      },
+      "actions_events_per_panel": {
+        "control_bar": [
+          "on_batch_changed -> reload table rows and KPI cache",
+          "on_stage_mode_changed -> apply column emphasis and default sort/filter presets",
+          "on_datasource_changed -> requery from project/global source",
+          "on_refresh_clicked -> queue background KPI recompute",
+          "on_cancel_clicked -> cancel active background worker"
+        ],
+        "candidate_table": [
+          "on_row_selected -> load plane metadata and default heatmap",
+          "on_rows_multiselect_changed -> update overlay source set",
+          "on_filter_changed -> client-side filter",
+          "on_sort_changed -> client-side sort",
+          "on_shortlist_toggled -> update pin/tag or shortlist cache"
+        ],
+        "polar_heatmap": [
+          "on_plane_tab_changed -> fetch/restore plane matrix cache",
+          "on_normalization_changed -> rerender from cached matrix",
+          "on_cursor_band_selected -> emit diagnostic focus event"
+        ],
+        "beamwidth_plot": [
+          "on_selected_run_changed -> recompute/show curves",
+          "on_target_profile_changed -> recompute E_BW visuals",
+          "on_overlay_changed -> redraw with selected run set"
+        ],
+        "kpi_diagnostics_compare": [
+          "on_kpi_cell_clicked -> jump to relevant plot and band",
+          "on_export_shortlist_clicked -> export csv/json selection list",
+          "on_compare_mode_changed -> update overlay strategy"
+        ]
+      }
+    }
+  ],
+  "queries": [
+    {
+      "id": "q0_schema_guard",
+      "purpose": "verify polar tables are present",
+      "returns": "0..2 rows"
+    },
+    {
+      "id": "q1_batches_with_polar",
+      "purpose": "list project batches that have polar data",
+      "returns": "one row per batch"
+    },
+    {
+      "id": "q2_run_version_table_rows",
+      "purpose": "list run/version candidates for selected batch with metadata",
+      "returns": "one row per run+version with polar data"
+    },
+    {
+      "id": "q3_planes_for_row",
+      "purpose": "list available planes and matrix dimensions for selected run/version",
+      "returns": "usually 3 rows (H,V,D)"
+    },
+    {
+      "id": "q4_plane_matrix",
+      "purpose": "fetch full matrix for selected plane",
+      "returns": "freq_count * angle_count rows"
+    },
+    {
+      "id": "q5_angle_slice",
+      "purpose": "fetch fast angle slice for overlay/diagnostics",
+      "returns": "freq_count rows"
+    },
+    {
+      "id": "q6_frequency_slice",
+      "purpose": "fetch fast frequency slice for diagnostics",
+      "returns": "angle_count rows"
+    }
+  ],
+  "row_count_expectations": {
+    "observed_sample_per_run": {
+      "planes": 3,
+      "freq_count": 16,
+      "angle_count": 19,
+      "points_per_plane": 304,
+      "points_per_run": 912
+    },
+    "planning_baseline_200_runs": {
+      "measurement_rows": 600,
+      "point_rows": 182400
+    }
+  },
+  "kpi_sets_per_stage": {
+    "mvp_columns_max_5": [
+      "B_PC",
+      "E_BW",
+      "JumpCollapseFlags",
+      "E_cov",
+      "R_spill_or_Q_beam"
+    ],
+    "stage_1_concept_shaping": {
+      "emphasis": [
+        "B_PC",
+        "E_BW",
+        "JumpCollapseFlags"
+      ],
+      "default_sort": [
+        "B_PC desc",
+        "E_BW asc",
+        "JumpCollapseFlags asc"
+      ]
+    },
+    "stage_2_stabilization": {
+      "emphasis": [
+        "E_cov",
+        "R_spill_or_Q_beam",
+        "JumpCollapseFlags",
+        "E_BW"
+      ],
+      "default_sort": [
+        "E_cov asc",
+        "R_spill_or_Q_beam asc",
+        "E_BW asc"
+      ]
+    },
+    "stage_3_resonance_final": {
+      "emphasis": [
+        "R_spill_or_Q_beam",
+        "E_cov",
+        "JumpCollapseFlags"
+      ],
+      "phase2_slots_enabled": [
+        "S_theta",
+        "R_off",
+        "S_DI",
+        "E_sym_shape",
+        "S_GD_optional"
+      ]
+    }
+  },
+  "performance_plan": {
+    "compute_placement": {
+      "mvp": "on-demand compute + in-memory cache",
+      "phase2": "add persisted analyzer_kpi_cache table with algorithm_revision key"
+    },
+    "threading": {
+      "pattern": "QObject worker + QThread (match existing GUI pattern)",
+      "workers": [
+        "AnalyzerListWorker",
+        "AnalyzerPlaneWorker",
+        "AnalyzerKpiWorker"
+      ],
+      "features": [
+        "progress signals",
+        "request-id cancellation guard",
+        "cancel button integration"
+      ]
+    },
+    "ui_cache": {
+      "matrix_cache": "bounded LRU by run+plane+normalization",
+      "downsample_cache": "render-resolution keyed cache",
+      "kpi_cache": "run/version/stage keyed scalar cache"
+    },
+    "operation_costs": {
+      "cheap": [
+        "batch/run metadata queries",
+        "table sort/filter on cached scalars",
+        "angle/frequency slice fetch"
+      ],
+      "medium": [
+        "first matrix load and magnitude transform",
+        "mvp scalar KPI compute per row"
+      ],
+      "expensive": [
+        "batch-wide recompute",
+        "multi-run heavy overlays",
+        "phase-derived and advanced phase2 metrics"
+      ]
+    }
+  },
+  "open_questions_risks": [
+    "No existing plotting library for polar/beamwidth charts; plotting approach must be selected in UI-1.",
+    "No existing run_metrics table; persisted KPI cache requires additive schema decision.",
+    "Some legacy project DBs in repo have no polar tables and need no-data/migration handling.",
+    "Global compare may be stale if replication queue has pending writes.",
+    "Large grouped table query may need summary/cache optimization if batch size grows."
+  ]
+}
