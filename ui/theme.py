@@ -982,17 +982,17 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         background-color: #272727;
     }}
     QPushButton#BatchRunButton {{
-        background-color: #222222;
+        background-color: #2a2a2a;
         color: {c['text']};
-        border: 1px solid {c['border']};
+        border: 1px solid #555555;
         border-radius: {r['md']}px;
         min-height: 30px;
         padding: 0px {s['md']}px;
-        font-weight: 600;
+        font-weight: 700;
     }}
     QPushButton#BatchRunButton:hover {{
         border-color: {c['accent']};
-        background-color: #272727;
+        background-color: #303030;
     }}
     QPushButton#BatchRunButton[runReady="true"] {{
         background-color: #213327;

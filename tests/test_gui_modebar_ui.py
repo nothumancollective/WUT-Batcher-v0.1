@@ -50,6 +50,7 @@ class ModeBarUiTests(unittest.TestCase):
             window.batch_mode_button.click()
             self.assertIs(window.stack.currentWidget(), window.batch_page)
             self.assertTrue(window.batch_mode_button.isChecked())
+            self.assertEqual(window.page_title_label.text().strip(), "")
             window.analyse_mode_button.click()
             self.assertIs(window.stack.currentWidget(), window.analyse_page)
             self.assertTrue(window.analyse_mode_button.isChecked())
@@ -58,4 +59,3 @@ class ModeBarUiTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

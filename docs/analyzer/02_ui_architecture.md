@@ -142,3 +142,8 @@ The Analyzer page is planned with two explicit subviews:
 
 - Bottom ModeBar is now a compact segmented switch (`QToolButton`-based, checkable/exclusive) with reduced height and subdued contrast.
 - Layout was adjusted to keep ModeBar visually separated from `QStatusBar`, preventing clipping at small heights.
+
+## Implementation status (UI-1D.4)
+
+- Batch page top row is consolidated to `BATCH + Batch Name + Save + Run` within one compact header strip.
+- Global TopBar center text is intentionally blank while Batch page is active to avoid duplicated “Batch” titles.

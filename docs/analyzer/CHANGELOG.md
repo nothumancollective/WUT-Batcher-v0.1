@@ -34,3 +34,6 @@
 
 ## 2026-02-21 (UI-1D.3)
 - UI-1D.3: Reworked bottom ModeBar into a compact segmented switch with checkable toolbuttons and fixed clipping at the status-bar boundary.
+
+## 2026-02-21 (UI-1D.4)
+- UI-1D.4: Consolidated Batch header into one compact row (`BATCH + Batch Name + Save + Run`) and removed redundant global TopBar page text for Batch mode.

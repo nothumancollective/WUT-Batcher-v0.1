@@ -42,6 +42,7 @@ class BatchActionsUiTests(unittest.TestCase):
         self.assertNotIn("Project Manager", labels)
         self.assertNotIn("Back to Dashboard", labels)
         self.assertEqual(page.save_btn.parent(), page.run_btn.parent())
+        self.assertEqual(page.batch_name.parent(), page.run_btn.parent())
         legacy_bar = page.findChildren(QFrame, "BatchActionBar")
         self.assertEqual(legacy_bar, [])
 
@@ -86,4 +87,3 @@ class BatchActionsUiTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

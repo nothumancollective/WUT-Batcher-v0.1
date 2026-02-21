@@ -2014,7 +2014,7 @@ class BatchPage(QWidget):
         super().__init__()
         root = QVBoxLayout(self)
         root.setContentsMargins(20, 12, 20, 14)
-        root.setSpacing(10)
+        root.setSpacing(8)
         self._root_layout = root
 
         header_row = QWidget()
@@ -2022,11 +2022,14 @@ class BatchPage(QWidget):
         header_layout.setContentsMargins(0, 0, 0, 0)
         header_layout.setSpacing(8)
         title = QLabel("BATCH")
-        title.setObjectName("PageTitle")
+        title.setObjectName("SectionTitle")
         header_layout.addWidget(title, 0, Qt.AlignLeft | Qt.AlignVCenter)
-        header_layout.addStretch(1)
+        self.batch_name = QLineEdit()
+        self.batch_name.setPlaceholderText("Batch Name")
+        self.batch_name.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        header_layout.addWidget(self.batch_name, 1, Qt.AlignVCenter)
         self.save_btn = QPushButton("Save Batch")
-        self.save_btn.setObjectName("BatchPrimaryButton")
+        self.save_btn.setObjectName("BatchSecondaryButton")
         self.run_btn = QPushButton("Run Batch")
         self.run_btn.setObjectName("BatchRunButton")
         self.save_btn.setMinimumWidth(120)
@@ -2036,16 +2039,6 @@ class BatchPage(QWidget):
         header_layout.addWidget(self.save_btn, 0, Qt.AlignRight | Qt.AlignVCenter)
         header_layout.addWidget(self.run_btn, 0, Qt.AlignRight | Qt.AlignVCenter)
         root.addWidget(header_row)
-
-        name_row = QWidget()
-        name_layout = QHBoxLayout(name_row)
-        name_layout.setContentsMargins(0, 0, 0, 0)
-        name_layout.setSpacing(10)
-        self.batch_name = QLineEdit()
-        self.batch_name.setPlaceholderText("Batch Name")
-        name_layout.addWidget(self.batch_name, 0, Qt.AlignLeft)
-        name_layout.addStretch(1)
-        root.addWidget(name_row)
 
         summary_strip = QWidget()
         summary_strip_layout = QHBoxLayout(summary_strip)
@@ -2190,10 +2183,8 @@ class BatchPage(QWidget):
         self._right_panel.setMinimumWidth(right_width)
         self._right_panel.setMaximumWidth(right_width)
 
-        name_width = max(240, available_width // 3)
-        name_width = max(int(summary_width), 240)
-        self.batch_name.setMinimumWidth(name_width)
-        self.batch_name.setMaximumWidth(name_width)
+        self.batch_name.setMinimumWidth(max(260, available_width // 4))
+        self.batch_name.setMaximumWidth(16777215)
 
     def _emit_draft_changed(self) -> None:
         if self._suspend_draft_events:
@@ -3321,7 +3312,7 @@ class MainWindow(QMainWindow):
 
     def _title_for_page(self, page: QWidget | None) -> str:
         if page is self.batch_page:
-            return "Batch"
+            return ""
         if page is self.analyse_page:
             return "Analyse"
         if page is self.run_page:
