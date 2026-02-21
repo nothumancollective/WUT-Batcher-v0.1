@@ -178,3 +178,8 @@ The Analyzer page is planned with two explicit subviews:
   - Row 1: responsive command bar (`Batch Name` + `Save Batch` + `Run Batch`) with deterministic wide/narrow switching.
   - Row 2: status deck with wrap-safe estimate chips and a clickable issues chip.
   - Issues chip opens an anchored popover listing current validation/warning messages.
+
+## Implementation status (Polish A8+A12)
+
+- Right-column action-footer clipping was reduced by replacing fixed-height button constraints with minimum-height layout-driven sizing.
+- Exports footer and Mesh `Advanced` trigger now rely on bottom padding/margins plus non-fixed max heights for safer resize behavior.

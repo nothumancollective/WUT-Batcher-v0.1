@@ -2029,9 +2029,8 @@ class BatchPage(QWidget):
         self.export_panel = BatchExportPanel()
         self.preview_panel = BatchPreviewPlaceholder()
         self.preview_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.export_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.export_panel.setMinimumHeight(240)
-        self.export_panel.setMaximumHeight(260)
+        self.export_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.export_panel.setMinimumHeight(220)
 
         body = QHBoxLayout()
         body.setContentsMargins(0, 0, 0, 0)
@@ -2050,7 +2049,7 @@ class BatchPage(QWidget):
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(8)
         right_layout.addWidget(self.preview_panel, 3)
-        right_layout.addWidget(self.export_panel, 1, Qt.AlignBottom)
+        right_layout.addWidget(self.export_panel, 1)
         body.addWidget(right_panel, 2)
         root.addLayout(body, 1)
 

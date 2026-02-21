@@ -58,3 +58,9 @@
 - Batch upper region now uses a compact two-row template:
   - command bar (`Batch Name`, `Save Batch`, `Run Batch`)
   - wrap-safe status deck (estimate chips + clickable issues chip with popover list).
+
+## 2026-02-21 (Polish A8+A12)
+- Fixed footer clipping around action buttons in Batch right-column panels:
+  - Exports footer (`Simulate Enclosure`, `Advanced`)
+  - Mesh group `Advanced` launcher button.
+- Replaced brittle fixed-height usage with minimum-height + layout-padding constraints.
