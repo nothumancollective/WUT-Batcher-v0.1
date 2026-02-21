@@ -109,6 +109,28 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         font-weight: 700;
         padding-right: {s['xs']}px;
     }}
+    QWidget#GlobalTopBar {{
+        background-color: #161616;
+        border-bottom: 1px solid {c['border']};
+    }}
+    QToolButton#TopBarIconButton {{
+        background-color: transparent;
+        color: {c['text']};
+        border: 1px solid transparent;
+        border-radius: {r['sm']}px;
+        min-width: 26px;
+        max-width: 26px;
+        min-height: 26px;
+        max-height: 26px;
+        padding: 0px;
+    }}
+    QToolButton#TopBarIconButton:hover {{
+        border-color: {c['accent']};
+        background-color: #232323;
+    }}
+    QToolButton#TopBarIconButton:pressed {{
+        background-color: #1f1f1f;
+    }}
     QFrame#Card {{
         background-color: {c['surface']};
         border: 1px solid {c['border']};

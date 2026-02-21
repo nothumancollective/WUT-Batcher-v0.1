@@ -13,6 +13,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional
 
 from app.doctor_service import run_doctor_checks
 from app.constants import DEFAULT_RUNNER_MODE
+import app.resources_rc  # noqa: F401  # Registers Qt resource paths used by icons/QSS.
 from app.models import AppConfig, Batch, Project, ProjectConstraints
 from app.project_issue_model import UiProjectIssue, classify_ui_severity, issue_counts, normalize_project_issues
 from app.services import OrchestratorService, PreviewGenerationCancelled
@@ -62,7 +63,6 @@ try:
         QSplashScreen,
         QStackedWidget,
         QStatusBar,
-        QStyle,
         QTableWidget,
         QTableWidgetItem,
         QTabWidget,
@@ -3225,6 +3225,7 @@ class MainWindow(QMainWindow):
         root.setSpacing(0)
 
         self.top_bar = QWidget(central)
+        self.top_bar.setObjectName("GlobalTopBar")
         self.top_bar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.top_bar.setMinimumHeight(44)
         self.top_bar.setMaximumHeight(44)
@@ -3233,9 +3234,11 @@ class MainWindow(QMainWindow):
         top_row.setSpacing(8)
 
         self.home_button = QToolButton(self.top_bar)
+        self.home_button.setObjectName("TopBarIconButton")
         self.home_button.setAutoRaise(True)
-        self.home_button.setToolTip("Open Project Manager")
-        self.home_button.setIcon(self.style().standardIcon(QStyle.SP_DirHomeIcon))
+        self.home_button.setToolTip("Project Manager")
+        self.home_button.setIcon(QIcon(":/icons/home.svg"))
+        self.home_button.setIconSize(QSize(18, 18))
         self.home_button.clicked.connect(self._open_project_manager)
         top_row.addWidget(self.home_button, 0, Qt.AlignLeft | Qt.AlignVCenter)
 
@@ -3246,9 +3249,11 @@ class MainWindow(QMainWindow):
         top_row.addStretch(1)
 
         self.settings_button = QToolButton(self.top_bar)
+        self.settings_button.setObjectName("TopBarIconButton")
         self.settings_button.setAutoRaise(True)
-        self.settings_button.setToolTip("Open Settings")
-        self.settings_button.setIcon(self.style().standardIcon(QStyle.SP_FileDialogDetailedView))
+        self.settings_button.setToolTip("Settings")
+        self.settings_button.setIcon(QIcon(":/icons/settings.svg"))
+        self.settings_button.setIconSize(QSize(18, 18))
         self.settings_button.clicked.connect(self._open_settings)
         top_row.addWidget(self.settings_button, 0, Qt.AlignRight | Qt.AlignVCenter)
 

@@ -25,3 +25,6 @@
 
 ## 2026-02-21 (UI-1C)
 - UI-1C: Implemented Analyzer MVP layout (split view) with read-only polar run discovery.
+
+## 2026-02-21 (UI-1D.1)
+- UI-1D.1: Added Qt resource icon pipeline (QRC + compiled resource module) and updated global TopBar buttons to Home + Settings SVG icons.
