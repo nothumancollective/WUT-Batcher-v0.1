@@ -1,0 +1,272 @@
+{
+  "export": {
+    "entrypoints": [
+      {
+        "file": "app/runtime_orchestrator.py:1842",
+        "function": "run_batch_pipeline",
+        "role": "calls run_vacs_export_specs and then _ingest_vacs_exports"
+      },
+      {
+        "file": "app/runtime_orchestrator.py:113",
+        "function": "_version_exports_dir",
+        "role": "computes per-version export root <project_root>/versions/<version_id>/exports/<run_id>"
+      },
+      {
+        "file": "app/vacs_export_pipeline.py:225",
+        "function": "run_vacs_export_specs",
+        "role": "executes export specs via external script or catalog plugins"
+      },
+      {
+        "file": "scripts/vacs_export_save_all.py:1252",
+        "function": "_unique_export_path",
+        "role": "raw export filename pattern <script_run_id>_<index>_<safe_title>.txt"
+      },
+      {
+        "file": "app/vacs_export_pipeline.py:176",
+        "function": "_build_external_any_graph_exports",
+        "role": "canonical any-graph filename pattern <version_id>_anygraph_<index>_<safe_title>.txt"
+      }
+    ],
+    "polar_detection": {
+      "signals": [
+        {
+          "name": "metadata_keys",
+          "rule": "Param_Coord_x2 + Param_Coord_x3 + Data_Format=Complex",
+          "reliability": "high",
+          "evidence": "299/299 scanned Mic_Polar files"
+        },
+        {
+          "name": "source_name",
+          "rule": "source_file or source_title contains Mic_Polar/Mic Polar",
+          "reliability": "medium_high",
+          "evidence": "present for most files but not all (example: V001_spl.txt with polar metadata)"
+        },
+        {
+          "name": "variant_external",
+          "rule": "external_01/02/03",
+          "reliability": "medium",
+          "evidence": "observed mapping external_01->42, external_02->0, external_03->90 in DB rows"
+        },
+        {
+          "name": "graph_kind",
+          "rule": "graph_kind == polar",
+          "reliability": "low",
+          "evidence": "observed Mic Polar rows persisted as graph_kind='spl'"
+        }
+      ],
+      "recommended_primary_rule": "classify as polar when metadata has Param_Coord_x2 and Param_Coord_x3 and Data_Format=Complex",
+      "recommended_fallback_rule": "if metadata missing, use Mic_Polar title/path; only then fallback to external_01/02/03 mapping",
+      "db_examples": [
+        {
+          "source_file": ".../V077_anygraph_01_Mic_Polar_-_BE_Spectrum_2.txt",
+          "graph_kind": "spl",
+          "param_coord_x3": "42"
+        },
+        {
+          "source_file": ".../V001_spl.txt",
+          "graph_kind": "spl",
+          "param_coord_x3": "42"
+        }
+      ]
+    },
+    "uia": {
+      "dialog": {
+        "selector": "Window[class_name='TForm_Export', title='Data Export']",
+        "evidence_file": "runner_test_workspace/logs/vacs_export_state_probe/run_20260221_130626/summary.json"
+      },
+      "controls": [
+        {
+          "purpose": "keep header params",
+          "selector": "TRzCheckBox title='Export of parameters'",
+          "expected_state": "checked (BM_GETCHECK=1)",
+          "verification": "read BM_GETCHECK on Win32 checkbox handle",
+          "fallback_selector": "Win32 child class='TRzCheckBox' text='Export of parameters'"
+        },
+        {
+          "purpose": "abscissa block toggle",
+          "selector": "TRzCheckBox title='Abscissa separat'",
+          "expected_state": "unchecked (BM_GETCHECK=0)",
+          "verification": "read BM_GETCHECK",
+          "fallback_selector": "Win32 child class='TRzCheckBox' text='Abscissa separat'"
+        },
+        {
+          "purpose": "matrix toggle",
+          "selector": "Win32 child class='TRzCheckBox' text='Try matrix form'",
+          "expected_state": "unchecked (BM_GETCHECK=0)",
+          "verification": "read BM_GETCHECK",
+          "fallback_selector": "same"
+        },
+        {
+          "purpose": "single-file toggle",
+          "selector": "Win32 child class='TRzCheckBox' text='Single file'",
+          "expected_state": "unchecked (BM_GETCHECK=0)",
+          "verification": "read BM_GETCHECK",
+          "fallback_selector": "same"
+        },
+        {
+          "purpose": "save",
+          "selector": "TRzBitBtn text='&Save...'",
+          "expected_state": "actionable",
+          "verification": "existing save ladder invokes and Save-As dialog appears",
+          "fallback_selector": "button text contains Save/Speicher"
+        }
+      ],
+      "automation_id_stability": "unstable across runs/dialog instances",
+      "setter_status": "unproven for contour dialog (BM_CLICK and UIA space did not toggle check states in probes)"
+    },
+    "path_spec": {
+      "root": "<project_root>/versions/<version_id>/exports/<run_id>",
+      "filename_patterns": [
+        "<script_run_id>_<index:02d>_<safe_title>.txt",
+        "<version_id>_anygraph_<index:02d>_<safe_title>.txt",
+        "<ExportSpec output_name_template result>"
+      ],
+      "mapping_rule": "parse project/version/run from path segments; resolve batch_id from versions table; orientation from Param_Coord_x3 header",
+      "orientation_fallback": "external_01->42, external_02->0, external_03->90 when header missing"
+    }
+  },
+  "import": {
+    "txt_format_classes": [
+      {
+        "name": "legacy_complex_matrix",
+        "detection": "Data_Format=Complex + Data/Data_End + no Abscissa + row width 39",
+        "observed_files": 299,
+        "angle_bins": "Param_Coord_x2",
+        "orientation": "Param_Coord_x3",
+        "row_counts_observed": [5, 6, 10, 16]
+      },
+      {
+        "name": "abscissa_data_blocks",
+        "detection": "contains standalone Abscissa block",
+        "observed_files": 0,
+        "status": "UNKNOWN in current workspace"
+      }
+    ],
+    "norm_angle_policy": {
+      "sources_observed": [
+        "ui payload sim_export_params/export_specs options.norm_angle",
+        "version.json sim_export_settings export_specs options.norm_angle"
+      ],
+      "not_observed": [
+        "norm_angle key in Mic_Polar TXT header",
+        "norm_angle columns in graphs/graph_series/graph_points"
+      ],
+      "resolution_order": [
+        "header norm-angle if present",
+        "per-file resolved export spec option norm_angle",
+        "version/batch sim_export_params norm_angle",
+        "NULL + conflict flag when ambiguous"
+      ],
+      "current_observed_values": [0]
+    },
+    "pipeline": {
+      "entrypoint": "app/runtime_orchestrator.py:_ingest_vacs_exports",
+      "flow": [
+        "parse_vacs_txt_file",
+        "flatten rows",
+        "write_measurements",
+        "upsert_graphs"
+      ],
+      "limitation": "parser consumes only first three numeric tokens per data row",
+      "proof": {
+        "example_file": ".../V077_anygraph_01_Mic_Polar_-_BE_Spectrum_2.txt",
+        "file_shape": "6 rows x 39 columns, 19 angle bins => 114 complex cells",
+        "stored_shape": "1 series, 6 points"
+      },
+      "recommended_hook": "branch to polar matrix importer inside _ingest_vacs_exports after parse and before row flattening"
+    }
+  },
+  "db": {
+    "project_db": "<project_root>/dataset/project.sqlite",
+    "global_db": "<library_root>/global.sqlite",
+    "confirmed_tables": [
+      "graphs",
+      "graph_series",
+      "graph_points"
+    ],
+    "migration_mechanism": "startup ensure+migrate in SqlDatasetStore._init_db/_migrate_schema",
+    "migration_files": "none (no standalone migration directory)",
+    "playbook": [
+      "add polar_* DDL in _init_db",
+      "add migration guards in _migrate_schema",
+      "run python -m app run pipeline --project-json ... --batch-json ... --dry-run (or run-sample --dry-run)",
+      "verify polar_* tables in both project.sqlite and global.sqlite"
+    ]
+  },
+  "replication": {
+    "mechanism": "operation-based dual-write with retry queue",
+    "core_functions": [
+      "_dual_write",
+      "_apply_operation",
+      "retry_pending_global_writes"
+    ],
+    "selection_model": "not table whitelist; explicit operation dispatch",
+    "integration_checklist": [
+      "add polar_* schema to both DB init/migration",
+      "add new operation types in _apply_operation",
+      "implement _op_* handlers for polar_*",
+      "route writes through _dual_write",
+      "extend _op_delete_runs and cleanup counts if polar_* keyed by run/graph",
+      "validate replication_queue replay via dataset sync-global"
+    ]
+  },
+  "unknowns": [
+    "Deterministic idempotent setter for contour Data Export checkboxes is not proven in current automation path.",
+    "Abscissa/Data-block polar TXT format examples are absent in this workspace.",
+    "Any-graph fallback does not provide deterministic per-file mapping to requested polar spec id when multiple specs are requested.",
+    "Norm-angle conflict handling for divergent per-spec values cannot be validated from current data (all observed 0).",
+    "Presence and automation selectors of deeper Preferences options for TXT structure remain unproven."
+  ],
+  "risks": [
+    {
+      "risk": "UIA AutomationId instability",
+      "detection": "compare control IDs across runs/dialogs",
+      "mitigation": "select by dialog signature + class + text; keep AutomationId optional"
+    },
+    {
+      "risk": "Checkboxes non-toggleable in contour export dialog",
+      "detection": "BM_GETCHECK unchanged after BM_CLICK/UIA key attempts",
+      "mitigation": "verify-and-fail-fast; do not assume writable controls"
+    },
+    {
+      "risk": "Polar misclassified as SPL",
+      "detection": "Mic_Polar rows stored as graph_kind='spl'",
+      "mitigation": "metadata-based polar detection independent of graph_kind"
+    },
+    {
+      "risk": "Filename orientation mismatch",
+      "detection": "BE_Spectrum_2 anomalies vs Param_Coord_x3",
+      "mitigation": "use Param_Coord_x3 header as primary orientation source"
+    },
+    {
+      "risk": "Matrix data loss in parser",
+      "detection": "file column count >> stored points",
+      "mitigation": "new polar matrix importer and schema"
+    },
+    {
+      "risk": "Unknown future TXT shape",
+      "detection": "parser rejects or misreads Abscissa format",
+      "mitigation": "explicit format classifier + fixtures"
+    },
+    {
+      "risk": "Variable frequency grids",
+      "detection": "row-count/frequency-grid mismatch across planes",
+      "mitigation": "strict per-file grid validation and metadata persistence"
+    },
+    {
+      "risk": "Partial plane exports",
+      "detection": "missing expected orientations per run/version",
+      "mitigation": "completeness checks before consolidation"
+    },
+    {
+      "risk": "Norm-angle ambiguity",
+      "detection": "multiple candidate specs with differing norm_angle and no per-file spec mapping",
+      "mitigation": "persist UNKNOWN + conflict flag until mapping is explicit"
+    },
+    {
+      "risk": "Replication omission for new tables",
+      "detection": "project DB updates missing in global DB after replay",
+      "mitigation": "add operation handlers + replay tests"
+    }
+  ]
+}
