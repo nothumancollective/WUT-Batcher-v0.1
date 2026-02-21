@@ -19,6 +19,7 @@ from app.project_issue_model import UiProjectIssue, classify_ui_severity, issue_
 from app.services import OrchestratorService, PreviewGenerationCancelled
 from app.settings_store import UserSettings
 from app.ui_validation import UiValidationEngine
+from app.widgets.command_header import CommandHeaderWidget
 from ui.batch_export_panel import BatchExportPanel
 from ui.batch_parameter_form import BatchParameterForm
 from ui.batch_preview_placeholder import BatchPreviewPlaceholder
@@ -2017,93 +2018,12 @@ class BatchPage(QWidget):
         root.setSpacing(8)
         self._root_layout = root
 
-        header_row = QWidget()
-        header_layout = QHBoxLayout(header_row)
-        header_layout.setContentsMargins(0, 0, 0, 0)
-        header_layout.setSpacing(8)
-        self.batch_name = QLineEdit()
-        self.batch_name.setPlaceholderText("Batch Name")
-        self.batch_name.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        header_layout.addWidget(self.batch_name, 1, Qt.AlignVCenter)
-        self.save_btn = QPushButton("Save Batch")
-        self.save_btn.setObjectName("BatchSecondaryButton")
-        self.run_btn = QPushButton("Run Batch")
-        self.run_btn.setObjectName("BatchRunButton")
-        self.save_btn.setMinimumWidth(120)
-        self.run_btn.setMinimumWidth(120)
-        self.save_btn.setToolTip("Save current batch configuration")
-        self.run_btn.setToolTip("Run simulation batch with current configuration")
-        header_layout.addWidget(self.save_btn, 0, Qt.AlignRight | Qt.AlignVCenter)
-        header_layout.addWidget(self.run_btn, 0, Qt.AlignRight | Qt.AlignVCenter)
-        root.addWidget(header_row)
-
-        summary_strip = QWidget()
-        summary_strip.setObjectName("BatchSummaryStrip")
-        summary_strip_layout = QGridLayout(summary_strip)
-        summary_strip_layout.setContentsMargins(0, 0, 0, 0)
-        summary_strip_layout.setHorizontalSpacing(8)
-        summary_strip_layout.setVerticalSpacing(8)
-
-        self.summary_left_card = QFrame()
-        self.summary_left_card.setObjectName("ProjectSummaryPanel")
-        self.summary_left_card.setMinimumHeight(92)
-        self.summary_left_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        left_card_layout = QVBoxLayout(self.summary_left_card)
-        left_card_layout.setContentsMargins(10, 8, 10, 8)
-        left_card_layout.setSpacing(4)
-        summary_title = QLabel("Batch Draft")
-        summary_title.setObjectName("SummaryTitle")
-        left_card_layout.addWidget(summary_title)
-        self.summary_line_1 = QLabel("Define base values, activate sweeps, and configure exports.")
-        self.summary_line_1.setObjectName("SummaryText")
-        self.summary_line_1.setWordWrap(True)
-        left_card_layout.addWidget(self.summary_line_1)
-        self.summary_line_2 = QLabel("Dynamic compatibility hiding prevents conflicting fatal combinations.")
-        self.summary_line_2.setObjectName("SummaryText")
-        self.summary_line_2.setWordWrap(True)
-        left_card_layout.addWidget(self.summary_line_2)
-        summary_strip_layout.addWidget(self.summary_left_card, 0, 0)
-
-        self.summary_center_card = QFrame()
-        self.summary_center_card.setObjectName("ProjectSummaryPanel")
-        self.summary_center_card.setMinimumHeight(92)
-        self.summary_center_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        center_card_layout = QVBoxLayout(self.summary_center_card)
-        center_card_layout.setContentsMargins(10, 8, 10, 8)
-        center_card_layout.setSpacing(4)
-        summary_center_title = QLabel("Estimate")
-        summary_center_title.setObjectName("SummaryTitle")
-        center_card_layout.addWidget(summary_center_title)
-        self.summary_meta_versions = QLabel("Version preview: 0 · Export specs: 0 · Mode: single")
-        self.summary_meta_versions.setObjectName("SummaryMeta")
-        center_card_layout.addWidget(self.summary_meta_versions)
-        self.summary_meta_counts = QLabel("Visible variable params: 0 · Active sweeps: 0")
-        self.summary_meta_counts.setObjectName("SummaryMeta")
-        center_card_layout.addWidget(self.summary_meta_counts)
-        self.summary_defined_vars = QLabel("Defined variables: 0")
-        self.summary_defined_vars.setObjectName("SummaryMeta")
-        center_card_layout.addWidget(self.summary_defined_vars)
-        self.summary_eta_label = QLabel("ETA: unknown")
-        self.summary_eta_label.setObjectName("SummaryMeta")
-        center_card_layout.addWidget(self.summary_eta_label)
-        summary_strip_layout.addWidget(self.summary_center_card, 0, 1)
-
-        self.summary_right_card = QFrame()
-        self.summary_right_card.setObjectName("ProjectSummaryPanel")
-        self.summary_right_card.setMinimumHeight(92)
-        self.summary_right_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        right_card_layout = QVBoxLayout(self.summary_right_card)
-        right_card_layout.setContentsMargins(10, 8, 10, 8)
-        right_card_layout.setSpacing(4)
-        summary_issue_title = QLabel("Validation")
-        summary_issue_title.setObjectName("SummaryTitle")
-        right_card_layout.addWidget(summary_issue_title)
-        self.summary_issue_hint = QLabel("No validation issues.")
-        self.summary_issue_hint.setObjectName("BatchValidationHint")
-        self.summary_issue_hint.setWordWrap(True)
-        right_card_layout.addWidget(self.summary_issue_hint)
-        summary_strip_layout.addWidget(self.summary_right_card, 0, 2)
-        root.addWidget(summary_strip)
+        self.command_header = CommandHeaderWidget(context_label="Batch")
+        self.batch_name = self.command_header.batch_name_edit
+        self.save_btn = self.command_header.save_button
+        self.run_btn = self.command_header.run_button
+        self.summary_issue_hint = self.command_header.issues_chip
+        root.addWidget(self.command_header)
 
         self.parameter_form = BatchParameterForm(build_project_form_schema())
         self.export_panel = BatchExportPanel()
@@ -2146,18 +2066,16 @@ class BatchPage(QWidget):
         self.export_panel.open_enclosure.connect(self.parameter_form.open_enclosure_dialog)
         self.batch_name.textChanged.connect(self._emit_draft_changed)
 
-        self._summary_strip_layout = summary_strip_layout
-        self._summary_strip = summary_strip
         self._body_layout = body
         self._right_panel = right_panel
-        self._summary_cards = [self.summary_left_card, self.summary_center_card, self.summary_right_card]
-        self._summary_arrangement_key: Optional[str] = None
 
         self._compat_state: Dict[str, Any] = {"visible_keys": [], "locked_keys": [], "sweepable_keys": [], "issues": []}
         self._latest_field_issues: List[Dict[str, Any]] = []
         self._project_fixed_keys: set[str] = set()
         self._eta_seconds: Optional[float] = None
         self._eta_sample_count: int = 0
+        self._eta_chip_text = "ETA: unknown"
+        self._eta_chip_tooltip = "No historical duration data available yet."
         self._suspend_draft_events = False
         self._update_summary_widgets()
         QTimer.singleShot(0, self._apply_equal_widths)
@@ -2169,56 +2087,13 @@ class BatchPage(QWidget):
     def _apply_equal_widths(self) -> None:
         margins = self._root_layout.contentsMargins()
         available_width = max(int(self.width() - margins.left() - margins.right()), 1)
-        self._apply_summary_strip_layout(available_width)
+        self.command_header.apply_responsive_layout(available_width)
 
         body_total = max(available_width, 1)
         body_spacing = max(int(self._body_layout.spacing()), 0)
         right_width = max((body_total - body_spacing) // 3, 1)
         self._right_panel.setMinimumWidth(right_width)
         self._right_panel.setMaximumWidth(right_width)
-
-        self.batch_name.setMinimumWidth(max(260, available_width // 4))
-        self.batch_name.setMaximumWidth(16777215)
-
-    def _apply_summary_strip_layout(self, available_width: int) -> None:
-        if available_width >= 1080:
-            arrangement = "triple"
-            placements = [
-                (self.summary_left_card, 0, 0, 1, 1),
-                (self.summary_center_card, 0, 1, 1, 1),
-                (self.summary_right_card, 0, 2, 1, 1),
-            ]
-            for col in range(3):
-                self._summary_strip_layout.setColumnStretch(col, 1)
-        elif available_width >= 760:
-            arrangement = "dual_plus_validation"
-            placements = [
-                (self.summary_left_card, 0, 0, 1, 1),
-                (self.summary_center_card, 0, 1, 1, 1),
-                (self.summary_right_card, 1, 0, 1, 2),
-            ]
-            self._summary_strip_layout.setColumnStretch(0, 1)
-            self._summary_strip_layout.setColumnStretch(1, 1)
-            self._summary_strip_layout.setColumnStretch(2, 0)
-        else:
-            arrangement = "stacked"
-            placements = [
-                (self.summary_left_card, 0, 0, 1, 1),
-                (self.summary_center_card, 1, 0, 1, 1),
-                (self.summary_right_card, 2, 0, 1, 1),
-            ]
-            self._summary_strip_layout.setColumnStretch(0, 1)
-            self._summary_strip_layout.setColumnStretch(1, 0)
-            self._summary_strip_layout.setColumnStretch(2, 0)
-
-        if arrangement == self._summary_arrangement_key:
-            return
-
-        while self._summary_strip_layout.count():
-            self._summary_strip_layout.takeAt(0)
-        for card, row, col, row_span, col_span in placements:
-            self._summary_strip_layout.addWidget(card, row, col, row_span, col_span)
-        self._summary_arrangement_key = arrangement
 
     def _emit_draft_changed(self) -> None:
         if self._suspend_draft_events:
@@ -2264,8 +2139,8 @@ class BatchPage(QWidget):
         self._eta_seconds = eta_seconds
         self._eta_sample_count = max(int(sample_count), 0)
         if eta_seconds is None:
-            self.summary_eta_label.setText("ETA: unknown")
-            self.summary_eta_label.setToolTip("No historical duration data available yet.")
+            self._eta_chip_text = "ETA: unknown"
+            self._eta_chip_tooltip = "No historical duration data available yet."
         else:
             total = max(float(eta_seconds), 0.0)
             minutes = int(total // 60)
@@ -2274,11 +2149,12 @@ class BatchPage(QWidget):
                 text = f"ETA: ~{minutes}m {seconds:02d}s"
             else:
                 text = f"ETA: ~{seconds}s"
-            self.summary_eta_label.setText(text)
+            self._eta_chip_text = text
             median_hint = "unknown" if median_seconds is None else f"{float(median_seconds):.1f}s/version"
-            self.summary_eta_label.setToolTip(
+            self._eta_chip_tooltip = (
                 f"Estimated from historical median ({median_hint}) across {self._eta_sample_count} successful versions."
             )
+        self._update_summary_widgets()
 
     def apply_compatibility(self, state: Dict[str, Any]) -> None:
         self._compat_state = dict(state)
@@ -2361,11 +2237,7 @@ class BatchPage(QWidget):
         version_preview = int(self._compat_state.get("version_count_preview", 0) or 0)
         export_specs = int(self.export_panel.export_spec_count())
         selected = self.parameter_form.selected_params_payload()
-        defined_vars = sum(1 for value in selected.values() if value is not None)
         mode = self.export_panel.sweep_mode_value()
-        self.summary_meta_versions.setText(
-            f"Version preview: {version_preview} · Export specs: {export_specs} · Mode: {mode}"
-        )
 
         issues = list(self._latest_field_issues or self.compat_panel.issues())
         fatal_count = 0
@@ -2395,12 +2267,6 @@ class BatchPage(QWidget):
             return (3, str(raw.get("message", "")))
 
         sorted_issues = sorted([dict(item) for item in issues], key=_issue_rank)
-        self.summary_meta_counts.setText(
-            f"Visible variable params: {visible_count} · Active sweeps: {active_sweeps}"
-        )
-        self.summary_defined_vars.setText(
-            f"Defined variables: {defined_vars} · Errors: {fatal_count} · Incomplete: {incomplete_count}"
-        )
 
         issue_lines: List[str] = []
         for issue in sorted_issues:
@@ -2408,32 +2274,22 @@ class BatchPage(QWidget):
             if not msg:
                 continue
             issue_lines.append(msg)
-        tooltip_lines = [f"{index + 1}. {line}" for index, line in enumerate(issue_lines)]
-        summary_tooltip = "\n".join(tooltip_lines[:12]).strip()
-        if fatal_count > 0:
-            self.summary_issue_hint.setText(
-                "\n".join([line for line in issue_lines[:3] if line])
-                or f"{fatal_count} fatal issue(s), {warn_count} warning(s)."
-            )
-            self.summary_issue_hint.setProperty("severity", "fatal")
-        elif incomplete_count > 0:
-            self.summary_issue_hint.setText("Define required values to run this batch.")
-            self.summary_issue_hint.setProperty("severity", "")
-        elif warn_count > 0:
-            warning_lines = [
-                str(issue.get("message", "")).strip()
-                for issue in sorted_issues
-                if str(issue.get("severity", "")).strip().lower() == "warn"
-            ]
-            warning_lines = [line for line in warning_lines if line]
-            self.summary_issue_hint.setText(warning_lines[0] if warning_lines else f"{warn_count} warning(s) in current draft.")
-            self.summary_issue_hint.setProperty("severity", "warn")
-        else:
-            self.summary_issue_hint.setText("No validation issues.")
-            self.summary_issue_hint.setProperty("severity", "")
-        self.summary_issue_hint.setToolTip(summary_tooltip)
-        self.summary_issue_hint.style().unpolish(self.summary_issue_hint)
-        self.summary_issue_hint.style().polish(self.summary_issue_hint)
+        estimate_chips = [
+            self._eta_chip_text,
+            f"Visible vars: {visible_count}",
+            f"Active sweeps: {active_sweeps}",
+            f"Export specs: {export_specs}",
+        ]
+        if len(str(mode)) <= 10:
+            estimate_chips.append(f"Mode: {mode}")
+        estimate_chips.append(f"Versions: {version_preview}")
+        self.command_header.set_estimate_chips(estimate_chips[:6])
+        self.command_header.set_issue_state(
+            messages=issue_lines,
+            fatal_count=fatal_count,
+            warn_count=warn_count,
+            incomplete_count=incomplete_count,
+        )
 
         has_name = bool(self.batch_name.text().strip())
         can_save = has_name

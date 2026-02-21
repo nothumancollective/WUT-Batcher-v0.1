@@ -157,6 +157,8 @@ class CommandHeaderWidget(QFrame):
 
     def _mount_command_groups(self, mode: str) -> None:
         target_mode = "narrow" if str(mode) == "narrow" else "wide"
+        self._clear_layout(self._wide_layout)
+        self._clear_layout(self._narrow_layout)
         self._detach_from_parent_layout(self._name_group)
         self._detach_from_parent_layout(self._actions_group)
         if target_mode == "wide":
@@ -182,6 +184,15 @@ class CommandHeaderWidget(QFrame):
         if parent is not None and parent.layout() is not None:
             parent.layout().removeWidget(widget)
         widget.setParent(None)
+
+    @staticmethod
+    def _clear_layout(layout) -> None:
+        while layout.count():
+            item = layout.takeAt(0)
+            widget = item.widget()
+            if widget is None:
+                continue
+            widget.setParent(None)
 
     def _rebuild_status_chips(self) -> None:
         self._chips_flow.clear()

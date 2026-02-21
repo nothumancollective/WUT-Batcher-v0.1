@@ -169,3 +169,12 @@ The Analyzer page is planned with two explicit subviews:
 - Introduced reusable shared UI primitives for the next Batch header integration:
   - `CommandHeaderWidget`: two-row template (`Command Bar` + `Status Deck`) with deterministic wide/narrow switching.
   - `FlowLayout`: wrap-safe layout for status chips without fixed positioning.
+
+## Implementation status (Polish A7.2)
+
+- Batch upper region is now rendered through `CommandHeaderWidget`.
+- Removed legacy `Batch Draft / Estimate / Validation` cards from Batch page content.
+- `CommandHeaderWidget` behavior:
+  - Row 1: responsive command bar (`Batch Name` + `Save Batch` + `Run Batch`) with deterministic wide/narrow switching.
+  - Row 2: status deck with wrap-safe estimate chips and a clickable issues chip.
+  - Issues chip opens an anchored popover listing current validation/warning messages.

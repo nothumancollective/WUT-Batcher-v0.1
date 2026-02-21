@@ -52,3 +52,9 @@
 - Added reusable header primitives for upcoming Batch upper-region rewrite:
   - `CommandHeaderWidget` (responsive command bar + status deck shell)
   - `FlowLayout` (wrap-safe chip row behavior).
+
+## 2026-02-21 (Polish A7.2)
+- Integrated `CommandHeaderWidget` into `BatchPage` and replaced the old Draft/Estimate/Validation card strip.
+- Batch upper region now uses a compact two-row template:
+  - command bar (`Batch Name`, `Save Batch`, `Run Batch`)
+  - wrap-safe status deck (estimate chips + clickable issues chip with popover list).

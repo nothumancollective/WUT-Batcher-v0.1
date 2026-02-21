@@ -41,8 +41,8 @@ class BatchActionsUiTests(unittest.TestCase):
         self.assertIn("Run Batch", labels)
         self.assertNotIn("Project Manager", labels)
         self.assertNotIn("Back to Dashboard", labels)
-        self.assertEqual(page.save_btn.parent(), page.run_btn.parent())
-        self.assertEqual(page.batch_name.parent(), page.run_btn.parent())
+        self.assertIsNotNone(page.command_header)
+        self.assertEqual(page.command_header.objectName(), "CommandHeaderWidget")
         legacy_bar = page.findChildren(QFrame, "BatchActionBar")
         self.assertEqual(legacy_bar, [])
 

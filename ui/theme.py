@@ -699,6 +699,60 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         padding: 3px 8px;
         font-size: 11px;
     }}
+    QFrame#CommandHeaderWidget {{
+        background-color: #171717;
+        border: 1px solid {c['border']};
+        border-radius: {r['md']}px;
+    }}
+    QLabel#BatchCommandLabel {{
+        color: {c['muted']};
+        font-size: 11px;
+        font-weight: 700;
+        min-width: 74px;
+    }}
+    QWidget#CommandStatusDeck {{
+        background-color: transparent;
+        border-top: 1px solid #272727;
+    }}
+    QPushButton#CommandIssuesChip {{
+        background-color: #242424;
+        color: {c['muted']};
+        border: 1px solid {c['border']};
+        border-radius: {r['sm']}px;
+        min-height: 24px;
+        padding: 0px 10px;
+        font-size: 11px;
+        font-weight: 600;
+    }}
+    QPushButton#CommandIssuesChip:hover {{
+        border-color: {c['accent']};
+    }}
+    QPushButton#CommandIssuesChip[severity="warn"] {{
+        color: {c['warning_border']};
+        border: 1px solid #4a3d23;
+        background-color: rgba(125, 91, 34, 0.16);
+    }}
+    QPushButton#CommandIssuesChip[severity="fatal"] {{
+        color: {c['danger_border']};
+        border: 1px solid #4d2d2d;
+        background-color: rgba(110, 50, 50, 0.18);
+    }}
+    QPushButton#CommandIssuesChip[severity="incomplete"] {{
+        color: {c['accent']};
+        border: 1px solid #2f4768;
+        background-color: rgba(63, 113, 169, 0.14);
+    }}
+    QPushButton#CommandIssuesChip[severity="ok"] {{
+        color: {c['risk_ok']};
+        border: 1px solid #2f5b37;
+        background-color: rgba(56, 98, 66, 0.14);
+    }}
+    QMenu#CommandIssuesPopover {{
+        background-color: #1f1f1f;
+        border: 1px solid {c['border']};
+        border-radius: {r['sm']}px;
+        padding: 0px;
+    }}
     QFrame#ProjectActionBar {{
         background-color: #1a1a1a;
         border-top: 1px solid {c['border']};
