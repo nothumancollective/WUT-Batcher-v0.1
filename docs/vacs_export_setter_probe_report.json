@@ -1,0 +1,106 @@
+{
+  "generated_at": "2026-02-21T14:06:56.163690+00:00",
+  "dialog_found": false,
+  "process_id": 5596,
+  "dialog_signature": null,
+  "controls": [
+    {
+      "purpose": "IncludeHeader",
+      "selector_used": "dialog_missing",
+      "found": false,
+      "before_state": null,
+      "after_state": null,
+      "settable": false,
+      "attempts": [],
+      "restore": {
+        "restored": false,
+        "final_state": null,
+        "attempts": []
+      },
+      "reason": "dialog_not_found"
+    },
+    {
+      "purpose": "AbscissaDataBlocks",
+      "selector_used": "dialog_missing",
+      "found": false,
+      "before_state": null,
+      "after_state": null,
+      "settable": false,
+      "attempts": [],
+      "restore": {
+        "restored": false,
+        "final_state": null,
+        "attempts": []
+      },
+      "reason": "dialog_not_found"
+    },
+    {
+      "purpose": "TryMatrixForm",
+      "selector_used": "dialog_missing",
+      "found": false,
+      "before_state": null,
+      "after_state": null,
+      "settable": false,
+      "attempts": [],
+      "restore": {
+        "restored": false,
+        "final_state": null,
+        "attempts": []
+      },
+      "reason": "dialog_not_found"
+    },
+    {
+      "purpose": "SingleFile",
+      "selector_used": "dialog_missing",
+      "found": false,
+      "before_state": null,
+      "after_state": null,
+      "settable": false,
+      "attempts": [],
+      "restore": {
+        "restored": false,
+        "final_state": null,
+        "attempts": []
+      },
+      "reason": "dialog_not_found"
+    },
+    {
+      "purpose": "ComplexFormat",
+      "selector_used": "dialog_missing",
+      "found": false,
+      "before_state": null,
+      "after_state": null,
+      "settable": false,
+      "attempts": [],
+      "restore": {
+        "restored": false,
+        "final_state": null,
+        "attempts": []
+      },
+      "reason": "dialog_not_found"
+    }
+  ],
+  "trigger_attempts": [
+    {
+      "method": "main_wm_command_52",
+      "status": "ok",
+      "main_handle": 722388
+    },
+    {
+      "method": "graph_f7",
+      "status": "skipped",
+      "reason": "handle_missing"
+    },
+    {
+      "method": "main_f7",
+      "status": "ok",
+      "handle": 722388
+    }
+  ],
+  "errors": [
+    {
+      "stage": "find_dialog",
+      "error": "export_dialog_not_found"
+    }
+  ]
+}

@@ -13,6 +13,7 @@ from app.ui_automation.step_logger import StructuredStepLogger
 from app.ui_automation.waits import wait_until
 from app.ui_automation.watchdog import ModalDialogWatchdog
 from app.ui_contracts.window_signatures import VACS_EXPORT_DIALOG, VACS_MAIN_WINDOW
+from app.vacs_export_enforcer import ExportConfigurationError, enforce_export_dialog_controls
 
 
 @dataclass(frozen=True)
@@ -221,9 +222,22 @@ class VacsDriver:
                 title_regex=VACS_EXPORT_DIALOG.title_regex,
                 class_name_regex=VACS_EXPORT_DIALOG.class_name_regex,
             )
-            if dialog is not None:
-                dialog.type_keys(str(output_path), with_spaces=True, set_foreground=True)
-                dialog.type_keys("{ENTER}")
+            if dialog is None:
+                raise ExportConfigurationError(
+                    "Export configuration invalid: [ExportDialog] expected [VISIBLE], found [MISSING]. "
+                    "Please enable this option in VACS preferences or export dialog."
+                )
+
+            def _enforcer_logger(event: str, payload: Dict[str, Any]) -> None:
+                level = "warning" if event == "setter_error" else "info"
+                self._log(level=level, step=step, event=f"export_enforcer_{event}", payload=payload)
+
+            enforcement = enforce_export_dialog_controls(dialog=dialog, logger=_enforcer_logger)
+            self._log(level="info", step=step, event="export_config_enforced", payload=enforcement)
+            dialog.type_keys(str(output_path), with_spaces=True, set_foreground=True)
+            dialog.type_keys("{ENTER}")
+        except ExportConfigurationError:
+            raise
         except Exception as exc:
             raise RuntimeError(f"Failed exporting VACS TXT: {exc}") from exc
 

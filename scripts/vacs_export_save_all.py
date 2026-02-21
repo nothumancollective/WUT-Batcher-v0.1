@@ -21,10 +21,11 @@ from typing import Any, Dict, List, Optional
 
 from pywinauto import Desktop
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
+
+from app.vacs_export_enforcer import ExportConfigurationError, enforce_export_dialog_controls
 
 
 WM_COMMAND = 0x0111
@@ -432,6 +433,21 @@ def _dialog_controls(dialog: Any) -> List[Dict[str, Any]]:
         s["text"] = _window_text(c)
         rows.append(s)
     return rows
+
+
+def _enforce_export_dialog_configuration(export_dialog: Any) -> Dict[str, Any]:
+    events: List[Dict[str, Any]] = []
+
+    def _logger(event: str, payload: Dict[str, Any]) -> None:
+        events.append({"event": str(event), "payload": dict(payload or {})})
+
+    try:
+        result = enforce_export_dialog_controls(dialog=export_dialog, logger=_logger)
+        return {"ok": True, "result": result, "events": events}
+    except ExportConfigurationError as exc:
+        return {"ok": False, "error": str(exc), "events": events}
+    except Exception as exc:
+        return {"ok": False, "error": f"unexpected_enforcer_error:{exc!r}", "events": events}
 
 
 def _win32_children(hwnd: int) -> List[Dict[str, Any]]:
@@ -1591,6 +1607,25 @@ def run_once_safe(args: argparse.Namespace) -> Dict[str, Any]:
             row["data_export_controls"] = _dialog_controls(export_dialog)
             row["data_export_win32_children"] = _win32_children(int(exp_sig.get("handle", 0) or 0))
 
+        enforcement = _enforce_export_dialog_configuration(export_dialog)
+        row["export_config_enforcement"] = enforcement
+        step("graph_export_config_enforcement", loop=loop_idx, enforcement=enforcement)
+        if not bool(enforcement.get("ok")):
+            row["error"] = "export_configuration_invalid"
+            row["export_configuration_error"] = str(enforcement.get("error") or "")
+            try:
+                row["close_data_export_on_enforcement_error"] = _close_dialog(export_dialog)
+            except Exception as exc:
+                row["close_data_export_on_enforcement_error"] = {"status": "error", "error": repr(exc)}
+            step(
+                "graph_export_configuration_invalid",
+                loop=loop_idx,
+                error=row["export_configuration_error"],
+                close=row["close_data_export_on_enforcement_error"],
+            )
+            per_graph.append(row)
+            break
+
         save_ctrl = _find_save_bitbtn(export_dialog)
         row["save_control"] = save_ctrl
         if not save_ctrl:
@@ -2074,6 +2109,25 @@ def run_once_fast(args: argparse.Namespace) -> Dict[str, Any]:
             seen_export_dialog_handles.add(exp_handle)
         row["data_export_dialog"] = exp_sig
         step("graph_data_export_found", loop=loop_idx, dialog=exp_sig)
+
+        enforcement = _enforce_export_dialog_configuration(export_dialog)
+        row["export_config_enforcement"] = enforcement
+        step("graph_export_config_enforcement", loop=loop_idx, enforcement=enforcement)
+        if not bool(enforcement.get("ok")):
+            row["error"] = "export_configuration_invalid"
+            row["export_configuration_error"] = str(enforcement.get("error") or "")
+            try:
+                row["close_data_export_on_enforcement_error"] = _close_dialog(export_dialog)
+            except Exception as exc:
+                row["close_data_export_on_enforcement_error"] = {"status": "error", "error": repr(exc)}
+            step(
+                "graph_export_configuration_invalid",
+                loop=loop_idx,
+                error=row["export_configuration_error"],
+                close=row["close_data_export_on_enforcement_error"],
+            )
+            per_graph.append(row)
+            break
 
         save_ctrl = _find_save_bitbtn(export_dialog)
         row["save_control"] = save_ctrl
