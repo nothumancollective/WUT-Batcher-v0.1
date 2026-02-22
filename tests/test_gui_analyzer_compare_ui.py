@@ -126,6 +126,9 @@ class AnalyzerCompareUiTests(unittest.TestCase):
             saved_selector = page.findChild(QComboBox, "AnalyzerAnalysisSelector")
             self.assertIsNotNone(slots_table)
             self.assertIsNotNone(saved_selector)
+            self.assertTrue(hasattr(page, "compare_kpi_panel"))
+            self.assertFalse(page.compare_table.isVisible())
+            self.assertIn("heatmap", page.compare_heatmap_selector.toolTip().lower())
 
     def test_compare_add_and_remove_candidate_updates_shortlist(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_ui2c_compare_slots_") as tmp:
