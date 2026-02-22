@@ -232,3 +232,23 @@ The Analyzer page is planned with two explicit subviews:
 - Batch popup shells now reuse a shared frameless dialog template (`StyledDialogBase`) aligned with Export Advanced dialog visuals.
 - Batch body column sizing now enforces explicit left/right bounds during resize so expanded left cards remain clipped to the left column and cannot bleed into the right Preview/Exports column.
 - R-OSSE subsection visibility now follows rendered `R-OSSE.*` rows when only parent-key compatibility visibility (`R-OSSE`) is present.
+
+## Implementation status (Analyzer Phase 2A: Batch Review KPI MVP)
+
+- Analyzer `Batch Review` now includes KPI-focused control surface:
+  - stage selector: `Concept | Shaping | Stabilization`
+  - target preset selector (`H x V`)
+  - tolerance control (`+/- deg`)
+  - frequency-band preset selector (including `Full (auto)` and `Custom`)
+  - filters (`Exclude flagged`, `Exclude warnings`, `Min score`)
+  - `Compute KPIs` / `Refresh KPIs` action
+- Run table now renders cached KPI columns per run/version:
+  - `Score`, `B_PC`, `E_BW`, `E_cov`, `R_spill`, `Flags`
+  - stage presets toggle default visible KPI columns and filter defaults
+- Compute path is background-threaded with progress + cancel:
+  - compute runs only against project source DB
+  - writes KPI cache rows to project DB and replicates to global DB via existing replication queue model
+  - UI refresh re-queries cached scalar rows only (no matrix preload in table view)
+- Metadata/list view remains lightweight:
+  - table refresh uses metadata + cached scalar joins
+  - `polar_points` are loaded only inside the explicit compute worker.

@@ -185,3 +185,9 @@
   - batch-level KPI compute with cache-skip/recompute rules (`algo_version` + `source_hash`)
   - run metadata merge with cached KPI scalars/stage score for Batch Review table consumption.
 - Added synthetic unit tests for KPI engine behavior and service caching/recompute flow (`tests/test_analyzer_kpi_engine.py`, `tests/test_analyzer_kpi_service.py`).
+
+## 2026-02-22 (Analyzer Phase 2A: Batch Review UI wiring)
+- Extended Analyzer page UI with KPI controls for stage/target/tolerance/band presets, plus filter controls and a `Compute KPIs` action.
+- Added background KPI compute worker with progress/cancel wiring; compute runs only for project source and refreshes cached KPI scalars on completion.
+- Updated run table to show sortable KPI columns (`score`, `B_PC`, `E_BW`, `E_cov`, `R_spill`, `flags`) and stage-based default column visibility/filter presets.
+- Added focused GUI regression coverage for Analyzer KPI controls and filter behavior.

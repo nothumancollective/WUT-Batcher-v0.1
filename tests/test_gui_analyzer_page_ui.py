@@ -13,10 +13,12 @@ from app.services import OrchestratorService
 from app.settings_store import SettingsStore, UserSettings
 
 try:
-    from PySide6.QtWidgets import QApplication, QComboBox, QTableWidget
+    from PySide6.QtWidgets import QApplication, QCheckBox, QComboBox, QPushButton, QTableWidget
 except ImportError:  # pragma: no cover
     QApplication = None  # type: ignore[assignment]
+    QCheckBox = None  # type: ignore[assignment]
     QComboBox = None  # type: ignore[assignment]
+    QPushButton = None  # type: ignore[assignment]
     QTableWidget = None  # type: ignore[assignment]
 
 
@@ -51,8 +53,18 @@ class AnalyzerPageUiTests(unittest.TestCase):
             page = AnalysePage(service=service)
             batch_selector = page.findChild(QComboBox, "AnalyzerBatchCombo")
             run_table = page.findChild(QTableWidget, "AnalyzerRunTable")
+            stage_selector = page.findChild(QComboBox, "AnalyzerStageCombo")
+            target_selector = page.findChild(QComboBox, "AnalyzerTargetPresetCombo")
+            band_selector = page.findChild(QComboBox, "AnalyzerBandPresetCombo")
+            compute_btn = page.findChild(QPushButton, "AnalyzerComputeKpisButton")
+            exclude_flagged = page.findChild(QCheckBox, "AnalyzerExcludeFlaggedCheck")
             self.assertIsNotNone(batch_selector)
             self.assertIsNotNone(run_table)
+            self.assertIsNotNone(stage_selector)
+            self.assertIsNotNone(target_selector)
+            self.assertIsNotNone(band_selector)
+            self.assertIsNotNone(compute_btn)
+            self.assertIsNotNone(exclude_flagged)
             assert run_table is not None
             self.assertEqual(run_table.selectionMode(), QTableWidget.ExtendedSelection)
 
@@ -89,6 +101,13 @@ class AnalyzerPageUiTests(unittest.TestCase):
                         "freq_count": 401,
                         "angle_count": 19,
                         "norm_angle_deg": 10.0,
+                        "kpi_score": 87.5,
+                        "kpi_b_pc_oct": 2.2,
+                        "kpi_e_bw": 1.4,
+                        "kpi_e_cov": 0.8,
+                        "kpi_r_spill": 0.11,
+                        "kpi_flags_count": 0,
+                        "kpi_flagged": False,
                         "imported_at": "2026-02-21T10:00:00+00:00",
                         "created_at": "2026-02-21T09:45:00+00:00",
                         "source_files": ["result_v001polar.txt"],
@@ -105,8 +124,56 @@ class AnalyzerPageUiTests(unittest.TestCase):
             assert run_id_item is not None and planes_item is not None
             self.assertEqual(run_id_item.text(), "R001")
             self.assertEqual(planes_item.text(), "H/V/D")
+            self.assertEqual(page.run_table.item(0, 6).text(), "87.50")
+            self.assertEqual(page.run_table.item(0, 7).text(), "2.20")
+
+    def test_filter_controls_reduce_rows_by_flag_and_score(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_ui2a_filter_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            payload = {
+                "mode": "runs",
+                "project_id": "P001",
+                "batch_id": "B001",
+                "runs": [
+                    {
+                        "project_id": "P001",
+                        "batch_id": "B001",
+                        "run_id": "R001",
+                        "version_id": "V001",
+                        "planes": ["H", "V"],
+                        "freq_count": 101,
+                        "angle_count": 19,
+                        "norm_angle_deg": 0.0,
+                        "kpi_score": 92.0,
+                        "kpi_flags_count": 0,
+                        "kpi_flagged": False,
+                    },
+                    {
+                        "project_id": "P001",
+                        "batch_id": "B001",
+                        "run_id": "R002",
+                        "version_id": "V002",
+                        "planes": ["H", "V"],
+                        "freq_count": 101,
+                        "angle_count": 19,
+                        "norm_angle_deg": 0.0,
+                        "kpi_score": 55.0,
+                        "kpi_flags_count": 2,
+                        "kpi_flagged": True,
+                    },
+                ],
+            }
+            page._apply_runs_payload(payload)
+            self.assertEqual(page.run_table.rowCount(), 2)
+            page.exclude_flagged_check.setChecked(True)
+            self.assertEqual(page.run_table.rowCount(), 1)
+            page.exclude_flagged_check.setChecked(False)
+            page.min_score_spin.setValue(90.0)
+            self.assertEqual(page.run_table.rowCount(), 1)
+            page.min_score_spin.setValue(95.0)
+            self.assertEqual(page.run_table.rowCount(), 0)
 
 
 if __name__ == "__main__":
     unittest.main()
-

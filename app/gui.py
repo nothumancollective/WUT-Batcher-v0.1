@@ -14,6 +14,16 @@ import threading
 import traceback
 from typing import Any, Callable, Dict, List, Mapping, Optional
 
+from app.analyzer.presets import (
+    ALGO_VERSION,
+    COVERAGE_PRESETS,
+    DEFAULT_BAND_PRESET_ID,
+    DEFAULT_COVERAGE_PRESET_ID,
+    DEFAULT_STAGE_ID,
+    DEFAULT_TOL_DEG,
+    STAGE_PRESETS,
+    resolve_band_limits,
+)
 from app.doctor_service import run_doctor_checks
 from app.constants import DEFAULT_RUNNER_MODE
 import app.resources_rc  # noqa: F401  # Registers Qt resource paths used by icons/QSS.
@@ -153,6 +163,7 @@ try:
         QComboBox,
         QCheckBox,
         QDialog,
+        QDoubleSpinBox,
         QFormLayout,
         QFrame,
         QGraphicsOpacityEffect,
@@ -374,6 +385,13 @@ class _AnalyzerMetadataWorker(QObject):
         project_id: Optional[str],
         batch_id: Optional[str],
         mode: str,
+        stage_mode: str,
+        target_h_deg: float,
+        target_v_deg: float,
+        tol_deg: float,
+        band_low_hz: float,
+        band_high_hz: float,
+        algo_version: str,
     ) -> None:
         super().__init__()
         self._service = service
@@ -382,6 +400,13 @@ class _AnalyzerMetadataWorker(QObject):
         self._project_id = str(project_id or "").strip() or None
         self._batch_id = str(batch_id or "").strip() or None
         self._mode = str(mode or "overview")
+        self._stage_mode = str(stage_mode or DEFAULT_STAGE_ID)
+        self._target_h_deg = float(target_h_deg)
+        self._target_v_deg = float(target_v_deg)
+        self._tol_deg = float(tol_deg)
+        self._band_low_hz = float(band_low_hz)
+        self._band_high_hz = float(band_high_hz)
+        self._algo_version = str(algo_version or ALGO_VERSION)
 
     def run(self) -> None:
         try:
@@ -394,10 +419,17 @@ class _AnalyzerMetadataWorker(QObject):
                         "runs": [],
                     }
                 else:
-                    rows = self._service.analyzer_list_polar_runs(
+                    rows = self._service.analyzer_list_batch_review_runs(
                         source=self._source,
                         project_id=self._project_id,
                         batch_id=self._batch_id,
+                        stage_mode=self._stage_mode,
+                        band_low_hz=self._band_low_hz,
+                        band_high_hz=self._band_high_hz,
+                        target_h_deg=self._target_h_deg,
+                        target_v_deg=self._target_v_deg,
+                        tol_deg=self._tol_deg,
+                        algo_version=self._algo_version,
                     )
                     payload = {
                         "mode": "runs",
@@ -425,10 +457,17 @@ class _AnalyzerMetadataWorker(QObject):
                 if not active_batch_id and batch_ids:
                     active_batch_id = batch_ids[0]
                 if active_batch_id:
-                    runs = self._service.analyzer_list_polar_runs(
+                    runs = self._service.analyzer_list_batch_review_runs(
                         source=self._source,
                         project_id=active_project_id,
                         batch_id=active_batch_id,
+                        stage_mode=self._stage_mode,
+                        band_low_hz=self._band_low_hz,
+                        band_high_hz=self._band_high_hz,
+                        target_h_deg=self._target_h_deg,
+                        target_v_deg=self._target_v_deg,
+                        tol_deg=self._tol_deg,
+                        algo_version=self._algo_version,
                     )
             payload = {
                 "mode": "overview",
@@ -442,6 +481,75 @@ class _AnalyzerMetadataWorker(QObject):
             self.finished.emit(self._request_id, payload)
         except Exception:  # pragma: no cover - integration surface
             self.failed.emit(self._request_id, traceback.format_exc())
+
+
+class _AnalyzerKpiComputeWorker(QObject):
+    finished = Signal(int, dict)
+    failed = Signal(int, str)
+    progress = Signal(int, int, str)
+    canceled = Signal(int, str)
+
+    def __init__(
+        self,
+        *,
+        service: OrchestratorService,
+        request_id: int,
+        project_id: str,
+        batch_id: str,
+        stage_mode: str,
+        target_h_deg: float,
+        target_v_deg: float,
+        tol_deg: float,
+        band_low_hz: float,
+        band_high_hz: float,
+        algo_version: str,
+    ) -> None:
+        super().__init__()
+        self._service = service
+        self._request_id = int(request_id)
+        self._project_id = str(project_id or "").strip()
+        self._batch_id = str(batch_id or "").strip()
+        self._stage_mode = str(stage_mode or DEFAULT_STAGE_ID)
+        self._target_h_deg = float(target_h_deg)
+        self._target_v_deg = float(target_v_deg)
+        self._tol_deg = float(tol_deg)
+        self._band_low_hz = float(band_low_hz)
+        self._band_high_hz = float(band_high_hz)
+        self._algo_version = str(algo_version or ALGO_VERSION)
+        self._cancelled = False
+
+    def cancel(self) -> None:
+        self._cancelled = True
+
+    def _cancel_check(self) -> bool:
+        return bool(self._cancelled)
+
+    def run(self) -> None:
+        try:
+            result = self._service.analyzer_compute_batch_kpis(
+                project_id=self._project_id,
+                batch_id=self._batch_id,
+                target_h_deg=self._target_h_deg,
+                target_v_deg=self._target_v_deg,
+                tol_deg=self._tol_deg,
+                band_low_hz=self._band_low_hz,
+                band_high_hz=self._band_high_hz,
+                stage_mode=self._stage_mode,
+                algo_version=self._algo_version,
+                progress_cb=lambda done, total, message: self.progress.emit(
+                    int(done),
+                    int(total),
+                    str(message or ""),
+                ),
+                cancel_check=self._cancel_check,
+            )
+        except Exception:  # pragma: no cover - integration surface
+            self.failed.emit(self._request_id, traceback.format_exc())
+            return
+        if bool(result.get("canceled")):
+            self.canceled.emit(self._request_id, "KPI compute canceled.")
+            return
+        self.finished.emit(self._request_id, dict(result))
 
 
 def _severity_rank(value: str) -> int:
@@ -2537,14 +2645,48 @@ class RunPage(QWidget):
 
 
 class AnalysePage(QWidget):
+    COL_RUN_ID = 0
+    COL_VERSION = 1
+    COL_PLANES = 2
+    COL_FREQ_COUNT = 3
+    COL_ANGLE_COUNT = 4
+    COL_NORM_ANGLE = 5
+    COL_SCORE = 6
+    COL_B_PC = 7
+    COL_E_BW = 8
+    COL_E_COV = 9
+    COL_R_SPILL = 10
+    COL_FLAGS = 11
+    COL_IMPORTED_AT = 12
+    COL_CREATED_AT = 13
+
     def __init__(self, *, service: OrchestratorService) -> None:
         super().__init__()
         self.service = service
         self._project_context_id: Optional[str] = None
         self._selector_sync_guard = False
+        self._control_sync_guard = False
         self._metadata_request_id = 0
         self._metadata_thread: Optional[QThread] = None
         self._metadata_worker: Optional[_AnalyzerMetadataWorker] = None
+        self._compute_request_id = 0
+        self._compute_thread: Optional[QThread] = None
+        self._compute_worker: Optional[_AnalyzerKpiComputeWorker] = None
+        self._all_run_rows: List[Dict[str, Any]] = []
+
+        presets = self.service.analyzer_presets()
+        self._coverage_presets = [dict(item) for item in list(presets.get("coverage_presets", []) or []) if isinstance(item, dict)]
+        self._band_presets = [dict(item) for item in list(presets.get("band_presets", []) or []) if isinstance(item, dict)]
+        self._stage_presets = {
+            str(key): dict(value) for key, value in dict(presets.get("stages", STAGE_PRESETS) or STAGE_PRESETS).items()
+        }
+        self._default_stage_id = str(presets.get("default_stage_id") or DEFAULT_STAGE_ID).strip().lower() or DEFAULT_STAGE_ID
+        self._default_coverage_preset_id = str(
+            presets.get("default_coverage_preset_id") or DEFAULT_COVERAGE_PRESET_ID
+        ).strip() or DEFAULT_COVERAGE_PRESET_ID
+        self._default_band_preset_id = str(presets.get("default_band_preset_id") or DEFAULT_BAND_PRESET_ID).strip() or DEFAULT_BAND_PRESET_ID
+        self._default_tol_deg = float(presets.get("default_tol_deg") or DEFAULT_TOL_DEG)
+        self._algo_version = str(presets.get("algo_version") or ALGO_VERSION)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(20, 12, 20, 14)
@@ -2573,6 +2715,101 @@ class AnalysePage(QWidget):
         self.refresh_btn.setToolTip("Reload Analyzer metadata.")
         header_layout.addWidget(self.refresh_btn, 0, Qt.AlignRight | Qt.AlignVCenter)
         root.addWidget(self.header_row)
+
+        self.controls_panel = QFrame()
+        self.controls_panel.setObjectName("ProjectSummaryPanel")
+        controls = QGridLayout(self.controls_panel)
+        controls.setContentsMargins(10, 8, 10, 8)
+        controls.setHorizontalSpacing(10)
+        controls.setVerticalSpacing(6)
+
+        controls.addWidget(QLabel("Stage"), 0, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        self.stage_selector = QComboBox()
+        self.stage_selector.setObjectName("AnalyzerStageCombo")
+        for stage_id in ("concept", "shaping", "stabilization"):
+            stage = dict(self._stage_presets.get(stage_id, {}) or {})
+            self.stage_selector.addItem(str(stage.get("label") or stage_id.title()), stage_id)
+        controls.addWidget(self.stage_selector, 0, 1)
+
+        controls.addWidget(QLabel("Target"), 0, 2, Qt.AlignLeft | Qt.AlignVCenter)
+        self.target_selector = QComboBox()
+        self.target_selector.setObjectName("AnalyzerTargetPresetCombo")
+        for preset in self._coverage_presets:
+            preset_id = str(preset.get("id") or "").strip()
+            label = str(preset.get("label") or preset_id)
+            self.target_selector.addItem(label, preset_id)
+        controls.addWidget(self.target_selector, 0, 3)
+
+        controls.addWidget(QLabel("Tol (+/- deg)"), 0, 4, Qt.AlignLeft | Qt.AlignVCenter)
+        self.tol_spin = QDoubleSpinBox()
+        self.tol_spin.setObjectName("AnalyzerToleranceSpin")
+        self.tol_spin.setRange(0.5, 30.0)
+        self.tol_spin.setDecimals(1)
+        self.tol_spin.setValue(float(self._default_tol_deg))
+        controls.addWidget(self.tol_spin, 0, 5)
+
+        controls.addWidget(QLabel("Band"), 1, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        self.band_selector = QComboBox()
+        self.band_selector.setObjectName("AnalyzerBandPresetCombo")
+        for preset in self._band_presets:
+            preset_id = str(preset.get("id") or "").strip()
+            label = str(preset.get("label") or preset_id)
+            self.band_selector.addItem(label, preset_id)
+        controls.addWidget(self.band_selector, 1, 1, 1, 2)
+
+        self.custom_band_widget = QWidget()
+        custom_band_row = QHBoxLayout(self.custom_band_widget)
+        custom_band_row.setContentsMargins(0, 0, 0, 0)
+        custom_band_row.setSpacing(6)
+        self.custom_band_low_spin = QDoubleSpinBox()
+        self.custom_band_low_spin.setObjectName("AnalyzerBandLowSpin")
+        self.custom_band_low_spin.setRange(20.0, 100000.0)
+        self.custom_band_low_spin.setDecimals(0)
+        self.custom_band_low_spin.setValue(200.0)
+        self.custom_band_high_spin = QDoubleSpinBox()
+        self.custom_band_high_spin.setObjectName("AnalyzerBandHighSpin")
+        self.custom_band_high_spin.setRange(20.0, 100000.0)
+        self.custom_band_high_spin.setDecimals(0)
+        self.custom_band_high_spin.setValue(16000.0)
+        custom_band_row.addWidget(QLabel("Low"))
+        custom_band_row.addWidget(self.custom_band_low_spin)
+        custom_band_row.addWidget(QLabel("High"))
+        custom_band_row.addWidget(self.custom_band_high_spin)
+        controls.addWidget(self.custom_band_widget, 1, 3, 1, 3)
+
+        self.exclude_flagged_check = QCheckBox("Exclude flagged")
+        self.exclude_flagged_check.setObjectName("AnalyzerExcludeFlaggedCheck")
+        controls.addWidget(self.exclude_flagged_check, 2, 0, 1, 2)
+        self.exclude_warnings_check = QCheckBox("Exclude warnings")
+        self.exclude_warnings_check.setObjectName("AnalyzerExcludeWarningsCheck")
+        controls.addWidget(self.exclude_warnings_check, 2, 2, 1, 2)
+        controls.addWidget(QLabel("Min score"), 2, 4, Qt.AlignLeft | Qt.AlignVCenter)
+        self.min_score_spin = QDoubleSpinBox()
+        self.min_score_spin.setObjectName("AnalyzerMinScoreSpin")
+        self.min_score_spin.setRange(0.0, 100.0)
+        self.min_score_spin.setDecimals(1)
+        self.min_score_spin.setValue(0.0)
+        controls.addWidget(self.min_score_spin, 2, 5)
+
+        self.compute_btn = QPushButton("Compute KPIs")
+        self.compute_btn.setObjectName("AnalyzerComputeKpisButton")
+        self.compute_btn.setToolTip("Compute or refresh KPI scalars for the selected batch.")
+        controls.addWidget(self.compute_btn, 0, 6, 3, 1)
+        root.addWidget(self.controls_panel)
+
+        self.compute_row = QWidget()
+        compute_row_layout = QHBoxLayout(self.compute_row)
+        compute_row_layout.setContentsMargins(0, 0, 0, 0)
+        compute_row_layout.setSpacing(8)
+        self.compute_progress = QProgressBar()
+        self.compute_progress.setObjectName("AnalyzerComputeProgress")
+        self.compute_progress.setVisible(False)
+        self.compute_cancel_btn = QPushButton("Cancel")
+        self.compute_cancel_btn.setObjectName("BatchSecondaryButton")
+        self.compute_cancel_btn.setVisible(False)
+        compute_row_layout.addWidget(self.compute_progress, 1)
+        compute_row_layout.addWidget(self.compute_cancel_btn, 0)
+        root.addWidget(self.compute_row)
 
         self.loading_label = QLabel("Ready.")
         self.loading_label.setObjectName("SummaryMeta")
@@ -2608,7 +2845,7 @@ class AnalysePage(QWidget):
         selector_layout.addRow("Batch", self.batch_selector)
         left_layout.addWidget(self.selector_panel, 0)
 
-        self.run_table = QTableWidget(0, 10)
+        self.run_table = QTableWidget(0, 14)
         self.run_table.setObjectName("AnalyzerRunTable")
         self.run_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.run_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
@@ -2623,23 +2860,20 @@ class AnalysePage(QWidget):
                 "freq_count",
                 "angle_count",
                 "norm_angle_deg",
+                "Score",
+                "B_PC (oct)",
+                "E_BW (deg)",
+                "E_cov (dB)",
+                "R_spill",
+                "Flags",
                 "imported_at",
                 "created_at",
-                "B_PC (planned)",
-                "E_BW (planned)",
             ]
         )
         header = self.run_table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.Stretch)
-        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(5, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(6, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(7, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(8, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(9, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(self.COL_RUN_ID, QHeaderView.Stretch)
+        for idx in range(1, 14):
+            header.setSectionResizeMode(idx, QHeaderView.ResizeToContents)
         left_layout.addWidget(self.run_table, 1)
 
         right = QWidget()
@@ -2662,6 +2896,12 @@ class AnalysePage(QWidget):
             ("freq_count", "freq_count"),
             ("angle_count", "angle_count"),
             ("norm_angle_deg", "norm_angle_deg"),
+            ("score", "score"),
+            ("b_pc_oct", "B_PC (oct)"),
+            ("e_bw", "E_BW (deg)"),
+            ("e_cov", "E_cov (dB)"),
+            ("r_spill", "R_spill"),
+            ("flags", "flags"),
             ("imported_at", "imported_at"),
             ("created_at", "created_at"),
             ("source_files", "source_files"),
@@ -2700,10 +2940,29 @@ class AnalysePage(QWidget):
         root.addWidget(self.splitter, 1)
 
         self.refresh_btn.clicked.connect(self.refresh_data)
+        self.compute_btn.clicked.connect(self._start_kpi_compute)
+        self.compute_cancel_btn.clicked.connect(self._cancel_kpi_compute)
         self.source_selector.currentIndexChanged.connect(self._on_source_changed)
         self.project_selector.currentIndexChanged.connect(self._on_project_changed)
         self.batch_selector.currentIndexChanged.connect(self._on_batch_changed)
         self.run_table.itemSelectionChanged.connect(self._on_run_selection_changed)
+        self.stage_selector.currentIndexChanged.connect(self._on_stage_changed)
+        self.target_selector.currentIndexChanged.connect(self._on_kpi_config_changed)
+        self.tol_spin.valueChanged.connect(self._on_kpi_config_changed)
+        self.band_selector.currentIndexChanged.connect(self._on_band_preset_changed)
+        self.custom_band_low_spin.valueChanged.connect(self._on_kpi_config_changed)
+        self.custom_band_high_spin.valueChanged.connect(self._on_kpi_config_changed)
+        self.exclude_flagged_check.toggled.connect(self._refresh_run_table)
+        self.exclude_warnings_check.toggled.connect(self._refresh_run_table)
+        self.min_score_spin.valueChanged.connect(self._refresh_run_table)
+        self._control_sync_guard = True
+        self._set_combo_current_by_data(self.stage_selector, self._default_stage_id)
+        self._set_combo_current_by_data(self.target_selector, self._default_coverage_preset_id)
+        self._set_combo_current_by_data(self.band_selector, self._default_band_preset_id)
+        self._control_sync_guard = False
+        self._sync_band_custom_visibility()
+        self._apply_stage_defaults()
+        self.compute_btn.setEnabled(self._source_key() == "project")
         self._set_details(None)
 
     def _build_plot_placeholder(self, text: str) -> QWidget:
@@ -2727,6 +2986,7 @@ class AnalysePage(QWidget):
 
     def shutdown(self) -> None:
         self._stop_metadata_worker()
+        self._stop_compute_worker()
 
     def set_project_context(self, project_id: Optional[str]) -> None:
         token = str(project_id or "").strip() or None
@@ -2751,6 +3011,58 @@ class AnalysePage(QWidget):
         token = str(self.batch_selector.currentData() or "").strip()
         return token or None
 
+    def _selected_stage_id(self) -> str:
+        token = str(self.stage_selector.currentData() or self._default_stage_id).strip().lower()
+        return token if token in self._stage_presets else self._default_stage_id
+
+    def _selected_target(self) -> Dict[str, Any]:
+        preset_id = str(self.target_selector.currentData() or self._default_coverage_preset_id).strip()
+        for preset in self._coverage_presets:
+            if str(preset.get("id") or "").strip() == preset_id:
+                return dict(preset)
+        return {"id": self._default_coverage_preset_id, "h_deg": 90.0, "v_deg": 40.0}
+
+    def _freq_bounds_hint(self) -> tuple[float, float]:
+        lows: List[float] = []
+        highs: List[float] = []
+        for row in self._all_run_rows:
+            try:
+                low = float(row.get("freq_min_hz"))
+                high = float(row.get("freq_max_hz"))
+            except Exception:
+                continue
+            if low > 0.0:
+                lows.append(low)
+            if high > 0.0:
+                highs.append(high)
+        if lows and highs:
+            return (min(lows), max(highs))
+        return (200.0, 16000.0)
+
+    def _resolved_band_limits(self) -> tuple[float, float]:
+        preset_id = str(self.band_selector.currentData() or self._default_band_preset_id).strip()
+        freq_min_hz, freq_max_hz = self._freq_bounds_hint()
+        return resolve_band_limits(
+            preset_id=preset_id,
+            freq_min_hz=freq_min_hz,
+            freq_max_hz=freq_max_hz,
+            custom_low_hz=float(self.custom_band_low_spin.value()),
+            custom_high_hz=float(self.custom_band_high_spin.value()),
+        )
+
+    def _active_kpi_config(self) -> Dict[str, Any]:
+        target = self._selected_target()
+        band_low_hz, band_high_hz = self._resolved_band_limits()
+        return {
+            "stage_mode": self._selected_stage_id(),
+            "target_h_deg": float(target.get("h_deg") or 90.0),
+            "target_v_deg": float(target.get("v_deg") or 40.0),
+            "tol_deg": float(self.tol_spin.value()),
+            "band_low_hz": float(band_low_hz),
+            "band_high_hz": float(band_high_hz),
+            "algo_version": self._algo_version,
+        }
+
     def _set_loading(self, loading: bool, text: Optional[str] = None) -> None:
         if loading:
             self.loading_label.setText(str(text or "Loading metadata..."))
@@ -2762,6 +3074,18 @@ class AnalysePage(QWidget):
         self.error_label.setVisible(bool(text))
         self.error_label.setText(text)
 
+    def _set_compute_busy(self, busy: bool, text: str = "") -> None:
+        self.compute_btn.setEnabled(not busy)
+        self.compute_progress.setVisible(bool(busy))
+        self.compute_cancel_btn.setVisible(bool(busy))
+        if busy:
+            self.compute_progress.setRange(0, 0)
+            self.compute_progress.setFormat(str(text or "Computing KPIs..."))
+        else:
+            self.compute_progress.setRange(0, 100)
+            self.compute_progress.setValue(0)
+            self.compute_progress.setFormat("%p%")
+
     def _clear_metadata_worker_refs(self, thread: Optional[QThread] = None) -> None:
         if thread is None:
             self._metadata_worker = None
@@ -2771,12 +3095,32 @@ class AnalysePage(QWidget):
             self._metadata_worker = None
             self._metadata_thread = None
 
+    def _clear_compute_worker_refs(self, thread: Optional[QThread] = None) -> None:
+        if thread is None:
+            self._compute_worker = None
+            self._compute_thread = None
+            return
+        if self._compute_thread is thread:
+            self._compute_worker = None
+            self._compute_thread = None
+
     def _stop_metadata_worker(self) -> None:
         thread = self._metadata_thread
         if thread is not None and thread.isRunning():
             thread.quit()
             thread.wait(1500)
         self._clear_metadata_worker_refs()
+
+    def _stop_compute_worker(self) -> None:
+        worker = self._compute_worker
+        if worker is not None:
+            worker.cancel()
+        thread = self._compute_thread
+        if thread is not None and thread.isRunning():
+            thread.quit()
+            thread.wait(1500)
+        self._clear_compute_worker_refs()
+        self._set_compute_busy(False)
 
     def _request_metadata(
         self,
@@ -2791,6 +3135,7 @@ class AnalysePage(QWidget):
         self._stop_metadata_worker()
         self._metadata_request_id += 1
         request_id = int(self._metadata_request_id)
+        config = self._active_kpi_config()
         worker = _AnalyzerMetadataWorker(
             service=self.service,
             request_id=request_id,
@@ -2798,6 +3143,13 @@ class AnalysePage(QWidget):
             project_id=project_token,
             batch_id=batch_token,
             mode=mode,
+            stage_mode=str(config["stage_mode"]),
+            target_h_deg=float(config["target_h_deg"]),
+            target_v_deg=float(config["target_v_deg"]),
+            tol_deg=float(config["tol_deg"]),
+            band_low_hz=float(config["band_low_hz"]),
+            band_high_hz=float(config["band_high_hz"]),
+            algo_version=str(config["algo_version"]),
         )
         thread = QThread(self)
         worker.moveToThread(thread)
@@ -2814,6 +3166,92 @@ class AnalysePage(QWidget):
         self._set_loading(True, "Loading metadata...")
         self._set_error("")
         thread.start()
+
+    def _start_kpi_compute(self) -> None:
+        project_id = self._selected_project_id()
+        batch_id = self._selected_batch_id()
+        if not project_id or not batch_id:
+            self._set_error("Select a project and batch before computing KPIs.")
+            return
+        if self._source_key() != "project":
+            self._set_error("KPI compute is available only for Project data source.")
+            return
+        self._stop_compute_worker()
+        self._compute_request_id += 1
+        request_id = int(self._compute_request_id)
+        config = self._active_kpi_config()
+        worker = _AnalyzerKpiComputeWorker(
+            service=self.service,
+            request_id=request_id,
+            project_id=project_id,
+            batch_id=batch_id,
+            stage_mode=str(config["stage_mode"]),
+            target_h_deg=float(config["target_h_deg"]),
+            target_v_deg=float(config["target_v_deg"]),
+            tol_deg=float(config["tol_deg"]),
+            band_low_hz=float(config["band_low_hz"]),
+            band_high_hz=float(config["band_high_hz"]),
+            algo_version=str(config["algo_version"]),
+        )
+        thread = QThread(self)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.progress.connect(self._on_compute_progress)
+        worker.finished.connect(self._on_compute_finished)
+        worker.failed.connect(self._on_compute_failed)
+        worker.canceled.connect(self._on_compute_canceled)
+        worker.finished.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        worker.canceled.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(lambda: self._clear_compute_worker_refs(thread))
+        self._compute_worker = worker
+        self._compute_thread = thread
+        self._set_compute_busy(True, "Computing KPIs...")
+        self._set_error("")
+        self._set_loading(True, "Computing KPIs in background...")
+        thread.start()
+
+    def _cancel_kpi_compute(self) -> None:
+        worker = self._compute_worker
+        if worker is not None:
+            worker.cancel()
+        self._set_loading(True, "Canceling KPI compute...")
+
+    def _on_compute_progress(self, done: int, total: int, message: str) -> None:
+        done_value = max(int(done), 0)
+        total_value = max(int(total), 0)
+        if total_value <= 0:
+            self.compute_progress.setRange(0, 0)
+            self.compute_progress.setFormat(str(message or "Computing KPIs..."))
+            return
+        self.compute_progress.setRange(0, total_value)
+        self.compute_progress.setValue(min(done_value, total_value))
+        self.compute_progress.setFormat(f"{min(done_value, total_value)}/{total_value} {str(message or '').strip()}")
+
+    def _on_compute_finished(self, request_id: int, payload: Dict[str, Any]) -> None:
+        if int(request_id) != int(self._compute_request_id):
+            return
+        self._set_compute_busy(False)
+        computed = int(payload.get("computed") or 0)
+        skipped = int(payload.get("skipped_cached") or 0)
+        failed = int(payload.get("failed") or 0)
+        self._set_loading(False, f"KPI compute done (computed={computed}, skipped={skipped}, failed={failed}).")
+        self._request_runs_for_selected_batch()
+
+    def _on_compute_failed(self, request_id: int, message: str) -> None:
+        if int(request_id) != int(self._compute_request_id):
+            return
+        self._set_compute_busy(False)
+        self._set_loading(False, "KPI compute failed.")
+        self._set_error(str(message or "Analyzer KPI compute failed."))
+
+    def _on_compute_canceled(self, request_id: int, message: str) -> None:
+        if int(request_id) != int(self._compute_request_id):
+            return
+        self._set_compute_busy(False)
+        self._set_loading(False, str(message or "KPI compute canceled."))
 
     def _on_metadata_ready(self, request_id: int, payload: Dict[str, Any]) -> None:
         if int(request_id) != int(self._metadata_request_id):
@@ -2890,7 +3328,7 @@ class AnalysePage(QWidget):
                 combo.setCurrentIndex(0)
             return
         for index in range(combo.count()):
-            if str(combo.itemData(index) or "").strip() == token:
+            if str(combo.itemData(index) or "").strip().lower() == token.lower():
                 combo.setCurrentIndex(index)
                 return
         if combo.count() > 0:
@@ -2905,11 +3343,87 @@ class AnalysePage(QWidget):
         except Exception:
             return str(value)
 
+    @staticmethod
+    def _format_float(value: Any, digits: int = 2) -> str:
+        if value is None:
+            return "--"
+        try:
+            return f"{float(value):.{digits}f}"
+        except Exception:
+            return str(value)
+
+    @staticmethod
+    def _row_has_warning(row: Dict[str, Any]) -> bool:
+        status = str(row.get("run_status") or "").strip().lower()
+        if not status:
+            return False
+        return any(token in status for token in ("warn", "fail", "error"))
+
+    def _sync_band_custom_visibility(self) -> None:
+        self.custom_band_widget.setVisible(str(self.band_selector.currentData() or "") == "custom")
+
+    def _apply_stage_defaults(self) -> None:
+        stage = dict(self._stage_presets.get(self._selected_stage_id(), {}) or {})
+        filters = dict(stage.get("filters", {}) or {})
+        self._control_sync_guard = True
+        try:
+            self.exclude_flagged_check.setChecked(bool(filters.get("exclude_flagged", False)))
+            self.exclude_warnings_check.setChecked(bool(filters.get("exclude_warnings", False)))
+            self.min_score_spin.setValue(float(filters.get("min_score", 0.0) or 0.0))
+        finally:
+            self._control_sync_guard = False
+        self._apply_stage_column_visibility()
+
+    def _apply_stage_column_visibility(self) -> None:
+        stage = dict(self._stage_presets.get(self._selected_stage_id(), {}) or {})
+        visible = {str(item) for item in list(stage.get("visible_columns", []) or [])}
+        metric_columns = {
+            "score": self.COL_SCORE,
+            "b_pc_oct": self.COL_B_PC,
+            "e_bw": self.COL_E_BW,
+            "e_cov": self.COL_E_COV,
+            "r_spill": self.COL_R_SPILL,
+            "flags_count": self.COL_FLAGS,
+        }
+        for key, col_idx in metric_columns.items():
+            self.run_table.setColumnHidden(col_idx, key not in visible)
+
+    def _update_compute_button_text(self, rows: Optional[List[Dict[str, Any]]] = None) -> None:
+        source_rows = rows if rows is not None else self._all_run_rows
+        has_kpi = any(row.get("kpi_score") is not None for row in source_rows)
+        self.compute_btn.setText("Refresh KPIs" if has_kpi else "Compute KPIs")
+
+    def _filtered_rows(self) -> List[Dict[str, Any]]:
+        rows = list(self._all_run_rows)
+        exclude_flagged = bool(self.exclude_flagged_check.isChecked())
+        exclude_warnings = bool(self.exclude_warnings_check.isChecked())
+        min_score = float(self.min_score_spin.value())
+        filtered: List[Dict[str, Any]] = []
+        for row in rows:
+            if exclude_flagged and bool(row.get("kpi_flagged")):
+                continue
+            if exclude_warnings and self._row_has_warning(row):
+                continue
+            score = row.get("kpi_score")
+            if min_score > 0.0 and (score is None or float(score) < min_score):
+                continue
+            filtered.append(row)
+        return filtered
+
+    def _refresh_run_table(self, *_args: Any) -> None:
+        self._set_run_table_rows(self._filtered_rows())
+
     def _set_run_table_rows(self, rows: List[Dict[str, Any]]) -> None:
         self.run_table.setSortingEnabled(False)
         self.run_table.setRowCount(len(rows))
         for row_index, row in enumerate(rows):
             planes = "/".join(str(item) for item in list(row.get("planes", []) or []))
+            flags_count = int(row.get("kpi_flags_count") or 0)
+            flags_text = "--"
+            if row.get("kpi_score") is not None:
+                flags_text = str(flags_count)
+                if bool(row.get("kpi_insufficient_coverage")):
+                    flags_text = f"{flags_count} (insufficient)"
             values = [
                 str(row.get("run_id") or row.get("run_label") or "--"),
                 str(row.get("version_id") or "--"),
@@ -2917,14 +3431,18 @@ class AnalysePage(QWidget):
                 str(row.get("freq_count") if row.get("freq_count") is not None else "--"),
                 str(row.get("angle_count") if row.get("angle_count") is not None else "--"),
                 self._format_angle(row.get("norm_angle_deg")),
+                self._format_float(row.get("kpi_score"), 2),
+                self._format_float(row.get("kpi_b_pc_oct"), 2),
+                self._format_float(row.get("kpi_e_bw"), 2),
+                self._format_float(row.get("kpi_e_cov"), 2),
+                self._format_float(row.get("kpi_r_spill"), 3),
+                flags_text,
                 str(row.get("imported_at") or "--"),
                 str(row.get("created_at") or "--"),
-                "--",
-                "--",
             ]
             for col_index, value in enumerate(values):
                 item = QTableWidgetItem(value)
-                if col_index == 0:
+                if col_index == self.COL_RUN_ID:
                     item.setData(Qt.UserRole, dict(row))
                 self.run_table.setItem(row_index, col_index, item)
         self.run_table.setSortingEnabled(True)
@@ -2933,18 +3451,24 @@ class AnalysePage(QWidget):
             self._set_details(dict(rows[0]))
         else:
             self._set_details(None)
+        self._update_compute_button_text(rows)
 
     def _apply_runs_payload(self, payload: Dict[str, Any]) -> None:
         rows = [dict(item) for item in list(payload.get("runs", []) or []) if isinstance(item, dict)]
-        self._set_run_table_rows(rows)
+        self._all_run_rows = rows
+        self._refresh_run_table()
 
     def _on_source_changed(self, _index: int = 0) -> None:
         if self._selector_sync_guard:
             return
         if self._source_key() == "project":
             self.project_selector.setEnabled(not bool(self._project_context_id))
+            if self._compute_thread is None or not self._compute_thread.isRunning():
+                self.compute_btn.setEnabled(True)
         else:
             self.project_selector.setEnabled(True)
+            if self._compute_thread is None or not self._compute_thread.isRunning():
+                self.compute_btn.setEnabled(False)
         self.refresh_data()
 
     def _on_project_changed(self, _index: int = 0) -> None:
@@ -2964,13 +3488,32 @@ class AnalysePage(QWidget):
             return
         self._request_runs_for_selected_batch()
 
+    def _on_stage_changed(self, _index: int = 0) -> None:
+        if self._control_sync_guard:
+            return
+        self._apply_stage_defaults()
+        if not self._selected_project_id() or not self._selected_batch_id():
+            return
+        self._request_runs_for_selected_batch()
+
+    def _on_kpi_config_changed(self, _value: Any = None) -> None:
+        if self._control_sync_guard:
+            return
+        if not self._selected_project_id() or not self._selected_batch_id():
+            return
+        self._request_runs_for_selected_batch()
+
+    def _on_band_preset_changed(self, _index: int = 0) -> None:
+        self._sync_band_custom_visibility()
+        self._on_kpi_config_changed()
+
     def _on_run_selection_changed(self) -> None:
         selected_indexes = list(self.run_table.selectionModel().selectedRows()) if self.run_table.selectionModel() else []
         if not selected_indexes:
             self._set_details(None)
             return
         row_index = int(selected_indexes[0].row())
-        item = self.run_table.item(row_index, 0)
+        item = self.run_table.item(row_index, self.COL_RUN_ID)
         payload = dict(item.data(Qt.UserRole) or {}) if item is not None else {}
         self._set_details(payload if payload else None)
 
@@ -2979,6 +3522,13 @@ class AnalysePage(QWidget):
         planes = "/".join(str(item) for item in list(data.get("planes", []) or []))
         source_files = "\n".join(str(item) for item in list(data.get("source_files", []) or []))
         file_hashes = "\n".join(str(item) for item in list(data.get("file_hashes", []) or []))
+        flags_count = int(data.get("kpi_flags_count") or 0) if data.get("kpi_score") is not None else None
+        if flags_count is None:
+            flags_text = "--"
+        elif bool(data.get("kpi_insufficient_coverage")):
+            flags_text = f"{flags_count} (insufficient)"
+        else:
+            flags_text = str(flags_count)
         mapping = {
             "run_id": str(data.get("run_id") or data.get("run_label") or "--"),
             "version_id": str(data.get("version_id") or "--"),
@@ -2988,6 +3538,12 @@ class AnalysePage(QWidget):
             "freq_count": str(data.get("freq_count") if data.get("freq_count") is not None else "--"),
             "angle_count": str(data.get("angle_count") if data.get("angle_count") is not None else "--"),
             "norm_angle_deg": self._format_angle(data.get("norm_angle_deg")),
+            "score": self._format_float(data.get("kpi_score"), 2),
+            "b_pc_oct": self._format_float(data.get("kpi_b_pc_oct"), 2),
+            "e_bw": self._format_float(data.get("kpi_e_bw"), 2),
+            "e_cov": self._format_float(data.get("kpi_e_cov"), 2),
+            "r_spill": self._format_float(data.get("kpi_r_spill"), 3),
+            "flags": flags_text,
             "imported_at": str(data.get("imported_at") or "--"),
             "created_at": str(data.get("created_at") or "--"),
             "source_files": source_files or "--",
