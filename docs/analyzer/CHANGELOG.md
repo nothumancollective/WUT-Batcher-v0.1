@@ -254,3 +254,16 @@
   - `Details...` dialog open path
   - Explorer/Compare tab switching stability
 - Existing Analyzer compare and project/batch navigation regression suites remain green after the layout overhaul.
+
+## 2026-02-22 (Analyzer pro-layout refactor + settings relocation)
+- Analyzer page IA restructured for readability and scaling:
+  - compact project-local toolbar (`Batch`, `Version`, refresh/compute, context chips, details dialog)
+  - two control tiles (`Analysis` + `Display`) replacing overcrowded mixed rows
+  - explicit segmented mode navigation (`Explorer` / `Compare`) with hidden tab bar clutter.
+- UI terminology now prioritizes `Batch/Version` identity in list/shortlist surfaces; internal `run_id` is kept in details/raw views.
+- Compare UI redesigned to fixed `C1..C5` shortlist slots with persistent candidate colors and compact overlay/heatmap + KPI compare surfaces.
+- Plot readability improved:
+  - heatmap smoothing default with raw-bin toggle
+  - log/linear x-axis mode selector
+  - visible frequency ticks/grid labels for Explorer and Compare beamwidth plots.
+- Gear Settings now includes an `Analyzer` tab with `Data source` selection (`Project`/`Global`); per-page source dropdown removed from Analyzer toolbar.

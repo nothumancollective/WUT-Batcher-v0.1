@@ -331,3 +331,39 @@ The Analyzer page is planned with two explicit subviews:
   - compact summary tab
   - files/hashes tab with copy actions
   - raw JSON tab for trace/debug workflows.
+
+## Implementation status (Analyzer IA refresh: project-local pro layout)
+
+- Analyzer top bar was reduced to project-local workflow essentials:
+  - removed per-page `Project` selector
+  - removed per-page `Source` selector
+  - `Batch` + `Version` selection, `Refresh`, `Compute/Refresh KPIs`, compact context chips, `Details...`
+- `Source` control moved into Gear Settings under a dedicated `Analyzer` tab:
+  - `Data source` (`Project`/`Global`) now lives in settings, not Analyzer page chrome.
+- Analyzer control layer now uses two compact tiles (row under top toolbar):
+  - `Analysis` tile: stage, target, band, custom band range, tolerance, shortlist filters
+  - `Display` tile: axis mode, normalization mode selector, clamp controls, raw-bin toggle, display-advanced entry
+- Explorer/Compare navigation is now explicit segmented mode switching:
+  - dedicated `Explorer` and `Compare` buttons
+  - tab bar hidden to reduce visual clutter and accidental truncation.
+
+### Explorer workspace
+
+- Explorer keeps a plot-first splitter with scalable plot tiles.
+- Each tile has:
+  - meaningful title
+  - graph-type selector scaffold (`Heatmap`, `Beamwidth`, future `SPL`)
+  - focus/unfocus action
+  - contextual `?` help tooltip.
+- Plot readability defaults:
+  - log-frequency x-axis default
+  - visible tick/grid cues
+  - compact axis labels.
+
+### Compare workspace
+
+- Compare now follows a shortlist + plots architecture:
+  - left: fixed `C1..C5` shortlist slots with stable color markers, score/flags, remove controls
+  - right: overlay + heatmap plot tiles, compact KPI compare table, candidate selector for heatmap
+- Candidate identity is UI-facing `Batch/Version` by default.
+- Internal `run_id` remains available in details dialog/raw payloads only.

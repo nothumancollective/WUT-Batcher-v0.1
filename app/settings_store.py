@@ -16,6 +16,11 @@ def _default_settings_path() -> Path:
     return Path.home() / ".wut_batcher" / "config.json"
 
 
+SIMULATION_TIMEOUT_MINUTES_DEFAULT = 10
+SIMULATION_TIMEOUT_MINUTES_MIN = 1
+SIMULATION_TIMEOUT_MINUTES_MAX = 240
+
+
 def _as_bool(value: object, *, default: bool) -> bool:
     if isinstance(value, bool):
         return value
@@ -44,6 +49,8 @@ class UserSettings:
     vacs_exe: Optional[str] = None
     template_cfg: Optional[str] = None
     background_automation_mode: bool = True
+    simulation_timeout_minutes: int = SIMULATION_TIMEOUT_MINUTES_DEFAULT
+    analyzer_data_source: str = "project"
     analyzer_cache_mode: str = "balanced"
     analyzer_cache_limit_mb: int = 240
     analyzer_cache_keep_last_n: int = 5
@@ -56,6 +63,8 @@ class UserSettings:
             "vacs_exe": self.vacs_exe,
             "template_cfg": self.template_cfg,
             "background_automation_mode": bool(self.background_automation_mode),
+            "simulation_timeout_minutes": int(self.simulation_timeout_minutes),
+            "analyzer_data_source": str(self.analyzer_data_source or "project"),
             "analyzer_cache_mode": str(self.analyzer_cache_mode or "balanced"),
             "analyzer_cache_limit_mb": int(self.analyzer_cache_limit_mb),
             "analyzer_cache_keep_last_n": int(self.analyzer_cache_keep_last_n),
@@ -66,8 +75,18 @@ class UserSettings:
         mode = str(payload.get("analyzer_cache_mode", "balanced") or "balanced").strip().lower()
         if mode not in {"low", "balanced", "high", "extreme", "custom"}:
             mode = "balanced"
+        source = str(payload.get("analyzer_data_source", "project") or "project").strip().lower()
+        if source not in {"project", "global"}:
+            source = "project"
         limit_mb = max(min(_as_int(payload.get("analyzer_cache_limit_mb"), default=240), 10 * 1024), 0)
         keep_last_n = max(min(_as_int(payload.get("analyzer_cache_keep_last_n"), default=5), 200), 1)
+        simulation_timeout_minutes = max(
+            min(
+                _as_int(payload.get("simulation_timeout_minutes"), default=SIMULATION_TIMEOUT_MINUTES_DEFAULT),
+                SIMULATION_TIMEOUT_MINUTES_MAX,
+            ),
+            SIMULATION_TIMEOUT_MINUTES_MIN,
+        )
         return cls(
             library_root=str(payload.get("library_root", _default_library_root())),
             ath_exe=str(payload["ath_exe"]) if payload.get("ath_exe") else None,
@@ -75,6 +94,8 @@ class UserSettings:
             vacs_exe=str(payload["vacs_exe"]) if payload.get("vacs_exe") else None,
             template_cfg=str(payload["template_cfg"]) if payload.get("template_cfg") else None,
             background_automation_mode=_as_bool(payload.get("background_automation_mode"), default=True),
+            simulation_timeout_minutes=simulation_timeout_minutes,
+            analyzer_data_source=source,
             analyzer_cache_mode=mode,
             analyzer_cache_limit_mb=limit_mb,
             analyzer_cache_keep_last_n=keep_last_n,
@@ -118,11 +139,22 @@ class SettingsStore:
 
         if str(settings.analyzer_cache_mode or "").strip().lower() not in {"low", "balanced", "high", "extreme", "custom"}:
             issues["analyzer_cache_mode"] = "Invalid analyzer cache mode."
+        if str(settings.analyzer_data_source or "").strip().lower() not in {"project", "global"}:
+            issues["analyzer_data_source"] = "Analyzer data source must be project or global."
         if int(settings.analyzer_cache_limit_mb) < 0:
             issues["analyzer_cache_limit_mb"] = "Analyzer cache limit must be >= 0 MB."
         if int(settings.analyzer_cache_limit_mb) > 10 * 1024:
             issues["analyzer_cache_limit_mb"] = "Analyzer cache limit must be <= 10240 MB (10 GB)."
         if int(settings.analyzer_cache_keep_last_n) < 1:
             issues["analyzer_cache_keep_last_n"] = "Analyzer cache keep-last must be >= 1."
+        timeout_minutes = int(settings.simulation_timeout_minutes)
+        if timeout_minutes < SIMULATION_TIMEOUT_MINUTES_MIN:
+            issues["simulation_timeout_minutes"] = (
+                f"Simulation timeout must be >= {SIMULATION_TIMEOUT_MINUTES_MIN} minute."
+            )
+        if timeout_minutes > SIMULATION_TIMEOUT_MINUTES_MAX:
+            issues["simulation_timeout_minutes"] = (
+                f"Simulation timeout must be <= {SIMULATION_TIMEOUT_MINUTES_MAX} minutes."
+            )
 
         return issues
