@@ -2960,3 +2960,24 @@ Validation executed:
 
 
 
+
+## 2026-02-22
+### Update 77 (Analyzer UI Bar/Grid Refresh + Heatmap Mirror Toggle)
+#### Done
+- Analyzer control bar restructured into 3 equal-width blocks (`Analysis`, `KPIs`, `Display`) with reduced vertical height and compact spacing.
+- `Analysis` block now uses a fixed 4-row arrangement (`Stage`, `Target`+`Min score`, exclude toggles).
+- Added placeholder `KPIs` block with subtle visual emphasis for the next iteration.
+- `Display` block simplified to 4 compact frames:
+  - frame 1: `Band` + plane selectors (`H/V/D`)
+  - frames 2-4: reserved/empty.
+- Moved prior Display controls into `Display -> Advanced...` (tolerance, custom band low/high, x-axis, normalization, clamp, raw bins, smoothness toggle).
+- Added new Advanced option `Show mirrored -6 dB contour` (default off).
+- Removed visible `Version list updated` status row from page layout.
+- Analyzer plot panel compact pass:
+  - smaller plot panel titles
+  - reduced Explorer/Compare tile spacing and tile inner padding
+  - y-axis tick-label overlap guard for metric plots.
+
+#### Validation
+- `PYTHONPATH=. python -m pytest tests/test_gui_analyzer_page_ui.py tests/test_gui_analyzer_compare_ui.py -q`
+- Result: `24 passed`
