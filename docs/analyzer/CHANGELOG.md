@@ -330,3 +330,13 @@
   - D: Pareto scatter with axis selectors.
 - Stage selector now drives plot-tile mapping and compare defaults; Stage-3 missing artifacts are shown as explicit “missing data” messages in the relevant tiles.
 - Added Display Advanced toggle for `use_full_angles_for_smoothness` (feeds stage-compute request config without touching runner/import flows).
+
+## 2026-02-22 (Analyzer stage-plot tests: compute + UI)
+- Added `tests/test_analyzer_stage_plot_engine.py` covering:
+  - Stage-1 curve/overlay generation
+  - stabilization curves (`di_proxy`, `s_theta`, `e_sym_shape`)
+  - plane-consistency behavior.
+- Updated analyzer GUI tests for stage payload wiring:
+  - background plot worker tests now mock `analyzer_load_stage_plot_payload(...)`
+  - stage-switch title mapping checks for Explorer 2x2
+  - compare heatmap selector render path with stage overlay payload.
