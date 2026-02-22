@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from app.gui import AnalysePage, HeatmapCanvas, MainWindow
+from app.gui import AnalysePage, HeatmapCanvas, MainWindow, apply_analyzer_plot_margins
 from app.services import OrchestratorService
 from app.settings_store import SettingsStore, UserSettings
 
@@ -80,6 +80,32 @@ class AnalyzerPageUiTests(unittest.TestCase):
             self.assertEqual(run_table.selectionMode(), QTableWidget.ExtendedSelection)
             assert exclude_flagged is not None
             self.assertTrue(exclude_flagged.isCheckable())
+
+    def test_stage_plot_canvases_apply_shared_plot_style_and_axis_labels(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_ui2x_plot_style_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            heatmap_canvas = page._explorer_stage_panels["A"]["heatmap_canvas"]
+            curve_canvas = page._explorer_stage_panels["B"]["curve_canvas"]
+            self.assertTrue(str(heatmap_canvas._x_label).strip())
+            self.assertTrue(str(heatmap_canvas._y_label).strip())
+            curve_canvas.set_series(
+                series=[
+                    {
+                        "label": "",
+                        "show_legend": False,
+                        "points": [{"freq_hz": 1000.0, "value": 1.0}, {"freq_hz": 2000.0, "value": 1.5}],
+                    }
+                ],
+                x_scale_mode="log",
+                x_label="Frequency (Hz, log)",
+                y_label="Beamwidth error (deg)",
+            )
+            self.app.processEvents()
+            self.assertTrue(str(curve_canvas._x_label).strip())
+            self.assertTrue(str(curve_canvas._y_label).strip())
+            self.assertEqual(tuple(heatmap_canvas._applied_plot_margins), apply_analyzer_plot_margins(has_legend=False))
+            self.assertEqual(tuple(curve_canvas._applied_plot_margins), apply_analyzer_plot_margins(has_legend=False))
 
     def test_selecting_batch_requests_background_run_load(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_ui1c_batch_change_") as tmp:

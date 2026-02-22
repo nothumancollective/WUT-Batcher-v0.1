@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 import math
 import json
@@ -296,12 +296,41 @@ def _format_freq_label(freq_hz: float) -> str:
 _ANALYZER_LOG_MAJOR_TICKS: Tuple[float, ...] = (200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 16000.0)
 
 
+@dataclass(frozen=True)
+class AnalyzerPlotStyle:
+    left_margin_px: int = 90
+    right_margin_no_legend_px: int = 24
+    right_margin_with_legend_px: int = 136
+    top_margin_px: int = 18
+    bottom_margin_px: int = 64
+    x_tick_label_y_offset_px: int = 20
+    x_tick_label_height_px: int = 16
+    x_axis_label_height_px: int = 18
+    x_axis_label_bottom_pad_px: int = 6
+    y_tick_label_height_px: int = 16
+    y_tick_label_right_pad_px: int = 12
+    y_axis_label_band_left_px: int = 6
+    y_axis_label_band_width_px: int = 20
+    grid_major_color: str = "#2F3A4D"
+    grid_minor_color: str = "#232A35"
+    grid_y_color: str = "#2A3344"
+
+
+ANALYZER_PLOT_STYLE = AnalyzerPlotStyle()
+
+
+def apply_analyzer_plot_margins(*, has_legend: bool = False) -> Tuple[int, int, int, int]:
+    style = ANALYZER_PLOT_STYLE
+    return (
+        int(style.left_margin_px),
+        int(style.right_margin_with_legend_px if has_legend else style.right_margin_no_legend_px),
+        int(style.top_margin_px),
+        int(style.bottom_margin_px),
+    )
+
+
 def _plot_margins(*, has_legend: bool = False) -> Tuple[int, int, int, int]:
-    left = 64
-    right = 136 if has_legend else 22
-    top = 18
-    bottom = 54
-    return left, right, top, bottom
+    return apply_analyzer_plot_margins(has_legend=has_legend)
 
 
 def _log_tick_sets(freq_min: float, freq_max: float) -> Tuple[List[float], List[float]]:
@@ -317,10 +346,6 @@ def _log_tick_sets(freq_min: float, freq_max: float) -> Tuple[List[float], List[
                 tick = base * multiplier
                 if lo <= tick <= hi:
                     major.append(float(tick))
-    if lo not in major:
-        major.append(lo)
-    if hi not in major:
-        major.append(hi)
     major = sorted(set(round(float(item), 6) for item in major))
 
     decade_min = int(math.floor(math.log10(lo)))
@@ -334,6 +359,44 @@ def _log_tick_sets(freq_min: float, freq_max: float) -> Tuple[List[float], List[
                 minor.append(float(tick))
     minor = sorted(set(round(value, 6) for value in minor if round(value, 6) not in set(major)))
     return major, minor
+
+
+def _draw_analyzer_x_axis_label(
+    painter: QPainter,
+    *,
+    text: str,
+    margin_left: int,
+    plot_w: int,
+    canvas_height: int,
+) -> None:
+    style = ANALYZER_PLOT_STYLE
+    label_h = int(style.x_axis_label_height_px)
+    label_y = max(
+        0,
+        int(canvas_height - style.x_axis_label_bottom_pad_px - label_h),
+    )
+    painter.drawText(margin_left, label_y, plot_w, label_h, Qt.AlignHCenter | Qt.AlignVCenter, str(text or ""))
+
+
+def _draw_analyzer_y_axis_label(
+    painter: QPainter,
+    *,
+    text: str,
+    margin_top: int,
+    plot_h: int,
+) -> None:
+    style = ANALYZER_PLOT_STYLE
+    if plot_h <= 0:
+        return
+    band_left = int(style.y_axis_label_band_left_px)
+    band_width = int(max(style.y_axis_label_band_width_px, 12))
+    center_x = float(band_left + (band_width / 2.0))
+    center_y = float(margin_top + (plot_h / 2.0))
+    painter.save()
+    painter.translate(center_x, center_y)
+    painter.rotate(-90.0)
+    painter.drawText(int(-(plot_h / 2.0)), int(-(band_width / 2.0)), int(plot_h), int(band_width), Qt.AlignCenter, str(text or ""))
+    painter.restore()
 
 
 def _linear_ticks(minimum: float, maximum: float, *, max_count: int = 6) -> List[float]:
@@ -468,6 +531,9 @@ class HeatmapCanvas(QLabel):
         self._ref_angle_deg: Optional[float] = None
         self._minus6_contour: List[Dict[str, float]] = []
         self._target_half_window_deg: Optional[float] = None
+        self._x_label = "Frequency (Hz, log)"
+        self._y_label = "Angle (deg)"
+        self._applied_plot_margins: Tuple[int, int, int, int] = apply_analyzer_plot_margins(has_legend=False)
         self._lut = get_vacs_like_lut(256)
 
     def set_heatmap_data(
@@ -540,7 +606,8 @@ class HeatmapCanvas(QLabel):
             self.setPixmap(QPixmap.fromImage(image))
             return
 
-        margin_left, margin_right, margin_top, margin_bottom = _plot_margins(has_legend=False)
+        margin_left, margin_right, margin_top, margin_bottom = apply_analyzer_plot_margins(has_legend=False)
+        self._applied_plot_margins = (margin_left, margin_right, margin_top, margin_bottom)
         plot_w = max(width - margin_left - margin_right, 24)
         plot_h = max(height - margin_top - margin_bottom, 24)
 
@@ -586,22 +653,25 @@ class HeatmapCanvas(QLabel):
                 u = (math.log10(max(freq, 1.0)) - log_min) / max(log_max - log_min, 1.0e-6)
                 return int(round(margin_left + (u * plot_w)))
 
-            painter.setPen(QPen(QColor("#232A35"), 1))
+            painter.setPen(QPen(QColor(ANALYZER_PLOT_STYLE.grid_minor_color), 1))
             for tick in minor_ticks:
                 x = x_of(float(tick))
                 painter.drawLine(x, margin_top, x, margin_top + plot_h)
 
-            last_x = -10_000
-            painter.setPen(QPen(QColor("#2F3A4D"), 1))
+            painter.setPen(QPen(QColor(ANALYZER_PLOT_STYLE.grid_major_color), 1))
             for tick in major_ticks:
                 x = x_of(float(tick))
                 painter.drawLine(x, margin_top, x, margin_top + plot_h)
-                if x - last_x < 36:
-                    continue
-                last_x = x
                 painter.setPen(QColor("#A6AFBC"))
-                painter.drawText(x - 22, margin_top + plot_h + 18, 44, 16, Qt.AlignCenter, _format_freq_label(tick))
-                painter.setPen(QPen(QColor("#2F3A4D"), 1))
+                painter.drawText(
+                    x - 22,
+                    margin_top + plot_h + ANALYZER_PLOT_STYLE.x_tick_label_y_offset_px,
+                    44,
+                    ANALYZER_PLOT_STYLE.x_tick_label_height_px,
+                    Qt.AlignCenter,
+                    _format_freq_label(tick),
+                )
+                painter.setPen(QPen(QColor(ANALYZER_PLOT_STYLE.grid_major_color), 1))
 
         angle_min = None
         angle_max = None
@@ -615,13 +685,21 @@ class HeatmapCanvas(QLabel):
                 u = (float(angle_value) - angle_min) / max(angle_max - angle_min, 1.0e-6)
                 return int(round(margin_top + ((1.0 - u) * plot_h)))
 
-            painter.setPen(QPen(QColor("#2A3344"), 1))
+            painter.setPen(QPen(QColor(ANALYZER_PLOT_STYLE.grid_y_color), 1))
             for angle_tick in _angle_ticks(angle_min, angle_max):
                 y = y_of(float(angle_tick))
                 painter.drawLine(margin_left, y, margin_left + plot_w, y)
                 painter.setPen(QColor("#A6AFBC"))
-                painter.drawText(4, y - 8, margin_left - 12, 16, Qt.AlignRight | Qt.AlignVCenter, f"{angle_tick:.0f}")
-                painter.setPen(QPen(QColor("#2A3344"), 1))
+                tick_text_w = max(int(margin_left - ANALYZER_PLOT_STYLE.y_tick_label_right_pad_px - 4), 20)
+                painter.drawText(
+                    4,
+                    y - (ANALYZER_PLOT_STYLE.y_tick_label_height_px // 2),
+                    tick_text_w,
+                    ANALYZER_PLOT_STYLE.y_tick_label_height_px,
+                    Qt.AlignRight | Qt.AlignVCenter,
+                    f"{angle_tick:.0f}",
+                )
+                painter.setPen(QPen(QColor(ANALYZER_PLOT_STYLE.grid_y_color), 1))
 
         if angle_min is not None and angle_max is not None and self._target_half_window_deg is not None:
             half = max(float(self._target_half_window_deg), 0.5)
@@ -685,8 +763,19 @@ class HeatmapCanvas(QLabel):
         painter.setPen(QPen(QColor("#3A4252"), 1))
         painter.drawRect(margin_left, margin_top, plot_w, plot_h)
         painter.setPen(QColor("#A6AFBC"))
-        painter.drawText(margin_left, height - 8, plot_w, 16, Qt.AlignHCenter | Qt.AlignVCenter, "Frequency (Hz, log)")
-        painter.drawText(4, margin_top - 2, margin_left - 8, 14, Qt.AlignLeft | Qt.AlignVCenter, "Angle (deg)")
+        _draw_analyzer_x_axis_label(
+            painter,
+            text=self._x_label,
+            margin_left=margin_left,
+            plot_w=plot_w,
+            canvas_height=height,
+        )
+        _draw_analyzer_y_axis_label(
+            painter,
+            text=self._y_label,
+            margin_top=margin_top,
+            plot_h=plot_h,
+        )
         painter.setPen(QPen(QColor("#3A4252")))
         painter.drawRect(0, 0, width - 1, height - 1)
         if self._status:
@@ -708,6 +797,7 @@ class MetricCurveCanvas(QLabel):
         self._x_label = "Frequency (Hz, log)"
         self._y_label = "Value"
         self._status = "Curve not available."
+        self._applied_plot_margins: Tuple[int, int, int, int] = apply_analyzer_plot_margins(has_legend=False)
 
     def set_series(
         self,
@@ -785,7 +875,8 @@ class MetricCurveCanvas(QLabel):
             return
 
         has_legend = any(show for _label, _points, _color, show in points_by_series)
-        margin_left, margin_right, margin_top, margin_bottom = _plot_margins(has_legend=has_legend)
+        margin_left, margin_right, margin_top, margin_bottom = apply_analyzer_plot_margins(has_legend=has_legend)
+        self._applied_plot_margins = (margin_left, margin_right, margin_top, margin_bottom)
         plot_w = max(width - margin_left - margin_right, 36)
         plot_h = max(height - margin_top - margin_bottom, 30)
 
@@ -822,10 +913,18 @@ class MetricCurveCanvas(QLabel):
 
         for y_tick in _linear_ticks(y_min, y_max, max_count=6):
             y = int(round(y_of(y_tick)))
-            painter.setPen(QPen(QColor("#2A3344"), 1))
+            painter.setPen(QPen(QColor(ANALYZER_PLOT_STYLE.grid_y_color), 1))
             painter.drawLine(margin_left, y, margin_left + plot_w, y)
             painter.setPen(QColor("#A6AFBC"))
-            painter.drawText(4, y - 8, margin_left - 12, 16, Qt.AlignRight | Qt.AlignVCenter, f"{y_tick:.2f}")
+            tick_text_w = max(int(margin_left - ANALYZER_PLOT_STYLE.y_tick_label_right_pad_px - 4), 20)
+            painter.drawText(
+                4,
+                y - (ANALYZER_PLOT_STYLE.y_tick_label_height_px // 2),
+                tick_text_w,
+                ANALYZER_PLOT_STYLE.y_tick_label_height_px,
+                Qt.AlignRight | Qt.AlignVCenter,
+                f"{y_tick:.2f}",
+            )
 
         if x_mode == "linear":
             major_ticks = _linear_ticks(x_min, x_max, max_count=6)
@@ -833,21 +932,24 @@ class MetricCurveCanvas(QLabel):
         else:
             major_ticks, minor_ticks = _log_tick_sets(x_min, x_max)
 
-        painter.setPen(QPen(QColor("#232A35"), 1))
+        painter.setPen(QPen(QColor(ANALYZER_PLOT_STYLE.grid_minor_color), 1))
         for tick in minor_ticks:
             x = int(round(x_of(tick)))
             painter.drawLine(x, margin_top, x, margin_top + plot_h)
-        painter.setPen(QPen(QColor("#2F3A4D"), 1))
-        last_x = -10_000
+        painter.setPen(QPen(QColor(ANALYZER_PLOT_STYLE.grid_major_color), 1))
         for tick in major_ticks:
             x = int(round(x_of(tick)))
             painter.drawLine(x, margin_top, x, margin_top + plot_h)
-            if x - last_x < 34:
-                continue
-            last_x = x
             painter.setPen(QColor("#A6AFBC"))
-            painter.drawText(x - 22, margin_top + plot_h + 18, 44, 16, Qt.AlignCenter, _format_freq_label(tick))
-            painter.setPen(QPen(QColor("#2F3A4D"), 1))
+            painter.drawText(
+                x - 22,
+                margin_top + plot_h + ANALYZER_PLOT_STYLE.x_tick_label_y_offset_px,
+                44,
+                ANALYZER_PLOT_STYLE.x_tick_label_height_px,
+                Qt.AlignCenter,
+                _format_freq_label(tick),
+            )
+            painter.setPen(QPen(QColor(ANALYZER_PLOT_STYLE.grid_major_color), 1))
 
         legend_y = margin_top + 4
         for label, points, color, show_legend in points_by_series:
@@ -865,8 +967,19 @@ class MetricCurveCanvas(QLabel):
         painter.setPen(QPen(QColor("#3A4252"), 1))
         painter.drawRect(margin_left, margin_top, plot_w, plot_h)
         painter.setPen(QColor("#A6AFBC"))
-        painter.drawText(4, margin_top - 2, margin_left - 8, 14, Qt.AlignLeft | Qt.AlignVCenter, self._y_label)
-        painter.drawText(margin_left, height - 8, plot_w, 16, Qt.AlignHCenter | Qt.AlignVCenter, self._x_label)
+        _draw_analyzer_x_axis_label(
+            painter,
+            text=self._x_label,
+            margin_left=margin_left,
+            plot_w=plot_w,
+            canvas_height=height,
+        )
+        _draw_analyzer_y_axis_label(
+            painter,
+            text=self._y_label,
+            margin_top=margin_top,
+            plot_h=plot_h,
+        )
         if self._status:
             painter.setPen(QColor("#B8C1CF"))
             painter.drawText(margin_left + 4, margin_top + 16, self._status)
