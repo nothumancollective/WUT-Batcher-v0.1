@@ -158,6 +158,35 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     QToolButton#ModeBarButton:pressed {{
         background-color: #1b1b1b;
     }}
+    QToolButton[analyzerAction="true"],
+    QToolButton[analyzerToggle="true"],
+    QToolButton[analyzerPlaneToggle="true"] {{
+        background-color: #202327;
+        color: {c['text']};
+        border: 1px solid {c['border']};
+        border-radius: {r['sm']}px;
+        padding: 1px {s['sm']}px;
+        min-height: 24px;
+        font-size: 12px;
+        font-weight: 600;
+    }}
+    QToolButton[analyzerAction="true"]:hover,
+    QToolButton[analyzerToggle="true"]:hover,
+    QToolButton[analyzerPlaneToggle="true"]:hover {{
+        border-color: {c['accent']};
+        background-color: #262b31;
+    }}
+    QToolButton[analyzerToggle="true"]:checked,
+    QToolButton[analyzerPlaneToggle="true"]:checked {{
+        border-color: {c['accent']};
+        background-color: #263041;
+        color: #d9e9ff;
+    }}
+    QToolButton[analyzerAction="true"]:pressed,
+    QToolButton[analyzerToggle="true"]:pressed,
+    QToolButton[analyzerPlaneToggle="true"]:pressed {{
+        background-color: #1b1f24;
+    }}
     QFrame#Card {{
         background-color: {c['surface']};
         border: 1px solid {c['border']};
