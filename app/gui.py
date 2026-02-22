@@ -1373,7 +1373,7 @@ class SettingsDialog(QDialog):
         self.service = service
         self.setWindowTitle("Settings")
         self.setModal(True)
-        self.resize(560, 260)
+        self.resize(620, 360)
 
         self.library_root = QLineEdit()
         self.ath_exe = QLineEdit()

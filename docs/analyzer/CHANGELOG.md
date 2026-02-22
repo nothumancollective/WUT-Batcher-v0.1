@@ -208,3 +208,6 @@
 - Extended GUI Analyzer tests to cover Explorer behavior:
   - run selection triggers background plot load and renders canvases
   - fast run switching remains stable while plot workers are canceled/replaced.
+
+## 2026-02-22 (Analyzer Phase 2B: settings layout follow-up)
+- Increased default Settings dialog size to keep the new Analyzer cache controls visible without clipping at open.
