@@ -159,3 +159,29 @@ Note:
   - ATH timeout + manual interruption in `V005` before state finalization.
 - Cleanup did execute for `V004`, but evidence does not support cleanup as cause of `V005` stall.
 - A settings-driven cleanup toggle for the production runner path is currently missing and should be added in a dedicated code change.
+
+## Fix Status (Implemented)
+
+The following fixes are now implemented in code:
+
+1. Duplicate-version prevention in runner flow:
+   - Runtime now reuses already materialized versions for the same `batch_id` instead of allocating new `Vxxx` ids on every run.
+   - First-run behavior remains unchanged: if no versions exist for the batch, materialization is executed once.
+
+2. Settings-driven runtime cleanup toggle:
+   - New user setting: `runtime_cleanup_enabled` (default `true`).
+   - Wired through settings store, GUI settings dialog, service layer, and runtime pipeline call.
+
+3. Extended guarded cleanup scope:
+   - Successful runs can now also clean `versions/<Vxxx>/ath_work` via guarded workspace delete.
+   - Cleanup remains guard-railed (`safe_cleanup` APIs only).
+   - If cleanup is disabled, artifacts are retained and `cleanup_results` records `reason=cleanup_disabled`.
+
+Implemented code areas:
+
+- `app/runtime_orchestrator.py`
+- `app/settings_store.py`
+- `app/services.py`
+- `app/gui.py`
+- `tests/test_runtime_orchestrator.py`
+- `tests/test_service_runtime_cleanup_flag.py`

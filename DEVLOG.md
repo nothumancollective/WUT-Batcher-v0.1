@@ -1,5 +1,36 @@
 ﻿# DEVLOG
 
+## 2026-02-22
+### Update: Runner Duplicate-Version Fix + Runtime Cleanup Toggle
+#### Ursache
+- `run_batch_pipeline(...)` materialisierte beim Run den Batch erneut.
+- Bei bereits vorhandenem Batch wurden dadurch neue Version-IDs alloziert (`V004..V006` statt Wiederverwendung von `V001..V003`).
+- Runtime-Cleanup war nicht per Settings schaltbar und deckte `ath_work` nicht ab.
+
+#### Fix
+- `app/runtime_orchestrator.py`:
+  - Reuse-Logik fuer bestehende, materialisierte Versionen pro `batch_id` eingefuehrt.
+  - Materialisierung erfolgt nur noch, wenn fuer den Batch noch keine Versionen existieren.
+  - Neuer Pipeline-Parameter `runtime_cleanup_enabled` (default `true`).
+  - Guarded Cleanup erweitert: zusaetzlich `versions/<Vxxx>/ath_work` via `guarded_delete_tree_in_workspace(...)`.
+  - Bei deaktiviertem Cleanup: explizite `cleanup_results` mit `reason=cleanup_disabled`.
+- `app/settings_store.py`:
+  - Neues Setting `runtime_cleanup_enabled` inkl. Persistenz.
+- `app/gui.py`:
+  - Neues Settings-Checkbox-Feld `Runtime Cleanup`.
+- `app/services.py`:
+  - Setting wird in `run_batch_pipeline(...)` durchgereicht.
+  - `runtime_cleanup_enabled` in `settings_hash` aufgenommen.
+- Tests:
+  - `tests/test_runtime_orchestrator.py` erweitert:
+    - Wiederverwendung bestehender Batch-Versionen.
+    - Cleanup von `ath_work` bei Erfolg.
+    - Verhalten bei `runtime_cleanup_enabled=false`.
+  - Neu: `tests/test_service_runtime_cleanup_flag.py`.
+
+#### Verifikation
+- `python -m pytest tests/test_runtime_orchestrator.py tests/test_service_runtime_cleanup_flag.py -q` -> `19 passed`
+
 ## 2026-02-20
 ### Update: Fallback-Audit (Real-E2E) + deaktivierter non-funktionaler Interim-Rescue-Branch
 #### Ziel
@@ -2981,3 +3012,4 @@ Validation executed:
 #### Validation
 - `PYTHONPATH=. python -m pytest tests/test_gui_analyzer_page_ui.py tests/test_gui_analyzer_compare_ui.py -q`
 - Result: `24 passed`
+
