@@ -217,7 +217,7 @@ class CommandHeaderWidget(QFrame):
             issue_text = f"Incomplete: {self._incomplete_count}"
             severity = "incomplete"
 
-        self.issues_chip.setText(f"{issue_text} v")
+        self.issues_chip.setText(issue_text)
         self.issues_chip.setProperty("severity", severity)
         if self._issue_messages:
             self.issues_chip.setToolTip("\n".join(self._issue_messages[:10]))

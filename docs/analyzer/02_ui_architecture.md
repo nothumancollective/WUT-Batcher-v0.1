@@ -222,6 +222,11 @@ The Analyzer page is planned with two explicit subviews:
 ## Implementation status (Batch stabilization follow-up)
 
 - Chip/titlebar text rendering now routes through a shared safe-text normalization helper to avoid mojibake/bytes rendering artifacts.
+- Command-header warning chip text is now plain (`Warnings: N`) without trailing chevron glyph text.
 - Sweep controls are explicitly marked with `role="sweep"` and excluded from warning-color selectors; warning borders remain on input controls only.
+- Warning mapping now expands object-level `R-OSSE` issues to visible `R-OSSE.*` rows so input-level warning borders are consistently applied.
+- Batch cards with internal subsections now render through subtle section frames (no extra headings) while keeping compact spacing.
+- Responsive subgroup grids now repack based on explicit row visibility, preventing hidden-row hole artifacts in Circular Arc / Superformula layouts.
 - GCurve subgroup stacking order is stabilized as `Mode` -> `Common` -> `Mode-specific` for predictable layout and spacing.
 - Batch inline hint presentation now uses reusable `HelperRow` components (optional icon + wrapped text + subtle surface), replacing plain helper labels while preserving hint logic.
+- Batch popup shells now reuse a shared frameless dialog template (`StyledDialogBase`) aligned with Export Advanced dialog visuals.

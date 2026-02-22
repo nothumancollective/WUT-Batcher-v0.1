@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Set
+from ui.styled_dialog import StyledDialogBase
 
 try:
-    from PySide6.QtCore import QPoint, Qt, Signal
+    from PySide6.QtCore import Qt, Signal
     from PySide6.QtGui import QDoubleValidator, QIntValidator
     from PySide6.QtWidgets import (
         QComboBox,
@@ -136,15 +137,14 @@ class _AdvancedState:
         }
 
 
-class _AdvancedDialog(QDialog):
+class _AdvancedDialog(StyledDialogBase):
     def __init__(self, state: _AdvancedState, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
-        self.setAttribute(Qt.WA_TranslucentBackground, True)
-        self.setProperty("framelessShell", True)
-        self.setModal(True)
-        self.setMinimumSize(760, 620)
-        self._drag_offset: Optional[QPoint] = None
+        super().__init__(
+            title="Advanced Export Settings",
+            parent=parent,
+            min_width=760,
+            min_height=620,
+        )
 
         self._initial = state.to_dict()
         self._current = _AdvancedState(
@@ -153,33 +153,7 @@ class _AdvancedDialog(QDialog):
             polars=[_PolarCardState.from_dict(item.to_dict()) for item in list(state.polars)],
         )
 
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(10, 10, 10, 10)
-        outer.setSpacing(0)
-        shell = QFrame()
-        shell.setObjectName("FramelessShell")
-        outer.addWidget(shell)
-        root = QVBoxLayout(shell)
-        root.setContentsMargins(12, 10, 12, 12)
-        root.setSpacing(10)
-
-        title_bar = QWidget()
-        title_row = QHBoxLayout(title_bar)
-        title_row.setContentsMargins(0, 0, 0, 0)
-        title_row.setSpacing(8)
-        title = QLabel("Advanced Export Settings")
-        title.setObjectName("SectionTitle")
-        title_row.addWidget(title)
-        title_row.addStretch(1)
-        close_btn = QPushButton("X")
-        close_btn.setObjectName("WindowCloseButton")
-        close_btn.setFixedSize(28, 24)
-        close_btn.clicked.connect(self.reject)
-        title_row.addWidget(close_btn, alignment=Qt.AlignRight)
-        root.addWidget(title_bar)
-        title_bar.mousePressEvent = self._title_mouse_press  # type: ignore[assignment]
-        title_bar.mouseMoveEvent = self._title_mouse_move  # type: ignore[assignment]
-        title_bar.mouseReleaseEvent = self._title_mouse_release  # type: ignore[assignment]
+        root = self.body_layout()
 
         scroll = QScrollArea()
         scroll.setObjectName("BatchAdvancedScroll")
@@ -217,30 +191,13 @@ class _AdvancedDialog(QDialog):
         buttons.addStretch(1)
         cancel_btn = QPushButton("Cancel")
         apply_btn = QPushButton("Apply")
-        apply_btn.setObjectName("PrimaryButton")
+        cancel_btn.setObjectName("BatchSecondaryButton")
+        apply_btn.setObjectName("BatchPrimaryButton")
         cancel_btn.clicked.connect(self.reject)
         apply_btn.clicked.connect(self.accept)
         buttons.addWidget(cancel_btn)
         buttons.addWidget(apply_btn)
         root.addLayout(buttons)
-
-    def _title_mouse_press(self, event) -> None:  # type: ignore[override]
-        if event.button() != Qt.LeftButton:
-            return
-        self._drag_offset = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
-        event.accept()
-
-    def _title_mouse_move(self, event) -> None:  # type: ignore[override]
-        if self._drag_offset is None:
-            return
-        if not (event.buttons() & Qt.LeftButton):
-            return
-        self.move(event.globalPosition().toPoint() - self._drag_offset)
-        event.accept()
-
-    def _title_mouse_release(self, event) -> None:  # type: ignore[override]
-        self._drag_offset = None
-        event.accept()
 
     def _build_simple_card(self, title: str, state: _SimpleGraphState, *, graph_key: str) -> QWidget:
         card = QFrame()

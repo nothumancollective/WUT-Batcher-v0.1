@@ -19,6 +19,7 @@ from ui.form_builder import (
 from ui.helper_row import HelperRow
 from ui.form_metrics import FORM_METRICS
 from ui.form_schema import FieldSpec, FormSchema, ModeStackSpec, build_project_form_schema, field_display_priority
+from ui.styled_dialog import StyledDialogBase
 from ui.text_utils import safe_text
 
 try:
@@ -27,7 +28,6 @@ try:
     from PySide6.QtWidgets import (
         QButtonGroup,
         QComboBox,
-        QDialog,
         QFrame,
         QGridLayout,
         QHBoxLayout,
@@ -181,6 +181,14 @@ class _SubgroupHeader:
     keys: set[str]
 
 
+@dataclass
+class _SubgroupFrame:
+    group_name: str
+    subgroup_name: str
+    frame: QFrame
+    keys: set[str]
+
+
 @dataclass(frozen=True)
 class _FormGridSpec:
     label_width: int
@@ -220,6 +228,9 @@ class _ResponsiveFieldGrid(QWidget):
         self._items = [(kind, item, min_cols) for kind, item, min_cols in self._items if id(item) != target_id]
         self._relayout()
 
+    def relayout(self) -> None:
+        self._relayout()
+
     def resizeEvent(self, event) -> None:  # type: ignore[override]
         super().resizeEvent(event)
         self._relayout()
@@ -236,6 +247,9 @@ class _ResponsiveFieldGrid(QWidget):
         row = 0
         col = 0
         for kind, widget, min_cols in self._items:
+            row_visible = str(widget.property("rowVisible") or "").strip().lower()
+            if row_visible in {"false", "0", "no"}:
+                continue
             if kind == "gap" and cols < int(min_cols):
                 continue
             if kind == "full":
@@ -326,9 +340,11 @@ class BatchParameterForm(QWidget):
         self._risk_targets_by_key: Dict[str, List[QWidget]] = {}
         self._risk_original_tooltips: Dict[int, str] = {}
         self._subgroup_headers: List[_SubgroupHeader] = []
+        self._subgroup_frames: List[_SubgroupFrame] = []
         self._blink_tokens_by_key: Dict[str, int] = {}
         self._advanced_keys_by_group: Dict[str, set[str]] = {}
         self._group_grids: Dict[str, _ResponsiveFieldGrid] = {}
+        self._responsive_grids: List[_ResponsiveFieldGrid] = []
         self._policy_default_suggestions: Dict[str, Any] = {}
         self._latest_issues_by_key: Dict[str, List[Dict[str, Any]]] = {}
         self._detached_rows_host = QWidget(self)
@@ -531,6 +547,43 @@ class BatchParameterForm(QWidget):
         ordered.extend(rest)
         return ordered
 
+    @staticmethod
+    def _uses_section_frames(group_name: str) -> bool:
+        return str(group_name) in {"Basics", "Throat Profile", "Morph", "Mesh"}
+
+    def _create_section_frame(
+        self,
+        *,
+        host_grid: _ResponsiveFieldGrid,
+        group_name: str,
+        subgroup_name: str,
+        keys: set[str],
+    ) -> _ResponsiveFieldGrid:
+        frame = QFrame()
+        frame.setObjectName("BatchSubgroupFrame")
+        frame_layout = QVBoxLayout(frame)
+        frame_layout.setContentsMargins(6, 4, 6, 4)
+        frame_layout.setSpacing(2)
+        section_grid = _ResponsiveFieldGrid()
+        frame_layout.addWidget(section_grid)
+        host_grid.add_full_width(frame)
+        self._responsive_grids.append(section_grid)
+        self._subgroup_frames.append(
+            _SubgroupFrame(
+                group_name=str(group_name),
+                subgroup_name=str(subgroup_name),
+                frame=frame,
+                keys=set(keys or set()),
+            )
+        )
+        return section_grid
+
+    def _relayout_responsive_grids(self) -> None:
+        for grid in list(self._responsive_grids):
+            if grid is None:
+                continue
+            grid.relayout()
+
     def _register_box(self, box: AccordionGroupBox) -> None:
         self._accordion_boxes.append(box)
         box.toggled.connect(lambda expanded, current=box: self._on_group_toggled(current, expanded))
@@ -582,31 +635,81 @@ class BatchParameterForm(QWidget):
             field_grid = _ResponsiveFieldGrid()
             box.body_layout().addWidget(field_grid)
             self._group_grids[str(group_name)] = field_grid
+            self._responsive_grids.append(field_grid)
             subgroup_target_grids: Dict[str, _ResponsiveFieldGrid] = {}
+            ordered_fields = sorted(
+                grouped.get(group_name, []),
+                key=lambda field: (
+                    self._subgroup_for_field(field, group_name)[0],
+                    self._subgroup_for_field(field, group_name)[1],
+                    self._field_sort_tuple(field),
+                ),
+            )
+            subgroup_keys: Dict[str, set[str]] = {}
+            subgroup_ordered_names: List[str] = []
+            for field in ordered_fields:
+                subgroup_name = self._subgroup_for_field(field, group_name)[1]
+                subgroup_keys.setdefault(str(subgroup_name), set()).add(str(field.key))
+                if subgroup_name != "General" and subgroup_name not in subgroup_ordered_names:
+                    subgroup_ordered_names.append(str(subgroup_name))
+
             if str(group_name) == "GCurve":
                 mode_selector_frame = QFrame()
                 mode_selector_frame.setObjectName("BatchSubgroupFrame")
                 mode_selector_layout = QVBoxLayout(mode_selector_frame)
-                mode_selector_layout.setContentsMargins(0, 0, 0, 0)
+                mode_selector_layout.setContentsMargins(6, 4, 6, 4)
                 mode_selector_layout.setSpacing(2)
                 mode_selector_grid = _ResponsiveFieldGrid()
                 mode_selector_layout.addWidget(mode_selector_grid)
+                self._responsive_grids.append(mode_selector_grid)
+                self._subgroup_frames.append(
+                    _SubgroupFrame(
+                        group_name=str(group_name),
+                        subgroup_name="Mode",
+                        frame=mode_selector_frame,
+                        keys=set(subgroup_keys.get("Mode", set())),
+                    )
+                )
 
                 common_frame = QFrame()
                 common_frame.setObjectName("BatchSubgroupFrame")
                 common_layout = QVBoxLayout(common_frame)
-                common_layout.setContentsMargins(0, 0, 0, 0)
+                common_layout.setContentsMargins(6, 4, 6, 4)
                 common_layout.setSpacing(2)
                 common_grid = _ResponsiveFieldGrid()
                 common_layout.addWidget(common_grid)
+                self._responsive_grids.append(common_grid)
+                self._subgroup_frames.append(
+                    _SubgroupFrame(
+                        group_name=str(group_name),
+                        subgroup_name="Common",
+                        frame=common_frame,
+                        keys=set(subgroup_keys.get("Common", set())),
+                    )
+                )
 
                 mode_specific_frame = QFrame()
                 mode_specific_frame.setObjectName("BatchSubgroupFrame")
                 mode_specific_layout = QVBoxLayout(mode_specific_frame)
-                mode_specific_layout.setContentsMargins(0, 0, 0, 0)
+                mode_specific_layout.setContentsMargins(6, 4, 6, 4)
                 mode_specific_layout.setSpacing(2)
                 mode_specific_grid = _ResponsiveFieldGrid()
                 mode_specific_layout.addWidget(mode_specific_grid)
+                self._responsive_grids.append(mode_specific_grid)
+                mode_specific_keys = (
+                    set(subgroup_keys.get("Superformula", set()))
+                    | set(subgroup_keys.get("Superellipse", set()))
+                    | set(subgroup_keys.get("Coverage", set()))
+                    | set(subgroup_keys.get("General", set()))
+                )
+                self._subgroup_frames.append(
+                    _SubgroupFrame(
+                        group_name=str(group_name),
+                        subgroup_name="ModeSpecific",
+                        frame=mode_specific_frame,
+                        keys=mode_specific_keys,
+                    )
+                )
 
                 divider = QFrame()
                 divider.setObjectName("BatchSubtleDivider")
@@ -625,24 +728,16 @@ class BatchParameterForm(QWidget):
                     "Coverage": mode_specific_grid,
                     "General": mode_specific_grid,
                 }
+            elif self._uses_section_frames(str(group_name)):
+                for subgroup_name in subgroup_ordered_names:
+                    subgroup_target_grids[str(subgroup_name)] = self._create_section_frame(
+                        host_grid=field_grid,
+                        group_name=str(group_name),
+                        subgroup_name=str(subgroup_name),
+                        keys=set(subgroup_keys.get(str(subgroup_name), set())),
+                    )
 
             last_subgroup = None
-            ordered_fields = sorted(
-                grouped.get(group_name, []),
-                key=lambda field: (
-                    self._subgroup_for_field(field, group_name)[0],
-                    self._subgroup_for_field(field, group_name)[1],
-                    field_display_priority(str(field.key)),
-                    int(field.order),
-                    str(field.key),
-                ),
-            )
-            subgroup_keys: Dict[str, set[str]] = {}
-            for field in ordered_fields:
-                subgroup_name = self._subgroup_for_field(field, group_name)[1]
-                if subgroup_name == "General":
-                    continue
-                subgroup_keys.setdefault(str(subgroup_name), set()).add(str(field.key))
             for field in ordered_fields:
                 subgroup_order, subgroup_name = self._subgroup_for_field(field, group_name)
                 _ = subgroup_order
@@ -651,6 +746,7 @@ class BatchParameterForm(QWidget):
                     (str(group_name) == "Throat Profile" and subgroup_name in {"Mode", "OS-SE", "R-OSSE", "Circular Arc"})
                     or (str(group_name) == "GCurve")
                     or (str(group_name) == "Mesh" and subgroup_name == "Advanced")
+                    or self._uses_section_frames(str(group_name))
                 )
                 if subgroup_name != "General" and subgroup_name != last_subgroup and not skip_subgroup_heading:
                     subgroup_label = QLabel(subgroup_name)
@@ -870,30 +966,24 @@ class BatchParameterForm(QWidget):
         return ("set", values)
 
     def _build_dialog_editor(self, field: FieldSpec, current_value: Any) -> QWidget:
-        if str(field.widget_kind) == "enum":
-            combo = QComboBox()
-            combo.setObjectName("BatchFieldCombo")
-            for option in list(field.enum_options or []):
-                combo.addItem(safe_text(getattr(option, "label", "")), getattr(option, "value", None))
-            if current_value is not None:
-                index = combo.findData(current_value)
-                if index >= 0:
-                    combo.setCurrentIndex(index)
-            return combo
-
+        if str(field.widget_kind) != "object":
+            editor = ScalarFieldEditor(field)
+            if current_value is None:
+                editor.set_is_set(False)
+            else:
+                editor.set_value(current_value)
+            return editor
         edit = QLineEdit()
         if current_value is not None:
-            if str(field.widget_kind) == "list" or str(field.ath_type).startswith("list"):
-                edit.setText(self._format_list_text(current_value))
-            else:
-                edit.setText(safe_text(current_value))
-        if str(field.widget_kind) in {"float", "expr", "ex"}:
-            edit.setValidator(QDoubleValidator(edit))
-        elif str(field.widget_kind) == "int":
-            edit.setValidator(QIntValidator(edit))
+            edit.setText(safe_text(current_value))
         return edit
 
     def _dialog_editor_state(self, field: FieldSpec, editor: QWidget) -> tuple[str, Any]:
+        if isinstance(editor, ScalarFieldEditor):
+            state = editor.current_state()
+            if bool(getattr(state, "is_set", False)):
+                return ("set", getattr(state, "value", None))
+            return ("unset", None)
         if isinstance(editor, QComboBox):
             if editor.currentIndex() < 0:
                 return ("unset", None)
@@ -917,6 +1007,9 @@ class BatchParameterForm(QWidget):
             return ("invalid", None)
 
     def _bind_dialog_editor(self, editor: QWidget, on_change) -> None:
+        if isinstance(editor, ScalarFieldEditor):
+            editor.changed.connect(lambda *_: on_change())
+            return
         if isinstance(editor, QComboBox):
             editor.currentIndexChanged.connect(lambda _index: on_change())
             return
@@ -940,16 +1033,13 @@ class BatchParameterForm(QWidget):
             if str(key) in self._rows
             and str(self._rows[str(key)].container.property("compatVisible") or "false").strip().lower() == "true"
         ]
-        dialog = QDialog(self.window())
-        dialog.setWindowTitle("Mesh Advanced")
-        dialog.setModal(True)
-        dialog.resize(980, 620)
-        root = QVBoxLayout(dialog)
-        root.setContentsMargins(12, 10, 12, 10)
-        root.setSpacing(8)
-        title = QLabel("Mesh Advanced")
-        title.setObjectName("SectionTitle")
-        root.addWidget(title)
+        dialog = StyledDialogBase(
+            title="Mesh Advanced",
+            parent=self.window(),
+            min_width=980,
+            min_height=620,
+        )
+        root = dialog.body_layout()
         scroll = QScrollArea()
         scroll.setObjectName("BatchAdvancedScroll")
         scroll.setWidgetResizable(True)
@@ -1020,21 +1110,18 @@ class BatchParameterForm(QWidget):
         is_enabled, object_value = self._current_state(row)
         payload = dict(object_value or {}) if isinstance(object_value, Mapping) else {}
 
-        dialog = QDialog(self.window())
-        dialog.setWindowTitle("Simulate Enclosure")
-        dialog.setModal(True)
-        dialog.resize(960, 620)
-        root = QVBoxLayout(dialog)
-        root.setContentsMargins(12, 10, 12, 10)
-        root.setSpacing(8)
+        dialog = StyledDialogBase(
+            title="Simulate Enclosure",
+            parent=self.window(),
+            min_width=960,
+            min_height=620,
+        )
+        root = dialog.body_layout()
 
         top_row = QWidget()
         top_layout = QHBoxLayout(top_row)
         top_layout.setContentsMargins(0, 0, 0, 0)
         top_layout.setSpacing(8)
-        title = QLabel("Mesh Enclosure")
-        title.setObjectName("SectionTitle")
-        top_layout.addWidget(title, 0, Qt.AlignLeft | Qt.AlignVCenter)
         top_layout.addStretch(1)
         toggle_group = QButtonGroup(dialog)
         disable_btn = QPushButton("Disabled")
@@ -1579,12 +1666,14 @@ class BatchParameterForm(QWidget):
                 target.setProperty("fieldState", "neutral")
                 target.setProperty("riskLevel", "")
                 target.setProperty("warn", "false")
+                target.setProperty("hasWarning", "false")
                 target_id = id(target)
                 if target_id in self._risk_original_tooltips:
                     target.setToolTip(self._risk_original_tooltips[target_id])
                 self._repolish(target)
             row.sweep_toggle.setProperty("riskLevel", "")
             row.sweep_toggle.setProperty("warn", "false")
+            row.sweep_toggle.setProperty("hasWarning", "false")
             sweep_id = id(row.sweep_toggle)
             if sweep_id in self._risk_original_tooltips:
                 row.sweep_toggle.setToolTip(self._risk_original_tooltips[sweep_id])
@@ -1614,11 +1703,20 @@ class BatchParameterForm(QWidget):
         for issue in list(issues or []):
             if not isinstance(issue, Mapping):
                 continue
-            key = str(issue.get("field_key") or issue.get("key") or "").strip()
-            if not key or key not in self._rows:
+            raw_key = str(issue.get("field_key") or issue.get("key") or "").strip()
+            if not raw_key:
                 continue
-            grouped.setdefault(key, []).append(dict(issue))
-            self._latest_issues_by_key.setdefault(key, []).append(dict(issue))
+            target_keys: List[str] = []
+            normalized_key = self._normalize_policy_key_for_row(raw_key)
+            if normalized_key in self._rows:
+                target_keys.append(str(normalized_key))
+            elif normalized_key == "R-OSSE":
+                target_keys.extend(sorted(key for key in self._rows.keys() if str(key).startswith("R-OSSE.")))
+            if not target_keys:
+                continue
+            for key in target_keys:
+                grouped.setdefault(str(key), []).append(dict(issue))
+                self._latest_issues_by_key.setdefault(str(key), []).append(dict(issue))
 
         for key, row_issues in grouped.items():
             if not row_issues:
@@ -1641,6 +1739,7 @@ class BatchParameterForm(QWidget):
                 target.setProperty("fieldState", visual)
                 target.setProperty("riskLevel", visual)
                 target.setProperty("warn", "true" if highest == "warn" else "false")
+                target.setProperty("hasWarning", "true" if highest in {"warn", "fatal"} else "false")
                 tooltip = self._risk_tooltip(row_issues)
                 if tooltip:
                     base_tooltip = self._risk_original_tooltips.get(target_id, "")
@@ -1649,6 +1748,7 @@ class BatchParameterForm(QWidget):
             # Sweep buttons keep their active styling; warnings stay on input controls.
             row.sweep_toggle.setProperty("riskLevel", "")
             row.sweep_toggle.setProperty("warn", "false")
+            row.sweep_toggle.setProperty("hasWarning", "false")
             sweep_id = id(row.sweep_toggle)
             self._risk_original_tooltips.setdefault(sweep_id, row.sweep_toggle.toolTip())
             sweep_tip = self._risk_tooltip(row_issues)
@@ -1820,6 +1920,15 @@ class BatchParameterForm(QWidget):
                 for key in list(header.keys or set())
             )
             header.label.setVisible(bool(visible))
+        for subgroup in self._subgroup_frames:
+            visible = any(
+                (key in self._rows)
+                and (str(self._rows[key].container.property("rowVisible") or "false").lower() == "true")
+                for key in list(subgroup.keys or set())
+            )
+            subgroup.frame.setVisible(bool(visible))
+            subgroup.frame.setProperty("rowVisible", "true" if visible else "false")
+        self._relayout_responsive_grids()
 
         visible_boxes = [box for box in self._accordion_boxes if box.isVisible()]
         expanded = [box for box in visible_boxes if not box.is_collapsed()]

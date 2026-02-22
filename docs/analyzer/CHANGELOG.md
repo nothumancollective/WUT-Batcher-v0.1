@@ -150,3 +150,19 @@
 - TopBar center-title layout was rebalanced (removed symmetric stretch squeeze) so mode titles do not truncate under normal window widths.
 - Issues popover now applies responsive content width bounds and keeps a scrollable body for large warning lists to prevent clipping.
 - Added reusable `HelperRow` primitive and integrated it into Batch field hints (optional icon + wrapped text + subtle background) without changing Batch action button sizes.
+
+## 2026-02-22 (Batch UI final stabilization pass)
+- Batch card layout stabilization:
+  - added consistent subsection frames across Batch cards (`Basics`, `Throat Profile`, `GCurve`, `Morph`, `Mesh`) without introducing extra headings or inflated vertical spacing
+  - fixed responsive reflow so hidden rows no longer reserve diagonal/empty grid slots (notably Circular Arc / Superformula cases)
+  - kept GCurve ordering as `Mode -> Common -> Mode-specific`.
+- Header + warning polish:
+  - removed the extra trailing `v` from the command-header warnings chip (`Warnings: N` only)
+  - removed cheap text chevrons from card headers and kept clear click affordance via clickable/hoverable header cursor behavior.
+- Warning propagation hardening:
+  - object-key issues (e.g. `R-OSSE`) now fan out to visible `R-OSSE.*` rows so warn styling consistently reaches the actual input controls
+  - added segment-button warn styling while preserving sweep-button immunity from warning tint.
+- Popup stability + consistency:
+  - introduced shared frameless popup template (`StyledDialogBase`) and applied it to Batch popups and Export Advanced dialog shell
+  - migrated Mesh Advanced / Simulate Enclosure popup editors to schema-driven `ScalarFieldEditor` controls (matching project-side control types while writing Batch variables)
+  - verified no blanking/crash on toggle/edit flows.

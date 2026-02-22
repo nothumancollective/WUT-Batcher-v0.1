@@ -57,6 +57,12 @@ class GCurveSuperformulaLayoutUiTests(unittest.TestCase):
         self.assertIsNot(common_frame, superformula_frame)
         self.assertIsNot(mode_frame, superformula_frame)
 
+        mode_pos = mode_frame.mapToGlobal(mode_frame.rect().topLeft())
+        common_pos = common_frame.mapToGlobal(common_frame.rect().topLeft())
+        superformula_pos = superformula_frame.mapToGlobal(superformula_frame.rect().topLeft())
+        self.assertLessEqual(int(mode_pos.y()), int(common_pos.y()))
+        self.assertLessEqual(int(common_pos.y()), int(superformula_pos.y()))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -362,6 +362,28 @@ class BatchPageUiTests(unittest.TestCase):
         gcurve_spec = page.parameter_form._grid_spec_for_group("GCurve")  # type: ignore[attr-defined]
         self.assertEqual(basics_spec, gcurve_spec)
 
+    def test_basics_rows_use_same_subgroup_frame_pattern(self) -> None:
+        page = BatchPage()
+        state = self._compat_state()
+        page.apply_compatibility(state)
+        basics_row = page.parameter_form._rows.get("Length")
+        morph_row = page.parameter_form._rows.get("Morph.TargetWidth")
+        if basics_row is None or morph_row is None:
+            self.skipTest("Required rows are missing.")
+
+        def _ancestor_subgroup(widget):
+            current = widget
+            while current is not None:
+                if str(current.objectName() or "") == "BatchSubgroupFrame":
+                    return current
+                current = current.parentWidget()
+            return None
+
+        basics_frame = _ancestor_subgroup(basics_row.container)
+        morph_frame = _ancestor_subgroup(morph_row.container)
+        self.assertIsNotNone(basics_frame)
+        self.assertIsNotNone(morph_frame)
+
     def test_circular_arc_termangle_and_radius_share_row_alignment(self) -> None:
         page = BatchPage()
         state = self._compat_state(selected_params={"Throat.Profile": 3})
@@ -859,24 +881,31 @@ class BatchPageUiTests(unittest.TestCase):
         state = self._compat_state()
         page.apply_compatibility(state)
 
-        observed = {"host_found": False, "controls": 0}
+        observed = {"host_found": False, "controls": 0, "frameless_shell": False, "still_populated_after_edit": False}
 
-        def _fake_exec() -> int:
-            dialogs = [widget for widget in self.app.topLevelWidgets() if isinstance(widget, QDialog)]
-            dialog = dialogs[-1] if dialogs else None
+        def _fake_exec(dialog) -> int:
             if dialog is not None:
+                observed["frameless_shell"] = bool(str(dialog.property("framelessShell") or "").lower() == "true")
                 host = dialog.findChild(QWidget, "MeshAdvancedDialogHost")
                 observed["host_found"] = host is not None
                 if host is not None:
                     edits = host.findChildren(QLineEdit)
                     combos = host.findChildren(QComboBox)
                     observed["controls"] = len(edits) + len(combos)
+                    if edits:
+                        edits[0].setFocus()
+                        edits[0].setText(f"{edits[0].text()}1")
+                        edits[0].editingFinished.emit()
+                        self.app.processEvents()
+                    observed["still_populated_after_edit"] = bool(host.findChildren(QWidget))
             return int(QDialog.Accepted)
 
-        with patch("ui.batch_parameter_form.QDialog.exec", side_effect=_fake_exec):
+        with patch("ui.batch_parameter_form.StyledDialogBase.exec", new=_fake_exec):
             page.parameter_form.open_mesh_advanced_dialog()
         self.assertTrue(observed["host_found"])
         self.assertGreater(observed["controls"], 0)
+        self.assertTrue(observed["frameless_shell"])
+        self.assertTrue(observed["still_populated_after_edit"])
 
     def test_enclosure_dialog_contains_enclosure_group(self) -> None:
         page = BatchPage()
@@ -886,12 +915,17 @@ class BatchPageUiTests(unittest.TestCase):
         if row is None:
             self.skipTest("Mesh.Enclosure row not available.")
 
-        observed = {"host_found": False, "controls": 0, "enabled_checked": False}
+        observed = {
+            "host_found": False,
+            "controls": 0,
+            "enabled_checked": False,
+            "frameless_shell": False,
+            "host_stable_after_toggle": False,
+        }
 
-        def _fake_exec() -> int:
-            dialogs = [widget for widget in self.app.topLevelWidgets() if isinstance(widget, QDialog)]
-            dialog = dialogs[-1] if dialogs else None
+        def _fake_exec(dialog) -> int:
             if dialog is not None:
+                observed["frameless_shell"] = bool(str(dialog.property("framelessShell") or "").lower() == "true")
                 host = dialog.findChild(QWidget, "EnclosureDialogHost")
                 observed["host_found"] = host is not None
                 if host is not None:
@@ -903,13 +937,28 @@ class BatchPageUiTests(unittest.TestCase):
                     None,
                 )
                 observed["enabled_checked"] = bool(enabled_btn is not None and enabled_btn.isChecked())
+                disabled_btn = next(
+                    (button for button in dialog.findChildren(QPushButton) if str(button.text()).strip().lower() == "disabled"),
+                    None,
+                )
+                if enabled_btn is not None and disabled_btn is not None:
+                    enabled_btn.click()
+                    self.app.processEvents()
+                    disabled_btn.click()
+                    self.app.processEvents()
+                    enabled_btn.click()
+                    self.app.processEvents()
+                    host_after = dialog.findChild(QWidget, "EnclosureDialogHost")
+                    observed["host_stable_after_toggle"] = bool(host_after is not None and host_after.findChildren(QWidget))
             return int(QDialog.Accepted)
 
-        with patch("ui.batch_parameter_form.QDialog.exec", side_effect=_fake_exec):
+        with patch("ui.batch_parameter_form.StyledDialogBase.exec", new=_fake_exec):
             page.parameter_form.open_enclosure_dialog()
         self.assertTrue(observed["host_found"])
         self.assertGreater(observed["controls"], 0)
         self.assertIsInstance(observed["enabled_checked"], bool)
+        self.assertTrue(observed["frameless_shell"])
+        self.assertTrue(observed["host_stable_after_toggle"])
 
     def test_batch_form_has_no_horizontal_overflow_at_1920x1080(self) -> None:
         page = BatchPage()

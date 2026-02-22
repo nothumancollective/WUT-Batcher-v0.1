@@ -662,8 +662,9 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         background: transparent;
     }}
     QFrame#BatchSubgroupFrame {{
-        background: transparent;
-        border: none;
+        background-color: #1d1d1d;
+        border: 1px solid #2a2a2a;
+        border-radius: {r['sm']}px;
     }}
     QFrame#BatchSubtleDivider {{
         background-color: #2a2a2a;
@@ -1024,6 +1025,16 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         background-color: #2a2a2a;
         border: 1px solid #a9a9a9;
         color: #ffffff;
+    }}
+    QPushButton[segment=\"true\"][warn="true"],
+    QPushButton[segment=\"true\"][hasWarning="true"],
+    QPushButton[segment=\"true\"][fieldState="warn"] {{
+        border: 1px solid {c['warning_border']};
+        color: {c['warning_border']};
+    }}
+    QPushButton[segment=\"true\"][fieldState="fatal"] {{
+        border: 1px solid {c['danger_border']};
+        color: {c['danger_border']};
     }}
     QPushButton[segment=\"true\"][batchField="true"] {{
         min-height: 30px;

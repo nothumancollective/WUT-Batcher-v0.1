@@ -56,6 +56,7 @@ class BatchCommandHeaderUiTests(unittest.TestCase):
         self.assertIsNotNone(issue_chip)
         assert issue_chip is not None
         self.assertIn("Warnings:", issue_chip.text())
+        self.assertNotIn(" v", issue_chip.text())
         self.assertIn("Length warning from test.", issue_chip.toolTip())
 
     def test_issue_popover_uses_scrollable_body(self) -> None:

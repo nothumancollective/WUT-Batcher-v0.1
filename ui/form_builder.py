@@ -327,6 +327,7 @@ class AccordionHeaderRow(QFrame):
         super().__init__(parent)
         self.setObjectName("AccordionHeaderRow")
         self.setFocusPolicy(Qt.StrongFocus)
+        self.setCursor(Qt.PointingHandCursor)
         self.setProperty("severity", "neutral")
         self.setMinimumHeight(48)
 
@@ -374,10 +375,6 @@ class AccordionHeaderRow(QFrame):
         self._status_badge.setVisible(True)
         content_layout.addWidget(self._status_badge, 0, Qt.AlignVCenter)
 
-        self._chevron = QLabel("v")
-        self._chevron.setObjectName("AccordionChevron")
-        content_layout.addWidget(self._chevron, 0, Qt.AlignVCenter)
-
         root.addWidget(content, 1)
         self._chips: List[str] = []
         self._expanded = True
@@ -411,7 +408,6 @@ class AccordionHeaderRow(QFrame):
 
     def set_expanded(self, expanded: bool) -> None:
         self._expanded = bool(expanded)
-        self._chevron.setText("v" if self._expanded else ">")
         self._chips_wrap.setVisible(not self._expanded and bool(self._chips))
         self._sync_reset_button_visibility()
         self.setProperty("expanded", "true" if self._expanded else "false")
