@@ -314,6 +314,10 @@ class AnalyzerPlotStyle:
     grid_major_color: str = "#2F3A4D"
     grid_minor_color: str = "#232A35"
     grid_y_color: str = "#2A3344"
+    tile_gap_px: int = 4
+    tile_inner_padding_px: int = 4
+    tile_header_spacing_px: int = 2
+    y_tick_label_min_gap_px: int = 14
 
 
 ANALYZER_PLOT_STYLE = AnalyzerPlotStyle()
@@ -487,6 +491,27 @@ def _visible_target_angle_window(
     return region, lines
 
 
+def _should_render_minus6_angle(
+    angle_value: float,
+    *,
+    angle_min: float,
+    angle_max: float,
+    show_mirrored: bool,
+) -> bool:
+    angle = float(angle_value)
+    lo = float(angle_min)
+    hi = float(angle_max)
+    if bool(show_mirrored):
+        return True
+    if angle < (lo - 1.0e-6) or angle > (hi + 1.0e-6):
+        return False
+    if lo >= 0.0:
+        return angle >= -1.0e-6
+    if hi <= 0.0:
+        return angle <= 1.0e-6
+    return True
+
+
 STAGE_EXPLORER_LAYOUTS: Dict[str, List[Dict[str, str]]] = {
     "concept": [
         {"slot": "A", "key": "heatmap", "title": "Polar Map", "help": "Heatmap with -6 dB contour and target window."},
@@ -559,6 +584,7 @@ class HeatmapCanvas(QLabel):
         self._ref_angle_deg: Optional[float] = None
         self._minus6_contour: List[Dict[str, float]] = []
         self._target_half_window_deg: Optional[float] = None
+        self._show_mirrored_minus6 = False
         self._x_label = "Frequency (Hz, log)"
         self._y_label = "Angle (deg)"
         self._applied_plot_margins: Tuple[int, int, int, int] = apply_analyzer_plot_margins(has_legend=False)
@@ -576,6 +602,7 @@ class HeatmapCanvas(QLabel):
         ref_angle_deg: Optional[float],
         minus6_contour: Optional[List[Dict[str, float]]] = None,
         target_half_window_deg: Optional[float] = None,
+        show_mirrored_minus6: bool = False,
         status: str = "",
     ) -> None:
         self._matrix = [list(row) for row in list(matrix or [])]
@@ -589,6 +616,7 @@ class HeatmapCanvas(QLabel):
         self._target_half_window_deg = (
             float(target_half_window_deg) if target_half_window_deg is not None else None
         )
+        self._show_mirrored_minus6 = bool(show_mirrored_minus6)
         self._status = str(status or "").strip()
         self._rerender()
 
@@ -597,6 +625,7 @@ class HeatmapCanvas(QLabel):
         self._status = str(message or "No heatmap data.")
         self._minus6_contour = []
         self._target_half_window_deg = None
+        self._show_mirrored_minus6 = False
         self._rerender()
 
     def resizeEvent(self, event) -> None:  # type: ignore[override]
@@ -779,8 +808,20 @@ class HeatmapCanvas(QLabel):
                     continue
                 if freq_value < f_min or freq_value > f_max:
                     continue
-                left_points.append((x_of(freq_value), y_of(left_angle)))
-                right_points.append((x_of(freq_value), y_of(right_angle)))
+                if _should_render_minus6_angle(
+                    left_angle,
+                    angle_min=float(angle_min),
+                    angle_max=float(angle_max),
+                    show_mirrored=bool(self._show_mirrored_minus6),
+                ):
+                    left_points.append((x_of(freq_value), y_of(left_angle)))
+                if _should_render_minus6_angle(
+                    right_angle,
+                    angle_min=float(angle_min),
+                    angle_max=float(angle_max),
+                    show_mirrored=bool(self._show_mirrored_minus6),
+                ):
+                    right_points.append((x_of(freq_value), y_of(right_angle)))
             painter.setPen(QPen(QColor("#FFE38A"), 2))
             for idx in range(len(left_points) - 1):
                 x1, y1 = left_points[idx]
@@ -942,10 +983,17 @@ class MetricCurveCanvas(QLabel):
             u = (float(value) - float(y_min)) / max(float(y_max - y_min), 1.0e-6)
             return float(margin_top + ((1.0 - u) * plot_h))
 
-        for y_tick in _linear_ticks(y_min, y_max, max_count=6):
+        y_ticks = _linear_ticks(y_min, y_max, max_count=6)
+        y_positions: List[Tuple[float, int]] = []
+        for y_tick in y_ticks:
             y = int(round(y_of(y_tick)))
+            y_positions.append((float(y_tick), y))
             painter.setPen(QPen(QColor(ANALYZER_PLOT_STYLE.grid_y_color), 1))
             painter.drawLine(margin_left, y, margin_left + plot_w, y)
+        last_label_y = -10_000
+        for y_tick, y in sorted(y_positions, key=lambda item: item[1]):
+            if abs(int(y) - int(last_label_y)) < int(ANALYZER_PLOT_STYLE.y_tick_label_min_gap_px):
+                continue
             painter.setPen(QColor("#A6AFBC"))
             tick_text_w = max(int(margin_left - ANALYZER_PLOT_STYLE.y_tick_label_right_pad_px - 4), 20)
             painter.drawText(
@@ -956,6 +1004,7 @@ class MetricCurveCanvas(QLabel):
                 Qt.AlignRight | Qt.AlignVCenter,
                 f"{y_tick:.2f}",
             )
+            last_label_y = int(y)
 
         if x_mode == "linear":
             major_ticks = _linear_ticks(x_min, x_max, max_count=6)
@@ -4650,6 +4699,7 @@ class AnalysePage(QWidget):
         self._selected_compare_slot_index: Optional[int] = None
         self._selected_detail_payload: Dict[str, Any] = {}
         self._use_full_angles_for_smoothness = False
+        self._show_mirrored_minus6_contour = False
         self._latest_plot_payload: Dict[str, Any] = {}
         self._explorer_stage_panels: Dict[str, Dict[str, Any]] = {}
         self._compare_overlay_curve_key = "beamwidth"
@@ -4829,6 +4879,7 @@ class AnalysePage(QWidget):
 
         self.loading_label = QLabel("Ready.")
         self.loading_label.setObjectName("SummaryMeta")
+        self.loading_label.setVisible(False)
         root.addWidget(self.loading_label, 0, Qt.AlignLeft | Qt.AlignVCenter)
 
         self.error_label = QLabel("")
@@ -4992,8 +5043,8 @@ class AnalysePage(QWidget):
         self.explorer_grid_widget.setObjectName("AnalyzerExplorerGrid")
         self.explorer_grid_layout = QGridLayout(self.explorer_grid_widget)
         self.explorer_grid_layout.setContentsMargins(0, 0, 0, 0)
-        self.explorer_grid_layout.setHorizontalSpacing(8)
-        self.explorer_grid_layout.setVerticalSpacing(8)
+        self.explorer_grid_layout.setHorizontalSpacing(ANALYZER_PLOT_STYLE.tile_gap_px)
+        self.explorer_grid_layout.setVerticalSpacing(ANALYZER_PLOT_STYLE.tile_gap_px)
         self._explorer_stage_panels = {}
         for idx, slot in enumerate(("A", "B", "C", "D")):
             panel = self._create_stage_plot_panel(
@@ -5139,8 +5190,8 @@ class AnalysePage(QWidget):
         self.compare_grid_widget.setObjectName("AnalyzerCompareGrid")
         self.compare_grid_layout = QGridLayout(self.compare_grid_widget)
         self.compare_grid_layout.setContentsMargins(0, 0, 0, 0)
-        self.compare_grid_layout.setHorizontalSpacing(8)
-        self.compare_grid_layout.setVerticalSpacing(8)
+        self.compare_grid_layout.setHorizontalSpacing(ANALYZER_PLOT_STYLE.tile_gap_px)
+        self.compare_grid_layout.setVerticalSpacing(ANALYZER_PLOT_STYLE.tile_gap_px)
 
         self.compare_overlay_panel = self._create_stage_plot_panel(
             panel_id="CompareA",
@@ -5306,33 +5357,56 @@ class AnalysePage(QWidget):
         self.analyzer_controls_row = QFrame()
         self.analyzer_controls_row.setObjectName("ProjectSummaryPanel")
         controls_row_layout = QHBoxLayout(self.analyzer_controls_row)
-        controls_row_layout.setContentsMargins(10, 6, 10, 6)
-        controls_row_layout.setSpacing(6)
+        controls_row_layout.setContentsMargins(8, 4, 8, 4)
+        controls_row_layout.setSpacing(4)
 
         self.analysis_controls_tile = QFrame()
-        self.analysis_controls_tile.setObjectName("ProjectIssuesPanel")
+        self.analysis_controls_tile.setObjectName("ProjectSummaryPanel")
         analysis_controls_layout = QGridLayout(self.analysis_controls_tile)
-        analysis_controls_layout.setContentsMargins(8, 6, 8, 6)
-        analysis_controls_layout.setHorizontalSpacing(6)
-        analysis_controls_layout.setVerticalSpacing(4)
-        analysis_controls_layout.addWidget(QLabel("Analysis"), 0, 0, 1, 6, Qt.AlignLeft | Qt.AlignVCenter)
+        analysis_controls_layout.setContentsMargins(8, 4, 8, 4)
+        analysis_controls_layout.setHorizontalSpacing(4)
+        analysis_controls_layout.setVerticalSpacing(2)
+        analysis_title = QLabel("Analysis")
+        analysis_title.setObjectName("SummaryMeta")
+        analysis_title.setProperty("analyzerBlockTitle", True)
+        analysis_controls_layout.addWidget(analysis_title, 0, 0, 1, 4, Qt.AlignLeft | Qt.AlignVCenter)
         analysis_controls_layout.addWidget(QLabel("Stage"), 1, 0, Qt.AlignLeft | Qt.AlignVCenter)
-        analysis_controls_layout.addWidget(self.stage_selector, 1, 1)
-        analysis_controls_layout.addWidget(QLabel("Target"), 1, 2, Qt.AlignLeft | Qt.AlignVCenter)
-        analysis_controls_layout.addWidget(self.target_selector, 1, 3)
-        analysis_controls_layout.addWidget(self.exclude_flagged_check, 2, 0, 1, 2)
-        analysis_controls_layout.addWidget(self.exclude_warnings_check, 2, 2, 1, 2)
-        analysis_controls_layout.addWidget(QLabel("Min score"), 2, 4, Qt.AlignLeft | Qt.AlignVCenter)
-        analysis_controls_layout.addWidget(self.min_score_spin, 2, 5)
-        controls_row_layout.addWidget(self.analysis_controls_tile, 3)
+        analysis_controls_layout.addWidget(self.stage_selector, 1, 1, 1, 3)
+        analysis_controls_layout.addWidget(QLabel("Target"), 2, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        analysis_controls_layout.addWidget(self.target_selector, 2, 1)
+        analysis_controls_layout.addWidget(QLabel("Min score"), 2, 2, Qt.AlignLeft | Qt.AlignVCenter)
+        analysis_controls_layout.addWidget(self.min_score_spin, 2, 3)
+        analysis_controls_layout.addWidget(self.exclude_flagged_check, 3, 0, 1, 2)
+        analysis_controls_layout.addWidget(self.exclude_warnings_check, 3, 2, 1, 2)
+        analysis_controls_layout.setColumnStretch(0, 0)
+        analysis_controls_layout.setColumnStretch(1, 1)
+        analysis_controls_layout.setColumnStretch(2, 0)
+        analysis_controls_layout.setColumnStretch(3, 1)
+        controls_row_layout.addWidget(self.analysis_controls_tile, 1)
+
+        self.kpi_controls_tile = QFrame()
+        self.kpi_controls_tile.setObjectName("ProjectSummaryPanel")
+        self.kpi_controls_tile.setProperty("analyzerKpiTile", True)
+        kpi_controls_layout = QVBoxLayout(self.kpi_controls_tile)
+        kpi_controls_layout.setContentsMargins(8, 4, 8, 4)
+        kpi_controls_layout.setSpacing(2)
+        kpi_title = QLabel("KPIs")
+        kpi_title.setObjectName("SummaryMeta")
+        kpi_title.setProperty("analyzerBlockTitle", True)
+        kpi_controls_layout.addWidget(kpi_title, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        kpi_controls_layout.addStretch(1)
+        controls_row_layout.addWidget(self.kpi_controls_tile, 1)
 
         self.display_controls_tile = QFrame()
-        self.display_controls_tile.setObjectName("ProjectIssuesPanel")
+        self.display_controls_tile.setObjectName("ProjectSummaryPanel")
         display_controls_layout = QGridLayout(self.display_controls_tile)
-        display_controls_layout.setContentsMargins(8, 6, 8, 6)
-        display_controls_layout.setHorizontalSpacing(6)
-        display_controls_layout.setVerticalSpacing(4)
-        display_controls_layout.addWidget(QLabel("Display"), 0, 0, 1, 6, Qt.AlignLeft | Qt.AlignVCenter)
+        display_controls_layout.setContentsMargins(8, 4, 8, 4)
+        display_controls_layout.setHorizontalSpacing(4)
+        display_controls_layout.setVerticalSpacing(2)
+        display_title = QLabel("Display")
+        display_title.setObjectName("SummaryMeta")
+        display_title.setProperty("analyzerBlockTitle", True)
+        display_controls_layout.addWidget(display_title, 0, 0, 1, 4, Qt.AlignLeft | Qt.AlignVCenter)
         self.x_axis_scale_combo = QComboBox()
         self.x_axis_scale_combo.setObjectName("AnalyzerXAxisScaleCombo")
         self.x_axis_scale_combo.addItem("Log", "log")
@@ -5354,44 +5428,49 @@ class AnalysePage(QWidget):
         self.raw_bins_check.setChecked(False)
         self.display_advanced_btn = QPushButton("Advanced...")
         self.display_advanced_btn.setObjectName("BatchSecondaryButton")
+        self.display_advanced_btn.setMinimumHeight(24)
+        self.display_advanced_btn.setMaximumHeight(24)
         self.band_selector.setToolTip("Affects plotted range and KPI computation window.")
         self.tol_spin.setToolTip("Affects plotted range and KPI computation window.")
-        display_controls_layout.addWidget(QLabel("Band"), 1, 0, Qt.AlignLeft | Qt.AlignVCenter)
-        display_controls_layout.addWidget(self.band_selector, 1, 1)
-        display_controls_layout.addWidget(self.custom_band_widget, 1, 2, 1, 2)
-        display_controls_layout.addWidget(QLabel("Tol (+/-deg)"), 1, 4, Qt.AlignLeft | Qt.AlignVCenter)
-        display_controls_layout.addWidget(self.tol_spin, 1, 5)
-        display_controls_layout.addWidget(QLabel("X-axis"), 2, 0, Qt.AlignLeft | Qt.AlignVCenter)
-        display_controls_layout.addWidget(self.x_axis_scale_combo, 2, 1)
-        norm_group = QWidget()
-        norm_group_layout = QHBoxLayout(norm_group)
-        norm_group_layout.setContentsMargins(0, 0, 0, 0)
-        norm_group_layout.setSpacing(4)
-        norm_group_layout.addWidget(QLabel("Normalization"), 0, Qt.AlignLeft | Qt.AlignVCenter)
-        norm_group_layout.addWidget(self.norm_mode_combo, 1)
-        norm_group_layout.addWidget(QLabel("Norm angle"), 0, Qt.AlignLeft | Qt.AlignVCenter)
-        norm_group_layout.addWidget(self.norm_angle_selector, 1)
-        display_controls_layout.addWidget(norm_group, 2, 2, 1, 4)
-        display_controls_layout.addWidget(self.heatmap_clamp_check, 3, 0, 1, 2)
-        display_controls_layout.addWidget(QLabel("Clamp min dB"), 3, 2, Qt.AlignLeft | Qt.AlignVCenter)
-        display_controls_layout.addWidget(self.heatmap_clamp_min_spin, 3, 3)
-        display_controls_layout.addWidget(self.raw_bins_check, 3, 4, 1, 2)
-        display_controls_layout.addWidget(self.display_advanced_btn, 4, 4, 1, 2, Qt.AlignRight | Qt.AlignVCenter)
-
-        plane_box = QWidget()
-        plane_layout = QHBoxLayout(plane_box)
-        plane_layout.setContentsMargins(0, 0, 0, 0)
-        plane_layout.setSpacing(4)
-        plane_layout.addWidget(QLabel("Plane"), 0, Qt.AlignLeft | Qt.AlignVCenter)
-        for plane_key in ("H", "V", "D"):
-            btn = self._plane_buttons.get(plane_key)
-            if btn is not None:
-                plane_layout.addWidget(btn, 0, Qt.AlignLeft | Qt.AlignVCenter)
-        plane_layout.addStretch(1)
-        display_controls_layout.addWidget(plane_box, 4, 0, 1, 4)
-        display_controls_layout.addWidget(self.plot_loading_label, 5, 0, 1, 4, Qt.AlignLeft | Qt.AlignVCenter)
-        display_controls_layout.addWidget(self.plot_cancel_btn, 5, 4, 1, 2, Qt.AlignRight | Qt.AlignVCenter)
-        controls_row_layout.addWidget(self.display_controls_tile, 2)
+        slots_row = QWidget()
+        slots_layout = QHBoxLayout(slots_row)
+        slots_layout.setContentsMargins(0, 0, 0, 0)
+        slots_layout.setSpacing(4)
+        self.display_slot_frames: List[QFrame] = []
+        for slot_index in range(4):
+            slot_frame = QFrame()
+            slot_frame.setObjectName("AnalyzerDisplaySlotFrame")
+            slot_layout = QGridLayout(slot_frame)
+            slot_layout.setContentsMargins(6, 4, 6, 4)
+            slot_layout.setHorizontalSpacing(4)
+            slot_layout.setVerticalSpacing(2)
+            slot_layout.setColumnStretch(0, 0)
+            slot_layout.setColumnStretch(1, 1)
+            if slot_index == 0:
+                slot_layout.addWidget(QLabel("Band"), 0, 0, Qt.AlignLeft | Qt.AlignVCenter)
+                slot_layout.addWidget(self.band_selector, 0, 1)
+                plane_box = QWidget()
+                plane_layout = QHBoxLayout(plane_box)
+                plane_layout.setContentsMargins(0, 0, 0, 0)
+                plane_layout.setSpacing(2)
+                plane_layout.addWidget(QLabel("Plane"), 0, Qt.AlignLeft | Qt.AlignVCenter)
+                for plane_key in ("H", "V", "D"):
+                    btn = self._plane_buttons.get(plane_key)
+                    if btn is not None:
+                        plane_layout.addWidget(btn, 0, Qt.AlignLeft | Qt.AlignVCenter)
+                plane_layout.addStretch(1)
+                slot_layout.addWidget(plane_box, 1, 0, 1, 2)
+            self.display_slot_frames.append(slot_frame)
+            slots_layout.addWidget(slot_frame, 1)
+        slots_layout.addWidget(self.display_advanced_btn, 0, Qt.AlignRight | Qt.AlignVCenter)
+        display_controls_layout.addWidget(slots_row, 1, 0, 1, 4)
+        display_controls_layout.addWidget(self.plot_loading_label, 2, 0, 1, 3, Qt.AlignLeft | Qt.AlignVCenter)
+        display_controls_layout.addWidget(self.plot_cancel_btn, 2, 3, 1, 1, Qt.AlignRight | Qt.AlignVCenter)
+        display_controls_layout.setColumnStretch(0, 1)
+        display_controls_layout.setColumnStretch(1, 1)
+        display_controls_layout.setColumnStretch(2, 1)
+        display_controls_layout.setColumnStretch(3, 0)
+        controls_row_layout.addWidget(self.display_controls_tile, 1)
 
         self.analysis_mode_row = QFrame()
         self.analysis_mode_row.setObjectName("ProjectSummaryPanel")
@@ -5505,15 +5584,21 @@ class AnalysePage(QWidget):
         frame.setObjectName("ProjectIssuesPanel")
         frame.setMinimumHeight(180)
         frame_layout = QVBoxLayout(frame)
-        frame_layout.setContentsMargins(8, 8, 8, 8)
-        frame_layout.setSpacing(6)
+        frame_layout.setContentsMargins(
+            ANALYZER_PLOT_STYLE.tile_inner_padding_px,
+            ANALYZER_PLOT_STYLE.tile_inner_padding_px,
+            ANALYZER_PLOT_STYLE.tile_inner_padding_px,
+            ANALYZER_PLOT_STYLE.tile_inner_padding_px,
+        )
+        frame_layout.setSpacing(ANALYZER_PLOT_STYLE.tile_header_spacing_px)
 
         header = QWidget()
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(0, 0, 0, 0)
-        header_layout.setSpacing(4)
+        header_layout.setSpacing(ANALYZER_PLOT_STYLE.tile_header_spacing_px)
         title_label = QLabel(str(title or panel_id))
         title_label.setObjectName("SectionTitle")
+        title_label.setProperty("analyzerPlotTitle", True)
         header_layout.addWidget(title_label, 0, Qt.AlignLeft | Qt.AlignVCenter)
         help_btn = QToolButton()
         help_btn.setObjectName("BatchSecondaryToolButton")
@@ -6112,33 +6197,137 @@ class AnalysePage(QWidget):
         self._render_compare_pareto()
 
     def _open_display_advanced_dialog(self) -> None:
-        dialog = StyledDialogBase(title="Display Advanced", parent=self, min_width=420, min_height=280)
+        dialog = StyledDialogBase(title="Display Advanced", parent=self, min_width=560, min_height=360)
         body = dialog.body_layout()
-        text = QLabel(
-            "Display presets are intentionally lightweight for MVP.\n"
-            "Planned options: interpolation profile, grid density and colormap variants."
-        )
-        text.setObjectName("SummaryText")
-        text.setWordWrap(True)
-        body.addWidget(text, 0)
-        raw_state = QLabel(f"Raw bins: {'on' if self.raw_bins_check.isChecked() else 'off'}")
-        raw_state.setObjectName("SummaryMeta")
-        body.addWidget(raw_state, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        intro = QLabel("Configure hidden display options and rendering toggles.")
+        intro.setObjectName("SummaryText")
+        intro.setWordWrap(True)
+        body.addWidget(intro, 0)
+
+        form = QGridLayout()
+        form.setContentsMargins(0, 0, 0, 0)
+        form.setHorizontalSpacing(8)
+        form.setVerticalSpacing(6)
+
+        tol_spin = QDoubleSpinBox()
+        tol_spin.setRange(self.tol_spin.minimum(), self.tol_spin.maximum())
+        tol_spin.setDecimals(self.tol_spin.decimals())
+        tol_spin.setValue(float(self.tol_spin.value()))
+        form.addWidget(QLabel("Tol (+/-deg)"), 0, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        form.addWidget(tol_spin, 0, 1)
+
+        custom_band_low = QDoubleSpinBox()
+        custom_band_low.setRange(self.custom_band_low_spin.minimum(), self.custom_band_low_spin.maximum())
+        custom_band_low.setDecimals(self.custom_band_low_spin.decimals())
+        custom_band_low.setValue(float(self.custom_band_low_spin.value()))
+        custom_band_high = QDoubleSpinBox()
+        custom_band_high.setRange(self.custom_band_high_spin.minimum(), self.custom_band_high_spin.maximum())
+        custom_band_high.setDecimals(self.custom_band_high_spin.decimals())
+        custom_band_high.setValue(float(self.custom_band_high_spin.value()))
+        form.addWidget(QLabel("Custom band low"), 1, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        form.addWidget(custom_band_low, 1, 1)
+        form.addWidget(QLabel("Custom band high"), 1, 2, Qt.AlignLeft | Qt.AlignVCenter)
+        form.addWidget(custom_band_high, 1, 3)
+
+        x_axis_combo = QComboBox()
+        for idx in range(self.x_axis_scale_combo.count()):
+            x_axis_combo.addItem(self.x_axis_scale_combo.itemText(idx), self.x_axis_scale_combo.itemData(idx))
+        self._set_combo_current_by_data(x_axis_combo, str(self.x_axis_scale_combo.currentData() or "log"))
+        form.addWidget(QLabel("X-axis"), 2, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        form.addWidget(x_axis_combo, 2, 1)
+
+        norm_mode_combo = QComboBox()
+        for idx in range(self.norm_mode_combo.count()):
+            norm_mode_combo.addItem(self.norm_mode_combo.itemText(idx), self.norm_mode_combo.itemData(idx))
+        self._set_combo_current_by_data(norm_mode_combo, str(self.norm_mode_combo.currentData() or "relative_zero"))
+        form.addWidget(QLabel("Normalization"), 2, 2, Qt.AlignLeft | Qt.AlignVCenter)
+        form.addWidget(norm_mode_combo, 2, 3)
+
+        norm_angle_combo = QComboBox()
+        for idx in range(self.norm_angle_selector.count()):
+            norm_angle_combo.addItem(self.norm_angle_selector.itemText(idx), self.norm_angle_selector.itemData(idx))
+        self._set_combo_current_by_data(norm_angle_combo, str(self.norm_angle_selector.currentData() or "0"))
+        norm_angle_combo.setEnabled(bool(self.norm_angle_selector.isEnabled()))
+        norm_angle_combo.setToolTip(str(self.norm_angle_selector.toolTip() or ""))
+        form.addWidget(QLabel("Norm angle"), 3, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        form.addWidget(norm_angle_combo, 3, 1)
+
+        clamp_check = QCheckBox("Clamp heatmap")
+        clamp_check.setChecked(bool(self.heatmap_clamp_check.isChecked()))
+        clamp_min_spin = QDoubleSpinBox()
+        clamp_min_spin.setRange(self.heatmap_clamp_min_spin.minimum(), self.heatmap_clamp_min_spin.maximum())
+        clamp_min_spin.setDecimals(self.heatmap_clamp_min_spin.decimals())
+        clamp_min_spin.setValue(float(self.heatmap_clamp_min_spin.value()))
+        raw_bins_check = QCheckBox("Show raw bins")
+        raw_bins_check.setChecked(bool(self.raw_bins_check.isChecked()))
+        form.addWidget(clamp_check, 4, 0, 1, 2, Qt.AlignLeft | Qt.AlignVCenter)
+        form.addWidget(QLabel("Clamp min dB"), 4, 2, Qt.AlignLeft | Qt.AlignVCenter)
+        form.addWidget(clamp_min_spin, 4, 3)
+        form.addWidget(raw_bins_check, 5, 0, 1, 2, Qt.AlignLeft | Qt.AlignVCenter)
+
+        mirrored_minus6_check = QCheckBox("Show mirrored -6 dB contour")
+        mirrored_minus6_check.setChecked(bool(getattr(self, "_show_mirrored_minus6_contour", False)))
+        form.addWidget(mirrored_minus6_check, 5, 2, 1, 2, Qt.AlignLeft | Qt.AlignVCenter)
+
         smoothness_check = QCheckBox("Use full angles for smoothness (S_theta)")
         smoothness_check.setObjectName("AnalyzerFullAnglesSmoothnessCheck")
         smoothness_check.setChecked(bool(self._use_full_angles_for_smoothness))
         smoothness_check.setToolTip("When enabled, S_theta uses all angles instead of the target window.")
-        body.addWidget(smoothness_check, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        form.addWidget(smoothness_check, 6, 0, 1, 4, Qt.AlignLeft | Qt.AlignVCenter)
+        body.addLayout(form)
         close_row = QHBoxLayout()
         close_row.addStretch(1)
         apply_btn = QPushButton("Apply")
         apply_btn.setObjectName("BatchSecondaryButton")
         close_btn = QPushButton("Close")
         close_btn.setObjectName("BatchSecondaryButton")
+
         def _apply_and_close() -> None:
-            changed = bool(self._use_full_angles_for_smoothness) != bool(smoothness_check.isChecked())
+            kpi_changed = False
+            plot_changed = False
+            if abs(float(self.tol_spin.value()) - float(tol_spin.value())) > 1.0e-9:
+                kpi_changed = True
+            if abs(float(self.custom_band_low_spin.value()) - float(custom_band_low.value())) > 1.0e-9:
+                kpi_changed = True
+            if abs(float(self.custom_band_high_spin.value()) - float(custom_band_high.value())) > 1.0e-9:
+                kpi_changed = True
+            if str(self.x_axis_scale_combo.currentData() or "log") != str(x_axis_combo.currentData() or "log"):
+                plot_changed = True
+            if str(self.norm_mode_combo.currentData() or "relative_zero") != str(norm_mode_combo.currentData() or "relative_zero"):
+                plot_changed = True
+            if str(self.norm_angle_selector.currentData() or "0") != str(norm_angle_combo.currentData() or "0"):
+                plot_changed = True
+            if bool(self.heatmap_clamp_check.isChecked()) != bool(clamp_check.isChecked()):
+                plot_changed = True
+            if abs(float(self.heatmap_clamp_min_spin.value()) - float(clamp_min_spin.value())) > 1.0e-9:
+                plot_changed = True
+            if bool(self.raw_bins_check.isChecked()) != bool(raw_bins_check.isChecked()):
+                plot_changed = True
+            mirrored_changed = bool(getattr(self, "_show_mirrored_minus6_contour", False)) != bool(mirrored_minus6_check.isChecked())
+            if mirrored_changed:
+                plot_changed = True
+            smoothness_changed = bool(self._use_full_angles_for_smoothness) != bool(smoothness_check.isChecked())
+
+            self._control_sync_guard = True
+            self.tol_spin.setValue(float(tol_spin.value()))
+            self.custom_band_low_spin.setValue(float(custom_band_low.value()))
+            self.custom_band_high_spin.setValue(float(custom_band_high.value()))
+            self._set_combo_current_by_data(self.x_axis_scale_combo, str(x_axis_combo.currentData() or "log"))
+            self._set_combo_current_by_data(self.norm_mode_combo, str(norm_mode_combo.currentData() or "relative_zero"))
+            self._set_combo_current_by_data(self.norm_angle_selector, str(norm_angle_combo.currentData() or "0"))
+            self.heatmap_clamp_check.setChecked(bool(clamp_check.isChecked()))
+            self.heatmap_clamp_min_spin.setValue(float(clamp_min_spin.value()))
+            self.raw_bins_check.setChecked(bool(raw_bins_check.isChecked()))
+            self._show_mirrored_minus6_contour = bool(mirrored_minus6_check.isChecked())
             self._use_full_angles_for_smoothness = bool(smoothness_check.isChecked())
-            if changed:
+            self._control_sync_guard = False
+
+            if kpi_changed:
+                self._sync_band_custom_visibility()
+                self._on_kpi_config_changed()
+            elif plot_changed:
+                self._on_plot_config_changed()
+            if smoothness_changed:
                 self._schedule_plot_refresh()
                 self._schedule_compare_plot_refresh()
             dialog.accept()
@@ -6358,6 +6547,7 @@ class AnalysePage(QWidget):
                         if heatmap_overlays.get("target_half_window_deg") is not None
                         else None
                     ),
+                    show_mirrored_minus6=bool(self._show_mirrored_minus6_contour),
                     status=status,
                 )
                 continue
@@ -6735,6 +6925,7 @@ class AnalysePage(QWidget):
                 if overlays.get("target_half_window_deg") is not None
                 else None
             ),
+            show_mirrored_minus6=bool(self._show_mirrored_minus6_contour),
             status="",
         )
 

@@ -84,6 +84,15 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         font-size: 18px;
         font-weight: 700;
     }}
+    QLabel[analyzerPlotTitle="true"] {{
+        font-size: 9px;
+        font-weight: 600;
+    }}
+    QLabel[analyzerBlockTitle="true"] {{
+        font-size: 11px;
+        font-weight: 600;
+        color: {c['muted']};
+    }}
     QLabel#StatusSymbol {{
         color: {c['muted']};
         font-size: 16px;
@@ -711,6 +720,14 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         background-color: #1f1f1f;
         border: 1px solid {c['border']};
         border-radius: {r['md']}px;
+    }}
+    QFrame#ProjectSummaryPanel[analyzerKpiTile="true"] {{
+        background-color: #24272d;
+    }}
+    QFrame#AnalyzerDisplaySlotFrame {{
+        background-color: #1b1e23;
+        border: 1px solid {c['border']};
+        border-radius: {r['sm']}px;
     }}
     QFrame#ConstraintCard {{
         background-color: #1c1c1c;

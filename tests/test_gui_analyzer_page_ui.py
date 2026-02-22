@@ -9,7 +9,14 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from app.gui import AnalysePage, HeatmapCanvas, MainWindow, apply_analyzer_plot_margins
+from app.gui import (
+    ANALYZER_PLOT_STYLE,
+    AnalysePage,
+    HeatmapCanvas,
+    MainWindow,
+    _should_render_minus6_angle,
+    apply_analyzer_plot_margins,
+)
 from app.services import OrchestratorService
 from app.settings_store import SettingsStore, UserSettings
 
@@ -106,6 +113,41 @@ class AnalyzerPageUiTests(unittest.TestCase):
             self.assertTrue(str(curve_canvas._y_label).strip())
             self.assertEqual(tuple(heatmap_canvas._applied_plot_margins), apply_analyzer_plot_margins(has_legend=False))
             self.assertEqual(tuple(curve_canvas._applied_plot_margins), apply_analyzer_plot_margins(has_legend=False))
+
+    def test_controls_row_uses_three_equal_tiles(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_ui2x_three_tiles_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            layout = page.analyzer_controls_row.layout()
+            self.assertIsNotNone(layout)
+            assert layout is not None
+            self.assertEqual(layout.count(), 3)
+            self.assertEqual(layout.stretch(0), 1)
+            self.assertEqual(layout.stretch(1), 1)
+            self.assertEqual(layout.stretch(2), 1)
+            self.assertTrue(hasattr(page, "kpi_controls_tile"))
+            self.assertEqual(len(getattr(page, "display_slot_frames", [])), 4)
+            self.assertFalse(page.loading_label.isVisible())
+
+    def test_plot_titles_and_tile_gaps_use_compact_analyzer_style(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_ui2x_plot_title_compact_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            panel = page._explorer_stage_panels["A"]
+            title = panel["title_label"]
+            self.assertTrue(bool(title.property("analyzerPlotTitle")))
+            self.assertEqual(page.explorer_grid_layout.horizontalSpacing(), int(ANALYZER_PLOT_STYLE.tile_gap_px))
+            self.assertEqual(page.explorer_grid_layout.verticalSpacing(), int(ANALYZER_PLOT_STYLE.tile_gap_px))
+            self.assertEqual(page.compare_grid_layout.horizontalSpacing(), int(ANALYZER_PLOT_STYLE.tile_gap_px))
+            self.assertEqual(page.compare_grid_layout.verticalSpacing(), int(ANALYZER_PLOT_STYLE.tile_gap_px))
+
+    def test_mirrored_minus6_contour_filter_defaults_to_hidden(self) -> None:
+        self.assertFalse(
+            _should_render_minus6_angle(-20.0, angle_min=0.0, angle_max=90.0, show_mirrored=False)
+        )
+        self.assertTrue(
+            _should_render_minus6_angle(-20.0, angle_min=0.0, angle_max=90.0, show_mirrored=True)
+        )
 
     def test_selecting_batch_requests_background_run_load(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_ui1c_batch_change_") as tmp:
