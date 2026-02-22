@@ -267,3 +267,8 @@
   - log/linear x-axis mode selector
   - visible frequency ticks/grid labels for Explorer and Compare beamwidth plots.
 - Gear Settings now includes an `Analyzer` tab with `Data source` selection (`Project`/`Global`); per-page source dropdown removed from Analyzer toolbar.
+
+## 2026-02-22 (Analyzer pro-layout regression tests)
+- Updated Analyzer UI tests to assert `Batch/Version`-first display (instead of exposing run UUIDs in primary table/summary surfaces).
+- Added shortlist interaction coverage for Compare (`add/remove` updates visible slot rows without crashes).
+- Added Gear Settings Analyzer-tab tests to lock data-source relocation (`Analyzer` tab + source save roundtrip).

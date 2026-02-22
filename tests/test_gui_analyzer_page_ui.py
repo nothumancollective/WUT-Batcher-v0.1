@@ -42,6 +42,8 @@ class AnalyzerPageUiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="wut_ui1c_nav_") as tmp:
             service = _build_service(Path(tmp))
             window = MainWindow(service)
+            project = service.create_project("Analyzer Nav", {})
+            window.load_project(project)
             with patch.object(window.analyse_page, "refresh_data", autospec=True) as refresh_mock:
                 window.analyse_mode_button.click()
                 self.assertIs(window.stack.currentWidget(), window.analyse_page)
@@ -126,7 +128,7 @@ class AnalyzerPageUiTests(unittest.TestCase):
             self.assertIsNotNone(run_id_item)
             self.assertIsNotNone(planes_item)
             assert run_id_item is not None and planes_item is not None
-            self.assertEqual(run_id_item.text(), "R001")
+            self.assertEqual(run_id_item.text(), "B001/V001")
             self.assertEqual(planes_item.text(), "H/V/D")
             self.assertEqual(page.run_table.item(0, 6).text(), "87.50")
             self.assertEqual(page.run_table.item(0, 7).text(), "2.20")
@@ -204,7 +206,7 @@ class AnalyzerPageUiTests(unittest.TestCase):
                 ],
             }
             page._apply_runs_payload(payload)
-            self.assertIn("R001", page.run_summary_run_chip.text())
+            self.assertIn("B001/V001", page.run_summary_run_chip.text())
             self.assertIn("H/V/D", page.run_summary_planes_chip.text())
             self.assertIn("401/37", page.run_summary_freq_chip.text())
             self.assertIn("88.20", page.run_summary_score_chip.text())

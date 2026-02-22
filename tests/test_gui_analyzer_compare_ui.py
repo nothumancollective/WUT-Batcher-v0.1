@@ -92,10 +92,10 @@ class AnalyzerCompareUiTests(unittest.TestCase):
             page._load_selected_analysis()
 
             self.assertGreaterEqual(page.compare_slots_table.rowCount(), 1)
-            first_run = page.compare_slots_table.item(0, 2)
+            first_run = page.compare_slots_table.item(0, 1)
             self.assertIsNotNone(first_run)
             assert first_run is not None
-            self.assertIn(first_run.text(), {"R001", "R010"})
+            self.assertIn(first_run.text(), {"B001/V001", "B002/V010"})
 
     def test_autopick_result_is_capped_to_five_candidates(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_ui2c_compare_autopick_") as tmp:
@@ -126,6 +126,17 @@ class AnalyzerCompareUiTests(unittest.TestCase):
             saved_selector = page.findChild(QComboBox, "AnalyzerAnalysisSelector")
             self.assertIsNotNone(slots_table)
             self.assertIsNotNone(saved_selector)
+
+    def test_compare_add_and_remove_candidate_updates_shortlist(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_ui2c_compare_slots_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            payload = self._sample_runs_payload("P001")
+            page._apply_runs_payload(payload)
+            page._set_compare_candidates([payload["runs"][0]])
+            self.assertEqual(page.compare_slots_table.item(0, 1).text(), "B001/V001")
+            page._remove_compare_candidate(0)
+            self.assertEqual(page.compare_slots_table.item(0, 1).text(), "--")
 
 
 if __name__ == "__main__":
