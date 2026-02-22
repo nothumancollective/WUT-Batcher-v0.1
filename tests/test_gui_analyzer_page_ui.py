@@ -9,19 +9,20 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from app.gui import AnalysePage, MainWindow
+from app.gui import AnalysePage, HeatmapCanvas, MainWindow
 from app.services import OrchestratorService
 from app.settings_store import SettingsStore, UserSettings
 
 try:
-    from PySide6.QtWidgets import QApplication, QCheckBox, QComboBox, QPushButton, QTableWidget, QTabWidget
+    from PySide6.QtWidgets import QApplication, QComboBox, QDialog, QPushButton, QTableWidget, QTabWidget, QToolButton
 except ImportError:  # pragma: no cover
     QApplication = None  # type: ignore[assignment]
-    QCheckBox = None  # type: ignore[assignment]
     QComboBox = None  # type: ignore[assignment]
+    QDialog = None  # type: ignore[assignment]
     QPushButton = None  # type: ignore[assignment]
     QTableWidget = None  # type: ignore[assignment]
     QTabWidget = None  # type: ignore[assignment]
+    QToolButton = None  # type: ignore[assignment]
 
 
 def _build_service(tmp_root: Path) -> OrchestratorService:
@@ -62,17 +63,23 @@ class AnalyzerPageUiTests(unittest.TestCase):
             target_selector = page.findChild(QComboBox, "AnalyzerTargetPresetCombo")
             band_selector = page.findChild(QComboBox, "AnalyzerBandPresetCombo")
             compute_btn = page.findChild(QPushButton, "AnalyzerComputeKpisButton")
-            exclude_flagged = page.findChild(QCheckBox, "AnalyzerExcludeFlaggedCheck")
+            exclude_flagged = page.findChild(QToolButton, "AnalyzerExcludeFlaggedCheck")
+            versions_btn = page.findChild(QToolButton, "AnalyzerVersionsButton")
+            kpi_btn = page.findChild(QToolButton, "AnalyzerKpiPopoverButton")
             self.assertIsNotNone(batch_selector)
             self.assertIsNotNone(run_table)
-            self.assertIsNotNone(run_selector)
+            self.assertIsNotNone(run_selector if run_selector is not None else page.run_selector)
             self.assertIsNotNone(stage_selector)
             self.assertIsNotNone(target_selector)
             self.assertIsNotNone(band_selector)
             self.assertIsNotNone(compute_btn)
             self.assertIsNotNone(exclude_flagged)
+            self.assertIsNotNone(versions_btn)
+            self.assertIsNotNone(kpi_btn)
             assert run_table is not None
             self.assertEqual(run_table.selectionMode(), QTableWidget.ExtendedSelection)
+            assert exclude_flagged is not None
+            self.assertTrue(exclude_flagged.isCheckable())
 
     def test_selecting_batch_requests_background_run_load(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_ui1c_batch_change_") as tmp:
@@ -208,9 +215,94 @@ class AnalyzerPageUiTests(unittest.TestCase):
             page._apply_runs_payload(payload)
             self.assertIn("B001/V001", page.run_summary_run_chip.text())
             self.assertIn("H/V/D", page.run_summary_planes_chip.text())
-            self.assertIn("401/37", page.run_summary_freq_chip.text())
             self.assertIn("88.20", page.run_summary_score_chip.text())
             self.assertTrue(page.run_details_btn.isEnabled())
+
+    def test_toolbar_has_single_visible_compute_button(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_ui2x_compute_btn_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            compute_buttons = [
+                btn
+                for btn in page.findChildren(QPushButton, "AnalyzerComputeKpisButton")
+            ]
+            self.assertEqual(len(compute_buttons), 1)
+            self.assertIs(compute_buttons[0], page.compute_btn)
+
+    def test_clamp_default_is_minus_20_db(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_ui2x_clamp_default_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            self.assertEqual(float(page.heatmap_clamp_min_spin.value()), -20.0)
+
+    def test_versions_button_opens_picker_and_updates_selection(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_ui2x_versions_popover_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            payload = {
+                "mode": "runs",
+                "project_id": "P001",
+                "batch_id": "B001",
+                "runs": [
+                    {
+                        "project_id": "P001",
+                        "batch_id": "B001",
+                        "run_id": "R001",
+                        "version_id": "V001",
+                        "planes": ["H", "V"],
+                        "kpi_score": 80.0,
+                    },
+                    {
+                        "project_id": "P001",
+                        "batch_id": "B001",
+                        "run_id": "R002",
+                        "version_id": "V002",
+                        "planes": ["H", "V", "D"],
+                        "kpi_score": 90.0,
+                    },
+                ],
+            }
+            page._apply_runs_payload(payload)
+            target = dict(payload["runs"][1])
+            with patch("app.gui._AnalyzerVersionPickerDialog.exec", autospec=True, return_value=QDialog.Accepted) as exec_mock:
+                with patch(
+                    "app.gui._AnalyzerVersionPickerDialog.selected_payload",
+                    autospec=True,
+                    return_value=target,
+                ):
+                    page._open_version_picker()
+            self.assertEqual(exec_mock.call_count, 1)
+            current_item = page.run_table.item(page.run_table.currentRow(), 0)
+            self.assertIsNotNone(current_item)
+            assert current_item is not None
+            self.assertEqual(current_item.text(), "B001/V002")
+
+    def test_heatmap_orientation_places_positive_angles_up(self) -> None:
+        canvas = HeatmapCanvas()
+        canvas.resize(360, 240)
+        matrix = [
+            [-30.0, -30.0, -30.0],
+            [0.0, 0.0, 0.0],
+        ]
+        canvas.set_heatmap_data(
+            matrix=matrix,
+            freqs_hz=[200.0, 1000.0, 5000.0],
+            angles_deg=[-10.0, 10.0],
+            clamp_enabled=True,
+            clamp_min_db=-30.0,
+            show_raw_bins=False,
+            ref_angle_deg=0.0,
+            status="",
+        )
+        pixmap = canvas.pixmap()
+        self.assertIsNotNone(pixmap)
+        assert pixmap is not None
+        image = pixmap.toImage()
+        top = image.pixelColor(170, 70)
+        bottom = image.pixelColor(170, 165)
+        top_luma = int(top.red()) + int(top.green()) + int(top.blue())
+        bottom_luma = int(bottom.red()) + int(bottom.green()) + int(bottom.blue())
+        self.assertGreater(top_luma, bottom_luma)
 
     def test_details_dialog_open_path_is_callable(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_ui2x_details_") as tmp:

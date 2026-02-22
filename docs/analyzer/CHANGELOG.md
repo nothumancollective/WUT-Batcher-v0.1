@@ -299,3 +299,10 @@
   - analyzer toggle controls + clamp default
   - compare shortlist KPI panel behavior
   - heatmap orientation sanity rendering.
+
+## 2026-02-22 (Analyzer pro-layout polish: regression test lock)
+- Extended Analyzer GUI regression coverage to lock the final polish pass:
+  - toolbar compactness contract (`1` compute button, popup-based version selection path)
+  - control defaults (`-20 dB` clamp) and toggle affordances
+  - compare shortlist KPI panel and overlay-heatmap selector guidance
+  - heatmap orientation sanity rendering (positive angles map upward in plot view).
