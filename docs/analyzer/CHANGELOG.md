@@ -318,3 +318,15 @@
 - Added stage-curve compute module `app/analyzer/stage_plot_engine.py` and integrated service API:
   - `analyzer_load_stage_plot_payload(...)` now returns stage-specific curves + artifact availability metadata
   - no runner/export/import pipeline changes.
+
+## 2026-02-22 (Analyzer UI: stage-based 2x2 Explorer + Compare grids)
+- Explorer now renders a fixed stage-driven 2x2 panel matrix:
+  - A: Polar map (heatmap + target shading + -6 dB contour)
+  - B/C/D: stage-specific metric curves (concept/shaping, stabilization, final).
+- Compare now renders a fixed 2x2 matrix:
+  - A: stage-dependent overlay key curve
+  - B: single-candidate heatmap with contour/shading
+  - C: KPI breakdown panel
+  - D: Pareto scatter with axis selectors.
+- Stage selector now drives plot-tile mapping and compare defaults; Stage-3 missing artifacts are shown as explicit “missing data” messages in the relevant tiles.
+- Added Display Advanced toggle for `use_full_angles_for_smoothness` (feeds stage-compute request config without touching runner/import flows).
