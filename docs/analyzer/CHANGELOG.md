@@ -171,3 +171,8 @@
 - Fixed R-OSSE subgroup visibility regression: subsection frame visibility now tracks rendered `R-OSSE.*` property rows (not just the parent `R-OSSE` object key), so the block appears reliably when mode 2 is active.
 - Stabilized Batch card resize behavior by reducing aggressive multi-column expansion at large widths (keeps Basics/GCurve/Throat behavior consistent under fullscreen-like widths).
 - Hardened Batch split-column bounds: left panel is now explicitly width-bounded against the computed right-panel width to prevent left-card rendering from intruding into the right Preview/Exports column.
+
+## 2026-02-22 (Analyzer Phase 2A: cache schema + presets baseline)
+- Added additive KPI cache storage table `analyzer_run_kpis` to SQL dataset schema (project + global), including cache identity indexes and score-oriented lookup indexes.
+- Added `_dual_write` replication operation `upsert_analyzer_run_kpis` and store-level upsert/list APIs for Analyzer KPI rows.
+- Added canonical Analyzer preset definitions (`coverage`, `band`, `tolerance`, `stage`) in `app/analyzer/presets.py`, including a default scoring band starting at `200 Hz`.

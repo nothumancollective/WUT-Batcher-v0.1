@@ -15,7 +15,7 @@ import uuid
 from app.models import Batch, Project, VersionSpec
 
 
-SCHEMA_VERSION = "2.5"
+SCHEMA_VERSION = "2.6"
 
 
 def _now_iso() -> str:
@@ -101,6 +101,38 @@ def _stable_polar_id(
 ) -> str:
     raw = "|".join([project_id, batch_id, version_id, run_id or "", orientation, file_hash])
     return "P" + hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
+
+
+def _stable_analyzer_kpi_id(
+    *,
+    project_id: str,
+    batch_id: str,
+    version_id: str,
+    run_id: Optional[str],
+    band_low_hz: float,
+    band_high_hz: float,
+    target_h_deg: float,
+    target_v_deg: float,
+    tol_deg: float,
+    algo_version: str,
+    source_hash: str,
+) -> str:
+    raw = "|".join(
+        [
+            project_id,
+            batch_id,
+            version_id,
+            run_id or "",
+            f"{float(band_low_hz):.6f}",
+            f"{float(band_high_hz):.6f}",
+            f"{float(target_h_deg):.6f}",
+            f"{float(target_v_deg):.6f}",
+            f"{float(tol_deg):.6f}",
+            algo_version,
+            source_hash,
+        ]
+    )
+    return "K" + hashlib.sha1(raw.encode("utf-8")).hexdigest()[:20]
 
 
 class SqlDatasetStore:
@@ -330,6 +362,26 @@ class SqlDatasetStore:
                     FOREIGN KEY (polar_id) REFERENCES polar_measurements(polar_id) ON DELETE CASCADE
                 );
 
+                CREATE TABLE IF NOT EXISTS analyzer_run_kpis (
+                    kpi_id TEXT PRIMARY KEY,
+                    project_id TEXT NOT NULL,
+                    batch_id TEXT NOT NULL,
+                    run_id TEXT,
+                    version_id TEXT NOT NULL,
+                    stage_mode TEXT,
+                    band_low_hz REAL NOT NULL,
+                    band_high_hz REAL NOT NULL,
+                    target_h_deg REAL NOT NULL,
+                    target_v_deg REAL NOT NULL,
+                    tol_deg REAL NOT NULL,
+                    kpi_json TEXT NOT NULL,
+                    flags_json TEXT,
+                    score REAL,
+                    algo_version TEXT NOT NULL,
+                    source_hash TEXT NOT NULL,
+                    computed_at TEXT NOT NULL
+                );
+
                 CREATE TABLE IF NOT EXISTS replication_queue (
                     queue_id INTEGER PRIMARY KEY AUTOINCREMENT,
                     operation TEXT NOT NULL,
@@ -409,6 +461,22 @@ class SqlDatasetStore:
                 CREATE INDEX IF NOT EXISTS idx_polar_points_polar_freq ON polar_points(polar_id, freq_hz);
                 CREATE INDEX IF NOT EXISTS idx_polar_points_polar_angle_freq ON polar_points(polar_id, angle_index, freq_hz);
                 CREATE INDEX IF NOT EXISTS idx_polar_points_polar_angle ON polar_points(polar_id, angle_deg);
+                CREATE INDEX IF NOT EXISTS idx_analyzer_kpis_batch_score ON analyzer_run_kpis(project_id, batch_id, score DESC);
+                CREATE INDEX IF NOT EXISTS idx_analyzer_kpis_batch_version ON analyzer_run_kpis(project_id, batch_id, version_id);
+                CREATE INDEX IF NOT EXISTS idx_analyzer_kpis_batch_run ON analyzer_run_kpis(project_id, batch_id, run_id);
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_analyzer_kpis_identity ON analyzer_run_kpis(
+                    project_id,
+                    batch_id,
+                    version_id,
+                    coalesce(run_id, ''),
+                    band_low_hz,
+                    band_high_hz,
+                    target_h_deg,
+                    target_v_deg,
+                    tol_deg,
+                    algo_version,
+                    source_hash
+                );
                 CREATE INDEX IF NOT EXISTS idx_replication_queue_status ON replication_queue(status, queue_id);
                 CREATE INDEX IF NOT EXISTS idx_compat_results_project_fact ON compat_verification_results(project_id, fact_id);
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_federation_tombstones_entity
@@ -763,6 +831,29 @@ class SqlDatasetStore:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS analyzer_run_kpis (
+                kpi_id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                batch_id TEXT NOT NULL,
+                run_id TEXT,
+                version_id TEXT NOT NULL,
+                stage_mode TEXT,
+                band_low_hz REAL NOT NULL,
+                band_high_hz REAL NOT NULL,
+                target_h_deg REAL NOT NULL,
+                target_v_deg REAL NOT NULL,
+                tol_deg REAL NOT NULL,
+                kpi_json TEXT NOT NULL,
+                flags_json TEXT,
+                score REAL,
+                algo_version TEXT NOT NULL,
+                source_hash TEXT NOT NULL,
+                computed_at TEXT NOT NULL
+            )
+            """
+        )
         self._ensure_federation_tables(conn)
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_runs_project_batch ON runs(project_id, batch_id, started_at)"
@@ -812,6 +903,20 @@ class SqlDatasetStore:
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_polar_points_polar_angle ON polar_points(polar_id, angle_deg)"
         )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_analyzer_kpis_batch_score ON analyzer_run_kpis(project_id, batch_id, score DESC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_analyzer_kpis_batch_version ON analyzer_run_kpis(project_id, batch_id, version_id)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_analyzer_kpis_batch_run ON analyzer_run_kpis(project_id, batch_id, run_id)"
+        )
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_analyzer_kpis_identity ON analyzer_run_kpis("
+            "project_id, batch_id, version_id, coalesce(run_id, ''), band_low_hz, band_high_hz, "
+            "target_h_deg, target_v_deg, tol_deg, algo_version, source_hash)"
+        )
 
     def persist_schema_descriptor(self) -> None:
         payload = {
@@ -832,6 +937,7 @@ class SqlDatasetStore:
                 "graph_points",
                 "polar_measurements",
                 "polar_points",
+                "analyzer_run_kpis",
                 "compat_verification_results",
                 "federation_profile",
                 "federation_sync_state",
@@ -870,6 +976,8 @@ class SqlDatasetStore:
             self._op_upsert_polar_measurement(conn, payload)
         elif operation == "insert_polar_points_chunk":
             self._op_insert_polar_points_chunk(conn, payload)
+        elif operation == "upsert_analyzer_run_kpis":
+            self._op_upsert_analyzer_run_kpis(conn, payload)
         elif operation == "upsert_run":
             self._op_upsert_run(conn, payload)
         elif operation == "update_run":
@@ -1328,6 +1436,72 @@ class SqlDatasetStore:
             """,
             values,
         )
+
+    def _op_upsert_analyzer_run_kpis(self, conn: sqlite3.Connection, payload: Dict[str, Any]) -> None:
+        rows = [item for item in list(payload.get("rows", []) or []) if isinstance(item, dict)]
+        if not rows:
+            return
+        for row in rows:
+            conn.execute(
+                """
+                INSERT INTO analyzer_run_kpis (
+                    kpi_id, project_id, batch_id, run_id, version_id, stage_mode,
+                    band_low_hz, band_high_hz, target_h_deg, target_v_deg, tol_deg,
+                    kpi_json, flags_json, score, algo_version, source_hash, computed_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(kpi_id) DO UPDATE SET
+                    project_id=excluded.project_id,
+                    batch_id=excluded.batch_id,
+                    run_id=excluded.run_id,
+                    version_id=excluded.version_id,
+                    stage_mode=excluded.stage_mode,
+                    band_low_hz=excluded.band_low_hz,
+                    band_high_hz=excluded.band_high_hz,
+                    target_h_deg=excluded.target_h_deg,
+                    target_v_deg=excluded.target_v_deg,
+                    tol_deg=excluded.tol_deg,
+                    kpi_json=excluded.kpi_json,
+                    flags_json=excluded.flags_json,
+                    score=excluded.score,
+                    algo_version=excluded.algo_version,
+                    source_hash=excluded.source_hash,
+                    computed_at=excluded.computed_at
+                """,
+                (
+                    str(
+                        row.get("kpi_id")
+                        or _stable_analyzer_kpi_id(
+                            project_id=str(row["project_id"]),
+                            batch_id=str(row["batch_id"]),
+                            version_id=str(row["version_id"]),
+                            run_id=(str(row.get("run_id") or "").strip() or None),
+                            band_low_hz=float(row["band_low_hz"]),
+                            band_high_hz=float(row["band_high_hz"]),
+                            target_h_deg=float(row["target_h_deg"]),
+                            target_v_deg=float(row["target_v_deg"]),
+                            tol_deg=float(row["tol_deg"]),
+                            algo_version=str(row["algo_version"]),
+                            source_hash=str(row["source_hash"]),
+                        )
+                    ),
+                    str(row["project_id"]),
+                    str(row["batch_id"]),
+                    (str(row.get("run_id") or "").strip() or None),
+                    str(row["version_id"]),
+                    (str(row.get("stage_mode") or "").strip() or None),
+                    float(row["band_low_hz"]),
+                    float(row["band_high_hz"]),
+                    float(row["target_h_deg"]),
+                    float(row["target_v_deg"]),
+                    float(row["tol_deg"]),
+                    str(row.get("kpi_json") or _to_json({})),
+                    row.get("flags_json"),
+                    float(row["score"]) if row.get("score") is not None else None,
+                    str(row["algo_version"]),
+                    str(row["source_hash"]),
+                    str(row.get("computed_at") or _now_iso()),
+                ),
+            )
 
     def _op_upsert_run(self, conn: sqlite3.Connection, payload: Dict[str, Any]) -> None:
         conn.execute(
@@ -2132,6 +2306,127 @@ class SqlDatasetStore:
             "points_written": len(point_rows),
             "chunks_written": chunks_written,
         }
+
+    def write_analyzer_run_kpis(self, rows: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+        payload_rows: List[Dict[str, Any]] = []
+        for row in rows:
+            run_id_token = str(row.get("run_id") or "").strip() or None
+            payload_rows.append(
+                {
+                    "kpi_id": str(
+                        row.get("kpi_id")
+                        or _stable_analyzer_kpi_id(
+                            project_id=str(row["project_id"]),
+                            batch_id=str(row["batch_id"]),
+                            version_id=str(row["version_id"]),
+                            run_id=run_id_token,
+                            band_low_hz=float(row["band_low_hz"]),
+                            band_high_hz=float(row["band_high_hz"]),
+                            target_h_deg=float(row["target_h_deg"]),
+                            target_v_deg=float(row["target_v_deg"]),
+                            tol_deg=float(row["tol_deg"]),
+                            algo_version=str(row["algo_version"]),
+                            source_hash=str(row["source_hash"]),
+                        )
+                    ),
+                    "project_id": str(row["project_id"]),
+                    "batch_id": str(row["batch_id"]),
+                    "run_id": run_id_token,
+                    "version_id": str(row["version_id"]),
+                    "stage_mode": (str(row.get("stage_mode") or "").strip() or None),
+                    "band_low_hz": float(row["band_low_hz"]),
+                    "band_high_hz": float(row["band_high_hz"]),
+                    "target_h_deg": float(row["target_h_deg"]),
+                    "target_v_deg": float(row["target_v_deg"]),
+                    "tol_deg": float(row["tol_deg"]),
+                    "kpi_json": str(row.get("kpi_json") or _to_json({})),
+                    "flags_json": (
+                        str(row.get("flags_json"))
+                        if row.get("flags_json") is not None
+                        else _to_json(row.get("flags", {}))
+                    ),
+                    "score": float(row["score"]) if row.get("score") is not None else None,
+                    "algo_version": str(row["algo_version"]),
+                    "source_hash": str(row["source_hash"]),
+                    "computed_at": str(row.get("computed_at") or _now_iso()),
+                }
+            )
+        result = self._dual_write("upsert_analyzer_run_kpis", {"rows": payload_rows})
+        return {**result, "rows_written": len(payload_rows)}
+
+    def list_analyzer_run_kpis(
+        self,
+        *,
+        project_id: str,
+        batch_id: str,
+        band_low_hz: Optional[float] = None,
+        band_high_hz: Optional[float] = None,
+        target_h_deg: Optional[float] = None,
+        target_v_deg: Optional[float] = None,
+        tol_deg: Optional[float] = None,
+        algo_version: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        where = ["project_id = ?", "batch_id = ?"]
+        values: List[Any] = [str(project_id), str(batch_id)]
+        for key, value in (
+            ("band_low_hz", band_low_hz),
+            ("band_high_hz", band_high_hz),
+            ("target_h_deg", target_h_deg),
+            ("target_v_deg", target_v_deg),
+            ("tol_deg", tol_deg),
+        ):
+            if value is None:
+                continue
+            where.append(f"{key} = ?")
+            values.append(float(value))
+        if algo_version:
+            where.append("algo_version = ?")
+            values.append(str(algo_version))
+        with self._open_conn(self.project_db_path) as conn:
+            rows = conn.execute(
+                f"""
+                SELECT
+                    kpi_id, project_id, batch_id, run_id, version_id, stage_mode,
+                    band_low_hz, band_high_hz, target_h_deg, target_v_deg, tol_deg,
+                    kpi_json, flags_json, score, algo_version, source_hash, computed_at
+                FROM analyzer_run_kpis
+                WHERE {' AND '.join(where)}
+                ORDER BY computed_at DESC
+                """,
+                tuple(values),
+            ).fetchall()
+        result: List[Dict[str, Any]] = []
+        for row in rows:
+            try:
+                kpi_payload = json.loads(str(row["kpi_json"] or "{}"))
+            except json.JSONDecodeError:
+                kpi_payload = {}
+            try:
+                flags_payload = json.loads(str(row["flags_json"] or "{}"))
+            except json.JSONDecodeError:
+                flags_payload = {}
+            result.append(
+                {
+                    "kpi_id": str(row["kpi_id"]),
+                    "project_id": str(row["project_id"]),
+                    "batch_id": str(row["batch_id"]),
+                    "run_id": str(row["run_id"]).strip() if row["run_id"] is not None else None,
+                    "version_id": str(row["version_id"]),
+                    "stage_mode": row["stage_mode"],
+                    "band_low_hz": float(row["band_low_hz"]),
+                    "band_high_hz": float(row["band_high_hz"]),
+                    "target_h_deg": float(row["target_h_deg"]),
+                    "target_v_deg": float(row["target_v_deg"]),
+                    "tol_deg": float(row["tol_deg"]),
+                    "kpi": kpi_payload,
+                    "flags": flags_payload,
+                    "score": float(row["score"]) if row["score"] is not None else None,
+                    "algo_version": str(row["algo_version"]),
+                    "source_hash": str(row["source_hash"]),
+                    "computed_at": str(row["computed_at"]),
+                }
+            )
+        return result
 
     def write_compat_verification_results(self, rows: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
         payload_rows: List[Dict[str, Any]] = []
