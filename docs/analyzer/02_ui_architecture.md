@@ -219,6 +219,49 @@ The Analyzer page is planned with two explicit subviews:
 - Global TopBar title allocation now prioritizes center-title width (no symmetric stretch squeeze), reducing unnecessary truncation in normal window sizes.
 - Command-header issue popover now enforces responsive width bounds plus a scrollable message area for long warning lists.
 
+## Implementation status (Analyzer Stage Plot System)
+
+- Analyzer Explorer now uses a fixed **2x2 stage matrix** (always four panels):
+  - Stage 1 (`concept` / `shaping`):
+    - A `Polar Map` (heatmap + `-6 dB` contour + target window shading)
+    - B `Beamwidth Error vs Target`
+    - C `Coverage Uniformity vs f`
+    - D `Spill Index vs f`
+  - Stage 2 (`stabilization`):
+    - A `Polar Map`
+    - B `DI proxy vs f`
+    - C `Pattern Smoothness (S_theta) vs f`
+    - D `Plane Consistency (E_sym_shape) vs f`
+  - Stage 3 (`final`):
+    - A `Polar Map`
+    - B `Off-axis Ripple (R_off) vs f`
+    - C `Impedance/Loading` (conditional availability)
+    - D `Group Delay/Phase` (conditional availability)
+
+- Analyzer Compare now uses a fixed **2x2 matrix**:
+  - A stage-dependent key-curve overlay
+  - B single-candidate heatmap (candidate switcher)
+  - C KPI breakdown panel
+  - D Pareto scatter (selectable KPI axes)
+
+- Stage-3 non-polar artifacts are availability-gated through analyzer artifact probes:
+  - `POLAR` (active)
+  - `SPL_FR` (scaffold)
+  - `IMPEDANCE` (scaffold)
+  - `PHASE_GD` (scaffold)
+  Missing artifacts render explicit non-crashing guidance text in the corresponding tiles.
+
+- Plot execution/dataflow:
+  - list views stay metadata-only
+  - selected run/version + plane requests run in worker threads
+  - service returns base plot payload + `stage_plot` DTO (`curves`, `heatmap_overlays`, `artifact_status`)
+  - UI renders from DTOs only; no full matrix loads in tables.
+
+- Display advanced options currently include:
+  - clamp min dB (default `-20`)
+  - raw-bins toggle
+  - `use_full_angles_for_smoothness` toggle for `S_theta` compute requests.
+
 ## Implementation status (Batch stabilization follow-up)
 
 - Chip/titlebar text rendering now routes through a shared safe-text normalization helper to avoid mojibake/bytes rendering artifacts.
