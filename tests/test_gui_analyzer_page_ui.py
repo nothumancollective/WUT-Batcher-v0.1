@@ -286,8 +286,12 @@ class AnalyzerPageUiTests(unittest.TestCase):
             with patch.object(service, "analyzer_load_plot_payload", autospec=True, return_value=fake_plot) as load_mock:
                 page._start_plot_request()
                 deadline = time.time() + 2.0
-                while time.time() < deadline and page._plot_thread is not None:
+                while time.time() < deadline:
                     self.app.processEvents()
+                    if "ready" in page.plot_loading_label.text().lower():
+                        break
+                    if page._plot_thread is None:
+                        break
                     time.sleep(0.01)
                 self.app.processEvents()
                 self.assertGreaterEqual(load_mock.call_count, 1)

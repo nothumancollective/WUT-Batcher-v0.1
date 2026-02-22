@@ -272,3 +272,4 @@
 - Updated Analyzer UI tests to assert `Batch/Version`-first display (instead of exposing run UUIDs in primary table/summary surfaces).
 - Added shortlist interaction coverage for Compare (`add/remove` updates visible slot rows without crashes).
 - Added Gear Settings Analyzer-tab tests to lock data-source relocation (`Analyzer` tab + source save roundtrip).
+- Stabilized Explorer background-plot smoke assertion to wait for async completion signal before checking ready-state text.
