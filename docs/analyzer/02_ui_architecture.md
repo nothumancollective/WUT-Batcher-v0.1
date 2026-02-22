@@ -280,3 +280,16 @@ The Analyzer page is planned with two explicit subviews:
   - `Custom`: user-defined soft limit (`<= 10 GB`) and keep-last count
 - Cache keys include selection/config identity:
   - project_id, batch_id, run_id, version_id, plane, normalization policy, band range.
+
+## Implementation status (Analyzer Phase 2C: Saved Analyses data model + auto-pick service)
+
+- Added project-local persistence for compare sessions (POLAR artifact type):
+  - `analyzer_analyses` stores analysis metadata + context config JSON (`stage`, `target`, `band`, `tolerance`, clamp, strategy/filter settings).
+  - `analyzer_analysis_candidates` stores ordered candidate identities (`batch_id`, `run_id`, `version_id`) with max 5 slots.
+- Persistence is currently project-db only by design (no global replication in 2C).
+- Added Analyzer service APIs for:
+  - save/load/list saved analyses
+  - deterministic project-local auto-pick strategies from cached KPI scalars:
+    - `A`: top N by score
+    - `B`: top N by selected KPI
+    - `C`: filter + score tie-break.

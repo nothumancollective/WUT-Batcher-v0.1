@@ -211,3 +211,13 @@
 
 ## 2026-02-22 (Analyzer Phase 2B: settings layout follow-up)
 - Increased default Settings dialog size to keep the new Analyzer cache controls visible without clipping at open.
+
+## 2026-02-22 (Analyzer Phase 2C: saved analyses schema + service APIs)
+- Added additive project-db tables for persisted Analyzer Compare sessions:
+  - `analyzer_analyses`
+  - `analyzer_analysis_candidates`
+- Added service/store APIs for saved analyses lifecycle:
+  - save/update analysis config + candidates (max 5)
+  - list analyses
+  - load analysis (config + ordered candidates)
+- Added project-local auto-pick service (`A/B/C` strategies) that ranks from cached KPI scalars only (no `polar_points` preload for table operations).

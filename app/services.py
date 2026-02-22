@@ -49,7 +49,11 @@ from app.models import Batch, ParamSelection, Project, ProjectConstraints, Sweep
 from app.project_storage import ProjectRepository
 from app.runtime_orchestrator import RuntimeSummary, run_batch_pipeline
 from app.runners import AthRunner
-from app.settings_store import SettingsStore, UserSettings
+from app.settings_store import (
+    SIMULATION_TIMEOUT_MINUTES_DEFAULT,
+    SettingsStore,
+    UserSettings,
+)
 from app.tidy_dataset import TidyDatasetWriter
 from app.version_resolver import resolve_versions
 
@@ -107,6 +111,10 @@ def _settings_hash(settings: UserSettings) -> str:
         "vacs_exe": settings.vacs_exe,
         "template_cfg": settings.template_cfg,
         "background_automation_mode": bool(getattr(settings, "background_automation_mode", True)),
+        "simulation_timeout_minutes": int(
+            getattr(settings, "simulation_timeout_minutes", SIMULATION_TIMEOUT_MINUTES_DEFAULT)
+            or SIMULATION_TIMEOUT_MINUTES_DEFAULT
+        ),
     }
     canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
@@ -2079,6 +2087,51 @@ class OrchestratorService:
             cancel_check=cancel_check,
         )
 
+    def analyzer_save_analysis(
+        self,
+        *,
+        project_id: str,
+        name: str,
+        config: Dict[str, Any],
+        candidates: Sequence[Dict[str, Any]],
+        analysis_id: Optional[str] = None,
+        notes: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        project_token = str(project_id or "").strip()
+        project_paths = self.repo.project_paths(project_token, ensure=False)
+        dataset = TidyDatasetWriter(project_paths.project_dir, library_root=self.settings.library_root)
+        return dataset.save_analyzer_analysis(
+            project_id=project_token,
+            name=name,
+            config=dict(config or {}),
+            candidates=list(candidates or [])[:5],
+            analysis_id=(str(analysis_id or "").strip() or None),
+            notes=notes,
+            artifact_type="POLAR",
+        )
+
+    def analyzer_list_analyses(self, *, project_id: str) -> List[Dict[str, Any]]:
+        project_token = str(project_id or "").strip()
+        if not project_token:
+            return []
+        project_paths = self.repo.project_paths(project_token, ensure=False)
+        dataset = TidyDatasetWriter(project_paths.project_dir, library_root=self.settings.library_root)
+        return dataset.list_analyzer_analyses(project_id=project_token)
+
+    def analyzer_load_analysis(
+        self,
+        *,
+        project_id: str,
+        analysis_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        project_token = str(project_id or "").strip()
+        analysis_token = str(analysis_id or "").strip()
+        if not project_token or not analysis_token:
+            return None
+        project_paths = self.repo.project_paths(project_token, ensure=False)
+        dataset = TidyDatasetWriter(project_paths.project_dir, library_root=self.settings.library_root)
+        return dataset.load_analyzer_analysis(project_id=project_token, analysis_id=analysis_token)
+
     def analyzer_list_cached_kpis(
         self,
         *,
@@ -2242,6 +2295,140 @@ class OrchestratorService:
                 payload["kpi_insufficient_coverage"] = bool(aggregate.get("insufficient_coverage"))
             result.append(payload)
         return result
+
+    def analyzer_autopick_candidates(
+        self,
+        *,
+        project_id: str,
+        batch_ids: Sequence[str],
+        strategy: str,
+        kpi_key: str,
+        filters: Optional[Dict[str, Any]] = None,
+        top_n: int = 5,
+        stage_mode: str = DEFAULT_STAGE_ID,
+        band_low_hz: float,
+        band_high_hz: float,
+        target_h_deg: float,
+        target_v_deg: float,
+        tol_deg: float,
+        algo_version: str = ALGO_VERSION,
+        progress_cb: Optional[Callable[[int, int, str], None]] = None,
+        cancel_check: Optional[Callable[[], bool]] = None,
+    ) -> Dict[str, Any]:
+        project_token = str(project_id or "").strip()
+        if not project_token:
+            return {"candidates": [], "scanned": 0, "canceled": False}
+        requested_batches = [str(item or "").strip() for item in list(batch_ids or []) if str(item or "").strip()]
+        if not requested_batches:
+            requested_batches = [
+                str(item.get("batch_id") or "").strip()
+                for item in self.analyzer_list_polar_batches(project_id=project_token, source="project")
+                if str(item.get("batch_id") or "").strip()
+            ]
+        requested_batches = sorted(set(requested_batches))
+        total_batches = len(requested_batches)
+        if callable(progress_cb):
+            progress_cb(0, total_batches, "Scanning batches for candidates...")
+
+        all_rows: List[Dict[str, Any]] = []
+        for index, batch_id in enumerate(requested_batches, start=1):
+            if callable(cancel_check) and bool(cancel_check()):
+                return {"candidates": [], "scanned": len(all_rows), "canceled": True}
+            rows = self.analyzer_list_batch_review_runs(
+                project_id=project_token,
+                batch_id=batch_id,
+                source="project",
+                stage_mode=stage_mode,
+                band_low_hz=band_low_hz,
+                band_high_hz=band_high_hz,
+                target_h_deg=target_h_deg,
+                target_v_deg=target_v_deg,
+                tol_deg=tol_deg,
+                algo_version=algo_version,
+            )
+            all_rows.extend(rows)
+            if callable(progress_cb):
+                progress_cb(index, total_batches, f"Scanned {batch_id}.")
+
+        filters_payload = dict(filters or {})
+        exclude_flags = bool(filters_payload.get("exclude_flags", False))
+        exclude_missing = bool(filters_payload.get("exclude_missing_kpi", False))
+        filtered: List[Dict[str, Any]] = []
+        for row in all_rows:
+            if exclude_flags and bool(row.get("kpi_flagged")):
+                continue
+            if exclude_missing and row.get("kpi_score") is None:
+                continue
+            filtered.append(dict(row))
+
+        strategy_token = str(strategy or "A").strip().upper()
+        if strategy_token not in {"A", "B", "C"}:
+            strategy_token = "A"
+        kpi_token = str(kpi_key or "score").strip().lower()
+        kpi_sort_map: Dict[str, Tuple[str, bool]] = {
+            "score": ("kpi_score", True),
+            "b_pc": ("kpi_b_pc_oct", True),
+            "b_pc_oct": ("kpi_b_pc_oct", True),
+            "e_bw": ("kpi_e_bw", False),
+            "e_cov": ("kpi_e_cov", False),
+            "r_spill": ("kpi_r_spill", False),
+            "flags": ("kpi_flags_count", False),
+            "flags_count": ("kpi_flags_count", False),
+        }
+
+        def _score_value(row: Dict[str, Any]) -> float:
+            raw = row.get("kpi_score")
+            return float(raw) if raw is not None else float("-inf")
+
+        def _metric_value(row: Dict[str, Any], key: str, desc: bool) -> float:
+            raw = row.get(key)
+            if raw is None:
+                return float("-inf") if desc else float("inf")
+            return float(raw)
+
+        # Deterministic tie-break base.
+        filtered.sort(key=lambda row: str(row.get("run_id") or ""))
+        filtered.sort(key=lambda row: str(row.get("version_id") or ""), reverse=True)
+        filtered.sort(key=lambda row: str(row.get("imported_at") or ""), reverse=True)
+        filtered.sort(key=lambda row: str(row.get("batch_id") or ""))
+
+        if strategy_token == "B":
+            metric_key, desc = kpi_sort_map.get(kpi_token, ("kpi_score", True))
+            filtered.sort(key=lambda row: _score_value(row), reverse=True)
+            filtered.sort(
+                key=lambda row: _metric_value(row, metric_key, desc),
+                reverse=desc,
+            )
+        else:
+            filtered.sort(key=lambda row: _score_value(row), reverse=True)
+
+        limited = filtered[: max(1, min(int(top_n), 5))]
+        candidates: List[Dict[str, Any]] = []
+        for row in limited:
+            candidates.append(
+                {
+                    "project_id": str(row.get("project_id") or project_token),
+                    "batch_id": str(row.get("batch_id") or ""),
+                    "run_id": (str(row.get("run_id") or "").strip() or None),
+                    "version_id": str(row.get("version_id") or ""),
+                    "score": row.get("kpi_score"),
+                    "kpi_b_pc_oct": row.get("kpi_b_pc_oct"),
+                    "kpi_e_bw": row.get("kpi_e_bw"),
+                    "kpi_e_cov": row.get("kpi_e_cov"),
+                    "kpi_r_spill": row.get("kpi_r_spill"),
+                    "kpi_flags_count": int(row.get("kpi_flags_count") or 0),
+                    "kpi_flagged": bool(row.get("kpi_flagged")),
+                    "imported_at": row.get("imported_at"),
+                }
+            )
+        return {
+            "candidates": candidates,
+            "scanned": len(all_rows),
+            "after_filters": len(filtered),
+            "strategy": strategy_token,
+            "kpi_key": kpi_token,
+            "canceled": False,
+        }
 
     def analyzer_compute_batch_kpis(
         self,
@@ -2550,6 +2737,13 @@ class OrchestratorService:
         if dry_run is None:
             tools = [self.settings.ath_exe, self.settings.akabak_exe, self.settings.vacs_exe]
             dry_run = not all(_is_executable_path(path) for path in tools)
+        simulation_timeout_minutes = int(
+            getattr(self.settings, "simulation_timeout_minutes", SIMULATION_TIMEOUT_MINUTES_DEFAULT)
+            or SIMULATION_TIMEOUT_MINUTES_DEFAULT
+        )
+        if simulation_timeout_minutes < 1:
+            simulation_timeout_minutes = 1
+        akabak_solve_timeout_s = int(simulation_timeout_minutes * 60)
         return run_batch_pipeline(
             project=project,
             batch=batch,
@@ -2558,6 +2752,7 @@ class OrchestratorService:
             ath_executable=self.settings.ath_exe if not dry_run else None,
             akabak_executable=self.settings.akabak_exe if not dry_run else None,
             vacs_executable=self.settings.vacs_exe if not dry_run else None,
+            akabak_solve_timeout_s=akabak_solve_timeout_s,
             continue_on_error=continue_on_error,
             dry_run=bool(dry_run),
             git_commit=_detect_git_commit(),

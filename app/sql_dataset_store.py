@@ -15,7 +15,7 @@ import uuid
 from app.models import Batch, Project, VersionSpec
 
 
-SCHEMA_VERSION = "2.6"
+SCHEMA_VERSION = "2.7"
 
 
 def _now_iso() -> str:
@@ -382,6 +382,27 @@ class SqlDatasetStore:
                     computed_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS analyzer_analyses (
+                    analysis_id TEXT PRIMARY KEY,
+                    project_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    artifact_type TEXT NOT NULL DEFAULT 'POLAR',
+                    config_json TEXT NOT NULL,
+                    notes TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS analyzer_analysis_candidates (
+                    analysis_id TEXT NOT NULL,
+                    ordinal INTEGER NOT NULL,
+                    batch_id TEXT NOT NULL,
+                    run_id TEXT,
+                    version_id TEXT NOT NULL,
+                    PRIMARY KEY (analysis_id, ordinal),
+                    FOREIGN KEY (analysis_id) REFERENCES analyzer_analyses(analysis_id) ON DELETE CASCADE
+                );
+
                 CREATE TABLE IF NOT EXISTS replication_queue (
                     queue_id INTEGER PRIMARY KEY AUTOINCREMENT,
                     operation TEXT NOT NULL,
@@ -477,6 +498,8 @@ class SqlDatasetStore:
                     algo_version,
                     source_hash
                 );
+                CREATE INDEX IF NOT EXISTS idx_an_analyses_project_created ON analyzer_analyses(project_id, created_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_an_candidates_analysis ON analyzer_analysis_candidates(analysis_id);
                 CREATE INDEX IF NOT EXISTS idx_replication_queue_status ON replication_queue(status, queue_id);
                 CREATE INDEX IF NOT EXISTS idx_compat_results_project_fact ON compat_verification_results(project_id, fact_id);
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_federation_tombstones_entity
@@ -854,6 +877,33 @@ class SqlDatasetStore:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS analyzer_analyses (
+                analysis_id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                artifact_type TEXT NOT NULL DEFAULT 'POLAR',
+                config_json TEXT NOT NULL,
+                notes TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS analyzer_analysis_candidates (
+                analysis_id TEXT NOT NULL,
+                ordinal INTEGER NOT NULL,
+                batch_id TEXT NOT NULL,
+                run_id TEXT,
+                version_id TEXT NOT NULL,
+                PRIMARY KEY (analysis_id, ordinal),
+                FOREIGN KEY (analysis_id) REFERENCES analyzer_analyses(analysis_id) ON DELETE CASCADE
+            )
+            """
+        )
         self._ensure_federation_tables(conn)
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_runs_project_batch ON runs(project_id, batch_id, started_at)"
@@ -917,6 +967,12 @@ class SqlDatasetStore:
             "project_id, batch_id, version_id, coalesce(run_id, ''), band_low_hz, band_high_hz, "
             "target_h_deg, target_v_deg, tol_deg, algo_version, source_hash)"
         )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_an_analyses_project_created ON analyzer_analyses(project_id, created_at DESC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_an_candidates_analysis ON analyzer_analysis_candidates(analysis_id)"
+        )
 
     def persist_schema_descriptor(self) -> None:
         payload = {
@@ -938,6 +994,8 @@ class SqlDatasetStore:
                 "polar_measurements",
                 "polar_points",
                 "analyzer_run_kpis",
+                "analyzer_analyses",
+                "analyzer_analysis_candidates",
                 "compat_verification_results",
                 "federation_profile",
                 "federation_sync_state",
@@ -2427,6 +2485,179 @@ class SqlDatasetStore:
                 }
             )
         return result
+
+    def save_analyzer_analysis(
+        self,
+        *,
+        project_id: str,
+        name: str,
+        config: Dict[str, Any],
+        candidates: Sequence[Dict[str, Any]],
+        analysis_id: Optional[str] = None,
+        notes: Optional[str] = None,
+        artifact_type: str = "POLAR",
+    ) -> Dict[str, Any]:
+        project_token = str(project_id or "").strip()
+        if not project_token:
+            raise ValueError("project_id is required")
+        label = str(name or "").strip()
+        if not label:
+            raise ValueError("analysis name is required")
+        analysis_token = str(analysis_id or "").strip() or f"A{uuid.uuid4().hex[:20]}"
+        now = _now_iso()
+        normalized_candidates: List[Dict[str, Any]] = []
+        for candidate in list(candidates or [])[:5]:
+            if not isinstance(candidate, dict):
+                continue
+            batch_id = str(candidate.get("batch_id") or "").strip()
+            version_id = str(candidate.get("version_id") or "").strip()
+            if not batch_id or not version_id:
+                continue
+            normalized_candidates.append(
+                {
+                    "batch_id": batch_id,
+                    "run_id": str(candidate.get("run_id") or "").strip(),
+                    "version_id": version_id,
+                }
+            )
+        config_payload = dict(config or {})
+        config_payload.setdefault("config_version", 1)
+        artifact_token = str(artifact_type or "POLAR").strip().upper() or "POLAR"
+        notes_value = str(notes).strip() if notes is not None else None
+
+        with self._open_conn(self.project_db_path) as conn:
+            existing = conn.execute(
+                "SELECT created_at FROM analyzer_analyses WHERE analysis_id = ?",
+                (analysis_token,),
+            ).fetchone()
+            created_at = str(existing["created_at"]) if existing is not None and existing["created_at"] is not None else now
+            conn.execute(
+                """
+                INSERT INTO analyzer_analyses (
+                    analysis_id, project_id, name, created_at, updated_at, artifact_type, config_json, notes
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(analysis_id) DO UPDATE SET
+                    project_id=excluded.project_id,
+                    name=excluded.name,
+                    updated_at=excluded.updated_at,
+                    artifact_type=excluded.artifact_type,
+                    config_json=excluded.config_json,
+                    notes=excluded.notes
+                """,
+                (
+                    analysis_token,
+                    project_token,
+                    label,
+                    created_at,
+                    now,
+                    artifact_token,
+                    _to_json(config_payload),
+                    notes_value,
+                ),
+            )
+            conn.execute("DELETE FROM analyzer_analysis_candidates WHERE analysis_id = ?", (analysis_token,))
+            for ordinal, candidate in enumerate(normalized_candidates):
+                conn.execute(
+                    """
+                    INSERT INTO analyzer_analysis_candidates (
+                        analysis_id, ordinal, batch_id, run_id, version_id
+                    ) VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        analysis_token,
+                        int(ordinal),
+                        str(candidate["batch_id"]),
+                        str(candidate.get("run_id") or ""),
+                        str(candidate["version_id"]),
+                    ),
+                )
+        return {
+            "analysis_id": analysis_token,
+            "project_id": project_token,
+            "name": label,
+            "artifact_type": artifact_token,
+            "candidates": normalized_candidates,
+            "updated_at": now,
+        }
+
+    def list_analyzer_analyses(self, *, project_id: str) -> List[Dict[str, Any]]:
+        project_token = str(project_id or "").strip()
+        if not project_token:
+            return []
+        with self._open_conn(self.project_db_path) as conn:
+            rows = conn.execute(
+                """
+                SELECT analysis_id, project_id, name, created_at, updated_at, artifact_type, notes
+                FROM analyzer_analyses
+                WHERE project_id = ?
+                ORDER BY updated_at DESC, created_at DESC
+                """,
+                (project_token,),
+            ).fetchall()
+        return [
+            {
+                "analysis_id": str(row["analysis_id"]),
+                "project_id": str(row["project_id"]),
+                "name": str(row["name"]),
+                "created_at": str(row["created_at"]),
+                "updated_at": str(row["updated_at"]),
+                "artifact_type": str(row["artifact_type"] or "POLAR"),
+                "notes": (str(row["notes"]) if row["notes"] is not None else None),
+            }
+            for row in rows
+        ]
+
+    def load_analyzer_analysis(self, *, project_id: str, analysis_id: str) -> Optional[Dict[str, Any]]:
+        project_token = str(project_id or "").strip()
+        analysis_token = str(analysis_id or "").strip()
+        if not project_token or not analysis_token:
+            return None
+        with self._open_conn(self.project_db_path) as conn:
+            row = conn.execute(
+                """
+                SELECT analysis_id, project_id, name, created_at, updated_at, artifact_type, config_json, notes
+                FROM analyzer_analyses
+                WHERE project_id = ? AND analysis_id = ?
+                """,
+                (project_token, analysis_token),
+            ).fetchone()
+            if row is None:
+                return None
+            candidate_rows = conn.execute(
+                """
+                SELECT ordinal, batch_id, run_id, version_id
+                FROM analyzer_analysis_candidates
+                WHERE analysis_id = ?
+                ORDER BY ordinal ASC
+                """,
+                (analysis_token,),
+            ).fetchall()
+        try:
+            config_payload = json.loads(str(row["config_json"] or "{}"))
+        except json.JSONDecodeError:
+            config_payload = {}
+        candidates: List[Dict[str, Any]] = []
+        for candidate_row in candidate_rows:
+            run_token = str(candidate_row["run_id"] or "").strip()
+            candidates.append(
+                {
+                    "ordinal": int(candidate_row["ordinal"]),
+                    "batch_id": str(candidate_row["batch_id"]),
+                    "run_id": run_token or None,
+                    "version_id": str(candidate_row["version_id"]),
+                }
+            )
+        return {
+            "analysis_id": str(row["analysis_id"]),
+            "project_id": str(row["project_id"]),
+            "name": str(row["name"]),
+            "created_at": str(row["created_at"]),
+            "updated_at": str(row["updated_at"]),
+            "artifact_type": str(row["artifact_type"] or "POLAR"),
+            "config": config_payload if isinstance(config_payload, dict) else {},
+            "notes": (str(row["notes"]) if row["notes"] is not None else None),
+            "candidates": candidates,
+        }
 
     def write_compat_verification_results(self, rows: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
         payload_rows: List[Dict[str, Any]] = []
