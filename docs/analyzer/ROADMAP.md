@@ -56,6 +56,10 @@ Acceptance criteria:
 - UI remains responsive during data fetches via background workers.
 - No heavy full-batch recompute on row selection.
 
+Status update (2026-02-22):
+- Analyzer Batch Review IA was re-laid out for plot-first usability (compact toolbar, control tiles, segmented Explorer/Compare navigation, details dialog).
+- Project-local scope is now explicit in UI; per-page project selector was removed.
+
 ## Phase C - Candidate Pool (Cross-Batch Compare)
 Goal:
 - Enable cross-batch shortlisting and comparison planning before heavy compute layers.
@@ -71,6 +75,10 @@ Acceptance criteria:
 - User can pin runs from different batches into one pool.
 - Pinned runs are viewable and comparable in one place.
 - Selecting/adding/removing candidates does not trigger heavy recompute.
+
+Status update (2026-02-22):
+- Compare workflow now uses fixed `C1..C5` shortlist slots with stable colors and compact overlay/heatmap presentation.
+- Multi-candidate plotting remains worker-driven and cache-backed.
 
 ## Phase D - Incremental Compute and Cache Framework
 Goal:
