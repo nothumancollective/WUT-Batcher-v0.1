@@ -293,29 +293,46 @@ def _format_freq_label(freq_hz: float) -> str:
     return str(int(round(value)))
 
 
+_ANALYZER_LOG_MAJOR_TICKS: Tuple[float, ...] = (200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 16000.0)
+
+
+def _plot_margins(*, has_legend: bool = False) -> Tuple[int, int, int, int]:
+    left = 64
+    right = 136 if has_legend else 22
+    top = 18
+    bottom = 54
+    return left, right, top, bottom
+
+
 def _log_tick_sets(freq_min: float, freq_max: float) -> Tuple[List[float], List[float]]:
     lo = max(float(freq_min), 1.0)
     hi = max(float(freq_max), lo + 1.0e-6)
-    decade_min = int(math.floor(math.log10(lo)))
-    decade_max = int(math.ceil(math.log10(hi)))
-    major: List[float] = []
-    minor: List[float] = []
-    for decade in range(decade_min, decade_max + 1):
-        base = 10.0 ** decade
-        for multiplier in (1.0, 2.0, 5.0):
-            tick = base * multiplier
-            if lo <= tick <= hi:
-                major.append(float(tick))
-        for multiplier in (3.0, 4.0, 6.0, 7.0, 8.0, 9.0):
-            tick = base * multiplier
-            if lo <= tick <= hi:
-                minor.append(float(tick))
+    major: List[float] = [tick for tick in _ANALYZER_LOG_MAJOR_TICKS if lo <= float(tick) <= hi]
+    if not major:
+        decade_min = int(math.floor(math.log10(lo)))
+        decade_max = int(math.ceil(math.log10(hi)))
+        for decade in range(decade_min, decade_max + 1):
+            base = 10.0 ** decade
+            for multiplier in (1.0, 2.0, 5.0):
+                tick = base * multiplier
+                if lo <= tick <= hi:
+                    major.append(float(tick))
     if lo not in major:
         major.append(lo)
     if hi not in major:
         major.append(hi)
-    major = sorted(set(major))
-    minor = sorted(set(value for value in minor if value not in major))
+    major = sorted(set(round(float(item), 6) for item in major))
+
+    decade_min = int(math.floor(math.log10(lo)))
+    decade_max = int(math.ceil(math.log10(hi)))
+    minor: List[float] = []
+    for decade in range(decade_min, decade_max + 1):
+        base = 10.0 ** decade
+        for multiplier in (3.0, 4.0, 6.0, 7.0, 8.0, 9.0):
+            tick = base * multiplier
+            if lo <= tick <= hi:
+                minor.append(float(tick))
+    minor = sorted(set(round(value, 6) for value in minor if round(value, 6) not in set(major)))
     return major, minor
 
 
@@ -358,29 +375,24 @@ def _angle_ticks(min_angle: float, max_angle: float) -> List[float]:
     hi = float(max_angle)
     if hi <= lo:
         return [lo]
-    span = hi - lo
-    if span <= 30.0:
-        step = 5.0
-    elif span <= 60.0:
-        step = 10.0
-    elif span <= 120.0:
-        step = 15.0
-    elif span <= 180.0:
-        step = 30.0
-    else:
-        step = 45.0
-    start = math.ceil(lo / step) * step
+    step = 15.0
     ticks: List[float] = []
-    value = start
-    while value <= hi + 1.0e-6:
-        ticks.append(float(value))
-        value += step
+    if lo < 0.0 < hi:
+        max_abs = max(abs(lo), abs(hi))
+        bound = int(math.ceil(max_abs / step) * step)
+        value = -bound
+        while value <= bound + 1.0e-6:
+            if lo - 1.0e-6 <= float(value) <= hi + 1.0e-6:
+                ticks.append(float(value))
+            value += step
+    else:
+        start = math.ceil(lo / step) * step
+        value = start
+        while value <= hi + 1.0e-6:
+            ticks.append(float(value))
+            value += step
     if not ticks:
         ticks = [lo, hi]
-    if abs(ticks[0] - lo) > 1.0e-6:
-        ticks.insert(0, lo)
-    if abs(ticks[-1] - hi) > 1.0e-6:
-        ticks.append(hi)
     return sorted(set(round(item, 6) for item in ticks))
 
 
@@ -528,10 +540,7 @@ class HeatmapCanvas(QLabel):
             self.setPixmap(QPixmap.fromImage(image))
             return
 
-        margin_left = 58
-        margin_right = 16
-        margin_top = 14
-        margin_bottom = 40
+        margin_left, margin_right, margin_top, margin_bottom = _plot_margins(has_legend=False)
         plot_w = max(width - margin_left - margin_right, 24)
         plot_h = max(height - margin_top - margin_bottom, 24)
 
@@ -591,7 +600,7 @@ class HeatmapCanvas(QLabel):
                     continue
                 last_x = x
                 painter.setPen(QColor("#A6AFBC"))
-                painter.drawText(x - 18, margin_top + plot_h + 16, 36, 14, Qt.AlignCenter, _format_freq_label(tick))
+                painter.drawText(x - 22, margin_top + plot_h + 18, 44, 16, Qt.AlignCenter, _format_freq_label(tick))
                 painter.setPen(QPen(QColor("#2F3A4D"), 1))
 
         angle_min = None
@@ -611,7 +620,7 @@ class HeatmapCanvas(QLabel):
                 y = y_of(float(angle_tick))
                 painter.drawLine(margin_left, y, margin_left + plot_w, y)
                 painter.setPen(QColor("#A6AFBC"))
-                painter.drawText(4, y - 8, margin_left - 10, 16, Qt.AlignRight | Qt.AlignVCenter, f"{angle_tick:.0f}")
+                painter.drawText(4, y - 8, margin_left - 12, 16, Qt.AlignRight | Qt.AlignVCenter, f"{angle_tick:.0f}")
                 painter.setPen(QPen(QColor("#2A3344"), 1))
 
         if angle_min is not None and angle_max is not None and self._target_half_window_deg is not None:
@@ -663,7 +672,7 @@ class HeatmapCanvas(QLabel):
                     continue
                 left_points.append((x_of(freq_value), y_of(left_angle)))
                 right_points.append((x_of(freq_value), y_of(right_angle)))
-            painter.setPen(QPen(QColor("#FFD86A"), 1))
+            painter.setPen(QPen(QColor("#FFE38A"), 2))
             for idx in range(len(left_points) - 1):
                 x1, y1 = left_points[idx]
                 x2, y2 = left_points[idx + 1]
@@ -676,8 +685,8 @@ class HeatmapCanvas(QLabel):
         painter.setPen(QPen(QColor("#3A4252"), 1))
         painter.drawRect(margin_left, margin_top, plot_w, plot_h)
         painter.setPen(QColor("#A6AFBC"))
-        painter.drawText(margin_left, height - 8, "Frequency (Hz, log)")
-        painter.drawText(8, margin_top + 12, "Angle (deg)")
+        painter.drawText(margin_left, height - 8, plot_w, 16, Qt.AlignHCenter | Qt.AlignVCenter, "Frequency (Hz, log)")
+        painter.drawText(4, margin_top - 2, margin_left - 8, 14, Qt.AlignLeft | Qt.AlignVCenter, "Angle (deg)")
         painter.setPen(QPen(QColor("#3A4252")))
         painter.drawRect(0, 0, width - 1, height - 1)
         if self._status:
@@ -734,9 +743,10 @@ class MetricCurveCanvas(QLabel):
         painter = QPainter(image)
         painter.setRenderHint(QPainter.Antialiasing, True)
 
-        points_by_series: List[Tuple[str, List[Tuple[float, float]], QColor]] = []
+        points_by_series: List[Tuple[str, List[Tuple[float, float]], QColor, bool]] = []
         for index, row in enumerate(self._series):
             label = str(row.get("label") or f"S{index + 1}")
+            show_legend = bool(row.get("show_legend", bool(label.strip())))
             points_raw = list(row.get("points", []) or [])
             color_raw = row.get("color")
             if isinstance(color_raw, QColor):
@@ -765,7 +775,7 @@ class MetricCurveCanvas(QLabel):
                     continue
                 points.append((freq, value))
             if points:
-                points_by_series.append((label, points, color))
+                points_by_series.append((label, points, color, show_legend))
 
         if not points_by_series:
             painter.setPen(QColor("#9AA4B2"))
@@ -774,15 +784,13 @@ class MetricCurveCanvas(QLabel):
             self.setPixmap(QPixmap.fromImage(image))
             return
 
-        margin_left = 56
-        margin_right = 128
-        margin_top = 14
-        margin_bottom = 40
+        has_legend = any(show for _label, _points, _color, show in points_by_series)
+        margin_left, margin_right, margin_top, margin_bottom = _plot_margins(has_legend=has_legend)
         plot_w = max(width - margin_left - margin_right, 36)
         plot_h = max(height - margin_top - margin_bottom, 30)
 
-        all_freqs = [point[0] for _, points, _ in points_by_series for point in points]
-        all_values = [point[1] for _, points, _ in points_by_series for point in points]
+        all_freqs = [point[0] for _label, points, _color, _show in points_by_series for point in points]
+        all_values = [point[1] for _label, points, _color, _show in points_by_series for point in points]
         x_mode = self._x_scale_mode
         if x_mode == "linear":
             x_min = float(min(all_freqs))
@@ -817,7 +825,7 @@ class MetricCurveCanvas(QLabel):
             painter.setPen(QPen(QColor("#2A3344"), 1))
             painter.drawLine(margin_left, y, margin_left + plot_w, y)
             painter.setPen(QColor("#A6AFBC"))
-            painter.drawText(4, y - 8, margin_left - 10, 16, Qt.AlignRight | Qt.AlignVCenter, f"{y_tick:.2f}")
+            painter.drawText(4, y - 8, margin_left - 12, 16, Qt.AlignRight | Qt.AlignVCenter, f"{y_tick:.2f}")
 
         if x_mode == "linear":
             major_ticks = _linear_ticks(x_min, x_max, max_count=6)
@@ -838,26 +846,27 @@ class MetricCurveCanvas(QLabel):
                 continue
             last_x = x
             painter.setPen(QColor("#A6AFBC"))
-            painter.drawText(x - 18, margin_top + plot_h + 16, 36, 14, Qt.AlignCenter, _format_freq_label(tick))
+            painter.drawText(x - 22, margin_top + plot_h + 18, 44, 16, Qt.AlignCenter, _format_freq_label(tick))
             painter.setPen(QPen(QColor("#2F3A4D"), 1))
 
         legend_y = margin_top + 4
-        for label, points, color in points_by_series:
+        for label, points, color, show_legend in points_by_series:
             painter.setPen(QPen(color, 2))
             for idx in range(len(points) - 1):
                 x1, y1 = points[idx]
                 x2, y2 = points[idx + 1]
                 painter.drawLine(int(round(x_of(x1))), int(round(y_of(y1))), int(round(x_of(x2))), int(round(y_of(y2))))
-            painter.setPen(QPen(color, 1))
-            text = painter.fontMetrics().elidedText(label, Qt.ElideRight, margin_right - 10)
-            painter.drawText(width - margin_right + 4, legend_y, margin_right - 8, 14, Qt.AlignLeft | Qt.AlignVCenter, text)
-            legend_y += 14
+            if has_legend and show_legend:
+                painter.setPen(QPen(color, 1))
+                text = painter.fontMetrics().elidedText(label, Qt.ElideRight, margin_right - 10)
+                painter.drawText(width - margin_right + 4, legend_y, margin_right - 8, 14, Qt.AlignLeft | Qt.AlignVCenter, text)
+                legend_y += 14
 
         painter.setPen(QPen(QColor("#3A4252"), 1))
         painter.drawRect(margin_left, margin_top, plot_w, plot_h)
         painter.setPen(QColor("#A6AFBC"))
-        painter.drawText(8, margin_top + 12, self._y_label)
-        painter.drawText(margin_left, height - 8, self._x_label)
+        painter.drawText(4, margin_top - 2, margin_left - 8, 14, Qt.AlignLeft | Qt.AlignVCenter, self._y_label)
+        painter.drawText(margin_left, height - 8, plot_w, 16, Qt.AlignHCenter | Qt.AlignVCenter, self._x_label)
         if self._status:
             painter.setPen(QColor("#B8C1CF"))
             painter.drawText(margin_left + 4, margin_top + 16, self._status)
@@ -932,10 +941,7 @@ class ParetoScatterCanvas(QLabel):
             self.setPixmap(QPixmap.fromImage(image))
             return
 
-        margin_left = 56
-        margin_right = 16
-        margin_top = 14
-        margin_bottom = 40
+        margin_left, margin_right, margin_top, margin_bottom = _plot_margins(has_legend=False)
         plot_w = max(width - margin_left - margin_right, 36)
         plot_h = max(height - margin_top - margin_bottom, 30)
         x_values = [item[1] for item in valid]
@@ -962,13 +968,13 @@ class ParetoScatterCanvas(QLabel):
             painter.setPen(QPen(QColor("#2A3344"), 1))
             painter.drawLine(margin_left, y, margin_left + plot_w, y)
             painter.setPen(QColor("#A6AFBC"))
-            painter.drawText(4, y - 8, margin_left - 10, 16, Qt.AlignRight | Qt.AlignVCenter, f"{y_tick:.2f}")
+            painter.drawText(4, y - 8, margin_left - 12, 16, Qt.AlignRight | Qt.AlignVCenter, f"{y_tick:.2f}")
         for x_tick in _linear_ticks(x_min, x_max, max_count=6):
             x = int(round(x_of(x_tick)))
             painter.setPen(QPen(QColor("#2F3A4D"), 1))
             painter.drawLine(x, margin_top, x, margin_top + plot_h)
             painter.setPen(QColor("#A6AFBC"))
-            painter.drawText(x - 18, margin_top + plot_h + 16, 36, 14, Qt.AlignCenter, f"{x_tick:.2f}")
+            painter.drawText(x - 22, margin_top + plot_h + 18, 44, 16, Qt.AlignCenter, f"{x_tick:.2f}")
 
         for label, x_value, y_value, color in valid:
             x = int(round(x_of(x_value)))
@@ -982,8 +988,8 @@ class ParetoScatterCanvas(QLabel):
         painter.setPen(QPen(QColor("#3A4252"), 1))
         painter.drawRect(margin_left, margin_top, plot_w, plot_h)
         painter.setPen(QColor("#A6AFBC"))
-        painter.drawText(8, margin_top + 12, self._y_label)
-        painter.drawText(margin_left, height - 8, self._x_label)
+        painter.drawText(4, margin_top - 2, margin_left - 8, 14, Qt.AlignLeft | Qt.AlignVCenter, self._y_label)
+        painter.drawText(margin_left, height - 8, plot_w, 16, Qt.AlignHCenter | Qt.AlignVCenter, self._x_label)
         if self._status:
             painter.setPen(QColor("#B8C1CF"))
             painter.drawText(margin_left + 4, margin_top + 16, self._status)
@@ -1045,10 +1051,7 @@ class BeamwidthCanvas(QLabel):
             self.setPixmap(QPixmap.fromImage(image))
             return
 
-        margin_left = 56
-        margin_right = 16
-        margin_top = 14
-        margin_bottom = 40
+        margin_left, margin_right, margin_top, margin_bottom = _plot_margins(has_legend=False)
         plot_w = max(width - margin_left - margin_right, 30)
         plot_h = max(height - margin_top - margin_bottom, 30)
 
@@ -1094,7 +1097,7 @@ class BeamwidthCanvas(QLabel):
             y = int(round(y_of(float(y_tick))))
             painter.drawLine(margin_left, y, margin_left + plot_w, y)
             painter.setPen(QColor("#A6AFBC"))
-            painter.drawText(4, y - 8, margin_left - 10, 16, Qt.AlignRight | Qt.AlignVCenter, f"{y_tick:.0f}")
+            painter.drawText(4, y - 8, margin_left - 12, 16, Qt.AlignRight | Qt.AlignVCenter, f"{y_tick:.0f}")
             painter.setPen(QPen(QColor("#2A3344"), 1))
 
         if x_mode == "linear":
@@ -1117,7 +1120,7 @@ class BeamwidthCanvas(QLabel):
                 continue
             last_x = x
             painter.setPen(QColor("#A6AFBC"))
-            painter.drawText(x - 18, margin_top + plot_h + 16, 36, 14, Qt.AlignCenter, _format_freq_label(tick))
+            painter.drawText(x - 22, margin_top + plot_h + 18, 44, 16, Qt.AlignCenter, _format_freq_label(tick))
             painter.setPen(QPen(QColor("#2F3A4D"), 1))
 
         # tolerance band
@@ -1154,8 +1157,15 @@ class BeamwidthCanvas(QLabel):
         painter.setPen(QPen(QColor("#3A4252"), 1))
         painter.drawRect(margin_left, margin_top, plot_w, plot_h)
         painter.setPen(QColor("#A6AFBC"))
-        painter.drawText(8, margin_top + 12, "Beamwidth (deg)")
-        painter.drawText(margin_left, height - 8, "Frequency (Hz, log)" if x_mode == "log" else "Frequency (Hz)")
+        painter.drawText(4, margin_top - 2, margin_left - 8, 14, Qt.AlignLeft | Qt.AlignVCenter, "Beamwidth (deg)")
+        painter.drawText(
+            margin_left,
+            height - 8,
+            plot_w,
+            16,
+            Qt.AlignHCenter | Qt.AlignVCenter,
+            "Frequency (Hz, log)" if x_mode == "log" else "Frequency (Hz)",
+        )
         if self._status:
             painter.setPen(QColor("#B8C1CF"))
             painter.drawText(margin_left + 4, margin_top + 16, self._status)
@@ -1229,10 +1239,8 @@ class BeamwidthOverlayCanvas(QLabel):
             return
 
         legend_width = max(120, min(180, int(width * 0.28)))
-        margin_left = 56
-        margin_right = legend_width + 12
-        margin_top = 14
-        margin_bottom = 40
+        margin_left, _base_right, margin_top, margin_bottom = _plot_margins(has_legend=True)
+        margin_right = max(_base_right, legend_width + 12)
         plot_w = max(width - margin_left - margin_right, 30)
         plot_h = max(height - margin_top - margin_bottom, 30)
 
@@ -1271,7 +1279,7 @@ class BeamwidthOverlayCanvas(QLabel):
             y = int(round(y_of(float(y_tick))))
             painter.drawLine(margin_left, y, margin_left + plot_w, y)
             painter.setPen(QColor("#A6AFBC"))
-            painter.drawText(4, y - 8, margin_left - 10, 16, Qt.AlignRight | Qt.AlignVCenter, f"{y_tick:.0f}")
+            painter.drawText(4, y - 8, margin_left - 12, 16, Qt.AlignRight | Qt.AlignVCenter, f"{y_tick:.0f}")
             painter.setPen(QPen(QColor("#2A3344"), 1))
 
         if x_mode == "linear":
@@ -1294,7 +1302,7 @@ class BeamwidthOverlayCanvas(QLabel):
                 continue
             last_x = x
             painter.setPen(QColor("#A6AFBC"))
-            painter.drawText(x - 18, margin_top + plot_h + 16, 36, 14, Qt.AlignCenter, _format_freq_label(tick))
+            painter.drawText(x - 22, margin_top + plot_h + 18, 44, 16, Qt.AlignCenter, _format_freq_label(tick))
             painter.setPen(QPen(QColor("#2F3A4D"), 1))
 
         tol_top = y_of(self._target_deg + self._tol_deg)
@@ -1347,8 +1355,15 @@ class BeamwidthOverlayCanvas(QLabel):
         painter.setPen(QPen(QColor("#3A4252"), 1))
         painter.drawRect(margin_left, margin_top, plot_w, plot_h)
         painter.setPen(QColor("#A6AFBC"))
-        painter.drawText(8, margin_top + 12, "Beamwidth (deg)")
-        painter.drawText(margin_left, height - 8, "Frequency (Hz, log)" if x_mode == "log" else "Frequency (Hz)")
+        painter.drawText(4, margin_top - 2, margin_left - 8, 14, Qt.AlignLeft | Qt.AlignVCenter, "Beamwidth (deg)")
+        painter.drawText(
+            margin_left,
+            height - 8,
+            plot_w,
+            16,
+            Qt.AlignHCenter | Qt.AlignVCenter,
+            "Frequency (Hz, log)" if x_mode == "log" else "Frequency (Hz)",
+        )
         if self._status:
             painter.setPen(QColor("#B8C1CF"))
             painter.drawText(margin_left + 4, margin_top + 16, self._status)
@@ -4623,6 +4638,22 @@ class AnalysePage(QWidget):
         self.exclude_warnings_check.setToolButtonStyle(Qt.ToolButtonTextOnly)
         self.exclude_warnings_check.setObjectName("AnalyzerExcludeWarningsCheck")
         self.exclude_warnings_check.setProperty("analyzerToggle", True)
+        toggle_style = (
+            "QToolButton[analyzerToggle=\"true\"] {"
+            " border: 1px solid #2B3442;"
+            " border-radius: 4px;"
+            " padding: 2px 8px;"
+            " background: #151B24;"
+            " color: #D3DCE8;"
+            " }"
+            "QToolButton[analyzerToggle=\"true\"]:checked {"
+            " border-color: #5DA8FF;"
+            " background: #20374F;"
+            " color: #F4FAFF;"
+            " }"
+        )
+        self.exclude_flagged_check.setStyleSheet(toggle_style)
+        self.exclude_warnings_check.setStyleSheet(toggle_style)
         controls.addWidget(self.exclude_warnings_check, 0, 2, 1, 2)
         controls.addWidget(QLabel("Min score"), 0, 4, Qt.AlignLeft | Qt.AlignVCenter)
         self.min_score_spin = QDoubleSpinBox()
@@ -5086,7 +5117,10 @@ class AnalysePage(QWidget):
         self.run_selector.setSizeAdjustPolicy(QComboBox.AdjustToContentsOnFirstShow)
         self.run_selector.setVisible(False)
         toolbar_layout.addWidget(self.compute_btn, 0)
-        self.compute_btn.setMinimumHeight(28)
+        self.compute_btn.setMinimumHeight(26)
+        self.compute_btn.setMaximumHeight(28)
+        self.compute_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.compute_btn.setProperty("analyzerAction", True)
         toolbar_layout.addStretch(1)
 
         self.run_summary_run_chip = ElidedTitleLabel("Selection: --")
@@ -5101,6 +5135,10 @@ class AnalysePage(QWidget):
         self.run_summary_score_chip.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.run_summary_score_chip.setMinimumWidth(96)
         self.run_summary_score_chip.setObjectName("SummaryMeta")
+        self.run_summary_flags_chip = ElidedTitleLabel("Flags: --")
+        self.run_summary_flags_chip.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.run_summary_flags_chip.setMinimumWidth(88)
+        self.run_summary_flags_chip.setObjectName("SummaryMeta")
         self.kpi_popover_btn = QToolButton()
         self.kpi_popover_btn.setObjectName("AnalyzerKpiPopoverButton")
         self.kpi_popover_btn.setText("KPIs")
@@ -5108,8 +5146,8 @@ class AnalysePage(QWidget):
         self.kpi_popover_btn.setToolTip("Open KPI summary for the selected version.")
         self.kpi_popover_btn.setProperty("analyzerAction", True)
         toolbar_layout.addWidget(self.run_summary_run_chip, 0)
-        toolbar_layout.addWidget(self.run_summary_planes_chip, 0)
         toolbar_layout.addWidget(self.run_summary_score_chip, 0)
+        toolbar_layout.addWidget(self.run_summary_flags_chip, 0)
         toolbar_layout.addWidget(self.kpi_popover_btn, 0)
         self.run_details_btn = QPushButton("Details...")
         self.run_details_btn.setObjectName("BatchSecondaryButton")
@@ -5175,10 +5213,15 @@ class AnalysePage(QWidget):
         display_controls_layout.addWidget(self.tol_spin, 1, 5)
         display_controls_layout.addWidget(QLabel("X-axis"), 2, 0, Qt.AlignLeft | Qt.AlignVCenter)
         display_controls_layout.addWidget(self.x_axis_scale_combo, 2, 1)
-        display_controls_layout.addWidget(QLabel("Normalization"), 2, 2, Qt.AlignLeft | Qt.AlignVCenter)
-        display_controls_layout.addWidget(self.norm_mode_combo, 2, 3)
-        display_controls_layout.addWidget(QLabel("Norm angle"), 2, 4, Qt.AlignLeft | Qt.AlignVCenter)
-        display_controls_layout.addWidget(self.norm_angle_selector, 2, 5)
+        norm_group = QWidget()
+        norm_group_layout = QHBoxLayout(norm_group)
+        norm_group_layout.setContentsMargins(0, 0, 0, 0)
+        norm_group_layout.setSpacing(4)
+        norm_group_layout.addWidget(QLabel("Normalization"), 0, Qt.AlignLeft | Qt.AlignVCenter)
+        norm_group_layout.addWidget(self.norm_mode_combo, 1)
+        norm_group_layout.addWidget(QLabel("Norm angle"), 0, Qt.AlignLeft | Qt.AlignVCenter)
+        norm_group_layout.addWidget(self.norm_angle_selector, 1)
+        display_controls_layout.addWidget(norm_group, 2, 2, 1, 4)
         display_controls_layout.addWidget(self.heatmap_clamp_check, 3, 0, 1, 2)
         display_controls_layout.addWidget(QLabel("Clamp min dB"), 3, 2, Qt.AlignLeft | Qt.AlignVCenter)
         display_controls_layout.addWidget(self.heatmap_clamp_min_spin, 3, 3)
@@ -5435,10 +5478,11 @@ class AnalysePage(QWidget):
     def _update_toolbar_compaction(self) -> None:
         width = max(int(self.width()), 1)
         compact = width < 1480
-        self.run_summary_planes_chip.setVisible(not compact)
+        self.run_summary_planes_chip.setVisible(False)
         self.scope_chip.setVisible(width >= 1320)
         max_batch_width = max(140, min(280, int(width * 0.18)))
         self.batch_selector.setMaximumWidth(max_batch_width)
+        self.run_summary_flags_chip.setVisible(width >= 1160)
 
     def resizeEvent(self, event) -> None:  # type: ignore[override]
         super().resizeEvent(event)
@@ -6111,13 +6155,13 @@ class AnalysePage(QWidget):
     def _stage_curve_y_label(key: str) -> str:
         mapping = {
             "beamwidth": "Beamwidth (deg)",
-            "e_bw": "Beamwidth Error (deg)",
-            "e_cov": "Coverage Uniformity (dB)",
-            "r_spill": "Spill Index",
+            "e_bw": "Beamwidth error (deg)",
+            "e_cov": "Coverage uniformity (dB)",
+            "r_spill": "Spill (ratio)",
             "di_proxy": "DI Proxy (dB)",
-            "s_theta": "Pattern Smoothness",
-            "e_sym_shape": "Plane Consistency",
-            "r_off": "Off-axis Ripple (dB)",
+            "s_theta": "Pattern smoothness",
+            "e_sym_shape": "Plane consistency",
+            "r_off": "Off-axis ripple (dB)",
             "impedance_loading": "Impedance / Loading",
             "phase_gd": "Group Delay / Phase",
         }
@@ -6176,7 +6220,8 @@ class AnalysePage(QWidget):
                 curve_canvas.set_series(
                     series=[
                         {
-                            "label": "Selected",
+                            "label": "",
+                            "show_legend": False,
                             "points": curve_points,
                             "color": compare_overlay_color(0),
                         }
@@ -7329,6 +7374,7 @@ class AnalysePage(QWidget):
             self.run_summary_run_chip.set_full_text("Selection: --")
             self.run_summary_planes_chip.set_full_text("Planes: --")
             self.run_summary_score_chip.set_full_text("Score: --")
+            self.run_summary_flags_chip.set_full_text("Flags: --")
             return
 
         batch_id = str(data.get("batch_id") or "--")
@@ -7337,6 +7383,7 @@ class AnalysePage(QWidget):
         self.run_summary_run_chip.set_full_text(f"Selection: {selection}")
         self.run_summary_planes_chip.set_full_text(f"Planes: {planes or '--'}")
         self.run_summary_score_chip.set_full_text(f"Score: {self._format_float(data.get('kpi_score'), 2)}")
+        self.run_summary_flags_chip.set_full_text(f"Flags: {flags_text}")
 
 
 class ProjectManagerWindow(QMainWindow):
