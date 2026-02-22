@@ -50,6 +50,7 @@ class UserSettings:
     template_cfg: Optional[str] = None
     background_automation_mode: bool = True
     simulation_timeout_minutes: int = SIMULATION_TIMEOUT_MINUTES_DEFAULT
+    runtime_cleanup_enabled: bool = True
     analyzer_data_source: str = "project"
     analyzer_cache_mode: str = "balanced"
     analyzer_cache_limit_mb: int = 240
@@ -64,6 +65,7 @@ class UserSettings:
             "template_cfg": self.template_cfg,
             "background_automation_mode": bool(self.background_automation_mode),
             "simulation_timeout_minutes": int(self.simulation_timeout_minutes),
+            "runtime_cleanup_enabled": bool(self.runtime_cleanup_enabled),
             "analyzer_data_source": str(self.analyzer_data_source or "project"),
             "analyzer_cache_mode": str(self.analyzer_cache_mode or "balanced"),
             "analyzer_cache_limit_mb": int(self.analyzer_cache_limit_mb),
@@ -95,6 +97,7 @@ class UserSettings:
             template_cfg=str(payload["template_cfg"]) if payload.get("template_cfg") else None,
             background_automation_mode=_as_bool(payload.get("background_automation_mode"), default=True),
             simulation_timeout_minutes=simulation_timeout_minutes,
+            runtime_cleanup_enabled=_as_bool(payload.get("runtime_cleanup_enabled"), default=True),
             analyzer_data_source=source,
             analyzer_cache_mode=mode,
             analyzer_cache_limit_mb=limit_mb,

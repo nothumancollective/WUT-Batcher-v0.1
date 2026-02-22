@@ -117,6 +117,7 @@ def _settings_hash(settings: UserSettings) -> str:
             getattr(settings, "simulation_timeout_minutes", SIMULATION_TIMEOUT_MINUTES_DEFAULT)
             or SIMULATION_TIMEOUT_MINUTES_DEFAULT
         ),
+        "runtime_cleanup_enabled": bool(getattr(settings, "runtime_cleanup_enabled", True)),
     }
     canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
@@ -2896,6 +2897,7 @@ class OrchestratorService:
             akabak_solve_timeout_s=akabak_solve_timeout_s,
             continue_on_error=continue_on_error,
             dry_run=bool(dry_run),
+            runtime_cleanup_enabled=bool(getattr(self.settings, "runtime_cleanup_enabled", True)),
             git_commit=_detect_git_commit(),
             app_version="0.1-rebuild",
             settings_hash=_settings_hash(self.settings),

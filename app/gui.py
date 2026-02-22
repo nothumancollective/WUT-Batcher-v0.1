@@ -2970,6 +2970,10 @@ class SettingsDialog(QDialog):
         self.background_automation_mode.setToolTip(
             "When enabled, the RUN screen stays in front while AKABAK/VACS automation runs in the background."
         )
+        self.runtime_cleanup_enabled = QCheckBox("Enable Runtime Cleanup")
+        self.runtime_cleanup_enabled.setToolTip(
+            "Delete per-version ATH work files and ATH export subfolders after successful runs."
+        )
         self.simulation_timeout_minutes = QSpinBox()
         self.simulation_timeout_minutes.setObjectName("SimulationTimeoutMinutesSpin")
         self.simulation_timeout_minutes.setRange(SIMULATION_TIMEOUT_MINUTES_MIN, SIMULATION_TIMEOUT_MINUTES_MAX)
@@ -3008,6 +3012,7 @@ class SettingsDialog(QDialog):
         general_form.addRow("VACS", self.vacs_exe)
         general_form.addRow("Template CFG", self.template_cfg)
         general_form.addRow("Automation", self.background_automation_mode)
+        general_form.addRow("Runtime Cleanup", self.runtime_cleanup_enabled)
         general_form.addRow("Simulation Timeout", self.simulation_timeout_minutes)
 
         analyzer_tab = QWidget()
@@ -3050,6 +3055,7 @@ class SettingsDialog(QDialog):
         self.vacs_exe.setText(settings.vacs_exe or "")
         self.template_cfg.setText(settings.template_cfg or "")
         self.background_automation_mode.setChecked(bool(getattr(settings, "background_automation_mode", True)))
+        self.runtime_cleanup_enabled.setChecked(bool(getattr(settings, "runtime_cleanup_enabled", True)))
         self.simulation_timeout_minutes.setValue(
             int(
                 getattr(settings, "simulation_timeout_minutes", SIMULATION_TIMEOUT_MINUTES_DEFAULT)
@@ -3078,6 +3084,7 @@ class SettingsDialog(QDialog):
             template_cfg=self.template_cfg.text().strip() or None,
             background_automation_mode=bool(self.background_automation_mode.isChecked()),
             simulation_timeout_minutes=int(self.simulation_timeout_minutes.value()),
+            runtime_cleanup_enabled=bool(self.runtime_cleanup_enabled.isChecked()),
             analyzer_data_source=str(self.analyzer_data_source.currentData() or "project"),
             analyzer_cache_mode=str(policy.mode),
             analyzer_cache_limit_mb=int(policy.size_limit_mb),

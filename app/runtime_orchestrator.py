@@ -23,7 +23,7 @@ from app.cfg_renderer import render_cfg_text
 from app.constants import ATH_PREVIEW_EXPORT_ROOT
 from app.export_specs import ExportSpec, parse_export_specs
 from app.models import Batch, Project
-from app.safe_cleanup import guarded_delete_file_in_workspace, guarded_delete_tree
+from app.safe_cleanup import guarded_delete_file_in_workspace, guarded_delete_tree, guarded_delete_tree_in_workspace
 from app.runners import AkabakRunner, AthRunner, RunnerResult, VacsRunner, parse_ath_dimensions
 from app.tidy_dataset import TidyDatasetWriter
 from app.polar_txt_parser import PolarTxtParseError, normalize_orientation_marker, parse_polar_legacy_complex_txt
@@ -34,6 +34,8 @@ try:
     from app.akabak_driver import AkabakDriver
 except Exception:
     AkabakDriver = None  # type: ignore[assignment]
+
+_VERSION_ID_RE = re.compile(r"^V(\d+)$", re.IGNORECASE)
 
 
 def _now_iso() -> str:
@@ -114,6 +116,52 @@ def _version_logs_dir(project_root: Path, version_id: str) -> Path:
 
 def _version_exports_dir(project_root: Path, version_id: str, run_id: str) -> Path:
     return project_root / "versions" / version_id / "exports" / run_id
+
+
+def _version_numeric_sort_value(version_id: str) -> int:
+    match = _VERSION_ID_RE.match(str(version_id).strip())
+    if not match:
+        return 10**9
+    try:
+        return int(match.group(1))
+    except Exception:
+        return 10**9
+
+
+def _existing_batch_version_ids(*, project_root: Path, batch_id: str) -> List[str]:
+    versions_dir = project_root / "versions"
+    if not versions_dir.exists() or not versions_dir.is_dir():
+        return []
+
+    rows: List[Tuple[int, int, str]] = []
+    seen: set[str] = set()
+    batch_token = str(batch_id or "").strip()
+    for entry in versions_dir.iterdir():
+        if not entry.is_dir():
+            continue
+        version_json = entry / "version.json"
+        if not version_json.exists() or not version_json.is_file():
+            continue
+        try:
+            payload = _read_json(version_json)
+        except Exception:
+            continue
+        payload_batch_id = str(payload.get("batch_id", "")).strip()
+        if batch_token and payload_batch_id != batch_token:
+            continue
+        version_id = str(payload.get("version_id", entry.name)).strip() or str(entry.name)
+        if version_id in seen:
+            continue
+        sequence_raw = payload.get("sequence_index")
+        try:
+            sequence_sort = int(sequence_raw)
+        except Exception:
+            sequence_sort = 10**9
+        rows.append((sequence_sort, _version_numeric_sort_value(version_id), version_id))
+        seen.add(version_id)
+
+    rows.sort(key=lambda item: (int(item[0]), int(item[1]), str(item[2])))
+    return [str(item[2]) for item in rows]
 
 
 def _load_template_text(template_cfg_path: Optional[str | Path]) -> str:
@@ -900,6 +948,7 @@ def _run_akabak_ui_driver_stage(
     abec_project_path: Path,
     version_logs_dir: Path,
     require_vacs_graph_import: bool,
+    solve_timeout_s: int = 600,
     preserve_vacs_for_export: bool = False,
 ) -> Tuple[StageExecution, Dict[str, Any], bool]:
     if AkabakDriver is None:
@@ -912,6 +961,7 @@ def _run_akabak_ui_driver_stage(
         "mode": "uia_driver",
         "version_id": version_id,
         "abec_project_path": str(abec_project_path),
+        "solve_timeout_s": int(max(1, int(solve_timeout_s or 600))),
         "started_at": _now_iso(),
         "steps": {},
         "watchdog_events": [],
@@ -919,6 +969,7 @@ def _run_akabak_ui_driver_stage(
     stage_ok = False
     timed_out = False
     error_text = ""
+    effective_solve_timeout_s = int(max(1, int(solve_timeout_s or 600)))
     driver = None
     vacs_before_stage = _list_vacs_process_ids()
     vacs_pre_cleanup = _terminate_process_ids(vacs_before_stage) if vacs_before_stage else {
@@ -943,11 +994,11 @@ def _run_akabak_ui_driver_stage(
 
         try:
             completed = driver.wait_for_completion(
-                timeout_s=600,
+                timeout_s=effective_solve_timeout_s,
                 require_vacs_graph_import=bool(require_vacs_graph_import),
             )
         except TypeError:
-            completed = driver.wait_for_completion(timeout_s=600)
+            completed = driver.wait_for_completion(timeout_s=effective_solve_timeout_s)
         payload["steps"]["wait_for_completion"] = {"ok": bool(completed.ok), "status": str(completed.status)}
         stage_ok = True
     except TimeoutError as exc:
@@ -1573,9 +1624,16 @@ def run_batch_pipeline(
     app_version: Optional[str] = "0.1-rebuild",
     settings_hash: Optional[str] = None,
     ath_export_root: str | Path | None = ATH_PREVIEW_EXPORT_ROOT,
+    akabak_solve_timeout_s: int = 600,
+    runtime_cleanup_enabled: bool = True,
 ) -> RuntimeSummary:
-    planning_summary = materialize_batch_plan(project=project, batch=batch, projects_root=projects_root)
-    project_root = Path(planning_summary.project_root).expanduser().resolve()
+    projects_root_path = Path(str(projects_root)).expanduser().resolve()
+    project_root = projects_root_path / str(project.project_id)
+    version_ids = _existing_batch_version_ids(project_root=project_root, batch_id=batch.batch_id)
+    if not version_ids:
+        planning_summary = materialize_batch_plan(project=project, batch=batch, projects_root=projects_root)
+        project_root = Path(planning_summary.project_root).expanduser().resolve()
+        version_ids = list(planning_summary.version_ids)
     template_text, template_cfg_effective = _load_effective_template(
         template_cfg_path,
         ath_executable=ath_executable,
@@ -1607,7 +1665,7 @@ def run_batch_pipeline(
                 "batch_id": batch.batch_id,
                 "status": "planned",
             }
-            for version_id in planning_summary.version_ids
+            for version_id in version_ids
         ]
     )
     if not _is_global_synced(write_run_versions_result):
@@ -1615,6 +1673,8 @@ def run_batch_pipeline(
 
     sim_export_payload = batch.sim_export_settings.to_dict()
     export_specs = _resolve_export_specs(sim_export_payload)
+    akabak_solve_timeout_s = int(max(1, int(akabak_solve_timeout_s or 600)))
+    runtime_cleanup_enabled = bool(runtime_cleanup_enabled)
     vacs_required = bool(export_specs)
     needs_abec_artifact = bool(akabak_executable) or vacs_required
     vacs_version = str(sim_export_payload.get("vacs_version", "default") or "default")
@@ -1641,12 +1701,13 @@ def run_batch_pipeline(
     run_error_summary: Optional[str] = None if not bootstrap_sync_errors else ", ".join(bootstrap_sync_errors)
 
     try:
-        for version_id in planning_summary.version_ids:
+        for version_id in version_ids:
             version_started = time.perf_counter()
             version_payload = _read_json(_version_json_path(project_root, version_id))
             version_params = dict(version_payload.get("parameters", {}) or {})
             runner_mode = str(batch.runner_mode or project.constraints.runner_mode)
             persist_sync_errors: List[str] = []
+            ath_work_dir = _version_ath_work_path(project_root, version_id)
 
             cfg_path = _version_cfg_path(project_root, version_id)
             cfg_basename = _runtime_cfg_basename(
@@ -1737,7 +1798,6 @@ def run_batch_pipeline(
             vacs_stage_ok = not vacs_required
 
             if ath_runner is not None:
-                ath_work_dir = _version_ath_work_path(project_root, version_id)
                 ath_work_dir.mkdir(parents=True, exist_ok=True)
                 ath_work_cfg_path = ath_work_dir / run_cfg_path.name
                 ath_work_cfg_path.write_text(cfg_text, encoding="utf-8")
@@ -1993,6 +2053,7 @@ def run_batch_pipeline(
                     abec_project_path=_version_abec_path(project_root, version_id),
                     version_logs_dir=_version_logs_dir(project_root, version_id),
                     require_vacs_graph_import=require_vacs_graph_import,
+                    solve_timeout_s=akabak_solve_timeout_s,
                     preserve_vacs_for_export=preserve_vacs_for_export,
                 )
                 stage_results.append(akabak_stage)
@@ -2356,47 +2417,93 @@ def run_batch_pipeline(
                 _track_sync("update_version_status.fallback_failed", fallback_result)
 
             if final_ok:
-                cfg_cleanup = guarded_delete_file_in_workspace(
-                    run_cfg_path,
-                    workspace_root=project_root,
-                    expected_parent_name="cfg",
-                    perform_delete=True,
-                    deny_paths=(project_root, project_root.parent),
-                )
-                cleanup_results.append(
-                    {
-                        "version_id": version_id,
-                        "artifact": "cfg",
-                        "target": cfg_cleanup.target,
-                        "deleted": cfg_cleanup.deleted,
-                        "reason": cfg_cleanup.reason,
-                    }
-                )
-                if ath_export_dir is not None and ath_export_root_path is not None:
-                    export_cleanup = guarded_delete_tree(
-                        ath_export_dir,
-                        allowed_root=ath_export_root_path,
-                        expected_dir_name=ath_export_dir.name,
+                if runtime_cleanup_enabled:
+                    cfg_cleanup = guarded_delete_file_in_workspace(
+                        run_cfg_path,
+                        workspace_root=project_root,
+                        expected_parent_name="cfg",
                         perform_delete=True,
-                        deny_paths=(ath_export_root_path, ath_export_root_path.parent),
+                        deny_paths=(project_root, project_root.parent),
                     )
                     cleanup_results.append(
                         {
                             "version_id": version_id,
-                            "artifact": "ath_export_subdir",
-                            "target": export_cleanup.target,
-                            "deleted": export_cleanup.deleted,
-                            "reason": export_cleanup.reason,
+                            "artifact": "cfg",
+                            "target": cfg_cleanup.target,
+                            "deleted": cfg_cleanup.deleted,
+                            "reason": cfg_cleanup.reason,
+                        }
+                    )
+                    if ath_export_dir is not None and ath_export_root_path is not None:
+                        export_cleanup = guarded_delete_tree(
+                            ath_export_dir,
+                            allowed_root=ath_export_root_path,
+                            expected_dir_name=ath_export_dir.name,
+                            perform_delete=True,
+                            deny_paths=(ath_export_root_path, ath_export_root_path.parent),
+                        )
+                        cleanup_results.append(
+                            {
+                                "version_id": version_id,
+                                "artifact": "ath_export_subdir",
+                                "target": export_cleanup.target,
+                                "deleted": export_cleanup.deleted,
+                                "reason": export_cleanup.reason,
+                            }
+                        )
+                    else:
+                        cleanup_results.append(
+                            {
+                                "version_id": version_id,
+                                "artifact": "ath_export_subdir",
+                                "target": str(ath_export_dir) if ath_export_dir is not None else "",
+                                "deleted": False,
+                                "reason": "ath_export_root_unset",
+                            }
+                        )
+                    ath_work_cleanup = guarded_delete_tree_in_workspace(
+                        ath_work_dir,
+                        workspace_root=project_root,
+                        expected_dir_name="ath_work",
+                        expected_parent_name=version_id,
+                        perform_delete=True,
+                        deny_paths=(project_root, project_root.parent),
+                    )
+                    cleanup_results.append(
+                        {
+                            "version_id": version_id,
+                            "artifact": "ath_work",
+                            "target": ath_work_cleanup.target,
+                            "deleted": ath_work_cleanup.deleted,
+                            "reason": ath_work_cleanup.reason,
                         }
                     )
                 else:
                     cleanup_results.append(
                         {
                             "version_id": version_id,
+                            "artifact": "cfg",
+                            "target": str(run_cfg_path),
+                            "deleted": False,
+                            "reason": "cleanup_disabled",
+                        }
+                    )
+                    cleanup_results.append(
+                        {
+                            "version_id": version_id,
                             "artifact": "ath_export_subdir",
                             "target": str(ath_export_dir) if ath_export_dir is not None else "",
                             "deleted": False,
-                            "reason": "ath_export_root_unset",
+                            "reason": "cleanup_disabled" if ath_export_dir is not None else "ath_export_root_unset",
+                        }
+                    )
+                    cleanup_results.append(
+                        {
+                            "version_id": version_id,
+                            "artifact": "ath_work",
+                            "target": str(ath_work_dir),
+                            "deleted": False,
+                            "reason": "cleanup_disabled",
                         }
                     )
             else:
@@ -2427,7 +2534,7 @@ def run_batch_pipeline(
         project_id=project.project_id,
         batch_id=batch.batch_id,
         project_root=str(project_root),
-        versions=list(planning_summary.version_ids),
+        versions=list(version_ids),
         stage_results=stage_results,
         ath_dimension_rows=ath_dimension_rows,
         cleanup_results=cleanup_results,

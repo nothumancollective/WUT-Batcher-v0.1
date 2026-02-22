@@ -112,6 +112,55 @@ class RuntimeOrchestratorTests(unittest.TestCase):
             self.assertTrue(bool(post.get("skipped")))
             self.assertEqual(str(post.get("reason")), "preserve_for_vacs_export")
 
+    def test_akabak_stage_uses_configured_solve_timeout(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            logs_dir = Path(tmp_dir) / "logs"
+            abec_path = Path(tmp_dir) / "Project.abec"
+            abec_path.write_text("stub", encoding="utf-8")
+            observed: dict[str, object] = {}
+
+            class _FakeAkabakDriver:
+                def __init__(self, *, executable: str, log_dir: Path) -> None:
+                    self.watchdog_events: list[dict] = []
+                    self.last_open_dialog_diagnostics_path = ""
+                    self.last_import_diagnostics_path = ""
+                    self.last_solve_diagnostics_path = ""
+
+                def open_project(self, abec_project_path: Path):
+                    return SimpleNamespace(ok=True, status="project_open")
+
+                def import_if_needed(self):
+                    return SimpleNamespace(ok=True, status="project_open")
+
+                def run_solve(self):
+                    return SimpleNamespace(ok=True, status="running")
+
+                def wait_for_completion(self, timeout_s: int = 300, require_vacs_graph_import: bool = False):
+                    observed["timeout_s"] = int(timeout_s)
+                    observed["require_vacs_graph_import"] = bool(require_vacs_graph_import)
+                    return SimpleNamespace(ok=True, status="completed")
+
+                def close(self):
+                    return SimpleNamespace(ok=True, status="closed")
+
+            with patch("app.runtime_orchestrator.AkabakDriver", _FakeAkabakDriver):
+                with patch("app.runtime_orchestrator._list_vacs_process_ids", side_effect=[[], []]):
+                    stage, _payload, ok = _run_akabak_ui_driver_stage(
+                        version_id="V001",
+                        executable="C:\\Tools\\AKABAK\\AKABAK.exe",
+                        abec_project_path=abec_path,
+                        version_logs_dir=logs_dir,
+                        require_vacs_graph_import=True,
+                        solve_timeout_s=1260,
+                    )
+
+            self.assertTrue(ok)
+            self.assertEqual(stage.status, "ok")
+            self.assertEqual(observed.get("timeout_s"), 1260)
+            self.assertEqual(observed.get("require_vacs_graph_import"), True)
+            summary_payload = json.loads(Path(stage.summary_log).read_text(encoding="utf-8-sig"))
+            self.assertEqual(int(summary_payload.get("solve_timeout_s", 0) or 0), 1260)
+
     def test_sync_generated_abec_copies_referenced_sidecars(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
@@ -446,6 +495,50 @@ class RuntimeOrchestratorTests(unittest.TestCase):
                 self.assertTrue(run_cfg_path.exists())
                 self.assertEqual(run_cfg_path.suffix.lower(), ".cfg")
 
+    def test_pipeline_reuses_existing_materialized_versions_for_same_batch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            projects_root = Path(tmp_dir) / "projects"
+            project = Project(
+                project_id="P001",
+                name="Runtime Reuse Test",
+                root_path=str(projects_root / "P001"),
+                constraints=ProjectConstraints(
+                    project_id="P001",
+                    fixed_params={"Length": 120},
+                    limits={},
+                    runner_mode="AthGuidePreview",
+                ),
+            )
+            batch = Batch(
+                batch_id="B001",
+                project_id="P001",
+                selected_params={"Throat.Diameter": ParamSelection(value=30.0)},
+                sweeps={"Coverage.Angle": SweepSpec(key="Coverage.Angle", start=40.0, end=50.0, steps=3)},
+                sweep_mode="single",
+                runner_mode="AthGuidePreview",
+            )
+
+            first = run_batch_pipeline(
+                project=project,
+                batch=batch,
+                projects_root=projects_root,
+                dry_run=True,
+                run_id="RUN_REUSE_1",
+            )
+            second = run_batch_pipeline(
+                project=project,
+                batch=batch,
+                projects_root=projects_root,
+                dry_run=True,
+                run_id="RUN_REUSE_2",
+            )
+
+            self.assertEqual(first.versions, ["V001", "V002", "V003"])
+            self.assertEqual(second.versions, ["V001", "V002", "V003"])
+            versions_dir = Path(second.project_root) / "versions"
+            existing_dirs = sorted(entry.name for entry in versions_dir.iterdir() if entry.is_dir())
+            self.assertEqual(existing_dirs, ["V001", "V002", "V003"])
+
     def test_pipeline_cleans_runtime_cfg_and_ath_export_subdir_after_success(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             projects_root = Path(tmp_dir) / "projects"
@@ -493,8 +586,10 @@ class RuntimeOrchestratorTests(unittest.TestCase):
             )
             run_cfg_path = Path(str(version_payload.get("run_cfg_path")))
             ath_export_dir = Path(str(version_payload.get("ath_export_dir")))
+            ath_work_dir = Path(summary.project_root) / "versions" / summary.versions[0] / "ath_work"
             self.assertFalse(run_cfg_path.exists())
             self.assertFalse(ath_export_dir.exists())
+            self.assertFalse(ath_work_dir.exists())
 
             cfg_cleanup = [
                 row for row in summary.cleanup_results if row.get("artifact") == "cfg" and row.get("version_id") == summary.versions[0]
@@ -504,12 +599,92 @@ class RuntimeOrchestratorTests(unittest.TestCase):
                 for row in summary.cleanup_results
                 if row.get("artifact") == "ath_export_subdir" and row.get("version_id") == summary.versions[0]
             ]
+            ath_work_cleanup = [
+                row for row in summary.cleanup_results if row.get("artifact") == "ath_work" and row.get("version_id") == summary.versions[0]
+            ]
             self.assertEqual(len(cfg_cleanup), 1)
             self.assertEqual(str(cfg_cleanup[0].get("reason")), "deleted")
             self.assertTrue(bool(cfg_cleanup[0].get("deleted")))
             self.assertEqual(len(export_cleanup), 1)
             self.assertEqual(str(export_cleanup[0].get("reason")), "deleted")
             self.assertTrue(bool(export_cleanup[0].get("deleted")))
+            self.assertEqual(len(ath_work_cleanup), 1)
+            self.assertEqual(str(ath_work_cleanup[0].get("reason")), "deleted")
+            self.assertTrue(bool(ath_work_cleanup[0].get("deleted")))
+
+    def test_pipeline_can_disable_runtime_cleanup_via_flag(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            projects_root = Path(tmp_dir) / "projects"
+            ath_export_root = Path(tmp_dir) / "ath_export"
+            ath_export_root.mkdir(parents=True, exist_ok=True)
+            project = Project(
+                project_id="P001",
+                name="Runtime Cleanup Disable Test",
+                root_path=str(projects_root / "P001"),
+                constraints=ProjectConstraints(
+                    project_id="P001",
+                    fixed_params={"Length": 120},
+                    limits={},
+                    runner_mode="AthGuidePreview",
+                ),
+            )
+            batch = Batch(
+                batch_id="B001",
+                project_id="P001",
+                selected_params={"Throat.Diameter": ParamSelection(value=30.0)},
+                sweep_mode="single",
+                runner_mode="AthGuidePreview",
+            )
+            ath_script = (
+                "from pathlib import Path; import sys; "
+                f"root=Path(r'{str(ath_export_root)}'); "
+                "cfg=Path(sys.argv[-1]); "
+                "sub=root/cfg.stem; sub.mkdir(parents=True, exist_ok=True); "
+                "(sub/'mesh.stl').write_text('solid m\\nendsolid m\\n', encoding='utf-8'); "
+                "print('Length=111 Width=222 Height=333')"
+            )
+
+            summary = run_batch_pipeline(
+                project=project,
+                batch=batch,
+                projects_root=projects_root,
+                ath_executable=sys.executable,
+                ath_base_args=["-c", ath_script],
+                continue_on_error=True,
+                ath_export_root=ath_export_root,
+                runtime_cleanup_enabled=False,
+            )
+            self.assertEqual(str(summary.run_status), "succeeded")
+            version_payload = json.loads(
+                (Path(summary.project_root) / "versions" / summary.versions[0] / "version.json").read_text(encoding="utf-8-sig")
+            )
+            run_cfg_path = Path(str(version_payload.get("run_cfg_path")))
+            ath_export_dir = Path(str(version_payload.get("ath_export_dir")))
+            ath_work_dir = Path(summary.project_root) / "versions" / summary.versions[0] / "ath_work"
+            self.assertTrue(run_cfg_path.exists())
+            self.assertTrue(ath_export_dir.exists())
+            self.assertTrue(ath_work_dir.exists())
+
+            cfg_cleanup = [
+                row for row in summary.cleanup_results if row.get("artifact") == "cfg" and row.get("version_id") == summary.versions[0]
+            ]
+            export_cleanup = [
+                row
+                for row in summary.cleanup_results
+                if row.get("artifact") == "ath_export_subdir" and row.get("version_id") == summary.versions[0]
+            ]
+            ath_work_cleanup = [
+                row for row in summary.cleanup_results if row.get("artifact") == "ath_work" and row.get("version_id") == summary.versions[0]
+            ]
+            self.assertEqual(len(cfg_cleanup), 1)
+            self.assertEqual(str(cfg_cleanup[0].get("reason")), "cleanup_disabled")
+            self.assertFalse(bool(cfg_cleanup[0].get("deleted")))
+            self.assertEqual(len(export_cleanup), 1)
+            self.assertEqual(str(export_cleanup[0].get("reason")), "cleanup_disabled")
+            self.assertFalse(bool(export_cleanup[0].get("deleted")))
+            self.assertEqual(len(ath_work_cleanup), 1)
+            self.assertEqual(str(ath_work_cleanup[0].get("reason")), "cleanup_disabled")
+            self.assertFalse(bool(ath_work_cleanup[0].get("deleted")))
 
     def test_pipeline_runs_ath_stage_and_writes_dimensions(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
