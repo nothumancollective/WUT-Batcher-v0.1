@@ -308,3 +308,26 @@ The Analyzer page is planned with two explicit subviews:
 - Heatmap style rule:
   - all POLAR heatmaps (Explorer + Compare) use one shared VACS-like LUT
   - color levels remain fixed against clamp settings (`0 dB .. clamp_min`) rather than per-dataset auto-rescale.
+
+## Implementation status (Analyzer UI Pro-Layout overhaul)
+
+- Analyzer `Batch Review` was re-laid out for plot-first usage:
+  - compact single-row Analyzer toolbar under global navigation
+  - right-side run summary chips + `Details...` action
+  - persistent long run metadata panel removed from the main workspace
+- Run selection model is now compact:
+  - primary selection via run selector combo in toolbar
+  - run table moved into a collapsible `Runs` drawer (hidden by default)
+  - keeps full row metadata available without permanently consuming workspace width
+- Explorer workspace now uses a scalable tile architecture:
+  - two splitter-based plot tiles with independent graph-type selectors
+  - supported selectors: `Heatmap`, `Beamwidth`, `SPL (coming soon)` scaffold
+  - per-tile focus toggle for temporary single-tile expansion
+- Plot rendering behavior remains data-compatible:
+  - no KPI math/scoring changes
+  - same run/plane/band/tolerance context inputs
+  - same background worker/cancel flow for loading polar plot payloads
+- Run details are now read-only dialog content:
+  - compact summary tab
+  - files/hashes tab with copy actions
+  - raw JSON tab for trace/debug workflows.

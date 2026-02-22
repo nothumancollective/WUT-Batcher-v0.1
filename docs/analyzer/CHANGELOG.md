@@ -233,3 +233,16 @@
   - cancel support for compare/autopick background operations
 - Added shared VACS-like POLAR heatmap LUT module and applied it consistently to Explorer + Compare heatmaps.
 - Added focused UI+style test coverage for compare workflow and LUT sanity.
+
+## 2026-02-22 (Analyzer UI layout overhaul: plot-first Batch Review workspace)
+- Reworked Analyzer Batch Review layout to prioritize plot readability:
+  - compact Analyzer toolbar with project/batch/source/filters and run summary chips
+  - run details moved to a read-only `Details...` dialog (summary/files/raw tabs)
+  - legacy always-visible details panel removed from main workspace
+- Replaced permanent left run column with compact run selection:
+  - toolbar run selector for primary selection
+  - collapsible `Runs` drawer containing the full run table
+- Explorer now uses a scalable plot-tile architecture:
+  - two splitter tiles with per-tile graph type selectors (`Heatmap`, `Beamwidth`, `SPL` scaffold)
+  - focus/unfocus action per tile for temporary single-tile expansion
+- No KPI compute/scoring logic was changed; updates are UI/layout and presentation wiring only.

@@ -1151,6 +1151,109 @@ class _AnalyzerAutoPickDialog(StyledDialogBase):
         return dict(self._accepted_payload) if isinstance(self._accepted_payload, dict) else None
 
 
+class _AnalyzerRunDetailsDialog(StyledDialogBase):
+    def __init__(self, *, payload: Dict[str, Any], parent: QWidget | None = None) -> None:
+        super().__init__(title="Run Details", parent=parent, min_width=880, min_height=620)
+        data = dict(payload or {})
+        body = self.body_layout()
+
+        tabs = QTabWidget()
+
+        summary_tab = QWidget()
+        summary_layout = QVBoxLayout(summary_tab)
+        summary_layout.setContentsMargins(0, 0, 0, 0)
+        summary_layout.setSpacing(8)
+        form = QFormLayout()
+        form.setContentsMargins(0, 0, 0, 0)
+        form.setSpacing(6)
+        rows = [
+            ("Run ID", str(data.get("run_id") or data.get("run_label") or "--"), True),
+            ("Version", str(data.get("version_id") or "--"), True),
+            ("Project", str(data.get("project_id") or "--"), False),
+            ("Batch", str(data.get("batch_id") or "--"), False),
+            ("Planes", "/".join(str(item) for item in list(data.get("planes", []) or [])) or "--", False),
+            ("freq_count", str(data.get("freq_count") if data.get("freq_count") is not None else "--"), False),
+            ("angle_count", str(data.get("angle_count") if data.get("angle_count") is not None else "--"), False),
+            ("norm_angle_deg", str(data.get("norm_angle_deg") or "--"), False),
+            ("score", str(data.get("kpi_score") if data.get("kpi_score") is not None else "--"), False),
+            ("B_PC", str(data.get("kpi_b_pc_oct") if data.get("kpi_b_pc_oct") is not None else "--"), False),
+            ("E_BW", str(data.get("kpi_e_bw") if data.get("kpi_e_bw") is not None else "--"), False),
+            ("E_cov", str(data.get("kpi_e_cov") if data.get("kpi_e_cov") is not None else "--"), False),
+            ("R_spill", str(data.get("kpi_r_spill") if data.get("kpi_r_spill") is not None else "--"), False),
+            ("Flags", str(data.get("kpi_flags_count") if data.get("kpi_flags_count") is not None else "--"), False),
+            ("imported_at", str(data.get("imported_at") or "--"), False),
+            ("created_at", str(data.get("created_at") or "--"), False),
+        ]
+        for label_text, value_text, copyable in rows:
+            row_widget = QWidget()
+            row_layout = QHBoxLayout(row_widget)
+            row_layout.setContentsMargins(0, 0, 0, 0)
+            row_layout.setSpacing(6)
+            value_label = QLabel(str(value_text))
+            value_label.setWordWrap(True)
+            value_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            row_layout.addWidget(value_label, 1)
+            if copyable and str(value_text).strip() and str(value_text).strip() != "--":
+                copy_btn = QPushButton("Copy")
+                copy_btn.setObjectName("BatchSecondaryButton")
+                copy_btn.clicked.connect(lambda _checked=False, text=str(value_text): QApplication.clipboard().setText(text))
+                row_layout.addWidget(copy_btn, 0)
+            form.addRow(label_text, row_widget)
+        summary_layout.addLayout(form)
+        summary_layout.addStretch(1)
+        tabs.addTab(summary_tab, "Summary")
+
+        files_tab = QWidget()
+        files_layout = QVBoxLayout(files_tab)
+        files_layout.setContentsMargins(0, 0, 0, 0)
+        files_layout.setSpacing(6)
+        files_list = QTextEdit()
+        files_list.setReadOnly(True)
+        source_files = [str(item) for item in list(data.get("source_files", []) or [])]
+        file_hashes = [str(item) for item in list(data.get("file_hashes", []) or [])]
+        text_lines = ["Source files:"]
+        text_lines.extend(source_files or ["--"])
+        text_lines.append("")
+        text_lines.append("File hashes:")
+        text_lines.extend(file_hashes or ["--"])
+        files_list.setPlainText("\n".join(text_lines))
+        files_actions = QHBoxLayout()
+        files_actions.setContentsMargins(0, 0, 0, 0)
+        files_actions.addStretch(1)
+        copy_files_btn = QPushButton("Copy files")
+        copy_files_btn.setObjectName("BatchSecondaryButton")
+        copy_files_btn.clicked.connect(lambda _checked=False: QApplication.clipboard().setText("\n".join(source_files)))
+        copy_hashes_btn = QPushButton("Copy hashes")
+        copy_hashes_btn.setObjectName("BatchSecondaryButton")
+        copy_hashes_btn.clicked.connect(lambda _checked=False: QApplication.clipboard().setText("\n".join(file_hashes)))
+        files_actions.addWidget(copy_files_btn)
+        files_actions.addWidget(copy_hashes_btn)
+        files_layout.addLayout(files_actions)
+        files_layout.addWidget(files_list, 1)
+        tabs.addTab(files_tab, "Files")
+
+        raw_tab = QWidget()
+        raw_layout = QVBoxLayout(raw_tab)
+        raw_layout.setContentsMargins(0, 0, 0, 0)
+        raw_layout.setSpacing(6)
+        raw_text = QTextEdit()
+        raw_text.setReadOnly(True)
+        raw_text.setPlainText(json.dumps(data, indent=2, ensure_ascii=False, sort_keys=True))
+        raw_layout.addWidget(raw_text, 1)
+        tabs.addTab(raw_tab, "Raw")
+
+        body.addWidget(tabs, 1)
+
+        actions = QHBoxLayout()
+        actions.setContentsMargins(0, 0, 0, 0)
+        actions.addStretch(1)
+        close_btn = QPushButton("Close")
+        close_btn.setObjectName("BatchSecondaryButton")
+        close_btn.clicked.connect(self.accept)
+        actions.addWidget(close_btn)
+        body.addLayout(actions)
+
+
 class _AnalyzerAutoPickWorker(QObject):
     finished = Signal(int, dict)
     failed = Signal(int, str)
@@ -3498,6 +3601,7 @@ class AnalysePage(QWidget):
         self._project_context_id: Optional[str] = None
         self._selector_sync_guard = False
         self._control_sync_guard = False
+        self._run_selector_sync_guard = False
         self._metadata_request_id = 0
         self._metadata_thread: Optional[QThread] = None
         self._metadata_worker: Optional[_AnalyzerMetadataWorker] = None
@@ -3521,6 +3625,11 @@ class AnalysePage(QWidget):
         self._compare_exclude_flags = True
         self._compare_exclude_missing = True
         self._loaded_analysis_id: Optional[str] = None
+        self._selected_detail_payload: Dict[str, Any] = {}
+        self._run_drawer_expanded = False
+        self._latest_plot_payload: Dict[str, Any] = {}
+        self._explorer_focus_index: Optional[int] = None
+        self._explorer_tiles: List[Dict[str, Any]] = []
         self._active_plane = "H"
         self._plane_buttons: Dict[str, QToolButton] = {}
         self._plot_debounce_timer = QTimer(self)
@@ -3827,10 +3936,20 @@ class AnalysePage(QWidget):
         explorer_layout = QVBoxLayout(self.explorer_tab)
         explorer_layout.setContentsMargins(4, 4, 4, 4)
         explorer_layout.setSpacing(8)
-        self.heatmap_canvas = HeatmapCanvas()
-        self.beamwidth_canvas = BeamwidthCanvas()
-        explorer_layout.addWidget(self.heatmap_canvas, 2)
-        explorer_layout.addWidget(self.beamwidth_canvas, 1)
+        self.explorer_splitter = QSplitter(Qt.Vertical)
+        self.explorer_splitter.setObjectName("AnalyzerExplorerSplitter")
+        self.explorer_splitter.setChildrenCollapsible(False)
+        top_tile = self._create_explorer_plot_tile(slot_index=0, title="Plot A", default_graph_type="heatmap")
+        bottom_tile = self._create_explorer_plot_tile(slot_index=1, title="Plot B", default_graph_type="beamwidth")
+        self._explorer_tiles = [top_tile, bottom_tile]
+        self.heatmap_canvas = top_tile["heatmap_canvas"]
+        self.beamwidth_canvas = bottom_tile["beamwidth_canvas"]
+        self.explorer_splitter.addWidget(top_tile["frame"])
+        self.explorer_splitter.addWidget(bottom_tile["frame"])
+        self.explorer_splitter.setStretchFactor(0, 3)
+        self.explorer_splitter.setStretchFactor(1, 2)
+        self.explorer_splitter.setSizes([420, 280])
+        explorer_layout.addWidget(self.explorer_splitter, 1)
         self.analysis_tabs.addTab(self.explorer_tab, "Explorer")
 
         self.compare_tab = QWidget()
@@ -3940,6 +4059,94 @@ class AnalysePage(QWidget):
         self.splitter.setStretchFactor(1, 6)
         root.addWidget(self.splitter, 1)
 
+        self.analyzer_toolbar = QFrame()
+        self.analyzer_toolbar.setObjectName("ProjectSummaryPanel")
+        toolbar_layout = QHBoxLayout(self.analyzer_toolbar)
+        toolbar_layout.setContentsMargins(10, 6, 10, 6)
+        toolbar_layout.setSpacing(8)
+        toolbar_layout.addWidget(QLabel("Project"), 0, Qt.AlignVCenter)
+        toolbar_layout.addWidget(self.project_selector, 0)
+        toolbar_layout.addWidget(QLabel("Batch"), 0, Qt.AlignVCenter)
+        toolbar_layout.addWidget(self.batch_selector, 0)
+        toolbar_layout.addWidget(QLabel("Source"), 0, Qt.AlignVCenter)
+        toolbar_layout.addWidget(self.source_selector, 0)
+        toolbar_layout.addWidget(self.refresh_btn, 0)
+        toolbar_layout.addSpacing(6)
+        self.run_drawer_toggle = QToolButton()
+        self.run_drawer_toggle.setObjectName("AnalyzerRunDrawerToggle")
+        self.run_drawer_toggle.setText("Runs")
+        self.run_drawer_toggle.setCheckable(True)
+        self.run_drawer_toggle.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        toolbar_layout.addWidget(self.run_drawer_toggle, 0)
+        self.run_selector = QComboBox()
+        self.run_selector.setObjectName("AnalyzerRunSelector")
+        self.run_selector.setMinimumWidth(220)
+        self.run_selector.setMaximumWidth(520)
+        self.run_selector.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.run_selector.setSizeAdjustPolicy(QComboBox.AdjustToContentsOnFirstShow)
+        toolbar_layout.addWidget(self.run_selector, 0)
+
+        toolbar_layout.addSpacing(10)
+        toolbar_layout.addWidget(self.exclude_flagged_check, 0)
+        toolbar_layout.addWidget(self.exclude_warnings_check, 0)
+        toolbar_layout.addWidget(QLabel("Min score"), 0, Qt.AlignVCenter)
+        toolbar_layout.addWidget(self.min_score_spin, 0)
+        toolbar_layout.addWidget(self.compute_btn, 0)
+        toolbar_layout.addStretch(1)
+
+        self.run_summary_run_chip = ElidedTitleLabel("Run: --")
+        self.run_summary_run_chip.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.run_summary_run_chip.setMinimumWidth(140)
+        self.run_summary_run_chip.setObjectName("SummaryMeta")
+        self.run_summary_planes_chip = ElidedTitleLabel("Planes: --")
+        self.run_summary_planes_chip.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.run_summary_planes_chip.setMinimumWidth(86)
+        self.run_summary_planes_chip.setObjectName("SummaryMeta")
+        self.run_summary_freq_chip = ElidedTitleLabel("f/a: --")
+        self.run_summary_freq_chip.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.run_summary_freq_chip.setMinimumWidth(120)
+        self.run_summary_freq_chip.setObjectName("SummaryMeta")
+        self.run_summary_score_chip = ElidedTitleLabel("Score: --")
+        self.run_summary_score_chip.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.run_summary_score_chip.setMinimumWidth(96)
+        self.run_summary_score_chip.setObjectName("SummaryMeta")
+        self.run_summary_kpi_chip = ElidedTitleLabel("E_BW/E_cov/R_spill: --")
+        self.run_summary_kpi_chip.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.run_summary_kpi_chip.setMinimumWidth(220)
+        self.run_summary_kpi_chip.setObjectName("SummaryMeta")
+        toolbar_layout.addWidget(self.run_summary_run_chip, 0)
+        toolbar_layout.addWidget(self.run_summary_planes_chip, 0)
+        toolbar_layout.addWidget(self.run_summary_freq_chip, 0)
+        toolbar_layout.addWidget(self.run_summary_score_chip, 0)
+        toolbar_layout.addWidget(self.run_summary_kpi_chip, 0)
+        self.run_details_btn = QPushButton("Details...")
+        self.run_details_btn.setObjectName("BatchSecondaryButton")
+        toolbar_layout.addWidget(self.run_details_btn, 0)
+
+        root.insertWidget(0, self.analyzer_toolbar)
+        self.header_row.setVisible(False)
+        self.controls_panel.setVisible(False)
+        self.selector_panel.setVisible(False)
+        self.details_panel.setVisible(False)
+
+        self.run_drawer = QFrame()
+        self.run_drawer.setObjectName("ProjectIssuesPanel")
+        run_drawer_layout = QVBoxLayout(self.run_drawer)
+        run_drawer_layout.setContentsMargins(8, 8, 8, 8)
+        run_drawer_layout.setSpacing(6)
+        run_drawer_title = QLabel("Run List")
+        run_drawer_title.setObjectName("SummaryMeta")
+        run_drawer_layout.addWidget(run_drawer_title, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        run_drawer_layout.addWidget(self.run_table, 1)
+        root.insertWidget(1, self.run_drawer, 1)
+        self.run_drawer.setVisible(False)
+
+        self.splitter.setSizes([0, 1600])
+        self.splitter.widget(0).setMinimumWidth(0)
+        self.splitter.widget(0).setMaximumWidth(0)
+        self.analysis_tabs.tabBar().setExpanding(True)
+        self.analysis_tabs.tabBar().setMinimumHeight(34)
+
         self.refresh_btn.clicked.connect(self.refresh_data)
         self.compute_btn.clicked.connect(self._start_kpi_compute)
         self.compute_cancel_btn.clicked.connect(self._cancel_kpi_compute)
@@ -3947,6 +4154,9 @@ class AnalysePage(QWidget):
         self.project_selector.currentIndexChanged.connect(self._on_project_changed)
         self.batch_selector.currentIndexChanged.connect(self._on_batch_changed)
         self.run_table.itemSelectionChanged.connect(self._on_run_selection_changed)
+        self.run_selector.currentIndexChanged.connect(self._on_run_selector_changed)
+        self.run_drawer_toggle.toggled.connect(self._set_run_drawer_visible)
+        self.run_details_btn.clicked.connect(self._open_run_details_dialog)
         self.stage_selector.currentIndexChanged.connect(self._on_stage_changed)
         self.target_selector.currentIndexChanged.connect(self._on_kpi_config_changed)
         self.tol_spin.valueChanged.connect(self._on_kpi_config_changed)
@@ -3981,9 +4191,147 @@ class AnalysePage(QWidget):
         self._apply_stage_defaults()
         self.compute_btn.setEnabled(self._source_key() == "project")
         self._set_details(None)
+        self.run_selector.addItem("(no runs)", "")
+        self.run_selector.setEnabled(False)
+        self.run_details_btn.setEnabled(False)
         self._clear_plot_views("Select run + plane to render plots.")
         self._refresh_saved_analyses()
         self._update_compare_slots()
+        self._update_toolbar_compaction()
+
+    def _create_explorer_plot_tile(
+        self,
+        *,
+        slot_index: int,
+        title: str,
+        default_graph_type: str,
+    ) -> Dict[str, Any]:
+        frame = QFrame()
+        frame.setObjectName("ProjectIssuesPanel")
+        frame.setMinimumHeight(180)
+        frame_layout = QVBoxLayout(frame)
+        frame_layout.setContentsMargins(8, 8, 8, 8)
+        frame_layout.setSpacing(6)
+
+        header = QWidget()
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(6)
+        title_label = QLabel(str(title or f"Plot {slot_index + 1}"))
+        title_label.setObjectName("SectionTitle")
+        header_layout.addWidget(title_label, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        header_layout.addStretch(1)
+        header_layout.addWidget(QLabel("Graph"), 0, Qt.AlignRight | Qt.AlignVCenter)
+        graph_selector = QComboBox()
+        graph_selector.setObjectName(f"AnalyzerGraphTypeCombo{slot_index + 1}")
+        graph_selector.addItem("Heatmap", "heatmap")
+        graph_selector.addItem("Beamwidth", "beamwidth")
+        graph_selector.addItem("SPL (coming soon)", "spl")
+        graph_selector.setSizeAdjustPolicy(QComboBox.AdjustToContentsOnFirstShow)
+        header_layout.addWidget(graph_selector, 0)
+        focus_btn = QToolButton()
+        focus_btn.setObjectName("BatchSecondaryToolButton")
+        focus_btn.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        focus_btn.setText("Focus")
+        focus_btn.setToolTip("Expand this plot tile and collapse the other tile.")
+        header_layout.addWidget(focus_btn, 0)
+        frame_layout.addWidget(header, 0)
+
+        stack = QStackedWidget()
+        stack.setObjectName(f"AnalyzerPlotTileStack{slot_index + 1}")
+        heatmap_canvas = HeatmapCanvas()
+        heatmap_canvas.setObjectName(f"AnalyzerHeatmapCanvas{slot_index + 1}")
+        beamwidth_canvas = BeamwidthCanvas()
+        beamwidth_canvas.setObjectName(f"AnalyzerBeamwidthCanvas{slot_index + 1}")
+        placeholder = QLabel("Graph type scaffold for future Analyzer plots.")
+        placeholder.setObjectName("SummaryMeta")
+        placeholder.setAlignment(Qt.AlignCenter)
+        placeholder.setWordWrap(True)
+        stack.addWidget(heatmap_canvas)
+        stack.addWidget(beamwidth_canvas)
+        stack.addWidget(placeholder)
+        frame_layout.addWidget(stack, 1)
+
+        tile = {
+            "slot_index": int(slot_index),
+            "frame": frame,
+            "title_label": title_label,
+            "graph_selector": graph_selector,
+            "focus_btn": focus_btn,
+            "stack": stack,
+            "heatmap_canvas": heatmap_canvas,
+            "beamwidth_canvas": beamwidth_canvas,
+            "placeholder": placeholder,
+            "graph_type": "heatmap",
+        }
+        graph_selector.currentIndexChanged.connect(
+            lambda _idx=0, idx=slot_index: self._on_explorer_tile_graph_changed(idx)
+        )
+        focus_btn.clicked.connect(lambda _checked=False, idx=slot_index: self._toggle_explorer_tile_focus(idx))
+        self._set_explorer_tile_graph(tile, default_graph_type)
+        return tile
+
+    def _set_explorer_tile_graph(self, tile: Dict[str, Any], graph_type: str) -> None:
+        graph = str(graph_type or "heatmap").strip().lower()
+        if graph not in {"heatmap", "beamwidth", "spl"}:
+            graph = "heatmap"
+        tile["graph_type"] = graph
+        stack = tile.get("stack")
+        selector = tile.get("graph_selector")
+        if isinstance(selector, QComboBox):
+            for index in range(selector.count()):
+                if str(selector.itemData(index) or "") == graph:
+                    if selector.currentIndex() != index:
+                        selector.blockSignals(True)
+                        selector.setCurrentIndex(index)
+                        selector.blockSignals(False)
+                    break
+        if isinstance(stack, QStackedWidget):
+            if graph == "heatmap":
+                stack.setCurrentWidget(tile.get("heatmap_canvas"))
+            elif graph == "beamwidth":
+                stack.setCurrentWidget(tile.get("beamwidth_canvas"))
+            else:
+                stack.setCurrentWidget(tile.get("placeholder"))
+
+    def _on_explorer_tile_graph_changed(self, slot_index: int) -> None:
+        if slot_index < 0 or slot_index >= len(self._explorer_tiles):
+            return
+        tile = self._explorer_tiles[slot_index]
+        selector = tile.get("graph_selector")
+        if not isinstance(selector, QComboBox):
+            return
+        graph_type = str(selector.currentData() or "heatmap").strip().lower()
+        self._set_explorer_tile_graph(tile, graph_type)
+
+    def _toggle_explorer_tile_focus(self, slot_index: int) -> None:
+        if slot_index < 0 or slot_index >= len(self._explorer_tiles):
+            return
+        if self._explorer_focus_index == slot_index:
+            self._explorer_focus_index = None
+            self.explorer_splitter.setSizes([420, 280])
+        else:
+            self._explorer_focus_index = int(slot_index)
+            focus_sizes = [80 for _ in self._explorer_tiles]
+            focus_sizes[slot_index] = 1200
+            self.explorer_splitter.setSizes(focus_sizes)
+        for index, tile in enumerate(self._explorer_tiles):
+            button = tile.get("focus_btn")
+            if isinstance(button, QToolButton):
+                button.setText("Unfocus" if self._explorer_focus_index == index else "Focus")
+
+    def _update_toolbar_compaction(self) -> None:
+        width = max(int(self.width()), 1)
+        compact = width < 1780
+        very_compact = width < 1500
+        self.run_summary_kpi_chip.setVisible(not compact)
+        self.run_summary_freq_chip.setVisible(not very_compact)
+        max_selector_width = max(220, min(520, int(width * 0.24)))
+        self.run_selector.setMaximumWidth(max_selector_width)
+
+    def resizeEvent(self, event) -> None:  # type: ignore[override]
+        super().resizeEvent(event)
+        self._update_toolbar_compaction()
 
     def _build_plot_placeholder(self, text: str) -> QWidget:
         shell = QWidget()
@@ -4541,10 +4889,20 @@ class AnalysePage(QWidget):
 
     def _clear_plot_views(self, message: str) -> None:
         msg = str(message or "No plot data.")
-        self.heatmap_canvas.clear_heatmap(msg)
-        self.beamwidth_canvas.clear_curve(msg)
+        self._latest_plot_payload = {}
+        for tile in self._explorer_tiles:
+            heatmap_canvas = tile.get("heatmap_canvas")
+            if isinstance(heatmap_canvas, HeatmapCanvas):
+                heatmap_canvas.clear_heatmap(msg)
+            beamwidth_canvas = tile.get("beamwidth_canvas")
+            if isinstance(beamwidth_canvas, BeamwidthCanvas):
+                beamwidth_canvas.clear_curve(msg)
+            placeholder = tile.get("placeholder")
+            if isinstance(placeholder, QLabel):
+                placeholder.setText(msg)
 
     def _render_plot_payload(self, payload: Dict[str, Any]) -> None:
+        self._latest_plot_payload = dict(payload or {})
         message = str(payload.get("message") or "").strip()
         display_matrix = [list(row) for row in list(payload.get("display_matrix_db", []) or [])]
         curve = [dict(item) for item in list(payload.get("beamwidth_curve", []) or []) if isinstance(item, dict)]
@@ -4567,25 +4925,36 @@ class AnalysePage(QWidget):
             status = f"Heatmap ({plane})"
         if message:
             status = message
-        self.heatmap_canvas.set_heatmap_data(
-            matrix=display_matrix,
-            clamp_enabled=clamp_enabled,
-            clamp_min_db=clamp_min,
-            ref_angle_deg=float(ref_angle) if ref_angle is not None else None,
-            status=status,
-        )
-        if curve:
-            bw_status = "Beamwidth (-6 dB)"
-            if bool(payload.get("insufficient_bw")):
-                bw_status = "Insufficient angle coverage"
-            self.beamwidth_canvas.set_curve(
-                curve=curve,
-                target_deg=float(target_deg),
-                tol_deg=float(self.tol_spin.value()),
-                status=bw_status,
-            )
-        else:
-            self.beamwidth_canvas.clear_curve(message or "Insufficient angle coverage.")
+        for tile in self._explorer_tiles:
+            heatmap_canvas = tile.get("heatmap_canvas")
+            if isinstance(heatmap_canvas, HeatmapCanvas):
+                heatmap_canvas.set_heatmap_data(
+                    matrix=display_matrix,
+                    clamp_enabled=clamp_enabled,
+                    clamp_min_db=clamp_min,
+                    ref_angle_deg=float(ref_angle) if ref_angle is not None else None,
+                    status=status,
+                )
+            beamwidth_canvas = tile.get("beamwidth_canvas")
+            if isinstance(beamwidth_canvas, BeamwidthCanvas):
+                if curve:
+                    bw_status = "Beamwidth (-6 dB)"
+                    if bool(payload.get("insufficient_bw")):
+                        bw_status = "Insufficient angle coverage"
+                    beamwidth_canvas.set_curve(
+                        curve=curve,
+                        target_deg=float(target_deg),
+                        tol_deg=float(self.tol_spin.value()),
+                        status=bw_status,
+                    )
+                else:
+                    beamwidth_canvas.clear_curve(message or "Insufficient angle coverage.")
+            placeholder = tile.get("placeholder")
+            if isinstance(placeholder, QLabel):
+                placeholder.setText(
+                    "Graph scaffold: switch to Heatmap/Beamwidth for live plots.\n"
+                    f"Loaded {len(display_matrix)}x{len(display_matrix[0]) if display_matrix else 0} matrix."
+                )
 
     def _compare_identity(self, row: Dict[str, Any]) -> tuple[str, str, str]:
         return (
@@ -5196,6 +5565,41 @@ class AnalysePage(QWidget):
             combo.setCurrentIndex(0)
 
     @staticmethod
+    def _run_identity(row: Dict[str, Any]) -> tuple[str, str, str]:
+        return (
+            str(row.get("batch_id") or "").strip(),
+            str(row.get("run_id") or "").strip(),
+            str(row.get("version_id") or "").strip(),
+        )
+
+    def _set_run_drawer_visible(self, visible: bool) -> None:
+        self._run_drawer_expanded = bool(visible)
+        self.run_drawer.setVisible(bool(visible))
+
+    def _on_run_selector_changed(self, _index: int = 0) -> None:
+        if self._run_selector_sync_guard:
+            return
+        payload = dict(self.run_selector.currentData() or {})
+        if not payload:
+            return
+        target_identity = self._run_identity(payload)
+        for row_index in range(self.run_table.rowCount()):
+            item = self.run_table.item(row_index, self.COL_RUN_ID)
+            if item is None:
+                continue
+            row_payload = dict(item.data(Qt.UserRole) or {})
+            if self._run_identity(row_payload) == target_identity:
+                self.run_table.selectRow(row_index)
+                break
+
+    def _open_run_details_dialog(self) -> None:
+        payload = dict(self._selected_detail_payload or {})
+        if not payload:
+            return
+        dialog = _AnalyzerRunDetailsDialog(payload=payload, parent=self)
+        dialog.exec()
+
+    @staticmethod
     def _format_angle(value: Any) -> str:
         if value is None:
             return "--"
@@ -5278,6 +5682,10 @@ class AnalysePage(QWidget):
     def _set_run_table_rows(self, rows: List[Dict[str, Any]]) -> None:
         self.run_table.setSortingEnabled(False)
         self.run_table.setRowCount(len(rows))
+        previous_identity = self._run_identity(self._selected_detail_payload) if self._selected_detail_payload else ("", "", "")
+        selected_row_index = 0
+        self._run_selector_sync_guard = True
+        self.run_selector.clear()
         for row_index, row in enumerate(rows):
             planes = "/".join(str(item) for item in list(row.get("planes", []) or []))
             flags_count = int(row.get("kpi_flags_count") or 0)
@@ -5307,17 +5715,31 @@ class AnalysePage(QWidget):
                 if col_index == self.COL_RUN_ID:
                     item.setData(Qt.UserRole, dict(row))
                 self.run_table.setItem(row_index, col_index, item)
+            run_label = f"{str(row.get('run_id') or row.get('run_label') or '--')} | {str(row.get('version_id') or '--')} | {str(row.get('batch_id') or '--')}"
+            self.run_selector.addItem(run_label, dict(row))
+            if previous_identity != ("", "", "") and self._run_identity(row) == previous_identity:
+                selected_row_index = row_index
         self.run_table.setSortingEnabled(True)
+        self._run_selector_sync_guard = False
+        self.run_selector.setEnabled(bool(rows))
         if rows:
-            self.run_table.selectRow(0)
-            first = dict(rows[0])
-            self._set_details(first)
-            self._sync_plane_controls(first)
+            selected_row_index = max(0, min(int(selected_row_index), len(rows) - 1))
+            self.run_table.selectRow(selected_row_index)
+            selected = dict(rows[selected_row_index])
+            self._set_details(selected)
+            self._sync_plane_controls(selected)
             self._schedule_plot_refresh()
+            self._run_selector_sync_guard = True
+            self.run_selector.setCurrentIndex(selected_row_index)
+            self._run_selector_sync_guard = False
         else:
             self._set_details(None)
             self._sync_plane_controls(None)
             self._clear_plot_views("Select run + plane to render plots.")
+            self._run_selector_sync_guard = True
+            self.run_selector.addItem("(no runs)", "")
+            self.run_selector.setCurrentIndex(0)
+            self._run_selector_sync_guard = False
         self._update_compute_button_text(rows)
 
     def _apply_runs_payload(self, payload: Dict[str, Any]) -> None:
@@ -5415,12 +5837,22 @@ class AnalysePage(QWidget):
         row_index = int(selected_indexes[0].row())
         item = self.run_table.item(row_index, self.COL_RUN_ID)
         payload = dict(item.data(Qt.UserRole) or {}) if item is not None else {}
+        if payload:
+            target_identity = self._run_identity(payload)
+            self._run_selector_sync_guard = True
+            for combo_index in range(self.run_selector.count()):
+                row_payload = dict(self.run_selector.itemData(combo_index) or {})
+                if self._run_identity(row_payload) == target_identity:
+                    self.run_selector.setCurrentIndex(combo_index)
+                    break
+            self._run_selector_sync_guard = False
         self._set_details(payload if payload else None)
         self._sync_plane_controls(payload if payload else None)
         self._schedule_plot_refresh()
 
     def _set_details(self, payload: Optional[Dict[str, Any]]) -> None:
         data = dict(payload or {})
+        self._selected_detail_payload = dict(data) if data else {}
         planes = "/".join(str(item) for item in list(data.get("planes", []) or []))
         source_files = "\n".join(str(item) for item in list(data.get("source_files", []) or []))
         file_hashes = "\n".join(str(item) for item in list(data.get("file_hashes", []) or []))
@@ -5453,6 +5885,30 @@ class AnalysePage(QWidget):
         }
         for key, label in self._detail_labels.items():
             label.setText(mapping.get(key, "--"))
+        self.run_details_btn.setEnabled(bool(data))
+
+        if not data:
+            self.run_summary_run_chip.set_full_text("Run: --")
+            self.run_summary_planes_chip.set_full_text("Planes: --")
+            self.run_summary_freq_chip.set_full_text("f/a: --")
+            self.run_summary_score_chip.set_full_text("Score: --")
+            self.run_summary_kpi_chip.set_full_text("E_BW/E_cov/R_spill: --")
+            return
+
+        run_id = str(data.get("run_id") or data.get("run_label") or "--")
+        version = str(data.get("version_id") or "--")
+        freq_count = str(data.get("freq_count") if data.get("freq_count") is not None else "--")
+        angle_count = str(data.get("angle_count") if data.get("angle_count") is not None else "--")
+        self.run_summary_run_chip.set_full_text(f"Run: {run_id} ({version})")
+        self.run_summary_planes_chip.set_full_text(f"Planes: {planes or '--'}")
+        self.run_summary_freq_chip.set_full_text(f"f/a: {freq_count}/{angle_count}")
+        self.run_summary_score_chip.set_full_text(f"Score: {self._format_float(data.get('kpi_score'), 2)}")
+        self.run_summary_kpi_chip.set_full_text(
+            "E_BW/E_cov/R_spill: "
+            f"{self._format_float(data.get('kpi_e_bw'), 2)} / "
+            f"{self._format_float(data.get('kpi_e_cov'), 2)} / "
+            f"{self._format_float(data.get('kpi_r_spill'), 3)}"
+        )
 
 
 class ProjectManagerWindow(QMainWindow):
