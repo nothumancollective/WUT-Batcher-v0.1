@@ -206,7 +206,9 @@ class _ResponsiveFieldGrid(QWidget):
         self._grid.setContentsMargins(0, 0, 0, 0)
         self._grid.setHorizontalSpacing(max(34, int(FORM_METRICS.column_gap) + 14))
         self._grid.setVerticalSpacing(max(8, int(FORM_METRICS.row_gap) + 1))
-        self._min_three_width = 1500
+        # Keep a compact two-column behavior across normal desktop widths.
+        # This avoids large-width drift in cards like Basics while staying responsive.
+        self._min_three_width = 2600
 
     def add_cell(self, widget: QWidget) -> None:
         self._items.append(("cell", widget, 1))
@@ -649,7 +651,13 @@ class BatchParameterForm(QWidget):
             subgroup_ordered_names: List[str] = []
             for field in ordered_fields:
                 subgroup_name = self._subgroup_for_field(field, group_name)[1]
-                subgroup_keys.setdefault(str(subgroup_name), set()).add(str(field.key))
+                target_keys = subgroup_keys.setdefault(str(subgroup_name), set())
+                target_keys.add(str(field.key))
+                # R-OSSE object rows are expanded into property rows (R-OSSE.*),
+                # so frame visibility must track those rendered keys, not only R-OSSE.
+                if str(field.key) == "R-OSSE" and str(field.widget_kind) == "object":
+                    for property_field in list(field.object_properties or ()):
+                        target_keys.add(str(property_field.key))
                 if subgroup_name != "General" and subgroup_name not in subgroup_ordered_names:
                     subgroup_ordered_names.append(str(subgroup_name))
 

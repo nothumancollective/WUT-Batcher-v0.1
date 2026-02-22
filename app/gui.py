@@ -2152,10 +2152,14 @@ class BatchPage(QWidget):
 
         left_panel = QFrame()
         left_panel.setObjectName("ProjectIssuesPanel")
+        left_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        left_panel.setMinimumWidth(0)
         left_layout = QVBoxLayout(left_panel)
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(2)
         left_layout.addWidget(self.parameter_form, 1)
+        self.parameter_form.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.parameter_form.setMinimumWidth(0)
         body.addWidget(left_panel, 3)
 
         right_panel = QWidget()
@@ -2180,6 +2184,7 @@ class BatchPage(QWidget):
         self.batch_name.textChanged.connect(self._emit_draft_changed)
 
         self._body_layout = body
+        self._left_panel = left_panel
         self._right_panel = right_panel
 
         self._compat_state: Dict[str, Any] = {"visible_keys": [], "locked_keys": [], "sweepable_keys": [], "issues": []}
@@ -2205,6 +2210,8 @@ class BatchPage(QWidget):
         body_total = max(available_width, 1)
         body_spacing = max(int(self._body_layout.spacing()), 0)
         right_width = max((body_total - body_spacing) // 3, 1)
+        left_width = max(body_total - body_spacing - right_width, 1)
+        self._left_panel.setMaximumWidth(left_width)
         self._right_panel.setMinimumWidth(right_width)
         self._right_panel.setMaximumWidth(right_width)
 

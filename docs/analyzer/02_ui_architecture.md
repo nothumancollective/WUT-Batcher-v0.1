@@ -230,3 +230,5 @@ The Analyzer page is planned with two explicit subviews:
 - GCurve subgroup stacking order is stabilized as `Mode` -> `Common` -> `Mode-specific` for predictable layout and spacing.
 - Batch inline hint presentation now uses reusable `HelperRow` components (optional icon + wrapped text + subtle surface), replacing plain helper labels while preserving hint logic.
 - Batch popup shells now reuse a shared frameless dialog template (`StyledDialogBase`) aligned with Export Advanced dialog visuals.
+- Batch body column sizing now enforces explicit left/right bounds during resize so expanded left cards remain clipped to the left column and cannot bleed into the right Preview/Exports column.
+- R-OSSE subsection visibility now follows rendered `R-OSSE.*` rows when only parent-key compatibility visibility (`R-OSSE`) is present.

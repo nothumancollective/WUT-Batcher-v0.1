@@ -166,3 +166,8 @@
   - introduced shared frameless popup template (`StyledDialogBase`) and applied it to Batch popups and Export Advanced dialog shell
   - migrated Mesh Advanced / Simulate Enclosure popup editors to schema-driven `ScalarFieldEditor` controls (matching project-side control types while writing Batch variables)
   - verified no blanking/crash on toggle/edit flows.
+
+## 2026-02-22 (Batch layout + R-OSSE visibility follow-up)
+- Fixed R-OSSE subgroup visibility regression: subsection frame visibility now tracks rendered `R-OSSE.*` property rows (not just the parent `R-OSSE` object key), so the block appears reliably when mode 2 is active.
+- Stabilized Batch card resize behavior by reducing aggressive multi-column expansion at large widths (keeps Basics/GCurve/Throat behavior consistent under fullscreen-like widths).
+- Hardened Batch split-column bounds: left panel is now explicitly width-bounded against the computed right-panel width to prevent left-card rendering from intruding into the right Preview/Exports column.

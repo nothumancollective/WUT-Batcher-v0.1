@@ -195,6 +195,25 @@ class BatchPageUiTests(unittest.TestCase):
         self.assertIn("R-OSSE.R", sweeps)
         self.assertIn("R-OSSE.r0", sweeps)
 
+    def test_rosse_property_rows_remain_visible_when_compat_only_flags_parent_key(self) -> None:
+        page = BatchPage()
+        state = self._compat_state(selected_params={"Throat.Profile": 2})
+        visible = [str(item) for item in list(state.get("visible_keys", []) or [])]
+        state["visible_keys"] = [key for key in visible if not key.startswith("R-OSSE.")]
+        state["visible_keys"].append("R-OSSE")
+        sweepable = [str(item) for item in list(state.get("sweepable_keys", []) or [])]
+        state["sweepable_keys"] = [key for key in sweepable if not key.startswith("R-OSSE.")]
+        state["sweepable_keys"].append("R-OSSE")
+        page.parameter_form.set_selected_params({"Throat.Profile": 2})
+        page.apply_compatibility(state)
+
+        rosse_r = page.parameter_form._rows.get("R-OSSE.R")
+        rosse_r0 = page.parameter_form._rows.get("R-OSSE.r0")
+        if rosse_r is None or rosse_r0 is None:
+            self.skipTest("R-OSSE property rows are unavailable.")
+        self.assertFalse(rosse_r.container.isHidden())
+        self.assertFalse(rosse_r0.container.isHidden())
+
     def test_disclosure_hint_marks_selected_segment_button(self) -> None:
         page = BatchPage()
         initial = self._compat_state()
@@ -967,6 +986,23 @@ class BatchPageUiTests(unittest.TestCase):
         self.app.processEvents()
         hbar = page.parameter_form.scroll.horizontalScrollBar()
         self.assertEqual(int(hbar.maximum()), 0)
+
+    def test_batch_left_panel_stays_within_column_when_resizing(self) -> None:
+        page = BatchPage()
+        state = self._compat_state()
+        page.apply_compatibility(state)
+        basics_box = page.parameter_form._group_boxes.get("Basics")  # type: ignore[attr-defined]
+        if basics_box is not None:
+            basics_box.set_collapsed(False)
+        for width in (1100, 1280, 1600, 1920):
+            page.resize(width, 900)
+            page.show()
+            self.app.processEvents()
+            left = page._left_panel  # type: ignore[attr-defined]
+            right = page._right_panel  # type: ignore[attr-defined]
+            self.assertLess(int(left.geometry().right()), int(right.geometry().left()))
+            viewport = page.parameter_form.scroll.viewport()
+            self.assertLessEqual(int(viewport.mapToGlobal(viewport.rect().topRight()).x()), int(right.mapToGlobal(right.rect().topLeft()).x()))
 
     def test_blocked_batch_segment_option_emits_interaction_and_keeps_selection(self) -> None:
         page = BatchPage()
