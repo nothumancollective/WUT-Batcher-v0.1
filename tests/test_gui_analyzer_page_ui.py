@@ -428,6 +428,11 @@ class AnalyzerPageUiTests(unittest.TestCase):
                 self.assertIsNotNone(pixmap)
                 assert pixmap is not None
                 self.assertFalse(pixmap.isNull())
+                self.assertEqual(float(page.heatmap_canvas._target_half_window_deg or 0.0), 30.0)
+                self.assertGreater(len(page.heatmap_canvas._minus6_contour), 0)
+                curve_series = list(page._explorer_stage_panels["B"]["curve_canvas"]._series)
+                self.assertGreaterEqual(len(curve_series), 1)
+                self.assertNotIn("Selected", [str(item.get("label") or "") for item in curve_series])
 
     def test_switching_runs_during_plot_load_keeps_ui_stable(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_ui2b_plot_switch_") as tmp:

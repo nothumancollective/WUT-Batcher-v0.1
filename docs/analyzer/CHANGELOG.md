@@ -345,3 +345,17 @@
 - Updated `02_ui_architecture.md` with the canonical stage-based 2x2 Explorer/Compare layout, worker dataflow, and artifact availability behavior.
 - Updated `01_kpi_foundations.md` with implemented stage-curve definitions (`E_BW`, `E_cov`, `R_spill`, `DI_proxy`, `S_theta`, `E_sym_shape`, `R_off`) and Stage-3 conditional artifacts.
 - Updated `03_kpi_scoring_model.md` with stage-to-plot mapping, compare overlay defaults, and Pareto axis defaults.
+
+## 2026-02-22 (Analyzer surgical polish: plot readability + toolbar/tile cleanup)
+- Introduced a shared Analyzer plot rendering policy (margins/ticks/grid) across heatmap and curve canvases to prevent clipped axis titles/tick labels at common window sizes.
+- Frequency-axis major ticks now prioritize anchored log ticks (`200`, `500`, `1k`, `2k`, `5k`, `10k`, `16k`) within the active band, with subtle minor gridlines.
+- Explorer curve panels no longer render `Selected` legend text in-plot; selection context remains in toolbar chips.
+- Heatmap overlays refined:
+  - target window shading (`±BW/2`) remains dynamic with target preset changes
+  - integrated `-6 dB` contour contrast increased for better readability.
+- Toolbar/tile polish:
+  - top bar uses compact `Selection` + `Score` + `Flags` chips, `KPIs` and `Details`
+  - removed redundant planes text from top bar (plane controls stay in Display tile)
+  - `Refresh/Compute KPIs` action normalized to toolbar button sizing
+  - Analysis tile exclude controls now have explicit checked-state affordance
+  - Display tile normalization controls grouped into one compact row.
