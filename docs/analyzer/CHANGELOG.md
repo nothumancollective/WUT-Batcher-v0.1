@@ -340,3 +340,8 @@
   - background plot worker tests now mock `analyzer_load_stage_plot_payload(...)`
   - stage-switch title mapping checks for Explorer 2x2
   - compare heatmap selector render path with stage overlay payload.
+
+## 2026-02-22 (Analyzer docs: stage plot system alignment)
+- Updated `02_ui_architecture.md` with the canonical stage-based 2x2 Explorer/Compare layout, worker dataflow, and artifact availability behavior.
+- Updated `01_kpi_foundations.md` with implemented stage-curve definitions (`E_BW`, `E_cov`, `R_spill`, `DI_proxy`, `S_theta`, `E_sym_shape`, `R_off`) and Stage-3 conditional artifacts.
+- Updated `03_kpi_scoring_model.md` with stage-to-plot mapping, compare overlay defaults, and Pareto axis defaults.

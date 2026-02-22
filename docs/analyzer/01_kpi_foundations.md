@@ -144,3 +144,39 @@ The full research is included verbatim in:
 
 - If angular coverage is too narrow for target region, KPI payload is marked `insufficient_coverage`.
 - Such rows are scored as `0` in stage scoring and remain filterable in UI.
+
+## Stage-curve definitions (Analyzer Stage Plot System)
+
+The stage plot system adds frequency curves for Explorer/Compare visualization. These are computed from polar magnitude data only.
+
+### Shared baseline
+
+- Build `L(f,theta)` in dB from `polar_points`.
+- Frequency axis is sorted ascending and displayed logarithmically.
+- Reference policy remains nearest-to-`0 deg` normalization.
+- Optional normalization-angle selector (`0 deg`/`10 deg`) is currently disabled in UI when unsupported by pipeline behavior.
+
+### Stage 1 (Concept/Shaping)
+
+- `BW(f)` from `-6 dB` contour around on-axis.
+- `E_BW(f)` = `|BW(f) - BW_target|`.
+- `E_cov(f)` = RMS variation inside target coverage window (`|theta| <= BW_target / 2`).
+- `R_spill(f)` = outside-vs-inside energy ratio proxy.
+- Heatmap overlays include:
+  - `-6 dB` contour
+  - target-window shading (`+-BW_target/2`).
+
+### Stage 2 (Stabilization)
+
+- `DI_proxy(f)` = local-window mean level minus all-angle mean level.
+- `S_theta(f)` = RMS of angular gradient `dL/dtheta`.
+  - default window: target coverage
+  - optional advanced toggle uses full angles.
+- `E_sym_shape(f)` = inter-plane consistency spread (beamwidth-based, with DI fallback).
+
+### Stage 3 (Final/Resonance)
+
+- `R_off(f)` = off-axis ripple spread using available off-axis angles (prefers `+-30`, `+-45`, `+-60`).
+- `Impedance/Loading` and `Group Delay/Phase` plots are conditional:
+  - shown only when corresponding artifacts are available
+  - otherwise UI shows explicit “missing data” guidance.

@@ -115,3 +115,38 @@ Final score:
 - Weighted sum of normalized components
 - Clamped to `0..100`
 - If `insufficient_coverage=true`, score is forced to `0`
+
+## Stage plot mapping (UI defaults)
+
+This mapping is used by Analyzer Explorer/Compare panels and does not by itself change score math.
+
+### Explorer 2x2 by stage
+
+- `concept` / `shaping`:
+  - A `Polar Map`
+  - B `E_BW(f)`
+  - C `E_cov(f)`
+  - D `R_spill(f)`
+- `stabilization`:
+  - A `Polar Map`
+  - B `DI_proxy(f)`
+  - C `S_theta(f)`
+  - D `E_sym_shape(f)`
+- `final`:
+  - A `Polar Map`
+  - B `R_off(f)`
+  - C `Impedance/Loading` (if available)
+  - D `Group Delay/Phase` (if available)
+
+### Compare overlay default per stage
+
+- `concept` / `shaping`: `beamwidth`
+- `stabilization`: `di_proxy`
+- `final`: `r_off` (fallback handled when data is missing)
+
+### Pareto defaults per stage
+
+- `concept`: `E_BW` vs `R_spill`
+- `shaping`: `E_BW` vs `E_cov`
+- `stabilization`: `DI_proxy` vs `S_theta`
+- `final`: `R_off` vs `E_cov`
