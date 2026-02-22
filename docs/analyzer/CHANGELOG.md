@@ -359,3 +359,9 @@
   - `Refresh/Compute KPIs` action normalized to toolbar button sizing
   - Analysis tile exclude controls now have explicit checked-state affordance
   - Display tile normalization controls grouped into one compact row.
+
+## 2026-02-22 (Analyzer UI polish: plot margins + anchored ticks)
+- Added a shared `AnalyzerPlotStyle` + `apply_analyzer_plot_margins(...)` path used by Analyzer heatmap and metric curve canvases (Explorer + Compare).
+- Increased left/bottom plot margins and moved y-axis labels into a dedicated rotated label band; axis titles now render without clipping/overlap against tick labels.
+- Updated log-frequency tick policy so major ticks are anchored to `200/500/1k/2k/5k/10k/16k` within range, with consistent major/minor gridline rendering across heatmap and curves.
+- Added a GUI regression test to assert non-empty plot axis labels and shared-style margin application on stage canvases.
