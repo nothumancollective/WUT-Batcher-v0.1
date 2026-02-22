@@ -221,3 +221,15 @@
   - list analyses
   - load analysis (config + ordered candidates)
 - Added project-local auto-pick service (`A/B/C` strategies) that ranks from cached KPI scalars only (no `polar_points` preload for table operations).
+
+## 2026-02-22 (Analyzer Phase 2C: Compare tab workflow + heatmap/overlay styling)
+- Replaced Compare placeholder with a real candidate workflow:
+  - compare slots (max 5) with remove actions
+  - `Add selected`, `Auto-pick...`, `Save Analysis...`, `Load` actions
+  - saved-analysis selector (project source only)
+- Added worker-driven Compare plotting pipeline:
+  - beamwidth overlay (distinct stable colors per candidate order)
+  - single-candidate heatmap switcher for compare mode
+  - cancel support for compare/autopick background operations
+- Added shared VACS-like POLAR heatmap LUT module and applied it consistently to Explorer + Compare heatmaps.
+- Added focused UI+style test coverage for compare workflow and LUT sanity.

@@ -16,6 +16,7 @@ import traceback
 from typing import Any, Callable, Dict, List, Mapping, Optional
 
 from app.analyzer.cache import AnalyzerPlotCache, resolve_cache_policy
+from app.analyzer.heatmap_style import compare_overlay_color, get_vacs_like_lut
 from app.analyzer.presets import (
     ALGO_VERSION,
     COVERAGE_PRESETS,
@@ -32,7 +33,12 @@ import app.resources_rc  # noqa: F401  # Registers Qt resource paths used by ico
 from app.models import AppConfig, Batch, Project, ProjectConstraints
 from app.project_issue_model import UiProjectIssue, classify_ui_severity, issue_counts, normalize_project_issues
 from app.services import OrchestratorService, PreviewGenerationCancelled
-from app.settings_store import UserSettings
+from app.settings_store import (
+    SIMULATION_TIMEOUT_MINUTES_DEFAULT,
+    SIMULATION_TIMEOUT_MINUTES_MAX,
+    SIMULATION_TIMEOUT_MINUTES_MIN,
+    UserSettings,
+)
 from app.ui_validation import UiValidationEngine
 from app.widgets.command_header import CommandHeaderWidget
 from ui.batch_export_panel import BatchExportPanel
@@ -42,6 +48,7 @@ from ui.compat_ui_adapter import CompatUiAdapter
 from ui.form_builder import ParameterForm
 from ui.form_metrics import FORM_METRICS
 from ui.form_schema import build_project_form_schema
+from ui.styled_dialog import StyledDialogBase
 from ui.theme import apply_theme, apply_windows_dark_titlebar, configure_windows_qt_darkmode_env
 
 LOGGER = logging.getLogger(__name__)
@@ -289,6 +296,7 @@ class HeatmapCanvas(QLabel):
         self._clamp_min_db = -30.0
         self._status = "Select run + plane to render heatmap."
         self._ref_angle_deg: Optional[float] = None
+        self._lut = get_vacs_like_lut(256)
 
     def set_heatmap_data(
         self,
@@ -315,21 +323,12 @@ class HeatmapCanvas(QLabel):
         super().resizeEvent(event)
         self._rerender()
 
-    @staticmethod
-    def _color_for_value(value_db: float) -> QColor:
-        # dark blue -> cyan -> yellow
+    def _color_for_value(self, value_db: float) -> QColor:
         t = max(0.0, min(1.0, float(value_db)))
-        if t < 0.5:
-            u = t / 0.5
-            r = int(20 + (60 * u))
-            g = int(40 + (170 * u))
-            b = int(120 + (110 * u))
-        else:
-            u = (t - 0.5) / 0.5
-            r = int(80 + (175 * u))
-            g = int(210 + (35 * u))
-            b = int(230 - (170 * u))
-        return QColor(r, g, b)
+        lut = self._lut if self._lut else [(20, 40, 120), (255, 220, 80)]
+        index = min(int(round(t * float(len(lut) - 1))), len(lut) - 1)
+        r, g, b = lut[index]
+        return QColor(int(r), int(g), int(b))
 
     def _rerender(self) -> None:
         width = max(int(self.width()), 120)
@@ -523,6 +522,154 @@ class BeamwidthCanvas(QLabel):
         painter.drawText(width - 110, height - 6, "Freq (log Hz)")
         painter.end()
         self.setPixmap(QPixmap.fromImage(image))
+
+
+class BeamwidthOverlayCanvas(QLabel):
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("AnalyzerBeamwidthOverlayCanvas")
+        self.setAlignment(Qt.AlignCenter)
+        self.setMinimumHeight(220)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self._series: List[Dict[str, Any]] = []
+        self._target_deg = 0.0
+        self._tol_deg = 0.0
+        self._status = "Compare overlay not available."
+
+    def set_series(
+        self,
+        *,
+        series: List[Dict[str, Any]],
+        target_deg: float,
+        tol_deg: float,
+        status: str = "",
+    ) -> None:
+        self._series = [dict(item) for item in list(series or []) if isinstance(item, dict)]
+        self._target_deg = float(target_deg)
+        self._tol_deg = float(tol_deg)
+        self._status = str(status or "").strip()
+        self._rerender()
+
+    def clear_series(self, message: str) -> None:
+        self._series = []
+        self._status = str(message or "Compare overlay not available.")
+        self._rerender()
+
+    def resizeEvent(self, event) -> None:  # type: ignore[override]
+        super().resizeEvent(event)
+        self._rerender()
+
+    def _rerender(self) -> None:
+        width = max(int(self.width()), 180)
+        height = max(int(self.height()), 140)
+        image = QImage(width, height, QImage.Format_ARGB32_Premultiplied)
+        image.fill(QColor("#111217"))
+        painter = QPainter(image)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+
+        flattened: List[Tuple[float, float, int, str]] = []
+        for series_idx, series in enumerate(self._series):
+            curve = [dict(item) for item in list(series.get("curve", []) or []) if isinstance(item, dict)]
+            label = str(series.get("label") or f"C{series_idx + 1}")
+            for row in curve:
+                freq = float(row.get("freq_hz", 0.0))
+                bw = float(row.get("beamwidth_deg", 0.0))
+                if freq <= 0.0:
+                    continue
+                flattened.append((freq, bw, series_idx, label))
+
+        if not flattened:
+            painter.setPen(QColor("#9AA4B2"))
+            painter.drawText(image.rect(), Qt.AlignCenter, self._status or "Compare overlay not available.")
+            painter.end()
+            self.setPixmap(QPixmap.fromImage(image))
+            return
+
+        margin_left = 46
+        margin_right = 16
+        margin_top = 14
+        margin_bottom = 28
+        plot_w = max(width - margin_left - margin_right, 30)
+        plot_h = max(height - margin_top - margin_bottom, 30)
+
+        freqs = [item[0] for item in flattened]
+        widths = [item[1] for item in flattened]
+        log_min = math.log10(min(freqs))
+        log_max = math.log10(max(freqs))
+        if log_max <= log_min:
+            log_max = log_min + 1.0
+        y_max = max(max(widths), self._target_deg + self._tol_deg + 10.0, 20.0)
+        y_min = max(min(min(widths), self._target_deg - self._tol_deg - 10.0, 0.0), 0.0)
+        if y_max <= y_min:
+            y_max = y_min + 1.0
+
+        def x_of(freq: float) -> float:
+            u = (math.log10(max(freq, 1.0)) - log_min) / (log_max - log_min)
+            return float(margin_left + (u * plot_w))
+
+        def y_of(width_deg: float) -> float:
+            u = (float(width_deg) - y_min) / (y_max - y_min)
+            return float(margin_top + ((1.0 - u) * plot_h))
+
+        painter.setPen(QPen(QColor("#262C38"), 1))
+        for frac in (0.0, 0.25, 0.5, 0.75, 1.0):
+            y = int(round(margin_top + (frac * plot_h)))
+            painter.drawLine(margin_left, y, margin_left + plot_w, y)
+
+        tol_top = y_of(self._target_deg + self._tol_deg)
+        tol_bottom = y_of(self._target_deg - self._tol_deg)
+        band_top = min(tol_top, tol_bottom)
+        band_height = abs(tol_bottom - tol_top)
+        painter.fillRect(
+            margin_left,
+            int(round(band_top)),
+            plot_w,
+            max(int(round(band_height)), 1),
+            QColor(93, 168, 255, 28),
+        )
+        painter.setPen(QPen(QColor("#5DA8FF"), 1))
+        y_target = int(round(y_of(self._target_deg)))
+        painter.drawLine(margin_left, y_target, margin_left + plot_w, y_target)
+
+        legend_y = margin_top + 4
+        for series_idx, series in enumerate(self._series):
+            curve = [dict(item) for item in list(series.get("curve", []) or []) if isinstance(item, dict)]
+            if len(curve) < 2:
+                continue
+            color = series.get("color")
+            if isinstance(color, QColor):
+                line_color = color
+            elif isinstance(color, tuple):
+                line_color = QColor(*color)
+            else:
+                palette_rgb = compare_overlay_color(series_idx)
+                line_color = QColor(*palette_rgb)
+            painter.setPen(QPen(line_color, 2))
+            points: List[Tuple[float, float]] = []
+            for row in curve:
+                freq = float(row.get("freq_hz", 0.0))
+                bw = float(row.get("beamwidth_deg", 0.0))
+                if freq <= 0.0:
+                    continue
+                points.append((x_of(freq), y_of(bw)))
+            for idx in range(len(points) - 1):
+                x1, y1 = points[idx]
+                x2, y2 = points[idx + 1]
+                painter.drawLine(int(round(x1)), int(round(y1)), int(round(x2)), int(round(y2)))
+            label = str(series.get("label") or f"C{series_idx + 1}")
+            painter.setPen(QPen(line_color, 1))
+            painter.drawText(width - 190, legend_y, 182, 14, Qt.AlignRight | Qt.AlignVCenter, label)
+            legend_y += 14
+
+        painter.setPen(QPen(QColor("#3A4252"), 1))
+        painter.drawRect(margin_left, margin_top, plot_w, plot_h)
+        painter.setPen(QColor("#A6AFBC"))
+        painter.drawText(8, 16, self._status or "Beamwidth overlay (-6 dB)")
+        painter.drawText(8, height - 6, "BW (deg)")
+        painter.drawText(width - 120, height - 6, "Freq (log Hz)")
+        painter.end()
+        self.setPixmap(QPixmap.fromImage(image))
+
 
 class _BatchPreviewWorker(QObject):
     finished = Signal(int, dict)
@@ -869,6 +1016,289 @@ class _AnalyzerPlotWorker(QObject):
             self.canceled.emit(self._request_id, "Plot request canceled.")
             return
         self.finished.emit(self._request_id, dict(payload))
+
+
+class _AnalyzerAutoPickDialog(StyledDialogBase):
+    def __init__(
+        self,
+        *,
+        batch_ids: Sequence[str],
+        current_batch_id: Optional[str],
+        strategy: str,
+        kpi_key: str,
+        exclude_flags: bool,
+        exclude_missing_kpi: bool,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(title="Auto-pick Candidates", parent=parent, min_width=760, min_height=560)
+        self._accepted_payload: Optional[Dict[str, Any]] = None
+        body = self.body_layout()
+
+        form = QFormLayout()
+        form.setContentsMargins(0, 0, 0, 0)
+        form.setSpacing(8)
+        self.scope_combo = QComboBox()
+        self.scope_combo.addItem("Current batch", "current")
+        self.scope_combo.addItem("Selected batches", "multi")
+        self.strategy_combo = QComboBox()
+        self.strategy_combo.addItem("A - Top N by Score (default)", "A")
+        self.strategy_combo.addItem("B - Top N by selected KPI", "B")
+        self.strategy_combo.addItem("C - Filter + score tie-break", "C")
+        self.kpi_combo = QComboBox()
+        self.kpi_combo.addItem("Score", "score")
+        self.kpi_combo.addItem("B_PC (higher better)", "b_pc_oct")
+        self.kpi_combo.addItem("E_BW (lower better)", "e_bw")
+        self.kpi_combo.addItem("E_cov (lower better)", "e_cov")
+        self.kpi_combo.addItem("R_spill (lower better)", "r_spill")
+        self.kpi_combo.addItem("Flags (lower better)", "flags_count")
+        self.top_n_label = QLabel("Top N: 5 (fixed)")
+        self.top_n_label.setObjectName("SummaryMeta")
+
+        form.addRow("Scope", self.scope_combo)
+        form.addRow("Strategy", self.strategy_combo)
+        form.addRow("KPI (for strategy B)", self.kpi_combo)
+        form.addRow("Limit", self.top_n_label)
+        body.addLayout(form)
+
+        self.batch_list = QListWidget()
+        self.batch_list.setSelectionMode(QAbstractItemView.NoSelection)
+        self.batch_list.setObjectName("AnalyzerAutopickBatchList")
+        for batch_id in sorted({str(item).strip() for item in list(batch_ids or []) if str(item).strip()}):
+            item = QListWidgetItem(batch_id)
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
+            if current_batch_id and str(batch_id) == str(current_batch_id):
+                item.setCheckState(Qt.Checked)
+            else:
+                item.setCheckState(Qt.Unchecked)
+            self.batch_list.addItem(item)
+        body.addWidget(self.batch_list, 1)
+
+        self.exclude_flags_check = QCheckBox("Exclude flagged candidates")
+        self.exclude_flags_check.setChecked(bool(exclude_flags))
+        self.exclude_missing_check = QCheckBox("Exclude missing KPI rows")
+        self.exclude_missing_check.setChecked(bool(exclude_missing_kpi))
+        filters_row = QHBoxLayout()
+        filters_row.setContentsMargins(0, 0, 0, 0)
+        filters_row.setSpacing(8)
+        filters_row.addWidget(self.exclude_flags_check)
+        filters_row.addWidget(self.exclude_missing_check)
+        filters_row.addStretch(1)
+        body.addLayout(filters_row)
+
+        buttons = QHBoxLayout()
+        buttons.setContentsMargins(0, 0, 0, 0)
+        buttons.addStretch(1)
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setObjectName("BatchSecondaryButton")
+        apply_btn = QPushButton("Auto-pick")
+        apply_btn.setObjectName("BatchPrimaryButton")
+        cancel_btn.clicked.connect(self.reject)
+        apply_btn.clicked.connect(self._accept_payload)
+        buttons.addWidget(cancel_btn)
+        buttons.addWidget(apply_btn)
+        body.addLayout(buttons)
+
+        self._set_combo_current_by_data(self.strategy_combo, strategy)
+        self._set_combo_current_by_data(self.kpi_combo, kpi_key)
+        self.scope_combo.currentIndexChanged.connect(self._sync_controls)
+        self.strategy_combo.currentIndexChanged.connect(self._sync_controls)
+        self._sync_controls()
+
+    @staticmethod
+    def _set_combo_current_by_data(combo: QComboBox, value: str) -> None:
+        token = str(value or "").strip().lower()
+        for index in range(combo.count()):
+            if str(combo.itemData(index) or "").strip().lower() == token:
+                combo.setCurrentIndex(index)
+                return
+
+    def _sync_controls(self) -> None:
+        scope = str(self.scope_combo.currentData() or "current")
+        strategy = str(self.strategy_combo.currentData() or "A")
+        self.batch_list.setVisible(scope == "multi")
+        self.kpi_combo.setEnabled(strategy == "B")
+
+    def _selected_batches(self) -> List[str]:
+        scope = str(self.scope_combo.currentData() or "current")
+        if scope != "multi":
+            return []
+        selected: List[str] = []
+        for index in range(self.batch_list.count()):
+            item = self.batch_list.item(index)
+            if item is None:
+                continue
+            if item.checkState() == Qt.Checked:
+                token = str(item.text() or "").strip()
+                if token:
+                    selected.append(token)
+        return selected
+
+    def _accept_payload(self) -> None:
+        self._accepted_payload = {
+            "scope": str(self.scope_combo.currentData() or "current"),
+            "batch_ids": self._selected_batches(),
+            "strategy": str(self.strategy_combo.currentData() or "A"),
+            "kpi_key": str(self.kpi_combo.currentData() or "score"),
+            "filters": {
+                "exclude_flags": bool(self.exclude_flags_check.isChecked()),
+                "exclude_missing_kpi": bool(self.exclude_missing_check.isChecked()),
+            },
+            "top_n": 5,
+        }
+        self.accept()
+
+    def payload(self) -> Optional[Dict[str, Any]]:
+        return dict(self._accepted_payload) if isinstance(self._accepted_payload, dict) else None
+
+
+class _AnalyzerAutoPickWorker(QObject):
+    finished = Signal(int, dict)
+    failed = Signal(int, str)
+    progress = Signal(int, int, str)
+    canceled = Signal(int, str)
+
+    def __init__(
+        self,
+        *,
+        service: OrchestratorService,
+        request_id: int,
+        project_id: str,
+        batch_ids: Sequence[str],
+        strategy: str,
+        kpi_key: str,
+        filters: Dict[str, Any],
+        top_n: int,
+        stage_mode: str,
+        band_low_hz: float,
+        band_high_hz: float,
+        target_h_deg: float,
+        target_v_deg: float,
+        tol_deg: float,
+        algo_version: str,
+    ) -> None:
+        super().__init__()
+        self._service = service
+        self._request_id = int(request_id)
+        self._project_id = str(project_id or "").strip()
+        self._batch_ids = [str(item or "").strip() for item in list(batch_ids or []) if str(item or "").strip()]
+        self._strategy = str(strategy or "A")
+        self._kpi_key = str(kpi_key or "score")
+        self._filters = dict(filters or {})
+        self._top_n = max(1, min(int(top_n), 5))
+        self._stage_mode = str(stage_mode or DEFAULT_STAGE_ID)
+        self._band_low_hz = float(band_low_hz)
+        self._band_high_hz = float(band_high_hz)
+        self._target_h_deg = float(target_h_deg)
+        self._target_v_deg = float(target_v_deg)
+        self._tol_deg = float(tol_deg)
+        self._algo_version = str(algo_version or ALGO_VERSION)
+        self._cancelled = False
+
+    def cancel(self) -> None:
+        self._cancelled = True
+
+    def _cancel_check(self) -> bool:
+        return bool(self._cancelled)
+
+    def run(self) -> None:
+        try:
+            payload = self._service.analyzer_autopick_candidates(
+                project_id=self._project_id,
+                batch_ids=self._batch_ids,
+                strategy=self._strategy,
+                kpi_key=self._kpi_key,
+                filters=self._filters,
+                top_n=self._top_n,
+                stage_mode=self._stage_mode,
+                band_low_hz=self._band_low_hz,
+                band_high_hz=self._band_high_hz,
+                target_h_deg=self._target_h_deg,
+                target_v_deg=self._target_v_deg,
+                tol_deg=self._tol_deg,
+                algo_version=self._algo_version,
+                progress_cb=lambda done, total, message: self.progress.emit(int(done), int(total), str(message or "")),
+                cancel_check=self._cancel_check,
+            )
+        except Exception:  # pragma: no cover - integration surface
+            self.failed.emit(self._request_id, traceback.format_exc())
+            return
+        if bool(payload.get("canceled")):
+            self.canceled.emit(self._request_id, "Auto-pick canceled.")
+            return
+        self.finished.emit(self._request_id, dict(payload))
+
+
+class _AnalyzerComparePlotWorker(QObject):
+    finished = Signal(int, dict)
+    failed = Signal(int, str)
+    progress = Signal(int, int, str)
+    canceled = Signal(int, str)
+
+    def __init__(
+        self,
+        *,
+        service: OrchestratorService,
+        request_id: int,
+        source: str,
+        project_id: str,
+        candidates: Sequence[Dict[str, Any]],
+        plane: str,
+        band_low_hz: float,
+        band_high_hz: float,
+        cache: AnalyzerPlotCache,
+    ) -> None:
+        super().__init__()
+        self._service = service
+        self._request_id = int(request_id)
+        self._source = str(source or "project")
+        self._project_id = str(project_id or "").strip()
+        self._candidates = [dict(item) for item in list(candidates or []) if isinstance(item, dict)]
+        self._plane = str(plane or "H").strip().upper() or "H"
+        self._band_low_hz = float(band_low_hz)
+        self._band_high_hz = float(band_high_hz)
+        self._cache = cache
+        self._cancelled = False
+
+    def cancel(self) -> None:
+        self._cancelled = True
+
+    def _cancel_check(self) -> bool:
+        return bool(self._cancelled)
+
+    def run(self) -> None:
+        results: List[Dict[str, Any]] = []
+        total = len(self._candidates)
+        if callable(self._cancel_check) and self._cancel_check():
+            self.canceled.emit(self._request_id, "Compare plot load canceled.")
+            return
+        for index, candidate in enumerate(self._candidates, start=1):
+            if self._cancel_check():
+                self.canceled.emit(self._request_id, "Compare plot load canceled.")
+                return
+            batch_id = str(candidate.get("batch_id") or "").strip()
+            version_id = str(candidate.get("version_id") or "").strip()
+            run_id = str(candidate.get("run_id") or "").strip() or None
+            if not batch_id or not version_id:
+                results.append({"candidate": dict(candidate), "plot": {"message": "Missing candidate identity."}})
+                continue
+            try:
+                payload = self._service.analyzer_load_plot_payload(
+                    source=self._source,
+                    project_id=self._project_id,
+                    batch_id=batch_id,
+                    run_id=run_id,
+                    version_id=version_id,
+                    plane=self._plane,
+                    band_low_hz=self._band_low_hz,
+                    band_high_hz=self._band_high_hz,
+                    cache=self._cache,
+                    cancel_check=self._cancel_check,
+                )
+            except Exception:
+                payload = {"message": "Failed to load candidate plot."}
+            results.append({"candidate": dict(candidate), "plot": dict(payload)})
+            self.progress.emit(index, total, f"Loaded {batch_id}/{version_id}")
+        self.finished.emit(self._request_id, {"items": results, "plane": self._plane})
 
 
 def _severity_rank(value: str) -> int:
@@ -1373,7 +1803,7 @@ class SettingsDialog(QDialog):
         self.service = service
         self.setWindowTitle("Settings")
         self.setModal(True)
-        self.resize(620, 360)
+        self.resize(620, 390)
 
         self.library_root = QLineEdit()
         self.ath_exe = QLineEdit()
@@ -1383,6 +1813,13 @@ class SettingsDialog(QDialog):
         self.background_automation_mode = QCheckBox("Enable Background Automation Mode")
         self.background_automation_mode.setToolTip(
             "When enabled, the RUN screen stays in front while AKABAK/VACS automation runs in the background."
+        )
+        self.simulation_timeout_minutes = QSpinBox()
+        self.simulation_timeout_minutes.setObjectName("SimulationTimeoutMinutesSpin")
+        self.simulation_timeout_minutes.setRange(SIMULATION_TIMEOUT_MINUTES_MIN, SIMULATION_TIMEOUT_MINUTES_MAX)
+        self.simulation_timeout_minutes.setSuffix(" min")
+        self.simulation_timeout_minutes.setToolTip(
+            "Maximum wait time for AKABAK solve completion per version before timeout."
         )
         self.analyzer_cache_mode = QComboBox()
         self.analyzer_cache_mode.setObjectName("AnalyzerCacheModeCombo")
@@ -1409,6 +1846,7 @@ class SettingsDialog(QDialog):
         form.addRow("VACS", self.vacs_exe)
         form.addRow("Template CFG", self.template_cfg)
         form.addRow("Automation", self.background_automation_mode)
+        form.addRow("Simulation Timeout", self.simulation_timeout_minutes)
         form.addRow(QLabel("Analyzer Cache"))
         form.addRow("Cache mode", self.analyzer_cache_mode)
         form.addRow("Limit", self.analyzer_cache_limit_mb)
@@ -1441,6 +1879,12 @@ class SettingsDialog(QDialog):
         self.vacs_exe.setText(settings.vacs_exe or "")
         self.template_cfg.setText(settings.template_cfg or "")
         self.background_automation_mode.setChecked(bool(getattr(settings, "background_automation_mode", True)))
+        self.simulation_timeout_minutes.setValue(
+            int(
+                getattr(settings, "simulation_timeout_minutes", SIMULATION_TIMEOUT_MINUTES_DEFAULT)
+                or SIMULATION_TIMEOUT_MINUTES_DEFAULT
+            )
+        )
         mode_token = str(getattr(settings, "analyzer_cache_mode", "balanced") or "balanced").strip().lower()
         self._set_combo_current_by_data(self.analyzer_cache_mode, mode_token)
         self.analyzer_cache_limit_mb.setValue(int(getattr(settings, "analyzer_cache_limit_mb", 240) or 240))
@@ -1460,6 +1904,7 @@ class SettingsDialog(QDialog):
             vacs_exe=self.vacs_exe.text().strip() or None,
             template_cfg=self.template_cfg.text().strip() or None,
             background_automation_mode=bool(self.background_automation_mode.isChecked()),
+            simulation_timeout_minutes=int(self.simulation_timeout_minutes.value()),
             analyzer_cache_mode=str(policy.mode),
             analyzer_cache_limit_mb=int(policy.size_limit_mb),
             analyzer_cache_keep_last_n=int(policy.keep_last_n),
@@ -3062,13 +3507,30 @@ class AnalysePage(QWidget):
         self._plot_request_id = 0
         self._plot_thread: Optional[QThread] = None
         self._plot_worker: Optional[_AnalyzerPlotWorker] = None
+        self._compare_plot_request_id = 0
+        self._compare_plot_thread: Optional[QThread] = None
+        self._compare_plot_worker: Optional[_AnalyzerComparePlotWorker] = None
+        self._autopick_request_id = 0
+        self._autopick_thread: Optional[QThread] = None
+        self._autopick_worker: Optional[_AnalyzerAutoPickWorker] = None
         self._all_run_rows: List[Dict[str, Any]] = []
+        self._compare_candidates: List[Dict[str, Any]] = []
+        self._compare_plot_items: List[Dict[str, Any]] = []
+        self._compare_last_strategy = "A"
+        self._compare_last_kpi_key = "score"
+        self._compare_exclude_flags = True
+        self._compare_exclude_missing = True
+        self._loaded_analysis_id: Optional[str] = None
         self._active_plane = "H"
         self._plane_buttons: Dict[str, QToolButton] = {}
         self._plot_debounce_timer = QTimer(self)
         self._plot_debounce_timer.setSingleShot(True)
         self._plot_debounce_timer.setInterval(220)
         self._plot_debounce_timer.timeout.connect(self._start_plot_request)
+        self._compare_plot_debounce_timer = QTimer(self)
+        self._compare_plot_debounce_timer.setSingleShot(True)
+        self._compare_plot_debounce_timer.setInterval(220)
+        self._compare_plot_debounce_timer.timeout.connect(self._start_compare_plot_request)
 
         presets = self.service.analyzer_presets()
         self._coverage_presets = [dict(item) for item in list(presets.get("coverage_presets", []) or []) if isinstance(item, dict)]
@@ -3375,10 +3837,61 @@ class AnalysePage(QWidget):
         compare_layout = QVBoxLayout(self.compare_tab)
         compare_layout.setContentsMargins(6, 6, 6, 6)
         compare_layout.setSpacing(8)
-        self.compare_notice = QLabel("Select up to 5 runs to compare cached KPI scalars.")
+        self.compare_controls = QFrame()
+        self.compare_controls.setObjectName("ProjectSummaryPanel")
+        compare_controls_layout = QGridLayout(self.compare_controls)
+        compare_controls_layout.setContentsMargins(10, 8, 10, 8)
+        compare_controls_layout.setHorizontalSpacing(8)
+        compare_controls_layout.setVerticalSpacing(6)
+        self.compare_add_selected_btn = QPushButton("Add selected")
+        self.compare_add_selected_btn.setObjectName("BatchSecondaryButton")
+        self.compare_auto_pick_btn = QPushButton("Auto-pick...")
+        self.compare_auto_pick_btn.setObjectName("BatchSecondaryButton")
+        self.compare_save_btn = QPushButton("Save Analysis...")
+        self.compare_save_btn.setObjectName("BatchSecondaryButton")
+        self.compare_analysis_selector = QComboBox()
+        self.compare_analysis_selector.setObjectName("AnalyzerAnalysisSelector")
+        self.compare_load_btn = QPushButton("Load")
+        self.compare_load_btn.setObjectName("BatchSecondaryButton")
+        self.compare_cancel_btn = QPushButton("Cancel")
+        self.compare_cancel_btn.setObjectName("BatchSecondaryButton")
+        self.compare_cancel_btn.setVisible(False)
+        self.compare_cancel_btn.setEnabled(False)
+        self.compare_plane_combo = QComboBox()
+        self.compare_plane_combo.setObjectName("AnalyzerComparePlaneCombo")
+        self.compare_plane_combo.addItem("H", "H")
+        self.compare_plane_combo.addItem("V", "V")
+        self.compare_plane_combo.addItem("D", "D")
+        compare_controls_layout.addWidget(self.compare_add_selected_btn, 0, 0)
+        compare_controls_layout.addWidget(self.compare_auto_pick_btn, 0, 1)
+        compare_controls_layout.addWidget(self.compare_save_btn, 0, 2)
+        compare_controls_layout.addWidget(QLabel("Saved"), 0, 3, Qt.AlignRight | Qt.AlignVCenter)
+        compare_controls_layout.addWidget(self.compare_analysis_selector, 0, 4)
+        compare_controls_layout.addWidget(self.compare_load_btn, 0, 5)
+        compare_controls_layout.addWidget(QLabel("Overlay plane"), 0, 6, Qt.AlignRight | Qt.AlignVCenter)
+        compare_controls_layout.addWidget(self.compare_plane_combo, 0, 7)
+        compare_controls_layout.addWidget(self.compare_cancel_btn, 0, 8)
+        self.compare_notice = QLabel("Select up to 5 runs, then add or auto-pick top candidates.")
         self.compare_notice.setObjectName("SummaryMeta")
         self.compare_notice.setWordWrap(True)
-        compare_layout.addWidget(self.compare_notice, 0)
+        compare_controls_layout.addWidget(self.compare_notice, 1, 0, 1, 9)
+        compare_layout.addWidget(self.compare_controls, 0)
+
+        self.compare_slots_table = QTableWidget(0, 6)
+        self.compare_slots_table.setObjectName("AnalyzerCompareSlotsTable")
+        self.compare_slots_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.compare_slots_table.setSelectionMode(QAbstractItemView.NoSelection)
+        self.compare_slots_table.setHorizontalHeaderLabels(["Slot", "Batch", "Run", "Version", "Score", "Remove"])
+        slots_header = self.compare_slots_table.horizontalHeader()
+        slots_header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        slots_header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        slots_header.setSectionResizeMode(2, QHeaderView.Stretch)
+        slots_header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        slots_header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        slots_header.setSectionResizeMode(5, QHeaderView.ResizeToContents)
+        self.compare_slots_table.verticalHeader().setVisible(False)
+        compare_layout.addWidget(self.compare_slots_table, 0)
+
         self.compare_table = QTableWidget(0, 8)
         self.compare_table.setObjectName("AnalyzerCompareTable")
         self.compare_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -3391,8 +3904,29 @@ class AnalysePage(QWidget):
         for idx in range(1, 8):
             compare_header.setSectionResizeMode(idx, QHeaderView.ResizeToContents)
         compare_layout.addWidget(self.compare_table, 1)
-        compare_hint = QLabel("Enable Compare Plots in Phase 2C.")
+
+        self.compare_overlay_canvas = BeamwidthOverlayCanvas()
+        self.compare_overlay_canvas.setObjectName("AnalyzerCompareOverlayCanvas")
+        compare_layout.addWidget(self.compare_overlay_canvas, 2)
+
+        heatmap_row = QWidget()
+        heatmap_row_layout = QHBoxLayout(heatmap_row)
+        heatmap_row_layout.setContentsMargins(0, 0, 0, 0)
+        heatmap_row_layout.setSpacing(6)
+        heatmap_row_layout.addWidget(QLabel("Heatmap candidate"), 0, Qt.AlignLeft | Qt.AlignVCenter)
+        self.compare_heatmap_selector = QComboBox()
+        self.compare_heatmap_selector.setObjectName("AnalyzerCompareHeatmapSelector")
+        heatmap_row_layout.addWidget(self.compare_heatmap_selector, 0)
+        heatmap_row_layout.addStretch(1)
+        compare_layout.addWidget(heatmap_row, 0)
+
+        self.compare_heatmap_canvas = HeatmapCanvas()
+        self.compare_heatmap_canvas.setObjectName("AnalyzerCompareHeatmapCanvas")
+        compare_layout.addWidget(self.compare_heatmap_canvas, 2)
+
+        compare_hint = QLabel("Compare overlay and heatmap use cached polar data; full multi-plot compare ships in Phase 2C+.")
         compare_hint.setObjectName("SummaryMeta")
+        compare_hint.setWordWrap(True)
         compare_layout.addWidget(compare_hint, 0, Qt.AlignLeft | Qt.AlignVCenter)
         self.analysis_tabs.addTab(self.compare_tab, "Compare")
 
@@ -3426,6 +3960,13 @@ class AnalysePage(QWidget):
         self.min_score_spin.valueChanged.connect(self._refresh_run_table)
         self.plot_cancel_btn.clicked.connect(self._cancel_plot_request)
         self.analysis_tabs.currentChanged.connect(self._on_analysis_tab_changed)
+        self.compare_add_selected_btn.clicked.connect(self._on_compare_add_selected)
+        self.compare_auto_pick_btn.clicked.connect(self._open_compare_autopick_dialog)
+        self.compare_save_btn.clicked.connect(self._save_compare_analysis)
+        self.compare_load_btn.clicked.connect(self._load_selected_analysis)
+        self.compare_plane_combo.currentIndexChanged.connect(self._schedule_compare_plot_refresh)
+        self.compare_heatmap_selector.currentIndexChanged.connect(self._render_compare_heatmap_selection)
+        self.compare_cancel_btn.clicked.connect(self._cancel_compare_operations)
         for plane_key, button in self._plane_buttons.items():
             button.toggled.connect(lambda checked, key=plane_key: self._on_plane_toggled(key, checked))
         self._control_sync_guard = True
@@ -3441,6 +3982,8 @@ class AnalysePage(QWidget):
         self.compute_btn.setEnabled(self._source_key() == "project")
         self._set_details(None)
         self._clear_plot_views("Select run + plane to render plots.")
+        self._refresh_saved_analyses()
+        self._update_compare_slots()
 
     def _build_plot_placeholder(self, text: str) -> QWidget:
         shell = QWidget()
@@ -3465,7 +4008,10 @@ class AnalysePage(QWidget):
         self._stop_metadata_worker()
         self._stop_compute_worker()
         self._stop_plot_worker()
+        self._stop_compare_plot_worker()
+        self._stop_autopick_worker()
         self._plot_debounce_timer.stop()
+        self._compare_plot_debounce_timer.stop()
 
     def set_project_context(self, project_id: Optional[str]) -> None:
         token = str(project_id or "").strip() or None
@@ -3591,6 +4137,17 @@ class AnalysePage(QWidget):
             return
         self.plot_loading_label.setText(str(text or "Ready."))
 
+    def _set_compare_busy(self, busy: bool, text: str = "") -> None:
+        self.compare_cancel_btn.setVisible(bool(busy))
+        self.compare_cancel_btn.setEnabled(bool(busy))
+        if busy:
+            self.compare_notice.setText(str(text or "Loading compare candidates..."))
+            return
+        if not self._compare_candidates:
+            self.compare_notice.setText("Select up to 5 runs, then add or auto-pick top candidates.")
+        else:
+            self.compare_notice.setText(str(text or f"{len(self._compare_candidates)} candidate(s) in compare set."))
+
     def _clear_metadata_worker_refs(self, thread: Optional[QThread] = None) -> None:
         if thread is None:
             self._metadata_worker = None
@@ -3617,6 +4174,24 @@ class AnalysePage(QWidget):
         if self._plot_thread is thread:
             self._plot_worker = None
             self._plot_thread = None
+
+    def _clear_compare_plot_worker_refs(self, thread: Optional[QThread] = None) -> None:
+        if thread is None:
+            self._compare_plot_worker = None
+            self._compare_plot_thread = None
+            return
+        if self._compare_plot_thread is thread:
+            self._compare_plot_worker = None
+            self._compare_plot_thread = None
+
+    def _clear_autopick_worker_refs(self, thread: Optional[QThread] = None) -> None:
+        if thread is None:
+            self._autopick_worker = None
+            self._autopick_thread = None
+            return
+        if self._autopick_thread is thread:
+            self._autopick_worker = None
+            self._autopick_thread = None
 
     def _stop_metadata_worker(self) -> None:
         thread = self._metadata_thread
@@ -3646,6 +4221,27 @@ class AnalysePage(QWidget):
             thread.wait(1000)
         self._clear_plot_worker_refs()
         self._set_plot_busy(False)
+
+    def _stop_compare_plot_worker(self) -> None:
+        worker = self._compare_plot_worker
+        if worker is not None:
+            worker.cancel()
+        thread = self._compare_plot_thread
+        if thread is not None and thread.isRunning():
+            thread.quit()
+            thread.wait(1000)
+        self._clear_compare_plot_worker_refs()
+        self._set_compare_busy(False)
+
+    def _stop_autopick_worker(self) -> None:
+        worker = self._autopick_worker
+        if worker is not None:
+            worker.cancel()
+        thread = self._autopick_thread
+        if thread is not None and thread.isRunning():
+            thread.quit()
+            thread.wait(1000)
+        self._clear_autopick_worker_refs()
 
     def _request_metadata(
         self,
@@ -3844,13 +4440,19 @@ class AnalysePage(QWidget):
         if self._control_sync_guard:
             return
         self._schedule_plot_refresh()
+        self._render_compare_heatmap_selection()
 
     def _on_analysis_tab_changed(self, _index: int = 0) -> None:
         if self.analysis_tabs.currentWidget() is self.compare_tab:
             self._stop_plot_worker()
             self._set_plot_busy(False, "Compare tab active.")
-            self._update_compare_table()
+            self._refresh_saved_analyses()
+            self._set_compare_busy(False)
+            self._update_compare_slots()
+            self._schedule_compare_plot_refresh()
             return
+        self._stop_autopick_worker()
+        self._stop_compare_plot_worker()
         self._schedule_plot_refresh()
 
     def _schedule_plot_refresh(self) -> None:
@@ -3985,30 +4587,548 @@ class AnalysePage(QWidget):
         else:
             self.beamwidth_canvas.clear_curve(message or "Insufficient angle coverage.")
 
-    def _update_compare_table(self) -> None:
-        rows = self._selected_row_payloads()
-        limited = rows[:5]
-        if len(rows) > 5:
-            self.compare_notice.setText("Showing first 5 selected runs. Reduce selection for focused compare.")
-        elif rows:
-            self.compare_notice.setText("Cached KPI compare (scalar-only).")
-        else:
-            self.compare_notice.setText("Select up to 5 runs to compare cached KPI scalars.")
-        self.compare_table.setRowCount(len(limited))
-        for row_index, row in enumerate(limited):
-            flags_count = int(row.get("kpi_flags_count") or 0) if row.get("kpi_score") is not None else None
-            values = [
-                str(row.get("run_id") or row.get("run_label") or "--"),
-                str(row.get("version_id") or "--"),
-                self._format_float(row.get("kpi_score"), 2),
-                self._format_float(row.get("kpi_b_pc_oct"), 2),
-                self._format_float(row.get("kpi_e_bw"), 2),
-                self._format_float(row.get("kpi_e_cov"), 2),
-                self._format_float(row.get("kpi_r_spill"), 3),
-                "--" if flags_count is None else str(flags_count),
+    def _compare_identity(self, row: Dict[str, Any]) -> tuple[str, str, str]:
+        return (
+            str(row.get("batch_id") or "").strip(),
+            str(row.get("run_id") or "").strip(),
+            str(row.get("version_id") or "").strip(),
+        )
+
+    def _candidate_from_row(self, row: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "project_id": str(row.get("project_id") or self._selected_project_id() or "").strip(),
+            "batch_id": str(row.get("batch_id") or "").strip(),
+            "run_id": (str(row.get("run_id") or "").strip() or None),
+            "version_id": str(row.get("version_id") or "").strip(),
+            "run_label": str(row.get("run_id") or row.get("run_label") or "--"),
+            "score": row.get("kpi_score"),
+            "kpi_b_pc_oct": row.get("kpi_b_pc_oct"),
+            "kpi_e_bw": row.get("kpi_e_bw"),
+            "kpi_e_cov": row.get("kpi_e_cov"),
+            "kpi_r_spill": row.get("kpi_r_spill"),
+            "kpi_flags_count": int(row.get("kpi_flags_count") or 0) if row.get("kpi_score") is not None else None,
+            "planes": [str(item) for item in list(row.get("planes", []) or [])],
+            "imported_at": row.get("imported_at"),
+        }
+
+    def _set_compare_candidates(self, candidates: Sequence[Dict[str, Any]], *, message: str = "") -> None:
+        dedup: Dict[tuple[str, str, str], Dict[str, Any]] = {}
+        ordered: List[Dict[str, Any]] = []
+        for candidate in list(candidates or []):
+            if not isinstance(candidate, dict):
+                continue
+            normalized = self._candidate_from_row(dict(candidate))
+            identity = self._compare_identity(normalized)
+            if not identity[0] or not identity[2]:
+                continue
+            if identity in dedup:
+                continue
+            dedup[identity] = normalized
+            ordered.append(normalized)
+            if len(ordered) >= 5:
+                break
+        self._compare_candidates = ordered
+        self._compare_plot_items = []
+        self._update_compare_slots(message=message)
+        self._schedule_compare_plot_refresh()
+
+    def _on_compare_add_selected(self) -> None:
+        rows = [dict(item) for item in self._selected_row_payloads()]
+        if not rows:
+            self._set_compare_busy(False, "Select run rows first, then Add selected.")
+            return
+        merged = list(self._compare_candidates) + [self._candidate_from_row(row) for row in rows]
+        self._set_compare_candidates(merged, message="Added selected runs to compare set.")
+
+    def _remove_compare_candidate(self, row_index: int) -> None:
+        if row_index < 0 or row_index >= len(self._compare_candidates):
+            return
+        remaining = [dict(item) for idx, item in enumerate(self._compare_candidates) if idx != row_index]
+        self._set_compare_candidates(remaining, message="Candidate removed.")
+
+    def _update_compare_slots(self, *, message: str = "") -> None:
+        slots = list(self._compare_candidates)
+        self.compare_slots_table.setRowCount(len(slots))
+        self.compare_table.setRowCount(len(slots))
+        self.compare_heatmap_selector.clear()
+        for row_index, candidate in enumerate(slots):
+            label = f"C{row_index + 1}"
+            run_text = str(candidate.get("run_id") or candidate.get("run_label") or "--")
+            version_text = str(candidate.get("version_id") or "--")
+            self.compare_slots_table.setItem(row_index, 0, QTableWidgetItem(label))
+            self.compare_slots_table.setItem(row_index, 1, QTableWidgetItem(str(candidate.get("batch_id") or "--")))
+            self.compare_slots_table.setItem(row_index, 2, QTableWidgetItem(run_text))
+            self.compare_slots_table.setItem(row_index, 3, QTableWidgetItem(version_text))
+            self.compare_slots_table.setItem(row_index, 4, QTableWidgetItem(self._format_float(candidate.get("score"), 2)))
+            remove_btn = QPushButton("Remove")
+            remove_btn.setObjectName("BatchSecondaryButton")
+            remove_btn.clicked.connect(lambda _checked=False, idx=row_index: self._remove_compare_candidate(idx))
+            self.compare_slots_table.setCellWidget(row_index, 5, remove_btn)
+
+            flags_count = candidate.get("kpi_flags_count")
+            compare_values = [
+                run_text,
+                version_text,
+                self._format_float(candidate.get("score"), 2),
+                self._format_float(candidate.get("kpi_b_pc_oct"), 2),
+                self._format_float(candidate.get("kpi_e_bw"), 2),
+                self._format_float(candidate.get("kpi_e_cov"), 2),
+                self._format_float(candidate.get("kpi_r_spill"), 3),
+                "--" if flags_count is None else str(int(flags_count)),
             ]
-            for col_index, value in enumerate(values):
+            for col_index, value in enumerate(compare_values):
                 self.compare_table.setItem(row_index, col_index, QTableWidgetItem(value))
+            self.compare_heatmap_selector.addItem(
+                f"C{row_index + 1} | {candidate.get('batch_id')} | {version_text}",
+                row_index,
+            )
+
+        self._sync_compare_plane_options()
+
+        if self.compare_heatmap_selector.count() > 0:
+            self.compare_heatmap_selector.setCurrentIndex(0)
+        else:
+            self.compare_heatmap_canvas.clear_heatmap("Select candidates to display compare heatmap.")
+            self.compare_overlay_canvas.clear_series("Select candidates to display beamwidth overlay.")
+
+        if message:
+            self._set_compare_busy(False, message)
+        elif not slots:
+            self._set_compare_busy(False, "Select up to 5 runs, then add or auto-pick top candidates.")
+        else:
+            self._set_compare_busy(False, f"{len(slots)} candidate(s) in compare set.")
+
+    def _compare_plane(self) -> str:
+        token = str(self.compare_plane_combo.currentData() or "H").strip().upper()
+        return token if token in {"H", "V", "D"} else "H"
+
+    def _sync_compare_plane_options(self) -> None:
+        has_d = any("D" in {str(token).upper() for token in list(candidate.get("planes", []) or [])} for candidate in self._compare_candidates)
+        model = self.compare_plane_combo.model()
+        for index in range(self.compare_plane_combo.count()):
+            data = str(self.compare_plane_combo.itemData(index) or "")
+            enabled = bool(data in {"H", "V"} or (data == "D" and has_d))
+            model_item = model.item(index) if hasattr(model, "item") else None
+            if model_item is not None:
+                flags = model_item.flags()
+                if enabled:
+                    model_item.setFlags(flags | Qt.ItemIsEnabled)
+                else:
+                    model_item.setFlags(flags & ~Qt.ItemIsEnabled)
+        if not has_d and self._compare_plane() == "D":
+            self._set_combo_current_by_data(self.compare_plane_combo, "H")
+
+    def _schedule_compare_plot_refresh(self) -> None:
+        if self.analysis_tabs.currentWidget() is not self.compare_tab:
+            return
+        self._compare_plot_debounce_timer.start()
+
+    def _start_compare_plot_request(self) -> None:
+        if self.analysis_tabs.currentWidget() is not self.compare_tab:
+            return
+        project_id = str(self._selected_project_id() or "").strip()
+        if not project_id:
+            self.compare_overlay_canvas.clear_series("Open a project to compare candidates.")
+            self.compare_heatmap_canvas.clear_heatmap("Open a project to compare candidates.")
+            return
+        if not self._compare_candidates:
+            self.compare_overlay_canvas.clear_series("Select candidates to display beamwidth overlay.")
+            self.compare_heatmap_canvas.clear_heatmap("Select candidates to display compare heatmap.")
+            return
+        band_low_hz, band_high_hz = self._resolved_band_limits()
+        self._stop_compare_plot_worker()
+        self._compare_plot_request_id += 1
+        request_id = int(self._compare_plot_request_id)
+        worker = _AnalyzerComparePlotWorker(
+            service=self.service,
+            request_id=request_id,
+            source=self._source_key(),
+            project_id=project_id,
+            candidates=list(self._compare_candidates),
+            plane=self._compare_plane(),
+            band_low_hz=float(band_low_hz),
+            band_high_hz=float(band_high_hz),
+            cache=self._plot_cache,
+        )
+        thread = QThread(self)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.progress.connect(self._on_compare_plot_progress)
+        worker.finished.connect(self._on_compare_plot_ready)
+        worker.failed.connect(self._on_compare_plot_failed)
+        worker.canceled.connect(self._on_compare_plot_canceled)
+        worker.finished.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        worker.canceled.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(lambda: self._clear_compare_plot_worker_refs(thread))
+        self._compare_plot_worker = worker
+        self._compare_plot_thread = thread
+        self._set_compare_busy(True, "Loading compare plot data...")
+        thread.start()
+
+    def _on_compare_plot_progress(self, done: int, total: int, message: str) -> None:
+        done_value = max(int(done), 0)
+        total_value = max(int(total), 0)
+        if total_value <= 0:
+            self._set_compare_busy(True, str(message or "Loading compare plot data..."))
+            return
+        self._set_compare_busy(True, f"{done_value}/{total_value} {str(message or '').strip()}")
+
+    def _on_compare_plot_ready(self, request_id: int, payload: Dict[str, Any]) -> None:
+        if int(request_id) != int(self._compare_plot_request_id):
+            return
+        self._compare_plot_items = [dict(item) for item in list(payload.get("items", []) or []) if isinstance(item, dict)]
+        self._render_compare_overlay()
+        self._render_compare_heatmap_selection()
+        self._set_compare_busy(False, "Compare plots ready.")
+
+    def _on_compare_plot_failed(self, request_id: int, message: str) -> None:
+        if int(request_id) != int(self._compare_plot_request_id):
+            return
+        self._set_compare_busy(False, "Compare plot load failed.")
+        self._set_error(str(message or "Compare plot load failed."))
+        self.compare_overlay_canvas.clear_series("Compare plot load failed.")
+        self.compare_heatmap_canvas.clear_heatmap("Compare heatmap load failed.")
+
+    def _on_compare_plot_canceled(self, request_id: int, message: str) -> None:
+        if int(request_id) != int(self._compare_plot_request_id):
+            return
+        self._set_compare_busy(False, str(message or "Compare plot load canceled."))
+
+    def _render_compare_overlay(self) -> None:
+        if not self._compare_plot_items:
+            self.compare_overlay_canvas.clear_series("Select candidates to display beamwidth overlay.")
+            return
+        target = self._selected_target()
+        plane = self._compare_plane()
+        if plane == "H":
+            target_deg = float(target.get("h_deg") or 90.0)
+        elif plane == "V":
+            target_deg = float(target.get("v_deg") or 40.0)
+        else:
+            target_deg = 0.5 * (float(target.get("h_deg") or 90.0) + float(target.get("v_deg") or 40.0))
+        series: List[Dict[str, Any]] = []
+        for index, item in enumerate(self._compare_plot_items):
+            candidate = dict(item.get("candidate") or {})
+            plot = dict(item.get("plot") or {})
+            curve = [dict(row) for row in list(plot.get("beamwidth_curve", []) or []) if isinstance(row, dict)]
+            if not curve:
+                continue
+            color_rgb = compare_overlay_color(index)
+            series.append(
+                {
+                    "label": f"C{index + 1} {candidate.get('batch_id')}/{candidate.get('version_id')}",
+                    "curve": curve,
+                    "color": color_rgb,
+                }
+            )
+        if not series:
+            self.compare_overlay_canvas.clear_series("Insufficient angle coverage for overlay.")
+            return
+        self.compare_overlay_canvas.set_series(
+            series=series,
+            target_deg=float(target_deg),
+            tol_deg=float(self.tol_spin.value()),
+            status=f"Beamwidth overlay ({plane})",
+        )
+
+    def _render_compare_heatmap_selection(self) -> None:
+        index = int(self.compare_heatmap_selector.currentData() or 0)
+        if index < 0 or index >= len(self._compare_plot_items):
+            self.compare_heatmap_canvas.clear_heatmap("Select candidate for compare heatmap.")
+            return
+        item = dict(self._compare_plot_items[index])
+        plot = dict(item.get("plot") or {})
+        matrix = [list(row) for row in list(plot.get("display_matrix_db", []) or [])]
+        if not matrix:
+            self.compare_heatmap_canvas.clear_heatmap(str(plot.get("message") or "No heatmap data for candidate."))
+            return
+        candidate = dict(item.get("candidate") or {})
+        label = f"C{index + 1} {candidate.get('batch_id')}/{candidate.get('version_id')}"
+        self.compare_heatmap_canvas.set_heatmap_data(
+            matrix=matrix,
+            clamp_enabled=bool(self.heatmap_clamp_check.isChecked()),
+            clamp_min_db=float(self.heatmap_clamp_min_spin.value()),
+            ref_angle_deg=(float(plot["ref_angle_deg"]) if plot.get("ref_angle_deg") is not None else None),
+            status=label,
+        )
+
+    def _cancel_compare_operations(self) -> None:
+        self._compare_plot_debounce_timer.stop()
+        self._stop_autopick_worker()
+        self._stop_compare_plot_worker()
+        self._set_compare_busy(False, "Compare operation canceled.")
+
+    def _refresh_saved_analyses(self) -> None:
+        if self._source_key() != "project":
+            self.compare_analysis_selector.clear()
+            self.compare_analysis_selector.addItem("(project source only)", "")
+            self.compare_load_btn.setEnabled(False)
+            self.compare_save_btn.setEnabled(False)
+            return
+        self.compare_save_btn.setEnabled(True)
+        project_id = str(self._selected_project_id() or "").strip()
+        self.compare_analysis_selector.clear()
+        if not project_id:
+            self.compare_analysis_selector.addItem("(open a project)", "")
+            self.compare_load_btn.setEnabled(False)
+            return
+        rows = self.service.analyzer_list_analyses(project_id=project_id)
+        for row in rows:
+            analysis_id = str(row.get("analysis_id") or "").strip()
+            name = str(row.get("name") or analysis_id)
+            updated_at = str(row.get("updated_at") or "")
+            self.compare_analysis_selector.addItem(f"{name} ({updated_at})", analysis_id)
+        if self.compare_analysis_selector.count() == 0:
+            self.compare_analysis_selector.addItem("(no saved analyses)", "")
+            self.compare_load_btn.setEnabled(False)
+        else:
+            self.compare_load_btn.setEnabled(True)
+
+    def _current_analysis_config(self) -> Dict[str, Any]:
+        target = self._selected_target()
+        band_low_hz, band_high_hz = self._resolved_band_limits()
+        return {
+            "config_version": 1,
+            "artifact_type": "POLAR",
+            "stage_mode": self._selected_stage_id(),
+            "target_preset_id": str(self.target_selector.currentData() or ""),
+            "target_h_deg": float(target.get("h_deg") or 90.0),
+            "target_v_deg": float(target.get("v_deg") or 40.0),
+            "band_preset_id": str(self.band_selector.currentData() or ""),
+            "band_low_hz": float(band_low_hz),
+            "band_high_hz": float(band_high_hz),
+            "custom_band_low_hz": float(self.custom_band_low_spin.value()),
+            "custom_band_high_hz": float(self.custom_band_high_spin.value()),
+            "tol_deg": float(self.tol_spin.value()),
+            "clamp_enabled": bool(self.heatmap_clamp_check.isChecked()),
+            "clamp_min_db": float(self.heatmap_clamp_min_spin.value()),
+            "compare": {
+                "strategy": str(self._compare_last_strategy),
+                "kpi_key": str(self._compare_last_kpi_key),
+                "exclude_flags": bool(self._compare_exclude_flags),
+                "exclude_missing_kpi": bool(self._compare_exclude_missing),
+            },
+        }
+
+    def _save_compare_analysis(self) -> None:
+        if self._source_key() != "project":
+            self._set_compare_busy(False, "Saved analyses are available only for Project source.")
+            return
+        project_id = str(self._selected_project_id() or "").strip()
+        if not project_id:
+            self._set_compare_busy(False, "Open a project before saving analyses.")
+            return
+        if not self._compare_candidates:
+            self._set_compare_busy(False, "Add candidates before saving analysis.")
+            return
+        name, accepted = QInputDialog.getText(self, "Save Analysis", "Analysis name:")
+        if not accepted:
+            return
+        label = str(name or "").strip()
+        if not label:
+            self._set_compare_busy(False, "Analysis name cannot be empty.")
+            return
+        result = self.service.analyzer_save_analysis(
+            project_id=project_id,
+            name=label,
+            config=self._current_analysis_config(),
+            candidates=list(self._compare_candidates),
+            analysis_id=self._loaded_analysis_id,
+        )
+        self._loaded_analysis_id = str(result.get("analysis_id") or "").strip() or None
+        self._refresh_saved_analyses()
+        self._set_compare_busy(False, f"Saved analysis '{label}'.")
+
+    def _load_selected_analysis(self) -> None:
+        if self._source_key() != "project":
+            return
+        project_id = str(self._selected_project_id() or "").strip()
+        analysis_id = str(self.compare_analysis_selector.currentData() or "").strip()
+        if not project_id or not analysis_id:
+            return
+        payload = self.service.analyzer_load_analysis(project_id=project_id, analysis_id=analysis_id)
+        if not isinstance(payload, dict):
+            self._set_compare_busy(False, "Selected analysis not found.")
+            return
+        self._loaded_analysis_id = analysis_id
+        config = dict(payload.get("config") or {})
+        self._apply_analysis_config(config)
+        loaded_candidates = [dict(item) for item in list(payload.get("candidates", []) or []) if isinstance(item, dict)]
+        rows_by_identity = {self._compare_identity(row): dict(row) for row in self._all_run_rows}
+        candidate_rows: List[Dict[str, Any]] = []
+        for candidate in loaded_candidates:
+            identity = (
+                str(candidate.get("batch_id") or "").strip(),
+                str(candidate.get("run_id") or "").strip(),
+                str(candidate.get("version_id") or "").strip(),
+            )
+            resolved = rows_by_identity.get(identity)
+            if resolved is not None:
+                candidate_rows.append(resolved)
+            else:
+                candidate_rows.append(
+                    {
+                        "project_id": project_id,
+                        "batch_id": identity[0],
+                        "run_id": identity[1] or None,
+                        "version_id": identity[2],
+                        "run_label": identity[1] or "(no run id)",
+                    }
+                )
+        self._set_compare_candidates(candidate_rows, message=f"Loaded analysis '{payload.get('name')}'.")
+
+    def _apply_analysis_config(self, config: Dict[str, Any]) -> None:
+        self._control_sync_guard = True
+        try:
+            self._set_combo_current_by_data(self.stage_selector, str(config.get("stage_mode") or self._default_stage_id))
+            self._set_combo_current_by_data(
+                self.target_selector,
+                str(config.get("target_preset_id") or self._default_coverage_preset_id),
+            )
+            self._set_combo_current_by_data(
+                self.band_selector,
+                str(config.get("band_preset_id") or self._default_band_preset_id),
+            )
+            self.custom_band_low_spin.setValue(float(config.get("custom_band_low_hz") or self.custom_band_low_spin.value()))
+            self.custom_band_high_spin.setValue(float(config.get("custom_band_high_hz") or self.custom_band_high_spin.value()))
+            self.tol_spin.setValue(float(config.get("tol_deg") or self.tol_spin.value()))
+            self.heatmap_clamp_check.setChecked(bool(config.get("clamp_enabled", True)))
+            self.heatmap_clamp_min_spin.setValue(float(config.get("clamp_min_db") or self.heatmap_clamp_min_spin.value()))
+            compare_cfg = dict(config.get("compare") or {})
+            self._compare_last_strategy = str(compare_cfg.get("strategy") or self._compare_last_strategy)
+            self._compare_last_kpi_key = str(compare_cfg.get("kpi_key") or self._compare_last_kpi_key)
+            self._compare_exclude_flags = bool(compare_cfg.get("exclude_flags", self._compare_exclude_flags))
+            self._compare_exclude_missing = bool(compare_cfg.get("exclude_missing_kpi", self._compare_exclude_missing))
+        finally:
+            self._control_sync_guard = False
+        self._sync_band_custom_visibility()
+        self._apply_stage_defaults()
+
+    def _open_compare_autopick_dialog(self) -> None:
+        if self._source_key() != "project":
+            self._set_compare_busy(False, "Auto-pick uses project-local cached KPIs only.")
+            return
+        project_id = str(self._selected_project_id() or "").strip()
+        if not project_id:
+            self._set_compare_busy(False, "Open a project before auto-pick.")
+            return
+        batch_rows = self.service.analyzer_list_polar_batches(project_id=project_id, source="project")
+        batch_ids = [str(row.get("batch_id") or "").strip() for row in batch_rows if str(row.get("batch_id") or "").strip()]
+        dialog = _AnalyzerAutoPickDialog(
+            batch_ids=batch_ids,
+            current_batch_id=self._selected_batch_id(),
+            strategy=self._compare_last_strategy,
+            kpi_key=self._compare_last_kpi_key,
+            exclude_flags=self._compare_exclude_flags,
+            exclude_missing_kpi=self._compare_exclude_missing,
+            parent=self,
+        )
+        if dialog.exec() != QDialog.Accepted:
+            return
+        payload = dialog.payload()
+        if not isinstance(payload, dict):
+            return
+        scope = str(payload.get("scope") or "current")
+        selected_batches = [str(item) for item in list(payload.get("batch_ids", []) or []) if str(item).strip()]
+        if scope == "current":
+            current_batch = str(self._selected_batch_id() or "").strip()
+            selected_batches = [current_batch] if current_batch else []
+        if scope == "multi" and not selected_batches:
+            self._set_compare_busy(False, "Select at least one batch for multi-batch auto-pick.")
+            return
+        self._compare_last_strategy = str(payload.get("strategy") or "A")
+        self._compare_last_kpi_key = str(payload.get("kpi_key") or "score")
+        filters = dict(payload.get("filters") or {})
+        self._compare_exclude_flags = bool(filters.get("exclude_flags", self._compare_exclude_flags))
+        self._compare_exclude_missing = bool(filters.get("exclude_missing_kpi", self._compare_exclude_missing))
+        self._start_autopick_worker(
+            project_id=project_id,
+            batch_ids=selected_batches,
+            strategy=self._compare_last_strategy,
+            kpi_key=self._compare_last_kpi_key,
+            filters={
+                "exclude_flags": self._compare_exclude_flags,
+                "exclude_missing_kpi": self._compare_exclude_missing,
+            },
+            top_n=5,
+        )
+
+    def _start_autopick_worker(
+        self,
+        *,
+        project_id: str,
+        batch_ids: Sequence[str],
+        strategy: str,
+        kpi_key: str,
+        filters: Dict[str, Any],
+        top_n: int,
+    ) -> None:
+        self._stop_autopick_worker()
+        self._autopick_request_id += 1
+        request_id = int(self._autopick_request_id)
+        config = self._active_kpi_config()
+        worker = _AnalyzerAutoPickWorker(
+            service=self.service,
+            request_id=request_id,
+            project_id=project_id,
+            batch_ids=batch_ids,
+            strategy=strategy,
+            kpi_key=kpi_key,
+            filters=filters,
+            top_n=top_n,
+            stage_mode=str(config["stage_mode"]),
+            band_low_hz=float(config["band_low_hz"]),
+            band_high_hz=float(config["band_high_hz"]),
+            target_h_deg=float(config["target_h_deg"]),
+            target_v_deg=float(config["target_v_deg"]),
+            tol_deg=float(config["tol_deg"]),
+            algo_version=str(config["algo_version"]),
+        )
+        thread = QThread(self)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.progress.connect(self._on_autopick_progress)
+        worker.finished.connect(self._on_autopick_finished)
+        worker.failed.connect(self._on_autopick_failed)
+        worker.canceled.connect(self._on_autopick_canceled)
+        worker.finished.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        worker.canceled.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(lambda: self._clear_autopick_worker_refs(thread))
+        self._autopick_worker = worker
+        self._autopick_thread = thread
+        self._set_compare_busy(True, "Auto-picking candidates...")
+        thread.start()
+
+    def _on_autopick_progress(self, done: int, total: int, message: str) -> None:
+        done_value = max(int(done), 0)
+        total_value = max(int(total), 0)
+        if total_value <= 0:
+            self._set_compare_busy(True, str(message or "Auto-picking candidates..."))
+            return
+        self._set_compare_busy(True, f"{done_value}/{total_value} {str(message or '').strip()}")
+
+    def _on_autopick_finished(self, request_id: int, payload: Dict[str, Any]) -> None:
+        if int(request_id) != int(self._autopick_request_id):
+            return
+        candidates = [dict(item) for item in list(payload.get("candidates", []) or []) if isinstance(item, dict)]
+        self._set_compare_candidates(candidates, message=f"Auto-picked {len(candidates)} candidates.")
+
+    def _on_autopick_failed(self, request_id: int, message: str) -> None:
+        if int(request_id) != int(self._autopick_request_id):
+            return
+        self._set_compare_busy(False, "Auto-pick failed.")
+        self._set_error(str(message or "Auto-pick failed."))
+
+    def _on_autopick_canceled(self, request_id: int, message: str) -> None:
+        if int(request_id) != int(self._autopick_request_id):
+            return
+        self._set_compare_busy(False, str(message or "Auto-pick canceled."))
 
     def _apply_overview_payload(self, payload: Dict[str, Any]) -> None:
         projects = [dict(item) for item in list(payload.get("projects", []) or []) if isinstance(item, dict)]
@@ -4060,6 +5180,7 @@ class AnalysePage(QWidget):
         finally:
             self._selector_sync_guard = False
         self._apply_runs_payload(payload)
+        self._refresh_saved_analyses()
 
     def _set_combo_current_by_data(self, combo: QComboBox, value: Optional[str]) -> None:
         token = str(value or "").strip()
@@ -4192,25 +5313,38 @@ class AnalysePage(QWidget):
             first = dict(rows[0])
             self._set_details(first)
             self._sync_plane_controls(first)
-            self._update_compare_table()
             self._schedule_plot_refresh()
         else:
             self._set_details(None)
             self._sync_plane_controls(None)
-            self._update_compare_table()
             self._clear_plot_views("Select run + plane to render plots.")
         self._update_compute_button_text(rows)
 
     def _apply_runs_payload(self, payload: Dict[str, Any]) -> None:
         rows = [dict(item) for item in list(payload.get("runs", []) or []) if isinstance(item, dict)]
         self._all_run_rows = rows
+        if self._compare_candidates:
+            lookup = {self._compare_identity(row): dict(row) for row in rows}
+            merged: List[Dict[str, Any]] = []
+            for candidate in self._compare_candidates:
+                identity = self._compare_identity(candidate)
+                merged.append(lookup.get(identity, dict(candidate)))
+            self._compare_candidates = merged[:5]
         self._refresh_run_table()
+        self._update_compare_slots()
 
     def _on_source_changed(self, _index: int = 0) -> None:
         if self._selector_sync_guard:
             return
         self._stop_plot_worker()
+        self._stop_compare_plot_worker()
+        self._stop_autopick_worker()
+        self._compare_candidates = []
+        self._compare_plot_items = []
+        self._loaded_analysis_id = None
         self._clear_plot_views("Select run + plane to render plots.")
+        self.compare_overlay_canvas.clear_series("Select candidates to display beamwidth overlay.")
+        self.compare_heatmap_canvas.clear_heatmap("Select candidates to display compare heatmap.")
         if self._source_key() == "project":
             self.project_selector.setEnabled(not bool(self._project_context_id))
             if self._compute_thread is None or not self._compute_thread.isRunning():
@@ -4219,11 +5353,17 @@ class AnalysePage(QWidget):
             self.project_selector.setEnabled(True)
             if self._compute_thread is None or not self._compute_thread.isRunning():
                 self.compute_btn.setEnabled(False)
+        self._refresh_saved_analyses()
         self.refresh_data()
 
     def _on_project_changed(self, _index: int = 0) -> None:
         if self._selector_sync_guard:
             return
+        self._compare_candidates = []
+        self._compare_plot_items = []
+        self._loaded_analysis_id = None
+        self._update_compare_slots()
+        self._refresh_saved_analyses()
         self._request_metadata(mode="overview", project_id=self._selected_project_id(), batch_id=None)
 
     def _request_runs_for_selected_batch(self) -> None:
@@ -4244,18 +5384,22 @@ class AnalysePage(QWidget):
         self._apply_stage_defaults()
         if not self._selected_project_id() or not self._selected_batch_id():
             self._schedule_plot_refresh()
+            self._schedule_compare_plot_refresh()
             return
         self._request_runs_for_selected_batch()
         self._schedule_plot_refresh()
+        self._schedule_compare_plot_refresh()
 
     def _on_kpi_config_changed(self, _value: Any = None) -> None:
         if self._control_sync_guard:
             return
         if not self._selected_project_id() or not self._selected_batch_id():
             self._schedule_plot_refresh()
+            self._schedule_compare_plot_refresh()
             return
         self._request_runs_for_selected_batch()
         self._schedule_plot_refresh()
+        self._schedule_compare_plot_refresh()
 
     def _on_band_preset_changed(self, _index: int = 0) -> None:
         self._sync_band_custom_visibility()
@@ -4266,7 +5410,6 @@ class AnalysePage(QWidget):
         if not selected_indexes:
             self._set_details(None)
             self._sync_plane_controls(None)
-            self._update_compare_table()
             self._clear_plot_views("Select run + plane to render plots.")
             return
         row_index = int(selected_indexes[0].row())
@@ -4274,7 +5417,6 @@ class AnalysePage(QWidget):
         payload = dict(item.data(Qt.UserRole) or {}) if item is not None else {}
         self._set_details(payload if payload else None)
         self._sync_plane_controls(payload if payload else None)
-        self._update_compare_table()
         self._schedule_plot_refresh()
 
     def _set_details(self, payload: Optional[Dict[str, Any]]) -> None:

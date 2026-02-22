@@ -293,3 +293,18 @@ The Analyzer page is planned with two explicit subviews:
     - `A`: top N by score
     - `B`: top N by selected KPI
     - `C`: filter + score tie-break.
+
+## Implementation status (Analyzer Phase 2C: Compare UI workflow + plotting)
+
+- Compare sub-tab is now a first-class workflow:
+  - candidate slots (`1..5`) with explicit remove actions
+  - `Add selected` from Batch Review table selection
+  - `Auto-pick...` dialog with batch scope + strategy `A/B/C` + filter toggles
+  - `Save Analysis...` and `Load` actions wired to project-local persistence
+- Compare rendering behavior:
+  - beamwidth overlay plot supports candidate overlays in a fixed 5-color palette (stable by slot order)
+  - heatmap renders one candidate at a time (candidate switcher) to avoid multi-heatmap overload
+  - compare updates run in background workers and support cancellation
+- Heatmap style rule:
+  - all POLAR heatmaps (Explorer + Compare) use one shared VACS-like LUT
+  - color levels remain fixed against clamp settings (`0 dB .. clamp_min`) rather than per-dataset auto-rescale.
