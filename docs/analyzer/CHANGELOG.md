@@ -200,3 +200,11 @@
   - `Explorer` sub-tab (heatmap + beamwidth rendering)
   - `Compare` sub-tab skeleton (up to 5 selected runs, cached KPI scalar table, Phase 2C note)
 - Plot loading now runs in a dedicated background worker with debounce + cancel, and loads `polar_points` only for the selected run/version/plane.
+
+## 2026-02-22 (Analyzer Phase 2B: plot/cache regression tests)
+- Added unit coverage for Analyzer plot cache policy/eviction and plot math helpers:
+  - nearest-0deg normalization
+  - beamwidth(-6 dB) curve extraction.
+- Extended GUI Analyzer tests to cover Explorer behavior:
+  - run selection triggers background plot load and renders canvases
+  - fast run switching remains stable while plot workers are canceled/replaced.

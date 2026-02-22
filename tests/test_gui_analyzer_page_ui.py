@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -173,6 +174,112 @@ class AnalyzerPageUiTests(unittest.TestCase):
             self.assertEqual(page.run_table.rowCount(), 1)
             page.min_score_spin.setValue(95.0)
             self.assertEqual(page.run_table.rowCount(), 0)
+
+    def test_run_selection_loads_explorer_plot_in_background(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_ui2b_plot_load_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            payload = {
+                "mode": "runs",
+                "project_id": "P001",
+                "batch_id": "B001",
+                "runs": [
+                    {
+                        "project_id": "P001",
+                        "batch_id": "B001",
+                        "run_id": "R001",
+                        "version_id": "V001",
+                        "planes": ["H", "V"],
+                        "freq_count": 64,
+                        "angle_count": 9,
+                    }
+                ],
+            }
+            page._apply_runs_payload(payload)
+            fake_plot = {
+                "cache_hit": False,
+                "display_freqs_hz": [200.0, 400.0, 800.0],
+                "display_matrix_db": [[0.0, -2.0, -4.0], [-1.0, -3.0, -6.0]],
+                "beamwidth_curve": [
+                    {"freq_hz": 200.0, "beamwidth_deg": 60.0},
+                    {"freq_hz": 400.0, "beamwidth_deg": 62.0},
+                ],
+                "ref_angle_deg": 0.0,
+                "insufficient_bw": False,
+                "message": "",
+            }
+            with patch.object(service, "analyzer_load_plot_payload", autospec=True, return_value=fake_plot) as load_mock:
+                page._start_plot_request()
+                deadline = time.time() + 2.0
+                while time.time() < deadline and page._plot_thread is not None:
+                    self.app.processEvents()
+                    time.sleep(0.01)
+                self.app.processEvents()
+                self.assertGreaterEqual(load_mock.call_count, 1)
+                self.assertIn("ready", page.plot_loading_label.text().lower())
+                pixmap = page.heatmap_canvas.pixmap()
+                self.assertIsNotNone(pixmap)
+                assert pixmap is not None
+                self.assertFalse(pixmap.isNull())
+
+    def test_switching_runs_during_plot_load_keeps_ui_stable(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_ui2b_plot_switch_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            payload = {
+                "mode": "runs",
+                "project_id": "P001",
+                "batch_id": "B001",
+                "runs": [
+                    {
+                        "project_id": "P001",
+                        "batch_id": "B001",
+                        "run_id": "R001",
+                        "version_id": "V001",
+                        "planes": ["H", "V"],
+                        "freq_count": 64,
+                        "angle_count": 9,
+                    },
+                    {
+                        "project_id": "P001",
+                        "batch_id": "B001",
+                        "run_id": "R002",
+                        "version_id": "V002",
+                        "planes": ["H", "V"],
+                        "freq_count": 64,
+                        "angle_count": 9,
+                    },
+                ],
+            }
+            page._apply_runs_payload(payload)
+
+            def _slow_loader(*_args, **kwargs):
+                cancel_check = kwargs.get("cancel_check")
+                for _ in range(30):
+                    if callable(cancel_check) and bool(cancel_check()):
+                        raise RuntimeError("canceled")
+                    time.sleep(0.005)
+                return {
+                    "cache_hit": False,
+                    "display_freqs_hz": [200.0, 400.0],
+                    "display_matrix_db": [[0.0, -1.0], [-2.0, -3.0]],
+                    "beamwidth_curve": [{"freq_hz": 200.0, "beamwidth_deg": 60.0}],
+                    "ref_angle_deg": 0.0,
+                    "insufficient_bw": True,
+                    "message": "",
+                }
+
+            with patch.object(service, "analyzer_load_plot_payload", autospec=True, side_effect=_slow_loader):
+                page.run_table.selectRow(0)
+                page._start_plot_request()
+                page.run_table.selectRow(1)
+                page._start_plot_request()
+                deadline = time.time() + 3.0
+                while time.time() < deadline and page._plot_thread is not None:
+                    self.app.processEvents()
+                    time.sleep(0.01)
+                self.app.processEvents()
+                self.assertIn(page.plot_loading_label.text().lower(), {"plot ready.", "ready.", "plot request canceled."})
 
 
 if __name__ == "__main__":
