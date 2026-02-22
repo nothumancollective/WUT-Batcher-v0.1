@@ -367,3 +367,23 @@ The Analyzer page is planned with two explicit subviews:
   - right: overlay + heatmap plot tiles, compact KPI compare table, candidate selector for heatmap
 - Candidate identity is UI-facing `Batch/Version` by default.
 - Internal `run_id` remains available in details dialog/raw payloads only.
+
+## Implementation status (Analyzer pro-layout polish refinement)
+
+- Toolbar interaction model was tightened for high-density workflows:
+  - `Versions` is now an anchored searchable popup selector (instead of opening another workspace panel).
+  - KPI summary moved to a compact popover (`KPIs`) with friendly metric labels.
+  - only one visible KPI compute action remains in the toolbar (`Compute KPIs` / `Refresh KPIs` stateful text).
+- Control tiles were compacted without adding extra rows:
+  - `Exclude flagged` and `Exclude warnings` are explicit checkable toggles.
+  - `Band` and `Tolerance` are placed in `Display` tile with shared-impact tooltip.
+  - clamp minimum default is `-20 dB`.
+  - normalization angle chooser (`0 deg` / `10 deg`) is present but disabled with tooltip until pipeline support exists.
+- Explorer and Compare plot canvases now share a consistent axis/grid contract:
+  - heatmap: angle ticks+labels, log-frequency major/minor ticks, subtle grid lines, stable orientation (larger angles map upward)
+  - beamwidth/overlay: consistent y-degree ticks, log/linear x-axis ticks, improved bottom/left padding to prevent clipped labels
+  - redundant in-plot title strings were removed where tile headers already provide context.
+- Compare left column now emphasizes shortlist + selected KPI insight:
+  - narrower default shortlist pane
+  - compact `Selected Candidate KPIs` panel under shortlist
+  - `Heatmap candidate` selector explicitly documents single-candidate heatmap behavior while beamwidth remains overlaid.

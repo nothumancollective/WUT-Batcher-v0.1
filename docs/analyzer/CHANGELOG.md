@@ -273,3 +273,29 @@
 - Added shortlist interaction coverage for Compare (`add/remove` updates visible slot rows without crashes).
 - Added Gear Settings Analyzer-tab tests to lock data-source relocation (`Analyzer` tab + source save roundtrip).
 - Stabilized Explorer background-plot smoke assertion to wait for async completion signal before checking ready-state text.
+
+## 2026-02-22 (Analyzer pro-layout polish: toolbar/tiles/plots/compare)
+- Toolbar cleanup:
+  - replaced workspace-level `Versions` panel behavior with an anchored searchable version picker popup (keyboard-friendly: arrows/Enter/Esc)
+  - kept exactly one KPI compute action button in the visible toolbar
+  - reduced inline KPI text noise to compact summary chips + dedicated KPI popover (`KPIs` button) with friendly labels.
+- Control-tile refinement:
+  - converted `Exclude flagged` / `Exclude warnings` into explicit checkable toggle buttons
+  - moved `Band` + `Tol` into `Display` tile with tooltip clarifying shared plot/KPI impact
+  - set clamp default to `-20 dB` in UI defaults and heatmap canvas behavior
+  - added a disabled `Norm angle` selector (`0 deg` / `10 deg`) with explanatory tooltip because post-hoc angle normalization switching is not currently supported by the plot pipeline.
+- Plot readability/padding pass (Explorer + Compare):
+  - heatmap now renders angle ticks/labels, log-frequency major+minor ticks, and subtle horizontal/vertical grid cues
+  - beamwidth and beamwidth-overlay plots now render consistent axis labels, log/linear tick handling, and improved margins to avoid clipped tick text
+  - removed redundant in-plot title/status text where page/tile titles already provide context
+  - enforced consistent heatmap orientation by mapping larger angles upward in the rendered view.
+- Compare panel cleanup:
+  - narrowed left shortlist column defaults
+  - replaced bottom KPI row emphasis with a compact `Selected Candidate KPIs` panel under shortlist
+  - kept overlay-heatmap candidate selector with explicit tooltip describing single-heatmap + overlay behavior.
+- Added/updated targeted UI tests covering:
+  - single compute button presence
+  - versions picker popup selection path
+  - analyzer toggle controls + clamp default
+  - compare shortlist KPI panel behavior
+  - heatmap orientation sanity rendering.
