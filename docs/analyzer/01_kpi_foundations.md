@@ -99,3 +99,48 @@ The full research is included verbatim in:
 
 - `01_kpi_research_raw.md` (SHA256 `e26cb5d9f9ad`)
 
+---
+
+## Phase 2A implementation baseline (MVP, now implemented)
+
+### Data domain (MVP)
+
+- Input source:
+  - `polar_measurements` + `polar_points`
+  - magnitude-only (`re`, `im` -> `|H|` in dB)
+- No phase/group-delay KPI in MVP.
+
+### Normalization policy
+
+- Per frequency row and orientation:
+  - reference = on-axis (`theta ~= 0 deg`, nearest available angle)
+  - all angles are normalized to that reference in dB
+- This is intentionally simple and robust for MVP.
+- Future enhancement (not in MVP): power-normalized/iterative references.
+
+### Implemented MVP KPIs
+
+- `E_BW`:
+  - beamwidth error vs target over selected band
+  - beamwidth extracted from `-6 dB` contour around on-axis
+- `B_PC`:
+  - contiguous pass bandwidth where `|beamwidth - target| <= tol`
+  - stored as octave span + pass-band edge frequencies
+- `E_cov`:
+  - RMS variation inside coverage region (`|theta| <= target/2`)
+- `R_spill`:
+  - outside-vs-inside energy ratio proxy (lower is better)
+- Flags:
+  - jump / collapse / wide transitions from beamwidth curve
+  - used both as filter and score penalty
+
+### Aggregate strategy
+
+- Per-plane KPI compute first (`H`, `V`, optional `D`).
+- Aggregate uses fixed plane weighting:
+  - `H=0.45`, `V=0.45`, `D=0.10` (renormalized by present planes).
+
+### Insufficient-coverage handling
+
+- If angular coverage is too narrow for target region, KPI payload is marked `insufficient_coverage`.
+- Such rows are scored as `0` in stage scoring and remain filterable in UI.

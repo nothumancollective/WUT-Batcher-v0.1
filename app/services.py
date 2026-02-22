@@ -18,6 +18,17 @@ import shutil
 import subprocess
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
+from app.analyzer.kpi_engine import compute_run_kpis, compute_stage_score
+from app.analyzer.presets import (
+    ALGO_VERSION,
+    BAND_PRESETS,
+    COVERAGE_PRESETS,
+    DEFAULT_BAND_PRESET_ID,
+    DEFAULT_COVERAGE_PRESET_ID,
+    DEFAULT_STAGE_ID,
+    DEFAULT_TOL_DEG,
+    STAGE_PRESETS,
+)
 from app.batch_orchestrator import PlanningSummary, materialize_batch_plan
 from app.ath_knowledge import load_ath_knowledge
 from app.ath_driver_assets import repair_post_ath_le_binding
@@ -152,6 +163,20 @@ def _normalize_orientation_tokens(values: Sequence[str]) -> List[str]:
             continue
         normalized.setdefault(upper, token)
     return sorted(normalized.values(), key=lambda token: (order.get(token.upper(), 99), token.upper()))
+
+
+def _analyzer_source_hash(file_hashes: Sequence[str]) -> str:
+    tokens = sorted({str(item).strip() for item in list(file_hashes or []) if str(item).strip()})
+    raw = "|".join(tokens) if tokens else "<missing>"
+    return hashlib.sha1(raw.encode("utf-8")).hexdigest()
+
+
+def _safe_json_load(raw: Any) -> Dict[str, Any]:
+    try:
+        payload = json.loads(str(raw or "{}"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
 
 
 class PreviewGenerationCancelled(RuntimeError):
@@ -1972,6 +1997,360 @@ class OrchestratorService:
                 }
             )
         return result
+
+    def analyzer_presets(self) -> Dict[str, Any]:
+        return {
+            "algo_version": str(ALGO_VERSION),
+            "coverage_presets": [dict(item) for item in COVERAGE_PRESETS],
+            "default_coverage_preset_id": str(DEFAULT_COVERAGE_PRESET_ID),
+            "band_presets": [dict(item) for item in BAND_PRESETS],
+            "default_band_preset_id": str(DEFAULT_BAND_PRESET_ID),
+            "default_tol_deg": float(DEFAULT_TOL_DEG),
+            "stages": {str(key): dict(value) for key, value in STAGE_PRESETS.items()},
+            "default_stage_id": str(DEFAULT_STAGE_ID),
+        }
+
+    def _analyzer_db_path(self, *, project_id: str, source: str) -> Path:
+        source_key = str(source or "project").strip().lower()
+        if source_key == "global":
+            return Path(self.settings.library_root) / "global.sqlite"
+        return self.repo.project_paths(str(project_id), ensure=False).dataset_dir / "project.sqlite"
+
+    def analyzer_list_cached_kpis(
+        self,
+        *,
+        project_id: str,
+        batch_id: str,
+        source: str = "project",
+        band_low_hz: float,
+        band_high_hz: float,
+        target_h_deg: float,
+        target_v_deg: float,
+        tol_deg: float,
+        algo_version: str = ALGO_VERSION,
+    ) -> List[Dict[str, Any]]:
+        db_path = self._analyzer_db_path(project_id=project_id, source=source)
+        if not db_path.exists():
+            return []
+        query = """
+            SELECT
+                kpi_id,
+                project_id,
+                batch_id,
+                run_id,
+                version_id,
+                stage_mode,
+                band_low_hz,
+                band_high_hz,
+                target_h_deg,
+                target_v_deg,
+                tol_deg,
+                kpi_json,
+                flags_json,
+                score,
+                algo_version,
+                source_hash,
+                computed_at
+            FROM analyzer_run_kpis
+            WHERE project_id = ?
+              AND batch_id = ?
+              AND band_low_hz = ?
+              AND band_high_hz = ?
+              AND target_h_deg = ?
+              AND target_v_deg = ?
+              AND tol_deg = ?
+              AND algo_version = ?
+            ORDER BY computed_at DESC
+        """
+        try:
+            with closing(sqlite3.connect(str(db_path))) as conn:
+                conn.row_factory = sqlite3.Row
+                rows = conn.execute(
+                    query,
+                    (
+                        str(project_id),
+                        str(batch_id),
+                        float(band_low_hz),
+                        float(band_high_hz),
+                        float(target_h_deg),
+                        float(target_v_deg),
+                        float(tol_deg),
+                        str(algo_version),
+                    ),
+                ).fetchall()
+        except sqlite3.Error:
+            return []
+
+        # Keep the latest computed row per run/version/source_hash.
+        seen: set[Tuple[str, str, str]] = set()
+        result: List[Dict[str, Any]] = []
+        for row in rows:
+            run_token = str(row["run_id"] or "").strip()
+            version_id = str(row["version_id"] or "")
+            source_hash = str(row["source_hash"] or "")
+            identity = (run_token, version_id, source_hash)
+            if identity in seen:
+                continue
+            seen.add(identity)
+            result.append(
+                {
+                    "kpi_id": str(row["kpi_id"]),
+                    "project_id": str(row["project_id"]),
+                    "batch_id": str(row["batch_id"]),
+                    "run_id": run_token or None,
+                    "version_id": version_id,
+                    "stage_mode": str(row["stage_mode"] or "").strip() or None,
+                    "band_low_hz": float(row["band_low_hz"]),
+                    "band_high_hz": float(row["band_high_hz"]),
+                    "target_h_deg": float(row["target_h_deg"]),
+                    "target_v_deg": float(row["target_v_deg"]),
+                    "tol_deg": float(row["tol_deg"]),
+                    "kpi": _safe_json_load(row["kpi_json"]),
+                    "flags": _safe_json_load(row["flags_json"]),
+                    "score": float(row["score"]) if row["score"] is not None else None,
+                    "algo_version": str(row["algo_version"]),
+                    "source_hash": source_hash,
+                    "computed_at": row["computed_at"],
+                }
+            )
+        return result
+
+    def analyzer_list_batch_review_runs(
+        self,
+        *,
+        project_id: str,
+        batch_id: str,
+        source: str = "project",
+        stage_mode: str = DEFAULT_STAGE_ID,
+        band_low_hz: float,
+        band_high_hz: float,
+        target_h_deg: float,
+        target_v_deg: float,
+        tol_deg: float,
+        algo_version: str = ALGO_VERSION,
+    ) -> List[Dict[str, Any]]:
+        runs = self.analyzer_list_polar_runs(
+            project_id=project_id,
+            batch_id=batch_id,
+            source=source,
+        )
+        cache_rows = self.analyzer_list_cached_kpis(
+            project_id=project_id,
+            batch_id=batch_id,
+            source=source,
+            band_low_hz=band_low_hz,
+            band_high_hz=band_high_hz,
+            target_h_deg=target_h_deg,
+            target_v_deg=target_v_deg,
+            tol_deg=tol_deg,
+            algo_version=algo_version,
+        )
+        cache_by_identity: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
+        for row in cache_rows:
+            run_token = str(row.get("run_id") or "").strip()
+            version_id = str(row.get("version_id") or "")
+            source_hash = str(row.get("source_hash") or "")
+            cache_by_identity[(run_token, version_id, source_hash)] = row
+
+        stage_key = str(stage_mode or DEFAULT_STAGE_ID).strip().lower() or DEFAULT_STAGE_ID
+        result: List[Dict[str, Any]] = []
+        for row in runs:
+            payload = dict(row)
+            run_token = str(payload.get("run_id") or "").strip()
+            version_id = str(payload.get("version_id") or "")
+            source_hash = _analyzer_source_hash(list(payload.get("file_hashes", []) or []))
+            cached = cache_by_identity.get((run_token, version_id, source_hash))
+            if cached:
+                kpi_payload = dict(cached.get("kpi", {}) or {})
+                flags_payload = dict(cached.get("flags", {}) or {})
+                score = compute_stage_score(kpi_payload, stage_id=stage_key)
+                aggregate = dict(kpi_payload.get("aggregate", {}) or {})
+                payload["kpi"] = kpi_payload
+                payload["kpi_flags"] = flags_payload
+                payload["kpi_source_hash"] = source_hash
+                payload["kpi_cached_at"] = cached.get("computed_at")
+                payload["kpi_score"] = float(score)
+                payload["kpi_b_pc_oct"] = aggregate.get("b_pc_oct")
+                payload["kpi_e_bw"] = aggregate.get("e_bw")
+                payload["kpi_e_cov"] = aggregate.get("e_cov")
+                payload["kpi_r_spill"] = aggregate.get("r_spill")
+                payload["kpi_flags_count"] = int(aggregate.get("flags_count") or 0)
+                payload["kpi_flagged"] = bool(aggregate.get("flagged"))
+                payload["kpi_insufficient_coverage"] = bool(aggregate.get("insufficient_coverage"))
+            result.append(payload)
+        return result
+
+    def analyzer_compute_batch_kpis(
+        self,
+        *,
+        project_id: str,
+        batch_id: str,
+        target_h_deg: float,
+        target_v_deg: float,
+        tol_deg: float,
+        band_low_hz: float,
+        band_high_hz: float,
+        stage_mode: str = DEFAULT_STAGE_ID,
+        algo_version: str = ALGO_VERSION,
+        progress_cb: Optional[Callable[[int, int, str], None]] = None,
+        cancel_check: Optional[Callable[[], bool]] = None,
+    ) -> Dict[str, Any]:
+        project_token = str(project_id or "").strip()
+        batch_token = str(batch_id or "").strip()
+        if not project_token or not batch_token:
+            return {"computed": 0, "skipped_cached": 0, "failed": 0, "total": 0, "canceled": False}
+
+        project_paths = self.repo.project_paths(project_token, ensure=False)
+        db_path = project_paths.dataset_dir / "project.sqlite"
+        if not db_path.exists():
+            raise FileNotFoundError(f"Project dataset DB not found: {db_path}")
+        dataset = TidyDatasetWriter(project_paths.project_dir, library_root=self.settings.library_root)
+
+        runs = self.analyzer_list_polar_runs(project_id=project_token, batch_id=batch_token, source="project")
+        cache_rows = dataset.list_analyzer_run_kpis(
+            project_id=project_token,
+            batch_id=batch_token,
+            band_low_hz=float(band_low_hz),
+            band_high_hz=float(band_high_hz),
+            target_h_deg=float(target_h_deg),
+            target_v_deg=float(target_v_deg),
+            tol_deg=float(tol_deg),
+            algo_version=str(algo_version),
+        )
+        cached_identity: set[Tuple[str, str, str]] = set()
+        for row in cache_rows:
+            run_token = str(row.get("run_id") or "").strip()
+            version_id = str(row.get("version_id") or "")
+            source_hash = str(row.get("source_hash") or "")
+            cached_identity.add((run_token, version_id, source_hash))
+
+        total = len(runs)
+        computed = 0
+        skipped_cached = 0
+        failed = 0
+        rows_to_write: List[Dict[str, Any]] = []
+        stage_key = str(stage_mode or DEFAULT_STAGE_ID).strip().lower() or DEFAULT_STAGE_ID
+
+        if callable(progress_cb):
+            progress_cb(0, total, "Preparing KPI compute...")
+
+        for idx, run in enumerate(runs, start=1):
+            if callable(cancel_check) and bool(cancel_check()):
+                if callable(progress_cb):
+                    progress_cb(idx - 1, total, "KPI compute canceled.")
+                return {
+                    "computed": computed,
+                    "skipped_cached": skipped_cached,
+                    "failed": failed,
+                    "total": total,
+                    "canceled": True,
+                }
+
+            run_token = str(run.get("run_id") or "").strip()
+            version_id = str(run.get("version_id") or "")
+            source_hash = _analyzer_source_hash(list(run.get("file_hashes", []) or []))
+            identity = (run_token, version_id, source_hash)
+            if identity in cached_identity:
+                skipped_cached += 1
+                if callable(progress_cb):
+                    progress_cb(idx, total, f"Skipping cached KPIs for {version_id}.")
+                continue
+
+            try:
+                with closing(sqlite3.connect(str(db_path))) as conn:
+                    conn.row_factory = sqlite3.Row
+                    query_rows = conn.execute(
+                        """
+                        SELECT
+                            pm.orientation AS orientation,
+                            pp.freq_hz AS freq_hz,
+                            pp.angle_deg AS angle_deg,
+                            pp.re AS re,
+                            pp.im AS im
+                        FROM polar_measurements pm
+                        JOIN polar_points pp ON pp.polar_id = pm.polar_id
+                        WHERE pm.project_id = ?
+                          AND pm.batch_id = ?
+                          AND pm.version_id = ?
+                          AND COALESCE(pm.run_id, '') = ?
+                        ORDER BY pm.orientation, pp.freq_hz, pp.angle_deg
+                        """,
+                        (
+                            project_token,
+                            batch_token,
+                            version_id,
+                            run_token,
+                        ),
+                    ).fetchall()
+            except sqlite3.Error:
+                failed += 1
+                if callable(progress_cb):
+                    progress_cb(idx, total, f"KPI query failed for {version_id}.")
+                continue
+
+            planes_points: Dict[str, List[Dict[str, Any]]] = {}
+            for row in query_rows:
+                orientation = str(row["orientation"] or "").strip().upper()
+                if orientation not in {"H", "V", "D"}:
+                    continue
+                planes_points.setdefault(orientation, []).append(
+                    {
+                        "freq_hz": float(row["freq_hz"]),
+                        "angle_deg": float(row["angle_deg"]),
+                        "re": float(row["re"]),
+                        "im": float(row["im"]),
+                    }
+                )
+
+            if not planes_points:
+                failed += 1
+                if callable(progress_cb):
+                    progress_cb(idx, total, f"No polar points found for {version_id}.")
+                continue
+
+            kpi_payload = compute_run_kpis(
+                planes_points=planes_points,
+                target_h_deg=float(target_h_deg),
+                target_v_deg=float(target_v_deg),
+                tol_deg=float(tol_deg),
+                band_low_hz=float(band_low_hz),
+                band_high_hz=float(band_high_hz),
+            )
+            score = compute_stage_score(kpi_payload, stage_id=stage_key)
+            rows_to_write.append(
+                {
+                    "project_id": project_token,
+                    "batch_id": batch_token,
+                    "run_id": run_token or None,
+                    "version_id": version_id,
+                    "stage_mode": stage_key,
+                    "band_low_hz": float(band_low_hz),
+                    "band_high_hz": float(band_high_hz),
+                    "target_h_deg": float(target_h_deg),
+                    "target_v_deg": float(target_v_deg),
+                    "tol_deg": float(tol_deg),
+                    "kpi_json": json.dumps(kpi_payload, ensure_ascii=False, sort_keys=True),
+                    "flags_json": json.dumps(kpi_payload.get("flags", {}), ensure_ascii=False, sort_keys=True),
+                    "score": float(score),
+                    "algo_version": str(algo_version),
+                    "source_hash": source_hash,
+                    "computed_at": _now_iso(),
+                }
+            )
+            computed += 1
+            if callable(progress_cb):
+                progress_cb(idx, total, f"Computed KPIs for {version_id}.")
+
+        if rows_to_write:
+            dataset.write_analyzer_run_kpis(rows_to_write)
+
+        return {
+            "computed": computed,
+            "skipped_cached": skipped_cached,
+            "failed": failed,
+            "total": total,
+            "canceled": False,
+        }
 
     def pin_run(self, *, project_id: str, run_id: str, tag: Optional[str] = None) -> Dict[str, Any]:
         project_paths = self.repo.project_paths(project_id, ensure=True)

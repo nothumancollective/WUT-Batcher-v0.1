@@ -94,3 +94,24 @@
   - `E_cov = 0.30`
   - `R_spill = 0.22`
   - `flags = 0.12`
+
+## Score normalization (MVP implementation)
+
+- `B_PC` component (higher better):
+  - normalized with soft cap around `3 octaves`
+- `E_BW` component (lower better):
+  - linear mapping, `0 deg -> 1.0`, `20 deg -> 0.0`
+- `E_cov` component (lower better):
+  - linear mapping, `0 dB -> 1.0`, `6 dB -> 0.0`
+- `R_spill` component (lower better):
+  - computed as outside/inside energy ratio
+  - mapped in dB-like space (`-15 dB` good, `+5 dB` poor)
+- `flags` component:
+  - no flags -> full component score
+  - flagged rows receive penalty based on flag count
+
+Final score:
+
+- Weighted sum of normalized components
+- Clamped to `0..100`
+- If `insufficient_coverage=true`, score is forced to `0`

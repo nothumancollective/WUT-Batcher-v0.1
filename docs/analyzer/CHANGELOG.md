@@ -176,3 +176,12 @@
 - Added additive KPI cache storage table `analyzer_run_kpis` to SQL dataset schema (project + global), including cache identity indexes and score-oriented lookup indexes.
 - Added `_dual_write` replication operation `upsert_analyzer_run_kpis` and store-level upsert/list APIs for Analyzer KPI rows.
 - Added canonical Analyzer preset definitions (`coverage`, `band`, `tolerance`, `stage`) in `app/analyzer/presets.py`, including a default scoring band starting at `200 Hz`.
+
+## 2026-02-22 (Analyzer Phase 2A: KPI engine + service caching)
+- Added magnitude-only KPI compute engine (`app/analyzer/kpi_engine.py`) implementing MVP metrics: `B_PC`, `E_BW`, `E_cov`, `R_spill`, and Jump/Collapse/Wide flags.
+- Added service-layer Analyzer APIs for:
+  - presets exposure
+  - cached KPI reads by compute config
+  - batch-level KPI compute with cache-skip/recompute rules (`algo_version` + `source_hash`)
+  - run metadata merge with cached KPI scalars/stage score for Batch Review table consumption.
+- Added synthetic unit tests for KPI engine behavior and service caching/recompute flow (`tests/test_analyzer_kpi_engine.py`, `tests/test_analyzer_kpi_service.py`).
