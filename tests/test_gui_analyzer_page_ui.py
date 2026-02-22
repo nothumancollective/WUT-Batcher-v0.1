@@ -254,6 +254,9 @@ class AnalyzerPageUiTests(unittest.TestCase):
             ]
             self.assertEqual(len(compute_buttons), 1)
             self.assertIs(compute_buttons[0], page.compute_btn)
+            self.assertEqual(int(page.compute_btn.minimumHeight()), int(page.versions_btn.minimumHeight()))
+            self.assertEqual(int(page.compute_btn.maximumHeight()), int(page.versions_btn.maximumHeight()))
+            self.assertTrue(bool(page.compute_btn.property("analyzerAction")))
 
     def test_clamp_default_is_minus_20_db(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_ui2x_clamp_default_") as tmp:

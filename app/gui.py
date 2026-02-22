@@ -459,6 +459,34 @@ def _angle_ticks(min_angle: float, max_angle: float) -> List[float]:
     return sorted(set(round(item, 6) for item in ticks))
 
 
+def _visible_target_angle_window(
+    *,
+    angle_min: float,
+    angle_max: float,
+    half_window_deg: float,
+) -> Tuple[Optional[Tuple[float, float]], List[float]]:
+    lo = float(angle_min)
+    hi = float(angle_max)
+    half = max(float(half_window_deg), 0.5)
+    if hi <= lo:
+        return None, []
+    if lo >= 0.0:
+        window = (max(lo, 0.0), min(hi, half))
+        boundaries = [0.0, half]
+    elif hi <= 0.0:
+        window = (max(lo, -half), min(hi, 0.0))
+        boundaries = [-half, 0.0]
+    else:
+        window = (max(lo, -half), min(hi, half))
+        boundaries = [-half, half]
+    if window[1] <= window[0]:
+        region: Optional[Tuple[float, float]] = None
+    else:
+        region = window
+    lines = [float(boundary) for boundary in boundaries if lo - 1.0e-6 <= float(boundary) <= hi + 1.0e-6]
+    return region, lines
+
+
 STAGE_EXPLORER_LAYOUTS: Dict[str, List[Dict[str, str]]] = {
     "concept": [
         {"slot": "A", "key": "heatmap", "title": "Polar Map", "help": "Heatmap with -6 dB contour and target window."},
@@ -702,19 +730,22 @@ class HeatmapCanvas(QLabel):
                 painter.setPen(QPen(QColor(ANALYZER_PLOT_STYLE.grid_y_color), 1))
 
         if angle_min is not None and angle_max is not None and self._target_half_window_deg is not None:
-            half = max(float(self._target_half_window_deg), 0.5)
-            if angle_max > angle_min:
-                y_top = int(round(margin_top + ((1.0 - ((half - angle_min) / max(angle_max - angle_min, 1.0e-6))) * plot_h)))
-                y_bottom = int(round(margin_top + ((1.0 - (((-half) - angle_min) / max(angle_max - angle_min, 1.0e-6))) * plot_h)))
-                shade_top = min(y_top, y_bottom)
-                shade_height = max(abs(y_bottom - y_top), 1)
-                painter.fillRect(
-                    margin_left,
-                    shade_top,
-                    plot_w,
-                    shade_height,
-                    QColor(93, 168, 255, 28),
-                )
+            target_region, boundary_lines = _visible_target_angle_window(
+                angle_min=float(angle_min),
+                angle_max=float(angle_max),
+                half_window_deg=float(self._target_half_window_deg),
+            )
+            if target_region is not None:
+                y_hi = y_of(float(target_region[1]))
+                y_lo = y_of(float(target_region[0]))
+                shade_top = min(int(y_hi), int(y_lo))
+                shade_height = max(abs(int(y_lo) - int(y_hi)), 1)
+                painter.fillRect(margin_left, shade_top, plot_w, shade_height, QColor(93, 168, 255, 24))
+            if boundary_lines:
+                painter.setPen(QPen(QColor(142, 196, 255, 140), 1, Qt.DashLine))
+                for angle_line in boundary_lines:
+                    y_line = y_of(float(angle_line))
+                    painter.drawLine(margin_left, y_line, margin_left + plot_w, y_line)
 
         if (
             self._minus6_contour
@@ -5220,6 +5251,8 @@ class AnalysePage(QWidget):
         self.versions_btn.setObjectName("AnalyzerVersionsButton")
         self.versions_btn.setText("Versions")
         self.versions_btn.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        self.versions_btn.setMinimumHeight(24)
+        self.versions_btn.setMaximumHeight(24)
         self.versions_btn.setProperty("analyzerAction", True)
         toolbar_layout.addWidget(self.versions_btn, 0)
         self.run_selector = QComboBox()
@@ -5230,8 +5263,8 @@ class AnalysePage(QWidget):
         self.run_selector.setSizeAdjustPolicy(QComboBox.AdjustToContentsOnFirstShow)
         self.run_selector.setVisible(False)
         toolbar_layout.addWidget(self.compute_btn, 0)
-        self.compute_btn.setMinimumHeight(26)
-        self.compute_btn.setMaximumHeight(28)
+        self.compute_btn.setMinimumHeight(24)
+        self.compute_btn.setMaximumHeight(24)
         self.compute_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.compute_btn.setProperty("analyzerAction", True)
         toolbar_layout.addStretch(1)
@@ -5257,6 +5290,8 @@ class AnalysePage(QWidget):
         self.kpi_popover_btn.setText("KPIs")
         self.kpi_popover_btn.setToolButtonStyle(Qt.ToolButtonTextOnly)
         self.kpi_popover_btn.setToolTip("Open KPI summary for the selected version.")
+        self.kpi_popover_btn.setMinimumHeight(24)
+        self.kpi_popover_btn.setMaximumHeight(24)
         self.kpi_popover_btn.setProperty("analyzerAction", True)
         toolbar_layout.addWidget(self.run_summary_run_chip, 0)
         toolbar_layout.addWidget(self.run_summary_score_chip, 0)
@@ -5264,6 +5299,8 @@ class AnalysePage(QWidget):
         toolbar_layout.addWidget(self.kpi_popover_btn, 0)
         self.run_details_btn = QPushButton("Details...")
         self.run_details_btn.setObjectName("BatchSecondaryButton")
+        self.run_details_btn.setMinimumHeight(24)
+        self.run_details_btn.setMaximumHeight(24)
         toolbar_layout.addWidget(self.run_details_btn, 0)
 
         self.analyzer_controls_row = QFrame()
