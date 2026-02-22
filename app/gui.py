@@ -6128,7 +6128,7 @@ class AnalysePage(QWidget):
         mode = str(payload.get("mode", "overview") or "overview")
         if mode == "runs":
             self._apply_runs_payload(payload)
-            self._set_loading(False, "Version list updated.")
+            self._set_loading(False, "Ready.")
             return
         self._apply_overview_payload(payload)
         self._set_loading(False, "Metadata loaded.")
