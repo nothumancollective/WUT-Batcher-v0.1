@@ -252,3 +252,31 @@ The Analyzer page is planned with two explicit subviews:
 - Metadata/list view remains lightweight:
   - table refresh uses metadata + cached scalar joins
   - `polar_points` are loaded only inside the explicit compute worker.
+
+## Implementation status (Analyzer Phase 2B: Polar visualization MVP)
+
+- Analyzer right pane now uses an explicit `Context Bar` + sub-tabs:
+  - `Explorer`: Polar Heatmap + Beamwidth(-6 dB) curve
+  - `Compare`: scalar KPI compare skeleton (up to 5 selected runs) + Phase 2C note
+- Context Bar controls are compact and editable in place:
+  - Stage, Target preset, Band preset (`Full`/`Custom` included), Tolerance
+  - Heatmap clamp toggle + clamp minimum dB control
+  - Plane toggle (`H` / `V` / `D`, `D` shown only when available)
+- Plot data flow is on-demand per selected run/version/plane:
+  - metadata table stays scalar-only
+  - selecting a run starts a debounced background plot worker
+  - switching selection/plane cancels the previous worker request
+  - no `polar_points` matrix preload for the run table
+- Plot pipeline:
+  - deterministic angle/frequency ordering
+  - relative normalization against nearest angle to `0 deg`
+  - beamwidth curve uses fixed `-6 dB` criterion on log-frequency axis
+  - deterministic heatmap downsample cap for display (`<= 512` freq bins)
+- Caching (POLAR-only, in-memory LRU) is now configurable via Settings:
+  - `Low`: keep 1 run, size limit `0 MB` (most-recent only)
+  - `Balanced`: keep 5 runs, soft limit `< 250 MB`
+  - `High`: keep 15 runs, soft limit `< 750 MB`
+  - `Extreme`: keep 30 runs, soft limit `< 1500 MB`
+  - `Custom`: user-defined soft limit (`<= 10 GB`) and keep-last count
+- Cache keys include selection/config identity:
+  - project_id, batch_id, run_id, version_id, plane, normalization policy, band range.

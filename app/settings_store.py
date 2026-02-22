@@ -29,6 +29,13 @@ def _as_bool(value: object, *, default: bool) -> bool:
     return bool(default)
 
 
+def _as_int(value: object, *, default: int) -> int:
+    try:
+        return int(value)  # type: ignore[arg-type]
+    except Exception:
+        return int(default)
+
+
 @dataclass
 class UserSettings:
     library_root: str = _default_library_root()
@@ -37,6 +44,9 @@ class UserSettings:
     vacs_exe: Optional[str] = None
     template_cfg: Optional[str] = None
     background_automation_mode: bool = True
+    analyzer_cache_mode: str = "balanced"
+    analyzer_cache_limit_mb: int = 240
+    analyzer_cache_keep_last_n: int = 5
 
     def to_dict(self) -> Dict[str, object]:
         return {
@@ -46,10 +56,18 @@ class UserSettings:
             "vacs_exe": self.vacs_exe,
             "template_cfg": self.template_cfg,
             "background_automation_mode": bool(self.background_automation_mode),
+            "analyzer_cache_mode": str(self.analyzer_cache_mode or "balanced"),
+            "analyzer_cache_limit_mb": int(self.analyzer_cache_limit_mb),
+            "analyzer_cache_keep_last_n": int(self.analyzer_cache_keep_last_n),
         }
 
     @classmethod
     def from_dict(cls, payload: Dict[str, object]) -> "UserSettings":
+        mode = str(payload.get("analyzer_cache_mode", "balanced") or "balanced").strip().lower()
+        if mode not in {"low", "balanced", "high", "extreme", "custom"}:
+            mode = "balanced"
+        limit_mb = max(min(_as_int(payload.get("analyzer_cache_limit_mb"), default=240), 10 * 1024), 0)
+        keep_last_n = max(min(_as_int(payload.get("analyzer_cache_keep_last_n"), default=5), 200), 1)
         return cls(
             library_root=str(payload.get("library_root", _default_library_root())),
             ath_exe=str(payload["ath_exe"]) if payload.get("ath_exe") else None,
@@ -57,6 +75,9 @@ class UserSettings:
             vacs_exe=str(payload["vacs_exe"]) if payload.get("vacs_exe") else None,
             template_cfg=str(payload["template_cfg"]) if payload.get("template_cfg") else None,
             background_automation_mode=_as_bool(payload.get("background_automation_mode"), default=True),
+            analyzer_cache_mode=mode,
+            analyzer_cache_limit_mb=limit_mb,
+            analyzer_cache_keep_last_n=keep_last_n,
         )
 
 
@@ -94,5 +115,14 @@ class SettingsStore:
             path = Path(value).expanduser()
             if not path.exists():
                 issues[key] = f"Configured path not found: {path}"
+
+        if str(settings.analyzer_cache_mode or "").strip().lower() not in {"low", "balanced", "high", "extreme", "custom"}:
+            issues["analyzer_cache_mode"] = "Invalid analyzer cache mode."
+        if int(settings.analyzer_cache_limit_mb) < 0:
+            issues["analyzer_cache_limit_mb"] = "Analyzer cache limit must be >= 0 MB."
+        if int(settings.analyzer_cache_limit_mb) > 10 * 1024:
+            issues["analyzer_cache_limit_mb"] = "Analyzer cache limit must be <= 10240 MB (10 GB)."
+        if int(settings.analyzer_cache_keep_last_n) < 1:
+            issues["analyzer_cache_keep_last_n"] = "Analyzer cache keep-last must be >= 1."
 
         return issues

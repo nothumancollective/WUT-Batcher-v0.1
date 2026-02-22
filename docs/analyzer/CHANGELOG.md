@@ -191,3 +191,12 @@
 - Added background KPI compute worker with progress/cancel wiring; compute runs only for project source and refreshes cached KPI scalars on completion.
 - Updated run table to show sortable KPI columns (`score`, `B_PC`, `E_BW`, `E_cov`, `R_spill`, `flags`) and stage-based default column visibility/filter presets.
 - Added focused GUI regression coverage for Analyzer KPI controls and filter behavior.
+
+## 2026-02-22 (Analyzer Phase 2B: Explorer plots + cache settings)
+- Added Analyzer polar plot data pipeline (`AnalyzerPlotService`) and in-memory LRU cache manager (`AnalyzerPlotCache`) with soft-limit eviction.
+- Extended Settings dialog with `Analyzer -> Cache` modes (`Low`, `Balanced`, `High`, `Extreme`, `Custom`) and persisted mode/limit/keep-last settings.
+- Extended Analyzer `Batch Review` right pane with:
+  - Context Bar (Stage/Target/Band/Tolerance + clamp controls + plane toggle)
+  - `Explorer` sub-tab (heatmap + beamwidth rendering)
+  - `Compare` sub-tab skeleton (up to 5 selected runs, cached KPI scalar table, Phase 2C note)
+- Plot loading now runs in a dedicated background worker with debounce + cancel, and loads `polar_points` only for the selected run/version/plane.

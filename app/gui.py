@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from datetime import datetime, timezone
+import math
 import json
 import logging
 import os
@@ -14,6 +15,7 @@ import threading
 import traceback
 from typing import Any, Callable, Dict, List, Mapping, Optional
 
+from app.analyzer.cache import AnalyzerPlotCache, resolve_cache_policy
 from app.analyzer.presets import (
     ALGO_VERSION,
     COVERAGE_PRESETS,
@@ -155,7 +157,7 @@ try:
         QSize,
         qInstallMessageHandler,
     )
-    from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPixmap, QIcon, QPalette
+    from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPixmap, QIcon, QPalette, QImage, QPen
     from PySide6.QtWidgets import (
         QAbstractItemView,
         QApplication,
@@ -185,6 +187,7 @@ try:
         QSizePolicy,
         QSplitter,
         QSplashScreen,
+        QSpinBox,
         QStackedWidget,
         QStatusBar,
         QTableWidget,
@@ -273,6 +276,253 @@ class IssueRowButton(QPushButton):
         super().resizeEvent(event)
         self._apply_elide()
 
+
+class HeatmapCanvas(QLabel):
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("AnalyzerHeatmapCanvas")
+        self.setAlignment(Qt.AlignCenter)
+        self.setMinimumHeight(220)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self._matrix: List[List[Optional[float]]] = []
+        self._clamp_enabled = True
+        self._clamp_min_db = -30.0
+        self._status = "Select run + plane to render heatmap."
+        self._ref_angle_deg: Optional[float] = None
+
+    def set_heatmap_data(
+        self,
+        *,
+        matrix: List[List[Optional[float]]],
+        clamp_enabled: bool,
+        clamp_min_db: float,
+        ref_angle_deg: Optional[float],
+        status: str = "",
+    ) -> None:
+        self._matrix = [list(row) for row in list(matrix or [])]
+        self._clamp_enabled = bool(clamp_enabled)
+        self._clamp_min_db = float(clamp_min_db)
+        self._ref_angle_deg = float(ref_angle_deg) if ref_angle_deg is not None else None
+        self._status = str(status or "").strip()
+        self._rerender()
+
+    def clear_heatmap(self, message: str) -> None:
+        self._matrix = []
+        self._status = str(message or "No heatmap data.")
+        self._rerender()
+
+    def resizeEvent(self, event) -> None:  # type: ignore[override]
+        super().resizeEvent(event)
+        self._rerender()
+
+    @staticmethod
+    def _color_for_value(value_db: float) -> QColor:
+        # dark blue -> cyan -> yellow
+        t = max(0.0, min(1.0, float(value_db)))
+        if t < 0.5:
+            u = t / 0.5
+            r = int(20 + (60 * u))
+            g = int(40 + (170 * u))
+            b = int(120 + (110 * u))
+        else:
+            u = (t - 0.5) / 0.5
+            r = int(80 + (175 * u))
+            g = int(210 + (35 * u))
+            b = int(230 - (170 * u))
+        return QColor(r, g, b)
+
+    def _rerender(self) -> None:
+        width = max(int(self.width()), 120)
+        height = max(int(self.height()), 120)
+        image = QImage(width, height, QImage.Format_ARGB32_Premultiplied)
+        image.fill(QColor("#111217"))
+        painter = QPainter(image)
+        painter.setRenderHint(QPainter.Antialiasing, False)
+
+        if not self._matrix:
+            painter.setPen(QColor("#9AA4B2"))
+            painter.drawText(image.rect(), Qt.AlignCenter, self._status or "No heatmap data.")
+            painter.end()
+            self.setPixmap(QPixmap.fromImage(image))
+            return
+
+        rows = len(self._matrix)
+        cols = len(self._matrix[0]) if rows > 0 else 0
+        if rows <= 0 or cols <= 0:
+            painter.setPen(QColor("#9AA4B2"))
+            painter.drawText(image.rect(), Qt.AlignCenter, self._status or "No heatmap data.")
+            painter.end()
+            self.setPixmap(QPixmap.fromImage(image))
+            return
+
+        min_db = float(self._clamp_min_db if self._clamp_enabled else -60.0)
+        max_db = 0.0
+        for row in self._matrix:
+            for value in row:
+                if value is None:
+                    continue
+                if not self._clamp_enabled:
+                    min_db = min(min_db, float(value))
+        span = max(max_db - min_db, 1.0)
+
+        cell_w = max(width / float(cols), 1.0)
+        cell_h = max(height / float(rows), 1.0)
+        for y_idx, row in enumerate(self._matrix):
+            top = int(round(y_idx * cell_h))
+            bottom = int(round((y_idx + 1) * cell_h))
+            for x_idx, value in enumerate(row):
+                if value is None:
+                    color = QColor("#1A1E26")
+                else:
+                    db = float(value)
+                    if self._clamp_enabled:
+                        db = max(min_db, min(max_db, db))
+                    norm = (db - min_db) / span
+                    color = self._color_for_value(norm)
+                left = int(round(x_idx * cell_w))
+                right = int(round((x_idx + 1) * cell_w))
+                painter.fillRect(left, top, max(right - left, 1), max(bottom - top, 1), color)
+
+        painter.setPen(QPen(QColor("#3A4252")))
+        painter.drawRect(0, 0, width - 1, height - 1)
+        if self._status:
+            painter.setPen(QColor("#B8C1CF"))
+            painter.drawText(8, 16, self._status)
+        if self._ref_angle_deg is not None:
+            painter.setPen(QColor("#A6AFBC"))
+            painter.drawText(width - 180, 16, f"Ref: {self._ref_angle_deg:.1f} deg")
+        painter.end()
+        self.setPixmap(QPixmap.fromImage(image))
+
+
+class BeamwidthCanvas(QLabel):
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("AnalyzerBeamwidthCanvas")
+        self.setAlignment(Qt.AlignCenter)
+        self.setMinimumHeight(180)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self._curve: List[Dict[str, float]] = []
+        self._target_deg = 0.0
+        self._tol_deg = 0.0
+        self._status = "Beamwidth curve not available."
+
+    def set_curve(
+        self,
+        *,
+        curve: List[Dict[str, float]],
+        target_deg: float,
+        tol_deg: float,
+        status: str = "",
+    ) -> None:
+        self._curve = [dict(item) for item in list(curve or []) if isinstance(item, dict)]
+        self._target_deg = float(target_deg)
+        self._tol_deg = float(tol_deg)
+        self._status = str(status or "").strip()
+        self._rerender()
+
+    def clear_curve(self, message: str) -> None:
+        self._curve = []
+        self._status = str(message or "Beamwidth curve not available.")
+        self._rerender()
+
+    def resizeEvent(self, event) -> None:  # type: ignore[override]
+        super().resizeEvent(event)
+        self._rerender()
+
+    def _rerender(self) -> None:
+        width = max(int(self.width()), 140)
+        height = max(int(self.height()), 120)
+        image = QImage(width, height, QImage.Format_ARGB32_Premultiplied)
+        image.fill(QColor("#111217"))
+        painter = QPainter(image)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+
+        if not self._curve:
+            painter.setPen(QColor("#9AA4B2"))
+            painter.drawText(image.rect(), Qt.AlignCenter, self._status or "Beamwidth curve not available.")
+            painter.end()
+            self.setPixmap(QPixmap.fromImage(image))
+            return
+
+        margin_left = 46
+        margin_right = 12
+        margin_top = 12
+        margin_bottom = 24
+        plot_w = max(width - margin_left - margin_right, 30)
+        plot_h = max(height - margin_top - margin_bottom, 30)
+
+        freqs = [float(item.get("freq_hz", 0.0)) for item in self._curve if float(item.get("freq_hz", 0.0)) > 0.0]
+        bws = [float(item.get("beamwidth_deg", 0.0)) for item in self._curve]
+        if not freqs or not bws:
+            painter.setPen(QColor("#9AA4B2"))
+            painter.drawText(image.rect(), Qt.AlignCenter, self._status or "Beamwidth curve not available.")
+            painter.end()
+            self.setPixmap(QPixmap.fromImage(image))
+            return
+
+        log_min = math.log10(min(freqs))
+        log_max = math.log10(max(freqs))
+        if log_max <= log_min:
+            log_max = log_min + 1.0
+        y_max = max(max(bws), self._target_deg + self._tol_deg + 10.0, 20.0)
+        y_min = max(min(min(bws), self._target_deg - self._tol_deg - 10.0, 0.0), 0.0)
+        if y_max <= y_min:
+            y_max = y_min + 1.0
+
+        def x_of(freq: float) -> float:
+            u = (math.log10(max(freq, 1.0)) - log_min) / (log_max - log_min)
+            return float(margin_left + (u * plot_w))
+
+        def y_of(width_deg: float) -> float:
+            u = (float(width_deg) - y_min) / (y_max - y_min)
+            return float(margin_top + ((1.0 - u) * plot_h))
+
+        # background guides
+        painter.setPen(QPen(QColor("#262C38"), 1))
+        for frac in (0.0, 0.25, 0.5, 0.75, 1.0):
+            y = int(round(margin_top + (frac * plot_h)))
+            painter.drawLine(margin_left, y, margin_left + plot_w, y)
+
+        # tolerance band
+        tol_top = y_of(self._target_deg + self._tol_deg)
+        tol_bottom = y_of(self._target_deg - self._tol_deg)
+        band_top = min(tol_top, tol_bottom)
+        band_height = abs(tol_bottom - tol_top)
+        painter.fillRect(
+            margin_left,
+            int(round(band_top)),
+            plot_w,
+            max(int(round(band_height)), 1),
+            QColor(93, 168, 255, 36),
+        )
+        painter.setPen(QPen(QColor("#5DA8FF"), 1))
+        y_target = int(round(y_of(self._target_deg)))
+        painter.drawLine(margin_left, y_target, margin_left + plot_w, y_target)
+
+        # curve
+        painter.setPen(QPen(QColor("#E6D36A"), 2))
+        points = []
+        for row in self._curve:
+            freq = float(row.get("freq_hz", 0.0))
+            bw = float(row.get("beamwidth_deg", 0.0))
+            if freq <= 0.0:
+                continue
+            points.append((x_of(freq), y_of(bw)))
+        if len(points) >= 2:
+            for idx in range(len(points) - 1):
+                x1, y1 = points[idx]
+                x2, y2 = points[idx + 1]
+                painter.drawLine(int(round(x1)), int(round(y1)), int(round(x2)), int(round(y2)))
+
+        painter.setPen(QPen(QColor("#3A4252"), 1))
+        painter.drawRect(margin_left, margin_top, plot_w, plot_h)
+        painter.setPen(QColor("#A6AFBC"))
+        painter.drawText(8, 16, self._status or "Beamwidth (-6 dB)")
+        painter.drawText(8, height - 6, "BW (deg)")
+        painter.drawText(width - 110, height - 6, "Freq (log Hz)")
+        painter.end()
+        self.setPixmap(QPixmap.fromImage(image))
 
 class _BatchPreviewWorker(QObject):
     finished = Signal(int, dict)
@@ -550,6 +800,75 @@ class _AnalyzerKpiComputeWorker(QObject):
             self.canceled.emit(self._request_id, "KPI compute canceled.")
             return
         self.finished.emit(self._request_id, dict(result))
+
+
+class _AnalyzerPlotWorker(QObject):
+    finished = Signal(int, dict)
+    failed = Signal(int, str)
+    canceled = Signal(int, str)
+
+    def __init__(
+        self,
+        *,
+        service: OrchestratorService,
+        request_id: int,
+        source: str,
+        project_id: str,
+        batch_id: str,
+        run_id: Optional[str],
+        version_id: str,
+        plane: str,
+        band_low_hz: float,
+        band_high_hz: float,
+        cache: AnalyzerPlotCache,
+    ) -> None:
+        super().__init__()
+        self._service = service
+        self._request_id = int(request_id)
+        self._source = str(source or "project")
+        self._project_id = str(project_id or "").strip()
+        self._batch_id = str(batch_id or "").strip()
+        self._run_id = str(run_id or "").strip() or None
+        self._version_id = str(version_id or "").strip()
+        self._plane = str(plane or "H").strip().upper() or "H"
+        self._band_low_hz = float(band_low_hz)
+        self._band_high_hz = float(band_high_hz)
+        self._cache = cache
+        self._cancelled = False
+
+    def cancel(self) -> None:
+        self._cancelled = True
+
+    def _cancel_check(self) -> bool:
+        return bool(self._cancelled)
+
+    def run(self) -> None:
+        if self._cancelled:
+            self.canceled.emit(self._request_id, "Plot request canceled.")
+            return
+        try:
+            payload = self._service.analyzer_load_plot_payload(
+                source=self._source,
+                project_id=self._project_id,
+                batch_id=self._batch_id,
+                run_id=self._run_id,
+                version_id=self._version_id,
+                plane=self._plane,
+                band_low_hz=self._band_low_hz,
+                band_high_hz=self._band_high_hz,
+                cache=self._cache,
+                cancel_check=self._cancel_check,
+            )
+        except Exception as exc:  # pragma: no cover - integration surface
+            if self._cancelled or "canceled" in str(exc).lower():
+                self.canceled.emit(self._request_id, "Plot request canceled.")
+                return
+            self.failed.emit(self._request_id, traceback.format_exc())
+            return
+        if self._cancelled:
+            self.canceled.emit(self._request_id, "Plot request canceled.")
+            return
+        self.finished.emit(self._request_id, dict(payload))
 
 
 def _severity_rank(value: str) -> int:
@@ -1065,6 +1384,23 @@ class SettingsDialog(QDialog):
         self.background_automation_mode.setToolTip(
             "When enabled, the RUN screen stays in front while AKABAK/VACS automation runs in the background."
         )
+        self.analyzer_cache_mode = QComboBox()
+        self.analyzer_cache_mode.setObjectName("AnalyzerCacheModeCombo")
+        self.analyzer_cache_mode.addItem("Low", "low")
+        self.analyzer_cache_mode.addItem("Balanced", "balanced")
+        self.analyzer_cache_mode.addItem("High", "high")
+        self.analyzer_cache_mode.addItem("Extreme", "extreme")
+        self.analyzer_cache_mode.addItem("Custom", "custom")
+        self.analyzer_cache_limit_mb = QSpinBox()
+        self.analyzer_cache_limit_mb.setObjectName("AnalyzerCacheLimitSpin")
+        self.analyzer_cache_limit_mb.setRange(0, 10 * 1024)
+        self.analyzer_cache_limit_mb.setSuffix(" MB")
+        self.analyzer_cache_keep_last = QSpinBox()
+        self.analyzer_cache_keep_last.setObjectName("AnalyzerCacheKeepLastSpin")
+        self.analyzer_cache_keep_last.setRange(1, 200)
+        self.analyzer_cache_warning = QLabel("High cache sizes may exceed RAM and cause OS swapping.")
+        self.analyzer_cache_warning.setObjectName("SummaryMeta")
+        self.analyzer_cache_warning.setWordWrap(True)
 
         form = QFormLayout()
         form.addRow("Library Folder", self.library_root)
@@ -1073,6 +1409,11 @@ class SettingsDialog(QDialog):
         form.addRow("VACS", self.vacs_exe)
         form.addRow("Template CFG", self.template_cfg)
         form.addRow("Automation", self.background_automation_mode)
+        form.addRow(QLabel("Analyzer Cache"))
+        form.addRow("Cache mode", self.analyzer_cache_mode)
+        form.addRow("Limit", self.analyzer_cache_limit_mb)
+        form.addRow("Keep last runs", self.analyzer_cache_keep_last)
+        form.addRow("", self.analyzer_cache_warning)
 
         save_btn = QPushButton("Save")
         save_btn.setObjectName("PrimaryButton")
@@ -1089,6 +1430,7 @@ class SettingsDialog(QDialog):
         root.addLayout(form)
         root.addLayout(buttons)
 
+        self.analyzer_cache_mode.currentIndexChanged.connect(self._sync_cache_controls)
         self._load()
 
     def _load(self) -> None:
@@ -1099,8 +1441,18 @@ class SettingsDialog(QDialog):
         self.vacs_exe.setText(settings.vacs_exe or "")
         self.template_cfg.setText(settings.template_cfg or "")
         self.background_automation_mode.setChecked(bool(getattr(settings, "background_automation_mode", True)))
+        mode_token = str(getattr(settings, "analyzer_cache_mode", "balanced") or "balanced").strip().lower()
+        self._set_combo_current_by_data(self.analyzer_cache_mode, mode_token)
+        self.analyzer_cache_limit_mb.setValue(int(getattr(settings, "analyzer_cache_limit_mb", 240) or 240))
+        self.analyzer_cache_keep_last.setValue(int(getattr(settings, "analyzer_cache_keep_last_n", 5) or 5))
+        self._sync_cache_controls()
 
     def _save(self) -> None:
+        policy = resolve_cache_policy(
+            mode=str(self.analyzer_cache_mode.currentData() or "balanced"),
+            custom_limit_mb=int(self.analyzer_cache_limit_mb.value()),
+            custom_keep_last_n=int(self.analyzer_cache_keep_last.value()),
+        )
         settings = UserSettings(
             library_root=self.library_root.text().strip(),
             ath_exe=self.ath_exe.text().strip() or None,
@@ -1108,6 +1460,9 @@ class SettingsDialog(QDialog):
             vacs_exe=self.vacs_exe.text().strip() or None,
             template_cfg=self.template_cfg.text().strip() or None,
             background_automation_mode=bool(self.background_automation_mode.isChecked()),
+            analyzer_cache_mode=str(policy.mode),
+            analyzer_cache_limit_mb=int(policy.size_limit_mb),
+            analyzer_cache_keep_last_n=int(policy.keep_last_n),
         )
         result = self.service.save_settings(settings)
         issues = result.get("validation", {})
@@ -1116,6 +1471,38 @@ class SettingsDialog(QDialog):
             detail = "\n".join(f"- {key}: {value}" for key, value in issues.items())
             QMessageBox.warning(self, "Settings saved with warnings", detail)
         self.accept()
+
+    @staticmethod
+    def _set_combo_current_by_data(combo: QComboBox, value: str) -> None:
+        token = str(value or "").strip().lower()
+        if not token:
+            return
+        for index in range(combo.count()):
+            if str(combo.itemData(index) or "").strip().lower() == token:
+                combo.setCurrentIndex(index)
+                return
+
+    def _sync_cache_controls(self) -> None:
+        mode = str(self.analyzer_cache_mode.currentData() or "balanced").strip().lower()
+        if mode == "custom":
+            self.analyzer_cache_limit_mb.setEnabled(True)
+            self.analyzer_cache_keep_last.setEnabled(True)
+            self.analyzer_cache_warning.setVisible(True)
+            return
+        policy = resolve_cache_policy(
+            mode=mode,
+            custom_limit_mb=int(self.analyzer_cache_limit_mb.value()),
+            custom_keep_last_n=int(self.analyzer_cache_keep_last.value()),
+        )
+        self.analyzer_cache_limit_mb.blockSignals(True)
+        self.analyzer_cache_keep_last.blockSignals(True)
+        self.analyzer_cache_limit_mb.setValue(int(policy.size_limit_mb))
+        self.analyzer_cache_keep_last.setValue(int(policy.keep_last_n))
+        self.analyzer_cache_limit_mb.blockSignals(False)
+        self.analyzer_cache_keep_last.blockSignals(False)
+        self.analyzer_cache_limit_mb.setEnabled(False)
+        self.analyzer_cache_keep_last.setEnabled(False)
+        self.analyzer_cache_warning.setVisible(False)
 
     def showEvent(self, event) -> None:  # type: ignore[override]
         super().showEvent(event)
@@ -2672,7 +3059,16 @@ class AnalysePage(QWidget):
         self._compute_request_id = 0
         self._compute_thread: Optional[QThread] = None
         self._compute_worker: Optional[_AnalyzerKpiComputeWorker] = None
+        self._plot_request_id = 0
+        self._plot_thread: Optional[QThread] = None
+        self._plot_worker: Optional[_AnalyzerPlotWorker] = None
         self._all_run_rows: List[Dict[str, Any]] = []
+        self._active_plane = "H"
+        self._plane_buttons: Dict[str, QToolButton] = {}
+        self._plot_debounce_timer = QTimer(self)
+        self._plot_debounce_timer.setSingleShot(True)
+        self._plot_debounce_timer.setInterval(220)
+        self._plot_debounce_timer.timeout.connect(self._start_plot_request)
 
         presets = self.service.analyzer_presets()
         self._coverage_presets = [dict(item) for item in list(presets.get("coverage_presets", []) or []) if isinstance(item, dict)]
@@ -2687,6 +3083,7 @@ class AnalysePage(QWidget):
         self._default_band_preset_id = str(presets.get("default_band_preset_id") or DEFAULT_BAND_PRESET_ID).strip() or DEFAULT_BAND_PRESET_ID
         self._default_tol_deg = float(presets.get("default_tol_deg") or DEFAULT_TOL_DEG)
         self._algo_version = str(presets.get("algo_version") or ALGO_VERSION)
+        self._plot_cache = AnalyzerPlotCache(self._cache_policy_from_settings())
 
         root = QVBoxLayout(self)
         root.setContentsMargins(20, 12, 20, 14)
@@ -2723,39 +3120,28 @@ class AnalysePage(QWidget):
         controls.setHorizontalSpacing(10)
         controls.setVerticalSpacing(6)
 
-        controls.addWidget(QLabel("Stage"), 0, 0, Qt.AlignLeft | Qt.AlignVCenter)
         self.stage_selector = QComboBox()
         self.stage_selector.setObjectName("AnalyzerStageCombo")
         for stage_id in ("concept", "shaping", "stabilization"):
             stage = dict(self._stage_presets.get(stage_id, {}) or {})
             self.stage_selector.addItem(str(stage.get("label") or stage_id.title()), stage_id)
-        controls.addWidget(self.stage_selector, 0, 1)
-
-        controls.addWidget(QLabel("Target"), 0, 2, Qt.AlignLeft | Qt.AlignVCenter)
         self.target_selector = QComboBox()
         self.target_selector.setObjectName("AnalyzerTargetPresetCombo")
         for preset in self._coverage_presets:
             preset_id = str(preset.get("id") or "").strip()
             label = str(preset.get("label") or preset_id)
             self.target_selector.addItem(label, preset_id)
-        controls.addWidget(self.target_selector, 0, 3)
-
-        controls.addWidget(QLabel("Tol (+/- deg)"), 0, 4, Qt.AlignLeft | Qt.AlignVCenter)
         self.tol_spin = QDoubleSpinBox()
         self.tol_spin.setObjectName("AnalyzerToleranceSpin")
         self.tol_spin.setRange(0.5, 30.0)
         self.tol_spin.setDecimals(1)
         self.tol_spin.setValue(float(self._default_tol_deg))
-        controls.addWidget(self.tol_spin, 0, 5)
-
-        controls.addWidget(QLabel("Band"), 1, 0, Qt.AlignLeft | Qt.AlignVCenter)
         self.band_selector = QComboBox()
         self.band_selector.setObjectName("AnalyzerBandPresetCombo")
         for preset in self._band_presets:
             preset_id = str(preset.get("id") or "").strip()
             label = str(preset.get("label") or preset_id)
             self.band_selector.addItem(label, preset_id)
-        controls.addWidget(self.band_selector, 1, 1, 1, 2)
 
         self.custom_band_widget = QWidget()
         custom_band_row = QHBoxLayout(self.custom_band_widget)
@@ -2775,26 +3161,34 @@ class AnalysePage(QWidget):
         custom_band_row.addWidget(self.custom_band_low_spin)
         custom_band_row.addWidget(QLabel("High"))
         custom_band_row.addWidget(self.custom_band_high_spin)
-        controls.addWidget(self.custom_band_widget, 1, 3, 1, 3)
+
+        self.heatmap_clamp_check = QCheckBox("Clamp heatmap")
+        self.heatmap_clamp_check.setObjectName("AnalyzerHeatmapClampCheck")
+        self.heatmap_clamp_check.setChecked(True)
+        self.heatmap_clamp_min_spin = QDoubleSpinBox()
+        self.heatmap_clamp_min_spin.setObjectName("AnalyzerHeatmapClampMinSpin")
+        self.heatmap_clamp_min_spin.setRange(-60.0, -20.0)
+        self.heatmap_clamp_min_spin.setDecimals(1)
+        self.heatmap_clamp_min_spin.setValue(-30.0)
 
         self.exclude_flagged_check = QCheckBox("Exclude flagged")
         self.exclude_flagged_check.setObjectName("AnalyzerExcludeFlaggedCheck")
-        controls.addWidget(self.exclude_flagged_check, 2, 0, 1, 2)
+        controls.addWidget(self.exclude_flagged_check, 0, 0, 1, 2)
         self.exclude_warnings_check = QCheckBox("Exclude warnings")
         self.exclude_warnings_check.setObjectName("AnalyzerExcludeWarningsCheck")
-        controls.addWidget(self.exclude_warnings_check, 2, 2, 1, 2)
-        controls.addWidget(QLabel("Min score"), 2, 4, Qt.AlignLeft | Qt.AlignVCenter)
+        controls.addWidget(self.exclude_warnings_check, 0, 2, 1, 2)
+        controls.addWidget(QLabel("Min score"), 0, 4, Qt.AlignLeft | Qt.AlignVCenter)
         self.min_score_spin = QDoubleSpinBox()
         self.min_score_spin.setObjectName("AnalyzerMinScoreSpin")
         self.min_score_spin.setRange(0.0, 100.0)
         self.min_score_spin.setDecimals(1)
         self.min_score_spin.setValue(0.0)
-        controls.addWidget(self.min_score_spin, 2, 5)
+        controls.addWidget(self.min_score_spin, 0, 5)
 
         self.compute_btn = QPushButton("Compute KPIs")
         self.compute_btn.setObjectName("AnalyzerComputeKpisButton")
         self.compute_btn.setToolTip("Compute or refresh KPI scalars for the selected batch.")
-        controls.addWidget(self.compute_btn, 0, 6, 3, 1)
+        controls.addWidget(self.compute_btn, 0, 6, 1, 1)
         root.addWidget(self.controls_panel)
 
         self.compute_row = QWidget()
@@ -2915,21 +3309,94 @@ class AnalysePage(QWidget):
             details_layout.addRow(label_text, value)
         right_layout.addWidget(self.details_panel, 0)
 
-        self.plot_tabs = QTabWidget()
-        self.plot_tabs.setObjectName("AnalyzerPlotTabs")
-        self.plot_tabs.addTab(
-            self._build_plot_placeholder("Polar Heatmap (placeholder)"),
-            "Polar Heatmap",
+        self.context_bar = QFrame()
+        self.context_bar.setObjectName("ProjectSummaryPanel")
+        context_layout = QGridLayout(self.context_bar)
+        context_layout.setContentsMargins(10, 8, 10, 8)
+        context_layout.setHorizontalSpacing(8)
+        context_layout.setVerticalSpacing(6)
+        context_layout.addWidget(QLabel("Stage"), 0, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        context_layout.addWidget(self.stage_selector, 0, 1)
+        context_layout.addWidget(QLabel("Target"), 0, 2, Qt.AlignLeft | Qt.AlignVCenter)
+        context_layout.addWidget(self.target_selector, 0, 3)
+        context_layout.addWidget(QLabel("Band"), 0, 4, Qt.AlignLeft | Qt.AlignVCenter)
+        context_layout.addWidget(self.band_selector, 0, 5)
+        context_layout.addWidget(self.custom_band_widget, 0, 6)
+        context_layout.addWidget(QLabel("Tol (+/-deg)"), 0, 7, Qt.AlignLeft | Qt.AlignVCenter)
+        context_layout.addWidget(self.tol_spin, 0, 8)
+        context_layout.addWidget(self.heatmap_clamp_check, 1, 0, 1, 2)
+        context_layout.addWidget(QLabel("Clamp min dB"), 1, 2, Qt.AlignLeft | Qt.AlignVCenter)
+        context_layout.addWidget(self.heatmap_clamp_min_spin, 1, 3)
+
+        plane_box = QWidget()
+        plane_layout = QHBoxLayout(plane_box)
+        plane_layout.setContentsMargins(0, 0, 0, 0)
+        plane_layout.setSpacing(4)
+        plane_layout.addWidget(QLabel("Plane"), 0, Qt.AlignLeft | Qt.AlignVCenter)
+        self.plane_group = QButtonGroup(self)
+        self.plane_group.setExclusive(True)
+        for plane_key in ("H", "V", "D"):
+            btn = QToolButton()
+            btn.setObjectName(f"AnalyzerPlane{plane_key}Button")
+            btn.setText(plane_key)
+            btn.setCheckable(True)
+            btn.setToolButtonStyle(Qt.ToolButtonTextOnly)
+            btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+            self.plane_group.addButton(btn)
+            self._plane_buttons[plane_key] = btn
+            plane_layout.addWidget(btn, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        plane_layout.addStretch(1)
+        context_layout.addWidget(plane_box, 1, 4, 1, 3)
+
+        self.plot_loading_label = QLabel("Select run + plane for Explorer plots.")
+        self.plot_loading_label.setObjectName("SummaryMeta")
+        self.plot_cancel_btn = QPushButton("Cancel")
+        self.plot_cancel_btn.setObjectName("BatchSecondaryButton")
+        self.plot_cancel_btn.setVisible(False)
+        self.plot_cancel_btn.setEnabled(False)
+        context_layout.addWidget(self.plot_loading_label, 1, 7, 1, 1, Qt.AlignLeft | Qt.AlignVCenter)
+        context_layout.addWidget(self.plot_cancel_btn, 1, 8, 1, 1, Qt.AlignRight | Qt.AlignVCenter)
+        right_layout.addWidget(self.context_bar, 0)
+
+        self.analysis_tabs = QTabWidget()
+        self.analysis_tabs.setObjectName("AnalyzerPlotTabs")
+
+        self.explorer_tab = QWidget()
+        explorer_layout = QVBoxLayout(self.explorer_tab)
+        explorer_layout.setContentsMargins(4, 4, 4, 4)
+        explorer_layout.setSpacing(8)
+        self.heatmap_canvas = HeatmapCanvas()
+        self.beamwidth_canvas = BeamwidthCanvas()
+        explorer_layout.addWidget(self.heatmap_canvas, 2)
+        explorer_layout.addWidget(self.beamwidth_canvas, 1)
+        self.analysis_tabs.addTab(self.explorer_tab, "Explorer")
+
+        self.compare_tab = QWidget()
+        compare_layout = QVBoxLayout(self.compare_tab)
+        compare_layout.setContentsMargins(6, 6, 6, 6)
+        compare_layout.setSpacing(8)
+        self.compare_notice = QLabel("Select up to 5 runs to compare cached KPI scalars.")
+        self.compare_notice.setObjectName("SummaryMeta")
+        self.compare_notice.setWordWrap(True)
+        compare_layout.addWidget(self.compare_notice, 0)
+        self.compare_table = QTableWidget(0, 8)
+        self.compare_table.setObjectName("AnalyzerCompareTable")
+        self.compare_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.compare_table.setSelectionMode(QAbstractItemView.NoSelection)
+        self.compare_table.setHorizontalHeaderLabels(
+            ["Run ID", "Version", "Score", "B_PC", "E_BW", "E_cov", "R_spill", "Flags"]
         )
-        self.plot_tabs.addTab(
-            self._build_plot_placeholder("Beamwidth vs Frequency (placeholder)"),
-            "Beamwidth vs Frequency",
-        )
-        self.plot_tabs.addTab(
-            self._build_plot_placeholder("Overlay Compare (placeholder)"),
-            "Overlay Compare",
-        )
-        right_layout.addWidget(self.plot_tabs, 1)
+        compare_header = self.compare_table.horizontalHeader()
+        compare_header.setSectionResizeMode(0, QHeaderView.Stretch)
+        for idx in range(1, 8):
+            compare_header.setSectionResizeMode(idx, QHeaderView.ResizeToContents)
+        compare_layout.addWidget(self.compare_table, 1)
+        compare_hint = QLabel("Enable Compare Plots in Phase 2C.")
+        compare_hint.setObjectName("SummaryMeta")
+        compare_layout.addWidget(compare_hint, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        self.analysis_tabs.addTab(self.compare_tab, "Compare")
+
+        right_layout.addWidget(self.analysis_tabs, 1)
 
         left.setMinimumWidth(360)
         right.setMinimumWidth(460)
@@ -2952,18 +3419,28 @@ class AnalysePage(QWidget):
         self.band_selector.currentIndexChanged.connect(self._on_band_preset_changed)
         self.custom_band_low_spin.valueChanged.connect(self._on_kpi_config_changed)
         self.custom_band_high_spin.valueChanged.connect(self._on_kpi_config_changed)
+        self.heatmap_clamp_check.toggled.connect(self._on_plot_config_changed)
+        self.heatmap_clamp_min_spin.valueChanged.connect(self._on_plot_config_changed)
         self.exclude_flagged_check.toggled.connect(self._refresh_run_table)
         self.exclude_warnings_check.toggled.connect(self._refresh_run_table)
         self.min_score_spin.valueChanged.connect(self._refresh_run_table)
+        self.plot_cancel_btn.clicked.connect(self._cancel_plot_request)
+        self.analysis_tabs.currentChanged.connect(self._on_analysis_tab_changed)
+        for plane_key, button in self._plane_buttons.items():
+            button.toggled.connect(lambda checked, key=plane_key: self._on_plane_toggled(key, checked))
         self._control_sync_guard = True
         self._set_combo_current_by_data(self.stage_selector, self._default_stage_id)
         self._set_combo_current_by_data(self.target_selector, self._default_coverage_preset_id)
         self._set_combo_current_by_data(self.band_selector, self._default_band_preset_id)
         self._control_sync_guard = False
+        if "H" in self._plane_buttons:
+            self._plane_buttons["H"].setChecked(True)
+        self.reload_cache_settings()
         self._sync_band_custom_visibility()
         self._apply_stage_defaults()
         self.compute_btn.setEnabled(self._source_key() == "project")
         self._set_details(None)
+        self._clear_plot_views("Select run + plane to render plots.")
 
     def _build_plot_placeholder(self, text: str) -> QWidget:
         shell = QWidget()
@@ -2987,6 +3464,8 @@ class AnalysePage(QWidget):
     def shutdown(self) -> None:
         self._stop_metadata_worker()
         self._stop_compute_worker()
+        self._stop_plot_worker()
+        self._plot_debounce_timer.stop()
 
     def set_project_context(self, project_id: Optional[str]) -> None:
         token = str(project_id or "").strip() or None
@@ -3063,6 +3542,24 @@ class AnalysePage(QWidget):
             "algo_version": self._algo_version,
         }
 
+    def _cache_policy_from_settings(self):
+        settings = self.service.settings
+        return resolve_cache_policy(
+            mode=str(getattr(settings, "analyzer_cache_mode", "balanced") or "balanced"),
+            custom_limit_mb=int(getattr(settings, "analyzer_cache_limit_mb", 240) or 240),
+            custom_keep_last_n=int(getattr(settings, "analyzer_cache_keep_last_n", 5) or 5),
+        )
+
+    def reload_cache_settings(self) -> None:
+        self._plot_cache.configure(self._cache_policy_from_settings())
+
+    def _selected_plane(self) -> str:
+        for plane_key in ("H", "V", "D"):
+            button = self._plane_buttons.get(plane_key)
+            if button is not None and button.isChecked():
+                return plane_key
+        return str(self._active_plane or "H")
+
     def _set_loading(self, loading: bool, text: Optional[str] = None) -> None:
         if loading:
             self.loading_label.setText(str(text or "Loading metadata..."))
@@ -3075,7 +3572,7 @@ class AnalysePage(QWidget):
         self.error_label.setText(text)
 
     def _set_compute_busy(self, busy: bool, text: str = "") -> None:
-        self.compute_btn.setEnabled(not busy)
+        self.compute_btn.setEnabled((not busy) and self._source_key() == "project")
         self.compute_progress.setVisible(bool(busy))
         self.compute_cancel_btn.setVisible(bool(busy))
         if busy:
@@ -3085,6 +3582,14 @@ class AnalysePage(QWidget):
             self.compute_progress.setRange(0, 100)
             self.compute_progress.setValue(0)
             self.compute_progress.setFormat("%p%")
+
+    def _set_plot_busy(self, busy: bool, text: str = "") -> None:
+        self.plot_cancel_btn.setVisible(bool(busy))
+        self.plot_cancel_btn.setEnabled(bool(busy))
+        if busy:
+            self.plot_loading_label.setText(str(text or "Loading plot data..."))
+            return
+        self.plot_loading_label.setText(str(text or "Ready."))
 
     def _clear_metadata_worker_refs(self, thread: Optional[QThread] = None) -> None:
         if thread is None:
@@ -3104,6 +3609,15 @@ class AnalysePage(QWidget):
             self._compute_worker = None
             self._compute_thread = None
 
+    def _clear_plot_worker_refs(self, thread: Optional[QThread] = None) -> None:
+        if thread is None:
+            self._plot_worker = None
+            self._plot_thread = None
+            return
+        if self._plot_thread is thread:
+            self._plot_worker = None
+            self._plot_thread = None
+
     def _stop_metadata_worker(self) -> None:
         thread = self._metadata_thread
         if thread is not None and thread.isRunning():
@@ -3121,6 +3635,17 @@ class AnalysePage(QWidget):
             thread.wait(1500)
         self._clear_compute_worker_refs()
         self._set_compute_busy(False)
+
+    def _stop_plot_worker(self) -> None:
+        worker = self._plot_worker
+        if worker is not None:
+            worker.cancel()
+        thread = self._plot_thread
+        if thread is not None and thread.isRunning():
+            thread.quit()
+            thread.wait(1000)
+        self._clear_plot_worker_refs()
+        self._set_plot_busy(False)
 
     def _request_metadata(
         self,
@@ -3270,6 +3795,221 @@ class AnalysePage(QWidget):
         self._set_loading(False, "Metadata load failed.")
         self._set_error(str(message or "Analyzer metadata query failed."))
 
+    def _selected_row_payloads(self) -> List[Dict[str, Any]]:
+        model = self.run_table.selectionModel()
+        if model is None:
+            return []
+        selected = sorted({int(index.row()) for index in model.selectedRows()})
+        rows: List[Dict[str, Any]] = []
+        for row_idx in selected:
+            item = self.run_table.item(row_idx, self.COL_RUN_ID)
+            if item is None:
+                continue
+            payload = dict(item.data(Qt.UserRole) or {})
+            if payload:
+                rows.append(payload)
+        return rows
+
+    def _available_planes(self, row: Dict[str, Any]) -> List[str]:
+        result: List[str] = []
+        for token in list(row.get("planes", []) or []):
+            plane = str(token or "").strip().upper()
+            if plane in {"H", "V", "D"} and plane not in result:
+                result.append(plane)
+        return result
+
+    def _sync_plane_controls(self, row: Optional[Dict[str, Any]]) -> None:
+        available = self._available_planes(dict(row or {}))
+        for plane_key, button in self._plane_buttons.items():
+            enabled = plane_key in available
+            button.setVisible(enabled)
+            button.setEnabled(enabled)
+        if not available:
+            self._active_plane = "H"
+            self._set_plot_busy(False, "Plane not available for selected run.")
+            return
+        if self._active_plane not in available:
+            self._active_plane = available[0]
+        button = self._plane_buttons.get(self._active_plane)
+        if button is not None and not button.isChecked():
+            button.setChecked(True)
+
+    def _on_plane_toggled(self, plane_key: str, checked: bool) -> None:
+        if not checked:
+            return
+        self._active_plane = str(plane_key or "H").strip().upper() or "H"
+        self._schedule_plot_refresh()
+
+    def _on_plot_config_changed(self, _value: Any = None) -> None:
+        if self._control_sync_guard:
+            return
+        self._schedule_plot_refresh()
+
+    def _on_analysis_tab_changed(self, _index: int = 0) -> None:
+        if self.analysis_tabs.currentWidget() is self.compare_tab:
+            self._stop_plot_worker()
+            self._set_plot_busy(False, "Compare tab active.")
+            self._update_compare_table()
+            return
+        self._schedule_plot_refresh()
+
+    def _schedule_plot_refresh(self) -> None:
+        if self.analysis_tabs.currentWidget() is not self.explorer_tab:
+            return
+        self._plot_debounce_timer.start()
+
+    def _start_plot_request(self) -> None:
+        if self.analysis_tabs.currentWidget() is not self.explorer_tab:
+            return
+        rows = self._selected_row_payloads()
+        if not rows:
+            self._clear_plot_views("Select run + plane to render plots.")
+            return
+        row = dict(rows[0])
+        project_id = str(row.get("project_id") or self._selected_project_id() or "").strip()
+        batch_id = str(row.get("batch_id") or self._selected_batch_id() or "").strip()
+        version_id = str(row.get("version_id") or "").strip()
+        run_id = str(row.get("run_id") or "").strip() or None
+        if not project_id or not batch_id or not version_id:
+            self._clear_plot_views("Select a valid run/version first.")
+            return
+        plane = self._selected_plane()
+        if plane not in self._available_planes(row):
+            self._clear_plot_views("Plane not available for selected run.")
+            return
+
+        band_low_hz, band_high_hz = self._resolved_band_limits()
+        self._stop_plot_worker()
+        self._plot_request_id += 1
+        request_id = int(self._plot_request_id)
+        worker = _AnalyzerPlotWorker(
+            service=self.service,
+            request_id=request_id,
+            source=self._source_key(),
+            project_id=project_id,
+            batch_id=batch_id,
+            run_id=run_id,
+            version_id=version_id,
+            plane=plane,
+            band_low_hz=float(band_low_hz),
+            band_high_hz=float(band_high_hz),
+            cache=self._plot_cache,
+        )
+        thread = QThread(self)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(self._on_plot_ready)
+        worker.failed.connect(self._on_plot_failed)
+        worker.canceled.connect(self._on_plot_canceled)
+        worker.finished.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        worker.canceled.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(lambda: self._clear_plot_worker_refs(thread))
+        self._plot_worker = worker
+        self._plot_thread = thread
+        self._set_plot_busy(True, f"Loading {plane} plane...")
+        self._set_error("")
+        thread.start()
+
+    def _cancel_plot_request(self) -> None:
+        worker = self._plot_worker
+        if worker is not None:
+            worker.cancel()
+        self._set_plot_busy(True, "Canceling plot request...")
+
+    def _on_plot_ready(self, request_id: int, payload: Dict[str, Any]) -> None:
+        if int(request_id) != int(self._plot_request_id):
+            return
+        self._set_plot_busy(False, "Plot ready.")
+        self._render_plot_payload(dict(payload or {}))
+
+    def _on_plot_failed(self, request_id: int, message: str) -> None:
+        if int(request_id) != int(self._plot_request_id):
+            return
+        self._set_plot_busy(False, "Plot load failed.")
+        self._set_error(str(message or "Analyzer plot load failed."))
+        self._clear_plot_views("Failed to load selected polar plot.")
+
+    def _on_plot_canceled(self, request_id: int, message: str) -> None:
+        if int(request_id) != int(self._plot_request_id):
+            return
+        self._set_plot_busy(False, str(message or "Plot request canceled."))
+
+    def _clear_plot_views(self, message: str) -> None:
+        msg = str(message or "No plot data.")
+        self.heatmap_canvas.clear_heatmap(msg)
+        self.beamwidth_canvas.clear_curve(msg)
+
+    def _render_plot_payload(self, payload: Dict[str, Any]) -> None:
+        message = str(payload.get("message") or "").strip()
+        display_matrix = [list(row) for row in list(payload.get("display_matrix_db", []) or [])]
+        curve = [dict(item) for item in list(payload.get("beamwidth_curve", []) or []) if isinstance(item, dict)]
+        if not display_matrix:
+            self._clear_plot_views(message or "No polar matrix available for this selection.")
+            return
+        clamp_enabled = bool(self.heatmap_clamp_check.isChecked())
+        clamp_min = float(self.heatmap_clamp_min_spin.value())
+        target = self._selected_target()
+        plane = self._selected_plane()
+        if plane == "H":
+            target_deg = float(target.get("h_deg") or 90.0)
+        elif plane == "V":
+            target_deg = float(target.get("v_deg") or 40.0)
+        else:
+            target_deg = 0.5 * (float(target.get("h_deg") or 90.0) + float(target.get("v_deg") or 40.0))
+        status = "Heatmap"
+        ref_angle = payload.get("ref_angle_deg")
+        if ref_angle is not None:
+            status = f"Heatmap ({plane})"
+        if message:
+            status = message
+        self.heatmap_canvas.set_heatmap_data(
+            matrix=display_matrix,
+            clamp_enabled=clamp_enabled,
+            clamp_min_db=clamp_min,
+            ref_angle_deg=float(ref_angle) if ref_angle is not None else None,
+            status=status,
+        )
+        if curve:
+            bw_status = "Beamwidth (-6 dB)"
+            if bool(payload.get("insufficient_bw")):
+                bw_status = "Insufficient angle coverage"
+            self.beamwidth_canvas.set_curve(
+                curve=curve,
+                target_deg=float(target_deg),
+                tol_deg=float(self.tol_spin.value()),
+                status=bw_status,
+            )
+        else:
+            self.beamwidth_canvas.clear_curve(message or "Insufficient angle coverage.")
+
+    def _update_compare_table(self) -> None:
+        rows = self._selected_row_payloads()
+        limited = rows[:5]
+        if len(rows) > 5:
+            self.compare_notice.setText("Showing first 5 selected runs. Reduce selection for focused compare.")
+        elif rows:
+            self.compare_notice.setText("Cached KPI compare (scalar-only).")
+        else:
+            self.compare_notice.setText("Select up to 5 runs to compare cached KPI scalars.")
+        self.compare_table.setRowCount(len(limited))
+        for row_index, row in enumerate(limited):
+            flags_count = int(row.get("kpi_flags_count") or 0) if row.get("kpi_score") is not None else None
+            values = [
+                str(row.get("run_id") or row.get("run_label") or "--"),
+                str(row.get("version_id") or "--"),
+                self._format_float(row.get("kpi_score"), 2),
+                self._format_float(row.get("kpi_b_pc_oct"), 2),
+                self._format_float(row.get("kpi_e_bw"), 2),
+                self._format_float(row.get("kpi_e_cov"), 2),
+                self._format_float(row.get("kpi_r_spill"), 3),
+                "--" if flags_count is None else str(flags_count),
+            ]
+            for col_index, value in enumerate(values):
+                self.compare_table.setItem(row_index, col_index, QTableWidgetItem(value))
+
     def _apply_overview_payload(self, payload: Dict[str, Any]) -> None:
         projects = [dict(item) for item in list(payload.get("projects", []) or []) if isinstance(item, dict)]
         batches = [dict(item) for item in list(payload.get("batches", []) or []) if isinstance(item, dict)]
@@ -3361,6 +4101,7 @@ class AnalysePage(QWidget):
 
     def _sync_band_custom_visibility(self) -> None:
         self.custom_band_widget.setVisible(str(self.band_selector.currentData() or "") == "custom")
+        self.heatmap_clamp_min_spin.setEnabled(bool(self.heatmap_clamp_check.isChecked()))
 
     def _apply_stage_defaults(self) -> None:
         stage = dict(self._stage_presets.get(self._selected_stage_id(), {}) or {})
@@ -3448,9 +4189,16 @@ class AnalysePage(QWidget):
         self.run_table.setSortingEnabled(True)
         if rows:
             self.run_table.selectRow(0)
-            self._set_details(dict(rows[0]))
+            first = dict(rows[0])
+            self._set_details(first)
+            self._sync_plane_controls(first)
+            self._update_compare_table()
+            self._schedule_plot_refresh()
         else:
             self._set_details(None)
+            self._sync_plane_controls(None)
+            self._update_compare_table()
+            self._clear_plot_views("Select run + plane to render plots.")
         self._update_compute_button_text(rows)
 
     def _apply_runs_payload(self, payload: Dict[str, Any]) -> None:
@@ -3461,6 +4209,8 @@ class AnalysePage(QWidget):
     def _on_source_changed(self, _index: int = 0) -> None:
         if self._selector_sync_guard:
             return
+        self._stop_plot_worker()
+        self._clear_plot_views("Select run + plane to render plots.")
         if self._source_key() == "project":
             self.project_selector.setEnabled(not bool(self._project_context_id))
             if self._compute_thread is None or not self._compute_thread.isRunning():
@@ -3493,15 +4243,19 @@ class AnalysePage(QWidget):
             return
         self._apply_stage_defaults()
         if not self._selected_project_id() or not self._selected_batch_id():
+            self._schedule_plot_refresh()
             return
         self._request_runs_for_selected_batch()
+        self._schedule_plot_refresh()
 
     def _on_kpi_config_changed(self, _value: Any = None) -> None:
         if self._control_sync_guard:
             return
         if not self._selected_project_id() or not self._selected_batch_id():
+            self._schedule_plot_refresh()
             return
         self._request_runs_for_selected_batch()
+        self._schedule_plot_refresh()
 
     def _on_band_preset_changed(self, _index: int = 0) -> None:
         self._sync_band_custom_visibility()
@@ -3511,11 +4265,17 @@ class AnalysePage(QWidget):
         selected_indexes = list(self.run_table.selectionModel().selectedRows()) if self.run_table.selectionModel() else []
         if not selected_indexes:
             self._set_details(None)
+            self._sync_plane_controls(None)
+            self._update_compare_table()
+            self._clear_plot_views("Select run + plane to render plots.")
             return
         row_index = int(selected_indexes[0].row())
         item = self.run_table.item(row_index, self.COL_RUN_ID)
         payload = dict(item.data(Qt.UserRole) or {}) if item is not None else {}
         self._set_details(payload if payload else None)
+        self._sync_plane_controls(payload if payload else None)
+        self._update_compare_table()
+        self._schedule_plot_refresh()
 
     def _set_details(self, payload: Optional[Dict[str, Any]]) -> None:
         data = dict(payload or {})
@@ -4353,8 +5113,15 @@ class MainWindow(QMainWindow):
 
     def _open_settings(self) -> None:
         dialog = SettingsDialog(self.service, self)
-        dialog.settings_saved.connect(lambda _: self.set_status("Settings saved."))
+        dialog.settings_saved.connect(lambda _: self._on_settings_saved())
         dialog.exec()
+
+    def _on_settings_saved(self) -> None:
+        self.set_status("Settings saved.")
+        try:
+            self.analyse_page.reload_cache_settings()
+        except Exception:
+            pass
 
     def load_project(self, project: Project) -> None:
         self.current_project = project

@@ -18,7 +18,9 @@ import shutil
 import subprocess
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
+from app.analyzer.cache import AnalyzerPlotCache
 from app.analyzer.kpi_engine import compute_run_kpis, compute_stage_score
+from app.analyzer.plot_service import AnalyzerPlotService
 from app.analyzer.presets import (
     ALGO_VERSION,
     BAND_PRESETS,
@@ -2019,6 +2021,63 @@ class OrchestratorService:
         if source_key == "global":
             return Path(self.settings.library_root) / "global.sqlite"
         return self.repo.project_paths(str(project_id), ensure=False).dataset_dir / "project.sqlite"
+
+    def analyzer_load_plot_payload(
+        self,
+        *,
+        source: str,
+        project_id: str,
+        batch_id: str,
+        run_id: Optional[str],
+        version_id: str,
+        plane: str,
+        band_low_hz: float,
+        band_high_hz: float,
+        cache: AnalyzerPlotCache,
+        cancel_check: Optional[Callable[[], bool]] = None,
+    ) -> Dict[str, Any]:
+        project_token = str(project_id or "").strip()
+        batch_token = str(batch_id or "").strip()
+        version_token = str(version_id or "").strip()
+        if not project_token or not batch_token or not version_token:
+            return {
+                "cache_hit": False,
+                "freqs_hz": [],
+                "angles_deg": [],
+                "matrix_db": [],
+                "display_freqs_hz": [],
+                "display_matrix_db": [],
+                "beamwidth_curve": [],
+                "ref_angle_deg": None,
+                "insufficient_bw": True,
+                "message": "Select project, batch, run/version and plane.",
+            }
+        db_path = self._analyzer_db_path(project_id=project_token, source=source)
+        if not db_path.exists():
+            return {
+                "cache_hit": False,
+                "freqs_hz": [],
+                "angles_deg": [],
+                "matrix_db": [],
+                "display_freqs_hz": [],
+                "display_matrix_db": [],
+                "beamwidth_curve": [],
+                "ref_angle_deg": None,
+                "insufficient_bw": True,
+                "message": f"Analyzer database not found: {db_path}",
+            }
+        loader = AnalyzerPlotService(cache)
+        return loader.load_plane_plot_payload(
+            db_path=db_path,
+            project_id=project_token,
+            batch_id=batch_token,
+            run_id=str(run_id or "").strip() or None,
+            version_id=version_token,
+            plane=str(plane or "H").strip().upper(),
+            band_low_hz=float(band_low_hz),
+            band_high_hz=float(band_high_hz),
+            cancel_check=cancel_check,
+        )
 
     def analyzer_list_cached_kpis(
         self,
