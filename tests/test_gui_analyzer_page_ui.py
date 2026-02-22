@@ -14,13 +14,14 @@ from app.services import OrchestratorService
 from app.settings_store import SettingsStore, UserSettings
 
 try:
-    from PySide6.QtWidgets import QApplication, QCheckBox, QComboBox, QPushButton, QTableWidget
+    from PySide6.QtWidgets import QApplication, QCheckBox, QComboBox, QPushButton, QTableWidget, QTabWidget
 except ImportError:  # pragma: no cover
     QApplication = None  # type: ignore[assignment]
     QCheckBox = None  # type: ignore[assignment]
     QComboBox = None  # type: ignore[assignment]
     QPushButton = None  # type: ignore[assignment]
     QTableWidget = None  # type: ignore[assignment]
+    QTabWidget = None  # type: ignore[assignment]
 
 
 def _build_service(tmp_root: Path) -> OrchestratorService:
@@ -54,6 +55,7 @@ class AnalyzerPageUiTests(unittest.TestCase):
             page = AnalysePage(service=service)
             batch_selector = page.findChild(QComboBox, "AnalyzerBatchCombo")
             run_table = page.findChild(QTableWidget, "AnalyzerRunTable")
+            run_selector = page.findChild(QComboBox, "AnalyzerRunSelector")
             stage_selector = page.findChild(QComboBox, "AnalyzerStageCombo")
             target_selector = page.findChild(QComboBox, "AnalyzerTargetPresetCombo")
             band_selector = page.findChild(QComboBox, "AnalyzerBandPresetCombo")
@@ -61,6 +63,7 @@ class AnalyzerPageUiTests(unittest.TestCase):
             exclude_flagged = page.findChild(QCheckBox, "AnalyzerExcludeFlaggedCheck")
             self.assertIsNotNone(batch_selector)
             self.assertIsNotNone(run_table)
+            self.assertIsNotNone(run_selector)
             self.assertIsNotNone(stage_selector)
             self.assertIsNotNone(target_selector)
             self.assertIsNotNone(band_selector)
@@ -174,6 +177,76 @@ class AnalyzerPageUiTests(unittest.TestCase):
             self.assertEqual(page.run_table.rowCount(), 1)
             page.min_score_spin.setValue(95.0)
             self.assertEqual(page.run_table.rowCount(), 0)
+
+    def test_run_selection_updates_summary_chips(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_ui2x_summary_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            payload = {
+                "mode": "runs",
+                "project_id": "P001",
+                "batch_id": "B001",
+                "runs": [
+                    {
+                        "project_id": "P001",
+                        "batch_id": "B001",
+                        "run_id": "R001",
+                        "version_id": "V001",
+                        "planes": ["H", "V", "D"],
+                        "freq_count": 401,
+                        "angle_count": 37,
+                        "norm_angle_deg": 0.0,
+                        "kpi_score": 88.2,
+                        "kpi_e_bw": 1.5,
+                        "kpi_e_cov": 0.9,
+                        "kpi_r_spill": 0.13,
+                    }
+                ],
+            }
+            page._apply_runs_payload(payload)
+            self.assertIn("R001", page.run_summary_run_chip.text())
+            self.assertIn("H/V/D", page.run_summary_planes_chip.text())
+            self.assertIn("401/37", page.run_summary_freq_chip.text())
+            self.assertIn("88.20", page.run_summary_score_chip.text())
+            self.assertTrue(page.run_details_btn.isEnabled())
+
+    def test_details_dialog_open_path_is_callable(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_ui2x_details_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            payload = {
+                "mode": "runs",
+                "project_id": "P001",
+                "batch_id": "B001",
+                "runs": [
+                    {
+                        "project_id": "P001",
+                        "batch_id": "B001",
+                        "run_id": "R100",
+                        "version_id": "V100",
+                        "planes": ["H", "V"],
+                        "freq_count": 64,
+                        "angle_count": 9,
+                    }
+                ],
+            }
+            page._apply_runs_payload(payload)
+            with patch("app.gui._AnalyzerRunDetailsDialog.exec", autospec=True, return_value=0) as exec_mock:
+                page._open_run_details_dialog()
+                self.assertEqual(exec_mock.call_count, 1)
+
+    def test_explorer_compare_tabs_switch_without_errors(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_ui2x_tabs_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            tabs = page.findChild(QTabWidget, "AnalyzerPlotTabs")
+            self.assertIsNotNone(tabs)
+            assert tabs is not None
+            self.assertGreaterEqual(tabs.count(), 2)
+            tabs.setCurrentIndex(1)
+            self.assertEqual(tabs.tabText(tabs.currentIndex()).lower(), "compare")
+            tabs.setCurrentIndex(0)
+            self.assertEqual(tabs.tabText(tabs.currentIndex()).lower(), "explorer")
 
     def test_run_selection_loads_explorer_plot_in_background(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_ui2b_plot_load_") as tmp:

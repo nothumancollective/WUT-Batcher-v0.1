@@ -246,3 +246,11 @@
   - two splitter tiles with per-tile graph type selectors (`Heatmap`, `Beamwidth`, `SPL` scaffold)
   - focus/unfocus action per tile for temporary single-tile expansion
 - No KPI compute/scoring logic was changed; updates are UI/layout and presentation wiring only.
+
+## 2026-02-22 (Analyzer UI overhaul test coverage)
+- Extended Analyzer GUI smoke coverage to lock the new workflow:
+  - toolbar run selector presence
+  - run selection -> summary chip updates
+  - `Details...` dialog open path
+  - Explorer/Compare tab switching stability
+- Existing Analyzer compare and project/batch navigation regression suites remain green after the layout overhaul.
