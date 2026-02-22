@@ -141,6 +141,72 @@ class AnalyzerCompareUiTests(unittest.TestCase):
             page._remove_compare_candidate(0)
             self.assertEqual(page.compare_slots_table.item(0, 1).text(), "--")
 
+    def test_compare_heatmap_selector_updates_canvas(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_stage_compare_heatmap_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            candidates = [
+                {
+                    "project_id": "P001",
+                    "batch_id": "B001",
+                    "run_id": "R001",
+                    "version_id": "V001",
+                    "planes": ["H", "V"],
+                    "kpi_score": 88.0,
+                },
+                {
+                    "project_id": "P001",
+                    "batch_id": "B002",
+                    "run_id": "R002",
+                    "version_id": "V002",
+                    "planes": ["H", "V"],
+                    "kpi_score": 81.0,
+                },
+            ]
+            page._set_compare_candidates(candidates)
+            page._compare_plot_items = [
+                {
+                    "candidate": dict(candidates[0]),
+                    "plot": {
+                        "display_freqs_hz": [200.0, 500.0, 1000.0],
+                        "display_matrix_db": [[0.0, -2.0, -4.0], [-1.0, -3.0, -5.0]],
+                        "angles_deg": [-10.0, 10.0],
+                        "ref_angle_deg": 0.0,
+                        "stage_plot": {
+                            "heatmap_overlays": {
+                                "minus6_contour": [
+                                    {"freq_hz": 200.0, "left_angle_deg": -30.0, "right_angle_deg": 30.0}
+                                ],
+                                "target_half_window_deg": 30.0,
+                            }
+                        },
+                    },
+                },
+                {
+                    "candidate": dict(candidates[1]),
+                    "plot": {
+                        "display_freqs_hz": [200.0, 500.0, 1000.0],
+                        "display_matrix_db": [[-2.0, -3.0, -6.0], [-1.0, -2.0, -4.0]],
+                        "angles_deg": [-10.0, 10.0],
+                        "ref_angle_deg": 0.0,
+                        "stage_plot": {
+                            "heatmap_overlays": {
+                                "minus6_contour": [
+                                    {"freq_hz": 200.0, "left_angle_deg": -24.0, "right_angle_deg": 24.0}
+                                ],
+                                "target_half_window_deg": 20.0,
+                            }
+                        },
+                    },
+                },
+            ]
+            page.compare_heatmap_selector.setCurrentIndex(1)
+            page._render_compare_heatmap_selection()
+            pixmap = page.compare_heatmap_canvas.pixmap()
+            self.assertIsNotNone(pixmap)
+            assert pixmap is not None
+            self.assertFalse(pixmap.isNull())
+
 
 if __name__ == "__main__":
     unittest.main()

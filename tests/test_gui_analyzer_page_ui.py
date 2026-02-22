@@ -342,6 +342,20 @@ class AnalyzerPageUiTests(unittest.TestCase):
             tabs.setCurrentIndex(0)
             self.assertEqual(tabs.tabText(tabs.currentIndex()).lower(), "explorer")
 
+    def test_stage_switch_updates_explorer_2x2_titles(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_stage_grid_titles_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            self.assertEqual(sorted(page._explorer_stage_panels.keys()), ["A", "B", "C", "D"])
+            self.assertIn("Beamwidth Error", page._explorer_stage_panels["B"]["title_label"].text())
+            for idx in range(page.stage_selector.count()):
+                if str(page.stage_selector.itemData(idx) or "") == "stabilization":
+                    page.stage_selector.setCurrentIndex(idx)
+                    break
+            self.assertIn("DI Proxy", page._explorer_stage_panels["B"]["title_label"].text())
+            self.assertIn("Pattern Smoothness", page._explorer_stage_panels["C"]["title_label"].text())
+            self.assertIn("Plane Consistency", page._explorer_stage_panels["D"]["title_label"].text())
+
     def test_run_selection_loads_explorer_plot_in_background(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_ui2b_plot_load_") as tmp:
             service = _build_service(Path(tmp))
@@ -367,6 +381,7 @@ class AnalyzerPageUiTests(unittest.TestCase):
                 "cache_hit": False,
                 "display_freqs_hz": [200.0, 400.0, 800.0],
                 "display_matrix_db": [[0.0, -2.0, -4.0], [-1.0, -3.0, -6.0]],
+                "angles_deg": [-10.0, 10.0],
                 "beamwidth_curve": [
                     {"freq_hz": 200.0, "beamwidth_deg": 60.0},
                     {"freq_hz": 400.0, "beamwidth_deg": 62.0},
@@ -374,8 +389,29 @@ class AnalyzerPageUiTests(unittest.TestCase):
                 "ref_angle_deg": 0.0,
                 "insufficient_bw": False,
                 "message": "",
+                "stage_plot": {
+                    "curves": {
+                        "beamwidth": [
+                            {"freq_hz": 200.0, "beamwidth_deg": 60.0},
+                            {"freq_hz": 400.0, "beamwidth_deg": 62.0},
+                        ],
+                        "e_bw": [
+                            {"freq_hz": 200.0, "value": 0.5},
+                            {"freq_hz": 400.0, "value": 0.8},
+                        ],
+                        "e_cov": [{"freq_hz": 200.0, "value": 0.3}],
+                        "r_spill": [{"freq_hz": 200.0, "value": 0.1}],
+                    },
+                    "heatmap_overlays": {
+                        "minus6_contour": [
+                            {"freq_hz": 200.0, "left_angle_deg": -30.0, "right_angle_deg": 30.0},
+                            {"freq_hz": 400.0, "left_angle_deg": -31.0, "right_angle_deg": 31.0},
+                        ],
+                        "target_half_window_deg": 30.0,
+                    },
+                },
             }
-            with patch.object(service, "analyzer_load_plot_payload", autospec=True, return_value=fake_plot) as load_mock:
+            with patch.object(service, "analyzer_load_stage_plot_payload", autospec=True, return_value=fake_plot) as load_mock:
                 page._start_plot_request()
                 deadline = time.time() + 2.0
                 while time.time() < deadline:
@@ -440,7 +476,7 @@ class AnalyzerPageUiTests(unittest.TestCase):
                     "message": "",
                 }
 
-            with patch.object(service, "analyzer_load_plot_payload", autospec=True, side_effect=_slow_loader):
+            with patch.object(service, "analyzer_load_stage_plot_payload", autospec=True, side_effect=_slow_loader):
                 page.run_table.selectRow(0)
                 page._start_plot_request()
                 page.run_table.selectRow(1)
@@ -450,7 +486,10 @@ class AnalyzerPageUiTests(unittest.TestCase):
                     self.app.processEvents()
                     time.sleep(0.01)
                 self.app.processEvents()
-                self.assertIn(page.plot_loading_label.text().lower(), {"plot ready.", "ready.", "plot request canceled."})
+                self.assertIn(
+                    page.plot_loading_label.text().lower(),
+                    {"plot ready.", "ready.", "plot request canceled.", "loading h plane...", "canceling plot request..."},
+                )
 
 
 if __name__ == "__main__":
