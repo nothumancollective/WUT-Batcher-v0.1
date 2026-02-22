@@ -159,6 +159,7 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         background-color: #1b1b1b;
     }}
     QToolButton[analyzerAction="true"],
+    QPushButton[analyzerAction="true"],
     QToolButton[analyzerToggle="true"],
     QToolButton[analyzerPlaneToggle="true"] {{
         background-color: #202327;
@@ -171,6 +172,7 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         font-weight: 600;
     }}
     QToolButton[analyzerAction="true"]:hover,
+    QPushButton[analyzerAction="true"]:hover,
     QToolButton[analyzerToggle="true"]:hover,
     QToolButton[analyzerPlaneToggle="true"]:hover {{
         border-color: {c['accent']};
@@ -183,6 +185,7 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         color: #d9e9ff;
     }}
     QToolButton[analyzerAction="true"]:pressed,
+    QPushButton[analyzerAction="true"]:pressed,
     QToolButton[analyzerToggle="true"]:pressed,
     QToolButton[analyzerPlaneToggle="true"]:pressed {{
         background-color: #1b1f24;

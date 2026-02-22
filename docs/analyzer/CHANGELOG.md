@@ -365,3 +365,8 @@
 - Increased left/bottom plot margins and moved y-axis labels into a dedicated rotated label band; axis titles now render without clipping/overlap against tick labels.
 - Updated log-frequency tick policy so major ticks are anchored to `200/500/1k/2k/5k/10k/16k` within range, with consistent major/minor gridline rendering across heatmap and curves.
 - Added a GUI regression test to assert non-empty plot axis labels and shared-style margin application on stage canvases.
+
+## 2026-02-22 (Analyzer UI polish: target overlay + toolbar button sizing)
+- Heatmap target-window rendering now computes visible boundaries from `target_half_window_deg` against the active angle range and draws subtle dashed boundary lines plus low-alpha shading.
+- For `60x60`, the overlay now marks `+/-30 deg` when signed angles exist, or `0..30 deg` when only positive angles are present.
+- Analyzer toolbar action controls were normalized to a single-height button row (`Versions`, `Refresh KPIs`, `KPIs`, `Details`) and `Refresh KPIs` now uses the same neutral analyzer-action styling (no white primary appearance).
