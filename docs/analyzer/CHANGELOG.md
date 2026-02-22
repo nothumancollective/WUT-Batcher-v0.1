@@ -306,3 +306,15 @@
   - control defaults (`-20 dB` clamp) and toggle affordances
   - compare shortlist KPI panel and overlay-heatmap selector guidance
   - heatmap orientation sanity rendering (positive angles map upward in plot view).
+
+## 2026-02-22 (Analyzer stage-plot discovery + artifact/service scaffolding)
+- Discovery baseline confirmed in repo:
+  - Analyzer UI shell and workers already present in `app/gui.py`
+  - KPI cache table `analyzer_run_kpis` and saved-analysis tables already exist in dataset schema
+  - polar source tables (`polar_measurements`, `polar_points`) are available in freshly initialized project/global DBs.
+- Added canonical Analyzer artifact registry scaffold in `app/analyzer/artifacts.py`:
+  - `POLAR` (available)
+  - `SPL_FR`, `IMPEDANCE`, `PHASE_GD` (availability probes only; no ingestion changes).
+- Added stage-curve compute module `app/analyzer/stage_plot_engine.py` and integrated service API:
+  - `analyzer_load_stage_plot_payload(...)` now returns stage-specific curves + artifact availability metadata
+  - no runner/export/import pipeline changes.

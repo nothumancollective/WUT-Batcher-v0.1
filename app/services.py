@@ -18,6 +18,7 @@ import shutil
 import subprocess
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
+from app.analyzer.artifacts import available_artifact_statuses
 from app.analyzer.cache import AnalyzerPlotCache
 from app.analyzer.kpi_engine import compute_run_kpis, compute_stage_score
 from app.analyzer.plot_service import AnalyzerPlotService
@@ -31,6 +32,7 @@ from app.analyzer.presets import (
     DEFAULT_TOL_DEG,
     STAGE_PRESETS,
 )
+from app.analyzer.stage_plot_engine import compute_di_proxy_curve, compute_stage_plot_payload
 from app.batch_orchestrator import PlanningSummary, materialize_batch_plan
 from app.ath_knowledge import load_ath_knowledge
 from app.ath_driver_assets import repair_post_ath_le_binding
@@ -2086,6 +2088,145 @@ class OrchestratorService:
             band_high_hz=float(band_high_hz),
             cancel_check=cancel_check,
         )
+
+    def analyzer_load_stage_plot_payload(
+        self,
+        *,
+        source: str,
+        project_id: str,
+        batch_id: str,
+        run_id: Optional[str],
+        version_id: str,
+        plane: str,
+        stage_mode: str,
+        target_h_deg: float,
+        target_v_deg: float,
+        tol_deg: float,
+        band_low_hz: float,
+        band_high_hz: float,
+        cache: AnalyzerPlotCache,
+        use_full_angles_for_smoothness: bool = False,
+        cancel_check: Optional[Callable[[], bool]] = None,
+    ) -> Dict[str, Any]:
+        project_token = str(project_id or "").strip()
+        batch_token = str(batch_id or "").strip()
+        version_token = str(version_id or "").strip()
+        run_token = str(run_id or "").strip() or None
+        plane_token = str(plane or "H").strip().upper() or "H"
+        base_plot = self.analyzer_load_plot_payload(
+            source=source,
+            project_id=project_token,
+            batch_id=batch_token,
+            run_id=run_token,
+            version_id=version_token,
+            plane=plane_token,
+            band_low_hz=float(band_low_hz),
+            band_high_hz=float(band_high_hz),
+            cache=cache,
+            cancel_check=cancel_check,
+        )
+        freqs_hz = [float(item) for item in list(base_plot.get("freqs_hz", []) or [])]
+        angles_deg = [float(item) for item in list(base_plot.get("angles_deg", []) or [])]
+        matrix_db = [list(row) for row in list(base_plot.get("matrix_db", []) or [])]
+
+        def _target_for_plane(plane_value: str) -> float:
+            if plane_value == "H":
+                return float(target_h_deg)
+            if plane_value == "V":
+                return float(target_v_deg)
+            return float((float(target_h_deg) + float(target_v_deg)) * 0.5)
+
+        bw_by_plane: Dict[str, List[Dict[str, Any]]] = {}
+        di_by_plane: Dict[str, List[Dict[str, Any]]] = {}
+        if freqs_hz and angles_deg and matrix_db:
+            bw_by_plane[plane_token] = [dict(item) for item in list(base_plot.get("beamwidth_curve", []) or []) if isinstance(item, dict)]
+            di_by_plane[plane_token] = compute_di_proxy_curve(
+                freqs_hz=freqs_hz,
+                angles_deg=angles_deg,
+                matrix_db=matrix_db,
+                target_deg=_target_for_plane(plane_token),
+                norm_angle_deg=(float(base_plot["ref_angle_deg"]) if base_plot.get("ref_angle_deg") is not None else None),
+            )
+
+        # Stage-2 plane consistency needs at least H/V context.
+        for other_plane in ("H", "V", "D"):
+            if other_plane == plane_token:
+                continue
+            if callable(cancel_check) and bool(cancel_check()):
+                raise RuntimeError("canceled")
+            try:
+                other_plot = self.analyzer_load_plot_payload(
+                    source=source,
+                    project_id=project_token,
+                    batch_id=batch_token,
+                    run_id=run_token,
+                    version_id=version_token,
+                    plane=other_plane,
+                    band_low_hz=float(band_low_hz),
+                    band_high_hz=float(band_high_hz),
+                    cache=cache,
+                    cancel_check=cancel_check,
+                )
+            except Exception:
+                continue
+            other_freqs = [float(item) for item in list(other_plot.get("freqs_hz", []) or [])]
+            other_angles = [float(item) for item in list(other_plot.get("angles_deg", []) or [])]
+            other_matrix = [list(row) for row in list(other_plot.get("matrix_db", []) or [])]
+            if not other_freqs or not other_angles or not other_matrix:
+                continue
+            bw_by_plane[other_plane] = [
+                dict(item) for item in list(other_plot.get("beamwidth_curve", []) or []) if isinstance(item, dict)
+            ]
+            di_by_plane[other_plane] = compute_di_proxy_curve(
+                freqs_hz=other_freqs,
+                angles_deg=other_angles,
+                matrix_db=other_matrix,
+                target_deg=_target_for_plane(other_plane),
+                norm_angle_deg=(float(other_plot["ref_angle_deg"]) if other_plot.get("ref_angle_deg") is not None else None),
+            )
+
+        artifact_status: Dict[str, Dict[str, Any]] = {}
+        db_path = self._analyzer_db_path(project_id=project_token, source=source)
+        if db_path.exists():
+            try:
+                with closing(sqlite3.connect(str(db_path))) as conn:
+                    conn.row_factory = sqlite3.Row
+                    artifact_status = available_artifact_statuses(
+                        conn=conn,
+                        project_id=project_token,
+                        batch_id=batch_token,
+                        run_id=run_token,
+                        version_id=version_token,
+                        artifact_types=("POLAR", "SPL_FR", "IMPEDANCE", "PHASE_GD"),
+                    )
+            except sqlite3.Error:
+                artifact_status = {}
+
+        stage_payload = compute_stage_plot_payload(
+            stage_mode=str(stage_mode or DEFAULT_STAGE_ID),
+            target_deg=_target_for_plane(plane_token),
+            tol_deg=float(tol_deg),
+            freqs_hz=freqs_hz,
+            angles_deg=angles_deg,
+            matrix_db=matrix_db,
+            beamwidth_curve=[dict(item) for item in list(base_plot.get("beamwidth_curve", []) or []) if isinstance(item, dict)],
+            norm_angle_deg=(float(base_plot["ref_angle_deg"]) if base_plot.get("ref_angle_deg") is not None else None),
+            use_full_angles_for_smoothness=bool(use_full_angles_for_smoothness),
+            bw_curves_by_plane=bw_by_plane,
+            di_curves_by_plane=di_by_plane,
+            artifact_status=artifact_status,
+        )
+        stage_token = str(stage_mode or "").strip().lower()
+        if stage_token == "final":
+            curves = dict(stage_payload.get("curves", {}) or {})
+            if not bool(dict(artifact_status.get("IMPEDANCE") or {}).get("available")):
+                curves.setdefault("impedance_loading", [])
+            if not bool(dict(artifact_status.get("PHASE_GD") or {}).get("available")):
+                curves.setdefault("phase_gd", [])
+            stage_payload["curves"] = curves
+        result = dict(base_plot)
+        result["stage_plot"] = stage_payload
+        return result
 
     def analyzer_save_analysis(
         self,
