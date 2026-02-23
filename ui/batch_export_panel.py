@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Set
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 try:
     from PySide6.QtCore import QPoint, Qt, Signal
@@ -114,6 +114,36 @@ class _PolarCardState:
         }
 
 
+_POLAR_SLOT_DEFAULT_NAMES: Tuple[str, str, str] = ("SPL_H", "SPL_V", "SPL_D")
+_POLAR_SLOT_DEFAULT_INCLINATIONS: Tuple[int, int, int] = (0, 90, 45)
+
+
+def _polar_slot_default_name(index: int) -> str:
+    if 0 <= int(index) < len(_POLAR_SLOT_DEFAULT_NAMES):
+        return str(_POLAR_SLOT_DEFAULT_NAMES[int(index)])
+    return f"SPL_V_{int(index) + 1}"
+
+
+def _polar_slot_default_inclination(index: int) -> int:
+    if 0 <= int(index) < len(_POLAR_SLOT_DEFAULT_INCLINATIONS):
+        return int(_POLAR_SLOT_DEFAULT_INCLINATIONS[int(index)])
+    return 90
+
+
+def _polar_slot_default_state(index: int) -> _PolarCardState:
+    return _PolarCardState(
+        enabled=False,
+        polar_name=_polar_slot_default_name(index),
+        map_angle_start=0,
+        map_angle_end=90,
+        map_angle_steps=19,
+        distance_m=2.0,
+        offset=145,
+        inclination=_polar_slot_default_inclination(index),
+        norm_angle=0,
+    )
+
+
 @dataclass
 class _AdvancedState:
     spl: _SimpleGraphState
@@ -125,7 +155,7 @@ class _AdvancedState:
         return cls(
             spl=_SimpleGraphState(enabled=False),
             impedance=_SimpleGraphState(enabled=False),
-            polars=[_PolarCardState(enabled=False) for _ in range(3)],
+            polars=[_polar_slot_default_state(idx) for idx in range(3)],
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -285,7 +315,7 @@ class _AdvancedDialog(QDialog):
         grid.setHorizontalSpacing(8)
         grid.setVerticalSpacing(4)
         name_edit = QLineEdit(str(state.polar_name or ""))
-        name_edit.setPlaceholderText("Polars Name")
+        name_edit.setPlaceholderText(_polar_slot_default_name(index))
         map_start = QLineEdit(str(int(state.map_angle_start)))
         map_start.setValidator(QIntValidator(-360, 360, map_start))
         map_end = QLineEdit(str(int(state.map_angle_end)))
@@ -327,7 +357,13 @@ class _AdvancedDialog(QDialog):
         )
         distance.textChanged.connect(lambda value, idx=index: self._set_polar(idx, "distance_m", _float_or_default(value, 2.0)))
         offset.textChanged.connect(lambda value, idx=index: self._set_polar(idx, "offset", _int_or_default(value, 145)))
-        inclination.textChanged.connect(lambda value, idx=index: self._set_polar(idx, "inclination", _int_or_default(value, 90)))
+        inclination.textChanged.connect(
+            lambda value, idx=index: self._set_polar(
+                idx,
+                "inclination",
+                _int_or_default(value, _polar_slot_default_inclination(idx)),
+            )
+        )
         norm_angle.textChanged.connect(lambda value, idx=index: self._set_polar(idx, "norm_angle", _int_or_default(value, 0)))
 
         row = 0
@@ -532,6 +568,7 @@ class BatchExportPanel(QFrame):
                     **base_options,
                     "polar_name": "SPL_H",
                     "offset": 145,
+                    "inclination": 0,
                 },
                 "output_name_template": "{version_id}_{graph_kind}_{export_id}.{format}",
             },
@@ -559,7 +596,7 @@ class BatchExportPanel(QFrame):
                     **base_options,
                     "polar_name": "SPL_D",
                     "offset_from_length_mm": 40,
-                    "inclination": 42,
+                    "inclination": 45,
                 },
                 "output_name_template": "{version_id}_{graph_kind}_{export_id}.{format}",
             },
@@ -594,7 +631,7 @@ class BatchExportPanel(QFrame):
         for idx, polar in enumerate(list(self._advanced_state.polars), start=1):
             if not polar.enabled:
                 continue
-            polar_name = str(polar.polar_name or "").strip() or f"SPL_V_{idx}"
+            polar_name = str(polar.polar_name or "").strip() or _polar_slot_default_name(idx - 1)
             specs.append(
                 {
                     "id": f"adv_polar_{idx}",
@@ -697,18 +734,21 @@ class BatchExportPanel(QFrame):
                 self._advanced_state.impedance.enabled = True
                 continue
             if graph_kind == "polar" and polar_slot < len(self._advanced_state.polars):
+                slot_default = _polar_slot_default_state(polar_slot)
                 map_range = list(options.get("map_angle_range", [0, 90, 19]) or [0, 90, 19])
                 while len(map_range) < 3:
                     map_range.append([0, 90, 19][len(map_range)])
                 self._advanced_state.polars[polar_slot] = _PolarCardState(
                     enabled=True,
-                    polar_name=str(options.get("polar_name", "") or "").strip(),
-                    map_angle_start=int(map_range[0] or 0),
-                    map_angle_end=int(map_range[1] or 90),
-                    map_angle_steps=max(1, int(map_range[2] or 19)),
-                    distance_m=float(options.get("distance_m", 2.0) or 2.0),
-                    offset=int(options.get("offset", 145) or 145),
-                    inclination=int(options.get("inclination", 90) or 90),
+                    polar_name=str(options.get("polar_name", "") or "").strip() or slot_default.polar_name,
+                    map_angle_start=int(map_range[0] or slot_default.map_angle_start),
+                    map_angle_end=int(map_range[1] or slot_default.map_angle_end),
+                    map_angle_steps=max(1, int(map_range[2] or slot_default.map_angle_steps)),
+                    distance_m=float(options.get("distance_m", slot_default.distance_m) or slot_default.distance_m),
+                    offset=int(options.get("offset", slot_default.offset) or slot_default.offset),
+                    inclination=int(
+                        options.get("inclination", slot_default.inclination) or slot_default.inclination
+                    ),
                     norm_angle=int(options.get("norm_angle", 0) or 0),
                 )
                 polar_slot += 1
