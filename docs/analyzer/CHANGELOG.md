@@ -508,3 +508,9 @@
   - plane toggle tooltip now includes actionable hint when `MISSING_PLANE` is present
   - reason-code action text now explicitly recommends verifying `H/V/D` export coverage before re-import.
 - Added UI regression assertion for the new tooltip hint in `tests/test_gui_analyzer_compare_ui.py`.
+
+## 2026-02-23 (Analyzer shortlist score binding consistency)
+- Fixed compare shortlist refresh merge path to keep candidates normalized via `_candidate_from_row(...)` instead of storing raw run rows.
+- This preserves `kpi_score -> score` mapping after metadata refreshes, so shortlist score stays aligned with top summary score.
+- Added regression coverage:
+  - `tests/test_gui_analyzer_compare_ui.py::test_compare_shortlist_score_survives_runs_refresh_merge`.

@@ -7760,7 +7760,8 @@ class AnalysePage(QWidget):
             merged: List[Dict[str, Any]] = []
             for candidate in self._compare_candidates:
                 identity = self._compare_identity(candidate)
-                merged.append(lookup.get(identity, dict(candidate)))
+                merged_row = lookup.get(identity, dict(candidate))
+                merged.append(self._candidate_from_row(dict(merged_row)))
             self._compare_candidates = merged[:5]
         self._refresh_run_table()
         self._update_compare_slots()

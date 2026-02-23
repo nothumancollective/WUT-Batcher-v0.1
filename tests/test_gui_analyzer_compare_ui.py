@@ -290,6 +290,17 @@ class AnalyzerCompareUiTests(unittest.TestCase):
             page._set_compare_candidates(candidates)
             self.assertEqual(len(page._compare_candidates), 2)
 
+    def test_compare_shortlist_score_survives_runs_refresh_merge(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_stage_compare_score_merge_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            payload = self._sample_runs_payload("P001")
+            page._apply_runs_payload(payload)
+            page._set_compare_candidates(payload["runs"])
+            self.assertEqual(page.compare_slots_table.item(0, 2).text(), "88.00")
+            page._apply_runs_payload(payload)
+            self.assertEqual(page.compare_slots_table.item(0, 2).text(), "88.00")
+
 
 if __name__ == "__main__":
     unittest.main()
