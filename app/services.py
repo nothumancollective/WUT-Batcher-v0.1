@@ -191,6 +191,33 @@ def _safe_float_or_none(raw: Any) -> Optional[float]:
         return None
 
 
+def _safe_json_load_any(raw: Any) -> Any:
+    try:
+        return json.loads(str(raw or "null"))
+    except Exception:
+        return None
+
+
+def _decode_db_value(raw: Any) -> Any:
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if not text:
+        return None
+    parsed = _safe_json_load_any(text)
+    if parsed is not None:
+        return parsed
+    return text
+
+
+def _snapshot_sweep_parameters(raw_snapshot: Any) -> Dict[str, Any]:
+    payload = _safe_json_load(raw_snapshot)
+    sweep_payload = payload.get("sweep_parameters")
+    if isinstance(sweep_payload, Mapping):
+        return {str(key): value for key, value in dict(sweep_payload).items() if str(key).strip()}
+    return {}
+
+
 def _parse_unambiguous_batch_norm_angle(sim_export_params_raw: Any) -> Optional[float]:
     payload = _safe_json_load(sim_export_params_raw)
     specs = payload.get("export_specs")
@@ -2060,14 +2087,43 @@ class OrchestratorService:
         try:
             with closing(sqlite3.connect(str(db_path))) as conn:
                 conn.row_factory = sqlite3.Row
+                has_batches_table = bool(
+                    conn.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='batches' LIMIT 1"
+                    ).fetchone()
+                )
+                has_versions_table = bool(
+                    conn.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='versions' LIMIT 1"
+                    ).fetchone()
+                )
+                has_version_params_table = bool(
+                    conn.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='version_params' LIMIT 1"
+                    ).fetchone()
+                )
+                has_ath_dimensions_table = bool(
+                    conn.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='ath_dimensions' LIMIT 1"
+                    ).fetchone()
+                )
+                has_notes_table = bool(
+                    conn.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='analyzer_version_notes' LIMIT 1"
+                    ).fetchone()
+                )
                 batch_row = conn.execute(
-                    """
-                    SELECT sim_export_params
-                    FROM batches
-                    WHERE project_id = ? AND batch_id = ?
-                    LIMIT 1
-                    """,
-                    (project_token, batch_token),
+                    (
+                        """
+                        SELECT sim_export_params
+                        FROM batches
+                        WHERE project_id = ? AND batch_id = ?
+                        LIMIT 1
+                        """
+                        if has_batches_table
+                        else "SELECT NULL AS sim_export_params"
+                    ),
+                    ((project_token, batch_token) if has_batches_table else ()),
                 ).fetchone()
                 batch_norm_angle_deg = _parse_unambiguous_batch_norm_angle(
                     batch_row["sim_export_params"] if batch_row is not None else None
@@ -2091,6 +2147,99 @@ class OrchestratorService:
                         str(measurement_row["version_id"] or "").strip(),
                     )
                     measurement_by_identity.setdefault(key, []).append(measurement_row)
+                version_meta_by_version: Dict[str, Dict[str, Any]] = {}
+                if has_versions_table:
+                    version_rows = conn.execute(
+                        """
+                        SELECT
+                            version_id,
+                            ath_length_mm,
+                            ath_width_mm,
+                            ath_height_mm,
+                            resolved_parameters_snapshot
+                        FROM versions
+                        WHERE project_id = ? AND batch_id = ?
+                        """,
+                        (project_token, batch_token),
+                    ).fetchall()
+                    for version_row in version_rows:
+                        version_token = str(version_row["version_id"] or "").strip()
+                        if not version_token:
+                            continue
+                        version_meta_by_version[version_token] = {
+                            "ath_length_mm": _safe_float_or_none(version_row["ath_length_mm"]),
+                            "ath_width_mm": _safe_float_or_none(version_row["ath_width_mm"]),
+                            "ath_height_mm": _safe_float_or_none(version_row["ath_height_mm"]),
+                            "sweep_parameters": _snapshot_sweep_parameters(version_row["resolved_parameters_snapshot"]),
+                        }
+
+                control_values_by_version: Dict[str, Dict[str, Any]] = {}
+                if has_version_params_table:
+                    control_rows = conn.execute(
+                        """
+                        SELECT version_id, param_name, value, is_set
+                        FROM version_params
+                        WHERE project_id = ?
+                          AND batch_id = ?
+                          AND param_name IN ('Throat.Profile', 'GCurve.Type', 'Morph.TargetShape', 'Mesh.Enclosure')
+                        """,
+                        (project_token, batch_token),
+                    ).fetchall()
+                    for control_row in control_rows:
+                        version_token = str(control_row["version_id"] or "").strip()
+                        param_name = str(control_row["param_name"] or "").strip()
+                        if not version_token or not param_name:
+                            continue
+                        entry = control_values_by_version.setdefault(version_token, {})
+                        if not bool(control_row["is_set"]):
+                            entry[param_name] = None
+                            continue
+                        entry[param_name] = _decode_db_value(control_row["value"])
+
+                ath_dims_by_identity: Dict[Tuple[str, str], Dict[str, Optional[float]]] = {}
+                if has_ath_dimensions_table:
+                    ath_rows = conn.execute(
+                        """
+                        SELECT
+                            COALESCE(run_id, '') AS run_id,
+                            version_id,
+                            length_mm,
+                            width_mm,
+                            height_mm
+                        FROM ath_dimensions
+                        WHERE project_id = ? AND batch_id = ?
+                        """,
+                        (project_token, batch_token),
+                    ).fetchall()
+                    for ath_row in ath_rows:
+                        version_token = str(ath_row["version_id"] or "").strip()
+                        run_token = str(ath_row["run_id"] or "").strip()
+                        if not version_token:
+                            continue
+                        ath_dims_by_identity[(run_token, version_token)] = {
+                            "ath_length_mm": _safe_float_or_none(ath_row["length_mm"]),
+                            "ath_width_mm": _safe_float_or_none(ath_row["width_mm"]),
+                            "ath_height_mm": _safe_float_or_none(ath_row["height_mm"]),
+                        }
+
+                notes_by_version: Dict[str, Dict[str, Any]] = {}
+                if has_notes_table:
+                    note_rows = conn.execute(
+                        """
+                        SELECT version_id, note_text, updated_at
+                        FROM analyzer_version_notes
+                        WHERE project_id = ? AND batch_id = ?
+                        """,
+                        (project_token, batch_token),
+                    ).fetchall()
+                    for note_row in note_rows:
+                        version_token = str(note_row["version_id"] or "").strip()
+                        if not version_token:
+                            continue
+                        notes_by_version[version_token] = {
+                            "note_text": str(note_row["note_text"] or ""),
+                            "note_updated_at": str(note_row["updated_at"] or ""),
+                        }
                 query_rows = conn.execute(
                     """
                     SELECT
@@ -2133,18 +2282,39 @@ class OrchestratorService:
             source_files = sorted(set(_split_csv_tokens(row["source_files_csv"])))
             file_hashes = sorted(set(_split_csv_tokens(row["file_hashes_csv"])))
             run_id = str(row["run_id"] or "").strip()
+            version_id = str(row["version_id"] or "").strip()
             run_version_measurements = measurement_by_identity.get((run_id, str(row["version_id"])), [])
             norm_angle_deg, norm_angle_source, norm_angle_note = _resolve_effective_norm_angle(
                 measurement_rows=run_version_measurements,
                 batch_norm_angle_deg=batch_norm_angle_deg,
             )
+            version_meta = dict(version_meta_by_version.get(version_id, {}) or {})
+            identity_dims = dict(ath_dims_by_identity.get((run_id, version_id), {}) or {})
+            control_values = dict(control_values_by_version.get(version_id, {}) or {})
+            note_payload = dict(notes_by_version.get(version_id, {}) or {})
+
+            throat_profile = control_values.get("Throat.Profile")
+            gcurve_type = control_values.get("GCurve.Type")
+            morph_shape = control_values.get("Morph.TargetShape")
+            enclosure_value = control_values.get("Mesh.Enclosure")
+
+            ath_length_mm = identity_dims.get("ath_length_mm")
+            if ath_length_mm is None:
+                ath_length_mm = _safe_float_or_none(version_meta.get("ath_length_mm"))
+            ath_width_mm = identity_dims.get("ath_width_mm")
+            if ath_width_mm is None:
+                ath_width_mm = _safe_float_or_none(version_meta.get("ath_width_mm"))
+            ath_height_mm = identity_dims.get("ath_height_mm")
+            if ath_height_mm is None:
+                ath_height_mm = _safe_float_or_none(version_meta.get("ath_height_mm"))
+
             result.append(
                 {
                     "project_id": str(row["project_id"]),
                     "batch_id": str(row["batch_id"]),
                     "run_id": run_id or None,
                     "run_label": run_id or "(no run id)",
-                    "version_id": str(row["version_id"]),
+                    "version_id": version_id,
                     "planes": planes,
                     "freq_min_hz": row["freq_min_hz"],
                     "freq_max_hz": row["freq_max_hz"],
@@ -2158,6 +2328,17 @@ class OrchestratorService:
                     "run_status": row["run_status"],
                     "source_files": source_files,
                     "file_hashes": file_hashes,
+                    "ath_length_mm": ath_length_mm,
+                    "ath_width_mm": ath_width_mm,
+                    "ath_height_mm": ath_height_mm,
+                    "throat_profile": throat_profile,
+                    "gcurve_type": gcurve_type,
+                    "morph_shape": morph_shape,
+                    "enclosure_enabled": bool(enclosure_value not in (None, 0, 0.0, False, "", "0", "false", "False")),
+                    "driver_label": "Generic25",
+                    "sweep_parameters": dict(version_meta.get("sweep_parameters", {}) or {}),
+                    "version_note": str(note_payload.get("note_text") or ""),
+                    "version_note_updated_at": str(note_payload.get("note_updated_at") or ""),
                 }
             )
         return result
@@ -2173,6 +2354,128 @@ class OrchestratorService:
             "stages": {str(key): dict(value) for key, value in STAGE_PRESETS.items()},
             "default_stage_id": str(DEFAULT_STAGE_ID),
         }
+
+    def analyzer_list_version_param_rows(
+        self,
+        *,
+        project_id: str,
+        batch_id: str,
+        version_id: str,
+    ) -> List[Dict[str, Any]]:
+        project_token = str(project_id or "").strip()
+        batch_token = str(batch_id or "").strip()
+        version_token = str(version_id or "").strip()
+        if not project_token or not batch_token or not version_token:
+            return []
+        db_path = self.repo.project_paths(project_token, ensure=False).dataset_dir / "project.sqlite"
+        if not db_path.exists():
+            return []
+        try:
+            with closing(sqlite3.connect(str(db_path))) as conn:
+                conn.row_factory = sqlite3.Row
+                rows = conn.execute(
+                    """
+                    SELECT param_name, value, is_set
+                    FROM version_params
+                    WHERE project_id = ?
+                      AND batch_id = ?
+                      AND version_id = ?
+                    ORDER BY param_name
+                    """,
+                    (project_token, batch_token, version_token),
+                ).fetchall()
+        except sqlite3.Error:
+            return []
+        result: List[Dict[str, Any]] = []
+        for row in rows:
+            param_name = str(row["param_name"] or "").strip()
+            if not param_name:
+                continue
+            if not bool(row["is_set"]):
+                result.append({"param_name": param_name, "is_set": False, "value": None})
+                continue
+            result.append({"param_name": param_name, "is_set": True, "value": _decode_db_value(row["value"])})
+        return result
+
+    def analyzer_version_param_values(
+        self,
+        *,
+        project_id: str,
+        batch_id: str,
+        version_id: str,
+        keys: Sequence[str],
+    ) -> Dict[str, Any]:
+        rows = self.analyzer_list_version_param_rows(
+            project_id=project_id,
+            batch_id=batch_id,
+            version_id=version_id,
+        )
+        target_keys = {str(key).strip() for key in list(keys or []) if str(key).strip()}
+        if not target_keys:
+            return {}
+        result: Dict[str, Any] = {}
+        for row in rows:
+            key = str(row.get("param_name") or "").strip()
+            if key not in target_keys:
+                continue
+            if not bool(row.get("is_set")):
+                continue
+            result[key] = row.get("value")
+        return result
+
+    def analyzer_get_ui_pref(self, *, project_id: str, pref_key: str) -> Dict[str, Any]:
+        project_token = str(project_id or "").strip()
+        pref_token = str(pref_key or "").strip()
+        if not project_token or not pref_token:
+            return {}
+        project_paths = self.repo.project_paths(project_token, ensure=True)
+        dataset = TidyDatasetWriter(project_paths.project_dir, library_root=self.settings.library_root)
+        loaded = dataset.load_analyzer_ui_pref(project_id=project_token, pref_key=pref_token)
+        if not loaded:
+            return {}
+        payload = dict(loaded.get("payload") or {})
+        return payload if isinstance(payload, dict) else {}
+
+    def analyzer_set_ui_pref(
+        self,
+        *,
+        project_id: str,
+        pref_key: str,
+        payload: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        project_token = str(project_id or "").strip()
+        pref_token = str(pref_key or "").strip()
+        if not project_token or not pref_token:
+            raise ValueError("project_id and pref_key are required")
+        project_paths = self.repo.project_paths(project_token, ensure=True)
+        dataset = TidyDatasetWriter(project_paths.project_dir, library_root=self.settings.library_root)
+        return dataset.save_analyzer_ui_pref(
+            project_id=project_token,
+            pref_key=pref_token,
+            payload=dict(payload or {}),
+        )
+
+    def analyzer_set_version_note(
+        self,
+        *,
+        project_id: str,
+        batch_id: str,
+        version_id: str,
+        note_text: str,
+    ) -> Dict[str, Any]:
+        project_token = str(project_id or "").strip()
+        batch_token = str(batch_id or "").strip()
+        version_token = str(version_id or "").strip()
+        if not project_token or not batch_token or not version_token:
+            raise ValueError("project_id, batch_id and version_id are required")
+        project_paths = self.repo.project_paths(project_token, ensure=True)
+        dataset = TidyDatasetWriter(project_paths.project_dir, library_root=self.settings.library_root)
+        return dataset.upsert_analyzer_version_note(
+            project_id=project_token,
+            batch_id=batch_token,
+            version_id=version_token,
+            note_text=str(note_text or ""),
+        )
 
     def _analyzer_db_path(self, *, project_id: str, source: str) -> Path:
         source_key = str(source or "project").strip().lower()

@@ -553,3 +553,18 @@
 - Added/updated GUI tests:
   - stepper presence + navigation boundary behavior
   - selection-bar version text update on row selection.
+
+## 2026-02-23 (Analyzer Version Bar v2: data and persistence)
+- Added project-local Analyzer UI persistence tables in project SQLite (`app/sql_dataset_store.py`):
+  - `analyzer_ui_prefs` for per-project UI preferences (for example visible ATH param keys)
+  - `analyzer_version_notes` for per-version notes keyed by `(project_id, batch_id, version_id)`.
+- Added service APIs (`app/services.py`) for:
+  - UI preference get/set
+  - version-note upsert
+  - version-parameter listing and key-based value lookup.
+- Extended analyzer run inventory payload (`analyzer_list_polar_runs`) with version-info fields used by the new Version Bar:
+  - final dimensions (`ath_length_mm`, `ath_width_mm`, `ath_height_mm`)
+  - mode controller values (`throat_profile`, `gcurve_type`, `morph_shape`, `enclosure_enabled`)
+  - sweep realization map (`sweep_parameters`)
+  - persisted note text (`version_note`).
+- Added regression tests in `tests/test_analyzer_services_analyses.py` for UI-pref roundtrip and version-note roundtrip.

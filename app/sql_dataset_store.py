@@ -403,6 +403,23 @@ class SqlDatasetStore:
                     FOREIGN KEY (analysis_id) REFERENCES analyzer_analyses(analysis_id) ON DELETE CASCADE
                 );
 
+                CREATE TABLE IF NOT EXISTS analyzer_ui_prefs (
+                    project_id TEXT NOT NULL,
+                    pref_key TEXT NOT NULL,
+                    pref_json TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (project_id, pref_key)
+                );
+
+                CREATE TABLE IF NOT EXISTS analyzer_version_notes (
+                    project_id TEXT NOT NULL,
+                    batch_id TEXT NOT NULL,
+                    version_id TEXT NOT NULL,
+                    note_text TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (project_id, batch_id, version_id)
+                );
+
                 CREATE TABLE IF NOT EXISTS replication_queue (
                     queue_id INTEGER PRIMARY KEY AUTOINCREMENT,
                     operation TEXT NOT NULL,
@@ -901,6 +918,29 @@ class SqlDatasetStore:
                 version_id TEXT NOT NULL,
                 PRIMARY KEY (analysis_id, ordinal),
                 FOREIGN KEY (analysis_id) REFERENCES analyzer_analyses(analysis_id) ON DELETE CASCADE
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS analyzer_ui_prefs (
+                project_id TEXT NOT NULL,
+                pref_key TEXT NOT NULL,
+                pref_json TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (project_id, pref_key)
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS analyzer_version_notes (
+                project_id TEXT NOT NULL,
+                batch_id TEXT NOT NULL,
+                version_id TEXT NOT NULL,
+                note_text TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (project_id, batch_id, version_id)
             )
             """
         )
@@ -2657,6 +2697,135 @@ class SqlDatasetStore:
             "config": config_payload if isinstance(config_payload, dict) else {},
             "notes": (str(row["notes"]) if row["notes"] is not None else None),
             "candidates": candidates,
+        }
+
+    def load_analyzer_ui_pref(self, *, project_id: str, pref_key: str) -> Optional[Dict[str, Any]]:
+        project_token = str(project_id or "").strip()
+        pref_token = str(pref_key or "").strip()
+        if not project_token or not pref_token:
+            return None
+        with self._open_conn(self.project_db_path) as conn:
+            row = conn.execute(
+                """
+                SELECT pref_json, updated_at
+                FROM analyzer_ui_prefs
+                WHERE project_id = ? AND pref_key = ?
+                LIMIT 1
+                """,
+                (project_token, pref_token),
+            ).fetchone()
+        if row is None:
+            return None
+        try:
+            payload = json.loads(str(row["pref_json"] or "{}"))
+        except json.JSONDecodeError:
+            payload = {}
+        if not isinstance(payload, dict):
+            payload = {}
+        return {
+            "project_id": project_token,
+            "pref_key": pref_token,
+            "payload": payload,
+            "updated_at": str(row["updated_at"] or _now_iso()),
+        }
+
+    def save_analyzer_ui_pref(self, *, project_id: str, pref_key: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        project_token = str(project_id or "").strip()
+        pref_token = str(pref_key or "").strip()
+        if not project_token:
+            raise ValueError("project_id is required")
+        if not pref_token:
+            raise ValueError("pref_key is required")
+        now = _now_iso()
+        with self._open_conn(self.project_db_path) as conn:
+            conn.execute(
+                """
+                INSERT INTO analyzer_ui_prefs (
+                    project_id, pref_key, pref_json, updated_at
+                ) VALUES (?, ?, ?, ?)
+                ON CONFLICT(project_id, pref_key) DO UPDATE SET
+                    pref_json=excluded.pref_json,
+                    updated_at=excluded.updated_at
+                """,
+                (project_token, pref_token, _to_json(dict(payload or {})), now),
+            )
+        return {
+            "project_id": project_token,
+            "pref_key": pref_token,
+            "updated_at": now,
+        }
+
+    def list_analyzer_version_notes(self, *, project_id: str, batch_id: str) -> Dict[str, Dict[str, Any]]:
+        project_token = str(project_id or "").strip()
+        batch_token = str(batch_id or "").strip()
+        if not project_token or not batch_token:
+            return {}
+        with self._open_conn(self.project_db_path) as conn:
+            rows = conn.execute(
+                """
+                SELECT version_id, note_text, updated_at
+                FROM analyzer_version_notes
+                WHERE project_id = ? AND batch_id = ?
+                """,
+                (project_token, batch_token),
+            ).fetchall()
+        result: Dict[str, Dict[str, Any]] = {}
+        for row in rows:
+            version_id = str(row["version_id"] or "").strip()
+            if not version_id:
+                continue
+            result[version_id] = {
+                "note_text": str(row["note_text"] or ""),
+                "updated_at": str(row["updated_at"] or ""),
+            }
+        return result
+
+    def upsert_analyzer_version_note(
+        self,
+        *,
+        project_id: str,
+        batch_id: str,
+        version_id: str,
+        note_text: str,
+    ) -> Dict[str, Any]:
+        project_token = str(project_id or "").strip()
+        batch_token = str(batch_id or "").strip()
+        version_token = str(version_id or "").strip()
+        if not project_token:
+            raise ValueError("project_id is required")
+        if not batch_token:
+            raise ValueError("batch_id is required")
+        if not version_token:
+            raise ValueError("version_id is required")
+        note_value = str(note_text or "")
+        now = _now_iso()
+        with self._open_conn(self.project_db_path) as conn:
+            if note_value.strip():
+                conn.execute(
+                    """
+                    INSERT INTO analyzer_version_notes (
+                        project_id, batch_id, version_id, note_text, updated_at
+                    ) VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(project_id, batch_id, version_id) DO UPDATE SET
+                        note_text=excluded.note_text,
+                        updated_at=excluded.updated_at
+                    """,
+                    (project_token, batch_token, version_token, note_value, now),
+                )
+            else:
+                conn.execute(
+                    """
+                    DELETE FROM analyzer_version_notes
+                    WHERE project_id = ? AND batch_id = ? AND version_id = ?
+                    """,
+                    (project_token, batch_token, version_token),
+                )
+        return {
+            "project_id": project_token,
+            "batch_id": batch_token,
+            "version_id": version_token,
+            "updated_at": now,
+            "cleared": not bool(note_value.strip()),
         }
 
     def write_compat_verification_results(self, rows: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
