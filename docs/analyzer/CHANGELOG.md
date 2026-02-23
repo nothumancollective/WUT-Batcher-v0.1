@@ -500,3 +500,10 @@
   - reproducible shortlist score-loss path (`score` becomes `--` after runs refresh while top summary stays numeric)
   - Pareto rectangle root cause in canvas brush state (`setBrush(color)` persists into `drawRect(...)` fill)
   - beamwidth definition/units sanity notes tied to current KPI engine implementation.
+
+## 2026-02-23 (Analyzer H-missing actionable messaging)
+- Kept orientation aliasing evidence-based (no new guessed alias codes added for B006).
+- Improved missing-plane user guidance:
+  - plane toggle tooltip now includes actionable hint when `MISSING_PLANE` is present
+  - reason-code action text now explicitly recommends verifying `H/V/D` export coverage before re-import.
+- Added UI regression assertion for the new tooltip hint in `tests/test_gui_analyzer_compare_ui.py`.

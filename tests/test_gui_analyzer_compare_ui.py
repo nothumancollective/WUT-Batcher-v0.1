@@ -251,6 +251,7 @@ class AnalyzerCompareUiTests(unittest.TestCase):
             self.assertFalse(h_button.isHidden())
             self.assertFalse(h_button.isEnabled())
             self.assertIn("MISSING_PLANE", h_button.toolTip())
+            self.assertIn("includes H/V/D", h_button.toolTip())
 
     def test_reason_severity_summary_is_shown_in_details_and_enables_help(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_stage_reason_help_") as tmp:
