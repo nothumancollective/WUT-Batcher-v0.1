@@ -2076,7 +2076,15 @@ class _AnalyzerAutoPickDialog(StyledDialogBase):
 
 
 class _AnalyzerRunDetailsDialog(StyledDialogBase):
-    def __init__(self, *, payload: Dict[str, Any], parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        payload: Dict[str, Any],
+        ath_param_rows: Optional[Sequence[Dict[str, Any]]] = None,
+        visible_ath_keys: Optional[Sequence[str]] = None,
+        on_toggle_ath_param: Optional[Callable[[str, bool], None]] = None,
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(title="Run Details", parent=parent, min_width=880, min_height=620)
         data = dict(payload or {})
         body = self.body_layout()
@@ -2158,6 +2166,76 @@ class _AnalyzerRunDetailsDialog(StyledDialogBase):
         summary_layout.addLayout(form)
         summary_layout.addStretch(1)
         tabs.addTab(summary_tab, "Summary")
+
+        ath_tab = QWidget()
+        ath_layout = QVBoxLayout(ath_tab)
+        ath_layout.setContentsMargins(0, 0, 0, 0)
+        ath_layout.setSpacing(6)
+        ath_hint = QLabel("Choose ATH parameters to display in Version Information column 2.")
+        ath_hint.setObjectName("SummaryMeta")
+        ath_hint.setWordWrap(True)
+        ath_layout.addWidget(ath_hint, 0, Qt.AlignLeft | Qt.AlignVCenter)
+
+        ath_table = QTableWidget(0, 4)
+        ath_table.setObjectName("AnalyzerAthParamsTable")
+        ath_table.setHorizontalHeaderLabels(["Group", "Parameter", "Value", "Visible"])
+        ath_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        ath_table.setSelectionMode(QAbstractItemView.NoSelection)
+        ath_header = ath_table.horizontalHeader()
+        ath_header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        ath_header.setSectionResizeMode(1, QHeaderView.Stretch)
+        ath_header.setSectionResizeMode(2, QHeaderView.Stretch)
+        ath_header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        ath_table.verticalHeader().setVisible(False)
+
+        def _ath_group_for_key(param_key: str) -> str:
+            key = str(param_key or "").strip()
+            if key.startswith("Throat.") or key.startswith("OSSE") or key.startswith("R-OSSE"):
+                return "Throat"
+            if key.startswith("Morph."):
+                return "Morph"
+            if key.startswith("GCurve."):
+                return "GCurve"
+            if key.startswith("Mesh."):
+                return "Mesh"
+            if key.startswith("Term."):
+                return "Term"
+            return "Other"
+
+        visible_set = {str(item).strip() for item in list(visible_ath_keys or []) if str(item).strip()}
+        normalized_rows = [dict(item) for item in list(ath_param_rows or []) if isinstance(item, dict)]
+        normalized_rows.sort(key=lambda item: (_ath_group_for_key(str(item.get("param_name") or "")), str(item.get("param_name") or "")))
+
+        for row in normalized_rows:
+            param_name = str(row.get("param_name") or "").strip()
+            if not param_name:
+                continue
+            value = row.get("value")
+            row_index = ath_table.rowCount()
+            ath_table.insertRow(row_index)
+            ath_table.setItem(row_index, 0, QTableWidgetItem(_ath_group_for_key(param_name)))
+            ath_table.setItem(row_index, 1, QTableWidgetItem(param_name))
+            ath_table.setItem(row_index, 2, QTableWidgetItem(AnalysePage._format_param_value(value)))
+            visible_check = QCheckBox()
+            visible_check.setChecked(param_name in visible_set)
+            if callable(on_toggle_ath_param):
+                visible_check.toggled.connect(
+                    lambda checked, key=param_name: on_toggle_ath_param(str(key), bool(checked))
+                )
+            cell = QWidget()
+            cell_layout = QHBoxLayout(cell)
+            cell_layout.setContentsMargins(0, 0, 0, 0)
+            cell_layout.setSpacing(0)
+            cell_layout.addWidget(visible_check, 0, Qt.AlignCenter)
+            ath_table.setCellWidget(row_index, 3, cell)
+        if ath_table.rowCount() <= 0:
+            ath_table.setRowCount(1)
+            ath_table.setItem(0, 0, QTableWidgetItem("--"))
+            ath_table.setItem(0, 1, QTableWidgetItem("No ATH parameters available."))
+            ath_table.setItem(0, 2, QTableWidgetItem("--"))
+            ath_table.setItem(0, 3, QTableWidgetItem("--"))
+        ath_layout.addWidget(ath_table, 1)
+        tabs.addTab(ath_tab, "ATH Params")
 
         files_tab = QWidget()
         files_layout = QVBoxLayout(files_tab)
@@ -4794,6 +4872,13 @@ class AnalysePage(QWidget):
         self._loaded_analysis_id: Optional[str] = None
         self._selected_compare_slot_index: Optional[int] = None
         self._selected_detail_payload: Dict[str, Any] = {}
+        self._ath_visible_param_keys: List[str] = []
+        self._ath_visible_pref_key = "ath_visible_params"
+        self._ath_all_param_rows_by_version: Dict[Tuple[str, str, str], List[Dict[str, Any]]] = {}
+        self._version_note_max_chars = 200
+        self._note_sync_guard = False
+        self._pending_note_context: Optional[Tuple[str, str, str]] = None
+        self._pending_note_text = ""
         self._use_full_angles_for_smoothness = False
         self._show_mirrored_minus6_contour = False
         self._latest_plot_payload: Dict[str, Any] = {}
@@ -4809,6 +4894,10 @@ class AnalysePage(QWidget):
         self._compare_plot_debounce_timer.setSingleShot(True)
         self._compare_plot_debounce_timer.setInterval(220)
         self._compare_plot_debounce_timer.timeout.connect(self._start_compare_plot_request)
+        self._note_save_timer = QTimer(self)
+        self._note_save_timer.setSingleShot(True)
+        self._note_save_timer.setInterval(450)
+        self._note_save_timer.timeout.connect(self._persist_pending_version_note)
 
         presets = self.service.analyzer_presets()
         self._coverage_presets = [dict(item) for item in list(presets.get("coverage_presets", []) or []) if isinstance(item, dict)]
@@ -5508,7 +5597,7 @@ class AnalysePage(QWidget):
         self.analyzer_controls_row.setObjectName("ProjectSummaryPanel")
         controls_row_layout = QHBoxLayout(self.analyzer_controls_row)
         controls_row_layout.setContentsMargins(8, 4, 8, 4)
-        controls_row_layout.setSpacing(4)
+        controls_row_layout.setSpacing(6)
 
         self.analysis_controls_tile = QFrame()
         self.analysis_controls_tile.setObjectName("ProjectSummaryPanel")
@@ -5539,13 +5628,126 @@ class AnalysePage(QWidget):
         self.kpi_controls_tile.setProperty("analyzerKpiTile", True)
         kpi_controls_layout = QVBoxLayout(self.kpi_controls_tile)
         kpi_controls_layout.setContentsMargins(8, 4, 8, 4)
-        kpi_controls_layout.setSpacing(2)
-        kpi_title = QLabel("KPIs")
+        kpi_controls_layout.setSpacing(4)
+        kpi_title = QLabel("Version Information")
         kpi_title.setObjectName("SummaryMeta")
         kpi_title.setProperty("analyzerBlockTitle", True)
         kpi_controls_layout.addWidget(kpi_title, 0, Qt.AlignLeft | Qt.AlignVCenter)
-        kpi_controls_layout.addStretch(1)
-        controls_row_layout.addWidget(self.kpi_controls_tile, 1)
+
+        version_info_body = QWidget()
+        version_info_body_layout = QHBoxLayout(version_info_body)
+        version_info_body_layout.setContentsMargins(0, 0, 0, 0)
+        version_info_body_layout.setSpacing(6)
+
+        self.version_info_scores_col = QFrame()
+        self.version_info_scores_col.setObjectName("ProjectSummaryPanel")
+        scores_layout = QFormLayout(self.version_info_scores_col)
+        scores_layout.setContentsMargins(6, 4, 6, 4)
+        scores_layout.setSpacing(3)
+        self._version_info_metric_labels: Dict[str, QLabel] = {}
+        for key, label_text, tip in (
+            ("score", "Score", "Stage score for the selected Batch/Version."),
+            ("b_pc_oct", "Pattern Ctrl", "Pattern control, in octave units."),
+            ("e_bw", "BW Error", "Beamwidth error in degrees."),
+            ("e_cov", "Cov Error", "Coverage uniformity error in dB."),
+            ("r_spill", "Spill", "Spill ratio in the selected window."),
+            ("flags", "Flags", "Flag summary count and severity tags."),
+        ):
+            value = QLabel("--")
+            value.setObjectName("SummaryMeta")
+            value.setWordWrap(False)
+            value.setToolTip(tip)
+            self._version_info_metric_labels[key] = value
+            scores_layout.addRow(label_text, value)
+        version_info_body_layout.addWidget(self.version_info_scores_col, 1)
+
+        self.version_info_extra_col = QFrame()
+        self.version_info_extra_col.setObjectName("ProjectSummaryPanel")
+        extra_layout = QHBoxLayout(self.version_info_extra_col)
+        extra_layout.setContentsMargins(6, 4, 6, 4)
+        extra_layout.setSpacing(6)
+
+        self.version_info_col1 = QWidget()
+        col1_layout = QVBoxLayout(self.version_info_col1)
+        col1_layout.setContentsMargins(0, 0, 0, 0)
+        col1_layout.setSpacing(3)
+        col1_title = QLabel("Dimensions + Chips")
+        col1_title.setObjectName("SummaryMeta")
+        col1_title.setProperty("analyzerBlockTitle", True)
+        col1_layout.addWidget(col1_title, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        self.version_dims_label = ElidedTitleLabel("--")
+        self.version_dims_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.version_dims_label.setObjectName("SummaryMeta")
+        self.version_dims_label.setToolTip("Final dimensions (L x W x H) in mm.")
+        col1_layout.addWidget(self.version_dims_label, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        self._version_chip_labels: Dict[str, QLabel] = {}
+        for key in ("throat", "gcurve", "morph", "driver", "enclosure"):
+            chip = QLabel("--")
+            chip.setObjectName("SummaryMeta")
+            chip.setWordWrap(False)
+            chip.setToolTip("Not available from DB yet.")
+            self._version_chip_labels[key] = chip
+            col1_layout.addWidget(chip, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        col1_layout.addStretch(1)
+        extra_layout.addWidget(self.version_info_col1, 1)
+
+        self.version_info_col2 = QWidget()
+        col2_layout = QVBoxLayout(self.version_info_col2)
+        col2_layout.setContentsMargins(0, 0, 0, 0)
+        col2_layout.setSpacing(3)
+        col2_title = QLabel("Sweep + ATH Params")
+        col2_title.setObjectName("SummaryMeta")
+        col2_title.setProperty("analyzerBlockTitle", True)
+        col2_layout.addWidget(col2_title, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        self.version_sweep_value_label = QLabel("Sweep: --")
+        self.version_sweep_value_label.setObjectName("SummaryMeta")
+        self.version_sweep_value_label.setWordWrap(True)
+        self.version_sweep_value_label.setStyleSheet("color: #5DA8FF;")
+        col2_layout.addWidget(self.version_sweep_value_label, 0, Qt.AlignLeft | Qt.AlignTop)
+        self.version_ath_params_value_label = QLabel("ATH params: --")
+        self.version_ath_params_value_label.setObjectName("SummaryMeta")
+        self.version_ath_params_value_label.setWordWrap(True)
+        self.version_ath_params_value_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        col2_layout.addWidget(self.version_ath_params_value_label, 1, Qt.AlignLeft | Qt.AlignTop)
+        extra_layout.addWidget(self.version_info_col2, 1)
+
+        self.version_info_col3 = QWidget()
+        col3_layout = QVBoxLayout(self.version_info_col3)
+        col3_layout.setContentsMargins(0, 0, 0, 0)
+        col3_layout.setSpacing(3)
+        col3_title = QLabel("Notes")
+        col3_title.setObjectName("SummaryMeta")
+        col3_title.setProperty("analyzerBlockTitle", True)
+        col3_layout.addWidget(col3_title, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        self.version_note_edit = QTextEdit()
+        self.version_note_edit.setObjectName("AnalyzerVersionNoteEdit")
+        self.version_note_edit.setAcceptRichText(False)
+        self.version_note_edit.setPlaceholderText("Short note for this B###/V### selection...")
+        self.version_note_edit.setMaximumHeight(62)
+        col3_layout.addWidget(self.version_note_edit, 1)
+        self.version_note_counter = QLabel(f"{self._version_note_max_chars} left")
+        self.version_note_counter.setObjectName("SummaryMeta")
+        self.version_note_counter.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        col3_layout.addWidget(self.version_note_counter, 0)
+        self.version_info_buttons_row = QWidget()
+        buttons_row_layout = QHBoxLayout(self.version_info_buttons_row)
+        buttons_row_layout.setContentsMargins(0, 0, 0, 0)
+        buttons_row_layout.setSpacing(4)
+        buttons_row_layout.addWidget(self.flags_help_btn, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        self.version_info_details_btn = QPushButton("Details")
+        self.version_info_details_btn.setObjectName("BatchSecondaryButton")
+        self.version_info_details_btn.setMinimumHeight(24)
+        self.version_info_details_btn.setMaximumHeight(24)
+        buttons_row_layout.addWidget(self.version_info_details_btn, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        buttons_row_layout.addStretch(1)
+        col3_layout.addWidget(self.version_info_buttons_row, 0)
+        extra_layout.addWidget(self.version_info_col3, 1)
+
+        version_info_body_layout.addWidget(self.version_info_extra_col, 3)
+        version_info_body_layout.setStretch(0, 1)
+        version_info_body_layout.setStretch(1, 3)
+        kpi_controls_layout.addWidget(version_info_body, 1)
+        controls_row_layout.addWidget(self.kpi_controls_tile, 2)
 
         self.display_controls_tile = QFrame()
         self.display_controls_tile.setObjectName("ProjectSummaryPanel")
@@ -5582,38 +5784,57 @@ class AnalysePage(QWidget):
         self.display_advanced_btn.setMaximumHeight(24)
         self.band_selector.setToolTip("Affects plotted range and KPI computation window.")
         self.tol_spin.setToolTip("Affects plotted range and KPI computation window.")
-        slots_row = QWidget()
-        slots_layout = QHBoxLayout(slots_row)
-        slots_layout.setContentsMargins(0, 0, 0, 0)
-        slots_layout.setSpacing(4)
         self.display_slot_frames: List[QFrame] = []
-        for slot_index in range(4):
-            slot_frame = QFrame()
-            slot_frame.setObjectName("AnalyzerDisplaySlotFrame")
-            slot_layout = QGridLayout(slot_frame)
-            slot_layout.setContentsMargins(6, 4, 6, 4)
-            slot_layout.setHorizontalSpacing(4)
-            slot_layout.setVerticalSpacing(2)
-            slot_layout.setColumnStretch(0, 0)
-            slot_layout.setColumnStretch(1, 1)
-            if slot_index == 0:
-                slot_layout.addWidget(QLabel("Band"), 0, 0, Qt.AlignLeft | Qt.AlignVCenter)
-                slot_layout.addWidget(self.band_selector, 0, 1)
-                plane_box = QWidget()
-                plane_layout = QHBoxLayout(plane_box)
-                plane_layout.setContentsMargins(0, 0, 0, 0)
-                plane_layout.setSpacing(2)
-                plane_layout.addWidget(QLabel("Plane"), 0, Qt.AlignLeft | Qt.AlignVCenter)
-                for plane_key in ("H", "V", "D"):
-                    btn = self._plane_buttons.get(plane_key)
-                    if btn is not None:
-                        plane_layout.addWidget(btn, 0, Qt.AlignLeft | Qt.AlignVCenter)
-                plane_layout.addStretch(1)
-                slot_layout.addWidget(plane_box, 1, 0, 1, 2)
-            self.display_slot_frames.append(slot_frame)
-            slots_layout.addWidget(slot_frame, 1)
-        slots_layout.addWidget(self.display_advanced_btn, 0, Qt.AlignRight | Qt.AlignVCenter)
-        display_controls_layout.addWidget(slots_row, 1, 0, 1, 4)
+        display_split_row = QWidget()
+        display_split_layout = QHBoxLayout(display_split_row)
+        display_split_layout.setContentsMargins(0, 0, 0, 0)
+        display_split_layout.setSpacing(6)
+
+        band_frame = QFrame()
+        band_frame.setObjectName("AnalyzerDisplaySlotFrame")
+        band_layout = QGridLayout(band_frame)
+        band_layout.setContentsMargins(6, 4, 6, 4)
+        band_layout.setHorizontalSpacing(4)
+        band_layout.setVerticalSpacing(2)
+        band_layout.addWidget(QLabel("Band"), 0, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        band_layout.addWidget(self.band_selector, 0, 1)
+        self.custom_band_low_label = QLabel("Low")
+        self.custom_band_high_label = QLabel("High")
+        band_layout.addWidget(self.custom_band_low_label, 1, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        band_layout.addWidget(self.custom_band_low_spin, 1, 1)
+        band_layout.addWidget(self.custom_band_high_label, 2, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        band_layout.addWidget(self.custom_band_high_spin, 2, 1)
+        band_layout.setColumnStretch(0, 0)
+        band_layout.setColumnStretch(1, 1)
+        display_split_layout.addWidget(band_frame, 1)
+        self.display_slot_frames.append(band_frame)
+
+        plane_frame = QFrame()
+        plane_frame.setObjectName("AnalyzerDisplaySlotFrame")
+        plane_layout = QGridLayout(plane_frame)
+        plane_layout.setContentsMargins(6, 4, 6, 4)
+        plane_layout.setHorizontalSpacing(4)
+        plane_layout.setVerticalSpacing(2)
+        plane_box = QWidget()
+        plane_box_layout = QHBoxLayout(plane_box)
+        plane_box_layout.setContentsMargins(0, 0, 0, 0)
+        plane_box_layout.setSpacing(2)
+        plane_box_layout.addWidget(QLabel("Plane"), 0, Qt.AlignLeft | Qt.AlignVCenter)
+        for plane_key in ("H", "V", "D"):
+            btn = self._plane_buttons.get(plane_key)
+            if btn is not None:
+                plane_box_layout.addWidget(btn, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        plane_box_layout.addStretch(1)
+        plane_layout.addWidget(plane_box, 0, 0, 1, 2)
+        plane_layout.addWidget(QLabel("Tol (+/-deg)"), 1, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        plane_layout.addWidget(self.tol_spin, 1, 1)
+        plane_layout.setColumnStretch(0, 0)
+        plane_layout.setColumnStretch(1, 1)
+        display_split_layout.addWidget(plane_frame, 1)
+        self.display_slot_frames.append(plane_frame)
+
+        display_split_layout.addWidget(self.display_advanced_btn, 0, Qt.AlignRight | Qt.AlignTop)
+        display_controls_layout.addWidget(display_split_row, 1, 0, 1, 4)
         display_controls_layout.addWidget(self.plot_loading_label, 2, 0, 1, 3, Qt.AlignLeft | Qt.AlignVCenter)
         display_controls_layout.addWidget(self.plot_cancel_btn, 2, 3, 1, 1, Qt.AlignRight | Qt.AlignVCenter)
         display_controls_layout.setColumnStretch(0, 1)
@@ -5621,6 +5842,9 @@ class AnalysePage(QWidget):
         display_controls_layout.setColumnStretch(2, 1)
         display_controls_layout.setColumnStretch(3, 0)
         controls_row_layout.addWidget(self.display_controls_tile, 1)
+        controls_row_layout.setStretch(0, 1)
+        controls_row_layout.setStretch(1, 2)
+        controls_row_layout.setStretch(2, 1)
 
         self.analysis_mode_row = QFrame()
         self.analysis_mode_row.setObjectName("ProjectSummaryPanel")
@@ -5672,6 +5896,8 @@ class AnalysePage(QWidget):
         self.kpi_popover_btn.clicked.connect(self._open_kpi_popover)
         self.flags_help_btn.clicked.connect(self._open_flags_help_dialog)
         self.run_details_btn.clicked.connect(self._open_run_details_dialog)
+        self.version_info_details_btn.clicked.connect(self._open_run_details_dialog)
+        self.version_note_edit.textChanged.connect(self._on_version_note_text_changed)
         self.stage_selector.currentIndexChanged.connect(self._on_stage_changed)
         self.target_selector.currentIndexChanged.connect(self._on_kpi_config_changed)
         self.tol_spin.valueChanged.connect(self._on_kpi_config_changed)
@@ -5719,7 +5945,10 @@ class AnalysePage(QWidget):
         self.run_selector.addItem("(no versions)", "")
         self.run_selector.setEnabled(False)
         self.run_details_btn.setEnabled(False)
+        self.version_info_details_btn.setEnabled(False)
         self.flags_help_btn.setEnabled(False)
+        self.version_note_edit.setEnabled(False)
+        self._update_version_note_counter(remaining=self._version_note_max_chars)
         self._sync_batch_selector_tooltip()
         self._sync_version_stepper()
         self._sync_selection_action_button_sizes()
@@ -5961,6 +6190,8 @@ class AnalysePage(QWidget):
         token = str(project_id or "").strip() or None
         self._project_context_id = token
         self.project_selector.setEnabled(False)
+        self._ath_all_param_rows_by_version.clear()
+        self._reload_project_ui_prefs()
         self._update_toolbar_context_chips()
 
     def refresh_data(self) -> None:
@@ -6431,39 +6662,19 @@ class AnalysePage(QWidget):
         form.setHorizontalSpacing(8)
         form.setVerticalSpacing(6)
 
-        tol_spin = QDoubleSpinBox()
-        tol_spin.setRange(self.tol_spin.minimum(), self.tol_spin.maximum())
-        tol_spin.setDecimals(self.tol_spin.decimals())
-        tol_spin.setValue(float(self.tol_spin.value()))
-        form.addWidget(QLabel("Tol (+/-deg)"), 0, 0, Qt.AlignLeft | Qt.AlignVCenter)
-        form.addWidget(tol_spin, 0, 1)
-
-        custom_band_low = QDoubleSpinBox()
-        custom_band_low.setRange(self.custom_band_low_spin.minimum(), self.custom_band_low_spin.maximum())
-        custom_band_low.setDecimals(self.custom_band_low_spin.decimals())
-        custom_band_low.setValue(float(self.custom_band_low_spin.value()))
-        custom_band_high = QDoubleSpinBox()
-        custom_band_high.setRange(self.custom_band_high_spin.minimum(), self.custom_band_high_spin.maximum())
-        custom_band_high.setDecimals(self.custom_band_high_spin.decimals())
-        custom_band_high.setValue(float(self.custom_band_high_spin.value()))
-        form.addWidget(QLabel("Custom band low"), 1, 0, Qt.AlignLeft | Qt.AlignVCenter)
-        form.addWidget(custom_band_low, 1, 1)
-        form.addWidget(QLabel("Custom band high"), 1, 2, Qt.AlignLeft | Qt.AlignVCenter)
-        form.addWidget(custom_band_high, 1, 3)
-
         x_axis_combo = QComboBox()
         for idx in range(self.x_axis_scale_combo.count()):
             x_axis_combo.addItem(self.x_axis_scale_combo.itemText(idx), self.x_axis_scale_combo.itemData(idx))
         self._set_combo_current_by_data(x_axis_combo, str(self.x_axis_scale_combo.currentData() or "log"))
-        form.addWidget(QLabel("X-axis"), 2, 0, Qt.AlignLeft | Qt.AlignVCenter)
-        form.addWidget(x_axis_combo, 2, 1)
+        form.addWidget(QLabel("X-axis"), 0, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        form.addWidget(x_axis_combo, 0, 1)
 
         norm_mode_combo = QComboBox()
         for idx in range(self.norm_mode_combo.count()):
             norm_mode_combo.addItem(self.norm_mode_combo.itemText(idx), self.norm_mode_combo.itemData(idx))
         self._set_combo_current_by_data(norm_mode_combo, str(self.norm_mode_combo.currentData() or "relative_zero"))
-        form.addWidget(QLabel("Normalization"), 2, 2, Qt.AlignLeft | Qt.AlignVCenter)
-        form.addWidget(norm_mode_combo, 2, 3)
+        form.addWidget(QLabel("Normalization"), 0, 2, Qt.AlignLeft | Qt.AlignVCenter)
+        form.addWidget(norm_mode_combo, 0, 3)
 
         norm_angle_combo = QComboBox()
         for idx in range(self.norm_angle_selector.count()):
@@ -6471,8 +6682,8 @@ class AnalysePage(QWidget):
         self._set_combo_current_by_data(norm_angle_combo, str(self.norm_angle_selector.currentData() or "0"))
         norm_angle_combo.setEnabled(bool(self.norm_angle_selector.isEnabled()))
         norm_angle_combo.setToolTip(str(self.norm_angle_selector.toolTip() or ""))
-        form.addWidget(QLabel("Norm angle"), 3, 0, Qt.AlignLeft | Qt.AlignVCenter)
-        form.addWidget(norm_angle_combo, 3, 1)
+        form.addWidget(QLabel("Norm angle"), 1, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        form.addWidget(norm_angle_combo, 1, 1)
 
         clamp_check = QCheckBox("Clamp heatmap")
         clamp_check.setChecked(bool(self.heatmap_clamp_check.isChecked()))
@@ -6482,20 +6693,20 @@ class AnalysePage(QWidget):
         clamp_min_spin.setValue(float(self.heatmap_clamp_min_spin.value()))
         raw_bins_check = QCheckBox("Show raw bins")
         raw_bins_check.setChecked(bool(self.raw_bins_check.isChecked()))
-        form.addWidget(clamp_check, 4, 0, 1, 2, Qt.AlignLeft | Qt.AlignVCenter)
-        form.addWidget(QLabel("Clamp min dB"), 4, 2, Qt.AlignLeft | Qt.AlignVCenter)
-        form.addWidget(clamp_min_spin, 4, 3)
-        form.addWidget(raw_bins_check, 5, 0, 1, 2, Qt.AlignLeft | Qt.AlignVCenter)
+        form.addWidget(clamp_check, 2, 0, 1, 2, Qt.AlignLeft | Qt.AlignVCenter)
+        form.addWidget(QLabel("Clamp min dB"), 2, 2, Qt.AlignLeft | Qt.AlignVCenter)
+        form.addWidget(clamp_min_spin, 2, 3)
+        form.addWidget(raw_bins_check, 3, 0, 1, 2, Qt.AlignLeft | Qt.AlignVCenter)
 
         mirrored_minus6_check = QCheckBox("Show mirrored -6 dB contour")
         mirrored_minus6_check.setChecked(bool(getattr(self, "_show_mirrored_minus6_contour", False)))
-        form.addWidget(mirrored_minus6_check, 5, 2, 1, 2, Qt.AlignLeft | Qt.AlignVCenter)
+        form.addWidget(mirrored_minus6_check, 3, 2, 1, 2, Qt.AlignLeft | Qt.AlignVCenter)
 
         smoothness_check = QCheckBox("Use full angles for smoothness (S_theta)")
         smoothness_check.setObjectName("AnalyzerFullAnglesSmoothnessCheck")
         smoothness_check.setChecked(bool(self._use_full_angles_for_smoothness))
         smoothness_check.setToolTip("When enabled, S_theta uses all angles instead of the target window.")
-        form.addWidget(smoothness_check, 6, 0, 1, 4, Qt.AlignLeft | Qt.AlignVCenter)
+        form.addWidget(smoothness_check, 4, 0, 1, 4, Qt.AlignLeft | Qt.AlignVCenter)
         body.addLayout(form)
         close_row = QHBoxLayout()
         close_row.addStretch(1)
@@ -6505,14 +6716,7 @@ class AnalysePage(QWidget):
         close_btn.setObjectName("BatchSecondaryButton")
 
         def _apply_and_close() -> None:
-            kpi_changed = False
             plot_changed = False
-            if abs(float(self.tol_spin.value()) - float(tol_spin.value())) > 1.0e-9:
-                kpi_changed = True
-            if abs(float(self.custom_band_low_spin.value()) - float(custom_band_low.value())) > 1.0e-9:
-                kpi_changed = True
-            if abs(float(self.custom_band_high_spin.value()) - float(custom_band_high.value())) > 1.0e-9:
-                kpi_changed = True
             if str(self.x_axis_scale_combo.currentData() or "log") != str(x_axis_combo.currentData() or "log"):
                 plot_changed = True
             if str(self.norm_mode_combo.currentData() or "relative_zero") != str(norm_mode_combo.currentData() or "relative_zero"):
@@ -6531,9 +6735,6 @@ class AnalysePage(QWidget):
             smoothness_changed = bool(self._use_full_angles_for_smoothness) != bool(smoothness_check.isChecked())
 
             self._control_sync_guard = True
-            self.tol_spin.setValue(float(tol_spin.value()))
-            self.custom_band_low_spin.setValue(float(custom_band_low.value()))
-            self.custom_band_high_spin.setValue(float(custom_band_high.value()))
             self._set_combo_current_by_data(self.x_axis_scale_combo, str(x_axis_combo.currentData() or "log"))
             self._set_combo_current_by_data(self.norm_mode_combo, str(norm_mode_combo.currentData() or "relative_zero"))
             self._set_combo_current_by_data(self.norm_angle_selector, str(norm_angle_combo.currentData() or "0"))
@@ -6544,10 +6745,7 @@ class AnalysePage(QWidget):
             self._use_full_angles_for_smoothness = bool(smoothness_check.isChecked())
             self._control_sync_guard = False
 
-            if kpi_changed:
-                self._sync_band_custom_visibility()
-                self._on_kpi_config_changed()
-            elif plot_changed:
+            if plot_changed:
                 self._on_plot_config_changed()
             if smoothness_changed:
                 self._schedule_plot_refresh()
@@ -7634,6 +7832,8 @@ class AnalysePage(QWidget):
             self._set_combo_current_by_data(self.batch_selector, active_batch_id)
         finally:
             self._selector_sync_guard = False
+        self._ath_all_param_rows_by_version.clear()
+        self._reload_project_ui_prefs()
         self._sync_batch_selector_tooltip()
         self._apply_runs_payload(payload)
         self._refresh_saved_analyses()
@@ -7737,7 +7937,14 @@ class AnalysePage(QWidget):
         payload = dict(self._selected_detail_payload or {})
         if not payload:
             return
-        dialog = _AnalyzerRunDetailsDialog(payload=payload, parent=self)
+        ath_rows = [row for row in self._version_param_rows(payload) if bool(row.get("is_set"))]
+        dialog = _AnalyzerRunDetailsDialog(
+            payload=payload,
+            ath_param_rows=ath_rows,
+            visible_ath_keys=list(self._ath_visible_param_keys),
+            on_toggle_ath_param=self._set_ath_param_visibility,
+            parent=self,
+        )
         dialog.exec()
 
     @staticmethod
@@ -7757,6 +7964,237 @@ class AnalysePage(QWidget):
             return f"{float(value):.{digits}f}"
         except Exception:
             return str(value)
+
+    @staticmethod
+    def _format_param_value(value: Any) -> str:
+        if value is None:
+            return "--"
+        if isinstance(value, bool):
+            return "true" if value else "false"
+        if isinstance(value, (int, float)):
+            if float(value).is_integer():
+                return str(int(value))
+            return f"{float(value):.3f}".rstrip("0").rstrip(".")
+        if isinstance(value, Mapping):
+            entries = [f"{str(k)}={AnalysePage._format_param_value(v)}" for k, v in list(dict(value).items())[:4]]
+            return "{" + ", ".join(entries) + (" ..." if len(list(dict(value).items())) > 4 else "") + "}"
+        if isinstance(value, list):
+            preview = ", ".join(AnalysePage._format_param_value(item) for item in list(value)[:4])
+            return "[" + preview + (" ..." if len(list(value)) > 4 else "") + "]"
+        return str(value)
+
+    def _reload_project_ui_prefs(self) -> None:
+        project_id = str(self._selected_project_id() or "").strip()
+        if not project_id or self._source_key() != "project":
+            self._ath_visible_param_keys = []
+            return
+        payload = self.service.analyzer_get_ui_pref(project_id=project_id, pref_key=self._ath_visible_pref_key)
+        raw_keys = list(payload.get("visible_keys", []) or []) if isinstance(payload, dict) else []
+        seen: set[str] = set()
+        ordered: List[str] = []
+        for raw in raw_keys:
+            key = str(raw or "").strip()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            ordered.append(key)
+        self._ath_visible_param_keys = ordered
+
+    def _persist_ath_visible_pref(self) -> None:
+        project_id = str(self._selected_project_id() or "").strip()
+        if not project_id or self._source_key() != "project":
+            return
+        self.service.analyzer_set_ui_pref(
+            project_id=project_id,
+            pref_key=self._ath_visible_pref_key,
+            payload={"visible_keys": list(self._ath_visible_param_keys)},
+        )
+
+    def _set_ath_param_visibility(self, key: str, visible: bool) -> None:
+        token = str(key or "").strip()
+        if not token:
+            return
+        current = list(self._ath_visible_param_keys)
+        if visible and token not in current:
+            current.append(token)
+        if not visible and token in current:
+            current = [item for item in current if item != token]
+        self._ath_visible_param_keys = current
+        self._persist_ath_visible_pref()
+        self._update_version_information_panel(dict(self._selected_detail_payload or {}))
+
+    def _version_identity_key(self, payload: Mapping[str, Any]) -> Tuple[str, str, str]:
+        return (
+            str(payload.get("project_id") or "").strip(),
+            str(payload.get("batch_id") or "").strip(),
+            str(payload.get("version_id") or "").strip(),
+        )
+
+    def _version_param_rows(self, payload: Mapping[str, Any]) -> List[Dict[str, Any]]:
+        identity = self._version_identity_key(payload)
+        if not all(identity):
+            return []
+        if identity in self._ath_all_param_rows_by_version:
+            return [dict(item) for item in list(self._ath_all_param_rows_by_version.get(identity, []))]
+        rows = self.service.analyzer_list_version_param_rows(
+            project_id=identity[0],
+            batch_id=identity[1],
+            version_id=identity[2],
+        )
+        normalized = [dict(item) for item in list(rows or []) if isinstance(item, dict)]
+        self._ath_all_param_rows_by_version[identity] = normalized
+        return [dict(item) for item in normalized]
+
+    def _visible_ath_param_lines(self, payload: Mapping[str, Any]) -> List[str]:
+        if not self._ath_visible_param_keys:
+            return ["ATH params: use Details -> ATH Params to pick visible keys."]
+        identity = self._version_identity_key(payload)
+        if not all(identity):
+            return ["ATH params: --"]
+        values = self.service.analyzer_version_param_values(
+            project_id=identity[0],
+            batch_id=identity[1],
+            version_id=identity[2],
+            keys=self._ath_visible_param_keys,
+        )
+        lines: List[str] = []
+        for key in self._ath_visible_param_keys:
+            if key not in values:
+                lines.append(f"{key}: --")
+                continue
+            lines.append(f"{key}: {self._format_param_value(values.get(key))}")
+        return lines or ["ATH params: --"]
+
+    def _update_version_note_counter(self, *, remaining: int) -> None:
+        self.version_note_counter.setText(f"{max(int(remaining), 0)} left")
+
+    def _on_version_note_text_changed(self) -> None:
+        if self._note_sync_guard:
+            return
+        text = str(self.version_note_edit.toPlainText() or "")
+        if len(text) > int(self._version_note_max_chars):
+            self._note_sync_guard = True
+            cursor = self.version_note_edit.textCursor()
+            self.version_note_edit.setPlainText(text[: int(self._version_note_max_chars)])
+            cursor.setPosition(min(cursor.position(), int(self._version_note_max_chars)))
+            self.version_note_edit.setTextCursor(cursor)
+            self._note_sync_guard = False
+            text = str(self.version_note_edit.toPlainText() or "")
+        remaining = int(self._version_note_max_chars) - len(text)
+        self._update_version_note_counter(remaining=remaining)
+        identity = self._version_identity_key(self._selected_detail_payload)
+        if not all(identity):
+            return
+        self._pending_note_context = identity
+        self._pending_note_text = text
+        self._note_save_timer.start()
+
+    def _persist_pending_version_note(self) -> None:
+        context = self._pending_note_context
+        if context is None:
+            return
+        project_id, batch_id, version_id = context
+        if not project_id or not batch_id or not version_id:
+            return
+        self.service.analyzer_set_version_note(
+            project_id=project_id,
+            batch_id=batch_id,
+            version_id=version_id,
+            note_text=self._pending_note_text,
+        )
+        if (
+            str(self._selected_detail_payload.get("project_id") or "").strip() == project_id
+            and str(self._selected_detail_payload.get("batch_id") or "").strip() == batch_id
+            and str(self._selected_detail_payload.get("version_id") or "").strip() == version_id
+        ):
+            self._selected_detail_payload["version_note"] = self._pending_note_text
+            self._selected_detail_payload["version_note_updated_at"] = (
+                datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+            )
+
+    def _update_version_information_panel(self, payload: Dict[str, Any]) -> None:
+        data = dict(payload or {})
+        if not data:
+            for label in self._version_info_metric_labels.values():
+                label.setText("--")
+            self.version_dims_label.set_full_text("--")
+            for label in self._version_chip_labels.values():
+                label.setText("--")
+                label.setToolTip("missing")
+            self.version_sweep_value_label.setText("Sweep: --")
+            self.version_ath_params_value_label.setText("ATH params: --")
+            self.version_info_details_btn.setEnabled(False)
+            self.version_note_edit.setEnabled(False)
+            self._note_sync_guard = True
+            self.version_note_edit.setPlainText("")
+            self._note_sync_guard = False
+            self._update_version_note_counter(remaining=self._version_note_max_chars)
+            return
+
+        self._version_info_metric_labels["score"].setText(self._format_float(data.get("kpi_score"), 2))
+        self._version_info_metric_labels["b_pc_oct"].setText(self._format_float(data.get("kpi_b_pc_oct"), 2))
+        self._version_info_metric_labels["e_bw"].setText(self._format_float(data.get("kpi_e_bw"), 2))
+        self._version_info_metric_labels["e_cov"].setText(self._format_float(data.get("kpi_e_cov"), 2))
+        self._version_info_metric_labels["r_spill"].setText(self._format_float(data.get("kpi_r_spill"), 3))
+        self._version_info_metric_labels["flags"].setText(self._flags_text(data))
+
+        length_mm = data.get("ath_length_mm")
+        width_mm = data.get("ath_width_mm")
+        height_mm = data.get("ath_height_mm")
+        if None in (length_mm, width_mm, height_mm):
+            self.version_dims_label.set_full_text("--")
+            self.version_dims_label.setToolTip("missing")
+        else:
+            self.version_dims_label.set_full_text(
+                f"{float(length_mm):.1f} x {float(width_mm):.1f} x {float(height_mm):.1f} mm"
+            )
+            self.version_dims_label.setToolTip("Final dimensions (L x W x H).")
+
+        def _mode_text(mapping: Dict[int, str], raw_value: Any, default: str) -> str:
+            try:
+                token = int(float(raw_value))
+            except Exception:
+                return default
+            return mapping.get(token, default)
+
+        throat_text = _mode_text({1: "OSSE", 2: "R-OSSE", 3: "Circular Arc"}, data.get("throat_profile"), "--")
+        gcurve_text = _mode_text({0: "No GCurve", 1: "Superellipse", 2: "Superformula"}, data.get("gcurve_type"), "No GCurve")
+        morph_text = _mode_text({0: "No Morph", 1: "Rectangle", 2: "Circle"}, data.get("morph_shape"), "No Morph")
+        enclosure_text = "Enclosure" if bool(data.get("enclosure_enabled")) else "No Enclosure"
+        chip_values = {
+            "throat": f"Throat: {throat_text}",
+            "gcurve": f"GCurve: {gcurve_text}",
+            "morph": f"Morph: {morph_text}",
+            "driver": f"Driver: {str(data.get('driver_label') or 'Generic25')}",
+            "enclosure": f"Enclosure: {enclosure_text}",
+        }
+        for key, label in self._version_chip_labels.items():
+            value = str(chip_values.get(key) or "--")
+            label.setText(value)
+            label.setToolTip(value if value != "--" else "missing")
+
+        sweep_params = dict(data.get("sweep_parameters") or {})
+        if sweep_params:
+            lines = [f"{name}: {self._format_param_value(value)}" for name, value in list(sweep_params.items())[:3]]
+            if len(sweep_params) > 3:
+                lines.append(f"+{len(sweep_params) - 3} more")
+            self.version_sweep_value_label.setText("Sweep: " + "\n".join(lines))
+        else:
+            self.version_sweep_value_label.setText("Sweep: --")
+
+        ath_lines = self._visible_ath_param_lines(data)
+        self.version_ath_params_value_label.setText("\n".join(ath_lines))
+
+        note_text = str(data.get("version_note") or "")
+        can_edit_note = bool(self._source_key() == "project" and all(self._version_identity_key(data)))
+        self._note_sync_guard = True
+        self.version_note_edit.setEnabled(can_edit_note)
+        self.version_note_edit.setPlainText(note_text[: int(self._version_note_max_chars)])
+        self._note_sync_guard = False
+        self._update_version_note_counter(
+            remaining=int(self._version_note_max_chars) - len(str(self.version_note_edit.toPlainText() or ""))
+        )
+        self.version_info_details_btn.setEnabled(True)
 
     @staticmethod
     def _row_has_warning(row: Dict[str, Any]) -> bool:
@@ -7817,7 +8255,11 @@ class AnalysePage(QWidget):
         return str(flags_count)
 
     def _sync_band_custom_visibility(self) -> None:
-        self.custom_band_widget.setVisible(str(self.band_selector.currentData() or "") == "custom")
+        is_custom = str(self.band_selector.currentData() or "") == "custom"
+        self.custom_band_low_spin.setEnabled(bool(is_custom))
+        self.custom_band_high_spin.setEnabled(bool(is_custom))
+        self.custom_band_low_label.setEnabled(bool(is_custom))
+        self.custom_band_high_label.setEnabled(bool(is_custom))
         self.heatmap_clamp_min_spin.setEnabled(bool(self.heatmap_clamp_check.isChecked()))
         self._update_toolbar_context_chips()
 
@@ -7960,6 +8402,7 @@ class AnalysePage(QWidget):
         self._stop_autopick_worker()
         self._compare_candidates = []
         self._compare_plot_items = []
+        self._ath_all_param_rows_by_version.clear()
         self._loaded_analysis_id = None
         self._clear_plot_views("Select version + plane to render plots.")
         self.compare_overlay_canvas.clear_series("Select candidates to display overlay.")
@@ -7977,6 +8420,7 @@ class AnalysePage(QWidget):
             return
         self._compare_candidates = []
         self._compare_plot_items = []
+        self._ath_all_param_rows_by_version.clear()
         self._loaded_analysis_id = None
         self._update_compare_slots()
         self._refresh_saved_analyses()
@@ -8098,6 +8542,8 @@ class AnalysePage(QWidget):
         for key, label in self._detail_labels.items():
             label.setText(mapping.get(key, "--"))
         self.run_details_btn.setEnabled(bool(data))
+        self.version_info_details_btn.setEnabled(bool(data))
+        self._update_version_information_panel(data)
 
         if not data:
             self.run_summary_run_chip.set_full_text("Selection: --")
@@ -8105,6 +8551,7 @@ class AnalysePage(QWidget):
             self.run_summary_score_chip.set_full_text("Score: --")
             self.run_summary_flags_chip.set_full_text("Flags: --")
             self.flags_help_btn.setEnabled(False)
+            self._pending_note_context = None
             return
 
         batch_id = str(data.get("batch_id") or "--")

@@ -129,10 +129,10 @@ class AnalyzerPageUiTests(unittest.TestCase):
             assert layout is not None
             self.assertEqual(layout.count(), 3)
             self.assertEqual(layout.stretch(0), 1)
-            self.assertEqual(layout.stretch(1), 1)
+            self.assertEqual(layout.stretch(1), 2)
             self.assertEqual(layout.stretch(2), 1)
             self.assertTrue(hasattr(page, "kpi_controls_tile"))
-            self.assertEqual(len(getattr(page, "display_slot_frames", [])), 4)
+            self.assertEqual(len(getattr(page, "display_slot_frames", [])), 2)
             self.assertFalse(page.loading_label.isVisible())
 
     def test_plot_titles_and_tile_gaps_use_compact_analyzer_style(self) -> None:
@@ -313,6 +313,79 @@ class AnalyzerPageUiTests(unittest.TestCase):
             page._apply_runs_payload(payload)
             self.assertIn("B001/V001", page.versions_btn.text())
             self.assertTrue(page.run_details_btn.isEnabled())
+
+    def test_version_note_persists_per_project_batch_version(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_ui2x_note_persist_") as tmp:
+            service = _build_service(Path(tmp))
+            project = service.create_project("Analyzer Notes UI", {})
+            paths = service.repo.project_paths(project.project_id, ensure=True)
+
+            from app.tidy_dataset import TidyDatasetWriter
+
+            writer = TidyDatasetWriter(paths.project_dir, library_root=service.settings.library_root)
+            measurement = {
+                "project_id": project.project_id,
+                "batch_id": "B001",
+                "version_id": "V001",
+                "run_id": "R001",
+                "graph_id": None,
+                "orientation": "H",
+                "orientation_raw": 0.0,
+                "norm_angle_deg": 0.0,
+                "data_level_type": "SPL",
+                "data_base_unit": "dB",
+                "data_absc_unit": "Hz",
+                "freq_min_hz": 200.0,
+                "freq_max_hz": 800.0,
+                "freq_count": 2,
+                "angle_min_deg": -30.0,
+                "angle_max_deg": 30.0,
+                "angle_step_deg": 60.0,
+                "angle_count": 2,
+                "angles_deg_json": "[-30, 30]",
+                "source_file": "V001_H.txt",
+                "file_hash": "hash_note_ui",
+                "export_meta_json": "{}",
+                "created_at": "2026-02-23T10:00:00+00:00",
+            }
+            points = [
+                {"freq_index": 0, "angle_index": 0, "freq_hz": 200.0, "angle_deg": -30.0, "re": 0.7, "im": 0.0},
+                {"freq_index": 0, "angle_index": 1, "freq_hz": 200.0, "angle_deg": 30.0, "re": 0.7, "im": 0.0},
+            ]
+            writer.write_polar_measurement(measurement=measurement, points=points)
+
+            page = AnalysePage(service=service)
+            page.set_project_context(project.project_id)
+            rows = service.analyzer_list_polar_runs(project_id=project.project_id, batch_id="B001", source="project")
+            page._apply_runs_payload({"mode": "runs", "project_id": project.project_id, "batch_id": "B001", "runs": rows})
+            page.version_note_edit.setPlainText("keep this candidate")
+            page._persist_pending_version_note()
+
+            page_reload = AnalysePage(service=service)
+            page_reload.set_project_context(project.project_id)
+            rows_reload = service.analyzer_list_polar_runs(project_id=project.project_id, batch_id="B001", source="project")
+            page_reload._apply_runs_payload(
+                {"mode": "runs", "project_id": project.project_id, "batch_id": "B001", "runs": rows_reload}
+            )
+            self.assertEqual(str(page_reload.version_note_edit.toPlainText() or ""), "keep this candidate")
+            page.close()
+            page_reload.close()
+
+    def test_ath_param_visibility_pref_persists_per_project(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_ui2x_ath_pref_") as tmp:
+            service = _build_service(Path(tmp))
+            project = service.create_project("Analyzer ATH Pref", {})
+            page = AnalysePage(service=service)
+            page.set_project_context(project.project_id)
+            page._set_ath_param_visibility("Throat.Profile", True)
+            page._set_ath_param_visibility("GCurve.Type", True)
+
+            page_reload = AnalysePage(service=service)
+            page_reload.set_project_context(project.project_id)
+            self.assertIn("Throat.Profile", page_reload._ath_visible_param_keys)
+            self.assertIn("GCurve.Type", page_reload._ath_visible_param_keys)
+            page.close()
+            page_reload.close()
 
     def test_version_stepper_arrows_navigate_and_disable_at_edges(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_ui2x_stepper_") as tmp:

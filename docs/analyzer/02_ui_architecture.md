@@ -427,6 +427,53 @@ The Analyzer page is planned with two explicit subviews:
 - Candidate identity is UI-facing `Batch/Version` by default.
 - Internal `run_id` remains available in details dialog/raw payloads only.
 
+## Implementation status (Analyzer Topbars v2)
+
+### Selection Bar responsibilities
+- Selection Bar (top/small row) is selection-only:
+  - left: Batch dropdown (`batch_id` plus optional `batch_name` and count summary)
+  - center: version stepper (`prev`, `B###/V###`, `next`) using existing version-picker list
+  - right: `Version Details` and `Refresh KPIs` actions.
+- Selection Bar intentionally does not display KPI chips/flags text to keep selection chrome minimal.
+
+### Version Bar responsibilities
+- Version Bar (second row) is information + controls:
+  - left `Analysis` block
+  - center `Version Information` block
+  - right `Display` block.
+- Layout target is responsive `1/4 : 1/2 : 1/4` (implemented via stretch factors, not fixed pixels).
+
+### Version Information content model
+- The center block is split into:
+  - left sub-block (1/4): vertical score/KPI list (`Score`, `Pattern Ctrl`, `BW Error`, `Cov Error`, `Spill`, `Flags`)
+  - right sub-block (3/4): 3 equal columns.
+- Column 1:
+  - final dimensions (`L x W x H mm`, 1 decimal)
+  - mode chips (`Throat`, `GCurve`, `Morph`, `Driver`, `Enclosure`).
+- Column 2:
+  - sweep realization summary from version metadata (`sweep_parameters`)
+  - user-selected ATH parameter values.
+- Column 3:
+  - per-version note field (length-capped)
+  - `Flags Help` and `Details` actions.
+
+### Display block structure
+- Display block now has two visible subfields:
+  - Band preset + Low/High inputs
+  - Plane (`H/V/D`) + `Tol (+/-deg)`.
+- Low/High inputs are always visible but disabled when preset is not `Custom`.
+- `Advanced...` remains for the remaining display-specific options only.
+
+### Persistence and identity rules
+- ATH param visibility selection is persisted per project (`analyzer_ui_prefs`).
+- Version notes are persisted per `(project_id, batch_id, version_id)` (`analyzer_version_notes`).
+- All version-information lookups are scoped to selected project + batch + version (and run where available for dimensions).
+
+### Open Questions
+- Driver source currently defaults to `Generic25` in Analyzer UI; no dedicated driver field is guaranteed in all project DBs.
+- Some historical DBs may not contain full `versions` / `version_params` rows for every imported polar row:
+  - UI falls back to `--` or conservative defaults and keeps tooltips explicit (`missing` / `Not available from DB yet` behavior).
+
 ## Implementation status (Analyzer pro-layout polish refinement)
 
 - Toolbar interaction model was tightened for high-density workflows:
