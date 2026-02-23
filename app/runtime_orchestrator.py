@@ -320,6 +320,7 @@ def _default_polar_export_specs() -> List[ExportSpec]:
                 **base_options,
                 "polar_name": "SPL_H",
                 "offset": 145,
+                "inclination": 0,
             },
             output_name_template="{version_id}_{graph_kind}_{export_id}.{format}",
         ),
@@ -347,17 +348,99 @@ def _default_polar_export_specs() -> List[ExportSpec]:
                 **base_options,
                 "polar_name": "SPL_D",
                 "offset_from_length_mm": 40,
-                "inclination": 42,
+                "inclination": 45,
             },
             output_name_template="{version_id}_{graph_kind}_{export_id}.{format}",
         ),
     ]
 
 
+def _plane_hint_from_polar_name(name: str) -> str:
+    tokens = [token for token in re.split(r"[^a-z0-9]+", str(name or "").strip().lower()) if token]
+    if any(token in {"h", "hor", "horizontal"} for token in tokens):
+        return "H"
+    if any(token in {"v", "ver", "vert", "vertical"} for token in tokens):
+        return "V"
+    if any(token in {"d", "diag", "diagonal"} for token in tokens):
+        return "D"
+    return ""
+
+
+def _option_float(options: Dict[str, Any], key: str) -> Optional[float]:
+    try:
+        value = options.get(key)
+        if value is None:
+            return None
+        return float(value)
+    except Exception:
+        return None
+
+
+def _legacy_safe_normalize_advanced_polar_specs(specs: Sequence[ExportSpec]) -> List[ExportSpec]:
+    normalized: List[ExportSpec] = [spec for spec in list(specs or [])]
+    by_id: Dict[str, int] = {}
+    for idx, spec in enumerate(normalized):
+        by_id[str(spec.id or "").strip().lower()] = idx
+
+    h_idx = by_id.get("adv_polar_1")
+    v_idx = by_id.get("adv_polar_2")
+    d_idx = by_id.get("adv_polar_3")
+    if h_idx is not None and v_idx is not None:
+        h_spec = normalized[h_idx]
+        v_spec = normalized[v_idx]
+        if (
+            str(h_spec.graph_kind or "").strip().lower() == "polar"
+            and str(v_spec.graph_kind or "").strip().lower() == "polar"
+        ):
+            h_options = dict(h_spec.options or {})
+            v_options = dict(v_spec.options or {})
+            h_hint = _plane_hint_from_polar_name(str(h_options.get("polar_name", "") or ""))
+            v_hint = _plane_hint_from_polar_name(str(v_options.get("polar_name", "") or ""))
+            h_incl = _option_float(h_options, "inclination")
+            v_incl = _option_float(v_options, "inclination")
+            if (
+                h_hint == "H"
+                and v_hint == "V"
+                and h_incl is not None
+                and v_incl is not None
+                and abs(h_incl - 90.0) <= 1e-6
+                and abs(v_incl - 90.0) <= 1e-6
+            ):
+                h_options["inclination"] = 0
+                normalized[h_idx] = ExportSpec(
+                    id=h_spec.id,
+                    tool=h_spec.tool,
+                    graph_kind=h_spec.graph_kind,
+                    variant=h_spec.variant,
+                    format=h_spec.format,
+                    options=h_options,
+                    output_name_template=h_spec.output_name_template,
+                )
+
+    if d_idx is not None:
+        d_spec = normalized[d_idx]
+        if str(d_spec.graph_kind or "").strip().lower() == "polar":
+            d_options = dict(d_spec.options or {})
+            d_hint = _plane_hint_from_polar_name(str(d_options.get("polar_name", "") or ""))
+            d_incl = _option_float(d_options, "inclination")
+            if d_hint == "D" and d_incl is not None and abs(d_incl - 42.0) <= 1e-6:
+                d_options["inclination"] = 45
+                normalized[d_idx] = ExportSpec(
+                    id=d_spec.id,
+                    tool=d_spec.tool,
+                    graph_kind=d_spec.graph_kind,
+                    variant=d_spec.variant,
+                    format=d_spec.format,
+                    options=d_options,
+                    output_name_template=d_spec.output_name_template,
+                )
+    return normalized
+
+
 def _resolve_export_specs(sim_export_payload: Dict[str, Any]) -> List[ExportSpec]:
     specs = parse_export_specs(sim_export_payload)
     if specs:
-        return specs
+        return _legacy_safe_normalize_advanced_polar_specs(specs)
     if bool(sim_export_payload.get("auto_default_polar_exports", False)):
         return _default_polar_export_specs()
     return []

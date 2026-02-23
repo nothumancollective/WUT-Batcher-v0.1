@@ -63,6 +63,7 @@ class PolarTxtParserTests(unittest.TestCase):
         self.assertEqual(normalize_orientation_marker(0.0), "H")
         self.assertEqual(normalize_orientation_marker(90.0), "V")
         self.assertEqual(normalize_orientation_marker(42.0), "D")
+        self.assertEqual(normalize_orientation_marker(45.0), "D")
         self.assertEqual(normalize_orientation_marker(17.5), "X3_17.5")
 
     def test_raises_bad_dimensions_on_wrong_row_width(self) -> None:

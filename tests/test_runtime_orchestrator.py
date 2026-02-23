@@ -14,6 +14,7 @@ from app.models import Batch, ParamSelection, Project, ProjectConstraints, SimEx
 from app.runtime_orchestrator import (
     StageExecution,
     _apply_sim_export_settings_to_cfg,
+    _resolve_export_specs,
     _run_akabak_ui_driver_stage,
     _sync_generated_abec,
     run_batch_pipeline,
@@ -21,6 +22,56 @@ from app.runtime_orchestrator import (
 
 
 class RuntimeOrchestratorTests(unittest.TestCase):
+    def test_default_polar_export_specs_use_h_v_d_inclinations(self) -> None:
+        specs = _resolve_export_specs({"auto_default_polar_exports": True})
+        polar_specs = [spec for spec in list(specs) if str(getattr(spec, "graph_kind", "")).lower() == "polar"]
+        self.assertEqual(len(polar_specs), 3)
+        self.assertEqual(
+            [int(dict(getattr(spec, "options", {}) or {}).get("inclination", -999)) for spec in polar_specs],
+            [0, 90, 45],
+        )
+        self.assertEqual(
+            [str(dict(getattr(spec, "options", {}) or {}).get("polar_name", "")) for spec in polar_specs],
+            ["SPL_H", "SPL_V", "SPL_D"],
+        )
+
+    def test_resolve_export_specs_normalizes_legacy_h_and_d_inclinations(self) -> None:
+        payload = {
+            "export_specs": [
+                {
+                    "id": "adv_polar_1",
+                    "tool": "vacs",
+                    "graph_kind": "polar",
+                    "variant": "main",
+                    "format": "txt",
+                    "options": {"polar_name": "Polars H", "inclination": 90},
+                },
+                {
+                    "id": "adv_polar_2",
+                    "tool": "vacs",
+                    "graph_kind": "polar",
+                    "variant": "main",
+                    "format": "txt",
+                    "options": {"polar_name": "Polars V", "inclination": 90},
+                },
+                {
+                    "id": "adv_polar_3",
+                    "tool": "vacs",
+                    "graph_kind": "polar",
+                    "variant": "main",
+                    "format": "txt",
+                    "options": {"polar_name": "Polars D", "inclination": 42},
+                },
+            ]
+        }
+        specs = _resolve_export_specs(payload)
+        polar_specs = [spec for spec in specs if str(spec.graph_kind).lower() == "polar"]
+        self.assertEqual(len(polar_specs), 3)
+        self.assertEqual(
+            [int(dict(spec.options or {}).get("inclination", -999)) for spec in polar_specs],
+            [0, 90, 45],
+        )
+
     def test_apply_sim_export_settings_injects_polar_block(self) -> None:
         base = "Output.ABECProject = 1\nOutput.STL = 0\n"
         spec = SimpleNamespace(
@@ -53,6 +104,67 @@ class RuntimeOrchestratorTests(unittest.TestCase):
         self.assertIn("Distance = 2", text)
         self.assertIn("Offset = 145", text)
         self.assertIn("Inclination = 90", text)
+
+    def test_apply_sim_export_settings_keeps_h_v_d_specs(self) -> None:
+        base = "Output.ABECProject = 1\nOutput.STL = 0\n"
+        payload = {
+            "freq_start_hz": 500.0,
+            "freq_end_hz": 10000.0,
+            "num_points": 12,
+            "simulation_mode": "free_standing",
+            "export_specs": [
+                {
+                    "id": "adv_polar_1",
+                    "tool": "vacs",
+                    "graph_kind": "polar",
+                    "variant": "main",
+                    "format": "txt",
+                    "options": {
+                        "polar_name": "SPL_H",
+                        "map_angle_range": [-90, 90, 19],
+                        "distance_m": 2.0,
+                        "offset": 145,
+                        "inclination": 0,
+                    },
+                },
+                {
+                    "id": "adv_polar_2",
+                    "tool": "vacs",
+                    "graph_kind": "polar",
+                    "variant": "main",
+                    "format": "txt",
+                    "options": {
+                        "polar_name": "SPL_V",
+                        "map_angle_range": [-90, 90, 19],
+                        "distance_m": 2.0,
+                        "offset": 145,
+                        "inclination": 90,
+                    },
+                },
+                {
+                    "id": "adv_polar_3",
+                    "tool": "vacs",
+                    "graph_kind": "polar",
+                    "variant": "main",
+                    "format": "txt",
+                    "options": {
+                        "polar_name": "SPL_D",
+                        "map_angle_range": [-90, 90, 19],
+                        "distance_m": 2.0,
+                        "offset": 145,
+                        "inclination": 45,
+                    },
+                },
+            ],
+        }
+        specs = _resolve_export_specs(payload)
+        text = _apply_sim_export_settings_to_cfg(base, sim_export_settings=payload, export_specs=specs)
+        self.assertIn("ABEC.Polars:SPL_H = {", text)
+        self.assertIn("ABEC.Polars:SPL_V = {", text)
+        self.assertIn("ABEC.Polars:SPL_D = {", text)
+        self.assertIn("Inclination = 0", text)
+        self.assertIn("Inclination = 90", text)
+        self.assertIn("Inclination = 45", text)
 
     def test_akabak_stage_preserves_vacs_for_export_when_requested(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

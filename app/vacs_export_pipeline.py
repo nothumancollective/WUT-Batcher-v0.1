@@ -11,6 +11,7 @@ import sys
 from typing import Any, Dict, Iterable, List
 
 from app.export_specs import ExportSpec
+from app.polar_txt_parser import normalize_orientation_marker
 from app.vacs_driver import VacsDriver
 from app.vacs_exporters.registry import VacsExporterRegistry
 from app.vacs_graph_catalog import build_catalog_index, load_graph_catalog, resolve_catalog_entry
@@ -110,6 +111,18 @@ def _infer_graph_kind_for_any_mapping(
     return best_kind
 
 
+def _orientation_token_from_metadata(metadata: Dict[str, str] | None) -> str:
+    raw = str((metadata or {}).get("Param_Coord_x3", "") or "").strip().strip("'").strip('"')
+    if not raw:
+        return ""
+    try:
+        numeric = float(raw)
+    except Exception:
+        return ""
+    token = normalize_orientation_marker(numeric)
+    return re.sub(r"[^A-Za-z0-9_.-]+", "_", str(token)).strip("._")
+
+
 def _run_external_vacs_export_save_all(
     *,
     executable: str | Path,
@@ -173,10 +186,12 @@ def _build_external_any_graph_exports(
         safe_title = re.sub(r"[^A-Za-z0-9_.-]+", "_", title).strip("._")
         if not safe_title:
             safe_title = f"graph_{index:02d}"
-        output_path = export_root / f"{version_id}_anygraph_{index:02d}_{safe_title}.txt"
+        metadata = _read_vacs_export_metadata(source)
+        orientation_token = _orientation_token_from_metadata(metadata)
+        suffix = f"_{orientation_token}" if orientation_token else ""
+        output_path = export_root / f"{version_id}_anygraph_{index:02d}_{safe_title}{suffix}.txt"
         output_path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, output_path)
-        metadata = _read_vacs_export_metadata(source)
         inferred_kind = _infer_graph_kind_for_any_mapping(
             title=title,
             path=str(source),
@@ -201,6 +216,7 @@ def _build_external_any_graph_exports(
                     "source_data_level_type": str(metadata.get("Data_LevelType", "") or ""),
                     "source_data_legend": str(metadata.get("Data_Legend", "") or ""),
                     "inferred_graph_kind": inferred_kind,
+                    "source_orientation_token": orientation_token,
                     "mapping_mode": "any_graph",
                     "requested_spec_ids": requested_ids,
                     "bytes": int(source.stat().st_size),
