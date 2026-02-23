@@ -390,3 +390,11 @@
   - reduced Explorer/Compare tile gaps by >=50% and tightened tile inner padding
   - added y-tick overlap guard for metric curves to prevent top-label collisions.
 - Heatmap `-6 dB` contour rendering now respects the new mirrored toggle; mirrored branch is disabled by default and can be enabled from Advanced.
+
+## 2026-02-23 (Analyzer debug evidence report: polar visibility + KPI zero)
+- Added `docs/analyzer/debug_polar_kpi_report.md` with hard evidence from live `P021/B005` data:
+  - DB inventory + grouped orientation counts (`V` + `X3_45`)
+  - `polar_points` integrity checks (`actual == freq_count * angle_count`)
+  - representative TXT-header extraction (`Param_Coord_x2`, `Param_Coord_x3`, missing NormAngle key, freq ranges)
+  - KPI row inspection showing stored rows with `score=0.0` and `insufficient_coverage=true`
+  - root-cause list with confidence and file/line fix targets.
