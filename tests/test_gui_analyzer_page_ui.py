@@ -140,18 +140,18 @@ class AnalyzerPageUiTests(unittest.TestCase):
             self.assertEqual(str(page.kpi_controls_tile.property("analyzerSurface") or ""), "2")
             self.assertEqual(str(page.display_controls_tile.property("analyzerSurface") or ""), "1")
 
-    def test_version_info_uses_dividers_and_plane_frame_is_flat_segment_container(self) -> None:
+    def test_version_info_uses_dividers_and_display_sections_keep_subtle_frames(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_ui2x_dividers_segments_") as tmp:
             service = _build_service(Path(tmp))
             page = AnalysePage(service=service)
             dividers = page.findChildren(QFrame, "AnalyzerInfoDivider")
             self.assertGreaterEqual(len(dividers), 2)
-            flat_plane_frames = [
-                frame
-                for frame in page.findChildren(QFrame, "AnalyzerDisplaySlotFrame")
-                if bool(frame.property("analyzerPlaneFlat"))
-            ]
-            self.assertEqual(len(flat_plane_frames), 1)
+            display_frames = page.findChildren(QFrame, "AnalyzerDisplaySlotFrame")
+            self.assertGreaterEqual(len(display_frames), 2)
+            self.assertFalse(any(bool(frame.property("analyzerPlaneFlat")) for frame in display_frames))
+            self.assertEqual(str(page._plane_buttons["H"].property("analyzerPlaneSegment")), "first")
+            self.assertEqual(str(page._plane_buttons["V"].property("analyzerPlaneSegment")), "middle")
+            self.assertEqual(str(page._plane_buttons["D"].property("analyzerPlaneSegment")), "last")
             self.assertTrue(bool(page.custom_band_low_label.property("analyzerBandEdgeLabel")))
             self.assertTrue(bool(page.custom_band_high_label.property("analyzerBandEdgeLabel")))
 

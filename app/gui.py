@@ -5876,7 +5876,6 @@ class AnalysePage(QWidget):
 
         plane_frame = QFrame()
         plane_frame.setObjectName("AnalyzerDisplaySlotFrame")
-        plane_frame.setProperty("analyzerPlaneFlat", True)
         plane_layout = QGridLayout(plane_frame)
         plane_layout.setContentsMargins(6, 4, 6, 4)
         plane_layout.setHorizontalSpacing(4)
@@ -5885,21 +5884,21 @@ class AnalysePage(QWidget):
         plane_box_layout = QHBoxLayout(plane_box)
         plane_box_layout.setContentsMargins(0, 0, 0, 0)
         plane_box_layout.setSpacing(0)
-        plane_box_layout.addWidget(QLabel("Plane"), 0, Qt.AlignLeft | Qt.AlignVCenter)
         for plane_key in ("H", "V", "D"):
             btn = self._plane_buttons.get(plane_key)
             if btn is not None:
                 plane_box_layout.addWidget(btn, 0, Qt.AlignLeft | Qt.AlignVCenter)
         plane_box_layout.addStretch(1)
-        plane_layout.addWidget(plane_box, 0, 0, 1, 2)
+        plane_layout.addWidget(QLabel("Plane"), 0, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        plane_layout.addWidget(plane_box, 0, 1, 1, 2)
         plane_layout.addWidget(QLabel("Tol (+/-deg)"), 1, 0, Qt.AlignLeft | Qt.AlignVCenter)
         plane_layout.addWidget(self.tol_spin, 1, 1)
+        plane_layout.addWidget(self.display_advanced_btn, 1, 2, Qt.AlignRight | Qt.AlignVCenter)
         plane_layout.setColumnStretch(0, 0)
         plane_layout.setColumnStretch(1, 1)
+        plane_layout.setColumnStretch(2, 0)
         display_split_layout.addWidget(plane_frame, 1)
         self.display_slot_frames.append(plane_frame)
-
-        display_split_layout.addWidget(self.display_advanced_btn, 0, Qt.AlignRight | Qt.AlignTop)
         display_controls_layout.addWidget(display_split_row, 1, 0, 1, 4)
         display_controls_layout.addWidget(self.plot_cancel_btn, 2, 3, 1, 1, Qt.AlignRight | Qt.AlignVCenter)
         display_controls_layout.setColumnStretch(0, 1)

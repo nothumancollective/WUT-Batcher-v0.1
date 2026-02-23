@@ -211,6 +211,10 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         border-top-right-radius: {r['sm']}px;
         border-bottom-right-radius: {r['sm']}px;
     }}
+    QToolButton[analyzerPlaneToggle="true"][analyzerPlaneSegment="middle"],
+    QToolButton[analyzerPlaneToggle="true"][analyzerPlaneSegment="last"] {{
+        margin-left: -1px;
+    }}
     QToolButton#AnalyzerVersionPinButton {{
         padding: 0px;
     }}

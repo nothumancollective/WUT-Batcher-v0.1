@@ -20,6 +20,12 @@
 - Moved Exclude filters into a subtle inner section frame so they read as filter toggles instead of primary CTA buttons.
 - Kept filter behavior unchanged; only layout and presentation were updated.
 
+## 2026-02-23 (Analyzer UI polish - display block and plane segments)
+- Rebalanced Display block layout into two framed sections: Band and Plane/Tolerance/Advanced.
+- Moved `Advanced...` into the Plane/Tolerance section for tighter alignment and less dead space.
+- Removed the flat plane container fallback and kept subtle section framing consistent with the rest of the Version Bar.
+- Normalized segmented plane button styling so H/V/D share consistent selected/unselected visuals, including V-state parity.
+
 ## 2026-02-21
 - Created initial persistent Analyzer documentation set:
   - Context overview
