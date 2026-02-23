@@ -301,6 +301,94 @@ class AnalyzerKpiServiceTests(unittest.TestCase):
             self.assertEqual(float(rows[0]["norm_angle_deg"]), 0.0)
             self.assertEqual(str(rows[0].get("norm_angle_source") or ""), "batch_export_settings")
 
+    def test_autopick_requires_cached_kpis(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_kpi_autopick_missing_") as tmp:
+            service = _build_service(Path(tmp))
+            project = service.create_project("Analyzer AutoPick Missing", {})
+            paths = service.repo.project_paths(project.project_id, ensure=True)
+            dataset = TidyDatasetWriter(paths.project_dir, library_root=service.settings.library_root)
+            _write_synthetic_run(
+                dataset=dataset,
+                project_id=project.project_id,
+                batch_id="B001",
+                run_id="R001",
+                version_id="V001",
+                hash_seed="hash_autopick_missing",
+            )
+            payload = service.analyzer_autopick_candidates(
+                project_id=project.project_id,
+                batch_ids=["B001"],
+                strategy="A",
+                kpi_key="score",
+                filters={"exclude_flags": False, "exclude_missing_kpi": False},
+                top_n=5,
+                stage_mode="shaping",
+                band_low_hz=200.0,
+                band_high_hz=1600.0,
+                target_h_deg=60.0,
+                target_v_deg=60.0,
+                tol_deg=5.0,
+                algo_version=ALGO_VERSION,
+            )
+            self.assertEqual(list(payload.get("candidates") or []), [])
+            self.assertTrue(bool(payload.get("requires_kpi")))
+            self.assertIn("Compute KPIs first", str(payload.get("message") or ""))
+
+    def test_autopick_scopes_to_requested_batches_and_emits_kpi_score_alias(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_kpi_autopick_scope_") as tmp:
+            service = _build_service(Path(tmp))
+            project = service.create_project("Analyzer AutoPick Scope", {})
+            paths = service.repo.project_paths(project.project_id, ensure=True)
+            dataset = TidyDatasetWriter(paths.project_dir, library_root=service.settings.library_root)
+            _write_synthetic_run(
+                dataset=dataset,
+                project_id=project.project_id,
+                batch_id="B001",
+                run_id="R001",
+                version_id="V001",
+                hash_seed="hash_autopick_b1",
+            )
+            _write_synthetic_run(
+                dataset=dataset,
+                project_id=project.project_id,
+                batch_id="B002",
+                run_id="R010",
+                version_id="V010",
+                hash_seed="hash_autopick_b2",
+            )
+            for batch_id in ("B001", "B002"):
+                service.analyzer_compute_batch_kpis(
+                    project_id=project.project_id,
+                    batch_id=batch_id,
+                    target_h_deg=60.0,
+                    target_v_deg=60.0,
+                    tol_deg=5.0,
+                    band_low_hz=200.0,
+                    band_high_hz=1600.0,
+                    stage_mode="shaping",
+                    algo_version=ALGO_VERSION,
+                )
+            payload = service.analyzer_autopick_candidates(
+                project_id=project.project_id,
+                batch_ids=["B001"],
+                strategy="A",
+                kpi_key="score",
+                filters={"exclude_flags": False, "exclude_missing_kpi": False},
+                top_n=5,
+                stage_mode="shaping",
+                band_low_hz=200.0,
+                band_high_hz=1600.0,
+                target_h_deg=60.0,
+                target_v_deg=60.0,
+                tol_deg=5.0,
+                algo_version=ALGO_VERSION,
+            )
+            candidates = [dict(item) for item in list(payload.get("candidates") or [])]
+            self.assertGreater(len(candidates), 0)
+            self.assertTrue(all(str(row.get("batch_id")) == "B001" for row in candidates))
+            self.assertTrue(all(row.get("kpi_score") is not None for row in candidates))
+            self.assertTrue(all(row.get("score") == row.get("kpi_score") for row in candidates))
+
 
 if __name__ == "__main__":
     unittest.main()

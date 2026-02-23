@@ -2583,7 +2583,7 @@ class OrchestratorService:
     ) -> Dict[str, Any]:
         project_token = str(project_id or "").strip()
         if not project_token:
-            return {"candidates": [], "scanned": 0, "canceled": False}
+            return {"candidates": [], "scanned": 0, "after_filters": 0, "canceled": False, "message": "Project is required."}
         requested_batches = [str(item or "").strip() for item in list(batch_ids or []) if str(item or "").strip()]
         if not requested_batches:
             requested_batches = [
@@ -2626,6 +2626,39 @@ class OrchestratorService:
             if exclude_missing and row.get("kpi_score") is None:
                 continue
             filtered.append(dict(row))
+
+        scored_rows = [row for row in all_rows if row.get("kpi_score") is not None]
+        if not all_rows:
+            return {
+                "candidates": [],
+                "scanned": 0,
+                "after_filters": 0,
+                "strategy": str(strategy or "A").strip().upper() or "A",
+                "kpi_key": str(kpi_key or "score").strip().lower() or "score",
+                "canceled": False,
+                "message": "No polar runs found in selected batch scope.",
+            }
+        if not scored_rows:
+            return {
+                "candidates": [],
+                "scanned": len(all_rows),
+                "after_filters": 0,
+                "strategy": str(strategy or "A").strip().upper() or "A",
+                "kpi_key": str(kpi_key or "score").strip().lower() or "score",
+                "canceled": False,
+                "requires_kpi": True,
+                "message": "Compute KPIs first for the selected batch scope.",
+            }
+        if not filtered:
+            return {
+                "candidates": [],
+                "scanned": len(all_rows),
+                "after_filters": 0,
+                "strategy": str(strategy or "A").strip().upper() or "A",
+                "kpi_key": str(kpi_key or "score").strip().lower() or "score",
+                "canceled": False,
+                "message": "No candidates left after filters.",
+            }
 
         strategy_token = str(strategy or "A").strip().upper()
         if strategy_token not in {"A", "B", "C"}:
@@ -2671,22 +2704,27 @@ class OrchestratorService:
         limited = filtered[: max(1, min(int(top_n), 5))]
         candidates: List[Dict[str, Any]] = []
         for row in limited:
+            score_value = row.get("kpi_score")
             candidates.append(
                 {
                     "project_id": str(row.get("project_id") or project_token),
                     "batch_id": str(row.get("batch_id") or ""),
                     "run_id": (str(row.get("run_id") or "").strip() or None),
                     "version_id": str(row.get("version_id") or ""),
-                    "score": row.get("kpi_score"),
+                    "score": score_value,
+                    "kpi_score": score_value,
                     "kpi_b_pc_oct": row.get("kpi_b_pc_oct"),
                     "kpi_e_bw": row.get("kpi_e_bw"),
                     "kpi_e_cov": row.get("kpi_e_cov"),
                     "kpi_r_spill": row.get("kpi_r_spill"),
                     "kpi_flags_count": int(row.get("kpi_flags_count") or 0),
                     "kpi_flagged": bool(row.get("kpi_flagged")),
+                    "kpi_reason_codes": [str(code) for code in list(row.get("kpi_reason_codes", []) or []) if str(code).strip()],
+                    "planes": [str(token) for token in list(row.get("planes", []) or []) if str(token).strip()],
                     "imported_at": row.get("imported_at"),
                 }
             )
+        message = f"Auto-picked {len(candidates)} candidate(s)."
         return {
             "candidates": candidates,
             "scanned": len(all_rows),
@@ -2694,6 +2732,7 @@ class OrchestratorService:
             "strategy": strategy_token,
             "kpi_key": kpi_token,
             "canceled": False,
+            "message": message,
         }
 
     def analyzer_compute_batch_kpis(

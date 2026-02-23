@@ -460,3 +460,15 @@
 - Added regression coverage:
   - `tests/test_analyzer_orientation.py`
   - `tests/test_gui_analyzer_compare_ui.py::test_plane_controls_keep_h_visible_with_missing_plane_reason`.
+
+## 2026-02-23 (Analyzer Auto-pick stability + score-key compatibility)
+- Hardened `analyzer_autopick_candidates(...)` to return deterministic non-crashing outcomes for empty scopes and missing KPI cache rows:
+  - emits `requires_kpi=true` with an explicit `Compute KPIs first...` message when no scored rows exist
+  - emits clear empty-scope/filter messages instead of returning ambiguous empty payloads.
+- Normalized Auto-pick candidate payloads to include both `score` and `kpi_score` keys so Compare UI handles legacy/new payload shapes consistently.
+- Updated Compare UI candidate normalization to accept either key and preserve reason codes/planes metadata.
+- Added guard for current-scope Auto-pick when no batch is selected.
+- Added regression coverage:
+  - `tests/test_analyzer_kpi_service.py::test_autopick_requires_cached_kpis`
+  - `tests/test_analyzer_kpi_service.py::test_autopick_scopes_to_requested_batches_and_emits_kpi_score_alias`
+  - `tests/test_gui_analyzer_compare_ui.py::test_autopick_accepts_score_key_payload`.

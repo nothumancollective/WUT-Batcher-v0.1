@@ -118,6 +118,26 @@ class AnalyzerCompareUiTests(unittest.TestCase):
             self.assertLessEqual(page.compare_slots_table.rowCount(), 5)
             self.assertEqual(page.compare_slots_table.rowCount(), 5)
 
+    def test_autopick_accepts_score_key_payload(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_ui2c_compare_autopick_score_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            payload = {
+                "candidates": [
+                    {
+                        "project_id": "P001",
+                        "batch_id": "B001",
+                        "run_id": "R001",
+                        "version_id": "V001",
+                        "score": 87.5,
+                    }
+                ],
+                "message": "Auto-picked 1 candidate(s).",
+            }
+            page._autopick_request_id = 2
+            page._on_autopick_finished(2, payload)
+            self.assertEqual(page.compare_slots_table.item(0, 2).text(), "87.50")
+
     def test_compare_tab_contains_slots_table_and_saved_selector(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_ui2c_compare_layout_") as tmp:
             service = _build_service(Path(tmp))
