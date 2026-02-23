@@ -70,7 +70,8 @@ Raw orientation marker comes from `Param_Coord_x3` when present.
 Normalization:
 - `0 -> "H"`
 - `90 -> "V"`
-- `42 -> "D"`
+- `42 -> "D"` (legacy diagonal exports)
+- `45 -> "D"` (current diagonal default inclination)
 - Any other numeric value -> `"X3_<value>"`
 - Missing marker -> `"X3_UNKNOWN"`
 
