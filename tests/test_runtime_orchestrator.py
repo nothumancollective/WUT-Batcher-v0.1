@@ -14,6 +14,7 @@ from app.models import Batch, ParamSelection, Project, ProjectConstraints, SimEx
 from app.runtime_orchestrator import (
     StageExecution,
     _apply_sim_export_settings_to_cfg,
+    _resolve_export_specs,
     _run_akabak_ui_driver_stage,
     _sync_generated_abec,
     run_batch_pipeline,
@@ -21,6 +22,19 @@ from app.runtime_orchestrator import (
 
 
 class RuntimeOrchestratorTests(unittest.TestCase):
+    def test_default_polar_export_specs_use_h_v_d_inclinations(self) -> None:
+        specs = _resolve_export_specs({"auto_default_polar_exports": True})
+        polar_specs = [spec for spec in list(specs) if str(getattr(spec, "graph_kind", "")).lower() == "polar"]
+        self.assertEqual(len(polar_specs), 3)
+        self.assertEqual(
+            [int(dict(getattr(spec, "options", {}) or {}).get("inclination", -999)) for spec in polar_specs],
+            [0, 90, 45],
+        )
+        self.assertEqual(
+            [str(dict(getattr(spec, "options", {}) or {}).get("polar_name", "")) for spec in polar_specs],
+            ["SPL_H", "SPL_V", "SPL_D"],
+        )
+
     def test_apply_sim_export_settings_injects_polar_block(self) -> None:
         base = "Output.ABECProject = 1\nOutput.STL = 0\n"
         spec = SimpleNamespace(

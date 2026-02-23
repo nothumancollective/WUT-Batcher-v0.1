@@ -5,3 +5,4 @@
 - Probe limitation: current probe reports may show `dialog_not_found` unless rerun in a live VACS session where `TForm_Export` is reachable.
 - 2026-02-23: added `docs/polar_export_h_plane_debug.md` with B006 pipeline evidence showing H-plane loss originates from persisted H inclination=90 and propagates through cfg/export/ingest.
 - 2026-02-23: batch export UI defaults now use per-plane inclinations H=0, V=90, D=45 in advanced polar cards and default polar specs; payload round-trip tests added in `tests/test_batch_export_panel.py`.
+- 2026-02-23: runtime and harness default polar specs now use explicit inclinations H=0, V=90, D=45; external any-graph export filenames now append orientation token (`_H/_V/_D` or `X3_*`) from TXT metadata for stable plane identity.
