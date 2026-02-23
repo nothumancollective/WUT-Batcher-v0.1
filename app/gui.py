@@ -5227,23 +5227,30 @@ class AnalysePage(QWidget):
         self.compare_kpi_notice.setObjectName("SummaryMeta")
         self.compare_kpi_notice.setWordWrap(True)
         compare_kpi_layout.addWidget(self.compare_kpi_notice, 0, Qt.AlignLeft | Qt.AlignVCenter)
-        self._compare_kpi_labels: Dict[str, QLabel] = {}
-        compare_kpi_form = QFormLayout()
-        compare_kpi_form.setContentsMargins(0, 0, 0, 0)
-        compare_kpi_form.setSpacing(4)
-        for key, label_text in (
+        self._compare_kpi_rows: List[Tuple[str, str]] = [
             ("score", "Score"),
-            ("b_pc_oct", "Pattern Control (oct)"),
-            ("e_bw", "Beamwidth Error (deg)"),
-            ("e_cov", "Coverage Error (dB)"),
+            ("b_pc_oct", "Pattern Ctrl (oct)"),
+            ("e_bw", "BW Err (deg)"),
+            ("e_cov", "Cov Err (dB)"),
             ("r_spill", "Spill Ratio"),
             ("flags", "Flags"),
-        ):
-            value = QLabel("--")
-            value.setObjectName("SummaryMeta")
-            self._compare_kpi_labels[key] = value
-            compare_kpi_form.addRow(label_text, value)
-        compare_kpi_layout.addLayout(compare_kpi_form)
+        ]
+        self.compare_kpi_matrix = QTableWidget(len(self._compare_kpi_rows), 6)
+        self.compare_kpi_matrix.setObjectName("AnalyzerCompareKpiMatrix")
+        self.compare_kpi_matrix.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.compare_kpi_matrix.setSelectionMode(QAbstractItemView.NoSelection)
+        self.compare_kpi_matrix.setHorizontalHeaderLabels(["KPI", "C1", "C2", "C3", "C4", "C5"])
+        self.compare_kpi_matrix.verticalHeader().setVisible(False)
+        matrix_header = self.compare_kpi_matrix.horizontalHeader()
+        matrix_header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        for col_idx in range(1, 6):
+            matrix_header.setSectionResizeMode(col_idx, QHeaderView.Stretch)
+        for row_idx, (_key, label_text) in enumerate(self._compare_kpi_rows):
+            label_item = QTableWidgetItem(label_text)
+            self.compare_kpi_matrix.setItem(row_idx, 0, label_item)
+            for col_idx in range(1, 6):
+                self.compare_kpi_matrix.setItem(row_idx, col_idx, QTableWidgetItem("--"))
+        compare_kpi_layout.addWidget(self.compare_kpi_matrix, 1)
         compare_left_layout.addStretch(1)
 
         compare_left.setMinimumWidth(240)
@@ -6784,20 +6791,47 @@ class AnalysePage(QWidget):
 
     def _update_compare_kpi_panel(self) -> None:
         idx = self._selected_compare_slot_index
-        if idx is None or idx < 0 or idx >= len(self._compare_candidates):
-            self.compare_kpi_notice.setText("Select a candidate to view KPIs.")
-            for label in self._compare_kpi_labels.values():
-                label.setText("--")
-            return
-        candidate = dict(self._compare_candidates[idx] or {})
-        self.compare_kpi_notice.setText(f"C{idx + 1}: {candidate.get('batch_id')}/{candidate.get('version_id')}")
-        self._compare_kpi_labels["score"].setText(self._format_float(candidate.get("score"), 2))
-        self._compare_kpi_labels["b_pc_oct"].setText(self._format_float(candidate.get("kpi_b_pc_oct"), 2))
-        self._compare_kpi_labels["e_bw"].setText(self._format_float(candidate.get("kpi_e_bw"), 2))
-        self._compare_kpi_labels["e_cov"].setText(self._format_float(candidate.get("kpi_e_cov"), 2))
-        self._compare_kpi_labels["r_spill"].setText(self._format_float(candidate.get("kpi_r_spill"), 3))
-        flags_count = candidate.get("kpi_flags_count")
-        self._compare_kpi_labels["flags"].setText("--" if flags_count is None else str(int(flags_count)))
+        selected_col = int(idx) if idx is not None and 0 <= int(idx) < len(self._compare_candidates) else None
+        if selected_col is None:
+            self.compare_kpi_notice.setText("Select a candidate to focus one column.")
+        else:
+            selected = dict(self._compare_candidates[selected_col] or {})
+            self.compare_kpi_notice.setText(
+                f"Selected: C{selected_col + 1} {selected.get('batch_id')}/{selected.get('version_id')}"
+            )
+
+        for row_idx, (metric_key, _label) in enumerate(self._compare_kpi_rows):
+            for col_idx in range(1, 6):
+                item = self.compare_kpi_matrix.item(row_idx, col_idx)
+                if item is None:
+                    item = QTableWidgetItem("--")
+                    self.compare_kpi_matrix.setItem(row_idx, col_idx, item)
+                candidate_index = col_idx - 1
+                if candidate_index >= len(self._compare_candidates):
+                    item.setText("--")
+                    item.setBackground(QColor())
+                    continue
+                candidate = dict(self._compare_candidates[candidate_index] or {})
+                if metric_key == "score":
+                    value_text = self._format_float(candidate.get("score"), 2)
+                elif metric_key == "b_pc_oct":
+                    value_text = self._format_float(candidate.get("kpi_b_pc_oct"), 2)
+                elif metric_key == "e_bw":
+                    value_text = self._format_float(candidate.get("kpi_e_bw"), 2)
+                elif metric_key == "e_cov":
+                    value_text = self._format_float(candidate.get("kpi_e_cov"), 2)
+                elif metric_key == "r_spill":
+                    value_text = self._format_float(candidate.get("kpi_r_spill"), 3)
+                elif metric_key == "flags":
+                    flags_count = candidate.get("kpi_flags_count")
+                    value_text = "--" if flags_count is None else str(int(flags_count))
+                else:
+                    value_text = "--"
+                item.setText(value_text)
+                if selected_col is not None and selected_col == candidate_index:
+                    item.setBackground(QColor(42, 51, 68, 140))
+                else:
+                    item.setBackground(QColor())
 
     def _update_compare_slots(self, *, message: str = "") -> None:
         slots = list(self._compare_candidates)
