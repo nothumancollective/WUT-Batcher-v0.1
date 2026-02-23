@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple
 
-ALGO_VERSION = "analyzer-mvp-2a-v1"
+ALGO_VERSION = "analyzer-mvp-2a-v2"
 
 DEFAULT_TOL_DEG = 5.0
 
@@ -96,4 +96,3 @@ def resolve_band_limits(
     if high <= low:
         high = max(low + 1.0, float(freq_max_hz or (low + 1.0)))
     return (low, high)
-
