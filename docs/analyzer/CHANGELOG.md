@@ -641,3 +641,8 @@
 - Reduced nested panel framing inside Version Information by switching inner containers to plain widgets and introducing subtle vertical dividers.
 - Restyled plane buttons as a neutral segmented control (no blue selected fill, contiguous segmented borders, no special container tint behind the control).
 - Neutralized display-slot background tinting and improved disabled readability for custom band low/high controls.
+
+## 2026-02-23 (Analyzer KPI panel polish: compact key/value alignment)
+- Tightened the KPI subblock into a compact two-column key/value grid with modest label widths and right-aligned values.
+- Applied monospaced/tabular-friendly value labels (`analyzerMetricValue`) for more stable numeric scanning.
+- Added GUI regression coverage to assert right alignment and metric-value label tagging.

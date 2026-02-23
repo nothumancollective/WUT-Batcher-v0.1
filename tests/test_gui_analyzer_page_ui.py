@@ -22,8 +22,10 @@ from app.services import OrchestratorService
 from app.settings_store import SettingsStore, UserSettings
 
 try:
+    from PySide6.QtCore import Qt
     from PySide6.QtWidgets import QApplication, QComboBox, QDialog, QLabel, QPushButton, QTableWidget, QTabWidget, QToolButton, QFrame
 except ImportError:  # pragma: no cover
+    Qt = None  # type: ignore[assignment]
     QApplication = None  # type: ignore[assignment]
     QComboBox = None  # type: ignore[assignment]
     QDialog = None  # type: ignore[assignment]
@@ -152,6 +154,14 @@ class AnalyzerPageUiTests(unittest.TestCase):
             self.assertEqual(len(flat_plane_frames), 1)
             self.assertTrue(bool(page.custom_band_low_label.property("analyzerBandEdgeLabel")))
             self.assertTrue(bool(page.custom_band_high_label.property("analyzerBandEdgeLabel")))
+
+    def test_version_info_metric_values_are_right_aligned_for_compact_scanability(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_ui2x_metric_alignment_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            for value_label in page._version_info_metric_labels.values():
+                self.assertEqual(int(value_label.alignment() & Qt.AlignRight), int(Qt.AlignRight))
+                self.assertTrue(bool(value_label.property("analyzerMetricValue")))
 
     def test_plot_titles_and_tile_gaps_use_compact_analyzer_style(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_ui2x_plot_title_compact_") as tmp:
