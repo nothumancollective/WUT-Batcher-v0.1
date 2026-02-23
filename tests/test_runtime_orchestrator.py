@@ -35,6 +35,43 @@ class RuntimeOrchestratorTests(unittest.TestCase):
             ["SPL_H", "SPL_V", "SPL_D"],
         )
 
+    def test_resolve_export_specs_normalizes_legacy_h_and_d_inclinations(self) -> None:
+        payload = {
+            "export_specs": [
+                {
+                    "id": "adv_polar_1",
+                    "tool": "vacs",
+                    "graph_kind": "polar",
+                    "variant": "main",
+                    "format": "txt",
+                    "options": {"polar_name": "Polars H", "inclination": 90},
+                },
+                {
+                    "id": "adv_polar_2",
+                    "tool": "vacs",
+                    "graph_kind": "polar",
+                    "variant": "main",
+                    "format": "txt",
+                    "options": {"polar_name": "Polars V", "inclination": 90},
+                },
+                {
+                    "id": "adv_polar_3",
+                    "tool": "vacs",
+                    "graph_kind": "polar",
+                    "variant": "main",
+                    "format": "txt",
+                    "options": {"polar_name": "Polars D", "inclination": 42},
+                },
+            ]
+        }
+        specs = _resolve_export_specs(payload)
+        polar_specs = [spec for spec in specs if str(spec.graph_kind).lower() == "polar"]
+        self.assertEqual(len(polar_specs), 3)
+        self.assertEqual(
+            [int(dict(spec.options or {}).get("inclination", -999)) for spec in polar_specs],
+            [0, 90, 45],
+        )
+
     def test_apply_sim_export_settings_injects_polar_block(self) -> None:
         base = "Output.ABECProject = 1\nOutput.STL = 0\n"
         spec = SimpleNamespace(
