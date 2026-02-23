@@ -8,6 +8,13 @@
 - Added a minimum-height stabilization pass for the version bar row after initial layout activation.
 - Added GUI regression tests for stable version-bar height and in-place widget updates across selection changes.
 
+## 2026-02-23 (Analyzer UI polish - version info density)
+- Tightened KPI key/value spacing in Version Information so value columns no longer drift too far right on wide windows.
+- Added the missing divider between KPI metrics and the Basic Infos column for clearer visual grouping.
+- Styled sweep info as a compact badge (neutral container + muted sweep-blue text) to avoid hyperlink-like appearance.
+- Improved Basic Infos typography with dimmer keys and brighter values while keeping content unchanged.
+- Neutralized remaining blue-ish analyzer control surfaces to the monochrome panel palette.
+
 ## 2026-02-21
 - Created initial persistent Analyzer documentation set:
   - Context overview

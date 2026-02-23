@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
+import html
 import math
 import json
 import logging
@@ -5651,9 +5652,12 @@ class AnalysePage(QWidget):
         version_info_body_layout.setSpacing(6)
 
         self.version_info_scores_col = QWidget()
+        self.version_info_scores_col.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Preferred)
+        self.version_info_scores_col.setMinimumWidth(170)
+        self.version_info_scores_col.setMaximumWidth(220)
         scores_layout = QGridLayout(self.version_info_scores_col)
         scores_layout.setContentsMargins(6, 4, 6, 4)
-        scores_layout.setHorizontalSpacing(6)
+        scores_layout.setHorizontalSpacing(4)
         scores_layout.setVerticalSpacing(3)
         self._version_info_metric_labels: Dict[str, QLabel] = {}
         metric_value_font = QFont()
@@ -5673,8 +5677,8 @@ class AnalysePage(QWidget):
             label.setObjectName("SummaryMeta")
             label.setToolTip(tip)
             label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-            label.setMinimumWidth(76)
-            label.setMaximumWidth(92)
+            label.setMinimumWidth(66)
+            label.setMaximumWidth(88)
             value = QLabel("--")
             value.setObjectName("SummaryMeta")
             value.setProperty("analyzerMetricValue", True)
@@ -5682,12 +5686,18 @@ class AnalysePage(QWidget):
             value.setToolTip(tip)
             value.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             value.setFont(metric_value_font)
+            value.setMinimumWidth(58)
+            value.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Preferred)
             self._version_info_metric_labels[key] = value
             scores_layout.addWidget(label, row_idx, 0, Qt.AlignLeft | Qt.AlignVCenter)
             scores_layout.addWidget(value, row_idx, 1)
         scores_layout.setColumnStretch(0, 0)
-        scores_layout.setColumnStretch(1, 1)
+        scores_layout.setColumnStretch(1, 0)
         version_info_body_layout.addWidget(self.version_info_scores_col, 1)
+        scores_divider = QFrame()
+        scores_divider.setObjectName("AnalyzerInfoDivider")
+        scores_divider.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
+        version_info_body_layout.addWidget(scores_divider, 0)
 
         self.version_info_extra_col = QWidget()
         extra_layout = QHBoxLayout(self.version_info_extra_col)
@@ -5729,9 +5739,9 @@ class AnalysePage(QWidget):
         self.version_sweep_value_label = ElidedTitleLabel("--")
         self.version_sweep_value_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.version_sweep_value_label.setObjectName("SummaryMeta")
+        self.version_sweep_value_label.setProperty("analyzerSweepBadge", True)
         self.version_sweep_value_label.setMinimumWidth(180)
         self.version_sweep_value_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.version_sweep_value_label.setStyleSheet("color: #5DA8FF;")
         col2_layout.addWidget(self.version_sweep_value_label, 0)
         self.version_ath_params_value_label = ElidedTitleLabel("ATH params: --")
         self.version_ath_params_value_label.setObjectName("SummaryMeta")
@@ -5787,7 +5797,8 @@ class AnalysePage(QWidget):
 
         version_info_body_layout.addWidget(self.version_info_extra_col, 3)
         version_info_body_layout.setStretch(0, 1)
-        version_info_body_layout.setStretch(1, 3)
+        version_info_body_layout.setStretch(1, 0)
+        version_info_body_layout.setStretch(2, 3)
         kpi_controls_layout.addWidget(version_info_body, 1)
         controls_row_layout.addWidget(self.kpi_controls_tile, 2)
 
@@ -8316,6 +8327,12 @@ class AnalysePage(QWidget):
                 datetime.now(timezone.utc).replace(microsecond=0).isoformat()
             )
 
+    @staticmethod
+    def _render_dim_key_value(label_text: str, value_text: str) -> str:
+        key = html.escape(str(label_text or "").strip())
+        value = html.escape(str(value_text or "--").strip() or "--")
+        return f"<span style='color:#A2A2A2'>{key}</span>: <span style='color:#E6E6E6'>{value}</span>"
+
     def _update_version_information_panel(self, payload: Dict[str, Any]) -> None:
         data = dict(payload or {})
         if not data:
@@ -8366,16 +8383,21 @@ class AnalysePage(QWidget):
         morph_text = _mode_text({0: "No Morph", 1: "Rectangle", 2: "Circle"}, data.get("morph_shape"), "No Morph")
         enclosure_text = "Enclosure" if bool(data.get("enclosure_enabled")) else "No Enclosure"
         chip_values = {
-            "throat": f"Throat: {throat_text}",
-            "gcurve": f"GCurve: {gcurve_text}",
-            "morph": f"Morph: {morph_text}",
-            "driver": f"Driver: {str(data.get('driver_label') or 'Generic25')}",
-            "enclosure": f"Enclosure: {enclosure_text}",
+            "throat": ("Throat", throat_text),
+            "gcurve": ("GCurve", gcurve_text),
+            "morph": ("Morph", morph_text),
+            "driver": ("Driver", str(data.get("driver_label") or "Generic25")),
+            "enclosure": ("Enclosure", enclosure_text),
         }
         for key, label in self._version_chip_labels.items():
-            value = str(chip_values.get(key) or "--")
-            label.setText(value)
-            label.setToolTip(value if value != "--" else "missing")
+            pair = chip_values.get(key)
+            if not pair:
+                label.setText("--")
+                label.setToolTip("missing")
+                continue
+            value_text = str(pair[1] or "--")
+            label.setText(self._render_dim_key_value(str(pair[0]), value_text))
+            label.setToolTip(f"{pair[0]}: {value_text}" if value_text != "--" else "missing")
 
         sweep_params = dict(data.get("sweep_parameters") or {})
         if sweep_params:

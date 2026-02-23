@@ -171,7 +171,7 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     QPushButton[analyzerAction="true"],
     QToolButton[analyzerToggle="true"],
     QToolButton[analyzerPlaneToggle="true"] {{
-        background-color: #202327;
+        background-color: #202020;
         color: {c['text']};
         border: 1px solid {c['border']};
         border-radius: {r['sm']}px;
@@ -185,7 +185,7 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     QToolButton[analyzerToggle="true"]:hover,
     QToolButton[analyzerPlaneToggle="true"]:hover {{
         border-color: {c['accent']};
-        background-color: #262b31;
+        background-color: #282828;
     }}
     QToolButton[analyzerToggle="true"]:checked,
     QToolButton[analyzerPlaneToggle="true"]:checked {{
@@ -197,7 +197,7 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     QPushButton[analyzerAction="true"]:pressed,
     QToolButton[analyzerToggle="true"]:pressed,
     QToolButton[analyzerPlaneToggle="true"]:pressed {{
-        background-color: #1b1f24;
+        background-color: #1b1b1b;
     }}
     QToolButton[analyzerPlaneToggle="true"] {{
         border-radius: 0px;
@@ -210,10 +210,6 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     QToolButton#AnalyzerPlaneDButton {{
         border-top-right-radius: {r['sm']}px;
         border-bottom-right-radius: {r['sm']}px;
-    }}
-    QToolButton#AnalyzerPlaneVButton {{
-        border-left-width: 0px;
-        border-right-width: 0px;
     }}
     QToolButton#AnalyzerVersionPinButton {{
         padding: 0px;
@@ -755,7 +751,7 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         border-color: #464646;
     }}
     QFrame#ProjectSummaryPanel[analyzerKpiTile="true"] {{
-        background-color: #24272d;
+        background-color: #232323;
     }}
     QFrame#ProjectSummaryPanel[analyzerPinned="true"] {{
         border: 1px solid #7F6AA6;
@@ -765,6 +761,13 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         border: none;
         min-width: 1px;
         max-width: 1px;
+    }}
+    QLabel[analyzerSweepBadge="true"] {{
+        color: #7FA9D8;
+        background-color: #232323;
+        border: 1px solid #3A3A3A;
+        border-radius: {r['sm']}px;
+        padding: 1px 6px;
     }}
     QFrame#AnalyzerDisplaySlotFrame {{
         background-color: #1d1d1d;
