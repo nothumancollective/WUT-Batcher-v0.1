@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple
 
-ALGO_VERSION = "analyzer-mvp-2a-v2"
+ALGO_VERSION = "analyzer-mvp-2a-v3"
 
 DEFAULT_TOL_DEG = 5.0
 
