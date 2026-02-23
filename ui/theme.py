@@ -189,9 +189,9 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     }}
     QToolButton[analyzerToggle="true"]:checked,
     QToolButton[analyzerPlaneToggle="true"]:checked {{
-        border-color: {c['accent']};
-        background-color: #263041;
-        color: #d9e9ff;
+        border-color: #9a9a9a;
+        background-color: #2a2a2a;
+        color: {c['text']};
     }}
     QToolButton[analyzerAction="true"]:pressed,
     QPushButton[analyzerAction="true"]:pressed,

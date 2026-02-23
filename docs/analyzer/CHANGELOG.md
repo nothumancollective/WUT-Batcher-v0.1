@@ -628,3 +628,8 @@
 - Rebalanced Version Information inner-column stretch so the sweep/ATH column gets more horizontal priority and elides later.
 - Added a stable minimum width for the Notes column to prevent sweep text from truncating prematurely due to notes field collapse.
 - Kept sweep rendering single-line (`ElidedTitleLabel`) with tooltip fallback for full content and added a GUI regression check for wide-layout visibility.
+
+## 2026-02-23 (Analyzer analysis-block polish: compact grid and neutral filter toggles)
+- Reworked Analysis block controls into a compact utility grid (`Stage` + `Target` on one row, `Min score` on next) with unchanged behavior.
+- Removed legacy blue inline toggle styling and switched Analyzer toggle checked-state visuals to neutral monochrome.
+- Added checked-state chip labels (`✓ Exclude flagged`, `✓ Exclude warnings`) while preserving the original filtering behavior and signal flow.

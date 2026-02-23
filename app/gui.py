@@ -5020,22 +5020,6 @@ class AnalysePage(QWidget):
         self.exclude_warnings_check.setToolButtonStyle(Qt.ToolButtonTextOnly)
         self.exclude_warnings_check.setObjectName("AnalyzerExcludeWarningsCheck")
         self.exclude_warnings_check.setProperty("analyzerToggle", True)
-        toggle_style = (
-            "QToolButton[analyzerToggle=\"true\"] {"
-            " border: 1px solid #2B3442;"
-            " border-radius: 4px;"
-            " padding: 2px 8px;"
-            " background: #151B24;"
-            " color: #D3DCE8;"
-            " }"
-            "QToolButton[analyzerToggle=\"true\"]:checked {"
-            " border-color: #5DA8FF;"
-            " background: #20374F;"
-            " color: #F4FAFF;"
-            " }"
-        )
-        self.exclude_flagged_check.setStyleSheet(toggle_style)
-        self.exclude_warnings_check.setStyleSheet(toggle_style)
         controls.addWidget(self.exclude_warnings_check, 0, 2, 1, 2)
         controls.addWidget(QLabel("Min score"), 0, 4, Qt.AlignLeft | Qt.AlignVCenter)
         self.min_score_spin = QDoubleSpinBox()
@@ -5616,11 +5600,11 @@ class AnalysePage(QWidget):
         analysis_title.setMinimumHeight(20)
         analysis_controls_layout.addWidget(analysis_title, 0, 0, 1, 4, Qt.AlignLeft | Qt.AlignVCenter)
         analysis_controls_layout.addWidget(QLabel("Stage"), 1, 0, Qt.AlignLeft | Qt.AlignVCenter)
-        analysis_controls_layout.addWidget(self.stage_selector, 1, 1, 1, 3)
-        analysis_controls_layout.addWidget(QLabel("Target"), 2, 0, Qt.AlignLeft | Qt.AlignVCenter)
-        analysis_controls_layout.addWidget(self.target_selector, 2, 1)
-        analysis_controls_layout.addWidget(QLabel("Min score"), 2, 2, Qt.AlignLeft | Qt.AlignVCenter)
-        analysis_controls_layout.addWidget(self.min_score_spin, 2, 3)
+        analysis_controls_layout.addWidget(self.stage_selector, 1, 1)
+        analysis_controls_layout.addWidget(QLabel("Target"), 1, 2, Qt.AlignLeft | Qt.AlignVCenter)
+        analysis_controls_layout.addWidget(self.target_selector, 1, 3)
+        analysis_controls_layout.addWidget(QLabel("Min score"), 2, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        analysis_controls_layout.addWidget(self.min_score_spin, 2, 1)
         analysis_controls_layout.addWidget(self.exclude_flagged_check, 3, 0, 1, 2)
         analysis_controls_layout.addWidget(self.exclude_warnings_check, 3, 2, 1, 2)
         analysis_controls_layout.setColumnStretch(0, 0)
@@ -5927,6 +5911,8 @@ class AnalysePage(QWidget):
         self.min_score_spin.valueChanged.connect(self._refresh_run_table)
         self.plot_cancel_btn.clicked.connect(self._cancel_plot_request)
         self.analysis_tabs.currentChanged.connect(self._on_analysis_tab_changed)
+        self.exclude_flagged_check.toggled.connect(self._sync_filter_toggle_chip_labels)
+        self.exclude_warnings_check.toggled.connect(self._sync_filter_toggle_chip_labels)
         self.analysis_explorer_btn.clicked.connect(lambda: self.analysis_tabs.setCurrentWidget(self.explorer_tab))
         self.analysis_compare_btn.clicked.connect(lambda: self.analysis_tabs.setCurrentWidget(self.compare_tab))
         self.compare_add_selected_btn.clicked.connect(self._on_compare_add_selected)
@@ -5965,6 +5951,7 @@ class AnalysePage(QWidget):
         self._sync_batch_selector_tooltip()
         self._sync_version_stepper()
         self._sync_selection_action_button_sizes()
+        self._sync_filter_toggle_chip_labels()
         self._clear_plot_views("Select version + plane to render plots.")
         self._refresh_saved_analyses()
         self._update_compare_slots()
@@ -8417,6 +8404,19 @@ class AnalysePage(QWidget):
 
     def _update_toolbar_context_chips(self) -> None:
         self.compute_btn.setText("Refresh KPIs")
+
+    @staticmethod
+    def _filter_toggle_text(base_text: str, checked: bool) -> str:
+        token = str(base_text or "").strip()
+        return f"✓ {token}" if bool(checked) else token
+
+    def _sync_filter_toggle_chip_labels(self) -> None:
+        self.exclude_flagged_check.setText(
+            self._filter_toggle_text("Exclude flagged", self.exclude_flagged_check.isChecked())
+        )
+        self.exclude_warnings_check.setText(
+            self._filter_toggle_text("Exclude warnings", self.exclude_warnings_check.isChecked())
+        )
 
     def _apply_stage_defaults(self) -> None:
         stage = dict(self._stage_presets.get(self._selected_stage_id(), {}) or {})

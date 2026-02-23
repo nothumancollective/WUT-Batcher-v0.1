@@ -260,6 +260,17 @@ class AnalyzerPageUiTests(unittest.TestCase):
             page.min_score_spin.setValue(95.0)
             self.assertEqual(page.run_table.rowCount(), 0)
 
+    def test_filter_toggle_chips_show_checkmark_when_enabled(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_ui2x_filter_chip_mark_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            self.assertEqual(page.exclude_flagged_check.text(), "Exclude flagged")
+            self.assertEqual(page.exclude_warnings_check.text(), "Exclude warnings")
+            page.exclude_flagged_check.setChecked(True)
+            page.exclude_warnings_check.setChecked(True)
+            self.assertTrue(page.exclude_flagged_check.text().startswith("✓ "))
+            self.assertTrue(page.exclude_warnings_check.text().startswith("✓ "))
+
     def test_missing_kpi_rows_show_missing_flag_text(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_ui2x_missing_kpi_") as tmp:
             service = _build_service(Path(tmp))
