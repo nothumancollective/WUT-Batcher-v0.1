@@ -76,7 +76,6 @@ class AnalyzerPageUiTests(unittest.TestCase):
             versions_btn = page.findChild(QToolButton, "AnalyzerVersionsButton")
             prev_btn = page.findChild(QToolButton, "AnalyzerVersionPrevButton")
             next_btn = page.findChild(QToolButton, "AnalyzerVersionNextButton")
-            kpi_btn = page.findChild(QToolButton, "AnalyzerKpiPopoverButton")
             self.assertIsNotNone(batch_selector)
             self.assertIsNotNone(run_table)
             self.assertIsNotNone(run_selector if run_selector is not None else page.run_selector)
@@ -88,7 +87,7 @@ class AnalyzerPageUiTests(unittest.TestCase):
             self.assertIsNotNone(versions_btn)
             self.assertIsNotNone(prev_btn)
             self.assertIsNotNone(next_btn)
-            self.assertIsNotNone(kpi_btn)
+            self.assertIsNone(page.findChild(QToolButton, "AnalyzerKpiPopoverButton"))
             assert run_table is not None
             self.assertEqual(run_table.selectionMode(), QTableWidget.ExtendedSelection)
             assert exclude_flagged is not None
@@ -314,6 +313,36 @@ class AnalyzerPageUiTests(unittest.TestCase):
             self.assertIn("B001/V001", page.versions_btn.text())
             self.assertTrue(page.run_details_btn.isEnabled())
 
+    def test_selection_bar_keeps_version_details_and_refresh_actions(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_ui2x_selection_actions_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            self.assertEqual(page.run_details_btn.text(), "Version Details")
+            self.assertEqual(page.compute_btn.text(), "Refresh KPIs")
+            self.assertIsNone(page.findChild(QToolButton, "AnalyzerKpiPopoverButton"))
+
+    def test_sweep_value_label_is_single_line_elided_with_tooltip(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_ui2x_sweep_elide_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            payload = {
+                "project_id": "P001",
+                "batch_id": "B001",
+                "version_id": "V001",
+                "run_id": "R001",
+                "planes": ["H", "V", "D"],
+                "sweep_parameters": {
+                    "Throat.Len": 120.0,
+                    "GCurve.AspectRatio": 1.45,
+                    "Morph.Coverage": 60.0,
+                    "Mesh.AngleStep": 2.0,
+                },
+            }
+            page._update_version_information_panel(payload)
+            self.assertFalse(page.version_sweep_value_label.wordWrap())
+            self.assertNotIn("\n", str(page.version_sweep_value_label.text() or ""))
+            self.assertIn("Throat.Len", str(page.version_sweep_value_label.toolTip() or ""))
+
     def test_version_note_persists_per_project_batch_version(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_ui2x_note_persist_") as tmp:
             service = _build_service(Path(tmp))
@@ -368,6 +397,42 @@ class AnalyzerPageUiTests(unittest.TestCase):
                 {"mode": "runs", "project_id": project.project_id, "batch_id": "B001", "runs": rows_reload}
             )
             self.assertEqual(str(page_reload.version_note_edit.toPlainText() or ""), "keep this candidate")
+            page.close()
+            page_reload.close()
+
+    def test_version_pin_persists_per_project_batch_version_run_and_marks_compare_slot(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_ui2x_pin_persist_") as tmp:
+            service = _build_service(Path(tmp))
+            project = service.create_project("Analyzer Pin UI", {})
+            payload = {
+                "mode": "runs",
+                "project_id": project.project_id,
+                "batch_id": "B001",
+                "runs": [
+                    {
+                        "project_id": project.project_id,
+                        "batch_id": "B001",
+                        "run_id": "R001",
+                        "version_id": "V001",
+                        "planes": ["H", "V", "D"],
+                    }
+                ],
+            }
+            page = AnalysePage(service=service)
+            page.set_project_context(project.project_id)
+            page._apply_runs_payload(payload)
+            self.assertFalse(page.version_pin_btn.isChecked())
+            page.version_pin_btn.click()
+            self.app.processEvents()
+            self.assertTrue(page.version_pin_btn.isChecked())
+
+            page_reload = AnalysePage(service=service)
+            page_reload.set_project_context(project.project_id)
+            page_reload._apply_runs_payload(payload)
+            self.assertTrue(page_reload.version_pin_btn.isChecked())
+            page_reload._set_compare_candidates([dict(payload["runs"][0])])
+            selection_text = str(page_reload.compare_slots_table.item(0, 1).text() or "")
+            self.assertIn("[PIN]", selection_text)
             page.close()
             page_reload.close()
 
