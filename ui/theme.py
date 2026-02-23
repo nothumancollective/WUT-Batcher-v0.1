@@ -199,6 +199,22 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     QToolButton[analyzerPlaneToggle="true"]:pressed {{
         background-color: #1b1f24;
     }}
+    QToolButton[analyzerPlaneToggle="true"] {{
+        border-radius: 0px;
+        padding: 1px 10px;
+    }}
+    QToolButton#AnalyzerPlaneHButton {{
+        border-top-left-radius: {r['sm']}px;
+        border-bottom-left-radius: {r['sm']}px;
+    }}
+    QToolButton#AnalyzerPlaneDButton {{
+        border-top-right-radius: {r['sm']}px;
+        border-bottom-right-radius: {r['sm']}px;
+    }}
+    QToolButton#AnalyzerPlaneVButton {{
+        border-left-width: 0px;
+        border-right-width: 0px;
+    }}
     QToolButton#AnalyzerVersionPinButton {{
         padding: 0px;
     }}
@@ -731,16 +747,41 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         border: 1px solid {c['border']};
         border-radius: {r['md']}px;
     }}
+    QFrame#ProjectSummaryPanel[analyzerSurface="1"] {{
+        background-color: #1e1e1e;
+    }}
+    QFrame#ProjectSummaryPanel[analyzerSurface="2"] {{
+        background-color: #222222;
+        border-color: #464646;
+    }}
     QFrame#ProjectSummaryPanel[analyzerKpiTile="true"] {{
         background-color: #24272d;
     }}
     QFrame#ProjectSummaryPanel[analyzerPinned="true"] {{
         border: 1px solid #7F6AA6;
     }}
+    QFrame#AnalyzerInfoDivider {{
+        background-color: #303030;
+        border: none;
+        min-width: 1px;
+        max-width: 1px;
+    }}
     QFrame#AnalyzerDisplaySlotFrame {{
-        background-color: #1b1e23;
+        background-color: #1d1d1d;
         border: 1px solid {c['border']};
         border-radius: {r['sm']}px;
+    }}
+    QFrame#AnalyzerDisplaySlotFrame[analyzerPlaneFlat="true"] {{
+        background-color: transparent;
+        border: none;
+    }}
+    QDoubleSpinBox[analyzerBandEdge="true"]:disabled {{
+        color: #9A9A9A;
+        background-color: #1a1a1a;
+        border-color: #323232;
+    }}
+    QLabel[analyzerBandEdgeLabel="true"]:disabled {{
+        color: #8f8f8f;
     }}
     QFrame#ConstraintCard {{
         background-color: #1c1c1c;

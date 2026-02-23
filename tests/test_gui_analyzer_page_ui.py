@@ -22,7 +22,7 @@ from app.services import OrchestratorService
 from app.settings_store import SettingsStore, UserSettings
 
 try:
-    from PySide6.QtWidgets import QApplication, QComboBox, QDialog, QLabel, QPushButton, QTableWidget, QTabWidget, QToolButton
+    from PySide6.QtWidgets import QApplication, QComboBox, QDialog, QLabel, QPushButton, QTableWidget, QTabWidget, QToolButton, QFrame
 except ImportError:  # pragma: no cover
     QApplication = None  # type: ignore[assignment]
     QComboBox = None  # type: ignore[assignment]
@@ -32,6 +32,7 @@ except ImportError:  # pragma: no cover
     QTableWidget = None  # type: ignore[assignment]
     QTabWidget = None  # type: ignore[assignment]
     QToolButton = None  # type: ignore[assignment]
+    QFrame = None  # type: ignore[assignment]
 
 
 def _build_service(tmp_root: Path) -> OrchestratorService:
@@ -133,6 +134,24 @@ class AnalyzerPageUiTests(unittest.TestCase):
             self.assertTrue(hasattr(page, "kpi_controls_tile"))
             self.assertEqual(len(getattr(page, "display_slot_frames", [])), 2)
             self.assertFalse(page.loading_label.isVisible())
+            self.assertEqual(str(page.analysis_controls_tile.property("analyzerSurface") or ""), "1")
+            self.assertEqual(str(page.kpi_controls_tile.property("analyzerSurface") or ""), "2")
+            self.assertEqual(str(page.display_controls_tile.property("analyzerSurface") or ""), "1")
+
+    def test_version_info_uses_dividers_and_plane_frame_is_flat_segment_container(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_ui2x_dividers_segments_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            dividers = page.findChildren(QFrame, "AnalyzerInfoDivider")
+            self.assertGreaterEqual(len(dividers), 2)
+            flat_plane_frames = [
+                frame
+                for frame in page.findChildren(QFrame, "AnalyzerDisplaySlotFrame")
+                if bool(frame.property("analyzerPlaneFlat"))
+            ]
+            self.assertEqual(len(flat_plane_frames), 1)
+            self.assertTrue(bool(page.custom_band_low_label.property("analyzerBandEdgeLabel")))
+            self.assertTrue(bool(page.custom_band_high_label.property("analyzerBandEdgeLabel")))
 
     def test_plot_titles_and_tile_gaps_use_compact_analyzer_style(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_ui2x_plot_title_compact_") as tmp:

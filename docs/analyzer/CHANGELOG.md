@@ -633,3 +633,11 @@
 - Reworked Analysis block controls into a compact utility grid (`Stage` + `Target` on one row, `Min score` on next) with unchanged behavior.
 - Removed legacy blue inline toggle styling and switched Analyzer toggle checked-state visuals to neutral monochrome.
 - Added checked-state chip labels (`✓ Exclude flagged`, `✓ Exclude warnings`) while preserving the original filtering behavior and signal flow.
+
+## 2026-02-23 (Analyzer bar styling pass: neutral surfaces, dividers, segmented plane control)
+- Added subtle panel surface layering in the Version Bar:
+  - `Analysis`/`Display` use neutral surface level 1
+  - `Version Information` uses a slightly stronger surface/stroke level for visual dominance.
+- Reduced nested panel framing inside Version Information by switching inner containers to plain widgets and introducing subtle vertical dividers.
+- Restyled plane buttons as a neutral segmented control (no blue selected fill, contiguous segmented borders, no special container tint behind the control).
+- Neutralized display-slot background tinting and improved disabled readability for custom band low/high controls.

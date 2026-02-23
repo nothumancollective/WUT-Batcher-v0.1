@@ -4985,11 +4985,13 @@ class AnalysePage(QWidget):
         custom_band_row.setSpacing(6)
         self.custom_band_low_spin = QDoubleSpinBox()
         self.custom_band_low_spin.setObjectName("AnalyzerBandLowSpin")
+        self.custom_band_low_spin.setProperty("analyzerBandEdge", True)
         self.custom_band_low_spin.setRange(20.0, 100000.0)
         self.custom_band_low_spin.setDecimals(0)
         self.custom_band_low_spin.setValue(200.0)
         self.custom_band_high_spin = QDoubleSpinBox()
         self.custom_band_high_spin.setObjectName("AnalyzerBandHighSpin")
+        self.custom_band_high_spin.setProperty("analyzerBandEdge", True)
         self.custom_band_high_spin.setRange(20.0, 100000.0)
         self.custom_band_high_spin.setDecimals(0)
         self.custom_band_high_spin.setValue(16000.0)
@@ -5190,6 +5192,12 @@ class AnalysePage(QWidget):
             btn.setToolButtonStyle(Qt.ToolButtonTextOnly)
             btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
             btn.setProperty("analyzerPlaneToggle", True)
+            if plane_key == "H":
+                btn.setProperty("analyzerPlaneSegment", "first")
+            elif plane_key == "D":
+                btn.setProperty("analyzerPlaneSegment", "last")
+            else:
+                btn.setProperty("analyzerPlaneSegment", "middle")
             self.plane_group.addButton(btn)
             self._plane_buttons[plane_key] = btn
             plane_layout.addWidget(btn, 0, Qt.AlignLeft | Qt.AlignVCenter)
@@ -5590,6 +5598,7 @@ class AnalysePage(QWidget):
 
         self.analysis_controls_tile = QFrame()
         self.analysis_controls_tile.setObjectName("ProjectSummaryPanel")
+        self.analysis_controls_tile.setProperty("analyzerSurface", "1")
         analysis_controls_layout = QGridLayout(self.analysis_controls_tile)
         analysis_controls_layout.setContentsMargins(8, 4, 8, 4)
         analysis_controls_layout.setHorizontalSpacing(4)
@@ -5615,6 +5624,7 @@ class AnalysePage(QWidget):
 
         self.kpi_controls_tile = QFrame()
         self.kpi_controls_tile.setObjectName("ProjectSummaryPanel")
+        self.kpi_controls_tile.setProperty("analyzerSurface", "2")
         kpi_controls_layout = QVBoxLayout(self.kpi_controls_tile)
         kpi_controls_layout.setContentsMargins(8, 4, 8, 4)
         kpi_controls_layout.setSpacing(4)
@@ -5629,33 +5639,45 @@ class AnalysePage(QWidget):
         version_info_body_layout.setContentsMargins(0, 0, 0, 0)
         version_info_body_layout.setSpacing(6)
 
-        self.version_info_scores_col = QFrame()
-        self.version_info_scores_col.setObjectName("ProjectSummaryPanel")
-        scores_layout = QFormLayout(self.version_info_scores_col)
+        self.version_info_scores_col = QWidget()
+        scores_layout = QGridLayout(self.version_info_scores_col)
         scores_layout.setContentsMargins(6, 4, 6, 4)
-        scores_layout.setSpacing(3)
+        scores_layout.setHorizontalSpacing(6)
+        scores_layout.setVerticalSpacing(3)
         self._version_info_metric_labels: Dict[str, QLabel] = {}
-        for key, label_text, tip in (
+        metric_value_font = QFont()
+        metric_value_font.setStyleHint(QFont.Monospace)
+        metric_value_font.setFixedPitch(True)
+        for row_idx, (key, label_text, tip) in enumerate(
+            (
             ("score", "Score", "Stage score for the selected Batch/Version."),
             ("b_pc_oct", "Pattern Ctrl", "Pattern control, in octave units."),
             ("e_bw", "BW Error", "Beamwidth error in degrees."),
             ("e_cov", "Cov Error", "Coverage uniformity error in dB."),
             ("r_spill", "Spill", "Spill ratio in the selected window."),
             ("flags", "Flags", "Flag summary count and severity tags."),
+            )
         ):
+            label = QLabel(label_text)
+            label.setObjectName("SummaryMeta")
+            label.setToolTip(tip)
             value = QLabel("--")
             value.setObjectName("SummaryMeta")
             value.setWordWrap(False)
             value.setToolTip(tip)
+            value.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            value.setFont(metric_value_font)
             self._version_info_metric_labels[key] = value
-            scores_layout.addRow(label_text, value)
+            scores_layout.addWidget(label, row_idx, 0, Qt.AlignLeft | Qt.AlignVCenter)
+            scores_layout.addWidget(value, row_idx, 1)
+        scores_layout.setColumnStretch(0, 0)
+        scores_layout.setColumnStretch(1, 1)
         version_info_body_layout.addWidget(self.version_info_scores_col, 1)
 
-        self.version_info_extra_col = QFrame()
-        self.version_info_extra_col.setObjectName("ProjectSummaryPanel")
+        self.version_info_extra_col = QWidget()
         extra_layout = QHBoxLayout(self.version_info_extra_col)
         extra_layout.setContentsMargins(6, 4, 6, 4)
-        extra_layout.setSpacing(6)
+        extra_layout.setSpacing(8)
 
         self.version_info_col1 = QWidget()
         self.version_info_col1.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Preferred)
@@ -5679,6 +5701,10 @@ class AnalysePage(QWidget):
             col1_layout.addWidget(chip, 0, Qt.AlignLeft | Qt.AlignVCenter)
         col1_layout.addStretch(1)
         extra_layout.addWidget(self.version_info_col1, 1)
+        divider_1 = QFrame()
+        divider_1.setObjectName("AnalyzerInfoDivider")
+        divider_1.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
+        extra_layout.addWidget(divider_1, 0)
 
         self.version_info_col2 = QWidget()
         self.version_info_col2.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
@@ -5698,6 +5724,10 @@ class AnalysePage(QWidget):
         self.version_ath_params_value_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         col2_layout.addWidget(self.version_ath_params_value_label, 1, Qt.AlignLeft | Qt.AlignTop)
         extra_layout.addWidget(self.version_info_col2, 1)
+        divider_2 = QFrame()
+        divider_2.setObjectName("AnalyzerInfoDivider")
+        divider_2.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
+        extra_layout.addWidget(divider_2, 0)
 
         self.version_info_col3 = QWidget()
         self.version_info_col3.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
@@ -5748,6 +5778,7 @@ class AnalysePage(QWidget):
 
         self.display_controls_tile = QFrame()
         self.display_controls_tile.setObjectName("ProjectSummaryPanel")
+        self.display_controls_tile.setProperty("analyzerSurface", "1")
         display_controls_layout = QGridLayout(self.display_controls_tile)
         display_controls_layout.setContentsMargins(8, 4, 8, 4)
         display_controls_layout.setHorizontalSpacing(4)
@@ -5798,6 +5829,8 @@ class AnalysePage(QWidget):
         band_layout.addWidget(self.band_selector, 0, 1)
         self.custom_band_low_label = QLabel("Low")
         self.custom_band_high_label = QLabel("High")
+        self.custom_band_low_label.setProperty("analyzerBandEdgeLabel", True)
+        self.custom_band_high_label.setProperty("analyzerBandEdgeLabel", True)
         band_layout.addWidget(self.custom_band_low_label, 1, 0, Qt.AlignLeft | Qt.AlignVCenter)
         band_layout.addWidget(self.custom_band_low_spin, 1, 1)
         band_layout.addWidget(self.custom_band_high_label, 2, 0, Qt.AlignLeft | Qt.AlignVCenter)
@@ -5809,6 +5842,7 @@ class AnalysePage(QWidget):
 
         plane_frame = QFrame()
         plane_frame.setObjectName("AnalyzerDisplaySlotFrame")
+        plane_frame.setProperty("analyzerPlaneFlat", True)
         plane_layout = QGridLayout(plane_frame)
         plane_layout.setContentsMargins(6, 4, 6, 4)
         plane_layout.setHorizontalSpacing(4)
@@ -5816,7 +5850,7 @@ class AnalysePage(QWidget):
         plane_box = QWidget()
         plane_box_layout = QHBoxLayout(plane_box)
         plane_box_layout.setContentsMargins(0, 0, 0, 0)
-        plane_box_layout.setSpacing(2)
+        plane_box_layout.setSpacing(0)
         plane_box_layout.addWidget(QLabel("Plane"), 0, Qt.AlignLeft | Qt.AlignVCenter)
         for plane_key in ("H", "V", "D"):
             btn = self._plane_buttons.get(plane_key)
