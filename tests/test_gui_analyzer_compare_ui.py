@@ -289,6 +289,36 @@ class AnalyzerCompareUiTests(unittest.TestCase):
             page._set_compare_candidates(candidates)
             self.assertEqual(len(page._compare_candidates), 2)
 
+    def test_compare_overlay_labels_include_pin_marker_for_pinned_candidates(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_stage_compare_pin_overlay_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            page._compare_plot_items = [
+                {
+                    "candidate": {
+                        "project_id": "P001",
+                        "batch_id": "B001",
+                        "run_id": "R001",
+                        "version_id": "V001",
+                        "version_pinned": True,
+                    },
+                    "plot": {
+                        "stage_plot": {
+                            "curves": {
+                                "beamwidth": [
+                                    {"freq_hz": 1000.0, "beamwidth_deg": 60.0},
+                                    {"freq_hz": 2000.0, "beamwidth_deg": 50.0},
+                                ]
+                            }
+                        }
+                    },
+                }
+            ]
+            page._render_compare_overlay()
+            labels = [str(series.get("label") or "") for series in list(page.compare_overlay_canvas._series)]
+            self.assertEqual(len(labels), 1)
+            self.assertIn("[PIN]", labels[0])
+
 
 if __name__ == "__main__":
     unittest.main()

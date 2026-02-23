@@ -555,3 +555,16 @@
   - subtle Version Information border highlight while pinned
   - pin markers (`[PIN]`) in Compare shortlist labels, candidate header, and overlay legend labels.
 - Converted Version Information `Flags Help` to a compact square `?` action button.
+
+## 2026-02-23 (Analyzer UI regression coverage + architecture docs for pin feature)
+- Updated GUI regression expectations for the Selection Bar cleanup:
+  - assert no legacy KPI popover button
+  - keep `Version Details` + `Refresh KPIs` actions in Selection Bar.
+- Added GUI regression coverage for:
+  - single-line elided sweep text behavior
+  - version pin persistence roundtrip
+  - compare shortlist/overlay pin markers.
+- Updated `docs/analyzer/02_ui_architecture.md` with:
+  - pinned-version identity/persistence scope
+  - visual indicator semantics
+  - compact reference links for modern icon-toggle patterns.

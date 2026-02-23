@@ -1,6 +1,6 @@
 # Analyzer UI Architecture (Modern, Scalable, MT/HT Workflow)
 
-**Last updated:** 2026-02-22
+**Last updated:** 2026-02-23
 
 This document captures the **UI/navigation decisions** and **implementation constraints** for the Analyzer UI.
 It is written to be actionable for Codex implementation while minimizing risk to existing Batch UI polish.
@@ -452,7 +452,8 @@ The Analyzer page is planned with two explicit subviews:
   - user-selected ATH parameter values.
 - Column 3:
   - per-version note field (length-capped)
-  - `Flags Help` and `Details` actions.
+  - compact `Flags Help` (`?`) action
+  - `Pin Version` icon toggle action (replaces the old Version Information `Details` action).
 
 ### Display block structure
 - Display block now has two visible subfields:
@@ -465,6 +466,22 @@ The Analyzer page is planned with two explicit subviews:
 - ATH param visibility selection is persisted per project (`analyzer_ui_prefs`).
 - Version notes are persisted per `(project_id, batch_id, version_id)` (`analyzer_version_notes`).
 - All version-information lookups are scoped to selected project + batch + version (and run where available for dimensions).
+
+### Pinned Version feature
+- Pin state is project-local and persisted in `analyzer_ui_prefs` under key `version_pins_v1`.
+- Pin identity key is strict and non-merged:
+  - `project_id|batch_id|version_id|run_id` (with empty-string `run_id` fallback when missing).
+- UI visibility:
+  - Version Information shows a pin icon toggle (off/on) plus subtle pinned outline on the Version Information block.
+  - Compare shortlist and compare overlay labels include a `[PIN]` marker for pinned candidates.
+- Color semantics:
+  - pin uses a subtle purple accent only
+  - warning/error/sweep colors are unchanged.
+
+### Pattern references (pin/favorite toggle)
+- Material Design buttons (icon toggles for star/favorite pattern): https://m1.material.io/components/buttons.html
+- Material Web icon-button toggle selected/unselected state model: https://material-web.dev/components/icon-button/
+- Fluent button guidance (toggle state and visible indicator semantics): https://fluent2.microsoft.design/components/web/react/core/button/usage
 
 ### Open Questions
 - Driver source currently defaults to `Generic25` in Analyzer UI; no dedicated driver field is guaranteed in all project DBs.
