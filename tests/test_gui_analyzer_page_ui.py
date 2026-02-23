@@ -329,6 +329,9 @@ class AnalyzerPageUiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="wut_ui2x_sweep_elide_") as tmp:
             service = _build_service(Path(tmp))
             page = AnalysePage(service=service)
+            page.resize(1920, 1080)
+            page.show()
+            self.app.processEvents()
             payload = {
                 "project_id": "P001",
                 "batch_id": "B001",
@@ -343,9 +346,12 @@ class AnalyzerPageUiTests(unittest.TestCase):
                 },
             }
             page._update_version_information_panel(payload)
+            self.app.processEvents()
             self.assertFalse(page.version_sweep_value_label.wordWrap())
             self.assertNotIn("\n", str(page.version_sweep_value_label.text() or ""))
             self.assertIn("Throat.Len", str(page.version_sweep_value_label.toolTip() or ""))
+            self.assertGreaterEqual(int(page.version_info_col3.minimumWidth()), 220)
+            self.assertGreaterEqual(int(page.version_sweep_value_label.width()), int(page.version_info_col2.width()) - 12)
 
     def test_version_note_persists_per_project_batch_version(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_ui2x_note_persist_") as tmp:
