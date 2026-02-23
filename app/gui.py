@@ -6272,7 +6272,10 @@ class AnalysePage(QWidget):
             return "Plane not available for selected Batch/Version."
         reason_codes = {str(code).strip().upper() for code in list(row.get("kpi_reason_codes", []) or []) if str(code).strip()}
         if "MISSING_PLANE" in reason_codes:
-            return f"{token} not available in imported polar data for this Batch/Version (MISSING_PLANE)."
+            return (
+                f"{token} not available in imported polar data for this Batch/Version (MISSING_PLANE). "
+                "Verify polar export includes H/V/D and angle coverage."
+            )
         return f"{token} not available for selected Batch/Version."
 
     def _sync_plane_controls(self, row: Optional[Dict[str, Any]]) -> None:

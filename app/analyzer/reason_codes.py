@@ -15,7 +15,7 @@ _REASON_CATALOG: Dict[str, Dict[str, str]] = {
         "severity": "warn",
         "summary": "At least one expected plane (H/V/D) is missing in imported polar data.",
         "impact": "Aggregate KPI weighting is reduced to available planes.",
-        "action": "Re-export/import missing polar planes if full-plane analysis is required.",
+        "action": "Verify polar export includes H/V/D and angle coverage, then re-import missing planes.",
     },
     "INSUFFICIENT_ANGLE_COVERAGE": {
         "severity": "warn",
