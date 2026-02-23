@@ -207,6 +207,31 @@ class AnalyzerCompareUiTests(unittest.TestCase):
             assert pixmap is not None
             self.assertFalse(pixmap.isNull())
 
+    def test_plane_controls_keep_h_visible_with_missing_plane_reason(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_stage_plane_missing_h_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            payload = {
+                "mode": "runs",
+                "project_id": "P001",
+                "batch_id": "B001",
+                "runs": [
+                    {
+                        "project_id": "P001",
+                        "batch_id": "B001",
+                        "run_id": "R001",
+                        "version_id": "V001",
+                        "planes": ["V", "D"],
+                        "kpi_reason_codes": ["MISSING_PLANE"],
+                    }
+                ],
+            }
+            page._apply_runs_payload(payload)
+            h_button = page._plane_buttons["H"]
+            self.assertFalse(h_button.isHidden())
+            self.assertFalse(h_button.isEnabled())
+            self.assertIn("MISSING_PLANE", h_button.toolTip())
+
 
 if __name__ == "__main__":
     unittest.main()

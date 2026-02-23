@@ -6181,15 +6181,27 @@ class AnalysePage(QWidget):
         fallback = [token for token in dedupe_orientations(values) if token not in {"H", "V", "D"}]
         return list(known) + list(fallback)
 
+    @staticmethod
+    def _plane_unavailable_reason(row: Dict[str, Any], plane_key: str) -> str:
+        token = str(plane_key or "").strip().upper()
+        if token not in {"H", "V", "D"}:
+            return "Plane not available for selected Batch/Version."
+        reason_codes = {str(code).strip().upper() for code in list(row.get("kpi_reason_codes", []) or []) if str(code).strip()}
+        if "MISSING_PLANE" in reason_codes:
+            return f"{token} not available in imported polar data for this Batch/Version (MISSING_PLANE)."
+        return f"{token} not available for selected Batch/Version."
+
     def _sync_plane_controls(self, row: Optional[Dict[str, Any]]) -> None:
-        available = self._available_planes(dict(row or {}))
+        row_payload = dict(row or {})
+        available = self._available_planes(row_payload)
         for plane_key, button in self._plane_buttons.items():
             enabled = plane_key in available
-            button.setVisible(enabled)
+            button.setVisible(True)
             button.setEnabled(enabled)
+            button.setToolTip("" if enabled else self._plane_unavailable_reason(row_payload, plane_key))
         if not available:
             self._active_plane = "H"
-            self._set_plot_busy(False, "Plane not available for selected run.")
+            self._set_plot_busy(False, "No planes available for selected run/version.")
             return
         if self._active_plane not in available:
             self._active_plane = available[0]

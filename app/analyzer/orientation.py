@@ -22,6 +22,16 @@ def _is_close(value: float, target: float, tol: float = 1.0e-6) -> bool:
     return abs(float(value) - float(target)) <= float(tol)
 
 
+def _x3_alias_tokens(value: float) -> List[str]:
+    numeric = float(value)
+    tokens: List[str] = []
+    if _is_close(numeric, round(numeric)):
+        tokens.append(f"X3_{int(round(numeric))}")
+    tokens.append(f"X3_{numeric:.1f}")
+    tokens.append(f"X3_{numeric:.6f}")
+    return list(dict.fromkeys(tokens))
+
+
 def canonical_orientation_token(value: Any) -> str:
     token = str(value or "").strip()
     if not token:
@@ -52,11 +62,11 @@ def canonical_orientation_token(value: Any) -> str:
 def orientation_query_aliases(plane: str) -> List[str]:
     canonical = canonical_orientation_token(plane)
     if canonical == "H":
-        return ["H", "X3_0", "X3_0.0"]
+        return ["H", *_x3_alias_tokens(0.0)]
     if canonical == "V":
-        return ["V", "X3_90", "X3_90.0"]
+        return ["V", *_x3_alias_tokens(90.0)]
     if canonical == "D":
-        return ["D", "X3_42", "X3_42.0", "X3_45", "X3_45.0"]
+        return ["D", *_x3_alias_tokens(42.0), *_x3_alias_tokens(45.0)]
     return [canonical] if canonical else []
 
 
