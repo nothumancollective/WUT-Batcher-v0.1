@@ -2100,6 +2100,11 @@ class _AnalyzerRunDetailsDialog(StyledDialogBase):
             ("E_cov", str(data.get("kpi_e_cov") if data.get("kpi_e_cov") is not None else "--"), False),
             ("R_spill", str(data.get("kpi_r_spill") if data.get("kpi_r_spill") is not None else "--"), False),
             ("Flags", str(data.get("kpi_flags_count") if data.get("kpi_flags_count") is not None else "--"), False),
+            (
+                "KPI reason_codes",
+                ", ".join(str(code) for code in list(data.get("kpi_reason_codes", []) or []) if str(code).strip()) or "--",
+                False,
+            ),
             ("imported_at", str(data.get("imported_at") or "--"), False),
             ("created_at", str(data.get("created_at") or "--"), False),
         ]
@@ -4981,6 +4986,7 @@ class AnalysePage(QWidget):
             ("e_cov", "E_cov (dB)"),
             ("r_spill", "R_spill"),
             ("flags", "flags"),
+            ("kpi_reason_codes", "kpi_reason_codes"),
             ("imported_at", "imported_at"),
             ("created_at", "created_at"),
             ("source_files", "source_files"),
@@ -7524,11 +7530,16 @@ class AnalysePage(QWidget):
         for row_index, row in enumerate(rows):
             planes = "/".join(str(item) for item in list(row.get("planes", []) or []))
             flags_count = int(row.get("kpi_flags_count") or 0)
+            reason_codes = [str(code) for code in list(row.get("kpi_reason_codes", []) or []) if str(code).strip()]
             flags_text = "--"
             if row.get("kpi_score") is not None:
                 flags_text = str(flags_count)
                 if bool(row.get("kpi_insufficient_coverage")):
                     flags_text = f"{flags_count} (insufficient)"
+            elif "MISSING_KPI_ROWS" in reason_codes:
+                flags_text = "missing"
+            elif reason_codes:
+                flags_text = reason_codes[0]
             batch_id = str(row.get("batch_id") or "--")
             version_id = str(row.get("version_id") or "--")
             selection_label = f"{batch_id}/{version_id}"
@@ -7693,13 +7704,19 @@ class AnalysePage(QWidget):
         planes = "/".join(str(item) for item in list(data.get("planes", []) or []))
         source_files = "\n".join(str(item) for item in list(data.get("source_files", []) or []))
         file_hashes = "\n".join(str(item) for item in list(data.get("file_hashes", []) or []))
+        reason_codes = [str(code) for code in list(data.get("kpi_reason_codes", []) or []) if str(code).strip()]
         norm_note = str(data.get("norm_angle_note") or "--")
         norm_source = str(data.get("norm_angle_source") or "").strip()
         if norm_note != "--" and norm_source:
             norm_note = f"{norm_note} [{norm_source}]"
         flags_count = int(data.get("kpi_flags_count") or 0) if data.get("kpi_score") is not None else None
         if flags_count is None:
-            flags_text = "--"
+            if "MISSING_KPI_ROWS" in reason_codes:
+                flags_text = "missing"
+            elif reason_codes:
+                flags_text = reason_codes[0]
+            else:
+                flags_text = "--"
         elif bool(data.get("kpi_insufficient_coverage")):
             flags_text = f"{flags_count} (insufficient)"
         else:
@@ -7720,6 +7737,7 @@ class AnalysePage(QWidget):
             "e_cov": self._format_float(data.get("kpi_e_cov"), 2),
             "r_spill": self._format_float(data.get("kpi_r_spill"), 3),
             "flags": flags_text,
+            "kpi_reason_codes": ", ".join(reason_codes) if reason_codes else "--",
             "imported_at": str(data.get("imported_at") or "--"),
             "created_at": str(data.get("created_at") or "--"),
             "source_files": source_files or "--",

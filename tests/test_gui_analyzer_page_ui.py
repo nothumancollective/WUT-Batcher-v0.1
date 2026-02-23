@@ -257,6 +257,30 @@ class AnalyzerPageUiTests(unittest.TestCase):
             page.min_score_spin.setValue(95.0)
             self.assertEqual(page.run_table.rowCount(), 0)
 
+    def test_missing_kpi_rows_show_missing_flag_text(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_ui2x_missing_kpi_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            payload = {
+                "mode": "runs",
+                "project_id": "P001",
+                "batch_id": "B001",
+                "runs": [
+                    {
+                        "project_id": "P001",
+                        "batch_id": "B001",
+                        "run_id": "R001",
+                        "version_id": "V001",
+                        "planes": ["H", "V"],
+                        "kpi_score": None,
+                        "kpi_reason_codes": ["MISSING_KPI_ROWS"],
+                    }
+                ],
+            }
+            page._apply_runs_payload(payload)
+            self.assertEqual(page.run_table.item(0, page.COL_SCORE).text(), "--")
+            self.assertEqual(page.run_table.item(0, page.COL_FLAGS).text(), "missing")
+
     def test_run_selection_updates_summary_chips(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_ui2x_summary_") as tmp:
             service = _build_service(Path(tmp))

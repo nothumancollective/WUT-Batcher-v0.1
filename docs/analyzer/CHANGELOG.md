@@ -424,3 +424,24 @@
   - `tests/test_analyzer_kpi_service.py::test_norm_angle_falls_back_to_batch_export_settings_when_db_missing`
   - `tests/test_analyzer_plot_service.py::test_normalize_prefers_provided_norm_angle_when_present`
   - `tests/test_gui_analyzer_page_ui.py::test_run_details_dialog_shows_zero_norm_angle_value`.
+
+## 2026-02-23 (Analyzer KPI robustness: band intersection, one-sided coverage, reason codes)
+- Updated KPI engine (`app/analyzer/kpi_engine.py`) to:
+  - keep strict requested-band intersection (`EMPTY_BAND_INTERSECTION` on empty overlap)
+  - support one-sided angle sets with limited-coverage beamwidth estimation
+  - emit explicit reason codes and missing-plane diagnostics
+  - treat unscorable payloads as `score=None` instead of forced `0.0`.
+- Updated analyzer service wiring (`app/services.py`):
+  - cache reads now expose `kpi_reason_codes` (with compatibility backfill for older cache rows)
+  - cache writes persist nullable score when payload is unscorable.
+- Updated Analyzer UI surfaces (`app/gui.py`):
+  - run table/details now show `missing` when KPI rows are absent (`MISSING_KPI_ROWS`)
+  - details panels now display joined KPI reason codes.
+- Updated docs rules in `docs/analyzer/02_ui_architecture.md` for:
+  - norm-angle reference fallback behavior
+  - strict band-intersection and unscorable-score semantics.
+- Added regression tests:
+  - `tests/test_analyzer_kpi_engine.py::test_one_sided_angles_are_scored_with_limited_coverage_reason`
+  - `tests/test_analyzer_kpi_engine.py::test_empty_band_intersection_marks_payload_unscorable`
+  - `tests/test_analyzer_kpi_service.py::test_batch_review_rows_mark_missing_kpi_rows_with_reason_code`
+  - `tests/test_gui_analyzer_page_ui.py::test_missing_kpi_rows_show_missing_flag_text`.

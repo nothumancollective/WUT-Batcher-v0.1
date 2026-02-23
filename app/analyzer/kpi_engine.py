@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
 from app.analyzer.presets import DEFAULT_STAGE_ID, STAGE_PRESETS
 
@@ -33,16 +33,21 @@ def _interp_crossing(x0: float, y0: float, x1: float, y1: float, threshold: floa
     return float(x0 + ((x1 - x0) * t))
 
 
-def _beamwidth_minus6db(angles: List[float], normalized_db: List[float]) -> Optional[float]:
+def _beamwidth_minus6db(angles: List[float], normalized_db: List[float]) -> Tuple[Optional[float], bool]:
     if len(angles) != len(normalized_db) or len(angles) < 3:
-        return None
+        return (None, True)
     pivot = min(range(len(angles)), key=lambda idx: abs(angles[idx]))
     if float(normalized_db[pivot]) < -6.0:
-        return None
+        return (None, True)
 
     left = float(angles[0])
     right = float(angles[-1])
     threshold = -6.0
+    pivot_angle = float(angles[pivot])
+    has_left_side = any(float(angle) < pivot_angle for angle in angles)
+    has_right_side = any(float(angle) > pivot_angle for angle in angles)
+    left_crossed = False
+    right_crossed = False
 
     for idx in range(pivot, len(angles) - 1):
         y_a = float(normalized_db[idx])
@@ -51,6 +56,7 @@ def _beamwidth_minus6db(angles: List[float], normalized_db: List[float]) -> Opti
             continue
         if y_a >= threshold and y_b < threshold:
             right = _interp_crossing(float(angles[idx]), y_a, float(angles[idx + 1]), y_b, threshold)
+            right_crossed = True
             break
         right = float(angles[idx])
         break
@@ -62,14 +68,27 @@ def _beamwidth_minus6db(angles: List[float], normalized_db: List[float]) -> Opti
             continue
         if y_a >= threshold and y_b < threshold:
             left = _interp_crossing(float(angles[idx]), y_a, float(angles[idx - 1]), y_b, threshold)
+            left_crossed = True
             break
         left = float(angles[idx])
         break
 
-    width = float(right - left)
-    if width <= 0.0:
-        return None
-    return width
+    if right_crossed and left_crossed:
+        width = float(right - left)
+        if width <= 0.0:
+            return (None, True)
+        return (width, False)
+
+    # One-sided support: mirror the available half-angle when only one side exists.
+    if (not has_left_side) and right_crossed:
+        half = float(right - pivot_angle)
+        if half > 0.0:
+            return (2.0 * half, True)
+    if (not has_right_side) and left_crossed:
+        half = float(pivot_angle - left)
+        if half > 0.0:
+            return (2.0 * half, True)
+    return (None, True)
 
 
 def _longest_pass_band_octaves(
@@ -190,35 +209,42 @@ def compute_plane_kpis(
 ) -> Dict[str, Any]:
     target_deg = _orientation_target_deg(orientation, target_h_deg, target_v_deg)
     grouped = _normalize_rows(points)
+    reason_codes: Set[str] = set()
     if not grouped:
+        reason_codes.add("NO_POINTS")
         return {
             "orientation": str(orientation).upper(),
             "target_deg": target_deg,
             "insufficient_coverage": True,
+            "unscorable": True,
+            "reason_codes": sorted(reason_codes),
             "reason": "no_points",
         }
 
     selected_freqs = sorted(freq for freq in grouped.keys() if float(band_low_hz) <= freq <= float(band_high_hz))
     if not selected_freqs:
-        selected_freqs = sorted(grouped.keys())
-    if not selected_freqs:
+        reason_codes.add("EMPTY_BAND_INTERSECTION")
         return {
             "orientation": str(orientation).upper(),
             "target_deg": target_deg,
             "insufficient_coverage": True,
-            "reason": "no_freq_in_band",
+            "unscorable": True,
+            "reason_codes": sorted(reason_codes),
+            "reason": "empty_band_intersection",
         }
 
     beamwidth_rows: List[Dict[str, float]] = []
     rms_inside_values: List[float] = []
     spill_values: List[float] = []
     insufficient_coverage = False
+    limited_angle_coverage = False
 
     coverage_half = max(float(target_deg) * 0.5, 1.0)
     for freq in selected_freqs:
         by_angle = grouped.get(freq, {})
         if len(by_angle) < 3:
             insufficient_coverage = True
+            reason_codes.add("INSUFFICIENT_ANGLE_COVERAGE")
             continue
         angles = sorted(by_angle.keys())
         values = [float(by_angle[angle]) for angle in angles]
@@ -226,14 +252,17 @@ def compute_plane_kpis(
         ref_db = float(values[pivot_idx])
         normalized_db = [float(value - ref_db) for value in values]
 
-        bw = _beamwidth_minus6db([float(a) for a in angles], normalized_db)
+        bw, bw_limited = _beamwidth_minus6db([float(a) for a in angles], normalized_db)
         if bw is not None:
             beamwidth_rows.append({"freq_hz": float(freq), "beamwidth_deg": float(bw)})
+        if bw_limited:
+            limited_angle_coverage = True
 
         inside_values = [normalized_db[idx] for idx, angle in enumerate(angles) if abs(float(angle)) <= coverage_half]
         outside_values = [normalized_db[idx] for idx, angle in enumerate(angles) if abs(float(angle)) > coverage_half]
         if len(inside_values) < 2:
             insufficient_coverage = True
+            reason_codes.add("INSUFFICIENT_ANGLE_COVERAGE")
             continue
         inside_mean = sum(inside_values) / float(len(inside_values))
         inside_rms = math.sqrt(sum((value - inside_mean) ** 2 for value in inside_values) / float(len(inside_values)))
@@ -249,7 +278,11 @@ def compute_plane_kpis(
         min_angle = float(min(angles))
         max_angle = float(max(angles))
         if min_angle > -coverage_half or max_angle < coverage_half:
-            insufficient_coverage = True
+            limited_angle_coverage = True
+            reason_codes.add("INSUFFICIENT_ANGLE_COVERAGE")
+
+    if limited_angle_coverage:
+        reason_codes.add("INSUFFICIENT_ANGLE_COVERAGE")
 
     beamwidths = [float(item["beamwidth_deg"]) for item in beamwidth_rows]
     beamwidth_freqs = [float(item["freq_hz"]) for item in beamwidth_rows]
@@ -281,6 +314,8 @@ def compute_plane_kpis(
                 wide.append(freq)
             prev_width = width
 
+    unscorable = not beamwidth_rows
+
     return {
         "orientation": str(orientation).upper(),
         "target_deg": float(target_deg),
@@ -299,7 +334,10 @@ def compute_plane_kpis(
             "wide_hz": wide,
         },
         "flag_count": int(len(jumps) + len(collapse) + len(wide)),
-        "insufficient_coverage": bool(insufficient_coverage),
+        "insufficient_coverage": bool(insufficient_coverage or limited_angle_coverage),
+        "limited_angle_coverage": bool(limited_angle_coverage),
+        "unscorable": bool(unscorable),
+        "reason_codes": sorted(reason_codes),
     }
 
 
@@ -313,13 +351,14 @@ def compute_run_kpis(
     band_high_hz: float,
 ) -> Dict[str, Any]:
     per_plane: Dict[str, Dict[str, Any]] = {}
+    reason_codes: Set[str] = set()
     for orientation, rows in planes_points.items():
         token = str(orientation or "").strip().upper()
         if token not in {"H", "V", "D"}:
             continue
         if not rows:
             continue
-        per_plane[token] = compute_plane_kpis(
+        plane_payload = compute_plane_kpis(
             orientation=token,
             points=rows,
             target_h_deg=float(target_h_deg),
@@ -328,6 +367,12 @@ def compute_run_kpis(
             band_low_hz=float(band_low_hz),
             band_high_hz=float(band_high_hz),
         )
+        per_plane[token] = plane_payload
+        reason_codes.update(str(code) for code in list(plane_payload.get("reason_codes", []) or []) if str(code).strip())
+
+    missing_planes = [plane for plane in ("H", "V", "D") if plane not in per_plane]
+    if missing_planes:
+        reason_codes.add("MISSING_PLANE")
 
     weights = _plane_weights(per_plane.keys())
     e_bw_values = {plane: row.get("e_bw") for plane, row in per_plane.items()}
@@ -337,6 +382,7 @@ def compute_run_kpis(
 
     flag_count = sum(int(row.get("flag_count") or 0) for row in per_plane.values())
     insufficient_coverage = any(bool(row.get("insufficient_coverage")) for row in per_plane.values()) or not per_plane
+    unscorable = any(bool(row.get("unscorable")) for row in per_plane.values()) or not per_plane
     aggregate = {
         "e_bw": _weighted_mean(e_bw_values, weights),
         "b_pc_oct": _weighted_mean(b_pc_values, weights),
@@ -345,6 +391,8 @@ def compute_run_kpis(
         "flags_count": int(flag_count),
         "flagged": bool(flag_count > 0),
         "insufficient_coverage": bool(insufficient_coverage),
+        "unscorable": bool(unscorable),
+        "reason_codes": sorted(reason_codes),
     }
 
     flags = {
@@ -364,6 +412,8 @@ def compute_run_kpis(
             if list(row.get("flags", {}).get("wide_hz", []))
         },
         "insufficient_coverage": bool(insufficient_coverage),
+        "reason_codes": sorted(reason_codes),
+        "missing_planes": missing_planes,
     }
 
     return {
@@ -375,10 +425,10 @@ def compute_run_kpis(
     }
 
 
-def compute_stage_score(kpi_payload: Mapping[str, Any], stage_id: str = DEFAULT_STAGE_ID) -> float:
+def compute_stage_score(kpi_payload: Mapping[str, Any], stage_id: str = DEFAULT_STAGE_ID) -> Optional[float]:
     aggregate = dict(kpi_payload.get("aggregate", {}) or {})
-    if bool(aggregate.get("insufficient_coverage")):
-        return 0.0
+    if bool(aggregate.get("unscorable")):
+        return None
     stage_key = str(stage_id or DEFAULT_STAGE_ID).strip().lower()
     stage = dict(STAGE_PRESETS.get(stage_key) or STAGE_PRESETS[DEFAULT_STAGE_ID])
     weights = dict(stage.get("weights", {}) or {})
@@ -407,5 +457,6 @@ def compute_stage_score(kpi_payload: Mapping[str, Any], stage_id: str = DEFAULT_
         + (_safe_float(weights.get("r_spill"), 0.0) * spill_norm)
         + (_safe_float(weights.get("flags"), 0.0) * flags_norm)
     )
+    if bool(aggregate.get("insufficient_coverage")):
+        weighted *= 0.75
     return round(_clamp(weighted, 0.0, 1.0) * 100.0, 2)
-
