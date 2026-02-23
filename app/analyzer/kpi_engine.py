@@ -322,6 +322,12 @@ def compute_plane_kpis(
                 wide.append(freq)
             prev_width = width
 
+    # Morphology flags are not reliable under limited/insufficient angle coverage.
+    if bool(insufficient_coverage or limited_angle_coverage):
+        jumps = []
+        collapse = []
+        wide = []
+
     unscorable = not beamwidth_rows
 
     return {

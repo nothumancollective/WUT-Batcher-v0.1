@@ -476,7 +476,7 @@
 
 ## 2026-02-23 (Analyzer flags severity + explainability)
 - Added shared KPI reason catalog (`app/analyzer/reason_codes.py`) with per-code severity/meaning/action metadata.
-- Bumped analyzer KPI algorithm identity to `analyzer-mvp-2a-v2` so existing caches recompute under the updated reason/flag rules.
+- Bumped analyzer KPI algorithm identity to `analyzer-mvp-2a-v3` so existing caches recompute under the updated reason/flag rules.
 - KPI engine now carries `reason_items` alongside `reason_codes` in aggregate/flags payloads.
 - One-sided angle coverage no longer drives jump/collapse/wide morphology flags, reducing false positives for half-space datasets while preserving `INSUFFICIENT_ANGLE_COVERAGE` WARN context.
 - Analyzer run rows now include reason severity counts and UI displays severity-tagged reason summaries.
