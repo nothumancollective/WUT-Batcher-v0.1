@@ -199,6 +199,16 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     QToolButton[analyzerPlaneToggle="true"]:pressed {{
         background-color: #1b1f24;
     }}
+    QToolButton#AnalyzerVersionPinButton {{
+        padding: 0px;
+    }}
+    QToolButton#AnalyzerVersionPinButton:checked {{
+        border-color: #7F6AA6;
+        background-color: #27222d;
+    }}
+    QToolButton#AnalyzerVersionPinButton:hover {{
+        border-color: #9380B8;
+    }}
     QFrame#Card {{
         background-color: {c['surface']};
         border: 1px solid {c['border']};
@@ -723,6 +733,9 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     }}
     QFrame#ProjectSummaryPanel[analyzerKpiTile="true"] {{
         background-color: #24272d;
+    }}
+    QFrame#ProjectSummaryPanel[analyzerPinned="true"] {{
+        border: 1px solid #7F6AA6;
     }}
     QFrame#AnalyzerDisplaySlotFrame {{
         background-color: #1b1e23;

@@ -547,3 +547,11 @@
 ## 2026-02-23 (Analyzer UI cleanup: remove stray KPI control + neutral tile surface)
 - Removed the legacy floating `KPIs` popover button from Analyzer to eliminate the stray/ghost control under the shell bar.
 - Dropped the special `analyzerKpiTile` tint on the Version Information container so the block uses the neutral monochrome summary-panel surface.
+
+## 2026-02-23 (Analyzer pinning: version marker toggle + compare visibility)
+- Replaced the Version Information `Details` action with a project-local pin toggle button (`AnalyzerVersionPinButton`) and kept Selection Bar `Version Details` unchanged.
+- Added per-project pin persistence using existing `analyzer_ui_prefs` (`version_pins_v1`) keyed by `project_id|batch_id|version_id|run_id`.
+- Added immediate pin-state feedback:
+  - subtle Version Information border highlight while pinned
+  - pin markers (`[PIN]`) in Compare shortlist labels, candidate header, and overlay legend labels.
+- Converted Version Information `Flags Help` to a compact square `?` action button.
