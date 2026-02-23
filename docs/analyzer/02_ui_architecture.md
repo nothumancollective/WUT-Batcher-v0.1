@@ -296,7 +296,12 @@ The Analyzer page is planned with two explicit subviews:
   - frequency band uses strict intersection with available polar frequencies (no silent full-band fallback)
   - one-sided angle sets are scored with limited-coverage handling instead of hard-failing to score `0`
   - explicit KPI reason codes are emitted (for example: `INSUFFICIENT_ANGLE_COVERAGE`, `EMPTY_BAND_INTERSECTION`, `MISSING_PLANE`, `MISSING_KPI_ROWS`)
+  - reason codes carry severity metadata:
+    - `INFO`: informational context only (hidden by default in flags summary)
+    - `WARN`: limited confidence but still usable
+    - `ERROR`: KPI unavailable/invalid for current config
   - unscorable payloads render score as `--` (not implicit `0`).
+  - one-sided angle coverage suppresses jump/collapse/wide morphology flagging to avoid false-positive flag walls on half-space datasets.
 - Metadata/list view remains lightweight:
   - table refresh uses metadata + cached scalar joins
   - `polar_points` are loaded only inside the explicit compute worker.
@@ -328,6 +333,9 @@ The Analyzer page is planned with two explicit subviews:
   - `Custom`: user-defined soft limit (`<= 10 GB`) and keep-last count
 - Cache keys include selection/config identity:
   - project_id, batch_id, run_id, version_id, plane, normalization policy, band range.
+- Compare candidate identity and shortlist dedupe use strict scope keying:
+  - project_id + batch_id + run_id + version_id
+  - plane remains explicit in plot fetch requests (never merged across H/V/D).
 
 ## Implementation status (Analyzer Phase 2C: Saved Analyses data model + auto-pick service)
 
@@ -421,6 +429,7 @@ The Analyzer page is planned with two explicit subviews:
 - Toolbar interaction model was tightened for high-density workflows:
   - `Versions` is now an anchored searchable popup selector (instead of opening another workspace panel).
   - KPI summary moved to a compact popover (`KPIs`) with friendly metric labels.
+  - Flags help moved to a dedicated `Flags Help` popover/dialog with per-code meaning and suggested actions.
   - only one visible KPI compute action remains in the toolbar (`Compute KPIs` / `Refresh KPIs` stateful text).
 - Control tiles were compacted without adding extra rows:
   - `Exclude flagged` and `Exclude warnings` are explicit checkable toggles.

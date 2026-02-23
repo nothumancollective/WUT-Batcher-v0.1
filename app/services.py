@@ -33,6 +33,7 @@ from app.analyzer.presets import (
     DEFAULT_TOL_DEG,
     STAGE_PRESETS,
 )
+from app.analyzer.reason_codes import reason_items_for_codes
 from app.analyzer.stage_plot_engine import compute_di_proxy_curve, compute_stage_plot_payload
 from app.batch_orchestrator import PlanningSummary, materialize_batch_plan
 from app.ath_knowledge import load_ath_knowledge
@@ -2081,8 +2082,14 @@ class OrchestratorService:
                         GROUP_CONCAT(DISTINCT pm.source_file) AS source_files_csv,
                         GROUP_CONCAT(DISTINCT pm.file_hash) AS file_hashes_csv
                     FROM polar_measurements pm
-                    LEFT JOIN runs r ON r.run_id = pm.run_id
-                    LEFT JOIN versions v ON v.version_id = pm.version_id
+                    LEFT JOIN runs r
+                        ON r.run_id = pm.run_id
+                       AND r.project_id = pm.project_id
+                       AND r.batch_id = pm.batch_id
+                    LEFT JOIN versions v
+                        ON v.version_id = pm.version_id
+                       AND v.project_id = pm.project_id
+                       AND v.batch_id = pm.batch_id
                     WHERE pm.project_id = ? AND pm.batch_id = ?
                     GROUP BY pm.project_id, pm.batch_id, COALESCE(pm.run_id, ''), pm.version_id
                     ORDER BY imported_at DESC, pm.version_id DESC
@@ -2543,9 +2550,17 @@ class OrchestratorService:
                     if any(plane not in planes_present for plane in ("H", "V", "D")):
                         reason_codes.append("MISSING_PLANE")
                 reason_codes = list(dict.fromkeys(reason_codes))
+                reason_items = reason_items_for_codes(reason_codes)
+                warn_count = sum(1 for item in reason_items if str(item.get("severity") or "").lower() == "warn")
+                error_count = sum(1 for item in reason_items if str(item.get("severity") or "").lower() == "error")
+                info_count = sum(1 for item in reason_items if str(item.get("severity") or "").lower() == "info")
                 payload["kpi"] = kpi_payload
                 payload["kpi_flags"] = flags_payload
                 payload["kpi_reason_codes"] = reason_codes
+                payload["kpi_reason_items"] = reason_items
+                payload["kpi_reason_warn_count"] = int(warn_count)
+                payload["kpi_reason_error_count"] = int(error_count)
+                payload["kpi_reason_info_count"] = int(info_count)
                 payload["kpi_source_hash"] = source_hash
                 payload["kpi_cached_at"] = cached.get("computed_at")
                 payload["kpi_score"] = float(score) if score is not None else None
@@ -2559,6 +2574,10 @@ class OrchestratorService:
                 payload["kpi_unscorable"] = bool(aggregate.get("unscorable"))
             else:
                 payload["kpi_reason_codes"] = ["MISSING_KPI_ROWS"]
+                payload["kpi_reason_items"] = reason_items_for_codes(["MISSING_KPI_ROWS"])
+                payload["kpi_reason_warn_count"] = 0
+                payload["kpi_reason_error_count"] = 1
+                payload["kpi_reason_info_count"] = 0
             result.append(payload)
         return result
 

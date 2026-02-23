@@ -472,3 +472,22 @@
   - `tests/test_analyzer_kpi_service.py::test_autopick_requires_cached_kpis`
   - `tests/test_analyzer_kpi_service.py::test_autopick_scopes_to_requested_batches_and_emits_kpi_score_alias`
   - `tests/test_gui_analyzer_compare_ui.py::test_autopick_accepts_score_key_payload`.
+
+## 2026-02-23 (Analyzer flags severity + explainability)
+- Added shared KPI reason catalog (`app/analyzer/reason_codes.py`) with per-code severity/meaning/action metadata.
+- KPI engine now carries `reason_items` alongside `reason_codes` in aggregate/flags payloads.
+- One-sided angle coverage no longer drives jump/collapse/wide morphology flags, reducing false positives for half-space datasets while preserving `INSUFFICIENT_ANGLE_COVERAGE` WARN context.
+- Analyzer run rows now include reason severity counts and UI displays severity-tagged reason summaries.
+- Added `Flags Help` dialog in Analyzer toolbar with actionable explanations for active reason codes.
+- Added regression coverage:
+  - `tests/test_analyzer_reason_codes.py`
+  - `tests/test_analyzer_kpi_engine.py` one-sided + severity assertions
+  - `tests/test_analyzer_kpi_service.py::test_batch_review_surfaces_missing_plane_as_warn_reason`
+  - `tests/test_gui_analyzer_compare_ui.py::test_reason_severity_summary_is_shown_in_details_and_enables_help`.
+
+## 2026-02-23 (Analyzer strict scoping hardening)
+- Hardened analyzer metadata joins to include project+batch scope when linking `polar_measurements` to `runs`/`versions`.
+- Compare candidate identity/dedupe now keys on full project scope (`project_id`, `batch_id`, `run_id`, `version_id`) to prevent accidental cross-project collisions.
+- Added scope regression coverage for reused `run_id`/`version_id` across batches:
+  - `tests/test_analyzer_kpi_service.py::test_batch_scoping_keeps_same_run_and_version_ids_separate`
+  - `tests/test_gui_analyzer_compare_ui.py::test_compare_candidate_identity_includes_project_scope`.

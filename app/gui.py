@@ -28,6 +28,7 @@ from app.analyzer.presets import (
     STAGE_PRESETS,
     resolve_band_limits,
 )
+from app.analyzer.reason_codes import reason_items_for_codes
 from app.doctor_service import run_doctor_checks
 from app.constants import DEFAULT_RUNNER_MODE
 import app.resources_rc  # noqa: F401  # Registers Qt resource paths used by icons/QSS.
@@ -2083,6 +2084,23 @@ class _AnalyzerRunDetailsDialog(StyledDialogBase):
                 norm_text = f"{float(norm_raw):.2f}"
             except Exception:
                 norm_text = str(norm_raw)
+        reason_items = [dict(item) for item in list(data.get("kpi_reason_items", []) or []) if isinstance(item, dict)]
+        if not reason_items:
+            reason_items = reason_items_for_codes(
+                [str(code) for code in list(data.get("kpi_reason_codes", []) or []) if str(code).strip()]
+            )
+        reason_lines: List[str] = []
+        for item in reason_items:
+            severity = str(item.get("severity") or "warn").upper()
+            code = str(item.get("code") or "").strip()
+            summary = str(item.get("summary") or "").strip()
+            action = str(item.get("action") or "").strip()
+            line = f"[{severity}] {code}" if code else f"[{severity}]"
+            if summary:
+                line = f"{line}: {summary}"
+            if action:
+                line = f"{line} | Action: {action}"
+            reason_lines.append(line)
         rows = [
             ("Run ID", str(data.get("run_id") or data.get("run_label") or "--"), True),
             ("Version", str(data.get("version_id") or "--"), True),
@@ -2102,7 +2120,7 @@ class _AnalyzerRunDetailsDialog(StyledDialogBase):
             ("Flags", str(data.get("kpi_flags_count") if data.get("kpi_flags_count") is not None else "--"), False),
             (
                 "KPI reason_codes",
-                ", ".join(str(code) for code in list(data.get("kpi_reason_codes", []) or []) if str(code).strip()) or "--",
+                "\n".join(reason_lines) if reason_lines else "--",
                 False,
             ),
             ("imported_at", str(data.get("imported_at") or "--"), False),
@@ -2307,6 +2325,54 @@ class _AnalyzerKpiPopoverDialog(QDialog):
             value.setTextInteractionFlags(Qt.TextSelectableByMouse)
             form.addRow(label_text, value)
         root.addLayout(form)
+
+class _AnalyzerFlagsHelpDialog(StyledDialogBase):
+    def __init__(self, *, reason_items: Sequence[Dict[str, Any]], parent: QWidget | None = None) -> None:
+        super().__init__(title="Flags Help", parent=parent, min_width=760, min_height=420)
+        body = self.body_layout()
+        intro = QLabel("Reason codes explain data limitations and what to do next.")
+        intro.setObjectName("SummaryMeta")
+        intro.setWordWrap(True)
+        body.addWidget(intro, 0)
+
+        items = [dict(item) for item in list(reason_items or []) if isinstance(item, dict)]
+        if not items:
+            empty = QLabel("No WARN/ERROR reason codes for the current selection.")
+            empty.setObjectName("SummaryMeta")
+            empty.setWordWrap(True)
+            body.addWidget(empty, 1)
+        else:
+            table = QTableWidget(len(items), 4)
+            table.setObjectName("AnalyzerFlagsHelpTable")
+            table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+            table.setSelectionMode(QAbstractItemView.NoSelection)
+            table.setHorizontalHeaderLabels(["Code", "Severity", "Meaning", "Suggested action"])
+            table.verticalHeader().setVisible(False)
+            header = table.horizontalHeader()
+            header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+            header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+            header.setSectionResizeMode(2, QHeaderView.Stretch)
+            header.setSectionResizeMode(3, QHeaderView.Stretch)
+            for row_index, row in enumerate(items):
+                code = str(row.get("code") or "--")
+                severity = str(row.get("severity") or "warn").upper()
+                summary = str(row.get("summary") or "--")
+                action = str(row.get("action") or "--")
+                table.setItem(row_index, 0, QTableWidgetItem(code))
+                table.setItem(row_index, 1, QTableWidgetItem(severity))
+                table.setItem(row_index, 2, QTableWidgetItem(summary))
+                table.setItem(row_index, 3, QTableWidgetItem(action))
+            body.addWidget(table, 1)
+
+        controls = QHBoxLayout()
+        controls.setContentsMargins(0, 0, 0, 0)
+        controls.addStretch(1)
+        close_btn = QPushButton("Close")
+        close_btn.setObjectName("BatchSecondaryButton")
+        close_btn.clicked.connect(self.accept)
+        controls.addWidget(close_btn, 0)
+        body.addLayout(controls)
+
 
 class _AnalyzerAutoPickWorker(QObject):
     finished = Signal(int, dict)
@@ -5362,10 +5428,19 @@ class AnalysePage(QWidget):
         self.kpi_popover_btn.setMinimumHeight(24)
         self.kpi_popover_btn.setMaximumHeight(24)
         self.kpi_popover_btn.setProperty("analyzerAction", True)
+        self.flags_help_btn = QToolButton()
+        self.flags_help_btn.setObjectName("AnalyzerFlagsHelpButton")
+        self.flags_help_btn.setText("Flags Help")
+        self.flags_help_btn.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        self.flags_help_btn.setToolTip("Show reason severities and recommended actions for current flags.")
+        self.flags_help_btn.setMinimumHeight(24)
+        self.flags_help_btn.setMaximumHeight(24)
+        self.flags_help_btn.setProperty("analyzerAction", True)
         toolbar_layout.addWidget(self.run_summary_run_chip, 0)
         toolbar_layout.addWidget(self.run_summary_score_chip, 0)
         toolbar_layout.addWidget(self.run_summary_flags_chip, 0)
         toolbar_layout.addWidget(self.kpi_popover_btn, 0)
+        toolbar_layout.addWidget(self.flags_help_btn, 0)
         self.run_details_btn = QPushButton("Details...")
         self.run_details_btn.setObjectName("BatchSecondaryButton")
         self.run_details_btn.setMinimumHeight(24)
@@ -5535,6 +5610,7 @@ class AnalysePage(QWidget):
         self.run_selector.currentIndexChanged.connect(self._on_run_selector_changed)
         self.versions_btn.clicked.connect(self._open_version_picker)
         self.kpi_popover_btn.clicked.connect(self._open_kpi_popover)
+        self.flags_help_btn.clicked.connect(self._open_flags_help_dialog)
         self.run_details_btn.clicked.connect(self._open_run_details_dialog)
         self.stage_selector.currentIndexChanged.connect(self._on_stage_changed)
         self.target_selector.currentIndexChanged.connect(self._on_kpi_config_changed)
@@ -5583,6 +5659,7 @@ class AnalysePage(QWidget):
         self.run_selector.addItem("(no versions)", "")
         self.run_selector.setEnabled(False)
         self.run_details_btn.setEnabled(False)
+        self.flags_help_btn.setEnabled(False)
         self._clear_plot_views("Select version + plane to render plots.")
         self._refresh_saved_analyses()
         self._update_compare_slots()
@@ -6619,8 +6696,9 @@ class AnalysePage(QWidget):
             if isinstance(placeholder, QLabel):
                 placeholder.setText(message or "No stage plot data available.")
 
-    def _compare_identity(self, row: Dict[str, Any]) -> tuple[str, str, str]:
+    def _compare_identity(self, row: Dict[str, Any]) -> tuple[str, str, str, str]:
         return (
+            str(row.get("project_id") or "").strip(),
             str(row.get("batch_id") or "").strip(),
             str(row.get("run_id") or "").strip(),
             str(row.get("version_id") or "").strip(),
@@ -6650,7 +6728,7 @@ class AnalysePage(QWidget):
         }
 
     def _set_compare_candidates(self, candidates: Sequence[Dict[str, Any]], *, message: str = "") -> None:
-        dedup: Dict[tuple[str, str, str], Dict[str, Any]] = {}
+        dedup: Dict[tuple[str, str, str, str], Dict[str, Any]] = {}
         ordered: List[Dict[str, Any]] = []
         for candidate in list(candidates or []):
             if not isinstance(candidate, dict):
@@ -7447,6 +7525,16 @@ class AnalysePage(QWidget):
         dialog.move(anchor)
         dialog.exec()
 
+    def _open_flags_help_dialog(self) -> None:
+        payload = dict(self._selected_detail_payload or {})
+        if not payload:
+            return
+        reason_items = self._reason_items(payload)
+        dialog = _AnalyzerFlagsHelpDialog(reason_items=reason_items, parent=self)
+        anchor = self.flags_help_btn.mapToGlobal(QPoint(0, self.flags_help_btn.height() + 2))
+        dialog.move(anchor)
+        dialog.exec()
+
     def _open_run_details_dialog(self) -> None:
         payload = dict(self._selected_detail_payload or {})
         if not payload:
@@ -7474,10 +7562,61 @@ class AnalysePage(QWidget):
 
     @staticmethod
     def _row_has_warning(row: Dict[str, Any]) -> bool:
+        reason_items = AnalysePage._reason_items(row, include_info=True)
+        if any(str(item.get("severity") or "").lower() in {"warn", "error"} for item in reason_items):
+            return True
         status = str(row.get("run_status") or "").strip().lower()
         if not status:
             return False
         return any(token in status for token in ("warn", "fail", "error"))
+
+    @staticmethod
+    def _reason_items(row: Dict[str, Any], *, include_info: bool = False) -> List[Dict[str, Any]]:
+        direct = [dict(item) for item in list(row.get("kpi_reason_items", []) or []) if isinstance(item, dict)]
+        if direct:
+            items = direct
+        else:
+            codes = [str(code) for code in list(row.get("kpi_reason_codes", []) or []) if str(code).strip()]
+            items = reason_items_for_codes(codes)
+        normalized: List[Dict[str, Any]] = []
+        for item in items:
+            code = str(item.get("code") or "").strip().upper()
+            if not code:
+                continue
+            severity = str(item.get("severity") or "warn").strip().lower()
+            entry = {
+                "code": code,
+                "severity": severity,
+                "summary": str(item.get("summary") or ""),
+                "impact": str(item.get("impact") or ""),
+                "action": str(item.get("action") or ""),
+            }
+            normalized.append(entry)
+        if include_info:
+            return normalized
+        return [item for item in normalized if str(item.get("severity") or "").lower() != "info"]
+
+    @staticmethod
+    def _flags_text(row: Dict[str, Any]) -> str:
+        reason_items = AnalysePage._reason_items(row)
+        flags_count = int(row.get("kpi_flags_count") or 0) if row.get("kpi_score") is not None else None
+        if flags_count is None:
+            if any(str(item.get("code") or "").upper() == "MISSING_KPI_ROWS" for item in reason_items):
+                return "missing"
+            if reason_items:
+                first = reason_items[0]
+                return f"{str(first.get('severity') or 'warn').upper()}:{str(first.get('code') or '')}"
+            return "--"
+        warn_count = sum(1 for item in reason_items if str(item.get("severity") or "").lower() == "warn")
+        error_count = sum(1 for item in reason_items if str(item.get("severity") or "").lower() == "error")
+        tags: List[str] = []
+        if error_count > 0:
+            tags.append(f"{error_count}E")
+        if warn_count > 0:
+            tags.append(f"{warn_count}W")
+        if tags:
+            return f"{flags_count} ({'/'.join(tags)})"
+        return str(flags_count)
 
     def _sync_band_custom_visibility(self) -> None:
         self.custom_band_widget.setVisible(str(self.band_selector.currentData() or "") == "custom")
@@ -7551,17 +7690,7 @@ class AnalysePage(QWidget):
         self.run_selector.clear()
         for row_index, row in enumerate(rows):
             planes = "/".join(str(item) for item in list(row.get("planes", []) or []))
-            flags_count = int(row.get("kpi_flags_count") or 0)
-            reason_codes = [str(code) for code in list(row.get("kpi_reason_codes", []) or []) if str(code).strip()]
-            flags_text = "--"
-            if row.get("kpi_score") is not None:
-                flags_text = str(flags_count)
-                if bool(row.get("kpi_insufficient_coverage")):
-                    flags_text = f"{flags_count} (insufficient)"
-            elif "MISSING_KPI_ROWS" in reason_codes:
-                flags_text = "missing"
-            elif reason_codes:
-                flags_text = reason_codes[0]
+            flags_text = self._flags_text(row)
             batch_id = str(row.get("batch_id") or "--")
             version_id = str(row.get("version_id") or "--")
             selection_label = f"{batch_id}/{version_id}"
@@ -7726,23 +7855,25 @@ class AnalysePage(QWidget):
         planes = "/".join(str(item) for item in list(data.get("planes", []) or []))
         source_files = "\n".join(str(item) for item in list(data.get("source_files", []) or []))
         file_hashes = "\n".join(str(item) for item in list(data.get("file_hashes", []) or []))
-        reason_codes = [str(code) for code in list(data.get("kpi_reason_codes", []) or []) if str(code).strip()]
+        reason_items = self._reason_items(data)
+        reason_codes = [str(item.get("code") or "") for item in reason_items if str(item.get("code") or "").strip()]
         norm_note = str(data.get("norm_angle_note") or "--")
         norm_source = str(data.get("norm_angle_source") or "").strip()
         if norm_note != "--" and norm_source:
             norm_note = f"{norm_note} [{norm_source}]"
-        flags_count = int(data.get("kpi_flags_count") or 0) if data.get("kpi_score") is not None else None
-        if flags_count is None:
-            if "MISSING_KPI_ROWS" in reason_codes:
-                flags_text = "missing"
-            elif reason_codes:
-                flags_text = reason_codes[0]
-            else:
-                flags_text = "--"
-        elif bool(data.get("kpi_insufficient_coverage")):
-            flags_text = f"{flags_count} (insufficient)"
-        else:
-            flags_text = str(flags_count)
+        flags_text = self._flags_text(data)
+        reason_summary = "--"
+        if reason_items:
+            rendered: List[str] = []
+            for item in reason_items:
+                sev = str(item.get("severity") or "warn").upper()
+                code = str(item.get("code") or "").strip()
+                summary = str(item.get("summary") or "").strip()
+                if summary:
+                    rendered.append(f"[{sev}] {code}: {summary}")
+                else:
+                    rendered.append(f"[{sev}] {code}")
+            reason_summary = "; ".join(rendered)
         mapping = {
             "run_id": str(data.get("run_id") or data.get("run_label") or "--"),
             "version_id": str(data.get("version_id") or "--"),
@@ -7759,7 +7890,7 @@ class AnalysePage(QWidget):
             "e_cov": self._format_float(data.get("kpi_e_cov"), 2),
             "r_spill": self._format_float(data.get("kpi_r_spill"), 3),
             "flags": flags_text,
-            "kpi_reason_codes": ", ".join(reason_codes) if reason_codes else "--",
+            "kpi_reason_codes": reason_summary,
             "imported_at": str(data.get("imported_at") or "--"),
             "created_at": str(data.get("created_at") or "--"),
             "source_files": source_files or "--",
@@ -7774,6 +7905,7 @@ class AnalysePage(QWidget):
             self.run_summary_planes_chip.set_full_text("Planes: --")
             self.run_summary_score_chip.set_full_text("Score: --")
             self.run_summary_flags_chip.set_full_text("Flags: --")
+            self.flags_help_btn.setEnabled(False)
             return
 
         batch_id = str(data.get("batch_id") or "--")
@@ -7783,6 +7915,7 @@ class AnalysePage(QWidget):
         self.run_summary_planes_chip.set_full_text(f"Planes: {planes or '--'}")
         self.run_summary_score_chip.set_full_text(f"Score: {self._format_float(data.get('kpi_score'), 2)}")
         self.run_summary_flags_chip.set_full_text(f"Flags: {flags_text}")
+        self.flags_help_btn.setEnabled(bool(reason_items))
 
 
 class ProjectManagerWindow(QMainWindow):
