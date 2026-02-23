@@ -1984,27 +1984,55 @@ class OrchestratorService:
         try:
             with closing(sqlite3.connect(str(db_path))) as conn:
                 conn.row_factory = sqlite3.Row
-                query_rows = conn.execute(
-                    """
-                    SELECT
-                        pm.project_id AS project_id,
-                        pm.batch_id AS batch_id,
-                        COUNT(DISTINCT (COALESCE(pm.run_id, '') || '|' || pm.version_id)) AS run_version_count,
-                        COUNT(*) AS measurement_count,
-                        MAX(pm.created_at) AS imported_at
-                    FROM polar_measurements pm
-                    WHERE pm.project_id = ?
-                    GROUP BY pm.project_id, pm.batch_id
-                    ORDER BY pm.batch_id
-                    """,
-                    (project_token,),
-                ).fetchall()
+                has_batches_table = bool(
+                    conn.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='batches' LIMIT 1"
+                    ).fetchone()
+                )
+                if has_batches_table:
+                    query_rows = conn.execute(
+                        """
+                        SELECT
+                            pm.project_id AS project_id,
+                            pm.batch_id AS batch_id,
+                            COALESCE(NULLIF(TRIM(b.batch_name), ''), pm.batch_id) AS batch_name,
+                            COUNT(DISTINCT (COALESCE(pm.run_id, '') || '|' || pm.version_id)) AS run_version_count,
+                            COUNT(*) AS measurement_count,
+                            MAX(pm.created_at) AS imported_at
+                        FROM polar_measurements pm
+                        LEFT JOIN batches b
+                          ON b.project_id = pm.project_id
+                         AND b.batch_id = pm.batch_id
+                        WHERE pm.project_id = ?
+                        GROUP BY pm.project_id, pm.batch_id, COALESCE(NULLIF(TRIM(b.batch_name), ''), pm.batch_id)
+                        ORDER BY pm.batch_id
+                        """,
+                        (project_token,),
+                    ).fetchall()
+                else:
+                    query_rows = conn.execute(
+                        """
+                        SELECT
+                            pm.project_id AS project_id,
+                            pm.batch_id AS batch_id,
+                            pm.batch_id AS batch_name,
+                            COUNT(DISTINCT (COALESCE(pm.run_id, '') || '|' || pm.version_id)) AS run_version_count,
+                            COUNT(*) AS measurement_count,
+                            MAX(pm.created_at) AS imported_at
+                        FROM polar_measurements pm
+                        WHERE pm.project_id = ?
+                        GROUP BY pm.project_id, pm.batch_id
+                        ORDER BY pm.batch_id
+                        """,
+                        (project_token,),
+                    ).fetchall()
         except sqlite3.Error:
             return []
         return [
             {
                 "project_id": str(row["project_id"]),
                 "batch_id": str(row["batch_id"]),
+                "batch_name": str(row["batch_name"] or row["batch_id"]),
                 "run_version_count": int(row["run_version_count"] or 0),
                 "measurement_count": int(row["measurement_count"] or 0),
                 "imported_at": row["imported_at"],

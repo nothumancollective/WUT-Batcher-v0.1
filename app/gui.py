@@ -4946,7 +4946,7 @@ class AnalysePage(QWidget):
         self.min_score_spin.setValue(0.0)
         controls.addWidget(self.min_score_spin, 0, 5)
 
-        self.compute_btn = QPushButton("Compute KPIs")
+        self.compute_btn = QPushButton("Refresh KPIs")
         self.compute_btn.setObjectName("AnalyzerComputeKpisButton")
         self.compute_btn.setToolTip("Compute or refresh KPI scalars for the selected batch.")
         controls.addWidget(self.compute_btn, 0, 6, 1, 1)
@@ -5381,22 +5381,60 @@ class AnalysePage(QWidget):
         self.analyzer_toolbar.setObjectName("ProjectSummaryPanel")
         toolbar_layout = QHBoxLayout(self.analyzer_toolbar)
         toolbar_layout.setContentsMargins(10, 4, 10, 4)
-        toolbar_layout.setSpacing(6)
+        toolbar_layout.setSpacing(8)
         self.scope_chip = QLabel("Scope: Project")
         self.scope_chip.setObjectName("SummaryMeta")
-        toolbar_layout.addWidget(self.scope_chip, 0, Qt.AlignLeft | Qt.AlignVCenter)
-        toolbar_layout.addWidget(QLabel("Batch"), 0, Qt.AlignVCenter)
-        self.batch_selector.setMinimumWidth(160)
-        self.batch_selector.setMaximumWidth(280)
-        toolbar_layout.addWidget(self.batch_selector, 0)
-        self.versions_btn = QToolButton()
+        self.scope_chip.setVisible(False)
+
+        self.batch_selector.setMinimumWidth(220)
+        self.batch_selector.setMaximumWidth(480)
+        self.batch_selector.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.batch_selector.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+
+        self.selection_left_box = QWidget()
+        left_box_layout = QHBoxLayout(self.selection_left_box)
+        left_box_layout.setContentsMargins(0, 0, 0, 0)
+        left_box_layout.setSpacing(0)
+        left_box_layout.addWidget(self.batch_selector, 1, Qt.AlignLeft | Qt.AlignVCenter)
+
+        self.selection_center_box = QWidget()
+        center_box_layout = QHBoxLayout(self.selection_center_box)
+        center_box_layout.setContentsMargins(0, 0, 0, 0)
+        center_box_layout.setSpacing(4)
+        self.version_prev_btn = QToolButton()
+        self.version_prev_btn.setObjectName("AnalyzerVersionPrevButton")
+        self.version_prev_btn.setText("<")
+        self.version_prev_btn.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        self.version_prev_btn.setProperty("analyzerAction", True)
+        self.version_prev_btn.setMinimumHeight(24)
+        self.version_prev_btn.setMaximumHeight(24)
+        self.version_prev_btn.setFixedWidth(30)
+        center_box_layout.addWidget(self.version_prev_btn, 0, Qt.AlignVCenter)
+        self.versions_btn = ElidedToolButton("B---/V---")
         self.versions_btn.setObjectName("AnalyzerVersionsButton")
-        self.versions_btn.setText("Versions")
-        self.versions_btn.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        self.versions_btn.setToolTip("Select version")
+        self.versions_btn.setMinimumWidth(260)
+        self.versions_btn.setMaximumWidth(440)
         self.versions_btn.setMinimumHeight(24)
         self.versions_btn.setMaximumHeight(24)
         self.versions_btn.setProperty("analyzerAction", True)
-        toolbar_layout.addWidget(self.versions_btn, 0)
+        center_box_layout.addWidget(self.versions_btn, 1, Qt.AlignVCenter)
+        self.version_next_btn = QToolButton()
+        self.version_next_btn.setObjectName("AnalyzerVersionNextButton")
+        self.version_next_btn.setText(">")
+        self.version_next_btn.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        self.version_next_btn.setProperty("analyzerAction", True)
+        self.version_next_btn.setMinimumHeight(24)
+        self.version_next_btn.setMaximumHeight(24)
+        self.version_next_btn.setFixedWidth(30)
+        center_box_layout.addWidget(self.version_next_btn, 0, Qt.AlignVCenter)
+
+        self.selection_right_box = QWidget()
+        right_box_layout = QHBoxLayout(self.selection_right_box)
+        right_box_layout.setContentsMargins(0, 0, 0, 0)
+        right_box_layout.setSpacing(6)
+        right_box_layout.addStretch(1)
+
         self.run_selector = QComboBox()
         self.run_selector.setObjectName("AnalyzerRunSelector")
         self.run_selector.setMinimumWidth(220)
@@ -5404,30 +5442,38 @@ class AnalysePage(QWidget):
         self.run_selector.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.run_selector.setSizeAdjustPolicy(QComboBox.AdjustToContentsOnFirstShow)
         self.run_selector.setVisible(False)
-        toolbar_layout.addWidget(self.compute_btn, 0)
         self.compute_btn.setMinimumHeight(24)
         self.compute_btn.setMaximumHeight(24)
         self.compute_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.compute_btn.setProperty("analyzerAction", True)
-        toolbar_layout.addStretch(1)
+        self.run_details_btn = QPushButton("Version Details")
+        self.run_details_btn.setObjectName("BatchSecondaryButton")
+        self.run_details_btn.setMinimumHeight(24)
+        self.run_details_btn.setMaximumHeight(24)
+        right_box_layout.addWidget(self.run_details_btn, 0, Qt.AlignVCenter)
+        right_box_layout.addWidget(self.compute_btn, 0, Qt.AlignVCenter)
 
-        self.run_summary_run_chip = ElidedTitleLabel("Selection: --")
+        toolbar_layout.addWidget(self.selection_left_box, 1, Qt.AlignLeft | Qt.AlignVCenter)
+        toolbar_layout.addWidget(self.selection_center_box, 0, Qt.AlignHCenter | Qt.AlignVCenter)
+        toolbar_layout.addWidget(self.selection_right_box, 1, Qt.AlignRight | Qt.AlignVCenter)
+
+        self.run_summary_run_chip = ElidedTitleLabel("Selection: --", parent=self)
         self.run_summary_run_chip.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.run_summary_run_chip.setMinimumWidth(150)
         self.run_summary_run_chip.setObjectName("SummaryMeta")
-        self.run_summary_planes_chip = ElidedTitleLabel("Planes: --")
+        self.run_summary_planes_chip = ElidedTitleLabel("Planes: --", parent=self)
         self.run_summary_planes_chip.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.run_summary_planes_chip.setMinimumWidth(86)
         self.run_summary_planes_chip.setObjectName("SummaryMeta")
-        self.run_summary_score_chip = ElidedTitleLabel("Score: --")
+        self.run_summary_score_chip = ElidedTitleLabel("Score: --", parent=self)
         self.run_summary_score_chip.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.run_summary_score_chip.setMinimumWidth(96)
         self.run_summary_score_chip.setObjectName("SummaryMeta")
-        self.run_summary_flags_chip = ElidedTitleLabel("Flags: --")
+        self.run_summary_flags_chip = ElidedTitleLabel("Flags: --", parent=self)
         self.run_summary_flags_chip.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.run_summary_flags_chip.setMinimumWidth(88)
         self.run_summary_flags_chip.setObjectName("SummaryMeta")
-        self.kpi_popover_btn = QToolButton()
+        self.kpi_popover_btn = QToolButton(self)
         self.kpi_popover_btn.setObjectName("AnalyzerKpiPopoverButton")
         self.kpi_popover_btn.setText("KPIs")
         self.kpi_popover_btn.setToolButtonStyle(Qt.ToolButtonTextOnly)
@@ -5435,7 +5481,7 @@ class AnalysePage(QWidget):
         self.kpi_popover_btn.setMinimumHeight(24)
         self.kpi_popover_btn.setMaximumHeight(24)
         self.kpi_popover_btn.setProperty("analyzerAction", True)
-        self.flags_help_btn = QToolButton()
+        self.flags_help_btn = QToolButton(self)
         self.flags_help_btn.setObjectName("AnalyzerFlagsHelpButton")
         self.flags_help_btn.setText("Flags Help")
         self.flags_help_btn.setToolButtonStyle(Qt.ToolButtonTextOnly)
@@ -5443,16 +5489,6 @@ class AnalysePage(QWidget):
         self.flags_help_btn.setMinimumHeight(24)
         self.flags_help_btn.setMaximumHeight(24)
         self.flags_help_btn.setProperty("analyzerAction", True)
-        toolbar_layout.addWidget(self.run_summary_run_chip, 0)
-        toolbar_layout.addWidget(self.run_summary_score_chip, 0)
-        toolbar_layout.addWidget(self.run_summary_flags_chip, 0)
-        toolbar_layout.addWidget(self.kpi_popover_btn, 0)
-        toolbar_layout.addWidget(self.flags_help_btn, 0)
-        self.run_details_btn = QPushButton("Details...")
-        self.run_details_btn.setObjectName("BatchSecondaryButton")
-        self.run_details_btn.setMinimumHeight(24)
-        self.run_details_btn.setMaximumHeight(24)
-        toolbar_layout.addWidget(self.run_details_btn, 0)
 
         self.analyzer_controls_row = QFrame()
         self.analyzer_controls_row.setObjectName("ProjectSummaryPanel")
@@ -5613,9 +5649,12 @@ class AnalysePage(QWidget):
         self.compute_cancel_btn.clicked.connect(self._cancel_kpi_compute)
         self.project_selector.currentIndexChanged.connect(self._on_project_changed)
         self.batch_selector.currentIndexChanged.connect(self._on_batch_changed)
+        self.batch_selector.currentIndexChanged.connect(self._sync_batch_selector_tooltip)
         self.run_table.itemSelectionChanged.connect(self._on_run_selection_changed)
         self.run_selector.currentIndexChanged.connect(self._on_run_selector_changed)
         self.versions_btn.clicked.connect(self._open_version_picker)
+        self.version_prev_btn.clicked.connect(lambda: self._step_selected_version(-1))
+        self.version_next_btn.clicked.connect(lambda: self._step_selected_version(1))
         self.kpi_popover_btn.clicked.connect(self._open_kpi_popover)
         self.flags_help_btn.clicked.connect(self._open_flags_help_dialog)
         self.run_details_btn.clicked.connect(self._open_run_details_dialog)
@@ -5667,6 +5706,9 @@ class AnalysePage(QWidget):
         self.run_selector.setEnabled(False)
         self.run_details_btn.setEnabled(False)
         self.flags_help_btn.setEnabled(False)
+        self._sync_batch_selector_tooltip()
+        self._sync_version_stepper()
+        self._sync_selection_action_button_sizes()
         self._clear_plot_views("Select version + plane to render plots.")
         self._refresh_saved_analyses()
         self._update_compare_slots()
@@ -5814,16 +5856,64 @@ class AnalysePage(QWidget):
 
     def _update_toolbar_compaction(self) -> None:
         width = max(int(self.width()), 1)
-        compact = width < 1480
-        self.run_summary_planes_chip.setVisible(False)
-        self.scope_chip.setVisible(width >= 1320)
-        max_batch_width = max(140, min(280, int(width * 0.18)))
+        max_batch_width = max(220, min(int(width * 0.33), 720))
         self.batch_selector.setMaximumWidth(max_batch_width)
-        self.run_summary_flags_chip.setVisible(width >= 1160)
+        self._sync_selection_action_button_sizes()
+        self._sync_version_stepper()
+        self._sync_batch_selector_tooltip()
 
     def resizeEvent(self, event) -> None:  # type: ignore[override]
         super().resizeEvent(event)
         self._update_toolbar_compaction()
+
+    def _sync_selection_action_button_sizes(self) -> None:
+        refresh_width = max(int(self.compute_btn.sizeHint().width()), 128)
+        details_width = max(int(self.run_details_btn.sizeHint().width()), 128)
+        target_width = max(refresh_width, details_width)
+        self.compute_btn.setFixedWidth(target_width)
+        self.run_details_btn.setFixedWidth(target_width)
+
+    def _sync_batch_selector_tooltip(self, _index: int = 0) -> None:
+        text = str(self.batch_selector.currentText() or "").strip()
+        self.batch_selector.setToolTip(text)
+
+    def _run_selector_rows(self) -> List[Dict[str, Any]]:
+        rows: List[Dict[str, Any]] = []
+        for idx in range(self.run_selector.count()):
+            payload = dict(self.run_selector.itemData(idx) or {})
+            if not payload:
+                continue
+            rows.append(payload)
+        return rows
+
+    def _sync_version_stepper(self) -> None:
+        rows = self._run_selector_rows()
+        if not rows:
+            self.versions_btn.set_full_text("B---/V---")
+            self.versions_btn.setEnabled(False)
+            self.version_prev_btn.setEnabled(False)
+            self.version_next_btn.setEnabled(False)
+            return
+        index = max(0, min(int(self.run_selector.currentIndex()), len(rows) - 1))
+        payload = dict(rows[index])
+        selection = f"{str(payload.get('batch_id') or '--')}/{str(payload.get('version_id') or '--')}"
+        self.versions_btn.set_full_text(selection)
+        self.versions_btn.setEnabled(True)
+        self.version_prev_btn.setEnabled(index > 0)
+        self.version_next_btn.setEnabled(index < (len(rows) - 1))
+
+    def _step_selected_version(self, direction: int) -> None:
+        rows = self._run_selector_rows()
+        if not rows:
+            self._sync_version_stepper()
+            return
+        current = max(0, min(int(self.run_selector.currentIndex()), len(rows) - 1))
+        target = max(0, min(current + int(direction), len(rows) - 1))
+        if target == current:
+            self._sync_version_stepper()
+            return
+        self.run_selector.setCurrentIndex(target)
+        self._sync_version_stepper()
 
     def _build_plot_placeholder(self, text: str) -> QWidget:
         shell = QWidget()
@@ -7443,15 +7533,22 @@ class AnalysePage(QWidget):
                 batch_id = str(row.get("batch_id") or "").strip()
                 if not batch_id:
                     continue
+                batch_name = str(row.get("batch_name") or "").strip()
                 runs = int(row.get("run_version_count") or 0)
                 measurements = int(row.get("measurement_count") or 0)
-                label = f"{batch_id} ({runs} run/version, {measurements} measurements)"
+                count_text = f"{runs} run/version, {measurements} measurements"
+                if batch_name and batch_name != batch_id:
+                    label = f"{batch_id} | {batch_name} ({count_text})"
+                else:
+                    label = f"{batch_id} ({count_text})"
                 self.batch_selector.addItem(label, batch_id)
+                self.batch_selector.setItemData(self.batch_selector.count() - 1, label, Qt.ToolTipRole)
             if self.batch_selector.count() == 0:
                 self.batch_selector.addItem("(no polar batches)", "")
             self._set_combo_current_by_data(self.batch_selector, active_batch_id)
         finally:
             self._selector_sync_guard = False
+        self._sync_batch_selector_tooltip()
         self._apply_runs_payload(payload)
         self._refresh_saved_analyses()
 
@@ -7476,13 +7573,7 @@ class AnalysePage(QWidget):
             str(row.get("version_id") or "").strip(),
         )
 
-    def _on_run_selector_changed(self, _index: int = 0) -> None:
-        if self._run_selector_sync_guard:
-            return
-        payload = dict(self.run_selector.currentData() or {})
-        if not payload:
-            return
-        target_identity = self._run_identity(payload)
+    def _select_run_table_row_by_identity(self, target_identity: tuple[str, str, str]) -> bool:
         for row_index in range(self.run_table.rowCount()):
             item = self.run_table.item(row_index, self.COL_RUN_ID)
             if item is None:
@@ -7490,7 +7581,20 @@ class AnalysePage(QWidget):
             row_payload = dict(item.data(Qt.UserRole) or {})
             if self._run_identity(row_payload) == target_identity:
                 self.run_table.selectRow(row_index)
-                break
+                return True
+        return False
+
+    def _on_run_selector_changed(self, _index: int = 0) -> None:
+        if self._run_selector_sync_guard:
+            self._sync_version_stepper()
+            return
+        payload = dict(self.run_selector.currentData() or {})
+        if not payload:
+            self._sync_version_stepper()
+            return
+        target_identity = self._run_identity(payload)
+        self._select_run_table_row_by_identity(target_identity)
+        self._sync_version_stepper()
 
     def _open_version_picker(self) -> None:
         entries: List[Dict[str, Any]] = []
@@ -7522,6 +7626,7 @@ class AnalysePage(QWidget):
                 break
         self._run_selector_sync_guard = False
         self._on_run_selector_changed()
+        self._sync_version_stepper()
 
     def _open_kpi_popover(self) -> None:
         payload = dict(self._selected_detail_payload or {})
@@ -7631,9 +7736,7 @@ class AnalysePage(QWidget):
         self._update_toolbar_context_chips()
 
     def _update_toolbar_context_chips(self) -> None:
-        source = self._source_key()
-        self.scope_chip.setText("Scope: Project" if source == "project" else "Scope: Global")
-        self.compute_btn.setText("Refresh KPIs" if any(row.get("kpi_score") is not None for row in self._all_run_rows) else "Compute KPIs")
+        self.compute_btn.setText("Refresh KPIs")
 
     def _apply_stage_defaults(self) -> None:
         stage = dict(self._stage_presets.get(self._selected_stage_id(), {}) or {})
@@ -7663,9 +7766,8 @@ class AnalysePage(QWidget):
             self.run_table.setColumnHidden(col_idx, key not in visible)
 
     def _update_compute_button_text(self, rows: Optional[List[Dict[str, Any]]] = None) -> None:
-        source_rows = rows if rows is not None else self._all_run_rows
-        has_kpi = any(row.get("kpi_score") is not None for row in source_rows)
-        self.compute_btn.setText("Refresh KPIs" if has_kpi else "Compute KPIs")
+        _ = rows if rows is not None else self._all_run_rows
+        self.compute_btn.setText("Refresh KPIs")
 
     def _filtered_rows(self) -> List[Dict[str, Any]]:
         rows = list(self._all_run_rows)
@@ -7747,6 +7849,7 @@ class AnalysePage(QWidget):
             self.run_selector.addItem("(no versions)", "")
             self.run_selector.setCurrentIndex(0)
             self._run_selector_sync_guard = False
+        self._sync_version_stepper()
         self._update_compute_button_text(rows)
 
     def _apply_runs_payload(self, payload: Dict[str, Any]) -> None:
@@ -7839,6 +7942,7 @@ class AnalysePage(QWidget):
             self._set_details(None)
             self._sync_plane_controls(None)
             self._clear_plot_views("Select version + plane to render plots.")
+            self._sync_version_stepper()
             return
         row_index = int(selected_indexes[0].row())
         item = self.run_table.item(row_index, self.COL_RUN_ID)
@@ -7852,6 +7956,7 @@ class AnalysePage(QWidget):
                     self.run_selector.setCurrentIndex(combo_index)
                     break
             self._run_selector_sync_guard = False
+            self._sync_version_stepper()
         self._set_details(payload if payload else None)
         self._sync_plane_controls(payload if payload else None)
         self._schedule_plot_refresh()
