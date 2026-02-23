@@ -587,3 +587,9 @@
   - updated bar stretch/layout contract
   - version-note persistence roundtrip
   - ATH parameter visibility preference persistence.
+
+## 2026-02-23 (Analyzer Version Bar polish: headings/elide/alignment/status density)
+- Removed redundant `Dimensions + Chips` and `Sweep + ATH Params` sub-headings from Version Information while keeping their data content unchanged.
+- Sweep summary line now renders as a single-line elided value (no `Sweep:` prefix, no wrap clipping) with full text in tooltip.
+- Aligned top-block heading baselines by normalizing title minimum heights for `Analysis`, `Version Information`, and `Display`.
+- Removed visible `Plot ready` status text from the Display block row to reclaim vertical space; plot cancel/status behavior remains functional.
