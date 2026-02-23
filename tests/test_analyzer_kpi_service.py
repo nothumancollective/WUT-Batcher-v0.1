@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import gc
 import json
 from pathlib import Path
 import tempfile
 import unittest
 
+from app.analyzer.cache import AnalyzerPlotCache, resolve_cache_policy
 from app.analyzer.presets import ALGO_VERSION
 from app.services import OrchestratorService
 from app.settings_store import SettingsStore, UserSettings
@@ -53,11 +55,12 @@ def _write_synthetic_run(
     run_id: str,
     version_id: str,
     hash_seed: str,
+    orientations: tuple[str, ...] = ("H", "V"),
 ) -> None:
     freqs = [200.0, 400.0, 800.0, 1600.0]
     angles = [-90.0, -60.0, -45.0, -30.0, -15.0, 0.0, 15.0, 30.0, 45.0, 60.0, 90.0]
     points = _build_points(freqs=freqs, angles=angles, bw_deg=60.0)
-    for orientation in ("H", "V"):
+    for orientation in orientations:
         measurement = {
             "project_id": str(project_id),
             "batch_id": str(batch_id),
@@ -179,7 +182,49 @@ class AnalyzerKpiServiceTests(unittest.TestCase):
             default_band = dict(by_id[default_band_id])
             self.assertGreaterEqual(float(default_band.get("low_hz") or 0.0), 200.0)
 
+    def test_orientation_alias_x3_45_is_exposed_as_d_and_loads_plot_data(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_kpi_alias_") as tmp:
+            service = _build_service(Path(tmp))
+            project = service.create_project("Analyzer Alias", {})
+            paths = service.repo.project_paths(project.project_id, ensure=True)
+            dataset = TidyDatasetWriter(paths.project_dir, library_root=service.settings.library_root)
+
+            _write_synthetic_run(
+                dataset=dataset,
+                project_id=project.project_id,
+                batch_id="B001",
+                run_id="R001",
+                version_id="V001",
+                hash_seed="hash_alias",
+                orientations=("V", "X3_45"),
+            )
+
+            runs = service.analyzer_list_polar_runs(project_id=project.project_id, batch_id="B001", source="project")
+            self.assertEqual(len(runs), 1)
+            self.assertEqual(list(runs[0].get("planes") or []), ["V", "D"])
+
+            cache = AnalyzerPlotCache(
+                resolve_cache_policy(mode="low", custom_limit_mb=0, custom_keep_last_n=1)
+            )
+            payload = service.analyzer_load_plot_payload(
+                source="project",
+                project_id=project.project_id,
+                batch_id="B001",
+                run_id="R001",
+                version_id="V001",
+                plane="D",
+                band_low_hz=200.0,
+                band_high_hz=1600.0,
+                cache=cache,
+            )
+            self.assertGreater(len(list(payload.get("freqs_hz") or [])), 0)
+            self.assertGreater(len(list(payload.get("angles_deg") or [])), 0)
+            del payload
+            del cache
+            del dataset
+            del service
+            gc.collect()
+
 
 if __name__ == "__main__":
     unittest.main()
-

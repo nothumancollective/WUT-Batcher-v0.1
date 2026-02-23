@@ -17,6 +17,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from app.analyzer.cache import AnalyzerPlotCache, resolve_cache_policy
 from app.analyzer.heatmap_style import compare_overlay_color, get_vacs_like_lut
+from app.analyzer.orientation import dedupe_orientations
 from app.analyzer.presets import (
     ALGO_VERSION,
     COVERAGE_PRESETS,
@@ -5851,11 +5852,14 @@ class AnalysePage(QWidget):
         self._on_source_changed()
 
     def _selected_plane(self) -> str:
+        active = str(self._active_plane or "H").strip().upper() or "H"
+        if active not in {"H", "V", "D"}:
+            return active
         for plane_key in ("H", "V", "D"):
             button = self._plane_buttons.get(plane_key)
             if button is not None and button.isChecked():
                 return plane_key
-        return str(self._active_plane or "H")
+        return active
 
     def _x_axis_mode(self) -> str:
         token = str(self.x_axis_scale_combo.currentData() or "log").strip().lower()
@@ -6162,12 +6166,10 @@ class AnalysePage(QWidget):
         return rows
 
     def _available_planes(self, row: Dict[str, Any]) -> List[str]:
-        result: List[str] = []
-        for token in list(row.get("planes", []) or []):
-            plane = str(token or "").strip().upper()
-            if plane in {"H", "V", "D"} and plane not in result:
-                result.append(plane)
-        return result
+        values = [str(token or "").strip() for token in list(row.get("planes", []) or [])]
+        known = [token for token in dedupe_orientations(values) if token in {"H", "V", "D"}]
+        fallback = [token for token in dedupe_orientations(values) if token not in {"H", "V", "D"}]
+        return list(known) + list(fallback)
 
     def _sync_plane_controls(self, row: Optional[Dict[str, Any]]) -> None:
         available = self._available_planes(dict(row or {}))
