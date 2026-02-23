@@ -6636,18 +6636,22 @@ class AnalysePage(QWidget):
     def _candidate_from_row(self, row: Dict[str, Any]) -> Dict[str, Any]:
         batch_id = str(row.get("batch_id") or "").strip() or "--"
         version_id = str(row.get("version_id") or "").strip() or "--"
+        score_raw = row.get("kpi_score")
+        if score_raw is None:
+            score_raw = row.get("score")
         return {
             "project_id": str(row.get("project_id") or self._selected_project_id() or "").strip(),
             "batch_id": batch_id,
             "run_id": (str(row.get("run_id") or "").strip() or None),
             "version_id": version_id,
             "run_label": f"{batch_id}/{version_id}",
-            "score": row.get("kpi_score"),
+            "score": score_raw,
             "kpi_b_pc_oct": row.get("kpi_b_pc_oct"),
             "kpi_e_bw": row.get("kpi_e_bw"),
             "kpi_e_cov": row.get("kpi_e_cov"),
             "kpi_r_spill": row.get("kpi_r_spill"),
-            "kpi_flags_count": int(row.get("kpi_flags_count") or 0) if row.get("kpi_score") is not None else None,
+            "kpi_flags_count": int(row.get("kpi_flags_count") or 0) if score_raw is not None else None,
+            "kpi_reason_codes": [str(code) for code in list(row.get("kpi_reason_codes", []) or []) if str(code).strip()],
             "planes": [str(item) for item in list(row.get("planes", []) or [])],
             "imported_at": row.get("imported_at"),
         }
@@ -7220,6 +7224,9 @@ class AnalysePage(QWidget):
         selected_batches = [str(item) for item in list(payload.get("batch_ids", []) or []) if str(item).strip()]
         if scope == "current":
             current_batch = str(self._selected_batch_id() or "").strip()
+            if not current_batch:
+                self._set_compare_busy(False, "Select a batch before using current-scope auto-pick.")
+                return
             selected_batches = [current_batch] if current_batch else []
         if scope == "multi" and not selected_batches:
             self._set_compare_busy(False, "Select at least one batch for multi-batch auto-pick.")
@@ -7302,7 +7309,10 @@ class AnalysePage(QWidget):
         if int(request_id) != int(self._autopick_request_id):
             return
         candidates = [dict(item) for item in list(payload.get("candidates", []) or []) if isinstance(item, dict)]
-        self._set_compare_candidates(candidates, message=f"Auto-picked {len(candidates)} candidates.")
+        message = str(payload.get("message") or "").strip()
+        if not message:
+            message = f"Auto-picked {len(candidates)} candidates."
+        self._set_compare_candidates(candidates, message=message)
 
     def _on_autopick_failed(self, request_id: int, message: str) -> None:
         if int(request_id) != int(self._autopick_request_id):
