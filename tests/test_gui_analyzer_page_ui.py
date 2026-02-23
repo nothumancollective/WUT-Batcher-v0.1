@@ -74,6 +74,8 @@ class AnalyzerPageUiTests(unittest.TestCase):
             compute_btn = page.findChild(QPushButton, "AnalyzerComputeKpisButton")
             exclude_flagged = page.findChild(QToolButton, "AnalyzerExcludeFlaggedCheck")
             versions_btn = page.findChild(QToolButton, "AnalyzerVersionsButton")
+            prev_btn = page.findChild(QToolButton, "AnalyzerVersionPrevButton")
+            next_btn = page.findChild(QToolButton, "AnalyzerVersionNextButton")
             kpi_btn = page.findChild(QToolButton, "AnalyzerKpiPopoverButton")
             self.assertIsNotNone(batch_selector)
             self.assertIsNotNone(run_table)
@@ -84,6 +86,8 @@ class AnalyzerPageUiTests(unittest.TestCase):
             self.assertIsNotNone(compute_btn)
             self.assertIsNotNone(exclude_flagged)
             self.assertIsNotNone(versions_btn)
+            self.assertIsNotNone(prev_btn)
+            self.assertIsNotNone(next_btn)
             self.assertIsNotNone(kpi_btn)
             assert run_table is not None
             self.assertEqual(run_table.selectionMode(), QTableWidget.ExtendedSelection)
@@ -281,7 +285,7 @@ class AnalyzerPageUiTests(unittest.TestCase):
             self.assertEqual(page.run_table.item(0, page.COL_SCORE).text(), "--")
             self.assertEqual(page.run_table.item(0, page.COL_FLAGS).text(), "missing")
 
-    def test_run_selection_updates_summary_chips(self) -> None:
+    def test_run_selection_updates_selection_bar_stepper(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_ui2x_summary_") as tmp:
             service = _build_service(Path(tmp))
             page = AnalysePage(service=service)
@@ -307,10 +311,34 @@ class AnalyzerPageUiTests(unittest.TestCase):
                 ],
             }
             page._apply_runs_payload(payload)
-            self.assertIn("B001/V001", page.run_summary_run_chip.text())
-            self.assertIn("H/V/D", page.run_summary_planes_chip.text())
-            self.assertIn("88.20", page.run_summary_score_chip.text())
+            self.assertIn("B001/V001", page.versions_btn.text())
             self.assertTrue(page.run_details_btn.isEnabled())
+
+    def test_version_stepper_arrows_navigate_and_disable_at_edges(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_ui2x_stepper_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            payload = {
+                "mode": "runs",
+                "project_id": "P001",
+                "batch_id": "B001",
+                "runs": [
+                    {"project_id": "P001", "batch_id": "B001", "run_id": "R001", "version_id": "V001", "planes": ["H"]},
+                    {"project_id": "P001", "batch_id": "B001", "run_id": "R002", "version_id": "V002", "planes": ["H"]},
+                    {"project_id": "P001", "batch_id": "B001", "run_id": "R003", "version_id": "V003", "planes": ["H"]},
+                ],
+            }
+            page._apply_runs_payload(payload)
+            self.assertFalse(page.version_prev_btn.isEnabled())
+            self.assertTrue(page.version_next_btn.isEnabled())
+            page.version_next_btn.click()
+            self.app.processEvents()
+            self.assertIn("B001/V002", page.versions_btn.text())
+            self.assertTrue(page.version_prev_btn.isEnabled())
+            page.version_next_btn.click()
+            self.app.processEvents()
+            self.assertIn("B001/V003", page.versions_btn.text())
+            self.assertFalse(page.version_next_btn.isEnabled())
 
     def test_unknown_plane_token_is_kept_as_fallback_plane(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_ui2x_unknown_plane_") as tmp:

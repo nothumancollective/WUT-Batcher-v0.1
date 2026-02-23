@@ -492,7 +492,6 @@
 - Added scope regression coverage for reused `run_id`/`version_id` across batches:
   - `tests/test_analyzer_kpi_service.py::test_batch_scoping_keeps_same_run_and_version_ids_separate`
   - `tests/test_gui_analyzer_compare_ui.py::test_compare_candidate_identity_includes_project_scope`.
-
 ## 2026-02-23 (Analyzer B006 evidence addendum)
 - Added `docs/analyzer/debug_analyzer_b006_addendum.md` with Phase-0 evidence for batch `P021/B006`:
   - DB plane inventory (`V` + `X3_45` only), point integrity checks, KPI row inventory
@@ -543,3 +542,14 @@
   - deterministic small jitter for overlapping points to reduce overdraw ambiguity.
 - Added regression coverage:
   - `tests/test_gui_analyzer_compare_ui.py::test_pareto_scatter_does_not_fill_plot_area_with_last_candidate_color`.
+
+## 2026-02-23 (Selection Bar v2)
+- Reworked Analyzer top Selection Bar (`app/gui.py`) to show only selection controls:
+  - left: batch dropdown (now includes batch name + counts when available)
+  - center: version stepper (`<`, clickable `B###/V###`, `>`) using existing version picker flow
+  - right: `Version Details` and `Refresh KPIs` (matched button widths).
+- Hid/removal of scope text from visible Selection Bar and removed summary/KPI/flags chips from that bar.
+- Added batch-name binding in analyzer batch inventory query (`app/services.py`) via `batches.batch_name` join fallback.
+- Added/updated GUI tests:
+  - stepper presence + navigation boundary behavior
+  - selection-bar version text update on row selection.
