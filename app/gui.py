@@ -1112,7 +1112,7 @@ class ParetoScatterCanvas(QLabel):
         painter = QPainter(image)
         painter.setRenderHint(QPainter.Antialiasing, True)
 
-        valid: List[Tuple[str, float, float, QColor]] = []
+        valid: List[Tuple[str, float, float, QColor, bool]] = []
         for index, row in enumerate(self._points):
             label = str(row.get("label") or f"C{index + 1}")
             try:
@@ -1127,7 +1127,7 @@ class ParetoScatterCanvas(QLabel):
                 dot_color = QColor(*color)
             else:
                 dot_color = QColor(*compare_overlay_color(index))
-            valid.append((label, x_value, y_value, dot_color))
+            valid.append((label, x_value, y_value, dot_color, bool(row.get("selected", False))))
 
         if not valid:
             painter.setPen(QColor("#9AA4B2"))
@@ -1171,15 +1171,29 @@ class ParetoScatterCanvas(QLabel):
             painter.setPen(QColor("#A6AFBC"))
             painter.drawText(x - 22, margin_top + plot_h + 18, 44, 16, Qt.AlignCenter, f"{x_tick:.2f}")
 
-        for label, x_value, y_value, color in valid:
+        collision_counts: Dict[Tuple[int, int], int] = {}
+        offsets = [(0, 0), (-4, -4), (4, -4), (-4, 4), (4, 4), (0, -6), (0, 6)]
+        for label, x_value, y_value, color, selected in valid:
             x = int(round(x_of(x_value)))
             y = int(round(y_of(y_value)))
+            key = (x, y)
+            seen = int(collision_counts.get(key, 0))
+            collision_counts[key] = seen + 1
+            dx, dy = offsets[seen % len(offsets)]
+            x += int(dx)
+            y += int(dy)
+            radius = 6 if selected else 4
+            if selected:
+                painter.setPen(QPen(QColor("#EAF2FF"), 2))
+                painter.setBrush(Qt.NoBrush)
+                painter.drawEllipse(x - (radius + 2), y - (radius + 2), (radius + 2) * 2, (radius + 2) * 2)
             painter.setPen(QPen(color, 1))
             painter.setBrush(color)
-            painter.drawEllipse(x - 4, y - 4, 8, 8)
+            painter.drawEllipse(x - radius, y - radius, radius * 2, radius * 2)
             painter.setPen(QPen(QColor("#D8E2F0"), 1))
             painter.drawText(x + 6, y - 2, label)
 
+        painter.setBrush(Qt.NoBrush)
         painter.setPen(QPen(QColor("#3A4252"), 1))
         painter.drawRect(margin_left, margin_top, plot_w, plot_h)
         painter.setPen(QColor("#A6AFBC"))
@@ -7157,6 +7171,11 @@ class AnalysePage(QWidget):
         x_label = str(self.compare_pareto_x_combo.currentText() or "X")
         y_label = str(self.compare_pareto_y_combo.currentText() or "Y")
         points: List[Dict[str, Any]] = []
+        selected_index = (
+            int(self._selected_compare_slot_index)
+            if self._selected_compare_slot_index is not None and 0 <= int(self._selected_compare_slot_index) < len(self._compare_plot_items)
+            else None
+        )
         for index, item in enumerate(self._compare_plot_items):
             candidate = dict(item.get("candidate") or {})
             plot = dict(item.get("plot") or {})
@@ -7172,6 +7191,7 @@ class AnalysePage(QWidget):
                     "x_value": float(x_value),
                     "y_value": float(y_value),
                     "color": compare_overlay_color(index),
+                    "selected": bool(selected_index is not None and selected_index == index),
                 }
             )
         if not points:

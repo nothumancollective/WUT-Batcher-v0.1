@@ -353,6 +353,34 @@ class AnalyzerCompareUiTests(unittest.TestCase):
             series = list(getattr(page.compare_overlay_canvas, "_series", []) or [])
             self.assertTrue(any("Target" in str(item.get("label") or "") for item in series))
 
+    def test_pareto_scatter_does_not_fill_plot_area_with_last_candidate_color(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_stage_pareto_fill_guard_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            page._selected_compare_slot_index = 2
+            points = []
+            for idx in range(5):
+                points.append(
+                    {
+                        "label": f"C{idx+1}",
+                        "x_value": 24.0 + idx,
+                        "y_value": 0.12 - (idx * 0.001),
+                        "color": (192, 132, 252) if idx == 4 else (93, 168, 255),
+                        "selected": idx == 2,
+                    }
+                )
+            page.compare_pareto_canvas.resize(640, 320)
+            page.compare_pareto_canvas.set_points(points=points, x_label="Beamwidth Error", y_label="Spill")
+            pixmap = page.compare_pareto_canvas.pixmap()
+            self.assertIsNotNone(pixmap)
+            assert pixmap is not None
+            image = pixmap.toImage()
+            center = image.pixelColor(image.width() // 2, image.height() // 2)
+            # Regression guard: rectangle fill bug painted the full plot with last-candidate color.
+            self.assertNotEqual((center.red(), center.green(), center.blue()), (192, 132, 252))
+            stored_points = list(getattr(page.compare_pareto_canvas, "_points", []) or [])
+            self.assertTrue(any(bool(item.get("selected")) for item in stored_points))
+
 
 if __name__ == "__main__":
     unittest.main()
