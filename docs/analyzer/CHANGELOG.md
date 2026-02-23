@@ -518,3 +518,22 @@
   - sweep realization map (`sweep_parameters`)
   - persisted note text (`version_note`).
 - Added regression tests in `tests/test_analyzer_services_analyses.py` for UI-pref roundtrip and version-note roundtrip.
+
+## 2026-02-23 (Analyzer Version Bar v2: UI layout + details)
+- Reworked the second Analyzer top bar in `app/gui.py` into a responsive 1/4-1/2-1/4 layout:
+  - `Analysis` tile (left)
+  - `Version Information` tile (center)
+  - `Display` tile (right).
+- Implemented `Version Information` content model:
+  - score/KPI vertical list
+  - dimensions + mode chips
+  - sweep summary + user-selected ATH parameter lines
+  - per-version notes editor with character budget and persisted save.
+- Added `ATH Params` tab in the run details dialog for visibility toggles; toggles persist per project and feed Version Bar column 2.
+- Simplified Display tile to two subfields:
+  - Band preset + Low/High inputs (disabled unless `Custom`)
+  - Plane (`H/V/D`) + `Tol (+/-deg)`; `Advanced...` remains for remaining display options.
+- Added/updated GUI coverage in `tests/test_gui_analyzer_page_ui.py`:
+  - updated bar stretch/layout contract
+  - version-note persistence roundtrip
+  - ATH parameter visibility preference persistence.
