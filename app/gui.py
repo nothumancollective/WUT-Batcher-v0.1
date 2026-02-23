@@ -5562,14 +5562,6 @@ class AnalysePage(QWidget):
         self.run_summary_flags_chip.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.run_summary_flags_chip.setMinimumWidth(88)
         self.run_summary_flags_chip.setObjectName("SummaryMeta")
-        self.kpi_popover_btn = QToolButton(self)
-        self.kpi_popover_btn.setObjectName("AnalyzerKpiPopoverButton")
-        self.kpi_popover_btn.setText("KPIs")
-        self.kpi_popover_btn.setToolButtonStyle(Qt.ToolButtonTextOnly)
-        self.kpi_popover_btn.setToolTip("Open KPI summary for the selected version.")
-        self.kpi_popover_btn.setMinimumHeight(24)
-        self.kpi_popover_btn.setMaximumHeight(24)
-        self.kpi_popover_btn.setProperty("analyzerAction", True)
         self.flags_help_btn = QToolButton(self)
         self.flags_help_btn.setObjectName("AnalyzerFlagsHelpButton")
         self.flags_help_btn.setText("Flags Help")
@@ -5612,7 +5604,6 @@ class AnalysePage(QWidget):
 
         self.kpi_controls_tile = QFrame()
         self.kpi_controls_tile.setObjectName("ProjectSummaryPanel")
-        self.kpi_controls_tile.setProperty("analyzerKpiTile", True)
         kpi_controls_layout = QVBoxLayout(self.kpi_controls_tile)
         kpi_controls_layout.setContentsMargins(8, 4, 8, 4)
         kpi_controls_layout.setSpacing(4)
@@ -5874,7 +5865,6 @@ class AnalysePage(QWidget):
         self.versions_btn.clicked.connect(self._open_version_picker)
         self.version_prev_btn.clicked.connect(lambda: self._step_selected_version(-1))
         self.version_next_btn.clicked.connect(lambda: self._step_selected_version(1))
-        self.kpi_popover_btn.clicked.connect(self._open_kpi_popover)
         self.flags_help_btn.clicked.connect(self._open_flags_help_dialog)
         self.run_details_btn.clicked.connect(self._open_run_details_dialog)
         self.version_info_details_btn.clicked.connect(self._open_run_details_dialog)
@@ -7822,15 +7812,6 @@ class AnalysePage(QWidget):
         self._run_selector_sync_guard = False
         self._on_run_selector_changed()
         self._sync_version_stepper()
-
-    def _open_kpi_popover(self) -> None:
-        payload = dict(self._selected_detail_payload or {})
-        if not payload:
-            return
-        dialog = _AnalyzerKpiPopoverDialog(payload=payload, parent=self)
-        anchor = self.kpi_popover_btn.mapToGlobal(QPoint(0, self.kpi_popover_btn.height() + 2))
-        dialog.move(anchor)
-        dialog.exec()
 
     def _open_flags_help_dialog(self) -> None:
         payload = dict(self._selected_detail_payload or {})

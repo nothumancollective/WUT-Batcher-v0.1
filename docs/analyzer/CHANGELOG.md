@@ -543,3 +543,7 @@
 - Sweep summary line now renders as a single-line elided value (no `Sweep:` prefix, no wrap clipping) with full text in tooltip.
 - Aligned top-block heading baselines by normalizing title minimum heights for `Analysis`, `Version Information`, and `Display`.
 - Removed visible `Plot ready` status text from the Display block row to reclaim vertical space; plot cancel/status behavior remains functional.
+
+## 2026-02-23 (Analyzer UI cleanup: remove stray KPI control + neutral tile surface)
+- Removed the legacy floating `KPIs` popover button from Analyzer to eliminate the stray/ghost control under the shell bar.
+- Dropped the special `analyzerKpiTile` tint on the Version Information container so the block uses the neutral monochrome summary-panel surface.
