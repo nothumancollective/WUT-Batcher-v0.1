@@ -320,6 +320,10 @@ class AnalyzerPageUiTests(unittest.TestCase):
             self.assertEqual(page.run_details_btn.text(), "Version Details")
             self.assertEqual(page.compute_btn.text(), "Refresh KPIs")
             self.assertIsNone(page.findChild(QToolButton, "AnalyzerKpiPopoverButton"))
+            self.assertFalse(page.run_summary_run_chip.isVisible())
+            self.assertFalse(page.run_summary_planes_chip.isVisible())
+            self.assertFalse(page.run_summary_score_chip.isVisible())
+            self.assertFalse(page.run_summary_flags_chip.isVisible())
 
     def test_sweep_value_label_is_single_line_elided_with_tooltip(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_ui2x_sweep_elide_") as tmp:

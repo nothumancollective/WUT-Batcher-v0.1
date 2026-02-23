@@ -618,3 +618,8 @@
   - pinned-version identity/persistence scope
   - visual indicator semantics
   - compact reference links for modern icon-toggle patterns.
+
+## 2026-02-23 (Analyzer top-bar polish: remove ghost overlay widgets)
+- Hid legacy summary chip widgets (`Selection/Planes/Score/Flags`) that were still instantiated but no longer part of the visible Selection Bar layout.
+- Marked those hidden chip widgets as mouse-transparent to guarantee no clickable/interactive remnants behind the Selection Bar.
+- Added GUI regression coverage to assert those legacy chip widgets stay non-visible in Analyzer.
