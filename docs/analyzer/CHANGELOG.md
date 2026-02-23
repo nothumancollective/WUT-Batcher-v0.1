@@ -445,3 +445,11 @@
   - `tests/test_analyzer_kpi_engine.py::test_empty_band_intersection_marks_payload_unscorable`
   - `tests/test_analyzer_kpi_service.py::test_batch_review_rows_mark_missing_kpi_rows_with_reason_code`
   - `tests/test_gui_analyzer_page_ui.py::test_missing_kpi_rows_show_missing_flag_text`.
+
+## 2026-02-23 (Analyzer debug addendum: missing-H evidence + autopick path investigation)
+- Added `docs/analyzer/debug_polar_kpi_report_addendum.md` with current `P021/B005` evidence:
+  - confirmed DB orientations are only `V` + `X3_45` (no `H`/`X3_0` rows)
+  - verified `polar_points` integrity per `polar_id` (`actual == freq_count * angle_count`)
+  - inspected real exported TXT headers and hashes showing only `Param_Coord_x3=45/90` and duplicated `90` export payload
+  - recorded current reason-code distribution for the affected batch (`INSUFFICIENT_ANGLE_COVERAGE`, `MISSING_PLANE`)
+  - investigated Compare Auto-pick path and documented payload-contract mismatch evidence (`score` vs `kpi_score`) found in UI candidate normalization.
