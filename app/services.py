@@ -182,6 +182,91 @@ def _safe_json_load(raw: Any) -> Dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
+def _safe_float_or_none(raw: Any) -> Optional[float]:
+    if raw is None:
+        return None
+    try:
+        return float(raw)
+    except Exception:
+        return None
+
+
+def _parse_unambiguous_batch_norm_angle(sim_export_params_raw: Any) -> Optional[float]:
+    payload = _safe_json_load(sim_export_params_raw)
+    specs = payload.get("export_specs")
+    if not isinstance(specs, list):
+        return None
+    values: List[float] = []
+    for spec in specs:
+        if not isinstance(spec, dict):
+            continue
+        if str(spec.get("graph_kind", "") or "").strip().lower() != "polar":
+            continue
+        options = spec.get("options") if isinstance(spec.get("options"), dict) else {}
+        parsed = _safe_float_or_none(options.get("norm_angle"))
+        if parsed is not None:
+            values.append(float(parsed))
+    if not values:
+        return None
+    if max(values) - min(values) <= 1.0e-6:
+        return float(values[0])
+    return None
+
+
+def _resolve_effective_norm_angle(
+    *,
+    measurement_rows: Sequence[sqlite3.Row],
+    batch_norm_angle_deg: Optional[float],
+) -> Tuple[Optional[float], str, str]:
+    stored_values: List[float] = []
+    for row in measurement_rows:
+        parsed = _safe_float_or_none(row["norm_angle_deg"])
+        if parsed is not None:
+            stored_values.append(parsed)
+    if stored_values:
+        if max(stored_values) - min(stored_values) <= 1.0e-6:
+            value = float(stored_values[0])
+            return (value, "stored", "Stored in polar_measurements.norm_angle_deg.")
+        value = float(sum(stored_values) / float(len(stored_values)))
+        return (value, "stored_mixed", "Mixed stored norm angles; using mean value.")
+
+    if batch_norm_angle_deg is not None:
+        return (
+            float(batch_norm_angle_deg),
+            "batch_export_settings",
+            "Derived from batches.sim_export_params export_specs[].options.norm_angle.",
+        )
+
+    all_angles: List[float] = []
+    for row in measurement_rows:
+        raw_angles = str(row["angles_deg_json"] or "").strip()
+        if not raw_angles:
+            continue
+        try:
+            payload = json.loads(raw_angles)
+        except Exception:
+            continue
+        if not isinstance(payload, list):
+            continue
+        for value in payload:
+            parsed = _safe_float_or_none(value)
+            if parsed is not None:
+                all_angles.append(float(parsed))
+    if all_angles:
+        ref_angle = min(all_angles, key=lambda angle: abs(float(angle)))
+        return (
+            float(ref_angle),
+            "nearest_zero_angle",
+            "Fallback: nearest available polar angle to 0 deg.",
+        )
+
+    return (
+        None,
+        "missing",
+        "Norm angle not stored and no polar angle grid available for fallback.",
+    )
+
+
 class PreviewGenerationCancelled(RuntimeError):
     """Raised when an in-flight preview generation is cancelled by the UI."""
 
@@ -1947,6 +2032,37 @@ class OrchestratorService:
         try:
             with closing(sqlite3.connect(str(db_path))) as conn:
                 conn.row_factory = sqlite3.Row
+                batch_row = conn.execute(
+                    """
+                    SELECT sim_export_params
+                    FROM batches
+                    WHERE project_id = ? AND batch_id = ?
+                    LIMIT 1
+                    """,
+                    (project_token, batch_token),
+                ).fetchone()
+                batch_norm_angle_deg = _parse_unambiguous_batch_norm_angle(
+                    batch_row["sim_export_params"] if batch_row is not None else None
+                )
+                measurement_rows = conn.execute(
+                    """
+                    SELECT
+                        COALESCE(run_id, '') AS run_id,
+                        version_id,
+                        norm_angle_deg,
+                        angles_deg_json
+                    FROM polar_measurements
+                    WHERE project_id = ? AND batch_id = ?
+                    """,
+                    (project_token, batch_token),
+                ).fetchall()
+                measurement_by_identity: Dict[Tuple[str, str], List[sqlite3.Row]] = {}
+                for measurement_row in measurement_rows:
+                    key = (
+                        str(measurement_row["run_id"] or "").strip(),
+                        str(measurement_row["version_id"] or "").strip(),
+                    )
+                    measurement_by_identity.setdefault(key, []).append(measurement_row)
                 query_rows = conn.execute(
                     """
                     SELECT
@@ -1983,6 +2099,11 @@ class OrchestratorService:
             source_files = sorted(set(_split_csv_tokens(row["source_files_csv"])))
             file_hashes = sorted(set(_split_csv_tokens(row["file_hashes_csv"])))
             run_id = str(row["run_id"] or "").strip()
+            run_version_measurements = measurement_by_identity.get((run_id, str(row["version_id"])), [])
+            norm_angle_deg, norm_angle_source, norm_angle_note = _resolve_effective_norm_angle(
+                measurement_rows=run_version_measurements,
+                batch_norm_angle_deg=batch_norm_angle_deg,
+            )
             result.append(
                 {
                     "project_id": str(row["project_id"]),
@@ -1995,7 +2116,9 @@ class OrchestratorService:
                     "freq_max_hz": row["freq_max_hz"],
                     "freq_count": int(row["freq_count"] or 0),
                     "angle_count": int(row["angle_count"] or 0),
-                    "norm_angle_deg": row["norm_angle_deg"],
+                    "norm_angle_deg": norm_angle_deg,
+                    "norm_angle_source": norm_angle_source,
+                    "norm_angle_note": norm_angle_note,
                     "imported_at": row["imported_at"],
                     "created_at": row["created_at"],
                     "run_status": row["run_status"],

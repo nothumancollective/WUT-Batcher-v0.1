@@ -42,16 +42,20 @@ def _mag_db(re: float, im: float) -> float:
     return 20.0 * math.log10(max(math.hypot(float(re), float(im)), _EPS))
 
 
-def normalize_relative_to_nearest_zero(
+def normalize_relative_to_reference(
     *,
     freqs_hz: Sequence[float],
     angles_deg: Sequence[float],
     matrix_db: Sequence[Sequence[Optional[float]]],  # angle x freq
+    preferred_ref_angle_deg: Optional[float] = None,
 ) -> Tuple[List[List[Optional[float]]], float]:
     if not freqs_hz or not angles_deg:
         return ([], 0.0)
     angles = [float(value) for value in angles_deg]
-    ref_idx = min(range(len(angles)), key=lambda idx: abs(angles[idx]))
+    if preferred_ref_angle_deg is None:
+        ref_idx = min(range(len(angles)), key=lambda idx: abs(angles[idx]))
+    else:
+        ref_idx = min(range(len(angles)), key=lambda idx: abs(angles[idx] - float(preferred_ref_angle_deg)))
     ref_angle = float(angles[ref_idx])
     rows = len(angles)
     cols = len(freqs_hz)
@@ -83,6 +87,20 @@ def normalize_relative_to_nearest_zero(
             else:
                 normalized[row_idx][col_idx] = float(value) - ref
     return (normalized, ref_angle)
+
+
+def normalize_relative_to_nearest_zero(
+    *,
+    freqs_hz: Sequence[float],
+    angles_deg: Sequence[float],
+    matrix_db: Sequence[Sequence[Optional[float]]],  # angle x freq
+) -> Tuple[List[List[Optional[float]]], float]:
+    return normalize_relative_to_reference(
+        freqs_hz=freqs_hz,
+        angles_deg=angles_deg,
+        matrix_db=matrix_db,
+        preferred_ref_angle_deg=None,
+    )
 
 
 def _interp_cross(x0: float, y0: float, x1: float, y1: float, threshold: float) -> float:
@@ -211,7 +229,12 @@ class AnalyzerPlotService:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 f"""
-                SELECT pp.freq_hz AS freq_hz, pp.angle_deg AS angle_deg, pp.re AS re, pp.im AS im
+                SELECT
+                    pm.norm_angle_deg AS norm_angle_deg,
+                    pp.freq_hz AS freq_hz,
+                    pp.angle_deg AS angle_deg,
+                    pp.re AS re,
+                    pp.im AS im
                 FROM polar_measurements pm
                 JOIN polar_points pp ON pp.polar_id = pm.polar_id
                 WHERE pm.project_id = ?
@@ -243,6 +266,16 @@ class AnalyzerPlotService:
 
         freqs = sorted({float(row["freq_hz"]) for row in rows})
         angles = sorted({float(row["angle_deg"]) for row in rows})
+        norm_angle_deg = None
+        for row in rows:
+            raw_norm = row["norm_angle_deg"]
+            if raw_norm is None:
+                continue
+            try:
+                norm_angle_deg = float(raw_norm)
+                break
+            except Exception:
+                continue
         freq_index = {value: idx for idx, value in enumerate(freqs)}
         angle_index = {value: idx for idx, value in enumerate(angles)}
 
@@ -254,10 +287,11 @@ class AnalyzerPlotService:
                 continue
             matrix_abs[a_idx][f_idx] = _mag_db(float(row["re"]), float(row["im"]))
 
-        normalized, ref_angle = normalize_relative_to_nearest_zero(
+        normalized, ref_angle = normalize_relative_to_reference(
             freqs_hz=freqs,
             angles_deg=angles,
             matrix_db=matrix_abs,
+            preferred_ref_angle_deg=norm_angle_deg,
         )
 
         band_cols = [idx for idx, freq in enumerate(freqs) if float(band_low_hz) <= freq <= float(band_high_hz)]
@@ -280,6 +314,7 @@ class AnalyzerPlotService:
             "display_matrix_db": display_matrix,
             "beamwidth_curve": curve,
             "ref_angle_deg": float(ref_angle),
+            "ref_angle_source": "norm_angle_deg" if norm_angle_deg is not None else "nearest_zero",
             "insufficient_bw": len(curve) <= 2,
             "message": "",
         }

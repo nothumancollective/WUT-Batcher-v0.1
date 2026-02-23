@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import unittest
 
-from app.analyzer.plot_service import compute_beamwidth_curve, normalize_relative_to_nearest_zero
+from app.analyzer.plot_service import (
+    compute_beamwidth_curve,
+    normalize_relative_to_nearest_zero,
+    normalize_relative_to_reference,
+)
 
 
 class AnalyzerPlotServiceMathTests(unittest.TestCase):
@@ -41,6 +45,19 @@ class AnalyzerPlotServiceMathTests(unittest.TestCase):
         for point in curve:
             self.assertGreater(float(point["beamwidth_deg"]), 30.0)
             self.assertLess(float(point["beamwidth_deg"]), 34.0)
+
+    def test_normalize_prefers_provided_norm_angle_when_present(self) -> None:
+        freqs = [1000.0]
+        angles = [-10.0, 0.0, 10.0]
+        matrix = [[-8.0], [0.0], [-2.0]]
+        normalized, ref_angle = normalize_relative_to_reference(
+            freqs_hz=freqs,
+            angles_deg=angles,
+            matrix_db=matrix,
+            preferred_ref_angle_deg=10.0,
+        )
+        self.assertAlmostEqual(ref_angle, 10.0)
+        self.assertAlmostEqual(float(normalized[2][0]), 0.0)
 
 
 if __name__ == "__main__":

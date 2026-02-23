@@ -2075,6 +2075,14 @@ class _AnalyzerRunDetailsDialog(StyledDialogBase):
         form = QFormLayout()
         form.setContentsMargins(0, 0, 0, 0)
         form.setSpacing(6)
+        norm_raw = data.get("norm_angle_deg")
+        if norm_raw is None:
+            norm_text = "--"
+        else:
+            try:
+                norm_text = f"{float(norm_raw):.2f}"
+            except Exception:
+                norm_text = str(norm_raw)
         rows = [
             ("Run ID", str(data.get("run_id") or data.get("run_label") or "--"), True),
             ("Version", str(data.get("version_id") or "--"), True),
@@ -2083,7 +2091,9 @@ class _AnalyzerRunDetailsDialog(StyledDialogBase):
             ("Planes", "/".join(str(item) for item in list(data.get("planes", []) or [])) or "--", False),
             ("freq_count", str(data.get("freq_count") if data.get("freq_count") is not None else "--"), False),
             ("angle_count", str(data.get("angle_count") if data.get("angle_count") is not None else "--"), False),
-            ("norm_angle_deg", str(data.get("norm_angle_deg") or "--"), False),
+            ("norm_angle_deg", norm_text, False),
+            ("norm_angle_source", str(data.get("norm_angle_source") or "--"), False),
+            ("norm_angle_note", str(data.get("norm_angle_note") or "--"), False),
             ("score", str(data.get("kpi_score") if data.get("kpi_score") is not None else "--"), False),
             ("B_PC", str(data.get("kpi_b_pc_oct") if data.get("kpi_b_pc_oct") is not None else "--"), False),
             ("E_BW", str(data.get("kpi_e_bw") if data.get("kpi_e_bw") is not None else "--"), False),
@@ -4971,6 +4981,7 @@ class AnalysePage(QWidget):
             ("freq_count", "freq_count"),
             ("angle_count", "angle_count"),
             ("norm_angle_deg", "norm_angle_deg"),
+            ("norm_angle_note", "norm_angle_note"),
             ("score", "score"),
             ("b_pc_oct", "B_PC (oct)"),
             ("e_bw", "E_BW (deg)"),
@@ -7689,6 +7700,10 @@ class AnalysePage(QWidget):
         planes = "/".join(str(item) for item in list(data.get("planes", []) or []))
         source_files = "\n".join(str(item) for item in list(data.get("source_files", []) or []))
         file_hashes = "\n".join(str(item) for item in list(data.get("file_hashes", []) or []))
+        norm_note = str(data.get("norm_angle_note") or "--")
+        norm_source = str(data.get("norm_angle_source") or "").strip()
+        if norm_note != "--" and norm_source:
+            norm_note = f"{norm_note} [{norm_source}]"
         flags_count = int(data.get("kpi_flags_count") or 0) if data.get("kpi_score") is not None else None
         if flags_count is None:
             flags_text = "--"
@@ -7705,6 +7720,7 @@ class AnalysePage(QWidget):
             "freq_count": str(data.get("freq_count") if data.get("freq_count") is not None else "--"),
             "angle_count": str(data.get("angle_count") if data.get("angle_count") is not None else "--"),
             "norm_angle_deg": self._format_angle(data.get("norm_angle_deg")),
+            "norm_angle_note": norm_note,
             "score": self._format_float(data.get("kpi_score"), 2),
             "b_pc_oct": self._format_float(data.get("kpi_b_pc_oct"), 2),
             "e_bw": self._format_float(data.get("kpi_e_bw"), 2),

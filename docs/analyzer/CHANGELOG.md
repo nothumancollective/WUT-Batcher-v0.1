@@ -409,3 +409,19 @@
 - Added regression tests:
   - `tests/test_analyzer_kpi_service.py::test_orientation_alias_x3_45_is_exposed_as_d_and_loads_plot_data`
   - `tests/test_gui_analyzer_page_ui.py::test_unknown_plane_token_is_kept_as_fallback_plane`.
+
+## 2026-02-23 (Analyzer norm-angle resolution + details fallback clarity)
+- Added analyzer-side effective norm-angle resolution in `app/services.py`:
+  - prefer stored `polar_measurements.norm_angle_deg`
+  - fallback to unambiguous `batches.sim_export_params.export_specs[].options.norm_angle`
+  - final fallback to nearest available polar angle to `0 deg`.
+- Analyzer run payloads now include:
+  - `norm_angle_deg` (effective value)
+  - `norm_angle_source`
+  - `norm_angle_note`.
+- Plot normalization now prefers stored norm-angle when available (otherwise nearest-to-zero) via `normalize_relative_to_reference(...)` in `app/analyzer/plot_service.py`.
+- Fixed `Run Details` dialog zero-value rendering bug (`0.0` no longer collapses to `--`) and added explicit norm-angle source/note fields (`app/gui.py`).
+- Added regression tests:
+  - `tests/test_analyzer_kpi_service.py::test_norm_angle_falls_back_to_batch_export_settings_when_db_missing`
+  - `tests/test_analyzer_plot_service.py::test_normalize_prefers_provided_norm_angle_when_present`
+  - `tests/test_gui_analyzer_page_ui.py::test_run_details_dialog_shows_zero_norm_angle_value`.
