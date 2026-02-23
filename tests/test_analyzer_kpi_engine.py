@@ -117,6 +117,30 @@ class AnalyzerKpiEngineTests(unittest.TestCase):
         self.assertEqual(str(empty_band_item.get("severity") or ""), "error")
         self.assertIsNone(compute_stage_score(payload, stage_id="concept"))
 
+    def test_saturated_beamwidth_is_finite_and_marked(self) -> None:
+        freqs = [1000.0, 2000.0, 4000.0]
+        angles = [-90.0, -60.0, -30.0, 0.0, 30.0, 60.0, 90.0]
+        rows: list[dict[str, float]] = []
+        for freq in freqs:
+            for angle in angles:
+                # Wide pattern that never reaches -6 dB within the exported angle range.
+                db = -2.0 * (abs(angle) / 90.0)
+                magnitude = 10.0 ** (db / 20.0)
+                rows.append({"freq_hz": freq, "angle_deg": angle, "re": magnitude, "im": 0.0})
+        payload = compute_run_kpis(
+            planes_points={"H": rows},
+            target_h_deg=60.0,
+            target_v_deg=60.0,
+            tol_deg=5.0,
+            band_low_hz=1000.0,
+            band_high_hz=4000.0,
+        )
+        reasons = list(payload.get("flags", {}).get("reason_codes", []) or [])
+        self.assertIn("BEAMWIDTH_SATURATED", reasons)
+        aggregate = dict(payload.get("aggregate", {}) or {})
+        self.assertIsNotNone(aggregate.get("e_bw"))
+        self.assertFalse(math.isnan(float(aggregate.get("e_bw"))))
+
 
 if __name__ == "__main__":
     unittest.main()

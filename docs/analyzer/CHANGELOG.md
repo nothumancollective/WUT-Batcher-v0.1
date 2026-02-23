@@ -523,3 +523,16 @@
   - selected compare slot column is softly highlighted.
 - Added regression coverage:
   - `tests/test_gui_analyzer_compare_ui.py::test_compare_kpi_matrix_renders_c1_to_c5_values`.
+
+## 2026-02-23 (Analyzer beamwidth saturation handling)
+- Added explicit beamwidth saturation behavior when `-6 dB` crossings are outside the exported angle range:
+  - plot-service beamwidth curves now emit `saturated` markers
+  - KPI engine treats full-span saturation as finite beamwidth (instead of NaN/missing) and emits `BEAMWIDTH_SATURATED`.
+- Compare beamwidth overlay now adds:
+  - target reference series (`Target XX deg`)
+  - status annotation for saturated bins.
+- Added regression coverage:
+  - `tests/test_analyzer_plot_service.py::test_beamwidth_curve_saturates_when_minus6_crossing_is_absent`
+  - `tests/test_analyzer_kpi_engine.py::test_saturated_beamwidth_is_finite_and_marked`
+  - `tests/test_gui_analyzer_compare_ui.py::test_beamwidth_overlay_includes_target_series_and_saturation_status`
+  - `tests/test_analyzer_reason_codes.py` catalog assertion for `BEAMWIDTH_SATURATED`.

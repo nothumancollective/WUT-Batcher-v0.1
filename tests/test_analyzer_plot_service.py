@@ -45,6 +45,16 @@ class AnalyzerPlotServiceMathTests(unittest.TestCase):
         for point in curve:
             self.assertGreater(float(point["beamwidth_deg"]), 30.0)
             self.assertLess(float(point["beamwidth_deg"]), 34.0)
+            self.assertFalse(bool(point.get("saturated")))
+
+    def test_beamwidth_curve_saturates_when_minus6_crossing_is_absent(self) -> None:
+        freqs = [1000.0]
+        angles = [-90.0, -45.0, 0.0, 45.0, 90.0]
+        matrix = [[-2.0], [-1.5], [0.0], [-1.5], [-2.0]]
+        curve = compute_beamwidth_curve(freqs_hz=freqs, angles_deg=angles, matrix_db=matrix)
+        self.assertEqual(len(curve), 1)
+        self.assertAlmostEqual(float(curve[0]["beamwidth_deg"]), 180.0)
+        self.assertTrue(bool(curve[0].get("saturated")))
 
     def test_normalize_prefers_provided_norm_angle_when_present(self) -> None:
         freqs = [1000.0]

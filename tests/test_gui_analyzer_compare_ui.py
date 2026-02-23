@@ -327,6 +327,32 @@ class AnalyzerCompareUiTests(unittest.TestCase):
             self.assertEqual(page.compare_kpi_matrix.item(0, 1).text(), "90.00")
             self.assertEqual(page.compare_kpi_matrix.item(5, 5).text(), "4")
 
+    def test_beamwidth_overlay_includes_target_series_and_saturation_status(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_stage_compare_bw_sat_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            page._compare_overlay_curve_key = "beamwidth"
+            page._compare_plot_items = [
+                {
+                    "candidate": {"batch_id": "B001", "version_id": "V001"},
+                    "plot": {
+                        "stage_plot": {
+                            "curves": {
+                                "beamwidth": [
+                                    {"freq_hz": 1000.0, "beamwidth_deg": 180.0, "saturated": True},
+                                    {"freq_hz": 2000.0, "beamwidth_deg": 170.0, "saturated": True},
+                                ]
+                            }
+                        }
+                    },
+                }
+            ]
+            page._render_compare_overlay()
+            status = str(getattr(page.compare_overlay_canvas, "_status", ""))
+            self.assertIn("Saturated bins", status)
+            series = list(getattr(page.compare_overlay_canvas, "_series", []) or [])
+            self.assertTrue(any("Target" in str(item.get("label") or "") for item in series))
+
 
 if __name__ == "__main__":
     unittest.main()

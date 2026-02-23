@@ -80,6 +80,12 @@ def _beamwidth_minus6db(angles: List[float], normalized_db: List[float]) -> Tupl
             return (None, True)
         return (width, False)
 
+    # Saturation support: one or both -6 dB crossings are outside available angle range.
+    if has_left_side and has_right_side:
+        span = float(right - left)
+        if span > 0.0:
+            return (span, True)
+
     # One-sided support: mirror the available half-angle when only one side exists.
     if (not has_left_side) and right_crossed:
         half = float(right - pivot_angle)
@@ -254,6 +260,13 @@ def compute_plane_kpis(
         normalized_db = [float(value - ref_db) for value in values]
 
         bw, bw_limited = _beamwidth_minus6db([float(a) for a in angles], normalized_db)
+        span_available = float(max(angles) - min(angles)) if angles else 0.0
+        saturated_full_span = bool(
+            bw is not None
+            and bw_limited
+            and span_available > 0.0
+            and abs(float(bw) - span_available) <= 1.0e-6
+        )
         if bw is not None:
             beamwidth_rows.append(
                 {
@@ -262,7 +275,9 @@ def compute_plane_kpis(
                     "limited": bool(bw_limited),
                 }
             )
-        if bw_limited:
+        if saturated_full_span:
+            reason_codes.add("BEAMWIDTH_SATURATED")
+        elif bw_limited:
             limited_angle_coverage = True
 
         inside_values = [normalized_db[idx] for idx, angle in enumerate(angles) if abs(float(angle)) <= coverage_half]
