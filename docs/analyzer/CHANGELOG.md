@@ -454,3 +454,10 @@
   - inspected real exported TXT headers and hashes showing only `Param_Coord_x3=45/90` and duplicated `90` export payload
   - recorded current reason-code distribution for the affected batch (`INSUFFICIENT_ANGLE_COVERAGE`, `MISSING_PLANE`)
   - investigated Compare Auto-pick path and documented payload-contract mismatch evidence (`score` vs `kpi_score`) found in UI candidate normalization.
+
+## 2026-02-23 (Analyzer plane controls + orientation alias hardening)
+- Analyzer plane controls now keep `H/V/D` visible for each selected run/version and disable unavailable planes with explicit tooltips (for example `MISSING_PLANE` when `H` is absent in imported data).
+- Orientation alias queries now include high-precision proven `X3_*` token forms used by historical imports (`X3_0.000000`, `X3_90.000000`, `X3_45.000000`) without changing unknown-token fallback behavior.
+- Added regression coverage:
+  - `tests/test_analyzer_orientation.py`
+  - `tests/test_gui_analyzer_compare_ui.py::test_plane_controls_keep_h_visible_with_missing_plane_reason`.
