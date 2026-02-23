@@ -21,6 +21,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 from app.analyzer.artifacts import available_artifact_statuses
 from app.analyzer.cache import AnalyzerPlotCache
 from app.analyzer.kpi_engine import compute_run_kpis, compute_stage_score
+from app.analyzer.orientation import canonical_orientation_token, dedupe_orientations
 from app.analyzer.plot_service import AnalyzerPlotService
 from app.analyzer.presets import (
     ALGO_VERSION,
@@ -163,18 +164,7 @@ def _split_csv_tokens(raw: Optional[str]) -> List[str]:
 
 
 def _normalize_orientation_tokens(values: Sequence[str]) -> List[str]:
-    order = {"H": 0, "V": 1, "D": 2}
-    normalized: Dict[str, str] = {}
-    for raw in values:
-        token = str(raw).strip()
-        if not token:
-            continue
-        upper = token.upper()
-        if upper in {"H", "V", "D"}:
-            normalized[upper] = upper
-            continue
-        normalized.setdefault(upper, token)
-    return sorted(normalized.values(), key=lambda token: (order.get(token.upper(), 99), token.upper()))
+    return dedupe_orientations([str(raw or "").strip() for raw in values])
 
 
 def _analyzer_source_hash(file_hashes: Sequence[str]) -> str:
@@ -2681,7 +2671,7 @@ class OrchestratorService:
 
             planes_points: Dict[str, List[Dict[str, Any]]] = {}
             for row in query_rows:
-                orientation = str(row["orientation"] or "").strip().upper()
+                orientation = canonical_orientation_token(row["orientation"])
                 if orientation not in {"H", "V", "D"}:
                     continue
                 planes_points.setdefault(orientation, []).append(

@@ -8,6 +8,7 @@ import sqlite3
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from app.analyzer.cache import AnalyzerPlotCache
+from app.analyzer.orientation import orientation_query_aliases
 
 _EPS = 1.0e-12
 
@@ -202,11 +203,14 @@ class AnalyzerPlotService:
             raise RuntimeError("canceled")
 
         run_token = str(run_id or "").strip()
-        orientation = str(plane or "").strip().upper()
+        orientation_tokens = orientation_query_aliases(str(plane or "").strip().upper())
+        if not orientation_tokens:
+            orientation_tokens = [str(plane or "").strip().upper()]
+        placeholders = ",".join("?" for _ in orientation_tokens)
         with sqlite3.connect(str(db_path)) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
-                """
+                f"""
                 SELECT pp.freq_hz AS freq_hz, pp.angle_deg AS angle_deg, pp.re AS re, pp.im AS im
                 FROM polar_measurements pm
                 JOIN polar_points pp ON pp.polar_id = pm.polar_id
@@ -214,10 +218,10 @@ class AnalyzerPlotService:
                   AND pm.batch_id = ?
                   AND pm.version_id = ?
                   AND COALESCE(pm.run_id, '') = ?
-                  AND pm.orientation = ?
+                  AND pm.orientation IN ({placeholders})
                 ORDER BY pp.freq_hz ASC, pp.angle_deg ASC
                 """,
-                (str(project_id), str(batch_id), str(version_id), run_token, orientation),
+                (str(project_id), str(batch_id), str(version_id), run_token, *orientation_tokens),
             ).fetchall()
 
         if cancel_check and bool(cancel_check()):

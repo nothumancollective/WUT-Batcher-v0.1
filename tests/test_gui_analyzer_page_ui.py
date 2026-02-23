@@ -286,6 +286,33 @@ class AnalyzerPageUiTests(unittest.TestCase):
             self.assertIn("88.20", page.run_summary_score_chip.text())
             self.assertTrue(page.run_details_btn.isEnabled())
 
+    def test_unknown_plane_token_is_kept_as_fallback_plane(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_ui2x_unknown_plane_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            payload = {
+                "mode": "runs",
+                "project_id": "P001",
+                "batch_id": "B001",
+                "runs": [
+                    {
+                        "project_id": "P001",
+                        "batch_id": "B001",
+                        "run_id": "R001",
+                        "version_id": "V001",
+                        "planes": ["X3_17.5"],
+                        "freq_count": 101,
+                        "angle_count": 19,
+                    }
+                ],
+            }
+            page._apply_runs_payload(payload)
+            selected_rows = page._selected_row_payloads()
+            self.assertEqual(len(selected_rows), 1)
+            selected = dict(selected_rows[0])
+            self.assertEqual(page._available_planes(selected), ["X3_17.5"])
+            self.assertEqual(page._selected_plane(), "X3_17.5")
+
     def test_toolbar_has_single_visible_compute_button(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_ui2x_compute_btn_") as tmp:
             service = _build_service(Path(tmp))

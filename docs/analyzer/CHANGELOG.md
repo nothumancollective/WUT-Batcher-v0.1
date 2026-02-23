@@ -397,3 +397,14 @@
   - representative TXT-header extraction (`Param_Coord_x2`, `Param_Coord_x3`, missing NormAngle key, freq ranges)
   - KPI row inspection showing stored rows with `score=0.0` and `insufficient_coverage=true`
   - root-cause list with confidence and file/line fix targets.
+
+## 2026-02-23 (Analyzer plane normalization: `X3_45` alias + fallback handling)
+- Added analyzer orientation helpers in `app/analyzer/orientation.py`:
+  - canonicalization of orientation tokens (`X3_45`/`X3_42` -> `D`, `X3_90` -> `V`, `X3_0` -> `H`)
+  - query alias expansion for plot loading.
+- Updated Analyzer run aggregation and KPI ingestion to use canonical orientation tokens (`app/services.py`).
+- Updated plot loading query to match canonical plane selections against alias tokens in DB (`app/analyzer/plot_service.py`), so selecting `D` can load rows stored as `X3_45`.
+- Updated UI available-plane resolution to keep unknown fallback tokens instead of silently dropping them (`app/gui.py`).
+- Added regression tests:
+  - `tests/test_analyzer_kpi_service.py::test_orientation_alias_x3_45_is_exposed_as_d_and_loads_plot_data`
+  - `tests/test_gui_analyzer_page_ui.py::test_unknown_plane_token_is_kept_as_fallback_plane`.
