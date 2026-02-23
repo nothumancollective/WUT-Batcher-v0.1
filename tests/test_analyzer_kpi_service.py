@@ -213,6 +213,9 @@ class AnalyzerKpiServiceTests(unittest.TestCase):
             self.assertEqual(len(rows), 1)
             self.assertIsNone(rows[0].get("kpi_score"))
             self.assertIn("MISSING_KPI_ROWS", list(rows[0].get("kpi_reason_codes") or []))
+            reason_items = [dict(item) for item in list(rows[0].get("kpi_reason_items", []) or []) if isinstance(item, dict)]
+            self.assertEqual(str(reason_items[0].get("severity") if reason_items else ""), "error")
+            self.assertEqual(int(rows[0].get("kpi_reason_error_count") or 0), 1)
 
     def test_orientation_alias_x3_45_is_exposed_as_d_and_loads_plot_data(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_kpi_alias_") as tmp:
@@ -256,6 +259,48 @@ class AnalyzerKpiServiceTests(unittest.TestCase):
             del dataset
             del service
             gc.collect()
+
+    def test_batch_review_surfaces_missing_plane_as_warn_reason(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_kpi_missing_plane_warn_") as tmp:
+            service = _build_service(Path(tmp))
+            project = service.create_project("Analyzer Missing Plane Warn", {})
+            paths = service.repo.project_paths(project.project_id, ensure=True)
+            dataset = TidyDatasetWriter(paths.project_dir, library_root=service.settings.library_root)
+            _write_synthetic_run(
+                dataset=dataset,
+                project_id=project.project_id,
+                batch_id="B001",
+                run_id="R001",
+                version_id="V001",
+                hash_seed="hash_warn",
+                orientations=("V", "X3_45"),
+            )
+            service.analyzer_compute_batch_kpis(
+                project_id=project.project_id,
+                batch_id="B001",
+                target_h_deg=60.0,
+                target_v_deg=60.0,
+                tol_deg=5.0,
+                band_low_hz=200.0,
+                band_high_hz=1600.0,
+                stage_mode="shaping",
+                algo_version=ALGO_VERSION,
+            )
+            rows = service.analyzer_list_batch_review_runs(
+                project_id=project.project_id,
+                batch_id="B001",
+                source="project",
+                stage_mode="shaping",
+                band_low_hz=200.0,
+                band_high_hz=1600.0,
+                target_h_deg=60.0,
+                target_v_deg=60.0,
+                tol_deg=5.0,
+                algo_version=ALGO_VERSION,
+            )
+            self.assertEqual(len(rows), 1)
+            self.assertIn("MISSING_PLANE", list(rows[0].get("kpi_reason_codes") or []))
+            self.assertEqual(int(rows[0].get("kpi_reason_warn_count") or 0), 1)
 
     def test_norm_angle_falls_back_to_batch_export_settings_when_db_missing(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_kpi_norm_fallback_") as tmp:
@@ -388,6 +433,76 @@ class AnalyzerKpiServiceTests(unittest.TestCase):
             self.assertTrue(all(str(row.get("batch_id")) == "B001" for row in candidates))
             self.assertTrue(all(row.get("kpi_score") is not None for row in candidates))
             self.assertTrue(all(row.get("score") == row.get("kpi_score") for row in candidates))
+
+    def test_batch_scoping_keeps_same_run_and_version_ids_separate(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_kpi_batch_scope_identity_") as tmp:
+            service = _build_service(Path(tmp))
+            project = service.create_project("Analyzer Batch Scope", {})
+            paths = service.repo.project_paths(project.project_id, ensure=True)
+            dataset = TidyDatasetWriter(paths.project_dir, library_root=service.settings.library_root)
+            _write_synthetic_run(
+                dataset=dataset,
+                project_id=project.project_id,
+                batch_id="B001",
+                run_id="R001",
+                version_id="V001",
+                hash_seed="hash_scope_b1",
+                orientations=("H", "V"),
+            )
+            _write_synthetic_run(
+                dataset=dataset,
+                project_id=project.project_id,
+                batch_id="B002",
+                run_id="R001",
+                version_id="V001",
+                hash_seed="hash_scope_b2",
+                orientations=("V", "X3_45"),
+            )
+            b1_runs = service.analyzer_list_polar_runs(
+                project_id=project.project_id,
+                batch_id="B001",
+                source="project",
+            )
+            b2_runs = service.analyzer_list_polar_runs(
+                project_id=project.project_id,
+                batch_id="B002",
+                source="project",
+            )
+            self.assertEqual(len(b1_runs), 1)
+            self.assertEqual(len(b2_runs), 1)
+            self.assertEqual(list(b1_runs[0].get("planes") or []), ["H", "V"])
+            self.assertEqual(list(b2_runs[0].get("planes") or []), ["V", "D"])
+            cache = AnalyzerPlotCache(resolve_cache_policy(mode="low", custom_limit_mb=0, custom_keep_last_n=1))
+            b1_d = service.analyzer_load_plot_payload(
+                source="project",
+                project_id=project.project_id,
+                batch_id="B001",
+                run_id="R001",
+                version_id="V001",
+                plane="D",
+                band_low_hz=200.0,
+                band_high_hz=1600.0,
+                cache=cache,
+            )
+            b2_d = service.analyzer_load_plot_payload(
+                source="project",
+                project_id=project.project_id,
+                batch_id="B002",
+                run_id="R001",
+                version_id="V001",
+                plane="D",
+                band_low_hz=200.0,
+                band_high_hz=1600.0,
+                cache=cache,
+            )
+            self.assertEqual(len(list(b1_d.get("freqs_hz") or [])), 0)
+            self.assertGreater(len(list(b2_d.get("freqs_hz") or [])), 0)
+            del b1_d
+            del b2_d
+            del cache
+            del dataset
+            del service
+            gc.collect()
 
 
 if __name__ == "__main__":

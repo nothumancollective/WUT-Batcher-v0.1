@@ -6,6 +6,7 @@ import math
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
 from app.analyzer.presets import DEFAULT_STAGE_ID, STAGE_PRESETS
+from app.analyzer.reason_codes import reason_items_for_codes
 
 _EPS = 1.0e-12
 
@@ -233,7 +234,7 @@ def compute_plane_kpis(
             "reason": "empty_band_intersection",
         }
 
-    beamwidth_rows: List[Dict[str, float]] = []
+    beamwidth_rows: List[Dict[str, Any]] = []
     rms_inside_values: List[float] = []
     spill_values: List[float] = []
     insufficient_coverage = False
@@ -254,7 +255,13 @@ def compute_plane_kpis(
 
         bw, bw_limited = _beamwidth_minus6db([float(a) for a in angles], normalized_db)
         if bw is not None:
-            beamwidth_rows.append({"freq_hz": float(freq), "beamwidth_deg": float(bw)})
+            beamwidth_rows.append(
+                {
+                    "freq_hz": float(freq),
+                    "beamwidth_deg": float(bw),
+                    "limited": bool(bw_limited),
+                }
+            )
         if bw_limited:
             limited_angle_coverage = True
 
@@ -300,10 +307,11 @@ def compute_plane_kpis(
     jumps: List[float] = []
     collapse: List[float] = []
     wide: List[float] = []
-    if beamwidth_rows:
+    flag_rows = [row for row in beamwidth_rows if not bool(row.get("limited"))]
+    if flag_rows:
         jump_threshold = max(12.0, float(target_deg) * 0.25)
         prev_width: Optional[float] = None
-        for row in beamwidth_rows:
+        for row in flag_rows:
             freq = float(row["freq_hz"])
             width = float(row["beamwidth_deg"])
             if prev_width is not None and abs(width - prev_width) >= jump_threshold:
@@ -338,6 +346,7 @@ def compute_plane_kpis(
         "limited_angle_coverage": bool(limited_angle_coverage),
         "unscorable": bool(unscorable),
         "reason_codes": sorted(reason_codes),
+        "reason_items": reason_items_for_codes(sorted(reason_codes)),
     }
 
 
@@ -393,6 +402,7 @@ def compute_run_kpis(
         "insufficient_coverage": bool(insufficient_coverage),
         "unscorable": bool(unscorable),
         "reason_codes": sorted(reason_codes),
+        "reason_items": reason_items_for_codes(sorted(reason_codes)),
     }
 
     flags = {
@@ -413,6 +423,7 @@ def compute_run_kpis(
         },
         "insufficient_coverage": bool(insufficient_coverage),
         "reason_codes": sorted(reason_codes),
+        "reason_items": reason_items_for_codes(sorted(reason_codes)),
         "missing_planes": missing_planes,
     }
 

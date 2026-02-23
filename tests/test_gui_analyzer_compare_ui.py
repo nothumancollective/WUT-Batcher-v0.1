@@ -252,6 +252,43 @@ class AnalyzerCompareUiTests(unittest.TestCase):
             self.assertFalse(h_button.isEnabled())
             self.assertIn("MISSING_PLANE", h_button.toolTip())
 
+    def test_reason_severity_summary_is_shown_in_details_and_enables_help(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_stage_reason_help_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            row = {
+                "project_id": "P001",
+                "batch_id": "B001",
+                "run_id": "R001",
+                "version_id": "V001",
+                "planes": ["V", "D"],
+                "kpi_score": 80.0,
+                "kpi_flags_count": 0,
+                "kpi_reason_items": [
+                    {
+                        "code": "MISSING_PLANE",
+                        "severity": "warn",
+                        "summary": "Missing H plane.",
+                        "action": "Re-export H plane.",
+                    }
+                ],
+            }
+            page._set_details(row)
+            self.assertTrue(page.flags_help_btn.isEnabled())
+            reason_text = page._detail_labels["kpi_reason_codes"].text()
+            self.assertIn("[WARN] MISSING_PLANE", reason_text)
+
+    def test_compare_candidate_identity_includes_project_scope(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_stage_compare_project_scope_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            candidates = [
+                {"project_id": "P001", "batch_id": "B001", "run_id": "R001", "version_id": "V001", "kpi_score": 88.0},
+                {"project_id": "P002", "batch_id": "B001", "run_id": "R001", "version_id": "V001", "kpi_score": 77.0},
+            ]
+            page._set_compare_candidates(candidates)
+            self.assertEqual(len(page._compare_candidates), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

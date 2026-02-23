@@ -93,6 +93,8 @@ class AnalyzerKpiEngineTests(unittest.TestCase):
         )
         reason_codes = list(payload.get("flags", {}).get("reason_codes", []) or [])
         self.assertIn("INSUFFICIENT_ANGLE_COVERAGE", reason_codes)
+        aggregate = dict(payload.get("aggregate", {}) or {})
+        self.assertEqual(int(aggregate.get("flags_count") or 0), 0)
         score = compute_stage_score(payload, stage_id="shaping")
         self.assertIsNotNone(score)
 
@@ -110,6 +112,9 @@ class AnalyzerKpiEngineTests(unittest.TestCase):
         )
         reason_codes = list(payload.get("flags", {}).get("reason_codes", []) or [])
         self.assertIn("EMPTY_BAND_INTERSECTION", reason_codes)
+        reason_items = [dict(item) for item in list(payload.get("flags", {}).get("reason_items", []) or []) if isinstance(item, dict)]
+        empty_band_item = next((item for item in reason_items if str(item.get("code")) == "EMPTY_BAND_INTERSECTION"), {})
+        self.assertEqual(str(empty_band_item.get("severity") or ""), "error")
         self.assertIsNone(compute_stage_score(payload, stage_id="concept"))
 
 
