@@ -23,6 +23,12 @@ _REASON_CATALOG: Dict[str, Dict[str, str]] = {
         "impact": "Beamwidth/coverage metrics may rely on half-space assumptions.",
         "action": "Export a wider angle set (ideally symmetric around 0 deg) for stronger confidence.",
     },
+    "BEAMWIDTH_SATURATED": {
+        "severity": "warn",
+        "summary": "Beamwidth stayed above -6 dB at angle-range limits and was saturated to available span.",
+        "impact": "Beamwidth error reflects range-limited saturation instead of true -6 dB crossings.",
+        "action": "Expand angle export range if available to reduce saturation effects.",
+    },
     "EMPTY_BAND_INTERSECTION": {
         "severity": "error",
         "summary": "Requested analysis band has no overlap with available polar frequencies.",

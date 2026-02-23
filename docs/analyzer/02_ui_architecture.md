@@ -295,6 +295,7 @@ The Analyzer page is planned with two explicit subviews:
 - KPI robustness rules:
   - frequency band uses strict intersection with available polar frequencies (no silent full-band fallback)
   - one-sided angle sets are scored with limited-coverage handling instead of hard-failing to score `0`
+  - if `-6 dB` crossings are outside exported angle limits, beamwidth is saturated to available span and marked (`BEAMWIDTH_SATURATED`) instead of producing NaN
   - explicit KPI reason codes are emitted (for example: `INSUFFICIENT_ANGLE_COVERAGE`, `EMPTY_BAND_INTERSECTION`, `MISSING_PLANE`, `MISSING_KPI_ROWS`)
   - reason codes carry severity metadata:
     - `INFO`: informational context only (hidden by default in flags summary)
@@ -359,6 +360,7 @@ The Analyzer page is planned with two explicit subviews:
   - `Save Analysis...` and `Load` actions wired to project-local persistence
 - Compare rendering behavior:
   - beamwidth overlay plot supports candidate overlays in a fixed 5-color palette (stable by slot order)
+  - beamwidth overlay includes a target reference series and saturated-bin status annotation when crossings are out of range
   - heatmap renders one candidate at a time (candidate switcher) to avoid multi-heatmap overload
   - compare updates run in background workers and support cancellation
 - Heatmap style rule:

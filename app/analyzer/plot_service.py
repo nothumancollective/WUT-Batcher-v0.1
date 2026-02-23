@@ -110,18 +110,20 @@ def _interp_cross(x0: float, y0: float, x1: float, y1: float, threshold: float) 
     return float(x0 + ((x1 - x0) * t))
 
 
-def _beamwidth_minus6db(angles: Sequence[float], column_db: Sequence[Optional[float]]) -> Optional[float]:
+def _beamwidth_minus6db(angles: Sequence[float], column_db: Sequence[Optional[float]]) -> Tuple[Optional[float], bool]:
     samples = [(float(a), float(v)) for a, v in zip(angles, column_db) if v is not None]
     if len(samples) < 3:
-        return None
+        return (None, False)
     angles_clean = [item[0] for item in samples]
     values_clean = [item[1] for item in samples]
     pivot = min(range(len(angles_clean)), key=lambda idx: abs(angles_clean[idx]))
     if values_clean[pivot] < -6.0:
-        return None
+        return (None, False)
     threshold = -6.0
     left = angles_clean[0]
     right = angles_clean[-1]
+    left_crossed = False
+    right_crossed = False
 
     for idx in range(pivot, len(angles_clean) - 1):
         y_a = values_clean[idx]
@@ -130,6 +132,7 @@ def _beamwidth_minus6db(angles: Sequence[float], column_db: Sequence[Optional[fl
             continue
         if y_a >= threshold and y_b < threshold:
             right = _interp_cross(angles_clean[idx], y_a, angles_clean[idx + 1], y_b, threshold)
+            right_crossed = True
             break
         right = angles_clean[idx]
         break
@@ -141,13 +144,16 @@ def _beamwidth_minus6db(angles: Sequence[float], column_db: Sequence[Optional[fl
             continue
         if y_a >= threshold and y_b < threshold:
             left = _interp_cross(angles_clean[idx], y_a, angles_clean[idx - 1], y_b, threshold)
+            left_crossed = True
             break
         left = angles_clean[idx]
         break
     width = float(right - left)
     if width <= 0.0:
-        return None
-    return width
+        return (None, False)
+    if left_crossed and right_crossed:
+        return (width, False)
+    return (width, True)
 
 
 def compute_beamwidth_curve(
@@ -163,10 +169,16 @@ def compute_beamwidth_curve(
     rows = len(angles_deg)
     for col_idx in range(cols):
         column = [matrix_db[row_idx][col_idx] if row_idx < len(matrix_db) else None for row_idx in range(rows)]
-        bw = _beamwidth_minus6db(angles_deg, column)
+        bw, saturated = _beamwidth_minus6db(angles_deg, column)
         if bw is None:
             continue
-        curve.append({"freq_hz": float(freqs_hz[col_idx]), "beamwidth_deg": float(bw)})
+        curve.append(
+            {
+                "freq_hz": float(freqs_hz[col_idx]),
+                "beamwidth_deg": float(bw),
+                "saturated": bool(saturated),
+            }
+        )
     return curve
 
 

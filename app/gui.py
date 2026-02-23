@@ -6584,10 +6584,10 @@ class AnalysePage(QWidget):
             self.compare_pareto_canvas.clear_points("Select candidates to render Pareto scatter.")
 
     @staticmethod
-    def _stage_curve_points(curves: Mapping[str, Any], key: str) -> List[Dict[str, float]]:
+    def _stage_curve_points(curves: Mapping[str, Any], key: str) -> List[Dict[str, Any]]:
         token = str(key or "").strip().lower()
         raw_curve = list(curves.get(token, []) or [])
-        points: List[Dict[str, float]] = []
+        points: List[Dict[str, Any]] = []
         for row in raw_curve:
             if not isinstance(row, Mapping):
                 continue
@@ -6604,7 +6604,13 @@ class AnalysePage(QWidget):
                 value = float(value_raw)  # type: ignore[arg-type]
             except Exception:
                 continue
-            points.append({"freq_hz": freq_hz, "value": value})
+            points.append(
+                {
+                    "freq_hz": freq_hz,
+                    "value": value,
+                    "saturated": bool(row.get("saturated", False)),
+                }
+            )
         points.sort(key=lambda item: float(item.get("freq_hz", 0.0)))
         return points
 
@@ -7021,6 +7027,7 @@ class AnalysePage(QWidget):
             return
         curve_key = str(self._compare_overlay_curve_key or "beamwidth").strip().lower()
         series: List[Dict[str, Any]] = []
+        saturated_bins = 0
         for index, item in enumerate(self._compare_plot_items):
             candidate = dict(item.get("candidate") or {})
             plot = dict(item.get("plot") or {})
@@ -7029,6 +7036,7 @@ class AnalysePage(QWidget):
             points = self._stage_curve_points(curves, curve_key)
             if not points:
                 continue
+            saturated_bins += sum(1 for point in points if bool(point.get("saturated")))
             color_rgb = compare_overlay_color(index)
             series.append(
                 {
@@ -7040,12 +7048,40 @@ class AnalysePage(QWidget):
         if not series:
             self.compare_overlay_canvas.clear_series("No curve data available for overlay.")
             return
+        status = ""
+        if curve_key == "beamwidth":
+            target = self._selected_target()
+            plane = self._compare_plane()
+            if plane == "H":
+                target_deg = float(target.get("h_deg") or 90.0)
+            elif plane == "V":
+                target_deg = float(target.get("v_deg") or 40.0)
+            else:
+                target_deg = float((float(target.get("h_deg") or 90.0) + float(target.get("v_deg") or 40.0)) * 0.5)
+            freq_union = sorted(
+                {
+                    float(point.get("freq_hz"))
+                    for row in series
+                    for point in list(row.get("points", []) or [])
+                    if float(point.get("freq_hz") or 0.0) > 0.0
+                }
+            )
+            if freq_union:
+                series.append(
+                    {
+                        "label": f"Target {target_deg:.0f} deg",
+                        "points": [{"freq_hz": float(freq), "value": float(target_deg)} for freq in freq_union],
+                        "color": (140, 145, 160),
+                    }
+                )
+            if saturated_bins > 0:
+                status = f"Saturated bins: {saturated_bins} (no -6 dB crossing in available angle range)."
         self.compare_overlay_canvas.set_series(
             series=series,
             x_scale_mode=self._x_axis_mode(),
             x_label="Frequency (Hz, log)" if self._x_axis_mode() == "log" else "Frequency (Hz)",
             y_label=self._stage_curve_y_label(curve_key),
-            status="",
+            status=status,
         )
 
     def _render_compare_heatmap_selection(self) -> None:
