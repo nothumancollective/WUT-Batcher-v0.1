@@ -370,3 +370,30 @@
 - Heatmap target-window rendering now computes visible boundaries from `target_half_window_deg` against the active angle range and draws subtle dashed boundary lines plus low-alpha shading.
 - For `60x60`, the overlay now marks `+/-30 deg` when signed angles exist, or `0..30 deg` when only positive angles are present.
 - Analyzer toolbar action controls were normalized to a single-height button row (`Versions`, `Refresh KPIs`, `KPIs`, `Details`) and `Refresh KPIs` now uses the same neutral analyzer-action styling (no white primary appearance).
+## 2026-02-22 (Analyzer UI refresh: 3-block control bar + compact plot tiles)
+- Reworked the Analyzer control row into three equal-width sub-blocks (`Analysis`, `KPIs`, `Display`) with reduced vertical footprint and compact label/control spacing.
+- `Analysis` block now uses a strict 4-row layout:
+  - header row
+  - `Stage`
+  - `Target` + `Min score`
+  - `Exclude flagged` + `Exclude warnings`.
+- Added a neutral placeholder `KPIs` middle block (slightly brighter background weighting) for follow-up KPI work.
+- `Display` block now shows four compact framed slots; slot 1 contains `Band` + plane toggles (`H/V/D`), slots 2-4 are intentionally empty for staged rollout.
+- Moved previously visible display options to `Display -> Advanced...`:
+  - tolerance, custom band low/high, x-axis mode, normalization mode/angle, heatmap clamp/min, raw bins
+  - `Use full angles for smoothness`
+  - new `Show mirrored -6 dB contour` toggle (default off).
+- Hidden the standalone metadata status row (`Version list updated` line no longer rendered in page flow).
+- Plot tile presentation polish:
+  - reduced stage-plot title size (analyzer-only)
+  - reduced Explorer/Compare tile gaps by >=50% and tightened tile inner padding
+  - added y-tick overlap guard for metric curves to prevent top-label collisions.
+- Heatmap `-6 dB` contour rendering now respects the new mirrored toggle; mirrored branch is disabled by default and can be enabled from Advanced.
+
+## 2026-02-23 (Analyzer debug evidence report: polar visibility + KPI zero)
+- Added `docs/analyzer/debug_polar_kpi_report.md` with hard evidence from live `P021/B005` data:
+  - DB inventory + grouped orientation counts (`V` + `X3_45`)
+  - `polar_points` integrity checks (`actual == freq_count * angle_count`)
+  - representative TXT-header extraction (`Param_Coord_x2`, `Param_Coord_x3`, missing NormAngle key, freq ranges)
+  - KPI row inspection showing stored rows with `score=0.0` and `insufficient_coverage=true`
+  - root-cause list with confidence and file/line fix targets.
