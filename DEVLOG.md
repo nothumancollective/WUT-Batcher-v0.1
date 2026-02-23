@@ -3013,3 +3013,17 @@ Validation executed:
 - `PYTHONPATH=. python -m pytest tests/test_gui_analyzer_page_ui.py tests/test_gui_analyzer_compare_ui.py -q`
 - Result: `24 passed`
 
+## 2026-02-23
+### Update 78 (Batch Advanced Export Dialog: Hide SPL/Impedance Redundancy)
+#### Done
+- Removed `SPL` and `Impedance` cards from the Batch `Advanced` export dialog in `ui/batch_export_panel.py`.
+- Kept all Polar controls unchanged (`Polar 1..3` with map angle range, distance, offset, inclination, norm angle).
+- Advanced export spec generation now only emits active `polar` specs; hidden Advanced `spl/impedance` toggles are no longer serialized.
+- Added focused test coverage in `tests/test_batch_export_panel.py`:
+  - payload structure test now validates an advanced `polar` spec path
+  - explicit guard test verifies hidden `spl/impedance` advanced toggles do not produce export specs.
+
+#### Validation
+- `$env:PYTHONPATH='.'; pytest tests/test_batch_export_panel.py -q`
+- Result: `9 passed`
+
