@@ -7,3 +7,4 @@
 - 2026-02-23: batch export UI defaults now use per-plane inclinations H=0, V=90, D=45 in advanced polar cards and default polar specs; payload round-trip tests added in `tests/test_batch_export_panel.py`.
 - 2026-02-23: runtime and harness default polar specs now use explicit inclinations H=0, V=90, D=45; external any-graph export filenames now append orientation token (`_H/_V/_D` or `X3_*`) from TXT metadata for stable plane identity.
 - 2026-02-23: orientation normalization now treats both `Param_Coord_x3=42` and `45` as diagonal (`D`) for backward compatibility while moving defaults to 45.
+- 2026-02-23: added cfg-generation regression coverage for three polar specs (H/V/D inclinations) and documented analyzer-facing export recommendations in `docs/polar_db_schema.md`.

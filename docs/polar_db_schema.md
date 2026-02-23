@@ -79,6 +79,16 @@ Both values are stored:
 - normalized string in `orientation`
 - raw numeric in `orientation_raw`
 
+## Export Recommendations For Analyzer
+
+For reliable H/V/D plane availability in Analyzer, configure three polar exports with explicit inclinations:
+
+- H: `Inclination = 0`
+- V: `Inclination = 90`
+- D: `Inclination = 45`
+
+Recommended angle coverage is symmetric (for example `MapAngleRange = -90,90,19`) to avoid one-sided interpretation artifacts.
+
 ## Norm-Angle Policy
 
 Importer resolves `norm_angle_deg` deterministically:

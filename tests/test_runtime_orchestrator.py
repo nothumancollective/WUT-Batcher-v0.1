@@ -68,6 +68,67 @@ class RuntimeOrchestratorTests(unittest.TestCase):
         self.assertIn("Offset = 145", text)
         self.assertIn("Inclination = 90", text)
 
+    def test_apply_sim_export_settings_keeps_h_v_d_specs(self) -> None:
+        base = "Output.ABECProject = 1\nOutput.STL = 0\n"
+        payload = {
+            "freq_start_hz": 500.0,
+            "freq_end_hz": 10000.0,
+            "num_points": 12,
+            "simulation_mode": "free_standing",
+            "export_specs": [
+                {
+                    "id": "adv_polar_1",
+                    "tool": "vacs",
+                    "graph_kind": "polar",
+                    "variant": "main",
+                    "format": "txt",
+                    "options": {
+                        "polar_name": "SPL_H",
+                        "map_angle_range": [-90, 90, 19],
+                        "distance_m": 2.0,
+                        "offset": 145,
+                        "inclination": 0,
+                    },
+                },
+                {
+                    "id": "adv_polar_2",
+                    "tool": "vacs",
+                    "graph_kind": "polar",
+                    "variant": "main",
+                    "format": "txt",
+                    "options": {
+                        "polar_name": "SPL_V",
+                        "map_angle_range": [-90, 90, 19],
+                        "distance_m": 2.0,
+                        "offset": 145,
+                        "inclination": 90,
+                    },
+                },
+                {
+                    "id": "adv_polar_3",
+                    "tool": "vacs",
+                    "graph_kind": "polar",
+                    "variant": "main",
+                    "format": "txt",
+                    "options": {
+                        "polar_name": "SPL_D",
+                        "map_angle_range": [-90, 90, 19],
+                        "distance_m": 2.0,
+                        "offset": 145,
+                        "inclination": 45,
+                    },
+                },
+            ],
+        }
+        specs = _resolve_export_specs(payload)
+        text = _apply_sim_export_settings_to_cfg(base, sim_export_settings=payload, export_specs=specs)
+        self.assertIn("ABEC.Polars:SPL_H = {", text)
+        self.assertIn("ABEC.Polars:SPL_V = {", text)
+        self.assertIn("ABEC.Polars:SPL_D = {", text)
+        self.assertIn("Inclination = 0", text)
+        self.assertIn("Inclination = 90", text)
+        self.assertIn("Inclination = 45", text)
+
     def test_akabak_stage_preserves_vacs_for_export_when_requested(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             logs_dir = Path(tmp_dir) / "logs"
