@@ -4874,9 +4874,12 @@ class AnalysePage(QWidget):
         self._selected_detail_payload: Dict[str, Any] = {}
         self._ath_visible_param_keys: List[str] = []
         self._ath_visible_pref_key = "ath_visible_params"
+        self._version_pin_pref_key = "version_pins_v1"
+        self._pinned_version_tokens: set[str] = set()
         self._ath_all_param_rows_by_version: Dict[Tuple[str, str, str], List[Dict[str, Any]]] = {}
         self._version_note_max_chars = 200
         self._note_sync_guard = False
+        self._pin_sync_guard = False
         self._pending_note_context: Optional[Tuple[str, str, str]] = None
         self._pending_note_text = ""
         self._use_full_angles_for_smoothness = False
@@ -5578,11 +5581,13 @@ class AnalysePage(QWidget):
         self.run_summary_flags_chip.setObjectName("SummaryMeta")
         self.flags_help_btn = QToolButton(self)
         self.flags_help_btn.setObjectName("AnalyzerFlagsHelpButton")
-        self.flags_help_btn.setText("Flags Help")
+        self.flags_help_btn.setText("?")
         self.flags_help_btn.setToolButtonStyle(Qt.ToolButtonTextOnly)
         self.flags_help_btn.setToolTip("Show reason severities and recommended actions for current flags.")
         self.flags_help_btn.setMinimumHeight(24)
         self.flags_help_btn.setMaximumHeight(24)
+        self.flags_help_btn.setMinimumWidth(24)
+        self.flags_help_btn.setMaximumWidth(24)
         self.flags_help_btn.setProperty("analyzerAction", True)
 
         self.analyzer_controls_row = QFrame()
@@ -5720,11 +5725,15 @@ class AnalysePage(QWidget):
         buttons_row_layout.setContentsMargins(0, 0, 0, 0)
         buttons_row_layout.setSpacing(4)
         buttons_row_layout.addWidget(self.flags_help_btn, 0, Qt.AlignLeft | Qt.AlignVCenter)
-        self.version_info_details_btn = QPushButton("Details")
-        self.version_info_details_btn.setObjectName("BatchSecondaryButton")
-        self.version_info_details_btn.setMinimumHeight(24)
-        self.version_info_details_btn.setMaximumHeight(24)
-        buttons_row_layout.addWidget(self.version_info_details_btn, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        self.version_pin_btn = QToolButton(self)
+        self.version_pin_btn.setObjectName("AnalyzerVersionPinButton")
+        self.version_pin_btn.setToolButtonStyle(Qt.ToolButtonIconOnly)
+        self.version_pin_btn.setCheckable(True)
+        self.version_pin_btn.setAutoRaise(False)
+        self.version_pin_btn.setMinimumSize(24, 24)
+        self.version_pin_btn.setMaximumSize(24, 24)
+        self.version_pin_btn.setProperty("analyzerAction", True)
+        buttons_row_layout.addWidget(self.version_pin_btn, 0, Qt.AlignLeft | Qt.AlignVCenter)
         buttons_row_layout.addStretch(1)
         col3_layout.addWidget(self.version_info_buttons_row, 0)
         extra_layout.addWidget(self.version_info_col3, 1)
@@ -5881,7 +5890,7 @@ class AnalysePage(QWidget):
         self.version_next_btn.clicked.connect(lambda: self._step_selected_version(1))
         self.flags_help_btn.clicked.connect(self._open_flags_help_dialog)
         self.run_details_btn.clicked.connect(self._open_run_details_dialog)
-        self.version_info_details_btn.clicked.connect(self._open_run_details_dialog)
+        self.version_pin_btn.toggled.connect(self._on_version_pin_toggled)
         self.version_note_edit.textChanged.connect(self._on_version_note_text_changed)
         self.stage_selector.currentIndexChanged.connect(self._on_stage_changed)
         self.target_selector.currentIndexChanged.connect(self._on_kpi_config_changed)
@@ -5930,7 +5939,8 @@ class AnalysePage(QWidget):
         self.run_selector.addItem("(no versions)", "")
         self.run_selector.setEnabled(False)
         self.run_details_btn.setEnabled(False)
-        self.version_info_details_btn.setEnabled(False)
+        self.version_pin_btn.setEnabled(False)
+        self._refresh_version_pin_button(enabled=False, pinned=False)
         self.flags_help_btn.setEnabled(False)
         self.version_note_edit.setEnabled(False)
         self._update_version_note_counter(remaining=self._version_note_max_chars)
@@ -7013,7 +7023,7 @@ class AnalysePage(QWidget):
         score_raw = row.get("kpi_score")
         if score_raw is None:
             score_raw = row.get("score")
-        return {
+        candidate = {
             "project_id": str(row.get("project_id") or self._selected_project_id() or "").strip(),
             "batch_id": batch_id,
             "run_id": (str(row.get("run_id") or "").strip() or None),
@@ -7029,6 +7039,7 @@ class AnalysePage(QWidget):
             "planes": [str(item) for item in list(row.get("planes", []) or [])],
             "imported_at": row.get("imported_at"),
         }
+        return self._apply_pin_state_to_row(candidate)
 
     def _set_compare_candidates(self, candidates: Sequence[Dict[str, Any]], *, message: str = "") -> None:
         dedup: Dict[tuple[str, str, str, str], Dict[str, Any]] = {}
@@ -7089,8 +7100,9 @@ class AnalysePage(QWidget):
             self.compare_kpi_notice.setText("Select a candidate to focus one column.")
         else:
             selected = dict(self._compare_candidates[selected_col] or {})
+            marker = "[PIN] " if bool(selected.get("version_pinned")) else ""
             self.compare_kpi_notice.setText(
-                f"Selected: C{selected_col + 1} {selected.get('batch_id')}/{selected.get('version_id')}"
+                f"Selected: C{selected_col + 1} {marker}{selected.get('batch_id')}/{selected.get('version_id')}"
             )
 
         for row_idx, (metric_key, _label) in enumerate(self._compare_kpi_rows):
@@ -7141,15 +7153,17 @@ class AnalysePage(QWidget):
             candidate = dict(slots[row_index]) if row_index < len(slots) else {}
             if candidate:
                 selection_label = f"{str(candidate.get('batch_id') or '--')}/{str(candidate.get('version_id') or '--')}"
+                marker = "[PIN] " if bool(candidate.get("version_pinned")) else ""
+                selection_text = f"{marker}{selection_label}"
                 score_text = self._format_float(candidate.get("score"), 2)
                 flags_count = candidate.get("kpi_flags_count")
                 flags_text = "--" if flags_count is None else str(int(flags_count))
-                selection_item = QTableWidgetItem(selection_label)
-                selection_item.setToolTip(selection_label)
+                selection_item = QTableWidgetItem(selection_text)
+                selection_item.setToolTip(selection_text)
                 self.compare_slots_table.setItem(row_index, 1, selection_item)
                 self.compare_slots_table.setItem(row_index, 2, QTableWidgetItem(score_text))
                 self.compare_slots_table.setItem(row_index, 3, QTableWidgetItem(flags_text))
-                self.compare_heatmap_selector.addItem(f"{slot_label} | {selection_label}", row_index)
+                self.compare_heatmap_selector.addItem(f"{slot_label} | {selection_text}", row_index)
                 compare_values = [
                     slot_label,
                     score_text,
@@ -7288,7 +7302,14 @@ class AnalysePage(QWidget):
     def _on_compare_plot_ready(self, request_id: int, payload: Dict[str, Any]) -> None:
         if int(request_id) != int(self._compare_plot_request_id):
             return
-        self._compare_plot_items = [dict(item) for item in list(payload.get("items", []) or []) if isinstance(item, dict)]
+        normalized_items: List[Dict[str, Any]] = []
+        for raw_item in list(payload.get("items", []) or []):
+            if not isinstance(raw_item, dict):
+                continue
+            item = dict(raw_item)
+            item["candidate"] = self._apply_pin_state_to_row(dict(item.get("candidate") or {}))
+            normalized_items.append(item)
+        self._compare_plot_items = normalized_items
         self._render_compare_overlay()
         self._render_compare_heatmap_selection()
         self._render_compare_pareto()
@@ -7327,7 +7348,11 @@ class AnalysePage(QWidget):
             color_rgb = compare_overlay_color(index)
             series.append(
                 {
-                    "label": f"C{index + 1} {candidate.get('batch_id')}/{candidate.get('version_id')}",
+                    "label": (
+                        f"[PIN] C{index + 1} {candidate.get('batch_id')}/{candidate.get('version_id')}"
+                        if bool(candidate.get("version_pinned"))
+                        else f"C{index + 1} {candidate.get('batch_id')}/{candidate.get('version_id')}"
+                    ),
                     "points": points,
                     "color": color_rgb,
                 }
@@ -7963,6 +7988,8 @@ class AnalysePage(QWidget):
         project_id = str(self._selected_project_id() or "").strip()
         if not project_id or self._source_key() != "project":
             self._ath_visible_param_keys = []
+            self._pinned_version_tokens = set()
+            self._refresh_version_pin_button(enabled=False, pinned=False)
             return
         payload = self.service.analyzer_get_ui_pref(project_id=project_id, pref_key=self._ath_visible_pref_key)
         raw_keys = list(payload.get("visible_keys", []) or []) if isinstance(payload, dict) else []
@@ -7975,6 +8002,134 @@ class AnalysePage(QWidget):
             seen.add(key)
             ordered.append(key)
         self._ath_visible_param_keys = ordered
+        pin_payload = self.service.analyzer_get_ui_pref(project_id=project_id, pref_key=self._version_pin_pref_key)
+        raw_pin_keys = list(pin_payload.get("keys", []) or []) if isinstance(pin_payload, dict) else []
+        self._pinned_version_tokens = {str(token or "").strip() for token in raw_pin_keys if str(token or "").strip()}
+        self._apply_pin_state_to_rows()
+        self._refresh_version_pin_button(
+            enabled=bool(self._source_key() == "project" and self._has_version_pin_identity(self._selected_detail_payload)),
+            pinned=self._is_version_pinned(self._selected_detail_payload),
+        )
+
+    @staticmethod
+    def _version_pin_identity(payload: Mapping[str, Any]) -> Tuple[str, str, str, str]:
+        return (
+            str(payload.get("project_id") or "").strip(),
+            str(payload.get("batch_id") or "").strip(),
+            str(payload.get("version_id") or "").strip(),
+            str(payload.get("run_id") or "").strip(),
+        )
+
+    @staticmethod
+    def _version_pin_token(identity: Tuple[str, str, str, str]) -> str:
+        return "|".join(
+            (
+                str(identity[0] or "").strip(),
+                str(identity[1] or "").strip(),
+                str(identity[2] or "").strip(),
+                str(identity[3] or "").strip(),
+            )
+        )
+
+    def _has_version_pin_identity(self, payload: Mapping[str, Any]) -> bool:
+        identity = self._version_pin_identity(payload)
+        return bool(identity[0] and identity[1] and identity[2])
+
+    def _is_version_pinned(self, payload: Mapping[str, Any]) -> bool:
+        identity = self._version_pin_identity(payload)
+        if not identity[0] or not identity[1] or not identity[2]:
+            return False
+        return self._version_pin_token(identity) in self._pinned_version_tokens
+
+    @staticmethod
+    def _build_pin_icon(*, pinned: bool) -> QIcon:
+        pixmap = QPixmap(16, 16)
+        pixmap.fill(Qt.transparent)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        accent = QColor("#9A86CC") if pinned else QColor("#A7AFBB")
+        pen = QPen(accent)
+        pen.setWidthF(1.35)
+        painter.setPen(pen)
+        painter.setBrush(accent if pinned else Qt.NoBrush)
+        painter.drawEllipse(5, 1, 6, 6)
+        painter.drawLine(8, 7, 8, 13)
+        painter.drawLine(6, 11, 10, 11)
+        painter.end()
+        return QIcon(pixmap)
+
+    def _set_version_info_pin_highlight(self, pinned: bool) -> None:
+        self.kpi_controls_tile.setProperty("analyzerPinned", bool(pinned))
+        style = self.kpi_controls_tile.style()
+        if style is not None:
+            style.unpolish(self.kpi_controls_tile)
+            style.polish(self.kpi_controls_tile)
+        self.kpi_controls_tile.update()
+
+    def _refresh_version_pin_button(self, *, enabled: bool, pinned: bool) -> None:
+        self._pin_sync_guard = True
+        self.version_pin_btn.setEnabled(bool(enabled))
+        self.version_pin_btn.setChecked(bool(enabled and pinned))
+        self.version_pin_btn.setIcon(self._build_pin_icon(pinned=bool(enabled and pinned)))
+        if not enabled:
+            self.version_pin_btn.setToolTip("Pin is available for project-backed Batch/Version selections.")
+        elif pinned:
+            self.version_pin_btn.setToolTip("Pinned for this Batch/Version. Click to unpin.")
+        else:
+            self.version_pin_btn.setToolTip("Pin this Batch/Version for quick comparison.")
+        self._pin_sync_guard = False
+        self._set_version_info_pin_highlight(bool(enabled and pinned))
+
+    def _apply_pin_state_to_row(self, row: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(row, dict):
+            return {}
+        token = self._version_pin_token(self._version_pin_identity(row))
+        normalized = dict(row)
+        normalized["version_pinned"] = bool(token and token in self._pinned_version_tokens)
+        return normalized
+
+    def _apply_pin_state_to_rows(self) -> None:
+        self._all_run_rows = [self._apply_pin_state_to_row(dict(row)) for row in self._all_run_rows if isinstance(row, dict)]
+        self._compare_candidates = [
+            self._apply_pin_state_to_row(dict(candidate))
+            for candidate in self._compare_candidates
+            if isinstance(candidate, dict)
+        ]
+        if self._selected_detail_payload:
+            self._selected_detail_payload = self._apply_pin_state_to_row(dict(self._selected_detail_payload))
+
+    def _persist_version_pin_pref(self) -> None:
+        project_id = str(self._selected_project_id() or "").strip()
+        if not project_id or self._source_key() != "project":
+            return
+        keys = sorted(self._pinned_version_tokens)
+        self.service.analyzer_set_ui_pref(
+            project_id=project_id,
+            pref_key=self._version_pin_pref_key,
+            payload={"keys": keys},
+        )
+
+    def _on_version_pin_toggled(self, checked: bool) -> None:
+        if self._pin_sync_guard:
+            return
+        payload = dict(self._selected_detail_payload or {})
+        identity = self._version_pin_identity(payload)
+        if not identity[0] or not identity[1] or not identity[2]:
+            self._refresh_version_pin_button(enabled=False, pinned=False)
+            return
+        token = self._version_pin_token(identity)
+        if checked:
+            self._pinned_version_tokens.add(token)
+        else:
+            self._pinned_version_tokens.discard(token)
+        self._persist_version_pin_pref()
+        self._apply_pin_state_to_rows()
+        self._refresh_version_pin_button(
+            enabled=bool(self._source_key() == "project" and self._has_version_pin_identity(payload)),
+            pinned=bool(checked),
+        )
+        self._refresh_run_table()
+        self._update_compare_slots()
 
     def _persist_ath_visible_pref(self) -> None:
         project_id = str(self._selected_project_id() or "").strip()
@@ -8099,7 +8254,7 @@ class AnalysePage(QWidget):
                 label.setToolTip("missing")
             self.version_sweep_value_label.set_full_text("--")
             self.version_ath_params_value_label.setText("ATH params: --")
-            self.version_info_details_btn.setEnabled(False)
+            self._refresh_version_pin_button(enabled=False, pinned=False)
             self.version_note_edit.setEnabled(False)
             self._note_sync_guard = True
             self.version_note_edit.setPlainText("")
@@ -8170,7 +8325,10 @@ class AnalysePage(QWidget):
         self._update_version_note_counter(
             remaining=int(self._version_note_max_chars) - len(str(self.version_note_edit.toPlainText() or ""))
         )
-        self.version_info_details_btn.setEnabled(True)
+        self._refresh_version_pin_button(
+            enabled=bool(self._source_key() == "project" and self._has_version_pin_identity(data)),
+            pinned=self._is_version_pinned(data),
+        )
 
     @staticmethod
     def _row_has_warning(row: Dict[str, Any]) -> bool:
@@ -8359,8 +8517,9 @@ class AnalysePage(QWidget):
     def _apply_runs_payload(self, payload: Dict[str, Any]) -> None:
         rows = [dict(item) for item in list(payload.get("runs", []) or []) if isinstance(item, dict)]
         self._all_run_rows = rows
+        self._apply_pin_state_to_rows()
         if self._compare_candidates:
-            lookup = {self._compare_identity(row): dict(row) for row in rows}
+            lookup = {self._compare_identity(row): dict(row) for row in self._all_run_rows}
             merged: List[Dict[str, Any]] = []
             for candidate in self._compare_candidates:
                 identity = self._compare_identity(candidate)
@@ -8518,7 +8677,6 @@ class AnalysePage(QWidget):
         for key, label in self._detail_labels.items():
             label.setText(mapping.get(key, "--"))
         self.run_details_btn.setEnabled(bool(data))
-        self.version_info_details_btn.setEnabled(bool(data))
         self._update_version_information_panel(data)
 
         if not data:
