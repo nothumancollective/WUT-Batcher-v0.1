@@ -2536,11 +2536,20 @@ class OrchestratorService:
                 flags_payload = dict(cached.get("flags", {}) or {})
                 score = compute_stage_score(kpi_payload, stage_id=stage_key)
                 aggregate = dict(kpi_payload.get("aggregate", {}) or {})
+                reason_codes = [str(code) for code in list(flags_payload.get("reason_codes", []) or []) if str(code)]
+                if not reason_codes and bool(aggregate.get("insufficient_coverage")):
+                    reason_codes.append("INSUFFICIENT_ANGLE_COVERAGE")
+                if not any(code == "MISSING_PLANE" for code in reason_codes):
+                    planes_present = {str(token or "").strip().upper() for token in list(payload.get("planes", []) or [])}
+                    if any(plane not in planes_present for plane in ("H", "V", "D")):
+                        reason_codes.append("MISSING_PLANE")
+                reason_codes = list(dict.fromkeys(reason_codes))
                 payload["kpi"] = kpi_payload
                 payload["kpi_flags"] = flags_payload
+                payload["kpi_reason_codes"] = reason_codes
                 payload["kpi_source_hash"] = source_hash
                 payload["kpi_cached_at"] = cached.get("computed_at")
-                payload["kpi_score"] = float(score)
+                payload["kpi_score"] = float(score) if score is not None else None
                 payload["kpi_b_pc_oct"] = aggregate.get("b_pc_oct")
                 payload["kpi_e_bw"] = aggregate.get("e_bw")
                 payload["kpi_e_cov"] = aggregate.get("e_cov")
@@ -2548,6 +2557,9 @@ class OrchestratorService:
                 payload["kpi_flags_count"] = int(aggregate.get("flags_count") or 0)
                 payload["kpi_flagged"] = bool(aggregate.get("flagged"))
                 payload["kpi_insufficient_coverage"] = bool(aggregate.get("insufficient_coverage"))
+                payload["kpi_unscorable"] = bool(aggregate.get("unscorable"))
+            else:
+                payload["kpi_reason_codes"] = ["MISSING_KPI_ROWS"]
             result.append(payload)
         return result
 
@@ -2836,7 +2848,7 @@ class OrchestratorService:
                     "tol_deg": float(tol_deg),
                     "kpi_json": json.dumps(kpi_payload, ensure_ascii=False, sort_keys=True),
                     "flags_json": json.dumps(kpi_payload.get("flags", {}), ensure_ascii=False, sort_keys=True),
-                    "score": float(score),
+                    "score": float(score) if score is not None else None,
                     "algo_version": str(algo_version),
                     "source_hash": source_hash,
                     "computed_at": _now_iso(),

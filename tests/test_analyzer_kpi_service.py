@@ -184,6 +184,36 @@ class AnalyzerKpiServiceTests(unittest.TestCase):
             default_band = dict(by_id[default_band_id])
             self.assertGreaterEqual(float(default_band.get("low_hz") or 0.0), 200.0)
 
+    def test_batch_review_rows_mark_missing_kpi_rows_with_reason_code(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_kpi_missing_rows_") as tmp:
+            service = _build_service(Path(tmp))
+            project = service.create_project("Analyzer Missing KPI", {})
+            paths = service.repo.project_paths(project.project_id, ensure=True)
+            dataset = TidyDatasetWriter(paths.project_dir, library_root=service.settings.library_root)
+            _write_synthetic_run(
+                dataset=dataset,
+                project_id=project.project_id,
+                batch_id="B001",
+                run_id="R001",
+                version_id="V001",
+                hash_seed="hash_missing",
+            )
+            rows = service.analyzer_list_batch_review_runs(
+                project_id=project.project_id,
+                batch_id="B001",
+                source="project",
+                stage_mode="concept",
+                band_low_hz=200.0,
+                band_high_hz=1600.0,
+                target_h_deg=60.0,
+                target_v_deg=60.0,
+                tol_deg=5.0,
+                algo_version=ALGO_VERSION,
+            )
+            self.assertEqual(len(rows), 1)
+            self.assertIsNone(rows[0].get("kpi_score"))
+            self.assertIn("MISSING_KPI_ROWS", list(rows[0].get("kpi_reason_codes") or []))
+
     def test_orientation_alias_x3_45_is_exposed_as_d_and_loads_plot_data(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_kpi_alias_") as tmp:
             service = _build_service(Path(tmp))

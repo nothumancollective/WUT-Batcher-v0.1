@@ -292,6 +292,11 @@ The Analyzer page is planned with two explicit subviews:
   - compute runs only against project source DB
   - writes KPI cache rows to project DB and replicates to global DB via existing replication queue model
   - UI refresh re-queries cached scalar rows only (no matrix preload in table view)
+- KPI robustness rules:
+  - frequency band uses strict intersection with available polar frequencies (no silent full-band fallback)
+  - one-sided angle sets are scored with limited-coverage handling instead of hard-failing to score `0`
+  - explicit KPI reason codes are emitted (for example: `INSUFFICIENT_ANGLE_COVERAGE`, `EMPTY_BAND_INTERSECTION`, `MISSING_PLANE`, `MISSING_KPI_ROWS`)
+  - unscorable payloads render score as `--` (not implicit `0`).
 - Metadata/list view remains lightweight:
   - table refresh uses metadata + cached scalar joins
   - `polar_points` are loaded only inside the explicit compute worker.
@@ -312,7 +317,7 @@ The Analyzer page is planned with two explicit subviews:
   - no `polar_points` matrix preload for the run table
 - Plot pipeline:
   - deterministic angle/frequency ordering
-  - relative normalization against nearest angle to `0 deg`
+  - relative normalization uses `norm_angle_deg` when available; fallback is nearest angle to `0 deg`
   - beamwidth curve uses fixed `-6 dB` criterion on log-frequency axis
   - deterministic heatmap downsample cap for display (`<= 512` freq bins)
 - Caching (POLAR-only, in-memory LRU) is now configurable via Settings:

@@ -79,7 +79,39 @@ class AnalyzerKpiEngineTests(unittest.TestCase):
         self.assertTrue(bool(aggregate.get("flagged")))
         self.assertFalse(math.isnan(float(compute_stage_score(payload, stage_id="concept"))))
 
+    def test_one_sided_angles_are_scored_with_limited_coverage_reason(self) -> None:
+        freqs = [500.0, 1000.0, 2000.0, 4000.0]
+        angles = [0.0, 10.0, 20.0, 30.0, 45.0, 60.0, 75.0, 90.0]
+        plane_points = _build_plane_points(freqs=freqs, angles=angles, nominal_bw_deg=50.0)
+        payload = compute_run_kpis(
+            planes_points={"V": plane_points},
+            target_h_deg=90.0,
+            target_v_deg=50.0,
+            tol_deg=5.0,
+            band_low_hz=500.0,
+            band_high_hz=4000.0,
+        )
+        reason_codes = list(payload.get("flags", {}).get("reason_codes", []) or [])
+        self.assertIn("INSUFFICIENT_ANGLE_COVERAGE", reason_codes)
+        score = compute_stage_score(payload, stage_id="shaping")
+        self.assertIsNotNone(score)
+
+    def test_empty_band_intersection_marks_payload_unscorable(self) -> None:
+        freqs = [500.0, 1000.0, 2000.0]
+        angles = [-60.0, -30.0, 0.0, 30.0, 60.0]
+        plane_points = _build_plane_points(freqs=freqs, angles=angles, nominal_bw_deg=60.0)
+        payload = compute_run_kpis(
+            planes_points={"H": plane_points},
+            target_h_deg=60.0,
+            target_v_deg=60.0,
+            tol_deg=5.0,
+            band_low_hz=8000.0,
+            band_high_hz=12000.0,
+        )
+        reason_codes = list(payload.get("flags", {}).get("reason_codes", []) or [])
+        self.assertIn("EMPTY_BAND_INTERSECTION", reason_codes)
+        self.assertIsNone(compute_stage_score(payload, stage_id="concept"))
+
 
 if __name__ == "__main__":
     unittest.main()
-
