@@ -536,3 +536,11 @@
   - `tests/test_analyzer_kpi_engine.py::test_saturated_beamwidth_is_finite_and_marked`
   - `tests/test_gui_analyzer_compare_ui.py::test_beamwidth_overlay_includes_target_series_and_saturation_status`
   - `tests/test_analyzer_reason_codes.py` catalog assertion for `BEAMWIDTH_SATURATED`.
+
+## 2026-02-23 (Analyzer Pareto scatter render fix)
+- Fixed Pareto canvas paint-state bug where point brush leaked into plot-frame `drawRect(...)`, causing a filled colored rectangle.
+- Pareto now remains true point-scatter rendering (no area fill), with:
+  - selected-point outline emphasis
+  - deterministic small jitter for overlapping points to reduce overdraw ambiguity.
+- Added regression coverage:
+  - `tests/test_gui_analyzer_compare_ui.py::test_pareto_scatter_does_not_fill_plot_area_with_last_candidate_color`.

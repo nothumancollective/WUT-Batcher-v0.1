@@ -362,6 +362,7 @@ The Analyzer page is planned with two explicit subviews:
   - beamwidth overlay plot supports candidate overlays in a fixed 5-color palette (stable by slot order)
   - beamwidth overlay includes a target reference series and saturated-bin status annotation when crossings are out of range
   - heatmap renders one candidate at a time (candidate switcher) to avoid multi-heatmap overload
+  - Pareto uses true scatter points only (no area fill), with selected-point emphasis and overlap jitter.
   - compare updates run in background workers and support cancellation
 - Heatmap style rule:
   - all POLAR heatmaps (Explorer + Compare) use one shared VACS-like LUT
