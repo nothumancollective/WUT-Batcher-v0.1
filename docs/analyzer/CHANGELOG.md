@@ -1,5 +1,13 @@
 # Analyzer Docs — Changelog
 
+## 2026-02-23 (Analyzer UI stability pass - phase 4)
+- Stabilized Analyzer version-bar updates to prevent visible layout jumps during version switches and filter toggles.
+- Replaced dynamic multi-line Compare/ATH labels in hot update paths with single-line elided labels + tooltips.
+- Kept cancel buttons retain-size-when-hidden to avoid geometry reflow when busy state changes.
+- Removed dynamic toggle label text mutations (checkmark prefix) so filter chips no longer change width on toggle.
+- Added a minimum-height stabilization pass for the version bar row after initial layout activation.
+- Added GUI regression tests for stable version-bar height and in-place widget updates across selection changes.
+
 ## 2026-02-21
 - Created initial persistent Analyzer documentation set:
   - Context overview

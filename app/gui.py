@@ -4888,6 +4888,7 @@ class AnalysePage(QWidget):
         self._explorer_stage_panels: Dict[str, Dict[str, Any]] = {}
         self._compare_overlay_curve_key = "beamwidth"
         self._active_plane = "H"
+        self._analyzer_controls_row_min_height = 0
         self._plane_buttons: Dict[str, QToolButton] = {}
         self._plot_debounce_timer = QTimer(self)
         self._plot_debounce_timer.setSingleShot(True)
@@ -5210,6 +5211,9 @@ class AnalysePage(QWidget):
         self.plot_cancel_btn.setObjectName("BatchSecondaryButton")
         self.plot_cancel_btn.setVisible(False)
         self.plot_cancel_btn.setEnabled(False)
+        plot_cancel_policy = self.plot_cancel_btn.sizePolicy()
+        plot_cancel_policy.setRetainSizeWhenHidden(True)
+        self.plot_cancel_btn.setSizePolicy(plot_cancel_policy)
         context_layout.addWidget(self.plot_loading_label, 1, 7, 1, 1, Qt.AlignLeft | Qt.AlignVCenter)
         context_layout.addWidget(self.plot_cancel_btn, 1, 8, 1, 1, Qt.AlignRight | Qt.AlignVCenter)
         right_layout.addWidget(self.context_bar, 0)
@@ -5280,6 +5284,9 @@ class AnalysePage(QWidget):
         self.compare_cancel_btn.setObjectName("BatchSecondaryButton")
         self.compare_cancel_btn.setVisible(False)
         self.compare_cancel_btn.setEnabled(False)
+        compare_cancel_policy = self.compare_cancel_btn.sizePolicy()
+        compare_cancel_policy.setRetainSizeWhenHidden(True)
+        self.compare_cancel_btn.setSizePolicy(compare_cancel_policy)
         self.compare_plane_combo = QComboBox()
         self.compare_plane_combo.setObjectName("AnalyzerComparePlaneCombo")
         self.compare_plane_combo.addItem("H", "H")
@@ -5292,9 +5299,10 @@ class AnalysePage(QWidget):
         compare_controls_layout.addWidget(self.compare_analysis_selector, 1, 1, 1, 2)
         compare_controls_layout.addWidget(self.compare_load_btn, 1, 3)
         compare_controls_layout.addWidget(self.compare_cancel_btn, 1, 4)
-        self.compare_notice = QLabel("Select up to 5 versions, then add or auto-pick top candidates.")
+        self.compare_notice = ElidedTitleLabel("Select up to 5 versions, then add or auto-pick top candidates.")
         self.compare_notice.setObjectName("SummaryMeta")
-        self.compare_notice.setWordWrap(True)
+        self.compare_notice.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.compare_notice.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         compare_controls_layout.addWidget(self.compare_notice, 2, 0, 1, 5)
         compare_left_layout.addWidget(self.compare_controls, 0)
 
@@ -5592,6 +5600,7 @@ class AnalysePage(QWidget):
 
         self.analyzer_controls_row = QFrame()
         self.analyzer_controls_row.setObjectName("ProjectSummaryPanel")
+        self.analyzer_controls_row.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         controls_row_layout = QHBoxLayout(self.analyzer_controls_row)
         controls_row_layout.setContentsMargins(8, 4, 8, 4)
         controls_row_layout.setSpacing(6)
@@ -5599,6 +5608,7 @@ class AnalysePage(QWidget):
         self.analysis_controls_tile = QFrame()
         self.analysis_controls_tile.setObjectName("ProjectSummaryPanel")
         self.analysis_controls_tile.setProperty("analyzerSurface", "1")
+        self.analysis_controls_tile.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         analysis_controls_layout = QGridLayout(self.analysis_controls_tile)
         analysis_controls_layout.setContentsMargins(8, 4, 8, 4)
         analysis_controls_layout.setHorizontalSpacing(4)
@@ -5625,6 +5635,7 @@ class AnalysePage(QWidget):
         self.kpi_controls_tile = QFrame()
         self.kpi_controls_tile.setObjectName("ProjectSummaryPanel")
         self.kpi_controls_tile.setProperty("analyzerSurface", "2")
+        self.kpi_controls_tile.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         kpi_controls_layout = QVBoxLayout(self.kpi_controls_tile)
         kpi_controls_layout.setContentsMargins(8, 4, 8, 4)
         kpi_controls_layout.setSpacing(4)
@@ -5722,11 +5733,11 @@ class AnalysePage(QWidget):
         self.version_sweep_value_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.version_sweep_value_label.setStyleSheet("color: #5DA8FF;")
         col2_layout.addWidget(self.version_sweep_value_label, 0)
-        self.version_ath_params_value_label = QLabel("ATH params: --")
+        self.version_ath_params_value_label = ElidedTitleLabel("ATH params: --")
         self.version_ath_params_value_label.setObjectName("SummaryMeta")
-        self.version_ath_params_value_label.setWordWrap(True)
-        self.version_ath_params_value_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        col2_layout.addWidget(self.version_ath_params_value_label, 1, Qt.AlignLeft | Qt.AlignTop)
+        self.version_ath_params_value_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.version_ath_params_value_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        col2_layout.addWidget(self.version_ath_params_value_label, 1, Qt.AlignLeft | Qt.AlignVCenter)
         extra_layout.addWidget(self.version_info_col2, 1)
         divider_2 = QFrame()
         divider_2.setObjectName("AnalyzerInfoDivider")
@@ -5783,6 +5794,7 @@ class AnalysePage(QWidget):
         self.display_controls_tile = QFrame()
         self.display_controls_tile.setObjectName("ProjectSummaryPanel")
         self.display_controls_tile.setProperty("analyzerSurface", "1")
+        self.display_controls_tile.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         display_controls_layout = QGridLayout(self.display_controls_tile)
         display_controls_layout.setContentsMargins(8, 4, 8, 4)
         display_controls_layout.setHorizontalSpacing(4)
@@ -5949,8 +5961,6 @@ class AnalysePage(QWidget):
         self.min_score_spin.valueChanged.connect(self._refresh_run_table)
         self.plot_cancel_btn.clicked.connect(self._cancel_plot_request)
         self.analysis_tabs.currentChanged.connect(self._on_analysis_tab_changed)
-        self.exclude_flagged_check.toggled.connect(self._sync_filter_toggle_chip_labels)
-        self.exclude_warnings_check.toggled.connect(self._sync_filter_toggle_chip_labels)
         self.analysis_explorer_btn.clicked.connect(lambda: self.analysis_tabs.setCurrentWidget(self.explorer_tab))
         self.analysis_compare_btn.clicked.connect(lambda: self.analysis_tabs.setCurrentWidget(self.compare_tab))
         self.compare_add_selected_btn.clicked.connect(self._on_compare_add_selected)
@@ -5976,6 +5986,7 @@ class AnalysePage(QWidget):
         self._sync_band_custom_visibility()
         self._apply_stage_defaults()
         self._apply_stage_plot_layout()
+        QTimer.singleShot(0, self._stabilize_analyzer_controls_row_height)
         self.compute_btn.setEnabled(self._source_key() == "project")
         self._set_details(None)
         self.run_selector.addItem("(no versions)", "")
@@ -5989,7 +6000,6 @@ class AnalysePage(QWidget):
         self._sync_batch_selector_tooltip()
         self._sync_version_stepper()
         self._sync_selection_action_button_sizes()
-        self._sync_filter_toggle_chip_labels()
         self._clear_plot_views("Select version + plane to render plots.")
         self._refresh_saved_analyses()
         self._update_compare_slots()
@@ -6142,6 +6152,26 @@ class AnalysePage(QWidget):
         self._sync_selection_action_button_sizes()
         self._sync_version_stepper()
         self._sync_batch_selector_tooltip()
+
+    def _stabilize_analyzer_controls_row_height(self) -> None:
+        if self._analyzer_controls_row_min_height > 0:
+            self.analyzer_controls_row.setMinimumHeight(int(self._analyzer_controls_row_min_height))
+            return
+        layout = self.analyzer_controls_row.layout()
+        if layout is not None:
+            layout.activate()
+        hinted = max(
+            int(self.analyzer_controls_row.sizeHint().height()),
+            int(self.analyzer_controls_row.minimumSizeHint().height()),
+        )
+        if hinted <= 0:
+            return
+        self._analyzer_controls_row_min_height = hinted
+        self.analyzer_controls_row.setMinimumHeight(int(hinted))
+
+    def showEvent(self, event) -> None:  # type: ignore[override]
+        super().showEvent(event)
+        self._stabilize_analyzer_controls_row_height()
 
     def resizeEvent(self, event) -> None:  # type: ignore[override]
         super().resizeEvent(event)
@@ -6367,12 +6397,12 @@ class AnalysePage(QWidget):
         self.compare_cancel_btn.setVisible(bool(busy))
         self.compare_cancel_btn.setEnabled(bool(busy))
         if busy:
-            self.compare_notice.setText(str(text or "Loading compare candidates..."))
+            self.compare_notice.set_full_text(str(text or "Loading compare candidates..."))
             return
         if not self._compare_candidates:
-            self.compare_notice.setText("Select up to 5 versions, then add or auto-pick top candidates.")
+            self.compare_notice.set_full_text("Select up to 5 versions, then add or auto-pick top candidates.")
         else:
-            self.compare_notice.setText(str(text or f"{len(self._compare_candidates)} candidate(s) in compare set."))
+            self.compare_notice.set_full_text(str(text or f"{len(self._compare_candidates)} candidate(s) in compare set."))
 
     def _clear_metadata_worker_refs(self, thread: Optional[QThread] = None) -> None:
         if thread is None:
@@ -8296,7 +8326,7 @@ class AnalysePage(QWidget):
                 label.setText("--")
                 label.setToolTip("missing")
             self.version_sweep_value_label.set_full_text("--")
-            self.version_ath_params_value_label.setText("ATH params: --")
+            self.version_ath_params_value_label.set_full_text("ATH params: --")
             self._refresh_version_pin_button(enabled=False, pinned=False)
             self.version_note_edit.setEnabled(False)
             self._note_sync_guard = True
@@ -8357,7 +8387,7 @@ class AnalysePage(QWidget):
             self.version_sweep_value_label.set_full_text("--")
 
         ath_lines = self._visible_ath_param_lines(data)
-        self.version_ath_params_value_label.setText("\n".join(ath_lines))
+        self.version_ath_params_value_label.set_full_text(" | ".join(ath_lines))
 
         note_text = str(data.get("version_note") or "")
         can_edit_note = bool(self._source_key() == "project" and all(self._version_identity_key(data)))
@@ -8442,19 +8472,6 @@ class AnalysePage(QWidget):
 
     def _update_toolbar_context_chips(self) -> None:
         self.compute_btn.setText("Refresh KPIs")
-
-    @staticmethod
-    def _filter_toggle_text(base_text: str, checked: bool) -> str:
-        token = str(base_text or "").strip()
-        return f"✓ {token}" if bool(checked) else token
-
-    def _sync_filter_toggle_chip_labels(self) -> None:
-        self.exclude_flagged_check.setText(
-            self._filter_toggle_text("Exclude flagged", self.exclude_flagged_check.isChecked())
-        )
-        self.exclude_warnings_check.setText(
-            self._filter_toggle_text("Exclude warnings", self.exclude_warnings_check.isChecked())
-        )
 
     def _apply_stage_defaults(self) -> None:
         stage = dict(self._stage_presets.get(self._selected_stage_id(), {}) or {})

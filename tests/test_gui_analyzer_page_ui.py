@@ -289,16 +289,16 @@ class AnalyzerPageUiTests(unittest.TestCase):
             page.min_score_spin.setValue(95.0)
             self.assertEqual(page.run_table.rowCount(), 0)
 
-    def test_filter_toggle_chips_show_checkmark_when_enabled(self) -> None:
-        with tempfile.TemporaryDirectory(prefix="wut_ui2x_filter_chip_mark_") as tmp:
+    def test_filter_toggle_chip_labels_stay_static_when_toggled(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_ui2x_filter_chip_static_") as tmp:
             service = _build_service(Path(tmp))
             page = AnalysePage(service=service)
             self.assertEqual(page.exclude_flagged_check.text(), "Exclude flagged")
             self.assertEqual(page.exclude_warnings_check.text(), "Exclude warnings")
             page.exclude_flagged_check.setChecked(True)
             page.exclude_warnings_check.setChecked(True)
-            self.assertTrue(page.exclude_flagged_check.text().startswith("✓ "))
-            self.assertTrue(page.exclude_warnings_check.text().startswith("✓ "))
+            self.assertEqual(page.exclude_flagged_check.text(), "Exclude flagged")
+            self.assertEqual(page.exclude_warnings_check.text(), "Exclude warnings")
 
     def test_missing_kpi_rows_show_missing_flag_text(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_ui2x_missing_kpi_") as tmp:
@@ -392,6 +392,108 @@ class AnalyzerPageUiTests(unittest.TestCase):
             self.assertIn("Throat.Len", str(page.version_sweep_value_label.toolTip() or ""))
             self.assertGreaterEqual(int(page.version_info_col3.minimumWidth()), 220)
             self.assertGreaterEqual(int(page.version_sweep_value_label.width()), int(page.version_info_col2.width()) - 12)
+
+    def test_version_bar_height_is_stable_across_selection_and_filter_updates(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_ui2x_version_bar_stable_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            payload = {
+                "mode": "runs",
+                "project_id": "P001",
+                "batch_id": "B001",
+                "runs": [
+                    {
+                        "project_id": "P001",
+                        "batch_id": "B001",
+                        "run_id": "R001",
+                        "version_id": "V001",
+                        "planes": ["H", "V", "D"],
+                        "kpi_score": 9.38,
+                        "sweep_parameters": {"Throat.Len": 120.0},
+                    },
+                    {
+                        "project_id": "P001",
+                        "batch_id": "B001",
+                        "run_id": "R002",
+                        "version_id": "V002",
+                        "planes": ["H", "V", "D"],
+                        "kpi_score": 8.91,
+                        "sweep_parameters": {
+                            "Throat.Len": 130.0,
+                            "GCurve.AspectRatio": 1.45,
+                            "Morph.Coverage": 60.0,
+                            "Mesh.AngleStep": 2.0,
+                        },
+                    },
+                ],
+            }
+            page.resize(1800, 1000)
+            page.show()
+            page._apply_runs_payload(payload)
+            self.app.processEvents()
+
+            base_height = int(page.analyzer_controls_row.height())
+            self.assertGreater(base_height, 0)
+
+            page.exclude_flagged_check.setChecked(True)
+            self.app.processEvents()
+            self.assertEqual(int(page.analyzer_controls_row.height()), base_height)
+
+            page.exclude_warnings_check.setChecked(True)
+            self.app.processEvents()
+            self.assertEqual(int(page.analyzer_controls_row.height()), base_height)
+
+            page.run_table.selectRow(1)
+            self.app.processEvents()
+            self.assertEqual(int(page.analyzer_controls_row.height()), base_height)
+
+            page.run_table.selectRow(0)
+            self.app.processEvents()
+            self.assertEqual(int(page.analyzer_controls_row.height()), base_height)
+            page.close()
+
+    def test_version_bar_widgets_are_updated_in_place(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_ui2x_version_bar_in_place_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            payload_a = {
+                "project_id": "P001",
+                "batch_id": "B001",
+                "version_id": "V001",
+                "run_id": "R001",
+                "planes": ["H", "V", "D"],
+                "kpi_score": 9.38,
+                "sweep_parameters": {"Throat.Len": 120.0},
+            }
+            payload_b = {
+                "project_id": "P001",
+                "batch_id": "B001",
+                "version_id": "V002",
+                "run_id": "R002",
+                "planes": ["H", "V", "D"],
+                "kpi_score": 8.71,
+                "sweep_parameters": {"Throat.Len": 132.0, "Morph.Coverage": 55.0},
+            }
+            refs = {
+                "row": page.analyzer_controls_row,
+                "scores": page.version_info_scores_col,
+                "col1": page.version_info_col1,
+                "col2": page.version_info_col2,
+                "col3": page.version_info_col3,
+                "sweep": page.version_sweep_value_label,
+                "ath": page.version_ath_params_value_label,
+            }
+            page._update_version_information_panel(payload_a)
+            self.app.processEvents()
+            page._update_version_information_panel(payload_b)
+            self.app.processEvents()
+            self.assertIs(refs["row"], page.analyzer_controls_row)
+            self.assertIs(refs["scores"], page.version_info_scores_col)
+            self.assertIs(refs["col1"], page.version_info_col1)
+            self.assertIs(refs["col2"], page.version_info_col2)
+            self.assertIs(refs["col3"], page.version_info_col3)
+            self.assertIs(refs["sweep"], page.version_sweep_value_label)
+            self.assertIs(refs["ath"], page.version_ath_params_value_label)
 
     def test_version_note_persists_per_project_batch_version(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_ui2x_note_persist_") as tmp:
