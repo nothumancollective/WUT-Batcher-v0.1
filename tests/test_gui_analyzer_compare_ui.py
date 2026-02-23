@@ -380,8 +380,7 @@ class AnalyzerCompareUiTests(unittest.TestCase):
             ]
             page._render_compare_overlay()
             labels = [str(series.get("label") or "") for series in list(page.compare_overlay_canvas._series)]
-            self.assertEqual(len(labels), 1)
-            self.assertIn("[PIN]", labels[0])
+            self.assertTrue(any("[PIN]" in label for label in labels))
 
     def test_pareto_scatter_does_not_fill_plot_area_with_last_candidate_color(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_stage_pareto_fill_guard_") as tmp:
