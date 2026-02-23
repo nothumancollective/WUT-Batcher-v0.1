@@ -106,6 +106,63 @@ def _write_run_with_cached_kpi(
 
 
 class AnalyzerServicesAnalysesTests(unittest.TestCase):
+    def test_analyzer_ui_pref_roundtrip(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_analyzer_ui_pref_") as tmp:
+            service = _build_service(Path(tmp))
+            project = service.create_project("Analyzer Prefs", {})
+            service.analyzer_set_ui_pref(
+                project_id=project.project_id,
+                pref_key="ath_visible_params",
+                payload={"visible_keys": ["Throat.Profile", "GCurve.Type"]},
+            )
+            loaded = service.analyzer_get_ui_pref(
+                project_id=project.project_id,
+                pref_key="ath_visible_params",
+            )
+            self.assertEqual(
+                list(loaded.get("visible_keys", []) or []),
+                ["Throat.Profile", "GCurve.Type"],
+            )
+
+    def test_version_note_roundtrip_is_exposed_in_analyzer_runs(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_analyzer_note_") as tmp:
+            service = _build_service(Path(tmp))
+            project = service.create_project("Analyzer Notes", {})
+            paths = service.repo.project_paths(project.project_id, ensure=True)
+            dataset = TidyDatasetWriter(paths.project_dir, library_root=service.settings.library_root)
+            _write_run_with_cached_kpi(
+                dataset=dataset,
+                project_id=project.project_id,
+                batch_id="B001",
+                run_id="R001",
+                version_id="V001",
+                file_hash="hash_note",
+                created_at=_iso_at(10),
+                aggregate={
+                    "b_pc_oct": 2.0,
+                    "e_bw": 1.0,
+                    "e_cov": 0.8,
+                    "r_spill": 0.12,
+                    "flags_count": 0,
+                    "flagged": False,
+                    "insufficient_coverage": False,
+                    "score_hint": 75.0,
+                },
+            )
+            service.analyzer_set_version_note(
+                project_id=project.project_id,
+                batch_id="B001",
+                version_id="V001",
+                note_text="candidate looks stable",
+            )
+            rows = service.analyzer_list_polar_runs(
+                project_id=project.project_id,
+                batch_id="B001",
+                source="project",
+            )
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(str(rows[0].get("version_note") or ""), "candidate looks stable")
+
     def test_save_load_analysis_roundtrip_and_ordering(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_analyzer_analysis_") as tmp:
             service = _build_service(Path(tmp))
