@@ -301,6 +301,32 @@ class AnalyzerCompareUiTests(unittest.TestCase):
             page._apply_runs_payload(payload)
             self.assertEqual(page.compare_slots_table.item(0, 2).text(), "88.00")
 
+    def test_compare_kpi_matrix_renders_c1_to_c5_values(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_stage_compare_kpi_matrix_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            candidates = []
+            for idx in range(5):
+                candidates.append(
+                    {
+                        "project_id": "P001",
+                        "batch_id": "B001",
+                        "run_id": f"R{idx+1:03d}",
+                        "version_id": f"V{idx+1:03d}",
+                        "score": 90.0 - idx,
+                        "kpi_b_pc_oct": 2.0 + idx * 0.1,
+                        "kpi_e_bw": 1.0 + idx,
+                        "kpi_e_cov": 0.5 + idx * 0.05,
+                        "kpi_r_spill": 0.1 + idx * 0.01,
+                        "kpi_flags_count": idx,
+                    }
+                )
+            page._set_compare_candidates(candidates)
+            self.assertEqual(page.compare_kpi_matrix.rowCount(), 6)
+            self.assertEqual(page.compare_kpi_matrix.columnCount(), 6)
+            self.assertEqual(page.compare_kpi_matrix.item(0, 1).text(), "90.00")
+            self.assertEqual(page.compare_kpi_matrix.item(5, 5).text(), "4")
+
 
 if __name__ == "__main__":
     unittest.main()

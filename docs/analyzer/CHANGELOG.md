@@ -514,3 +514,12 @@
 - This preserves `kpi_score -> score` mapping after metadata refreshes, so shortlist score stays aligned with top summary score.
 - Added regression coverage:
   - `tests/test_gui_analyzer_compare_ui.py::test_compare_shortlist_score_survives_runs_refresh_merge`.
+
+## 2026-02-23 (Analyzer compare KPI matrix UX)
+- Replaced single-candidate compare KPI text form with a compact C1..C5 matrix (`AnalyzerCompareKpiMatrix`) to improve readability and remove clipping pressure.
+- Matrix layout:
+  - rows: `Score`, `Pattern Ctrl`, `BW Err`, `Cov Err`, `Spill Ratio`, `Flags`
+  - columns: `C1..C5`
+  - selected compare slot column is softly highlighted.
+- Added regression coverage:
+  - `tests/test_gui_analyzer_compare_ui.py::test_compare_kpi_matrix_renders_c1_to_c5_values`.
