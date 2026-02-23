@@ -15,6 +15,11 @@
 - Improved Basic Infos typography with dimmer keys and brighter values while keeping content unchanged.
 - Neutralized remaining blue-ish analyzer control surfaces to the monochrome panel palette.
 
+## 2026-02-23 (Analyzer UI polish - analysis block)
+- Reworked Analysis controls into a compact 2-column grid (Stage/Target + Min score).
+- Moved Exclude filters into a subtle inner section frame so they read as filter toggles instead of primary CTA buttons.
+- Kept filter behavior unchanged; only layout and presentation were updated.
+
 ## 2026-02-21
 - Created initial persistent Analyzer documentation set:
   - Context overview
