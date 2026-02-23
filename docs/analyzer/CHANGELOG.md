@@ -493,3 +493,11 @@
 - Added scope regression coverage for reused `run_id`/`version_id` across batches:
   - `tests/test_analyzer_kpi_service.py::test_batch_scoping_keeps_same_run_and_version_ids_separate`
   - `tests/test_gui_analyzer_compare_ui.py::test_compare_candidate_identity_includes_project_scope`.
+
+## 2026-02-23 (Analyzer B006 evidence addendum)
+- Added `docs/analyzer/debug_analyzer_b006_addendum.md` with Phase-0 evidence for batch `P021/B006`:
+  - DB plane inventory (`V` + `X3_45` only), point integrity checks, KPI row inventory
+  - source TXT header inspection showing `Param_Coord_x3=45/90/90` and duplicated `90` export file
+  - reproducible shortlist score-loss path (`score` becomes `--` after runs refresh while top summary stays numeric)
+  - Pareto rectangle root cause in canvas brush state (`setBrush(color)` persists into `drawRect(...)` fill)
+  - beamwidth definition/units sanity notes tied to current KPI engine implementation.
