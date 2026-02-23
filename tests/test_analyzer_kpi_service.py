@@ -9,6 +9,7 @@ import unittest
 
 from app.analyzer.cache import AnalyzerPlotCache, resolve_cache_policy
 from app.analyzer.presets import ALGO_VERSION
+from app.models import Batch, SimExportSettings, VersionSpec
 from app.services import OrchestratorService
 from app.settings_store import SettingsStore, UserSettings
 from app.tidy_dataset import TidyDatasetWriter
@@ -56,6 +57,7 @@ def _write_synthetic_run(
     version_id: str,
     hash_seed: str,
     orientations: tuple[str, ...] = ("H", "V"),
+    norm_angle_deg: float | None = 0.0,
 ) -> None:
     freqs = [200.0, 400.0, 800.0, 1600.0]
     angles = [-90.0, -60.0, -45.0, -30.0, -15.0, 0.0, 15.0, 30.0, 45.0, 60.0, 90.0]
@@ -69,7 +71,7 @@ def _write_synthetic_run(
             "graph_id": None,
             "orientation": orientation,
             "orientation_raw": 0.0,
-            "norm_angle_deg": 0.0,
+            "norm_angle_deg": norm_angle_deg,
             "data_level_type": "SPL",
             "data_base_unit": "dB",
             "data_absc_unit": "Hz",
@@ -224,6 +226,50 @@ class AnalyzerKpiServiceTests(unittest.TestCase):
             del dataset
             del service
             gc.collect()
+
+    def test_norm_angle_falls_back_to_batch_export_settings_when_db_missing(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_kpi_norm_fallback_") as tmp:
+            service = _build_service(Path(tmp))
+            project = service.create_project("Analyzer Norm", {})
+            paths = service.repo.project_paths(project.project_id, ensure=True)
+            dataset = TidyDatasetWriter(paths.project_dir, library_root=service.settings.library_root)
+            batch = Batch(
+                batch_id="B001",
+                project_id=project.project_id,
+                sim_export_settings=SimExportSettings(
+                    export_specs=[
+                        {"id": "p1", "graph_kind": "polar", "options": {"norm_angle": 0}},
+                        {"id": "p2", "graph_kind": "polar", "options": {"norm_angle": 0}},
+                    ]
+                ),
+            )
+            version = VersionSpec(
+                project_id=project.project_id,
+                batch_id="B001",
+                version_id="V001",
+                sweep_mode="single",
+                sequence_index=1,
+                parameters={"Length": 120},
+            )
+            dataset.write_plan_bundle(project=project, batch=batch, versions=[version])
+            _write_synthetic_run(
+                dataset=dataset,
+                project_id=project.project_id,
+                batch_id="B001",
+                run_id="R001",
+                version_id="V001",
+                hash_seed="hash_norm",
+                norm_angle_deg=None,
+            )
+            rows = service.analyzer_list_polar_runs(
+                project_id=project.project_id,
+                batch_id="B001",
+                source="project",
+            )
+            self.assertEqual(len(rows), 1)
+            self.assertIsNotNone(rows[0].get("norm_angle_deg"))
+            self.assertEqual(float(rows[0]["norm_angle_deg"]), 0.0)
+            self.assertEqual(str(rows[0].get("norm_angle_source") or ""), "batch_export_settings")
 
 
 if __name__ == "__main__":

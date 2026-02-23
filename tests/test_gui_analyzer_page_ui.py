@@ -14,6 +14,7 @@ from app.gui import (
     AnalysePage,
     HeatmapCanvas,
     MainWindow,
+    _AnalyzerRunDetailsDialog,
     _should_render_minus6_angle,
     apply_analyzer_plot_margins,
 )
@@ -21,11 +22,12 @@ from app.services import OrchestratorService
 from app.settings_store import SettingsStore, UserSettings
 
 try:
-    from PySide6.QtWidgets import QApplication, QComboBox, QDialog, QPushButton, QTableWidget, QTabWidget, QToolButton
+    from PySide6.QtWidgets import QApplication, QComboBox, QDialog, QLabel, QPushButton, QTableWidget, QTabWidget, QToolButton
 except ImportError:  # pragma: no cover
     QApplication = None  # type: ignore[assignment]
     QComboBox = None  # type: ignore[assignment]
     QDialog = None  # type: ignore[assignment]
+    QLabel = None  # type: ignore[assignment]
     QPushButton = None  # type: ignore[assignment]
     QTableWidget = None  # type: ignore[assignment]
     QTabWidget = None  # type: ignore[assignment]
@@ -426,6 +428,22 @@ class AnalyzerPageUiTests(unittest.TestCase):
             with patch("app.gui._AnalyzerRunDetailsDialog.exec", autospec=True, return_value=0) as exec_mock:
                 page._open_run_details_dialog()
                 self.assertEqual(exec_mock.call_count, 1)
+
+    def test_run_details_dialog_shows_zero_norm_angle_value(self) -> None:
+        payload = {
+            "project_id": "P001",
+            "batch_id": "B001",
+            "run_id": "R001",
+            "version_id": "V001",
+            "planes": ["H", "V"],
+            "norm_angle_deg": 0.0,
+            "norm_angle_source": "batch_export_settings",
+            "norm_angle_note": "Derived from batches.sim_export_params export_specs[].options.norm_angle.",
+        }
+        dialog = _AnalyzerRunDetailsDialog(payload=payload, parent=None)
+        texts = [label.text() for label in dialog.findChildren(QLabel)]
+        # Fallback-safe assertion: 0.00 must be present and the field must not collapse to '--'.
+        self.assertIn("0.00", texts)
 
     def test_explorer_compare_tabs_switch_without_errors(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_ui2x_tabs_") as tmp:
