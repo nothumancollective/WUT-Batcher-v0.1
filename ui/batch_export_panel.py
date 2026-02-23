@@ -173,13 +173,6 @@ class _AdvancedDialog(StyledDialogBase):
         hint.setWordWrap(True)
         content_layout.addWidget(hint)
 
-        cards_top = QHBoxLayout()
-        cards_top.setContentsMargins(0, 0, 0, 0)
-        cards_top.setSpacing(10)
-        cards_top.addWidget(self._build_simple_card("SPL", self._current.spl, graph_key="spl"), 1)
-        cards_top.addWidget(self._build_simple_card("Impedance", self._current.impedance, graph_key="impedance"), 1)
-        content_layout.addLayout(cards_top)
-
         polar_title = QLabel("Polars")
         polar_title.setObjectName("SummaryTitle")
         content_layout.addWidget(polar_title)
@@ -568,30 +561,6 @@ class BatchExportPanel(QFrame):
 
     def _advanced_specs(self) -> List[Dict[str, Any]]:
         specs: List[Dict[str, Any]] = []
-        if self._advanced_state.spl.enabled:
-            specs.append(
-                {
-                    "id": "adv_spl",
-                    "tool": "vacs",
-                    "graph_kind": "spl",
-                    "variant": "main",
-                    "format": "txt",
-                    "options": {},
-                    "output_name_template": "{version_id}_{graph_kind}.{format}",
-                }
-            )
-        if self._advanced_state.impedance.enabled:
-            specs.append(
-                {
-                    "id": "adv_impedance",
-                    "tool": "vacs",
-                    "graph_kind": "impedance",
-                    "variant": "main",
-                    "format": "txt",
-                    "options": {},
-                    "output_name_template": "{version_id}_{graph_kind}.{format}",
-                }
-            )
         for idx, polar in enumerate(list(self._advanced_state.polars), start=1):
             if not polar.enabled:
                 continue

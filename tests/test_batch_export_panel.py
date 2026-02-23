@@ -27,7 +27,8 @@ class BatchExportPanelTests(unittest.TestCase):
 
     def test_payload_contains_mesh_frequency_and_structured_specs(self) -> None:
         panel = BatchExportPanel()
-        panel._advanced_state.spl.enabled = True  # type: ignore[attr-defined]
+        panel._advanced_state.polars[0].enabled = True  # type: ignore[attr-defined]
+        panel._advanced_state.polars[0].polar_name = "P1"  # type: ignore[attr-defined]
         panel.freq_start.setText("600")
         panel.freq_end.setText("14000")
         panel.num_points.setText("24")
@@ -40,8 +41,18 @@ class BatchExportPanelTests(unittest.TestCase):
         self.assertTrue(bool(payload.get("auto_default_polar_exports")))
         specs = list(payload.get("export_specs", []))
         self.assertEqual(len(specs), 1)
-        self.assertEqual(str(specs[0].get("graph_kind")), "spl")
+        self.assertEqual(str(specs[0].get("graph_kind")), "polar")
         self.assertEqual(str(specs[0].get("format")), "txt")
+
+    def test_advanced_specs_ignore_hidden_spl_impedance_toggles(self) -> None:
+        panel = BatchExportPanel()
+        panel._advanced_state.spl.enabled = True  # type: ignore[attr-defined]
+        panel._advanced_state.impedance.enabled = True  # type: ignore[attr-defined]
+        payload = panel.sim_export_params_payload()
+        specs = list(payload.get("export_specs", []))
+        graph_kinds = {str(item.get("graph_kind", "")).lower() for item in specs}
+        self.assertNotIn("spl", graph_kinds)
+        self.assertNotIn("impedance", graph_kinds)
 
     def test_payload_uses_default_polar_flag_when_no_manual_specs(self) -> None:
         panel = BatchExportPanel()
