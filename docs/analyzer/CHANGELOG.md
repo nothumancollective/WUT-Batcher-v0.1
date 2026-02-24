@@ -1,5 +1,10 @@
 # Analyzer Docs — Changelog
 
+## 2026-02-24 (Analyzer Version Bar final polish - ATH params stack + cap)
+- Replaced inline ATH params text with a stacked key/value column (single-line rows, elided values, tooltips).
+- Added ATH visibility selection cap (max 5) in `Version Details -> ATH Params`; selecting a 6th is prevented with a `Max 5 parameters` hint.
+- Added safety clamps for persisted ATH visibility prefs: values are deterministically limited to first 5 on load and writes, with a log note when clamped.
+
 ## 2026-02-24 (Analyzer Version Bar final polish - sweep color token)
 - Rebound the Version Information sweep chip to the same active Sweep QSS token values used by `QPushButton#SweepButton[sweepActive="true"]`.
 - Removed the ad-hoc inline sweep blue in Analyzer so sweep highlighting is now color-consistent with Batch Sweep controls.

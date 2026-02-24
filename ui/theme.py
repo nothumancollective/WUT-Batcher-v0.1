@@ -857,6 +857,14 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         font-size: 11px;
         font-weight: 600;
     }}
+    QLabel[analyzerInfoKey="true"] {{
+        color: #a2a2a2;
+        font-weight: 600;
+    }}
+    QLabel[analyzerInfoValue="true"] {{
+        color: #e2e2e2;
+        font-weight: 600;
+    }}
     QLabel#BatchSummaryMeta {{
         color: {c['muted']};
         font-size: 11px;

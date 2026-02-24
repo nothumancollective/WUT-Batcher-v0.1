@@ -23,10 +23,22 @@ from app.settings_store import SettingsStore, UserSettings
 
 try:
     from PySide6.QtCore import Qt
-    from PySide6.QtWidgets import QApplication, QComboBox, QDialog, QLabel, QPushButton, QTableWidget, QTabWidget, QToolButton, QFrame
+    from PySide6.QtWidgets import (
+        QApplication,
+        QCheckBox,
+        QComboBox,
+        QDialog,
+        QFrame,
+        QLabel,
+        QPushButton,
+        QTableWidget,
+        QTabWidget,
+        QToolButton,
+    )
 except ImportError:  # pragma: no cover
     Qt = None  # type: ignore[assignment]
     QApplication = None  # type: ignore[assignment]
+    QCheckBox = None  # type: ignore[assignment]
     QComboBox = None  # type: ignore[assignment]
     QDialog = None  # type: ignore[assignment]
     QLabel = None  # type: ignore[assignment]
@@ -514,6 +526,77 @@ class AnalyzerPageUiTests(unittest.TestCase):
             self.assertIn("GCurve.Type", page_reload._ath_visible_param_keys)
             page.close()
             page_reload.close()
+
+    def test_ath_visible_pref_is_clamped_to_five_on_reload(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_ui2x_ath_pref_clamp_") as tmp:
+            service = _build_service(Path(tmp))
+            project = service.create_project("Analyzer ATH Clamp", {})
+            keys = ["P1", "P2", "P3", "P4", "P5", "P6", "P7"]
+            service.analyzer_set_ui_pref(project_id=project.project_id, pref_key="ath_visible_params", payload={"visible_keys": keys})
+            page = AnalysePage(service=service)
+            page.set_project_context(project.project_id)
+            self.assertEqual(len(page._ath_visible_param_keys), 5)
+            self.assertEqual(page._ath_visible_param_keys, keys[:5])
+            page.close()
+
+    def test_ath_params_render_as_vertical_key_value_rows(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_ui2x_ath_vertical_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            page._ath_visible_param_keys = ["Throat.Profile", "GCurve.Type"]
+            payload = {"project_id": "P001", "batch_id": "B001", "version_id": "V001"}
+            with patch.object(
+                service,
+                "analyzer_version_param_values",
+                autospec=True,
+                return_value={"Throat.Profile": "OSSE", "GCurve.Type": "Superformula"},
+            ):
+                page._update_version_information_panel(payload)
+            self.assertFalse(page._version_ath_param_key_labels[0].isHidden())
+            self.assertFalse(page._version_ath_param_value_labels[0].isHidden())
+            self.assertEqual(page._version_ath_param_key_labels[0].text(), "Throat.Profile:")
+            self.assertIn("OSSE", str(page._version_ath_param_value_labels[0].toolTip() or ""))
+            self.assertFalse(page._version_ath_param_key_labels[1].isHidden())
+            self.assertTrue(page._version_ath_param_key_labels[2].isHidden())
+            self.assertTrue(page.version_ath_params_empty_label.isHidden())
+
+    def test_details_ath_tab_prevents_selecting_more_than_five_params(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_ui2x_ath_limit_dialog_") as tmp:
+            service = _build_service(Path(tmp))
+            toggles: list[tuple[str, bool]] = []
+            rows = [
+                {"param_name": f"Param.{idx+1}", "value": float(idx + 1), "is_set": True}
+                for idx in range(6)
+            ]
+            dialog = _AnalyzerRunDetailsDialog(
+                payload={"project_id": "P001", "batch_id": "B001", "version_id": "V001"},
+                ath_param_rows=rows,
+                visible_ath_keys=[f"Param.{idx+1}" for idx in range(5)],
+                on_toggle_ath_param=lambda key, checked: toggles.append((str(key), bool(checked))),
+                max_visible_ath_params=5,
+            )
+            ath_table = dialog.findChild(QTableWidget, "AnalyzerAthParamsTable")
+            self.assertIsNotNone(ath_table)
+            assert ath_table is not None
+            cell = ath_table.cellWidget(5, 3)
+            self.assertIsNotNone(cell)
+            assert cell is not None
+            check = cell.findChild(QCheckBox)
+            self.assertIsNotNone(check)
+            assert check is not None
+            check.setChecked(True)
+            self.app.processEvents()
+            self.assertFalse(check.isChecked())
+            self.assertEqual(toggles, [])
+            hints = [
+                label
+                for label in dialog.findChildren(QLabel)
+                if bool(label.property("analyzerAthLimitHint"))
+            ]
+            self.assertEqual(len(hints), 1)
+            self.assertFalse(hints[0].isHidden())
+            self.assertIn("Max 5", str(hints[0].text() or ""))
+            dialog.close()
 
     def test_version_stepper_arrows_navigate_and_disable_at_edges(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_ui2x_stepper_") as tmp:

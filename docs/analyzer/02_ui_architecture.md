@@ -58,6 +58,8 @@ It is written to be actionable for Codex implementation while minimizing risk to
   - left: `Band` + `Low/High`
   - right: `Plane` + `Advanced...`
 - `Tol (+/-deg)` is configured in `Display Advanced...` (not inline in Display) but remains bound to the same analyzer tolerance state.
+- Version Information ATH parameter rendering is a stacked key/value column (single-line rows with value elide + tooltip).
+- ATH visibility selection in `Version Details -> ATH Params` is capped at 5 keys; additional checks are prevented with inline hint feedback.
 
 ## Batch page: minimal-invasive changes
 
