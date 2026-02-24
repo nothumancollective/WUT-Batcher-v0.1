@@ -1,5 +1,11 @@
 # Analyzer Docs — Changelog
 
+## 2026-02-24 (Plot controls: stage defaults for full-angle smoothness + pareto guards)
+- Added stage defaults for `Use full angles for smoothness (S_theta)`: Concept OFF, Stabilization ON, Final ON.
+- Stage-switch defaults are now applied in Analyzer stage defaults, while loaded analysis configs can still restore explicit saved overrides.
+- Hardened numeric validation for stage curves and Pareto mapping (`NaN/inf` now treated as missing and excluded from plotting).
+- Prevented Pareto render collapse paths by refusing non-finite values instead of coercing invalid data to numeric fallbacks.
+
 ## 2026-02-24 (Plot controls: metric bands default-on + alpha safety clamp)
 - Switched Analyzer metric-band default to ON while keeping the `Display Advanced -> Show metric bands` toggle active.
 - Added a global, size-aware band opacity cap (max alpha <= 0.18) so trend/consistency/defect bands cannot cover curve data.

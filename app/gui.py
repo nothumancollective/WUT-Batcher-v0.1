@@ -694,6 +694,12 @@ STAGE_COMPARE_OVERLAY_KEY: Dict[str, str] = {
     "final": "r_off",
 }
 
+STAGE_SMOOTHNESS_FULL_ANGLES_DEFAULT: Dict[str, bool] = {
+    "concept": False,
+    "stabilization": True,
+    "final": True,
+}
+
 STAGE_COMPARE_LAYOUTS: Dict[str, List[Dict[str, str]]] = {
     "concept": [
         {"slot": "A", "kind": "heatmap", "key": "heatmap", "title": "Polar Heatmap", "help": "Single-candidate heatmap view (select C1..C5 above)."},
@@ -1640,6 +1646,8 @@ class ParetoScatterCanvas(QLabel):
                 x_value = float(row.get("x_value"))
                 y_value = float(row.get("y_value"))
             except Exception:
+                continue
+            if not (math.isfinite(x_value) and math.isfinite(y_value)):
                 continue
             color = row.get("color")
             if isinstance(color, QColor):
@@ -7819,7 +7827,7 @@ class AnalysePage(QWidget):
                 freq_hz = float(row.get("freq_hz"))  # type: ignore[arg-type]
             except Exception:
                 continue
-            if freq_hz <= 0.0:
+            if freq_hz <= 0.0 or not math.isfinite(freq_hz):
                 continue
             value_raw = row.get("value")
             if value_raw is None and token == "beamwidth":
@@ -7827,6 +7835,8 @@ class AnalysePage(QWidget):
             try:
                 value = float(value_raw)  # type: ignore[arg-type]
             except Exception:
+                continue
+            if not math.isfinite(value):
                 continue
             points.append(
                 {
@@ -7986,13 +7996,24 @@ class AnalysePage(QWidget):
                     summary = dict(stage_payload.get("summary") or {})
                     x_value = summary.get("e_bw_mean")
                     y_value = summary.get("r_spill_mean")
-                    if x_value is not None and y_value is not None:
+                    try:
+                        x_numeric = float(x_value) if x_value is not None else None
+                        y_numeric = float(y_value) if y_value is not None else None
+                    except Exception:
+                        x_numeric = None
+                        y_numeric = None
+                    if (
+                        x_numeric is not None
+                        and y_numeric is not None
+                        and math.isfinite(x_numeric)
+                        and math.isfinite(y_numeric)
+                    ):
                         pareto_canvas.set_points(
                             points=[
                                 {
                                     "label": format_series_label(dict(self._selected_detail_payload or {}).get("version_id")),
-                                    "x_value": float(x_value),
-                                    "y_value": float(y_value),
+                                    "x_value": float(x_numeric),
+                                    "y_value": float(y_numeric),
                                     "color": compare_overlay_color(0),
                                     "selected": True,
                                 }
@@ -8141,7 +8162,13 @@ class AnalysePage(QWidget):
             stage_summary = self._compare_stage_summary_for_candidate(candidate)
             if stage_summary:
                 value = stage_summary.get(f"{token}_mean")
-        return self._format_float(value, digits)
+        try:
+            numeric = float(value) if value is not None else None
+        except Exception:
+            numeric = None
+        if numeric is None or not math.isfinite(numeric):
+            return "--"
+        return self._format_float(numeric, digits)
 
     def _compare_stage_summary_for_candidate(self, candidate: Mapping[str, Any]) -> Dict[str, Any]:
         target_identity = self._compare_identity(dict(candidate))
@@ -8693,9 +8720,12 @@ class AnalysePage(QWidget):
         if token in direct_map:
             raw = candidate.get(direct_map[token])
             try:
-                return float(raw) if raw is not None else None
+                value = float(raw) if raw is not None else None
             except Exception:
                 return None
+            if value is None or not math.isfinite(value):
+                return None
+            return value
         if stage_summary is None:
             return None
         summary_key = f"{token}_mean"
@@ -8704,9 +8734,12 @@ class AnalysePage(QWidget):
         except Exception:
             value = None
         try:
-            return float(value) if value is not None else None
+            numeric = float(value) if value is not None else None
         except Exception:
             return None
+        if numeric is None or not math.isfinite(numeric):
+            return None
+        return numeric
 
     def _render_compare_pareto(self, _index: int = 0) -> None:
         rendered = False
@@ -8941,7 +8974,7 @@ class AnalysePage(QWidget):
         finally:
             self._control_sync_guard = False
         self._sync_band_custom_visibility()
-        self._apply_stage_defaults(include_filters=False)
+        self._apply_stage_defaults(include_filters=False, apply_stage_display_defaults=False)
 
     def _open_compare_autopick_dialog(self) -> None:
         if self._source_key() != "project":
@@ -9811,7 +9844,12 @@ class AnalysePage(QWidget):
     def _update_toolbar_context_chips(self) -> None:
         self.compute_btn.setText("Refresh KPIs")
 
-    def _apply_stage_defaults(self, *, include_filters: bool = True) -> None:
+    def _apply_stage_defaults(
+        self,
+        *,
+        include_filters: bool = True,
+        apply_stage_display_defaults: bool = True,
+    ) -> None:
         stage = dict(self._stage_presets.get(self._selected_stage_id(), {}) or {})
         if include_filters:
             filters = dict(stage.get("filters", {}) or {})
@@ -9822,6 +9860,10 @@ class AnalysePage(QWidget):
                 self.min_score_spin.setValue(float(filters.get("min_score", 0.0) or 0.0))
             finally:
                 self._control_sync_guard = False
+        if apply_stage_display_defaults:
+            stage_token = self._selected_stage_id()
+            stage_default = bool(STAGE_SMOOTHNESS_FULL_ANGLES_DEFAULT.get(stage_token, False))
+            self._use_full_angles_for_smoothness = stage_default
         self._refresh_compare_table_column_mapping()
         self._apply_stage_column_visibility()
         self._apply_stage_plot_layout()
