@@ -1,5 +1,11 @@
 ﻿# Analyzer Docs â€” Changelog
 
+## 2026-02-24 (Compare left-panel regression coverage + docs sync)
+- Added tests/test_gui_analyzer_compare_left_panel_ui.py with focused coverage for fixed 5-slot compare table contract, stage-driven KPI column remap, active-slot to heatmap default sync, and safe remove-slot behavior.
+- Updated existing compare UI tests to match the redesigned left panel (no legacy compare_kpi_panel / compare_kpi_matrix assumptions).
+- Updated docs/analyzer/02_ui_architecture.md to document the combined left panel and plot-only right grid.
+- Added docs/analyzer/e2e_compare_left_panel_fix_smoketest.md with offscreen end-to-end workflow and responsive geometry probe results.
+
 ## 2026-02-24 (Compare active candidate wiring: heatmap default + overlay emphasis)
 - Compare slot row selection now immediately redraws overlay with active-candidate emphasis while preserving C1..C5 color mapping.
 - Added overlay series style support (`alpha`, `line_width`) in `MetricCurveCanvas` so non-active candidates are visually de-emphasized.
@@ -788,5 +794,6 @@
 
 ## 2026-02-24 (Merge integration follow-up)
 - Aligned GUI regression `test_version_bar_widgets_are_updated_in_place` with the stacked ATH params widget model (`version_ath_params_rows_widget` + empty-label placeholder) after merging `ui/analyzer-versionbar-polish-final`.
+
 
 

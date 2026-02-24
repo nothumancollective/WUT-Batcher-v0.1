@@ -1,6 +1,6 @@
 # Analyzer UI Architecture (Modern, Scalable, MT/HT Workflow)
 
-**Last updated:** 2026-02-23
+**Last updated:** 2026-02-24
 
 This document captures the **UI/navigation decisions** and **implementation constraints** for the Analyzer UI.
 It is written to be actionable for Codex implementation while minimizing risk to existing Batch UI polish.
@@ -446,8 +446,9 @@ The Analyzer page is planned with two explicit subviews:
 ### Compare workspace
 
 - Compare now follows a shortlist + plots architecture:
-  - left: fixed `C1..C5` shortlist slots with stable color markers, score/flags, remove controls
-  - right: overlay + heatmap plot tiles, compact KPI compare table, candidate selector for heatmap
+  - left: fixed `C1..C5` combined selection table with stable color markers, score/flags, stage-specific KPI columns, remove controls
+  - right: plot-only 2x2 grid (`Overlay`, `Heatmap`, `Active Candidate Curve`, `Pareto`)
+- Compare no longer renders a standalone `Selected Candidate KPIs` block inside the plot grid.
 - Candidate identity is UI-facing `Batch/Version` by default.
 - Internal `run_id` remains available in details dialog/raw payloads only.
 
@@ -534,7 +535,7 @@ The Analyzer page is planned with two explicit subviews:
   - heatmap: angle ticks+labels, log-frequency major/minor ticks, subtle grid lines, stable orientation (larger angles map upward)
   - beamwidth/overlay: consistent y-degree ticks, log/linear x-axis ticks, improved bottom/left padding to prevent clipped labels
   - redundant in-plot title strings were removed where tile headers already provide context.
-- Compare left column now emphasizes shortlist + selected KPI insight:
-  - narrower default shortlist pane
-  - compact `Selected Candidate KPIs` panel under shortlist
-  - `Heatmap candidate` selector explicitly documents single-candidate heatmap behavior while beamwidth remains overlaid.
+- Compare left column now centralizes selection management + KPI display:
+  - compact action row (`Add selected`, `Auto-pick`, `Save`, `Load`)
+  - one combined shortlist/KPI table with stage-dependent KPI headers
+  - row selection defines active candidate and drives default heatmap candidate.

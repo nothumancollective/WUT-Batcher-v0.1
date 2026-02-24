@@ -149,7 +149,8 @@ class AnalyzerCompareUiTests(unittest.TestCase):
             saved_selector = page.findChild(QComboBox, "AnalyzerAnalysisSelector")
             self.assertIsNotNone(slots_table)
             self.assertIsNotNone(saved_selector)
-            self.assertTrue(hasattr(page, "compare_kpi_panel"))
+            self.assertFalse(hasattr(page, "compare_kpi_panel"))
+            self.assertTrue(hasattr(page, "compare_focus_canvas"))
             self.assertFalse(page.compare_table.isVisible())
             self.assertIn("heatmap", page.compare_heatmap_selector.toolTip().lower())
 
@@ -395,8 +396,8 @@ class AnalyzerCompareUiTests(unittest.TestCase):
             page._apply_runs_payload(payload)
             self.assertEqual(page.compare_slots_table.item(0, 2).text(), "88.00")
 
-    def test_compare_kpi_matrix_renders_c1_to_c5_values(self) -> None:
-        with tempfile.TemporaryDirectory(prefix="wut_stage_compare_kpi_matrix_") as tmp:
+    def test_compare_slots_table_renders_stage_kpi_values(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_stage_compare_slots_kpi_") as tmp:
             service = _build_service(Path(tmp))
             page = AnalysePage(service=service)
             candidates = []
@@ -416,10 +417,16 @@ class AnalyzerCompareUiTests(unittest.TestCase):
                     }
                 )
             page._set_compare_candidates(candidates)
-            self.assertEqual(page.compare_kpi_matrix.rowCount(), 6)
-            self.assertEqual(page.compare_kpi_matrix.columnCount(), 6)
-            self.assertEqual(page.compare_kpi_matrix.item(0, 1).text(), "90.00")
-            self.assertEqual(page.compare_kpi_matrix.item(5, 5).text(), "4")
+            headers = [
+                str(page.compare_slots_table.horizontalHeaderItem(i).text() or "")
+                for i in range(page.compare_slots_table.columnCount())
+            ]
+            self.assertIn("Pattern Ctrl (oct)", headers)
+            self.assertIn("BW Err (deg)", headers)
+            score_col = headers.index("Score")
+            flags_col = headers.index("Flags")
+            self.assertEqual(page.compare_slots_table.item(0, score_col).text(), "90.00")
+            self.assertEqual(page.compare_slots_table.item(4, flags_col).text(), "4")
 
     def test_beamwidth_overlay_includes_target_series_and_saturation_status(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_stage_compare_bw_sat_") as tmp:
