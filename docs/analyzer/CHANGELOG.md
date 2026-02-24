@@ -1,5 +1,9 @@
 ﻿# Analyzer Docs â€” Changelog
 
+## 2026-02-24 (Auto Scale toggle: selected-state styling parity)
+- Switched Analyzer Auto Scale to the standard analyzer toggle style path (QToolButton + analyzerToggle=true) so :checked uses the same selected visuals as other analyzer toggle buttons.
+- Preserved Auto Scale behavior, sizing, spacing, and toolbar layout; this is visual-state parity only.
+
 ## 2026-02-24 (Metric bands: threshold-anchored spec regions only)
 - Replaced curve-attached metric band fills (trend/consistency/defect glow-style envelopes) with threshold-anchored region/line primitives.
 - Metric bands now render as in-plot spec references (LinearRegionItem/InfiniteLine semantics) independent of the data-curve shape.
