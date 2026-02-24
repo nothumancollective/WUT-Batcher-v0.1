@@ -1,5 +1,10 @@
 # Analyzer Docs — Changelog
 
+## 2026-02-24 (Plot UX: adaptive x-tick label spacing guard)
+- Added a shared `x_tick_label_min_gap_px` theme metric so Heatmap, metric-curve, and Pareto x-axis labels skip overly-dense neighboring labels instead of colliding.
+- Kept all major grid lines/ticks while reducing text clutter on narrower tile widths; improves readability at `1366x768` and below.
+- No KPI/runner/export behavior changes; this commit is rendering-only.
+
 ## 2026-02-24 (Metric bands: smooth strip rendering + advanced control)
 - Added `Smooth metric bands` to `Display -> Advanced` (default ON), alongside `Show metric bands`.
 - Metric curve renderers now support both smooth filled bands and block-strip fallback mode via a shared `band_smooth` style flag.

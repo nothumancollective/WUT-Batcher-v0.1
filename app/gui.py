@@ -313,6 +313,7 @@ class AnalyzerPlotStyle:
     bottom_margin_px: int = 64
     x_tick_label_y_offset_px: int = 20
     x_tick_label_height_px: int = 16
+    x_tick_label_min_gap_px: int = 24
     x_axis_label_height_px: int = 18
     x_axis_label_bottom_pad_px: int = 6
     y_tick_label_height_px: int = 16
@@ -412,6 +413,7 @@ def apply_plot_theme(
         "x_axis_label_bottom_pad_px": x_axis_label_bottom_pad_px,
         "x_tick_label_height_px": x_tick_label_height_px,
         "x_tick_label_y_offset_px": x_tick_label_y_offset_px,
+        "x_tick_label_min_gap_px": max(22, int(round(2.9 * em))),
         "y_tick_label_height_px": max(int(tick_fm.height() + 2), 14),
         "y_tick_label_right_pad_px": y_tick_label_right_pad_px,
         "y_tick_label_min_gap_px": max(12, int(round(1.8 * em))),
@@ -976,9 +978,14 @@ class HeatmapCanvas(QLabel):
             painter.setPen(QPen(QColor(ANALYZER_PLOT_STYLE.grid_major_color), 1))
             painter.setFont(_font_with_pixel_size(self.font(), int(theme.get("tick_font_px", 8))))
             tick_text_w = max(int(painter.fontMetrics().horizontalAdvance("16k")) + 12, 40)
+            last_tick_label_x = -10_000
+            min_gap = int(theme.get("x_tick_label_min_gap_px", ANALYZER_PLOT_STYLE.x_tick_label_min_gap_px))
             for tick in major_ticks:
                 x = x_of(float(tick))
                 painter.drawLine(x, margin_top, x, margin_top + plot_h)
+                if abs(int(x) - int(last_tick_label_x)) < max(min_gap, 1):
+                    continue
+                last_tick_label_x = int(x)
                 painter.setPen(QColor("#A6AFBC"))
                 painter.drawText(
                     x - (tick_text_w // 2),
@@ -1375,9 +1382,14 @@ class MetricCurveCanvas(QLabel):
         painter.setPen(QPen(QColor(ANALYZER_PLOT_STYLE.grid_major_color), 1))
         painter.setFont(_font_with_pixel_size(self.font(), int(theme.get("tick_font_px", 8))))
         tick_text_w = max(int(painter.fontMetrics().horizontalAdvance("16k")) + 12, 40)
+        last_tick_label_x = -10_000
+        min_gap = int(theme.get("x_tick_label_min_gap_px", ANALYZER_PLOT_STYLE.x_tick_label_min_gap_px))
         for tick in major_ticks:
             x = int(round(x_of(tick)))
             painter.drawLine(x, margin_top, x, margin_top + plot_h)
+            if abs(int(x) - int(last_tick_label_x)) < max(min_gap, 1):
+                continue
+            last_tick_label_x = int(x)
             painter.setPen(QColor("#A6AFBC"))
             painter.drawText(
                 x - (tick_text_w // 2),
@@ -1757,10 +1769,15 @@ class ParetoScatterCanvas(QLabel):
                 f"{y_tick:.2f}",
             )
         tick_text_w = max(int(painter.fontMetrics().horizontalAdvance("16k")) + 12, 40)
+        last_tick_label_x = -10_000
+        min_gap = int(theme.get("x_tick_label_min_gap_px", ANALYZER_PLOT_STYLE.x_tick_label_min_gap_px))
         for x_tick in _linear_ticks(x_min, x_max, max_count=tick_max):
             x = int(round(x_of(x_tick)))
             painter.setPen(QPen(QColor("#2F3A4D"), 1))
             painter.drawLine(x, margin_top, x, margin_top + plot_h)
+            if abs(int(x) - int(last_tick_label_x)) < max(min_gap, 1):
+                continue
+            last_tick_label_x = int(x)
             painter.setPen(QColor("#A6AFBC"))
             painter.drawText(
                 x - (tick_text_w // 2),
