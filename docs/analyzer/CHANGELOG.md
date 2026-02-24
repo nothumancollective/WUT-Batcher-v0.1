@@ -1,5 +1,10 @@
 ﻿# Analyzer Docs â€” Changelog
 
+## 2026-02-24 (Final stage ripple defect visualization)
+- Added `defect_band` rendering mode in `MetricCurveCanvas` with threshold-zone shading, filled ripple band, and hotspot markers.
+- Final-stage `r_off` Explorer panel now uses defect-view styling (risk-band language) instead of plain line rendering.
+- Final-stage smoothness and plane-consistency panels keep compact strip styling so ripple remains the visual focus.
+
 ## 2026-02-24 (Stabilization stage trend/consistency visualization)
 - Added stage-aware curve rendering modes in `MetricCurveCanvas`: `trend_band` and `consistency_strip` (display-only style metadata).
 - Stabilization DI proxy now renders as a trend band with regime guides instead of a plain thin line.
@@ -809,6 +814,7 @@
 
 ## 2026-02-24 (Merge integration follow-up)
 - Aligned GUI regression `test_version_bar_widgets_are_updated_in_place` with the stacked ATH params widget model (`version_ath_params_rows_widget` + empty-label placeholder) after merging `ui/analyzer-versionbar-polish-final`.
+
 
 
 

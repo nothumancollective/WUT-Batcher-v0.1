@@ -537,9 +537,9 @@ STAGE_EXPLORER_LAYOUTS: Dict[str, List[Dict[str, str]]] = {
     ],
     "final": [
         {"slot": "A", "key": "heatmap", "title": "Polar Map", "help": "Heatmap with -6 dB contour and target window."},
-        {"slot": "B", "key": "r_off", "title": "Off-axis Ripple vs f", "help": "Ripple spread across key off-axis angles."},
-        {"slot": "C", "key": "s_theta", "title": "Pattern Smoothness vs f", "help": "RMS angular gradient in the active window."},
-        {"slot": "D", "key": "e_sym_shape", "title": "Plane Consistency vs f", "help": "Inter-plane spread of beamwidth/DI behavior."},
+        {"slot": "B", "key": "r_off", "title": "Off-axis Ripple Defect View", "help": "Defect-focused ripple risk view with hotspot markers."},
+        {"slot": "C", "key": "s_theta", "title": "Smoothness Stability Strip", "help": "Compact smoothness trend strip over frequency."},
+        {"slot": "D", "key": "e_sym_shape", "title": "Plane Consistency Strip", "help": "Compact inter-plane consistency trend strip."},
     ],
 }
 
@@ -1158,6 +1158,38 @@ class MetricCurveCanvas(QLabel):
             )
             painter.setPen(QPen(QColor(ANALYZER_PLOT_STYLE.grid_major_color), 1))
 
+        defect_rows = [row for row in points_by_series if str(row.get("style") or "").strip().lower() == "defect_band"]
+
+        def _fill_horizontal_band(value_lo: float, value_hi: float, color: QColor) -> None:
+            lo = max(float(y_min), min(float(value_lo), float(y_max)))
+            hi = max(float(y_min), min(float(value_hi), float(y_max)))
+            if hi <= lo:
+                return
+            y_a = int(round(y_of(lo)))
+            y_b = int(round(y_of(hi)))
+            top = min(y_a, y_b)
+            height_px = max(abs(y_b - y_a), 1)
+            painter.fillRect(margin_left, top, plot_w, height_px, color)
+
+        if defect_rows:
+            defect_thresholds = sorted(
+                {
+                    float(item)
+                    for row in defect_rows
+                    for item in list(row.get("thresholds", []) or [])
+                    if y_min <= float(item) <= y_max
+                }
+            )
+            if len(defect_thresholds) >= 3:
+                _fill_horizontal_band(y_min, defect_thresholds[0], QColor(74, 124, 90, 28))
+                _fill_horizontal_band(defect_thresholds[0], defect_thresholds[1], QColor(170, 142, 72, 32))
+                _fill_horizontal_band(defect_thresholds[1], defect_thresholds[2], QColor(186, 96, 82, 38))
+                _fill_horizontal_band(defect_thresholds[2], y_max, QColor(204, 78, 78, 48))
+            elif len(defect_thresholds) >= 2:
+                _fill_horizontal_band(y_min, defect_thresholds[0], QColor(74, 124, 90, 28))
+                _fill_horizontal_band(defect_thresholds[0], defect_thresholds[1], QColor(170, 142, 72, 34))
+                _fill_horizontal_band(defect_thresholds[1], y_max, QColor(196, 82, 82, 44))
+
         threshold_values = sorted(
             {
                 float(value)
@@ -1235,6 +1267,37 @@ class MetricCurveCanvas(QLabel):
                     strip_color.setAlpha(int(round(34 + (150.0 * max(0.0, min(normalized, 1.0))))))
                     painter.fillRect(seg_left, strip_top, seg_w, strip_height, strip_color)
                 _draw_polyline(points, color, max(line_width, 2.2))
+            elif style_token == "defect_band" and len(points) >= 2:
+                fill_alpha = float(row.get("fill_alpha", 0.22))
+                fill_color = QColor(color)
+                fill_color.setAlphaF(max(0.0, min(fill_alpha, 0.95)))
+                band = QPainterPath()
+                first_x, first_y = points[0]
+                band.moveTo(x_of(first_x), y_of(first_y))
+                for freq_hz, value in points[1:]:
+                    band.lineTo(x_of(freq_hz), y_of(value))
+                for freq_hz, _value in reversed(points):
+                    band.lineTo(x_of(freq_hz), y_of(y_min))
+                band.closeSubpath()
+                painter.fillPath(band, fill_color)
+                _draw_polyline(points, color, max(line_width, 2.6))
+                hotspot_raw = row.get("hotspot_threshold")
+                hotspot_threshold = None
+                if hotspot_raw is not None:
+                    try:
+                        hotspot_threshold = float(hotspot_raw)
+                    except Exception:
+                        hotspot_threshold = None
+                if hotspot_threshold is None:
+                    thresholds = [float(item) for item in list(row.get("thresholds", []) or [])]
+                    hotspot_threshold = max(thresholds) if thresholds else None
+                if hotspot_threshold is not None:
+                    painter.setBrush(QColor(255, 214, 166, 220))
+                    painter.setPen(QPen(QColor(255, 168, 120), 1))
+                    for freq_hz, value in points:
+                        if float(value) >= float(hotspot_threshold):
+                            painter.drawEllipse(QPoint(int(round(x_of(freq_hz))), int(round(y_of(value)))), 3, 3)
+                    painter.setBrush(Qt.NoBrush)
             else:
                 _draw_polyline(points, color, line_width)
             if has_legend and show_legend:
@@ -7324,22 +7387,36 @@ class AnalysePage(QWidget):
         stage_token = normalize_stage_id(stage_id, fallback=DEFAULT_STAGE_ID)
         key_token = str(metric_key or "").strip().lower()
         context_token = str(context or "explorer").strip().lower()
-        if stage_token != "stabilization":
-            return {}
-        if key_token == "di_proxy":
-            return {
-                "style": "trend_band",
-                "fill_alpha": 0.24 if context_token == "explorer" else 0.14,
-                "regime_markers": bool(context_token == "explorer"),
-                "thresholds": [2.0, 4.0],
-                "line_width": 3.0 if context_token == "explorer" else 2.4,
-            }
-        if key_token in {"s_theta", "e_sym_shape"}:
-            return {
-                "style": "consistency_strip",
-                "line_width": 2.2 if context_token == "explorer" else 2.0,
-                "thresholds": [0.20, 0.40] if key_token == "s_theta" else [0.35, 0.75],
-            }
+        if stage_token == "stabilization":
+            if key_token == "di_proxy":
+                return {
+                    "style": "trend_band",
+                    "fill_alpha": 0.24 if context_token == "explorer" else 0.14,
+                    "regime_markers": bool(context_token == "explorer"),
+                    "thresholds": [2.0, 4.0],
+                    "line_width": 3.0 if context_token == "explorer" else 2.4,
+                }
+            if key_token in {"s_theta", "e_sym_shape"}:
+                return {
+                    "style": "consistency_strip",
+                    "line_width": 2.2 if context_token == "explorer" else 2.0,
+                    "thresholds": [0.20, 0.40] if key_token == "s_theta" else [0.35, 0.75],
+                }
+        if stage_token == "final":
+            if key_token == "r_off":
+                return {
+                    "style": "defect_band",
+                    "fill_alpha": 0.28 if context_token == "explorer" else 0.18,
+                    "line_width": 3.2 if context_token == "explorer" else 2.6,
+                    "thresholds": [2.0, 4.0, 6.0],
+                    "hotspot_threshold": 6.0,
+                }
+            if key_token in {"s_theta", "e_sym_shape"}:
+                return {
+                    "style": "consistency_strip",
+                    "line_width": 2.1 if context_token == "explorer" else 2.0,
+                    "thresholds": [0.20, 0.40] if key_token == "s_theta" else [0.35, 0.75],
+                }
         return {}
 
     def _render_plot_payload(self, payload: Dict[str, Any]) -> None:
