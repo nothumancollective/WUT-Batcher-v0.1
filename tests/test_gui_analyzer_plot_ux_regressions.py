@@ -319,6 +319,27 @@ class AnalyzerPlotUxRegressionTests(unittest.TestCase):
                 help_btn = panel.get("help_btn")
                 self.assertEqual(_icon_png_bytes(help_btn.icon()), info_bytes)
 
+    def test_metric_band_toggle_state_flows_into_curve_style_profile(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_plot_ux_metric_band_toggle_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            self.assertFalse(bool(page._show_metric_bands))
+            stabilization_profile = page._curve_style_profile(
+                stage_id="stabilization",
+                metric_key="di_proxy",
+                context="explorer",
+            )
+            self.assertIn("show_band", stabilization_profile)
+            self.assertFalse(bool(stabilization_profile.get("show_band")))
+            page._apply_analysis_config({"show_metric_bands": True})
+            self.assertTrue(bool(page._show_metric_bands))
+            stabilization_profile_enabled = page._curve_style_profile(
+                stage_id="stabilization",
+                metric_key="di_proxy",
+                context="explorer",
+            )
+            self.assertTrue(bool(stabilization_profile_enabled.get("show_band")))
+
 
 if __name__ == "__main__":
     unittest.main()

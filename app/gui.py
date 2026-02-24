@@ -1211,6 +1211,7 @@ class MetricCurveCanvas(QLabel):
                     continue
             thresholds = sorted(set(thresholds))
             regime_markers = bool(row.get("regime_markers", False))
+            show_band = bool(row.get("show_band", True))
             points: List[Tuple[float, float]] = []
             for item in points_raw:
                 if isinstance(item, Mapping):
@@ -1242,6 +1243,7 @@ class MetricCurveCanvas(QLabel):
                         "fill_alpha": fill_alpha,
                         "thresholds": thresholds,
                         "regime_markers": regime_markers,
+                        "show_band": show_band,
                         "hotspot_threshold": row.get("hotspot_threshold"),
                     }
                 )
@@ -1347,7 +1349,11 @@ class MetricCurveCanvas(QLabel):
             )
             painter.setPen(QPen(QColor(ANALYZER_PLOT_STYLE.grid_major_color), 1))
 
-        defect_rows = [row for row in points_by_series if str(row.get("style") or "").strip().lower() == "defect_band"]
+        defect_rows = [
+            row
+            for row in points_by_series
+            if str(row.get("style") or "").strip().lower() == "defect_band" and bool(row.get("show_band", True))
+        ]
 
         def _fill_horizontal_band(value_lo: float, value_hi: float, color: QColor) -> None:
             lo = max(float(y_min), min(float(value_lo), float(y_max)))
@@ -1408,7 +1414,8 @@ class MetricCurveCanvas(QLabel):
             show_legend = bool(row.get("show_legend"))
             line_width = float(row.get("line_width", 2.0))
             style_token = str(row.get("style") or "line").strip().lower()
-            if style_token == "trend_band" and len(points) >= 2:
+            show_band = bool(row.get("show_band", True))
+            if style_token == "trend_band" and len(points) >= 2 and show_band:
                 values = [float(value) for _freq, value in points]
                 mean_value = float(sum(values) / float(len(values)))
                 fill_alpha = float(row.get("fill_alpha", 0.18))
@@ -1442,7 +1449,7 @@ class MetricCurveCanvas(QLabel):
                             marker_y = int(round(y_of(points[idx][1])))
                             painter.drawEllipse(QPoint(marker_x, marker_y), 3, 3)
                     painter.setBrush(Qt.NoBrush)
-            elif style_token == "consistency_strip" and len(points) >= 2:
+            elif style_token == "consistency_strip" and len(points) >= 2 and show_band:
                 strip_height = max(10, int(round(plot_h * 0.13)))
                 strip_top = int(margin_top + 4)
                 for idx in range(len(points) - 1):
@@ -1456,7 +1463,7 @@ class MetricCurveCanvas(QLabel):
                     strip_color.setAlpha(int(round(34 + (150.0 * max(0.0, min(normalized, 1.0))))))
                     painter.fillRect(seg_left, strip_top, seg_w, strip_height, strip_color)
                 _draw_polyline(points, color, max(line_width, 1.0))
-            elif style_token == "defect_band" and len(points) >= 2:
+            elif style_token == "defect_band" and len(points) >= 2 and show_band:
                 fill_alpha = float(row.get("fill_alpha", 0.22))
                 fill_color = QColor(color)
                 fill_color.setAlphaF(max(0.0, min(fill_alpha, 0.95)))
@@ -5419,6 +5426,7 @@ class AnalysePage(QWidget):
         self._pending_note_text = ""
         self._use_full_angles_for_smoothness = False
         self._show_mirrored_minus6_contour = False
+        self._show_metric_bands = False
         self._latest_plot_payload: Dict[str, Any] = {}
         self._explorer_stage_panels: Dict[str, Dict[str, Any]] = {}
         self._compare_stage_panels: Dict[str, Dict[str, Any]] = {}
@@ -7470,11 +7478,17 @@ class AnalysePage(QWidget):
         mirrored_minus6_check.setChecked(bool(getattr(self, "_show_mirrored_minus6_contour", False)))
         form.addWidget(mirrored_minus6_check, 3, 2, 1, 2, Qt.AlignLeft | Qt.AlignVCenter)
 
+        metric_bands_check = QCheckBox("Show metric bands")
+        metric_bands_check.setObjectName("AnalyzerMetricBandsCheck")
+        metric_bands_check.setChecked(bool(self._show_metric_bands))
+        metric_bands_check.setToolTip("Enable decorative trend/defect strip fills in stage metric plots.")
+        form.addWidget(metric_bands_check, 4, 0, 1, 2, Qt.AlignLeft | Qt.AlignVCenter)
+
         smoothness_check = QCheckBox("Use full angles for smoothness (S_theta)")
         smoothness_check.setObjectName("AnalyzerFullAnglesSmoothnessCheck")
         smoothness_check.setChecked(bool(self._use_full_angles_for_smoothness))
         smoothness_check.setToolTip("When enabled, S_theta uses all angles instead of the target window.")
-        form.addWidget(smoothness_check, 4, 0, 1, 4, Qt.AlignLeft | Qt.AlignVCenter)
+        form.addWidget(smoothness_check, 4, 2, 1, 2, Qt.AlignLeft | Qt.AlignVCenter)
         body.addLayout(form)
         close_row = QHBoxLayout()
         close_row.addStretch(1)
@@ -7501,6 +7515,9 @@ class AnalysePage(QWidget):
             mirrored_changed = bool(getattr(self, "_show_mirrored_minus6_contour", False)) != bool(mirrored_minus6_check.isChecked())
             if mirrored_changed:
                 plot_changed = True
+            metric_bands_changed = bool(self._show_metric_bands) != bool(metric_bands_check.isChecked())
+            if metric_bands_changed:
+                plot_changed = True
             smoothness_changed = bool(self._use_full_angles_for_smoothness) != bool(smoothness_check.isChecked())
 
             self._control_sync_guard = True
@@ -7512,6 +7529,7 @@ class AnalysePage(QWidget):
             self.heatmap_clamp_min_spin.setValue(float(clamp_min_spin.value()))
             self.raw_bins_check.setChecked(bool(raw_bins_check.isChecked()))
             self._show_mirrored_minus6_contour = bool(mirrored_minus6_check.isChecked())
+            self._show_metric_bands = bool(metric_bands_check.isChecked())
             self._use_full_angles_for_smoothness = bool(smoothness_check.isChecked())
             self._control_sync_guard = False
 
@@ -7743,11 +7761,11 @@ class AnalysePage(QWidget):
             "contour_width": 2.1,
         }
 
-    @staticmethod
-    def _curve_style_profile(*, stage_id: str, metric_key: str, context: str) -> Dict[str, Any]:
+    def _curve_style_profile(self, *, stage_id: str, metric_key: str, context: str) -> Dict[str, Any]:
         stage_token = normalize_stage_id(stage_id, fallback=DEFAULT_STAGE_ID)
         key_token = str(metric_key or "").strip().lower()
         context_token = str(context or "explorer").strip().lower()
+        show_bands = bool(self._show_metric_bands)
         if stage_token == "stabilization":
             if key_token == "di_proxy":
                 return {
@@ -7756,12 +7774,14 @@ class AnalysePage(QWidget):
                     "regime_markers": bool(context_token == "explorer"),
                     "thresholds": [2.0, 4.0],
                     "line_width": 1.4 if context_token == "explorer" else 1.2,
+                    "show_band": show_bands,
                 }
             if key_token in {"s_theta", "e_sym_shape"}:
                 return {
                     "style": "consistency_strip",
                     "line_width": 1.2,
                     "thresholds": [0.20, 0.40] if key_token == "s_theta" else [0.35, 0.75],
+                    "show_band": show_bands,
                 }
         if stage_token == "final":
             if key_token == "r_off":
@@ -7771,12 +7791,14 @@ class AnalysePage(QWidget):
                     "line_width": 1.4 if context_token == "explorer" else 1.2,
                     "thresholds": [2.0, 4.0, 6.0],
                     "hotspot_threshold": 6.0,
+                    "show_band": show_bands,
                 }
             if key_token in {"s_theta", "e_sym_shape"}:
                 return {
                     "style": "consistency_strip",
                     "line_width": 1.2,
                     "thresholds": [0.20, 0.40] if key_token == "s_theta" else [0.35, 0.75],
+                    "show_band": show_bands,
                 }
         return {}
 
@@ -8417,7 +8439,7 @@ class AnalysePage(QWidget):
                 "line_width": line_width,
                 "alpha": alpha,
             }
-            for style_key in ("style", "fill_alpha", "thresholds", "regime_markers", "hotspot_threshold"):
+            for style_key in ("style", "fill_alpha", "thresholds", "regime_markers", "hotspot_threshold", "show_band"):
                 if style_key in style_profile:
                     series_row[style_key] = style_profile.get(style_key)
             series.append(series_row)
@@ -8658,6 +8680,7 @@ class AnalysePage(QWidget):
             "tol_deg": float(self.tol_spin.value()),
             "clamp_enabled": bool(self.heatmap_clamp_check.isChecked()),
             "clamp_min_db": float(self.heatmap_clamp_min_spin.value()),
+            "show_metric_bands": bool(self._show_metric_bands),
             "use_full_angles_for_smoothness": bool(self._use_full_angles_for_smoothness),
             "compare": {
                 "strategy": str(self._compare_last_strategy),
@@ -8751,6 +8774,7 @@ class AnalysePage(QWidget):
             self.tol_spin.setValue(float(config.get("tol_deg") or self.tol_spin.value()))
             self.heatmap_clamp_check.setChecked(bool(config.get("clamp_enabled", True)))
             self.heatmap_clamp_min_spin.setValue(float(config.get("clamp_min_db") or self.heatmap_clamp_min_spin.value()))
+            self._show_metric_bands = bool(config.get("show_metric_bands", self._show_metric_bands))
             self._use_full_angles_for_smoothness = bool(
                 config.get("use_full_angles_for_smoothness", self._use_full_angles_for_smoothness)
             )

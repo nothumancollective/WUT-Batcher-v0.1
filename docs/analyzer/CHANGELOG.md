@@ -1,5 +1,12 @@
 # Analyzer Docs — Changelog
 
+## 2026-02-24 (Plot UX: metric-band overlay toggle)
+- Added `Show metric bands` toggle to `Display Advanced` (default OFF) to keep trend/defect decorative overlays from covering plot data.
+- Extended analysis display config persistence to include `show_metric_bands` and applied it in analysis config reload flow.
+- Stage curve style profiles now carry an explicit `show_band` flag; metric renderers fall back to plain line mode when disabled.
+- Defect-zone horizontal band fills now render only when metric bands are enabled.
+- Added regression coverage for metric-band toggle state propagation into stage style profiles.
+
 ## 2026-02-24 (Analyzer UI: help icon set to info glyph)
 - Added `info.svg` to analyzer icon resources and QRC registry.
 - Replaced Analyzer plot-header help buttons and flags help icon from settings gear to info icon (`:/icons/info.svg`).

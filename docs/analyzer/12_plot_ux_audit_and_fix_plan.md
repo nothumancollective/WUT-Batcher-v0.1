@@ -165,3 +165,7 @@
 - `FIXED/VERIFIED` issue cluster 5.1 (help icon mismatch):
   - Analyzer plot-header help buttons and flags help now use `:/icons/info.svg` (info icon) instead of the settings gear icon.
   - Added new QRC icon asset (`info.svg`) and regression coverage validating the rendered icon bytes against the info asset.
+- `FIXED/VERIFIED` issue cluster 6.1 (metric stripe/band overdraw):
+  - Added `Show metric bands` toggle to `Display Advanced`; default is OFF to avoid plot-content obstruction.
+  - Trend/consistency/defect style renderers now respect `show_band` and fall back to clean line rendering when disabled.
+  - Decorative defect-zone horizontal fills are now drawn only when metric bands are enabled.
