@@ -402,6 +402,7 @@ class AnalyzerPageUiTests(unittest.TestCase):
             self.assertFalse(page.version_sweep_value_label.wordWrap())
             self.assertNotIn("\n", str(page.version_sweep_value_label.text() or ""))
             self.assertIn("Throat.Len", str(page.version_sweep_value_label.toolTip() or ""))
+            self.assertTrue(bool(page.version_sweep_value_label.property("analyzerSweepChip")))
             self.assertGreaterEqual(int(page.version_info_col3.minimumWidth()), 220)
             self.assertGreaterEqual(int(page.version_sweep_value_label.width()), int(page.version_info_col2.width()) - 12)
 

@@ -1,5 +1,9 @@
 # Analyzer Docs — Changelog
 
+## 2026-02-24 (Analyzer Version Bar final polish - sweep color token)
+- Rebound the Version Information sweep chip to the same active Sweep QSS token values used by `QPushButton#SweepButton[sweepActive="true"]`.
+- Removed the ad-hoc inline sweep blue in Analyzer so sweep highlighting is now color-consistent with Batch Sweep controls.
+
 ## 2026-02-24 (Analyzer Version Bar final polish - plane segments)
 - Unified H/V/D segmented plane button visuals: consistent border/padding/radius behavior for all segments.
 - Removed the V-only border-width override that caused the visual inset/offset artifact.

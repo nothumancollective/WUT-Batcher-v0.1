@@ -1153,10 +1153,15 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         min-height: 30px;
         padding: 0px {max(int(s['sm']) + 1, 4)}px;
     }}
-    QPushButton#SweepButton[sweepActive="true"] {{
+    QPushButton#SweepButton[sweepActive="true"],
+    QLabel[analyzerSweepChip="true"] {{
         border: 1px solid #4f8cff;
         color: #d9e7ff;
         background-color: rgba(79, 140, 255, 0.22);
+    }}
+    QLabel[analyzerSweepChip="true"] {{
+        border-radius: {r['sm']}px;
+        padding: 1px 6px;
     }}
     QPushButton[segment=\"true\"][disclosureHint="true"] {{
         border: 1px solid {c['accent']};
