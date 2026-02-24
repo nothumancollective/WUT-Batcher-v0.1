@@ -1,5 +1,10 @@
 # Analyzer Docs — Changelog
 
+## 2026-02-24 (Docs: defer 3D balloon plot scope)
+- Added a scope note to `docs/analyzer/02_ui_architecture.md` clarifying why true 3D directivity balloon plotting is deferred.
+- Documented that current `H/V/D` slice coverage is insufficient for reliable balloon rendering without heavy interpolation artifacts.
+- Linked Klippel references used for the scope boundary rationale.
+
 ## 2026-02-24 (Plot surfaces: black-slab root-cause background policy fix)
 - Added a dedicated Analyzer plot-tile frame contract (`ProjectIssuesPanel[analyzerPlotTile=true]`) with panel-consistent background/border styling.
 - Kept Heatmap/Curve/Pareto/TargetSummary canvases transparent so tile surfaces come from the themed parent frame, preventing black parent bleed-through.

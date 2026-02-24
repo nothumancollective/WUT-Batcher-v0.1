@@ -318,6 +318,16 @@ The Analyzer page is planned with two explicit subviews:
 - Batch inline hint presentation now uses reusable `HelperRow` components (optional icon + wrapped text + subtle surface), replacing plain helper labels while preserving hint logic.
 - Batch popup shells now reuse a shared frameless dialog template (`StyledDialogBase`) aligned with Export Advanced dialog visuals.
 - Batch body column sizing now enforces explicit left/right bounds during resize so expanded left cards remain clipped to the left column and cannot bleed into the right Preview/Exports column.
+
+## Scope note: 3D balloon plot deferred
+
+- A true directivity balloon visualization generally requires full 2D angular coverage (`theta` + `phi`) and spherical integration assumptions.
+- Current Analyzer scope is polar-slice based (`H`/`V`/`D`) and is not sufficient for a robust non-misleading 3D balloon without heavy interpolation artifacts.
+- Therefore 3D balloon rendering is intentionally out of scope for this UI polish pass; current stage visuals stay with 2D heatmap/curve summaries.
+
+References:
+- Klippel Training 8 (polar/contour/balloon and DI sphere integration context): `https://klippel.de/training/attachments/training8/Training_8_Measurement_of_Loudspeaker_Directivity_en.pdf`
+- Klippel holography poster (contour/polar/balloon terminology): `https://www.klippel.de/fileadmin/user_upload/KLIPPEL_-_Holographie_Poster.pdf`
 - R-OSSE subsection visibility now follows rendered `R-OSSE.*` rows when only parent-key compatibility visibility (`R-OSSE`) is present.
 
 ## Implementation status (Analyzer Phase 2A: Batch Review KPI MVP)
