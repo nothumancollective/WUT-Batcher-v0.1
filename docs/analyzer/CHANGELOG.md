@@ -1,5 +1,11 @@
 # Analyzer Docs — Changelog
 
+## 2026-02-24 (Plot UX: target overlay visibility floor)
+- Removed stage-dependent target-window dimming and switched heatmap target overlay profile to a consistent visibility contract across Concept/Stabilization/Final.
+- Added minimum alpha floors for both target shading and boundary lines in `HeatmapCanvas` so target overlays remain visible in Explorer and Compare.
+- Switched target boundary lines to solid lines for clearer target-window edges on dark UI backgrounds.
+- Added regression coverage to assert stage-invariant target overlay visibility floors.
+
 ## 2026-02-24 (Plot UX: transparent canvas background polish)
 - Switched active Analyzer plot canvases (Heatmap, MetricCurve, Pareto) to transparent outer canvas rendering instead of opaque `#111217` full-canvas fills.
 - Kept readability via subtle low-alpha interior plot wash + existing plot-rect borders, removing the black slab effect while preserving contrast cues.

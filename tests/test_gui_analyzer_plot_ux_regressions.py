@@ -263,6 +263,32 @@ class AnalyzerPlotUxRegressionTests(unittest.TestCase):
                 self.assertLessEqual(int(image.pixelColor(1, 1).alpha()), 10)
                 self.assertLessEqual(int(image.pixelColor(max(image.width() - 2, 1), 1).alpha()), 10)
 
+    def test_target_overlay_visibility_floor_is_stage_invariant(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_plot_ux_target_visibility_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            page._set_compare_candidates(
+                [
+                    {
+                        "project_id": "P001",
+                        "batch_id": "B001",
+                        "run_id": "R001",
+                        "version_id": "V001",
+                        "planes": ["H", "V"],
+                        "kpi_score": 88.0,
+                    }
+                ]
+            )
+            page._compare_plot_items = [_sample_compare_plot_items()[0]]
+            for stage_id in ("concept", "stabilization", "final"):
+                _set_stage(page, stage_id)
+                self.app.processEvents()
+                page._render_compare_visuals()
+                self.app.processEvents()
+                heatmap = page._compare_stage_panels["A"]["heatmap_canvas"]
+                self.assertGreaterEqual(int(getattr(heatmap, "_target_shade_alpha", 0)), 44)
+                self.assertGreaterEqual(int(getattr(heatmap, "_target_boundary_alpha", 0)), 180)
+
 
 if __name__ == "__main__":
     unittest.main()

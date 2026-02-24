@@ -846,7 +846,9 @@ class HeatmapCanvas(QLabel):
         )
         self._show_mirrored_minus6 = bool(show_mirrored_minus6)
         self._target_shade_alpha = max(0, min(int(target_shade_alpha), 255))
+        self._target_shade_alpha = max(44, self._target_shade_alpha)
         self._target_boundary_alpha = max(0, min(int(target_boundary_alpha), 255))
+        self._target_boundary_alpha = max(180, self._target_boundary_alpha)
         if isinstance(contour_color, tuple) and len(contour_color) >= 3:
             self._contour_color = QColor(int(contour_color[0]), int(contour_color[1]), int(contour_color[2]))
         else:
@@ -1029,7 +1031,7 @@ class HeatmapCanvas(QLabel):
                     QColor(93, 168, 255, int(self._target_shade_alpha)),
                 )
             if boundary_lines:
-                painter.setPen(QPen(QColor(142, 196, 255, int(self._target_boundary_alpha)), 1, Qt.DashLine))
+                painter.setPen(QPen(QColor(142, 196, 255, int(self._target_boundary_alpha)), 1, Qt.SolidLine))
                 for angle_line in boundary_lines:
                     y_line = y_of(float(angle_line))
                     painter.drawLine(margin_left, y_line, margin_left + plot_w, y_line)
@@ -7729,12 +7731,11 @@ class AnalysePage(QWidget):
 
     @staticmethod
     def _heatmap_overlay_profile(stage_id: str) -> Dict[str, Any]:
-        stage_token = normalize_stage_id(stage_id, fallback=DEFAULT_STAGE_ID)
         return {
-            "target_shade_alpha": 48 if stage_token == "concept" else 44,
-            "target_boundary_alpha": 186 if stage_token == "concept" else 172,
+            "target_shade_alpha": 56,
+            "target_boundary_alpha": 208,
             "contour_color": (255, 226, 128),
-            "contour_width": 2.2 if stage_token == "concept" else 2.0,
+            "contour_width": 2.1,
         }
 
     @staticmethod

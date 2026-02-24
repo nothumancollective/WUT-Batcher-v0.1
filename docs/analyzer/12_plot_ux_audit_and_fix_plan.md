@@ -155,3 +155,6 @@
 - `FIXED/VERIFIED` issue cluster 3.1 (black-box background perception):
   - Active plot canvases (Heatmap/MetricCurve/Pareto) now render with transparent outer canvas backgrounds instead of opaque dark full-canvas fills.
   - Plot areas keep only subtle low-alpha interior wash and plot-rect borders, avoiding the former heavy black slab appearance.
+- `FIXED/VERIFIED` issue cluster 2.1 (target-window visibility):
+  - Heatmap target overlay profile is now stage-invariant with minimum visibility floors for both shading and boundary lines.
+  - Boundary lines now render as solid contrast lines and no longer fade out via stage-dependent alpha dimming.
