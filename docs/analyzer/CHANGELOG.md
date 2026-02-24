@@ -1,5 +1,7 @@
 ﻿# Analyzer Docs â€” Changelog
 
+## 2026-02-24 (Analyzer Compare UX stabilizer smoke)
+- `E2E_SMOKE_OK`: validated Compare drawer add/remove interactivity, collapse/expand behavior, metric-band rendering toggles, target-deviation summary rendering, tile maximize/restore, and resize probes (`1920x1080`, `1366x768`, `1100x700`).
 ## 2026-02-24 (Curve plot clipping: keep bands/lines inside plot box)
 - Added explicit plot-rect clipping for analyzer metric-curve rendering paths (trend bands, consistency strips, defect regions, threshold lines, hotspots, and curve polylines).
 - This prevents draw-overflow artifacts outside the plot box for Plane Consistency, Coverage Uniformity, and Off-axis Ripple Defect views.
@@ -979,6 +981,7 @@
 
 ## 2026-02-24 (Merge integration follow-up)
 - Aligned GUI regression `test_version_bar_widgets_are_updated_in_place` with the stacked ATH params widget model (`version_ath_params_rows_widget` + empty-label placeholder) after merging `ui/analyzer-versionbar-polish-final`.
+
 
 
 
