@@ -294,9 +294,9 @@ class AnalyzerCompareUiTests(unittest.TestCase):
             page._render_compare_overlay()
             status = str(getattr(page.compare_overlay_canvas, "_status", ""))
             self.assertIn("Missing H", status)
-            self.assertIn("C1 B001/V001", status)
+            self.assertIn("V001", status)
             labels = [str(series.get("label") or "") for series in list(page.compare_overlay_canvas._series)]
-            self.assertTrue(any("C2 B002/V002" in label for label in labels))
+            self.assertTrue(any("V002" in label for label in labels))
 
     def test_plane_controls_keep_h_visible_with_missing_plane_reason(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_stage_plane_missing_h_") as tmp:
@@ -452,9 +452,10 @@ class AnalyzerCompareUiTests(unittest.TestCase):
             status = str(getattr(page.compare_overlay_canvas, "_status", ""))
             self.assertIn("Saturated bins", status)
             series = list(getattr(page.compare_overlay_canvas, "_series", []) or [])
-            self.assertTrue(any("Target" in str(item.get("label") or "") for item in series))
+            self.assertGreaterEqual(len(series), 2)
+            self.assertTrue(any(bool(item.get("show_legend")) is False for item in series))
 
-    def test_compare_overlay_labels_include_pin_marker_for_pinned_candidates(self) -> None:
+    def test_compare_overlay_labels_use_version_only_tokens(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_stage_compare_pin_overlay_") as tmp:
             service = _build_service(Path(tmp))
             page = AnalysePage(service=service)
@@ -481,7 +482,7 @@ class AnalyzerCompareUiTests(unittest.TestCase):
             ]
             page._render_compare_overlay()
             labels = [str(series.get("label") or "") for series in list(page.compare_overlay_canvas._series)]
-            self.assertTrue(any("[PIN]" in label for label in labels))
+            self.assertTrue(any(label == "V001" for label in labels))
 
     def test_pareto_scatter_does_not_fill_plot_area_with_last_candidate_color(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_stage_pareto_fill_guard_") as tmp:

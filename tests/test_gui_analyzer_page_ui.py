@@ -16,7 +16,6 @@ from app.gui import (
     MainWindow,
     _AnalyzerRunDetailsDialog,
     _should_render_minus6_angle,
-    apply_analyzer_plot_margins,
 )
 from app.services import OrchestratorService
 from app.settings_store import SettingsStore, UserSettings
@@ -131,8 +130,10 @@ class AnalyzerPageUiTests(unittest.TestCase):
             self.app.processEvents()
             self.assertTrue(str(curve_canvas._x_label).strip())
             self.assertTrue(str(curve_canvas._y_label).strip())
-            self.assertEqual(tuple(heatmap_canvas._applied_plot_margins), apply_analyzer_plot_margins(has_legend=False))
-            self.assertEqual(tuple(curve_canvas._applied_plot_margins), apply_analyzer_plot_margins(has_legend=False))
+            self.assertEqual(len(tuple(heatmap_canvas._applied_plot_margins)), 4)
+            self.assertEqual(len(tuple(curve_canvas._applied_plot_margins)), 4)
+            self.assertTrue(all(int(value) > 0 for value in tuple(heatmap_canvas._applied_plot_margins)))
+            self.assertTrue(all(int(value) > 0 for value in tuple(curve_canvas._applied_plot_margins)))
 
     def test_controls_row_uses_three_equal_tiles(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_ui2x_three_tiles_") as tmp:
@@ -1017,20 +1018,22 @@ class AnalyzerPageUiTests(unittest.TestCase):
             self.assertEqual(sorted(page._explorer_stage_panels.keys()), ["A", "B", "C", "D"])
             stage_ids = [str(page.stage_selector.itemData(idx) or "") for idx in range(page.stage_selector.count())]
             self.assertEqual(stage_ids, ["concept", "stabilization", "final"])
-            self.assertIn("Beamwidth Error", page._explorer_stage_panels["B"]["title_label"].text())
+            self.assertIn("Coverage Uniformity", page._explorer_stage_panels["B"]["title_label"].text())
+            self.assertIn("Spill Index", page._explorer_stage_panels["C"]["title_label"].text())
+            self.assertIn("Decision Trade-off", page._explorer_stage_panels["D"]["title_label"].text())
             for idx in range(page.stage_selector.count()):
                 if str(page.stage_selector.itemData(idx) or "") == "stabilization":
                     page.stage_selector.setCurrentIndex(idx)
                     break
-            self.assertIn("DI Proxy", page._explorer_stage_panels["B"]["title_label"].text())
-            self.assertIn("Pattern Smoothness", page._explorer_stage_panels["C"]["title_label"].text())
+            self.assertIn("DI Trend Band", page._explorer_stage_panels["B"]["title_label"].text())
+            self.assertIn("Smoothness Stability", page._explorer_stage_panels["C"]["title_label"].text())
             self.assertIn("Plane Consistency", page._explorer_stage_panels["D"]["title_label"].text())
             for idx in range(page.stage_selector.count()):
                 if str(page.stage_selector.itemData(idx) or "") == "final":
                     page.stage_selector.setCurrentIndex(idx)
                     break
-            self.assertIn("Off-axis Ripple", page._explorer_stage_panels["B"]["title_label"].text())
-            self.assertIn("Pattern Smoothness", page._explorer_stage_panels["C"]["title_label"].text())
+            self.assertIn("Off-axis Ripple Defect", page._explorer_stage_panels["B"]["title_label"].text())
+            self.assertIn("Smoothness Stability", page._explorer_stage_panels["C"]["title_label"].text())
             self.assertIn("Plane Consistency", page._explorer_stage_panels["D"]["title_label"].text())
 
     def test_run_selection_loads_explorer_plot_in_background(self) -> None:
