@@ -393,6 +393,53 @@ class AnalyzerPageUiTests(unittest.TestCase):
             self.assertFalse(page.run_summary_score_chip.isVisible())
             self.assertFalse(page.run_summary_flags_chip.isVisible())
 
+    def test_stage_switch_preserves_selected_version_context(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_ui_stage_context_preserve_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            payload = {
+                "mode": "runs",
+                "project_id": "P001",
+                "batch_id": "B001",
+                "runs": [
+                    {
+                        "project_id": "P001",
+                        "batch_id": "B001",
+                        "run_id": "R001",
+                        "version_id": "V001",
+                        "planes": ["H", "V", "D"],
+                        "kpi_score": 88.2,
+                        "kpi_b_pc_oct": 1.9,
+                        "kpi_e_bw": 1.5,
+                        "kpi_e_cov": 0.8,
+                        "kpi_r_spill": 0.13,
+                        "kpi_reason_items": [
+                            {
+                                "code": "INSUFFICIENT_ANGLE_COVERAGE",
+                                "severity": "warn",
+                                "summary": "Coverage is limited.",
+                            }
+                        ],
+                    }
+                ],
+            }
+            page._apply_runs_payload(payload)
+            self.assertEqual(page.run_table.rowCount(), 1)
+            self.assertEqual(str(page._selected_detail_payload.get("version_id") or ""), "V001")
+            self.assertFalse(page.exclude_warnings_check.isChecked())
+
+            page._set_combo_current_by_data(page.stage_selector, "stabilization")
+            self.app.processEvents()
+            self.assertFalse(page.exclude_warnings_check.isChecked())
+            self.assertEqual(page.run_table.rowCount(), 1)
+            self.assertEqual(str(page._selected_detail_payload.get("version_id") or ""), "V001")
+
+            page._set_combo_current_by_data(page.stage_selector, "final")
+            self.app.processEvents()
+            self.assertFalse(page.exclude_warnings_check.isChecked())
+            self.assertEqual(page.run_table.rowCount(), 1)
+            self.assertEqual(str(page._selected_detail_payload.get("version_id") or ""), "V001")
+
     def test_sweep_value_label_is_single_line_elided_with_tooltip(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_ui2x_sweep_elide_") as tmp:
             service = _build_service(Path(tmp))

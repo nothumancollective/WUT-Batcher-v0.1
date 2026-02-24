@@ -1,5 +1,10 @@
 ﻿# Analyzer Docs â€” Changelog
 
+## 2026-02-24 (Fix 1 - stage switch preserves selection context)
+- Updated Analyzer stage-change behavior so stage switches no longer overwrite active filter toggles.
+- Stage transitions now preserve the current selection/version context while still updating stage plot layout/column visibility.
+- Added UI regression coverage ensuring selected version and version info remain populated across Concept -> Stabilization -> Final transitions.
+
 ## 2026-02-24 (Analyzer stage/selection/plane regression audit)
 - Added `docs/analyzer/07_analyzer_stage_selection_plane_bug_audit.md` with deterministic Phase 0 repro evidence for:
   - stage-dependent selection/version-info breakage (Concept vs Stabilization/Final),

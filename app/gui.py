@@ -7823,7 +7823,7 @@ class AnalysePage(QWidget):
         finally:
             self._control_sync_guard = False
         self._sync_band_custom_visibility()
-        self._apply_stage_defaults()
+        self._apply_stage_defaults(include_filters=False)
 
     def _open_compare_autopick_dialog(self) -> None:
         if self._source_key() != "project":
@@ -8641,16 +8641,17 @@ class AnalysePage(QWidget):
     def _update_toolbar_context_chips(self) -> None:
         self.compute_btn.setText("Refresh KPIs")
 
-    def _apply_stage_defaults(self) -> None:
+    def _apply_stage_defaults(self, *, include_filters: bool = True) -> None:
         stage = dict(self._stage_presets.get(self._selected_stage_id(), {}) or {})
-        filters = dict(stage.get("filters", {}) or {})
-        self._control_sync_guard = True
-        try:
-            self.exclude_flagged_check.setChecked(bool(filters.get("exclude_flagged", False)))
-            self.exclude_warnings_check.setChecked(bool(filters.get("exclude_warnings", False)))
-            self.min_score_spin.setValue(float(filters.get("min_score", 0.0) or 0.0))
-        finally:
-            self._control_sync_guard = False
+        if include_filters:
+            filters = dict(stage.get("filters", {}) or {})
+            self._control_sync_guard = True
+            try:
+                self.exclude_flagged_check.setChecked(bool(filters.get("exclude_flagged", False)))
+                self.exclude_warnings_check.setChecked(bool(filters.get("exclude_warnings", False)))
+                self.min_score_spin.setValue(float(filters.get("min_score", 0.0) or 0.0))
+            finally:
+                self._control_sync_guard = False
         self._apply_stage_column_visibility()
         self._apply_stage_plot_layout()
 
@@ -8817,7 +8818,7 @@ class AnalysePage(QWidget):
     def _on_stage_changed(self, _index: int = 0) -> None:
         if self._control_sync_guard:
             return
-        self._apply_stage_defaults()
+        self._apply_stage_defaults(include_filters=False)
         self._update_toolbar_context_chips()
         if not self._selected_project_id() or not self._selected_batch_id():
             self._schedule_plot_refresh()
