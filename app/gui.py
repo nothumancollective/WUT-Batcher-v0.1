@@ -6825,7 +6825,12 @@ class AnalysePage(QWidget):
         if not checked:
             return
         self._active_plane = str(plane_key or "H").strip().upper() or "H"
+        if str(self.compare_plane_combo.currentData() or "").strip().upper() != self._active_plane:
+            self._set_combo_current_by_data(self.compare_plane_combo, self._active_plane)
+        if self.analysis_tabs.currentWidget() is self.compare_tab:
+            self._update_compare_slots()
         self._schedule_plot_refresh()
+        self._schedule_compare_plot_refresh()
 
     def _on_plot_config_changed(self, _value: Any = None) -> None:
         if self._control_sync_guard:
@@ -7336,6 +7341,7 @@ class AnalysePage(QWidget):
         self.compare_slots_table.setRowCount(5)
         self.compare_table.setRowCount(len(slots))
         self.compare_heatmap_selector.clear()
+        selected_plane = self._compare_plane()
         for row_index in range(5):
             slot_label = f"C{row_index + 1}"
             color_item = QTableWidgetItem(slot_label)
@@ -7347,7 +7353,9 @@ class AnalysePage(QWidget):
             if candidate:
                 selection_label = f"{str(candidate.get('batch_id') or '--')}/{str(candidate.get('version_id') or '--')}"
                 marker = "[PIN] " if bool(candidate.get("version_pinned")) else ""
-                selection_text = f"{marker}{selection_label}"
+                planes_present = {str(token).strip().upper() for token in list(candidate.get("planes", []) or []) if str(token).strip()}
+                missing_note = f" [missing {selected_plane}]" if selected_plane not in planes_present else ""
+                selection_text = f"{marker}{selection_label}{missing_note}"
                 score_text = self._format_float(candidate.get("score"), 2)
                 flags_count = candidate.get("kpi_flags_count")
                 flags_text = "--" if flags_count is None else str(int(flags_count))
@@ -7529,6 +7537,8 @@ class AnalysePage(QWidget):
         curve_key = str(self._compare_overlay_curve_key or "beamwidth").strip().lower()
         series: List[Dict[str, Any]] = []
         saturated_bins = 0
+        missing_plane_labels: List[str] = []
+        selected_plane = self._compare_plane()
         for index, item in enumerate(self._compare_plot_items):
             candidate = dict(item.get("candidate") or {})
             plot = dict(item.get("plot") or {})
@@ -7536,6 +7546,10 @@ class AnalysePage(QWidget):
             curves = dict(stage_plot.get("curves") or {})
             points = self._stage_curve_points(curves, curve_key)
             if not points:
+                planes_present = {str(token).strip().upper() for token in list(candidate.get("planes", []) or []) if str(token).strip()}
+                plot_message = str(plot.get("message") or "").strip().lower()
+                if selected_plane not in planes_present or "plane not available" in plot_message:
+                    missing_plane_labels.append(f"C{index + 1} {candidate.get('batch_id')}/{candidate.get('version_id')}")
                 continue
             saturated_bins += sum(1 for point in points if bool(point.get("saturated")))
             color_rgb = compare_overlay_color(index)
@@ -7551,15 +7565,19 @@ class AnalysePage(QWidget):
                 }
             )
         if not series:
-            self.compare_overlay_canvas.clear_series("No curve data available for overlay.")
+            if missing_plane_labels:
+                self.compare_overlay_canvas.clear_series(
+                    f"No curve data for {selected_plane}. Missing plane: {', '.join(missing_plane_labels)}"
+                )
+            else:
+                self.compare_overlay_canvas.clear_series("No curve data available for overlay.")
             return
         status = ""
         if curve_key == "beamwidth":
             target = self._selected_target()
-            plane = self._compare_plane()
-            if plane == "H":
+            if selected_plane == "H":
                 target_deg = float(target.get("h_deg") or 90.0)
-            elif plane == "V":
+            elif selected_plane == "V":
                 target_deg = float(target.get("v_deg") or 40.0)
             else:
                 target_deg = float((float(target.get("h_deg") or 90.0) + float(target.get("v_deg") or 40.0)) * 0.5)
@@ -7581,6 +7599,9 @@ class AnalysePage(QWidget):
                 )
             if saturated_bins > 0:
                 status = f"Saturated bins: {saturated_bins} (no -6 dB crossing in available angle range)."
+        if missing_plane_labels:
+            missing_note = f"Missing {selected_plane}: {', '.join(missing_plane_labels)}."
+            status = f"{status} {missing_note}".strip() if status else missing_note
         self.compare_overlay_canvas.set_series(
             series=series,
             x_scale_mode=self._x_axis_mode(),

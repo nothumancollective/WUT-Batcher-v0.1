@@ -95,7 +95,10 @@ class AnalyzerCompareUiTests(unittest.TestCase):
             first_run = page.compare_slots_table.item(0, 1)
             self.assertIsNotNone(first_run)
             assert first_run is not None
-            self.assertIn(first_run.text(), {"B001/V001", "B002/V010"})
+            self.assertTrue(
+                any(first_run.text().startswith(prefix) for prefix in ("B001/V001", "B002/V010")),
+                msg=f"unexpected compare slot text: {first_run.text()}",
+            )
 
     def test_autopick_result_is_capped_to_five_candidates(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_ui2c_compare_autopick_") as tmp:
@@ -226,6 +229,73 @@ class AnalyzerCompareUiTests(unittest.TestCase):
             self.assertIsNotNone(pixmap)
             assert pixmap is not None
             self.assertFalse(pixmap.isNull())
+
+    def test_display_plane_toggle_propagates_to_compare_plane(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_stage_compare_plane_propagation_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            page.analysis_tabs.setCurrentWidget(page.compare_tab)
+            self.app.processEvents()
+            self.assertEqual(page._compare_plane(), "H")
+
+            with patch.object(page, "_schedule_compare_plot_refresh", autospec=True) as compare_refresh:
+                page._plane_buttons["V"].setChecked(True)
+                self.app.processEvents()
+                self.assertEqual(page._active_plane, "V")
+                self.assertEqual(page._compare_plane(), "V")
+                self.assertGreaterEqual(compare_refresh.call_count, 1)
+
+    def test_compare_shortlist_marks_missing_selected_plane(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_stage_compare_missing_plane_marker_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            candidates = [
+                {
+                    "project_id": "P001",
+                    "batch_id": "B001",
+                    "run_id": "R001",
+                    "version_id": "V001",
+                    "planes": ["V", "D"],
+                    "kpi_score": 88.0,
+                }
+            ]
+            page._set_compare_candidates(candidates)
+            selection_item = page.compare_slots_table.item(0, 1)
+            self.assertIsNotNone(selection_item)
+            assert selection_item is not None
+            self.assertIn("[missing H]", selection_item.text())
+
+    def test_compare_overlay_status_reports_missing_plane_candidates(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_stage_compare_missing_plane_overlay_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            page._compare_overlay_curve_key = "beamwidth"
+            page._set_combo_current_by_data(page.compare_plane_combo, "H")
+            page._compare_plot_items = [
+                {
+                    "candidate": {"batch_id": "B001", "version_id": "V001", "planes": ["V", "D"]},
+                    "plot": {"message": "Plane not available for selected run/version.", "stage_plot": {"curves": {}}},
+                },
+                {
+                    "candidate": {"batch_id": "B002", "version_id": "V002", "planes": ["H", "V"]},
+                    "plot": {
+                        "stage_plot": {
+                            "curves": {
+                                "beamwidth": [
+                                    {"freq_hz": 1000.0, "beamwidth_deg": 62.0},
+                                    {"freq_hz": 2000.0, "beamwidth_deg": 58.0},
+                                ]
+                            }
+                        }
+                    },
+                },
+            ]
+            page._render_compare_overlay()
+            status = str(getattr(page.compare_overlay_canvas, "_status", ""))
+            self.assertIn("Missing H", status)
+            self.assertIn("C1 B001/V001", status)
+            labels = [str(series.get("label") or "") for series in list(page.compare_overlay_canvas._series)]
+            self.assertTrue(any("C2 B002/V002" in label for label in labels))
 
     def test_plane_controls_keep_h_visible_with_missing_plane_reason(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_stage_plane_missing_h_") as tmp:

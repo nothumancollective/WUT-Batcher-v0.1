@@ -1,5 +1,11 @@
 ﻿# Analyzer Docs â€” Changelog
 
+## 2026-02-24 (Fix 3 - compare plane propagation + missing-plane feedback)
+- Display plane button changes now propagate into Compare plane selection and trigger Compare plot refresh.
+- Compare shortlist rows now mark candidates missing the selected plane (for example `[missing H]`).
+- Compare overlay rendering now reports missing-plane candidates in status text instead of silently dropping them.
+- Added Compare UI regression coverage for display-plane propagation and missing-plane status behavior.
+
 ## 2026-02-24 (Fix 2 - stage-specific KPI mapping in Version Information)
 - Added explicit stage-to-metric mapping for the Version Information KPI block (Concept/Stabilization/Final).
 - KPI row labels now switch to stage-friendly names (for example DI Proxy, Smoothness, Plane Consistency, Off-axis Ripple).
