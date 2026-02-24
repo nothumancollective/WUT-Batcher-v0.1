@@ -1012,3 +1012,8 @@
 
 
 
+## 2026-02-24 (Metric bands: opacity control + active-slot color owner)
+- Added `Band opacity` control (`Display -> Advanced`) with persisted analyzer config key `metric_band_opacity` and strict clamp (`5%..100%`).
+- Metric band alpha now respects a global opacity factor while remaining bounded by per-size visual safety caps.
+- Compare curve overlays now render band fills only for the active selected candidate/slot, so the band color follows the active plot series.
+- Added regression coverage for opacity clamp/persistence and active-slot band ownership in compare overlays.

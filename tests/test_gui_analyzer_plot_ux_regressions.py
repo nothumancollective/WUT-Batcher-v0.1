@@ -365,6 +365,35 @@ class AnalyzerPlotUxRegressionTests(unittest.TestCase):
             self.assertTrue(bool(stabilization_profile_blocks.get("show_band")))
             self.assertFalse(bool(stabilization_profile_blocks.get("band_smooth")))
 
+    def test_metric_band_opacity_config_is_clamped_and_applied(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_plot_ux_metric_band_opacity_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            page._apply_analysis_config({"metric_band_opacity": 2.4})
+            self.assertAlmostEqual(float(page._metric_band_opacity), 1.0, places=6)
+            page._apply_analysis_config({"metric_band_opacity": 0.01})
+            self.assertAlmostEqual(float(page._metric_band_opacity), 0.05, places=6)
+            cfg = page._current_analysis_config()
+            self.assertAlmostEqual(float(cfg.get("metric_band_opacity") or 0.0), 0.05, places=6)
+            page._render_plot_payload(dict(_sample_compare_plot_items()[0]["plot"]))
+            self.app.processEvents()
+            canvas = page._explorer_stage_panels["B"]["curve_canvas"]
+            self.assertAlmostEqual(float(canvas._band_opacity), 0.05, places=6)
+
+    def test_compare_curve_band_only_uses_active_slot_color_owner(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_plot_ux_metric_band_owner_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            page._compare_plot_items = _sample_compare_plot_items()
+            _set_stage(page, "stabilization")
+            self.app.processEvents()
+            page._selected_compare_slot_index = 1
+            page._render_compare_overlay()
+            slot_b = page._compare_stage_panels["B"]
+            series = list(slot_b["curve_canvas"]._series)
+            with_band = [bool(row.get("show_band")) for row in series if str(row.get("label") or "").startswith("V")]
+            self.assertEqual(with_band, [False, True])
+
     def test_auto_scale_button_exists_and_changes_scaling_mode(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_plot_ux_auto_scale_") as tmp:
             service = _build_service(Path(tmp))

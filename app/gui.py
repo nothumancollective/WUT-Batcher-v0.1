@@ -202,6 +202,7 @@ try:
         QSplitter,
         QSplashScreen,
         QSpinBox,
+        QSlider,
         QStackedLayout,
         QStackedWidget,
         QStatusBar,
@@ -1198,6 +1199,7 @@ class MetricCurveCanvas(QLabel):
         self._x_label = "Frequency (Hz, log)"
         self._y_label = "Value"
         self._target_axis_color = QColor("#8EC4FF")
+        self._band_opacity = 0.6
         self._status = "Curve not available."
         self._y_range_override: Optional[Tuple[float, float]] = None
         self._applied_plot_margins: Tuple[int, int, int, int] = apply_analyzer_plot_margins(has_legend=False)
@@ -1211,6 +1213,7 @@ class MetricCurveCanvas(QLabel):
         y_label: str = "Value",
         y_range: Optional[Tuple[float, float]] = None,
         target_axis_color: Optional[Tuple[int, int, int]] = None,
+        band_opacity: float = 0.6,
         status: str = "",
     ) -> None:
         self._series = [dict(item) for item in list(series or []) if isinstance(item, Mapping)]
@@ -1226,6 +1229,11 @@ class MetricCurveCanvas(QLabel):
             )
         else:
             self._target_axis_color = QColor("#8EC4FF")
+        try:
+            opacity_value = float(band_opacity)
+        except Exception:
+            opacity_value = 0.6
+        self._band_opacity = max(0.05, min(opacity_value, 1.0))
         if (
             isinstance(y_range, (tuple, list))
             and len(y_range) >= 2
@@ -1471,7 +1479,8 @@ class MetricCurveCanvas(QLabel):
 
         def _band_color(base: QColor, alpha_value: float) -> QColor:
             color = QColor(base)
-            color.setAlphaF(max(0.0, min(float(alpha_value), max_band_alpha)))
+            opacity_factor = max(0.05, min(float(self._band_opacity), 1.0))
+            color.setAlphaF(max(0.0, min(float(alpha_value) * opacity_factor, max_band_alpha)))
             return color
 
         def _fill_horizontal_band(value_lo: float, value_hi: float, color: QColor) -> None:
@@ -1517,10 +1526,11 @@ class MetricCurveCanvas(QLabel):
         )
         if threshold_values:
             threshold_color = QColor(self._target_axis_color)
-            threshold_color.setAlpha(132)
+            threshold_color.setAlpha(176 if len(threshold_values) == 1 else 132)
             painter.save()
             painter.setClipRect(margin_left, margin_top, plot_w, plot_h)
-            painter.setPen(QPen(threshold_color, 1, Qt.DashLine))
+            pen_style = Qt.SolidLine if len(threshold_values) == 1 else Qt.DashLine
+            painter.setPen(QPen(threshold_color, 1.2 if len(threshold_values) == 1 else 1.0, pen_style))
             for threshold in threshold_values:
                 y_line = int(round(y_of(float(threshold))))
                 painter.drawLine(margin_left, y_line, margin_left + plot_w, y_line)
@@ -5876,6 +5886,7 @@ class AnalysePage(QWidget):
         self._show_mirrored_minus6_contour = False
         self._show_metric_bands = True
         self._metric_band_smooth = True
+        self._metric_band_opacity = 0.6
         self._target_axis_color_hex = _coerce_hex_rgb("#8EC4FF")
         self._auto_scale_enabled = False
         self._stable_axis_ranges: Dict[str, Tuple[float, float]] = {}
@@ -8238,8 +8249,25 @@ class AnalysePage(QWidget):
         smoothness_check.setToolTip("When enabled, S_theta uses all angles instead of the target window.")
         form.addWidget(smoothness_check, 5, 2, 1, 2, Qt.AlignLeft | Qt.AlignVCenter)
 
+        metric_band_opacity_slider = QSlider(Qt.Horizontal)
+        metric_band_opacity_slider.setObjectName("AnalyzerMetricBandOpacitySlider")
+        metric_band_opacity_slider.setRange(5, 100)
+        metric_band_opacity_slider.setSingleStep(5)
+        metric_band_opacity_slider.setPageStep(10)
+        metric_band_opacity_slider.setValue(int(round(max(0.05, min(float(self._metric_band_opacity), 1.0)) * 100.0)))
+        metric_band_opacity_slider.setEnabled(bool(metric_bands_check.isChecked()))
+        metric_band_opacity_slider.setToolTip("Global metric band opacity (low values recommended).")
+        metric_band_opacity_value = QLabel(f"{int(metric_band_opacity_slider.value())}%")
+        metric_band_opacity_value.setObjectName("SummaryMeta")
+        metric_band_opacity_value.setMinimumWidth(42)
+        metric_band_opacity_slider.valueChanged.connect(lambda value: metric_band_opacity_value.setText(f"{int(value)}%"))
+        metric_bands_check.toggled.connect(metric_band_opacity_slider.setEnabled)
+        form.addWidget(QLabel("Band opacity"), 6, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        form.addWidget(metric_band_opacity_slider, 6, 1, 1, 2)
+        form.addWidget(metric_band_opacity_value, 6, 3, Qt.AlignRight | Qt.AlignVCenter)
+
         target_axis_color_state = {"hex": _coerce_hex_rgb(self._target_axis_color_hex)}
-        form.addWidget(QLabel("Target axis color"), 6, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        form.addWidget(QLabel("Target axis color"), 7, 0, Qt.AlignLeft | Qt.AlignVCenter)
         target_axis_color_preview = QLabel("")
         target_axis_color_preview.setObjectName("SummaryMeta")
         target_axis_color_preview.setFixedHeight(22)
@@ -8254,7 +8282,7 @@ class AnalysePage(QWidget):
             target_axis_color_preview.setToolTip(f"Target line color: {color_hex}")
 
         _refresh_target_axis_preview()
-        form.addWidget(target_axis_color_preview, 6, 1, Qt.AlignLeft | Qt.AlignVCenter)
+        form.addWidget(target_axis_color_preview, 7, 1, Qt.AlignLeft | Qt.AlignVCenter)
         target_axis_color_btn = QPushButton("Pick...")
         target_axis_color_btn.setObjectName("BatchSecondaryButton")
         target_axis_color_btn.setMinimumHeight(24)
@@ -8270,7 +8298,7 @@ class AnalysePage(QWidget):
             _refresh_target_axis_preview()
 
         target_axis_color_btn.clicked.connect(_pick_target_axis_color)
-        form.addWidget(target_axis_color_btn, 6, 2, Qt.AlignLeft | Qt.AlignVCenter)
+        form.addWidget(target_axis_color_btn, 7, 2, Qt.AlignLeft | Qt.AlignVCenter)
         body.addLayout(form)
         close_row = QHBoxLayout()
         close_row.addStretch(1)
@@ -8303,6 +8331,10 @@ class AnalysePage(QWidget):
             metric_band_smooth_changed = bool(self._metric_band_smooth) != bool(metric_band_smooth_check.isChecked())
             if metric_band_smooth_changed:
                 plot_changed = True
+            metric_band_opacity_next = max(0.05, min(float(metric_band_opacity_slider.value()) / 100.0, 1.0))
+            metric_band_opacity_changed = abs(float(self._metric_band_opacity) - float(metric_band_opacity_next)) > 1.0e-6
+            if metric_band_opacity_changed:
+                plot_changed = True
             smoothness_changed = bool(self._use_full_angles_for_smoothness) != bool(smoothness_check.isChecked())
             target_axis_color_next = _coerce_hex_rgb(target_axis_color_state.get("hex"), fallback=self._target_axis_color_hex)
             target_axis_color_changed = target_axis_color_next != _coerce_hex_rgb(self._target_axis_color_hex)
@@ -8320,6 +8352,7 @@ class AnalysePage(QWidget):
             self._show_mirrored_minus6_contour = bool(mirrored_minus6_check.isChecked())
             self._show_metric_bands = bool(metric_bands_check.isChecked())
             self._metric_band_smooth = bool(metric_band_smooth_check.isChecked())
+            self._metric_band_opacity = float(metric_band_opacity_next)
             self._use_full_angles_for_smoothness = bool(smoothness_check.isChecked())
             self._target_axis_color_hex = target_axis_color_next
             self._control_sync_guard = False
@@ -8827,6 +8860,7 @@ class AnalysePage(QWidget):
                     y_label=self._stage_curve_y_label(key),
                     y_range=y_range,
                     target_axis_color=target_axis_color,
+                    band_opacity=float(self._metric_band_opacity),
                     status="",
                 )
             else:
@@ -9455,6 +9489,7 @@ class AnalysePage(QWidget):
             metric_key=curve_key,
             context="compare",
         )
+        band_owner_index = int(selected_index) if selected_index is not None else 0
         series: List[Dict[str, Any]] = []
         saturated_bins = 0
         missing_plane_labels: List[str] = []
@@ -9491,7 +9526,10 @@ class AnalysePage(QWidget):
                 "band_smooth",
             ):
                 if style_key in style_profile:
-                    series_row[style_key] = style_profile.get(style_key)
+                    if style_key == "show_band":
+                        series_row[style_key] = bool(style_profile.get(style_key)) and int(index) == int(band_owner_index)
+                    else:
+                        series_row[style_key] = style_profile.get(style_key)
             series.append(series_row)
         if not series:
             if missing_plane_labels:
@@ -9548,6 +9586,7 @@ class AnalysePage(QWidget):
             y_label=self._stage_curve_y_label(curve_key),
             y_range=y_range,
             target_axis_color=target_axis_color,
+            band_opacity=float(self._metric_band_opacity),
             status=status,
         )
 
@@ -9762,6 +9801,7 @@ class AnalysePage(QWidget):
             "auto_scale": bool(self._auto_scale_enabled),
             "show_metric_bands": bool(self._show_metric_bands),
             "metric_band_smooth": bool(self._metric_band_smooth),
+            "metric_band_opacity": float(max(0.05, min(float(self._metric_band_opacity), 1.0))),
             "use_full_angles_for_smoothness": bool(self._use_full_angles_for_smoothness),
             "target_axis_color": _coerce_hex_rgb(self._target_axis_color_hex),
             "compare": {
@@ -9860,6 +9900,11 @@ class AnalysePage(QWidget):
             self.auto_scale_btn.setChecked(bool(self._auto_scale_enabled))
             self._show_metric_bands = bool(config.get("show_metric_bands", self._show_metric_bands))
             self._metric_band_smooth = bool(config.get("metric_band_smooth", self._metric_band_smooth))
+            try:
+                metric_band_opacity = float(config.get("metric_band_opacity", self._metric_band_opacity))
+            except Exception:
+                metric_band_opacity = float(self._metric_band_opacity)
+            self._metric_band_opacity = max(0.05, min(metric_band_opacity, 1.0))
             self._use_full_angles_for_smoothness = bool(
                 config.get("use_full_angles_for_smoothness", self._use_full_angles_for_smoothness)
             )
