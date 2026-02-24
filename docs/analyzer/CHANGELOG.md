@@ -1,5 +1,10 @@
 # Analyzer Docs — Changelog
 
+## 2026-02-24 (Plot controls: metric bands default-on + alpha safety clamp)
+- Switched Analyzer metric-band default to ON while keeping the `Display Advanced -> Show metric bands` toggle active.
+- Added a global, size-aware band opacity cap (max alpha <= 0.18) so trend/consistency/defect bands cannot cover curve data.
+- Reduced stage style defaults for trend/defect fill opacity and migrated consistency-strip rendering to a subtle behind-curve band (no blocky top strip overlay).
+
 ## 2026-02-24 (Plot controls: Auto Scale toggle in version bar)
 - Added an `Auto Scale` toggle button in the Display block (next to `Advanced...`) with analyzer-state wiring.
 - Introduced stable axis-range caching for Explorer/Compare metric curves and Compare Pareto axes when Auto Scale is OFF.

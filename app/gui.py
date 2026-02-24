@@ -1277,6 +1277,8 @@ class MetricCurveCanvas(QLabel):
 
         has_legend = any(bool(row.get("show_legend")) for row in points_by_series)
         theme = apply_plot_theme(self, has_legend=has_legend, context="curve")
+        size_class = str(theme.get("size_class") or "large").strip().lower()
+        max_band_alpha = 0.16 if size_class == "small" else 0.18
         layout = compute_plot_layout_geometry(width=width, height=height, theme=theme, min_plot_w=36, min_plot_h=30)
         margin_left = int(layout["margin_left"])
         margin_right = int(layout["margin_right"])
@@ -1384,6 +1386,11 @@ class MetricCurveCanvas(QLabel):
             if str(row.get("style") or "").strip().lower() == "defect_band" and bool(row.get("show_band", True))
         ]
 
+        def _band_color(base: QColor, alpha_value: float) -> QColor:
+            color = QColor(base)
+            color.setAlphaF(max(0.0, min(float(alpha_value), max_band_alpha)))
+            return color
+
         def _fill_horizontal_band(value_lo: float, value_hi: float, color: QColor) -> None:
             lo = max(float(y_min), min(float(value_lo), float(y_max)))
             hi = max(float(y_min), min(float(value_hi), float(y_max)))
@@ -1405,14 +1412,14 @@ class MetricCurveCanvas(QLabel):
                 }
             )
             if len(defect_thresholds) >= 3:
-                _fill_horizontal_band(y_min, defect_thresholds[0], QColor(74, 124, 90, 28))
-                _fill_horizontal_band(defect_thresholds[0], defect_thresholds[1], QColor(170, 142, 72, 32))
-                _fill_horizontal_band(defect_thresholds[1], defect_thresholds[2], QColor(186, 96, 82, 38))
-                _fill_horizontal_band(defect_thresholds[2], y_max, QColor(204, 78, 78, 48))
+                _fill_horizontal_band(y_min, defect_thresholds[0], _band_color(QColor(74, 124, 90), 0.10))
+                _fill_horizontal_band(defect_thresholds[0], defect_thresholds[1], _band_color(QColor(170, 142, 72), 0.12))
+                _fill_horizontal_band(defect_thresholds[1], defect_thresholds[2], _band_color(QColor(186, 96, 82), 0.14))
+                _fill_horizontal_band(defect_thresholds[2], y_max, _band_color(QColor(204, 78, 78), 0.16))
             elif len(defect_thresholds) >= 2:
-                _fill_horizontal_band(y_min, defect_thresholds[0], QColor(74, 124, 90, 28))
-                _fill_horizontal_band(defect_thresholds[0], defect_thresholds[1], QColor(170, 142, 72, 34))
-                _fill_horizontal_band(defect_thresholds[1], y_max, QColor(196, 82, 82, 44))
+                _fill_horizontal_band(y_min, defect_thresholds[0], _band_color(QColor(74, 124, 90), 0.10))
+                _fill_horizontal_band(defect_thresholds[0], defect_thresholds[1], _band_color(QColor(170, 142, 72), 0.12))
+                _fill_horizontal_band(defect_thresholds[1], y_max, _band_color(QColor(196, 82, 82), 0.16))
 
         threshold_values = sorted(
             {
@@ -1448,8 +1455,7 @@ class MetricCurveCanvas(QLabel):
                 values = [float(value) for _freq, value in points]
                 mean_value = float(sum(values) / float(len(values)))
                 fill_alpha = float(row.get("fill_alpha", 0.18))
-                fill_color = QColor(color)
-                fill_color.setAlphaF(max(0.0, min(fill_alpha, 0.95)))
+                fill_color = _band_color(color, fill_alpha)
                 band = QPainterPath()
                 first_x, first_y = points[0]
                 band.moveTo(x_of(first_x), y_of(first_y))
@@ -1479,23 +1485,25 @@ class MetricCurveCanvas(QLabel):
                             painter.drawEllipse(QPoint(marker_x, marker_y), 3, 3)
                     painter.setBrush(Qt.NoBrush)
             elif style_token == "consistency_strip" and len(points) >= 2 and show_band:
-                strip_height = max(10, int(round(plot_h * 0.13)))
-                strip_top = int(margin_top + 4)
-                for idx in range(len(points) - 1):
-                    x1, value1 = points[idx]
-                    x2, _value2 = points[idx + 1]
-                    seg_left = int(round(min(x_of(x1), x_of(x2))))
-                    seg_right = int(round(max(x_of(x1), x_of(x2))))
-                    seg_w = max(seg_right - seg_left, 1)
-                    normalized = (float(value1) - float(y_min)) / max(float(y_max - y_min), 1.0e-6)
-                    strip_color = QColor(color)
-                    strip_color.setAlpha(int(round(34 + (150.0 * max(0.0, min(normalized, 1.0))))))
-                    painter.fillRect(seg_left, strip_top, seg_w, strip_height, strip_color)
+                fill_alpha = float(row.get("fill_alpha", 0.12))
+                fill_color = _band_color(color, fill_alpha)
+                band_half_px = max(2.0, min(float(plot_h) * 0.025, 7.0))
+                band = QPainterPath()
+                first_x, first_value = points[0]
+                first_y = y_of(first_value)
+                band.moveTo(x_of(first_x), first_y - band_half_px)
+                for freq_hz, value in points[1:]:
+                    y_px = y_of(value)
+                    band.lineTo(x_of(freq_hz), y_px - band_half_px)
+                for freq_hz, value in reversed(points):
+                    y_px = y_of(value)
+                    band.lineTo(x_of(freq_hz), y_px + band_half_px)
+                band.closeSubpath()
+                painter.fillPath(band, fill_color)
                 _draw_polyline(points, color, max(line_width, 1.0))
             elif style_token == "defect_band" and len(points) >= 2 and show_band:
                 fill_alpha = float(row.get("fill_alpha", 0.22))
-                fill_color = QColor(color)
-                fill_color.setAlphaF(max(0.0, min(fill_alpha, 0.95)))
+                fill_color = _band_color(color, fill_alpha)
                 band = QPainterPath()
                 first_x, first_y = points[0]
                 band.moveTo(x_of(first_x), y_of(first_y))
@@ -5480,7 +5488,7 @@ class AnalysePage(QWidget):
         self._pending_note_text = ""
         self._use_full_angles_for_smoothness = False
         self._show_mirrored_minus6_contour = False
-        self._show_metric_bands = False
+        self._show_metric_bands = True
         self._auto_scale_enabled = False
         self._stable_axis_ranges: Dict[str, Tuple[float, float]] = {}
         self._latest_plot_payload: Dict[str, Any] = {}
@@ -7888,7 +7896,7 @@ class AnalysePage(QWidget):
             if key_token == "di_proxy":
                 return {
                     "style": "trend_band",
-                    "fill_alpha": 0.24 if context_token == "explorer" else 0.14,
+                    "fill_alpha": 0.16 if context_token == "explorer" else 0.12,
                     "regime_markers": bool(context_token == "explorer"),
                     "thresholds": [2.0, 4.0],
                     "line_width": 1.4 if context_token == "explorer" else 1.2,
@@ -7898,6 +7906,7 @@ class AnalysePage(QWidget):
                 return {
                     "style": "consistency_strip",
                     "line_width": 1.2,
+                    "fill_alpha": 0.12 if context_token == "explorer" else 0.10,
                     "thresholds": [0.20, 0.40] if key_token == "s_theta" else [0.35, 0.75],
                     "show_band": show_bands,
                 }
@@ -7905,7 +7914,7 @@ class AnalysePage(QWidget):
             if key_token == "r_off":
                 return {
                     "style": "defect_band",
-                    "fill_alpha": 0.28 if context_token == "explorer" else 0.18,
+                    "fill_alpha": 0.18 if context_token == "explorer" else 0.14,
                     "line_width": 1.4 if context_token == "explorer" else 1.2,
                     "thresholds": [2.0, 4.0, 6.0],
                     "hotspot_threshold": 6.0,
@@ -7915,6 +7924,7 @@ class AnalysePage(QWidget):
                 return {
                     "style": "consistency_strip",
                     "line_width": 1.2,
+                    "fill_alpha": 0.12 if context_token == "explorer" else 0.10,
                     "thresholds": [0.20, 0.40] if key_token == "s_theta" else [0.35, 0.75],
                     "show_band": show_bands,
                 }
