@@ -3,6 +3,7 @@
     <file alias="chevron_down.svg">icons/chevron_down.svg</file>
     <file alias="chevron_up.svg">icons/chevron_up.svg</file>
     <file alias="home.svg">icons/home.svg</file>
+    <file alias="info.svg">icons/info.svg</file>
     <file alias="settings.svg">icons/settings.svg</file>
   </qresource>
 </RCC>

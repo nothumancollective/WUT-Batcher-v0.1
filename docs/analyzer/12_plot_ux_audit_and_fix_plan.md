@@ -162,3 +162,6 @@
   - Compare left panel now uses explicit width bounds (`260..440`) with splitter default sizing to prevent overlap and clipping on narrow windows.
   - Compare shortlist table now uses fixed critical columns (`slot/score/flags/remove`) plus stretch columns (`selection` + KPI fields) to avoid default horizontal clipping.
   - Row heights and remove-button column widths are stabilized so remove actions remain reachable without horizontal scrolling.
+- `FIXED/VERIFIED` issue cluster 5.1 (help icon mismatch):
+  - Analyzer plot-header help buttons and flags help now use `:/icons/info.svg` (info icon) instead of the settings gear icon.
+  - Added new QRC icon asset (`info.svg`) and regression coverage validating the rendered icon bytes against the info asset.

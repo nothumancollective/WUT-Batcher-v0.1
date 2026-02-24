@@ -1,5 +1,10 @@
 # Analyzer Docs — Changelog
 
+## 2026-02-24 (Analyzer UI: help icon set to info glyph)
+- Added `info.svg` to analyzer icon resources and QRC registry.
+- Replaced Analyzer plot-header help buttons and flags help icon from settings gear to info icon (`:/icons/info.svg`).
+- Added regression coverage that compares rendered button icon output against the info asset.
+
 ## 2026-02-24 (Compare UI: left-panel table layout contract hardening)
 - Tightened compare-left splitter contract to bounded widths (`260..440`) with stable default sizing so the left panel does not overlap or collapse in smaller windows.
 - Reworked compare shortlist table column sizing: fixed widths for slot/score/flags/remove, stretch for selection and stage KPI columns to avoid default clipping.

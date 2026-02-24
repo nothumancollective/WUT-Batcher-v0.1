@@ -14,8 +14,13 @@ from app.services import OrchestratorService
 from app.settings_store import SettingsStore, UserSettings
 
 try:
+    from PySide6.QtCore import QBuffer, QIODevice
+    from PySide6.QtGui import QIcon
     from PySide6.QtWidgets import QApplication
 except ImportError:  # pragma: no cover
+    QBuffer = None  # type: ignore[assignment]
+    QIODevice = None  # type: ignore[assignment]
+    QIcon = None  # type: ignore[assignment]
     QApplication = None  # type: ignore[assignment]
 
 
@@ -91,6 +96,16 @@ def _sample_compare_plot_items() -> list[dict]:
             }
         )
     return rows
+
+
+def _icon_png_bytes(icon: QIcon, size: int = 14) -> bytes:
+    if QBuffer is None or QIODevice is None:
+        return b""
+    pixmap = icon.pixmap(size, size)
+    buffer = QBuffer()
+    buffer.open(QIODevice.WriteOnly)
+    pixmap.save(buffer, "PNG")
+    return bytes(buffer.data())
 
 
 @unittest.skipIf(QApplication is None, "PySide6 is required")
@@ -288,6 +303,21 @@ class AnalyzerPlotUxRegressionTests(unittest.TestCase):
                 heatmap = page._compare_stage_panels["A"]["heatmap_canvas"]
                 self.assertGreaterEqual(int(getattr(heatmap, "_target_shade_alpha", 0)), 44)
                 self.assertGreaterEqual(int(getattr(heatmap, "_target_boundary_alpha", 0)), 180)
+
+    def test_analyzer_help_buttons_use_info_icon(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_plot_ux_info_icon_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            expected_info = QIcon(":/icons/info.svg")
+            expected_settings = QIcon(":/icons/settings.svg")
+            info_bytes = _icon_png_bytes(expected_info)
+            settings_bytes = _icon_png_bytes(expected_settings)
+            self.assertTrue(info_bytes)
+            self.assertNotEqual(info_bytes, settings_bytes)
+            self.assertEqual(_icon_png_bytes(page.flags_help_btn.icon()), info_bytes)
+            for panel in list(page._explorer_stage_panels.values()) + list(page._compare_stage_panels.values()):
+                help_btn = panel.get("help_btn")
+                self.assertEqual(_icon_png_bytes(help_btn.icon()), info_bytes)
 
 
 if __name__ == "__main__":
