@@ -1,5 +1,9 @@
 ﻿# Analyzer Docs â€” Changelog
 
+## 2026-02-24 (Display Advanced: metric-band component defaults in user settings)
+- Added global Analyzer display settings keys for metric-band component visibility (good/warn/bad bands + warn/bad lines) with migration-safe defaults for existing users.
+- Added persistent Analyzer display color keys (good/warn/bad, #RRGGBB) with neutral-cool defaults and validation in SettingsStore.
+- Preserved these Analyzer display keys when saving the main Settings dialog so non-Analyzer settings edits do not reset metric-band display preferences.
 ## 2026-02-24 (Metric bands: KPI semantics mapping + lower-is-better rendering)
 - Added canonical KPI metric-band specs in app/analyzer/metric_band_specs.py (direction + thresholds/targets) and switched Analyzer band rendering to spec-driven region mapping.
 - Smoothness (S_theta) now renders as lower-is-better: good zone near the bottom with warn zone above it (no curve-hugging veil).
@@ -1053,3 +1057,4 @@
   - metric-band smooth rendering config (`show`, `smooth`, `opacity`)
   - robust non-auto `e_sym_shape` y-range clamp under outlier input
   - resize probes (`1920x1080`, `1366x768`, `1100x700`) without exceptions.
+

@@ -47,6 +47,14 @@ from app.models import AppConfig, Batch, Project, ProjectConstraints
 from app.project_issue_model import UiProjectIssue, classify_ui_severity, issue_counts, normalize_project_issues
 from app.services import OrchestratorService, PreviewGenerationCancelled
 from app.settings_store import (
+    ANALYZER_DISPLAY_COLOR_BAD_DEFAULT,
+    ANALYZER_DISPLAY_COLOR_GOOD_DEFAULT,
+    ANALYZER_DISPLAY_COLOR_WARN_DEFAULT,
+    ANALYZER_DISPLAY_SHOW_BAD_BAND_DEFAULT,
+    ANALYZER_DISPLAY_SHOW_BAD_LINE_DEFAULT,
+    ANALYZER_DISPLAY_SHOW_GOOD_BAND_DEFAULT,
+    ANALYZER_DISPLAY_SHOW_WARN_BAND_DEFAULT,
+    ANALYZER_DISPLAY_SHOW_WARN_LINE_DEFAULT,
     SIMULATION_TIMEOUT_MINUTES_DEFAULT,
     SIMULATION_TIMEOUT_MINUTES_MAX,
     SIMULATION_TIMEOUT_MINUTES_MIN,
@@ -4209,6 +4217,7 @@ class SettingsDialog(QDialog):
             custom_limit_mb=int(self.analyzer_cache_limit_mb.value()),
             custom_keep_last_n=int(self.analyzer_cache_keep_last.value()),
         )
+        current_settings = self.service.settings
         settings = UserSettings(
             library_root=self.library_root.text().strip(),
             ath_exe=self.ath_exe.text().strip() or None,
@@ -4221,6 +4230,33 @@ class SettingsDialog(QDialog):
             analyzer_cache_mode=str(policy.mode),
             analyzer_cache_limit_mb=int(policy.size_limit_mb),
             analyzer_cache_keep_last_n=int(policy.keep_last_n),
+            analyzer_display_show_good_band=bool(
+                getattr(current_settings, "analyzer_display_show_good_band", ANALYZER_DISPLAY_SHOW_GOOD_BAND_DEFAULT)
+            ),
+            analyzer_display_show_warn_band=bool(
+                getattr(current_settings, "analyzer_display_show_warn_band", ANALYZER_DISPLAY_SHOW_WARN_BAND_DEFAULT)
+            ),
+            analyzer_display_show_bad_band=bool(
+                getattr(current_settings, "analyzer_display_show_bad_band", ANALYZER_DISPLAY_SHOW_BAD_BAND_DEFAULT)
+            ),
+            analyzer_display_show_warn_line=bool(
+                getattr(current_settings, "analyzer_display_show_warn_line", ANALYZER_DISPLAY_SHOW_WARN_LINE_DEFAULT)
+            ),
+            analyzer_display_show_bad_line=bool(
+                getattr(current_settings, "analyzer_display_show_bad_line", ANALYZER_DISPLAY_SHOW_BAD_LINE_DEFAULT)
+            ),
+            analyzer_display_color_good=_coerce_hex_rgb(
+                getattr(current_settings, "analyzer_display_color_good", ANALYZER_DISPLAY_COLOR_GOOD_DEFAULT),
+                fallback=ANALYZER_DISPLAY_COLOR_GOOD_DEFAULT,
+            ),
+            analyzer_display_color_warn=_coerce_hex_rgb(
+                getattr(current_settings, "analyzer_display_color_warn", ANALYZER_DISPLAY_COLOR_WARN_DEFAULT),
+                fallback=ANALYZER_DISPLAY_COLOR_WARN_DEFAULT,
+            ),
+            analyzer_display_color_bad=_coerce_hex_rgb(
+                getattr(current_settings, "analyzer_display_color_bad", ANALYZER_DISPLAY_COLOR_BAD_DEFAULT),
+                fallback=ANALYZER_DISPLAY_COLOR_BAD_DEFAULT,
+            ),
         )
         result = self.service.save_settings(settings)
         issues = result.get("validation", {})
@@ -5852,6 +5888,23 @@ class AnalysePage(QWidget):
         self._show_metric_bands = True
         self._metric_band_smooth = True
         self._metric_band_opacity = 0.6
+        self._metric_band_show_good_band = bool(ANALYZER_DISPLAY_SHOW_GOOD_BAND_DEFAULT)
+        self._metric_band_show_warn_band = bool(ANALYZER_DISPLAY_SHOW_WARN_BAND_DEFAULT)
+        self._metric_band_show_bad_band = bool(ANALYZER_DISPLAY_SHOW_BAD_BAND_DEFAULT)
+        self._metric_band_show_warn_line = bool(ANALYZER_DISPLAY_SHOW_WARN_LINE_DEFAULT)
+        self._metric_band_show_bad_line = bool(ANALYZER_DISPLAY_SHOW_BAD_LINE_DEFAULT)
+        self._metric_band_color_good_hex = _coerce_hex_rgb(
+            ANALYZER_DISPLAY_COLOR_GOOD_DEFAULT,
+            fallback=ANALYZER_DISPLAY_COLOR_GOOD_DEFAULT,
+        )
+        self._metric_band_color_warn_hex = _coerce_hex_rgb(
+            ANALYZER_DISPLAY_COLOR_WARN_DEFAULT,
+            fallback=ANALYZER_DISPLAY_COLOR_WARN_DEFAULT,
+        )
+        self._metric_band_color_bad_hex = _coerce_hex_rgb(
+            ANALYZER_DISPLAY_COLOR_BAD_DEFAULT,
+            fallback=ANALYZER_DISPLAY_COLOR_BAD_DEFAULT,
+        )
         self._target_axis_color_hex = _coerce_hex_rgb("#8EC4FF")
         self._auto_scale_enabled = False
         self._stable_axis_ranges: Dict[str, Tuple[float, float]] = {}
@@ -5902,6 +5955,7 @@ class AnalysePage(QWidget):
         self._default_tol_deg = float(presets.get("default_tol_deg") or DEFAULT_TOL_DEG)
         self._algo_version = str(presets.get("algo_version") or ALGO_VERSION)
         self._plot_cache = AnalyzerPlotCache(self._cache_policy_from_settings())
+        self._load_metric_band_display_settings_from_user_settings()
 
         root = QVBoxLayout(self)
         root.setContentsMargins(20, 12, 20, 14)
@@ -7750,8 +7804,104 @@ class AnalysePage(QWidget):
     def reload_cache_settings(self) -> None:
         self._plot_cache.configure(self._cache_policy_from_settings())
 
+    @staticmethod
+    def _metric_band_display_defaults() -> Dict[str, Any]:
+        return {
+            "show_good_band": bool(ANALYZER_DISPLAY_SHOW_GOOD_BAND_DEFAULT),
+            "show_warn_band": bool(ANALYZER_DISPLAY_SHOW_WARN_BAND_DEFAULT),
+            "show_bad_band": bool(ANALYZER_DISPLAY_SHOW_BAD_BAND_DEFAULT),
+            "show_warn_line": bool(ANALYZER_DISPLAY_SHOW_WARN_LINE_DEFAULT),
+            "show_bad_line": bool(ANALYZER_DISPLAY_SHOW_BAD_LINE_DEFAULT),
+            "color_good": _coerce_hex_rgb(
+                ANALYZER_DISPLAY_COLOR_GOOD_DEFAULT,
+                fallback=ANALYZER_DISPLAY_COLOR_GOOD_DEFAULT,
+            ),
+            "color_warn": _coerce_hex_rgb(
+                ANALYZER_DISPLAY_COLOR_WARN_DEFAULT,
+                fallback=ANALYZER_DISPLAY_COLOR_WARN_DEFAULT,
+            ),
+            "color_bad": _coerce_hex_rgb(
+                ANALYZER_DISPLAY_COLOR_BAD_DEFAULT,
+                fallback=ANALYZER_DISPLAY_COLOR_BAD_DEFAULT,
+            ),
+        }
+
+    def _metric_band_display_settings_payload(self) -> Dict[str, Any]:
+        return {
+            "show_good_band": bool(self._metric_band_show_good_band),
+            "show_warn_band": bool(self._metric_band_show_warn_band),
+            "show_bad_band": bool(self._metric_band_show_bad_band),
+            "show_warn_line": bool(self._metric_band_show_warn_line),
+            "show_bad_line": bool(self._metric_band_show_bad_line),
+            "color_good": _coerce_hex_rgb(
+                self._metric_band_color_good_hex,
+                fallback=ANALYZER_DISPLAY_COLOR_GOOD_DEFAULT,
+            ),
+            "color_warn": _coerce_hex_rgb(
+                self._metric_band_color_warn_hex,
+                fallback=ANALYZER_DISPLAY_COLOR_WARN_DEFAULT,
+            ),
+            "color_bad": _coerce_hex_rgb(
+                self._metric_band_color_bad_hex,
+                fallback=ANALYZER_DISPLAY_COLOR_BAD_DEFAULT,
+            ),
+        }
+
+    def _load_metric_band_display_settings_from_user_settings(self) -> None:
+        defaults = self._metric_band_display_defaults()
+        settings = getattr(self.service, "settings", None)
+        self._metric_band_show_good_band = bool(
+            getattr(settings, "analyzer_display_show_good_band", defaults["show_good_band"])
+        )
+        self._metric_band_show_warn_band = bool(
+            getattr(settings, "analyzer_display_show_warn_band", defaults["show_warn_band"])
+        )
+        self._metric_band_show_bad_band = bool(
+            getattr(settings, "analyzer_display_show_bad_band", defaults["show_bad_band"])
+        )
+        self._metric_band_show_warn_line = bool(
+            getattr(settings, "analyzer_display_show_warn_line", defaults["show_warn_line"])
+        )
+        self._metric_band_show_bad_line = bool(
+            getattr(settings, "analyzer_display_show_bad_line", defaults["show_bad_line"])
+        )
+        self._metric_band_color_good_hex = _coerce_hex_rgb(
+            getattr(settings, "analyzer_display_color_good", defaults["color_good"]),
+            fallback=defaults["color_good"],
+        )
+        self._metric_band_color_warn_hex = _coerce_hex_rgb(
+            getattr(settings, "analyzer_display_color_warn", defaults["color_warn"]),
+            fallback=defaults["color_warn"],
+        )
+        self._metric_band_color_bad_hex = _coerce_hex_rgb(
+            getattr(settings, "analyzer_display_color_bad", defaults["color_bad"]),
+            fallback=defaults["color_bad"],
+        )
+
+    def _persist_metric_band_display_settings_to_user_settings(self) -> None:
+        try:
+            current = self.service.settings
+            payload = dict(current.to_dict())
+            settings_payload = self._metric_band_display_settings_payload()
+            payload.update(
+                {
+                    "analyzer_display_show_good_band": bool(settings_payload["show_good_band"]),
+                    "analyzer_display_show_warn_band": bool(settings_payload["show_warn_band"]),
+                    "analyzer_display_show_bad_band": bool(settings_payload["show_bad_band"]),
+                    "analyzer_display_show_warn_line": bool(settings_payload["show_warn_line"]),
+                    "analyzer_display_show_bad_line": bool(settings_payload["show_bad_line"]),
+                    "analyzer_display_color_good": str(settings_payload["color_good"]),
+                    "analyzer_display_color_warn": str(settings_payload["color_warn"]),
+                    "analyzer_display_color_bad": str(settings_payload["color_bad"]),
+                }
+            )
+            self.service.save_settings(UserSettings.from_dict(payload))
+        except Exception:
+            LOGGER.debug("Failed to persist analyzer display advanced metric-band settings.", exc_info=True)
+
     def reload_user_settings(self) -> None:
         self.reload_cache_settings()
+        self._load_metric_band_display_settings_from_user_settings()
         self.compute_btn.setEnabled(self._source_key() == "project")
         self._update_toolbar_context_chips()
         self._on_source_changed()

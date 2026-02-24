@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Optional
@@ -19,6 +20,17 @@ def _default_settings_path() -> Path:
 SIMULATION_TIMEOUT_MINUTES_DEFAULT = 10
 SIMULATION_TIMEOUT_MINUTES_MIN = 1
 SIMULATION_TIMEOUT_MINUTES_MAX = 240
+ANALYZER_DISPLAY_SHOW_GOOD_BAND_DEFAULT = True
+ANALYZER_DISPLAY_SHOW_WARN_BAND_DEFAULT = False
+ANALYZER_DISPLAY_SHOW_BAD_BAND_DEFAULT = False
+ANALYZER_DISPLAY_SHOW_WARN_LINE_DEFAULT = True
+ANALYZER_DISPLAY_SHOW_BAD_LINE_DEFAULT = False
+ANALYZER_DISPLAY_COLOR_GOOD_DEFAULT = "#6E8FA7"
+ANALYZER_DISPLAY_COLOR_WARN_DEFAULT = "#7B90A3"
+ANALYZER_DISPLAY_COLOR_BAD_DEFAULT = "#8D98A7"
+
+
+_HEX_RGB_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
 
 def _as_bool(value: object, *, default: bool) -> bool:
@@ -41,6 +53,13 @@ def _as_int(value: object, *, default: int) -> int:
         return int(default)
 
 
+def _as_hex_rgb(value: object, *, default: str) -> str:
+    text = str(value or "").strip()
+    if _HEX_RGB_RE.match(text):
+        return text.upper()
+    return str(default).upper()
+
+
 @dataclass
 class UserSettings:
     library_root: str = _default_library_root()
@@ -54,6 +73,14 @@ class UserSettings:
     analyzer_cache_mode: str = "balanced"
     analyzer_cache_limit_mb: int = 240
     analyzer_cache_keep_last_n: int = 5
+    analyzer_display_show_good_band: bool = ANALYZER_DISPLAY_SHOW_GOOD_BAND_DEFAULT
+    analyzer_display_show_warn_band: bool = ANALYZER_DISPLAY_SHOW_WARN_BAND_DEFAULT
+    analyzer_display_show_bad_band: bool = ANALYZER_DISPLAY_SHOW_BAD_BAND_DEFAULT
+    analyzer_display_show_warn_line: bool = ANALYZER_DISPLAY_SHOW_WARN_LINE_DEFAULT
+    analyzer_display_show_bad_line: bool = ANALYZER_DISPLAY_SHOW_BAD_LINE_DEFAULT
+    analyzer_display_color_good: str = ANALYZER_DISPLAY_COLOR_GOOD_DEFAULT
+    analyzer_display_color_warn: str = ANALYZER_DISPLAY_COLOR_WARN_DEFAULT
+    analyzer_display_color_bad: str = ANALYZER_DISPLAY_COLOR_BAD_DEFAULT
 
     def to_dict(self) -> Dict[str, object]:
         return {
@@ -68,6 +95,23 @@ class UserSettings:
             "analyzer_cache_mode": str(self.analyzer_cache_mode or "balanced"),
             "analyzer_cache_limit_mb": int(self.analyzer_cache_limit_mb),
             "analyzer_cache_keep_last_n": int(self.analyzer_cache_keep_last_n),
+            "analyzer_display_show_good_band": bool(self.analyzer_display_show_good_band),
+            "analyzer_display_show_warn_band": bool(self.analyzer_display_show_warn_band),
+            "analyzer_display_show_bad_band": bool(self.analyzer_display_show_bad_band),
+            "analyzer_display_show_warn_line": bool(self.analyzer_display_show_warn_line),
+            "analyzer_display_show_bad_line": bool(self.analyzer_display_show_bad_line),
+            "analyzer_display_color_good": _as_hex_rgb(
+                self.analyzer_display_color_good,
+                default=ANALYZER_DISPLAY_COLOR_GOOD_DEFAULT,
+            ),
+            "analyzer_display_color_warn": _as_hex_rgb(
+                self.analyzer_display_color_warn,
+                default=ANALYZER_DISPLAY_COLOR_WARN_DEFAULT,
+            ),
+            "analyzer_display_color_bad": _as_hex_rgb(
+                self.analyzer_display_color_bad,
+                default=ANALYZER_DISPLAY_COLOR_BAD_DEFAULT,
+            ),
         }
 
     @classmethod
@@ -80,6 +124,38 @@ class UserSettings:
             source = "project"
         limit_mb = max(min(_as_int(payload.get("analyzer_cache_limit_mb"), default=240), 10 * 1024), 0)
         keep_last_n = max(min(_as_int(payload.get("analyzer_cache_keep_last_n"), default=5), 200), 1)
+        analyzer_display_show_good_band = _as_bool(
+            payload.get("analyzer_display_show_good_band"),
+            default=ANALYZER_DISPLAY_SHOW_GOOD_BAND_DEFAULT,
+        )
+        analyzer_display_show_warn_band = _as_bool(
+            payload.get("analyzer_display_show_warn_band"),
+            default=ANALYZER_DISPLAY_SHOW_WARN_BAND_DEFAULT,
+        )
+        analyzer_display_show_bad_band = _as_bool(
+            payload.get("analyzer_display_show_bad_band"),
+            default=ANALYZER_DISPLAY_SHOW_BAD_BAND_DEFAULT,
+        )
+        analyzer_display_show_warn_line = _as_bool(
+            payload.get("analyzer_display_show_warn_line"),
+            default=ANALYZER_DISPLAY_SHOW_WARN_LINE_DEFAULT,
+        )
+        analyzer_display_show_bad_line = _as_bool(
+            payload.get("analyzer_display_show_bad_line"),
+            default=ANALYZER_DISPLAY_SHOW_BAD_LINE_DEFAULT,
+        )
+        analyzer_display_color_good = _as_hex_rgb(
+            payload.get("analyzer_display_color_good"),
+            default=ANALYZER_DISPLAY_COLOR_GOOD_DEFAULT,
+        )
+        analyzer_display_color_warn = _as_hex_rgb(
+            payload.get("analyzer_display_color_warn"),
+            default=ANALYZER_DISPLAY_COLOR_WARN_DEFAULT,
+        )
+        analyzer_display_color_bad = _as_hex_rgb(
+            payload.get("analyzer_display_color_bad"),
+            default=ANALYZER_DISPLAY_COLOR_BAD_DEFAULT,
+        )
         simulation_timeout_minutes = max(
             min(
                 _as_int(payload.get("simulation_timeout_minutes"), default=SIMULATION_TIMEOUT_MINUTES_DEFAULT),
@@ -99,6 +175,14 @@ class UserSettings:
             analyzer_cache_mode=mode,
             analyzer_cache_limit_mb=limit_mb,
             analyzer_cache_keep_last_n=keep_last_n,
+            analyzer_display_show_good_band=analyzer_display_show_good_band,
+            analyzer_display_show_warn_band=analyzer_display_show_warn_band,
+            analyzer_display_show_bad_band=analyzer_display_show_bad_band,
+            analyzer_display_show_warn_line=analyzer_display_show_warn_line,
+            analyzer_display_show_bad_line=analyzer_display_show_bad_line,
+            analyzer_display_color_good=analyzer_display_color_good,
+            analyzer_display_color_warn=analyzer_display_color_warn,
+            analyzer_display_color_bad=analyzer_display_color_bad,
         )
 
 
@@ -147,6 +231,12 @@ class SettingsStore:
             issues["analyzer_cache_limit_mb"] = "Analyzer cache limit must be <= 10240 MB (10 GB)."
         if int(settings.analyzer_cache_keep_last_n) < 1:
             issues["analyzer_cache_keep_last_n"] = "Analyzer cache keep-last must be >= 1."
+        if not _HEX_RGB_RE.match(str(settings.analyzer_display_color_good or "").strip()):
+            issues["analyzer_display_color_good"] = "Analyzer good-band color must be #RRGGBB."
+        if not _HEX_RGB_RE.match(str(settings.analyzer_display_color_warn or "").strip()):
+            issues["analyzer_display_color_warn"] = "Analyzer warn-band color must be #RRGGBB."
+        if not _HEX_RGB_RE.match(str(settings.analyzer_display_color_bad or "").strip()):
+            issues["analyzer_display_color_bad"] = "Analyzer bad-band color must be #RRGGBB."
         timeout_minutes = int(settings.simulation_timeout_minutes)
         if timeout_minutes < SIMULATION_TIMEOUT_MINUTES_MIN:
             issues["simulation_timeout_minutes"] = (
