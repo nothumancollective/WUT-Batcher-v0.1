@@ -1,5 +1,11 @@
 # Analyzer Docs — Changelog
 
+## 2026-02-24 (Plot UX: transparent canvas background polish)
+- Switched active Analyzer plot canvases (Heatmap, MetricCurve, Pareto) to transparent outer canvas rendering instead of opaque `#111217` full-canvas fills.
+- Kept readability via subtle low-alpha interior plot wash + existing plot-rect borders, removing the black slab effect while preserving contrast cues.
+- Removed the extra full-canvas border stroke in Heatmap canvas to keep tile framing light and avoid boxed appearance.
+- Added regression coverage asserting transparent corner pixels on rendered plot canvases.
+
 ## 2026-02-24 (Plot UX: axis/layout metrics hardening)
 - Reworked analyzer plot theme metrics to use dynamic `QFontMetrics`-derived margins and axis/tick spacing instead of fixed static label bands.
 - Added `compute_plot_layout_geometry(...)` as a shared/testable layout contract used by Heatmap, MetricCurve, and Pareto canvases.

@@ -152,3 +152,6 @@
   - Layout geometry contract added via `compute_plot_layout_geometry(...)` and covered by regression tests.
   - Heatmap angle ticks now render with explicit `deg` labels and improved non-overlapping spacing.
   - Pareto now uses the shared axis-label path (rotated y-label + dynamic bottom spacing), removing prior orientation/clipping drift.
+- `FIXED/VERIFIED` issue cluster 3.1 (black-box background perception):
+  - Active plot canvases (Heatmap/MetricCurve/Pareto) now render with transparent outer canvas backgrounds instead of opaque dark full-canvas fills.
+  - Plot areas keep only subtle low-alpha interior wash and plot-rect borders, avoiding the former heavy black slab appearance.

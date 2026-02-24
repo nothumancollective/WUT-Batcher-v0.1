@@ -886,7 +886,7 @@ class HeatmapCanvas(QLabel):
         width = max(int(self.width()), 120)
         height = max(int(self.height()), 120)
         image = QImage(width, height, QImage.Format_ARGB32_Premultiplied)
-        image.fill(QColor("#111217"))
+        image.fill(Qt.transparent)
         painter = QPainter(image)
         painter.setRenderHint(QPainter.Antialiasing, True)
 
@@ -927,7 +927,7 @@ class HeatmapCanvas(QLabel):
         span = max(max_db - min_db, 1.0)
 
         source_image = QImage(max(cols, 1), max(rows, 1), QImage.Format_ARGB32_Premultiplied)
-        source_image.fill(QColor("#1A1E26"))
+        source_image.fill(QColor(0, 0, 0, 16))
         for y_idx, row in enumerate(self._matrix):
             for x_idx, value in enumerate(row):
                 if value is None:
@@ -1110,8 +1110,6 @@ class HeatmapCanvas(QLabel):
             plot_h=plot_h,
             theme=theme,
         )
-        painter.setPen(QPen(QColor("#3A4252")))
-        painter.drawRect(0, 0, width - 1, height - 1)
         if self._status:
             painter.setPen(QColor("#B8C1CF"))
             painter.setFont(_font_with_pixel_size(self.font(), int(theme.get("tick_font_px", 8))))
@@ -1164,7 +1162,7 @@ class MetricCurveCanvas(QLabel):
         width = max(int(self.width()), 180)
         height = max(int(self.height()), 140)
         image = QImage(width, height, QImage.Format_ARGB32_Premultiplied)
-        image.fill(QColor("#111217"))
+        image.fill(Qt.transparent)
         painter = QPainter(image)
         painter.setRenderHint(QPainter.Antialiasing, True)
 
@@ -1263,6 +1261,7 @@ class MetricCurveCanvas(QLabel):
         self._applied_plot_margins = (margin_left, margin_right, margin_top, margin_bottom)
         plot_w = int(layout["plot_w"])
         plot_h = int(layout["plot_h"])
+        painter.fillRect(margin_left, margin_top, plot_w, plot_h, QColor(255, 255, 255, 6))
 
         all_freqs = [point[0] for row in points_by_series for point in list(row.get("points", []) or [])]
         all_values = [point[1] for row in points_by_series for point in list(row.get("points", []) or [])]
@@ -1563,7 +1562,7 @@ class ParetoScatterCanvas(QLabel):
         width = max(int(self.width()), 180)
         height = max(int(self.height()), 140)
         image = QImage(width, height, QImage.Format_ARGB32_Premultiplied)
-        image.fill(QColor("#111217"))
+        image.fill(Qt.transparent)
         painter = QPainter(image)
         painter.setRenderHint(QPainter.Antialiasing, True)
 
@@ -1599,6 +1598,7 @@ class ParetoScatterCanvas(QLabel):
         margin_bottom = int(layout["margin_bottom"])
         plot_w = int(layout["plot_w"])
         plot_h = int(layout["plot_h"])
+        painter.fillRect(margin_left, margin_top, plot_w, plot_h, QColor(255, 255, 255, 6))
         x_values = [item[1] for item in valid]
         y_values = [item[2] for item in valid]
         x_min = min(x_values)

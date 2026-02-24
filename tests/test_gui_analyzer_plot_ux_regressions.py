@@ -242,6 +242,27 @@ class AnalyzerPlotUxRegressionTests(unittest.TestCase):
                         int(canvas.height()),
                     )
 
+    def test_canvas_outer_background_is_transparent(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_plot_ux_transparent_bg_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            heatmap = page._explorer_stage_panels["A"]["heatmap_canvas"]
+            curve = page._explorer_stage_panels["B"]["curve_canvas"]
+            pareto = page._compare_stage_panels["C"]["pareto_canvas"]
+            for canvas in (heatmap, curve, pareto):
+                canvas.resize(520, 300)
+            heatmap.clear_heatmap("No heatmap data.")
+            curve.clear_series("Curve not available.")
+            pareto.clear_points("Pareto unavailable.")
+            self.app.processEvents()
+            for canvas in (heatmap, curve, pareto):
+                pixmap = canvas.pixmap()
+                self.assertIsNotNone(pixmap)
+                image = pixmap.toImage()
+                # Corners must stay transparent: no opaque full-canvas black slab.
+                self.assertLessEqual(int(image.pixelColor(1, 1).alpha()), 10)
+                self.assertLessEqual(int(image.pixelColor(max(image.width() - 2, 1), 1).alpha()), 10)
+
 
 if __name__ == "__main__":
     unittest.main()
