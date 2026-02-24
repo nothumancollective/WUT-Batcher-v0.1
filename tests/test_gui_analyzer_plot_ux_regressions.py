@@ -517,6 +517,42 @@ class AnalyzerPlotUxRegressionTests(unittest.TestCase):
         self.assertGreater(mid.red(), good.red())
         self.assertGreater(bad.red(), bad.green())
 
+    def test_metric_curve_draw_content_stays_within_plot_rect_clip(self) -> None:
+        canvas = MetricCurveCanvas()
+        canvas.resize(560, 320)
+        styles = ("consistency_strip", "trend_band", "defect_band")
+        for style in styles:
+            series = [
+                {
+                    "label": "",
+                    "show_legend": False,
+                    "style": style,
+                    "show_band": True,
+                    "band_smooth": True,
+                    "thresholds": [0.2, 0.5, 0.8],
+                    "points": [
+                        {"freq_hz": 200.0, "value": 0.30},
+                        {"freq_hz": 500.0, "value": 0.55},
+                        {"freq_hz": 1000.0, "value": 0.42},
+                        {"freq_hz": 2000.0, "value": 0.66},
+                    ],
+                    "color": (154, 172, 197),
+                }
+            ]
+            canvas.set_series(series=series, x_scale_mode="log", x_label="Frequency (Hz, log)", y_label="Metric")
+            self.app.processEvents()
+            pixmap = canvas.pixmap()
+            self.assertIsNotNone(pixmap)
+            assert pixmap is not None
+            image = pixmap.toImage()
+            margin_left, margin_right, margin_top, margin_bottom = tuple(canvas._applied_plot_margins)
+            plot_w = max(image.width() - margin_left - margin_right, 1)
+            plot_h = max(image.height() - margin_top - margin_bottom, 1)
+            sample_x = min(image.width() - 2, margin_left + plot_w + 6)
+            sample_y = min(image.height() - 2, margin_top + (plot_h // 2))
+            outside_color = image.pixelColor(sample_x, sample_y)
+            self.assertLessEqual(int(outside_color.alpha()), 26, msg=f"style={style} leaked outside plot rect")
+
 
 if __name__ == "__main__":
     unittest.main()

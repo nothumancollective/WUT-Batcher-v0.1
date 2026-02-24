@@ -1,5 +1,9 @@
 ﻿# Analyzer Docs â€” Changelog
 
+## 2026-02-24 (Curve plot clipping: keep bands/lines inside plot box)
+- Added explicit plot-rect clipping for analyzer metric-curve rendering paths (trend bands, consistency strips, defect regions, threshold lines, hotspots, and curve polylines).
+- This prevents draw-overflow artifacts outside the plot box for Plane Consistency, Coverage Uniformity, and Off-axis Ripple Defect views.
+- Kept existing axis/title layout contracts intact while hardening render boundaries.
 ## 2026-02-24 (Target Deviation Summary: traffic-light bar semantics)
 - Updated Target Deviation Summary bar fills to status-driven traffic colors (green/yellow/red) based on normalized deviation buckets, without changing KPI values/math.
 - Kept the qualitative background reference bands and added per-bar status color blending for clearer single-candidate readability.
@@ -975,6 +979,7 @@
 
 ## 2026-02-24 (Merge integration follow-up)
 - Aligned GUI regression `test_version_bar_widgets_are_updated_in_place` with the stacked ATH params widget model (`version_ath_params_rows_widget` + empty-label placeholder) after merging `ui/analyzer-versionbar-polish-final`.
+
 
 
 

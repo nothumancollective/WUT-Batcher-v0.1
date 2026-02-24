@@ -1472,7 +1472,10 @@ class MetricCurveCanvas(QLabel):
             y_b = int(round(y_of(hi)))
             top = min(y_a, y_b)
             height_px = max(abs(y_b - y_a), 1)
+            painter.save()
+            painter.setClipRect(margin_left, margin_top, plot_w, plot_h)
             painter.fillRect(margin_left, top, plot_w, height_px, color)
+            painter.restore()
 
         if defect_rows:
             defect_thresholds = sorted(
@@ -1504,17 +1507,23 @@ class MetricCurveCanvas(QLabel):
         if threshold_values:
             threshold_color = QColor(self._target_axis_color)
             threshold_color.setAlpha(132)
+            painter.save()
+            painter.setClipRect(margin_left, margin_top, plot_w, plot_h)
             painter.setPen(QPen(threshold_color, 1, Qt.DashLine))
             for threshold in threshold_values:
                 y_line = int(round(y_of(float(threshold))))
                 painter.drawLine(margin_left, y_line, margin_left + plot_w, y_line)
+            painter.restore()
 
         def _draw_polyline(points: List[Tuple[float, float]], color: QColor, width_px: float) -> None:
+            painter.save()
+            painter.setClipRect(margin_left, margin_top, plot_w, plot_h)
             painter.setPen(QPen(color, float(width_px)))
             for idx in range(len(points) - 1):
                 x1, y1 = points[idx]
                 x2, y2 = points[idx + 1]
                 painter.drawLine(int(round(x_of(x1))), int(round(y_of(y1))), int(round(x_of(x2))), int(round(y_of(y2))))
+            painter.restore()
 
         legend_y = margin_top + 4
         for row in points_by_series:
@@ -1532,6 +1541,7 @@ class MetricCurveCanvas(QLabel):
                 fill_color = _band_color(color, fill_alpha)
                 if smooth_band:
                     painter.save()
+                    painter.setClipRect(margin_left, margin_top, plot_w, plot_h)
                     painter.setRenderHint(QPainter.Antialiasing, False)
                     band = QPainterPath()
                     first_x, first_y = points[0]
@@ -1545,6 +1555,7 @@ class MetricCurveCanvas(QLabel):
                     painter.restore()
                 else:
                     painter.save()
+                    painter.setClipRect(margin_left, margin_top, plot_w, plot_h)
                     painter.setRenderHint(QPainter.Antialiasing, False)
                     for idx in range(len(points) - 1):
                         x1, v1 = points[idx]
@@ -1560,6 +1571,8 @@ class MetricCurveCanvas(QLabel):
                     painter.restore()
                 boundary_color = QColor(color)
                 boundary_color.setAlpha(min(220, max(150, int(round(fill_color.alpha() * 1.35)))))
+                painter.save()
+                painter.setClipRect(margin_left, margin_top, plot_w, plot_h)
                 painter.setPen(QPen(boundary_color, 1))
                 for idx in range(len(points) - 1):
                     x1, y1 = points[idx]
@@ -1576,10 +1589,13 @@ class MetricCurveCanvas(QLabel):
                         int(round(x_of(x2))),
                         int(round(y_of(y2 - band_span))),
                     )
+                painter.restore()
                 _draw_polyline(points, color, max(line_width, 1.0))
                 if bool(row.get("regime_markers")) and len(points) >= 3:
                     marker_brush = QColor(color)
                     marker_brush.setAlpha(196)
+                    painter.save()
+                    painter.setClipRect(margin_left, margin_top, plot_w, plot_h)
                     painter.setBrush(marker_brush)
                     painter.setPen(QPen(color, 1))
                     for idx in range(1, len(points) - 1):
@@ -1595,11 +1611,13 @@ class MetricCurveCanvas(QLabel):
                             marker_y = int(round(y_of(points[idx][1])))
                             painter.drawEllipse(QPoint(marker_x, marker_y), 3, 3)
                     painter.setBrush(Qt.NoBrush)
+                    painter.restore()
             elif style_token == "consistency_strip" and len(points) >= 2 and show_band:
                 fill_alpha = float(row.get("fill_alpha", 0.12))
                 fill_color = _band_color(color, fill_alpha)
                 if smooth_band:
                     painter.save()
+                    painter.setClipRect(margin_left, margin_top, plot_w, plot_h)
                     painter.setRenderHint(QPainter.Antialiasing, False)
                     band_half_px = max(2.0, min(float(plot_h) * 0.025, 7.0))
                     band = QPainterPath()
@@ -1617,6 +1635,7 @@ class MetricCurveCanvas(QLabel):
                     painter.restore()
                 else:
                     painter.save()
+                    painter.setClipRect(margin_left, margin_top, plot_w, plot_h)
                     painter.setRenderHint(QPainter.Antialiasing, False)
                     strip_height = max(10, int(round(plot_h * 0.12)))
                     strip_top = int(margin_top + 4)
@@ -1637,6 +1656,7 @@ class MetricCurveCanvas(QLabel):
                 fill_color = _band_color(color, fill_alpha)
                 if smooth_band:
                     painter.save()
+                    painter.setClipRect(margin_left, margin_top, plot_w, plot_h)
                     painter.setRenderHint(QPainter.Antialiasing, False)
                     band = QPainterPath()
                     first_x, first_y = points[0]
@@ -1650,6 +1670,7 @@ class MetricCurveCanvas(QLabel):
                     painter.restore()
                 else:
                     painter.save()
+                    painter.setClipRect(margin_left, margin_top, plot_w, plot_h)
                     painter.setRenderHint(QPainter.Antialiasing, False)
                     for idx in range(len(points) - 1):
                         x1, v1 = points[idx]
@@ -1675,12 +1696,15 @@ class MetricCurveCanvas(QLabel):
                     thresholds = [float(item) for item in list(row.get("thresholds", []) or [])]
                     hotspot_threshold = max(thresholds) if thresholds else None
                 if hotspot_threshold is not None:
+                    painter.save()
+                    painter.setClipRect(margin_left, margin_top, plot_w, plot_h)
                     painter.setBrush(QColor(255, 214, 166, 220))
                     painter.setPen(QPen(QColor(255, 168, 120), 1))
                     for freq_hz, value in points:
                         if float(value) >= float(hotspot_threshold):
                             painter.drawEllipse(QPoint(int(round(x_of(freq_hz))), int(round(y_of(value)))), 3, 3)
                     painter.setBrush(Qt.NoBrush)
+                    painter.restore()
             else:
                 _draw_polyline(points, color, line_width)
             if has_legend and show_legend:
