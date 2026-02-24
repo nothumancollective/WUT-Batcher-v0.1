@@ -67,6 +67,16 @@ Stability strategy applied:
 Scope guard:
 - No KPI/flags/runner logic changes; only Analyzer UI layout and update behavior were adjusted.
 
+## Analyzer Version Bar layout semantics
+
+- Display and Analysis side tiles are constrained to matched dynamic height (derived from runtime `sizeHint`) to keep aligned centerlines while staying responsive.
+- Display inline controls are intentionally split into two equal-width framed sections:
+  - left: `Band` + `Low/High`
+  - right: `Plane` + `Advanced...`
+- `Tol (+/-deg)` is configured in `Display Advanced...` (not inline in Display) but remains bound to the same analyzer tolerance state.
+- Version Information ATH parameter rendering is a stacked key/value column (single-line rows with value elide + tooltip).
+- ATH visibility selection in `Version Details -> ATH Params` is capped at 5 keys; additional checks are prevented with inline hint feedback.
+
 ## Batch page: minimal-invasive changes
 
 Goal: remove the current bottom bar controls without damaging the polished Batch layout.

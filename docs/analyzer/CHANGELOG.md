@@ -1,5 +1,26 @@
 # Analyzer Docs — Changelog
 
+## 2026-02-24 (Analyzer Version Bar final polish - ATH params stack + cap)
+- Replaced inline ATH params text with a stacked key/value column (single-line rows, elided values, tooltips).
+- Added ATH visibility selection cap (max 5) in `Version Details -> ATH Params`; selecting a 6th is prevented with a `Max 5 parameters` hint.
+- Added safety clamps for persisted ATH visibility prefs: values are deterministically limited to first 5 on load and writes, with a log note when clamped.
+
+## 2026-02-24 (Analyzer Version Bar final polish - sweep color token)
+- Rebound the Version Information sweep chip to the same active Sweep QSS token values used by `QPushButton#SweepButton[sweepActive="true"]`.
+- Removed the ad-hoc inline sweep blue in Analyzer so sweep highlighting is now color-consistent with Batch Sweep controls.
+
+## 2026-02-24 (Analyzer Version Bar final polish - plane segments)
+- Unified H/V/D segmented plane button visuals: consistent border/padding/radius behavior for all segments.
+- Removed the V-only border-width override that caused the visual inset/offset artifact.
+- Kept selected state monochrome (neutral highlight), no semantic-blue usage for generic selection state.
+
+## 2026-02-24 (Analyzer Version Bar final polish - layout round 1)
+- Moved `Tol (+/-deg)` out of Display inline controls into the existing `Display Advanced...` dialog while preserving the same bound tolerance value/behavior.
+- Reworked Display internals to two equal-width framed sections (`Band` and `Plane`), with `Advanced...` anchored inside the Plane section.
+- Removed the framed sub-block around Analysis exclude toggles while preserving spacing/height in the Analysis tile.
+- Added side-tile height synchronization so Analysis and Display maintain matched height and centered vertical alignment in the Version Bar.
+- Updated GUI assertions to verify Tol relocation, equal Display split widths, and side-tile height parity.
+
 ## 2026-02-23 (Analyzer UI stability pass - phase 4)
 - Stabilized Analyzer version-bar updates to prevent visible layout jumps during version switches and filter toggles.
 - Replaced dynamic multi-line Compare/ATH labels in hot update paths with single-line elided labels + tooltips.

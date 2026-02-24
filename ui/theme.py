@@ -202,6 +202,20 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     QToolButton[analyzerPlaneToggle="true"] {{
         border-radius: 0px;
         padding: 1px 10px;
+        background-color: #202020;
+    }}
+    QToolButton[analyzerPlaneToggle="true"]:hover {{
+        border-color: {c['accent']};
+        background-color: #262626;
+    }}
+    QToolButton[analyzerPlaneToggle="true"]:checked {{
+        border-color: #9a9a9a;
+        background-color: #2b2b2b;
+        color: {c['text']};
+    }}
+    QToolButton[analyzerPlaneToggle="true"][analyzerPlaneSegment="middle"],
+    QToolButton[analyzerPlaneToggle="true"][analyzerPlaneSegment="last"] {{
+        margin-left: -1px;
     }}
     QToolButton#AnalyzerPlaneHButton {{
         border-top-left-radius: {r['sm']}px;
@@ -210,10 +224,6 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     QToolButton#AnalyzerPlaneDButton {{
         border-top-right-radius: {r['sm']}px;
         border-bottom-right-radius: {r['sm']}px;
-    }}
-    QToolButton[analyzerPlaneToggle="true"][analyzerPlaneSegment="middle"],
-    QToolButton[analyzerPlaneToggle="true"][analyzerPlaneSegment="last"] {{
-        margin-left: -1px;
     }}
     QToolButton#AnalyzerVersionPinButton {{
         padding: 0px;
@@ -854,6 +864,14 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         font-size: 11px;
         font-weight: 600;
     }}
+    QLabel[analyzerInfoKey="true"] {{
+        color: #a2a2a2;
+        font-weight: 600;
+    }}
+    QLabel[analyzerInfoValue="true"] {{
+        color: #e2e2e2;
+        font-weight: 600;
+    }}
     QLabel#BatchSummaryMeta {{
         color: {c['muted']};
         font-size: 11px;
@@ -1150,10 +1168,15 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         min-height: 30px;
         padding: 0px {max(int(s['sm']) + 1, 4)}px;
     }}
-    QPushButton#SweepButton[sweepActive="true"] {{
+    QPushButton#SweepButton[sweepActive="true"],
+    QLabel[analyzerSweepChip="true"] {{
         border: 1px solid #4f8cff;
         color: #d9e7ff;
         background-color: rgba(79, 140, 255, 0.22);
+    }}
+    QLabel[analyzerSweepChip="true"] {{
+        border-radius: {r['sm']}px;
+        padding: 1px 6px;
     }}
     QPushButton[segment=\"true\"][disclosureHint="true"] {{
         border: 1px solid {c['accent']};

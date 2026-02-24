@@ -2077,7 +2077,8 @@ class _AnalyzerRunDetailsDialog(StyledDialogBase):
         payload: Dict[str, Any],
         ath_param_rows: Optional[Sequence[Dict[str, Any]]] = None,
         visible_ath_keys: Optional[Sequence[str]] = None,
-        on_toggle_ath_param: Optional[Callable[[str, bool], None]] = None,
+        on_toggle_ath_param: Optional[Callable[[str, bool], Any]] = None,
+        max_visible_ath_params: int = 5,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(title="Run Details", parent=parent, min_width=880, min_height=620)
@@ -2170,6 +2171,12 @@ class _AnalyzerRunDetailsDialog(StyledDialogBase):
         ath_hint.setObjectName("SummaryMeta")
         ath_hint.setWordWrap(True)
         ath_layout.addWidget(ath_hint, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        ath_limit_hint = QLabel("")
+        ath_limit_hint.setObjectName("SummaryMeta")
+        ath_limit_hint.setProperty("analyzerAthLimitHint", True)
+        ath_limit_hint.setWordWrap(False)
+        ath_limit_hint.setVisible(False)
+        ath_layout.addWidget(ath_limit_hint, 0, Qt.AlignLeft | Qt.AlignVCenter)
 
         ath_table = QTableWidget(0, 4)
         ath_table.setObjectName("AnalyzerAthParamsTable")
@@ -2197,7 +2204,22 @@ class _AnalyzerRunDetailsDialog(StyledDialogBase):
                 return "Term"
             return "Other"
 
-        visible_set = {str(item).strip() for item in list(visible_ath_keys or []) if str(item).strip()}
+        limit = max(1, int(max_visible_ath_params or 5))
+        visible_ordered: List[str] = []
+        seen_visible: set[str] = set()
+        for raw in list(visible_ath_keys or []):
+            key = str(raw or "").strip()
+            if not key or key in seen_visible:
+                continue
+            seen_visible.add(key)
+            visible_ordered.append(key)
+        clamped_on_open = len(visible_ordered) > limit
+        if clamped_on_open:
+            visible_ordered = visible_ordered[:limit]
+        selected_visible: set[str] = set(visible_ordered)
+        if clamped_on_open:
+            ath_limit_hint.setText(f"Max {limit} parameters. Loaded first {limit}.")
+            ath_limit_hint.setVisible(True)
         normalized_rows = [dict(item) for item in list(ath_param_rows or []) if isinstance(item, dict)]
         normalized_rows.sort(key=lambda item: (_ath_group_for_key(str(item.get("param_name") or "")), str(item.get("param_name") or "")))
 
@@ -2212,11 +2234,28 @@ class _AnalyzerRunDetailsDialog(StyledDialogBase):
             ath_table.setItem(row_index, 1, QTableWidgetItem(param_name))
             ath_table.setItem(row_index, 2, QTableWidgetItem(AnalysePage._format_param_value(value)))
             visible_check = QCheckBox()
-            visible_check.setChecked(param_name in visible_set)
+            visible_check.setChecked(param_name in selected_visible)
             if callable(on_toggle_ath_param):
-                visible_check.toggled.connect(
-                    lambda checked, key=param_name: on_toggle_ath_param(str(key), bool(checked))
-                )
+                def _handle_visible_toggle(checked: bool, *, key: str = param_name, control: QCheckBox = visible_check) -> None:
+                    token = str(key or "").strip()
+                    if not token:
+                        return
+                    if checked:
+                        if token in selected_visible:
+                            return
+                        if len(selected_visible) >= limit:
+                            control.blockSignals(True)
+                            control.setChecked(False)
+                            control.blockSignals(False)
+                            ath_limit_hint.setText(f"Max {limit} parameters.")
+                            ath_limit_hint.setVisible(True)
+                            return
+                        selected_visible.add(token)
+                    else:
+                        selected_visible.discard(token)
+                    on_toggle_ath_param(str(token), bool(checked))
+
+                visible_check.toggled.connect(_handle_visible_toggle)
             cell = QWidget()
             cell_layout = QHBoxLayout(cell)
             cell_layout.setContentsMargins(0, 0, 0, 0)
@@ -4882,6 +4921,7 @@ class AnalysePage(QWidget):
         self._latest_plot_payload: Dict[str, Any] = {}
         self._explorer_stage_panels: Dict[str, Dict[str, Any]] = {}
         self._compare_overlay_curve_key = "beamwidth"
+        self._ath_visible_param_limit = 5
         self._active_plane = "H"
         self._analyzer_controls_row_min_height = 0
         self._plane_buttons: Dict[str, QToolButton] = {}
@@ -5621,20 +5661,19 @@ class AnalysePage(QWidget):
         analysis_controls_layout.addWidget(self.target_selector, 1, 3)
         analysis_controls_layout.addWidget(QLabel("Min score"), 2, 0, Qt.AlignLeft | Qt.AlignVCenter)
         analysis_controls_layout.addWidget(self.min_score_spin, 2, 1)
-        analysis_toggle_frame = QFrame()
-        analysis_toggle_frame.setObjectName("AnalyzerDisplaySlotFrame")
-        analysis_toggle_layout = QHBoxLayout(analysis_toggle_frame)
-        analysis_toggle_layout.setContentsMargins(6, 3, 6, 3)
-        analysis_toggle_layout.setSpacing(4)
-        analysis_toggle_layout.addWidget(self.exclude_flagged_check, 0, Qt.AlignLeft | Qt.AlignVCenter)
-        analysis_toggle_layout.addWidget(self.exclude_warnings_check, 0, Qt.AlignLeft | Qt.AlignVCenter)
-        analysis_toggle_layout.addStretch(1)
-        analysis_controls_layout.addWidget(analysis_toggle_frame, 3, 0, 1, 4)
+        analysis_filter_row = QWidget()
+        analysis_filter_row_layout = QHBoxLayout(analysis_filter_row)
+        analysis_filter_row_layout.setContentsMargins(0, 0, 0, 0)
+        analysis_filter_row_layout.setSpacing(4)
+        analysis_filter_row_layout.addWidget(self.exclude_flagged_check, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        analysis_filter_row_layout.addWidget(self.exclude_warnings_check, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        analysis_filter_row_layout.addStretch(1)
+        analysis_controls_layout.addWidget(analysis_filter_row, 3, 0, 1, 4)
         analysis_controls_layout.setColumnStretch(0, 0)
         analysis_controls_layout.setColumnStretch(1, 1)
         analysis_controls_layout.setColumnStretch(2, 0)
         analysis_controls_layout.setColumnStretch(3, 1)
-        controls_row_layout.addWidget(self.analysis_controls_tile, 1)
+        controls_row_layout.addWidget(self.analysis_controls_tile, 1, Qt.AlignVCenter)
 
         self.kpi_controls_tile = QFrame()
         self.kpi_controls_tile.setObjectName("ProjectSummaryPanel")
@@ -5742,15 +5781,41 @@ class AnalysePage(QWidget):
         self.version_sweep_value_label = ElidedTitleLabel("--")
         self.version_sweep_value_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.version_sweep_value_label.setObjectName("SummaryMeta")
-        self.version_sweep_value_label.setProperty("analyzerSweepBadge", True)
+        self.version_sweep_value_label.setProperty("analyzerSweepChip", True)
         self.version_sweep_value_label.setMinimumWidth(180)
         self.version_sweep_value_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         col2_layout.addWidget(self.version_sweep_value_label, 0)
-        self.version_ath_params_value_label = ElidedTitleLabel("ATH params: --")
-        self.version_ath_params_value_label.setObjectName("SummaryMeta")
-        self.version_ath_params_value_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.version_ath_params_value_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        col2_layout.addWidget(self.version_ath_params_value_label, 1, Qt.AlignLeft | Qt.AlignVCenter)
+        self.version_ath_params_rows_widget = QWidget()
+        ath_rows_layout = QGridLayout(self.version_ath_params_rows_widget)
+        ath_rows_layout.setContentsMargins(0, 0, 0, 0)
+        ath_rows_layout.setHorizontalSpacing(6)
+        ath_rows_layout.setVerticalSpacing(3)
+        self._version_ath_param_key_labels: List[QLabel] = []
+        self._version_ath_param_value_labels: List[ElidedTitleLabel] = []
+        for idx in range(int(self._ath_visible_param_limit)):
+            key_label = QLabel("--")
+            key_label.setObjectName("SummaryMeta")
+            key_label.setProperty("analyzerInfoKey", True)
+            key_label.setWordWrap(False)
+            key_label.setVisible(False)
+            value_label = ElidedTitleLabel("--")
+            value_label.setObjectName("SummaryMeta")
+            value_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+            value_label.setProperty("analyzerInfoValue", True)
+            value_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            value_label.setVisible(False)
+            self._version_ath_param_key_labels.append(key_label)
+            self._version_ath_param_value_labels.append(value_label)
+            ath_rows_layout.addWidget(key_label, idx, 0, Qt.AlignLeft | Qt.AlignVCenter)
+            ath_rows_layout.addWidget(value_label, idx, 1)
+        ath_rows_layout.setColumnStretch(0, 0)
+        ath_rows_layout.setColumnStretch(1, 1)
+        self.version_ath_params_empty_label = ElidedTitleLabel("ATH params: --")
+        self.version_ath_params_empty_label.setObjectName("SummaryMeta")
+        self.version_ath_params_empty_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.version_ath_params_empty_label.setVisible(True)
+        col2_layout.addWidget(self.version_ath_params_rows_widget, 1, Qt.AlignLeft | Qt.AlignTop)
+        col2_layout.addWidget(self.version_ath_params_empty_label, 0, Qt.AlignLeft | Qt.AlignTop)
         extra_layout.addWidget(self.version_info_col2, 1)
         divider_2 = QFrame()
         divider_2.setObjectName("AnalyzerInfoDivider")
@@ -5887,21 +5952,22 @@ class AnalysePage(QWidget):
         plane_box_layout.addStretch(1)
         plane_layout.addWidget(QLabel("Plane"), 0, 0, Qt.AlignLeft | Qt.AlignVCenter)
         plane_layout.addWidget(plane_box, 0, 1, 1, 2)
-        plane_layout.addWidget(QLabel("Tol (+/-deg)"), 1, 0, Qt.AlignLeft | Qt.AlignVCenter)
-        plane_layout.addWidget(self.tol_spin, 1, 1)
         plane_layout.addWidget(self.display_advanced_btn, 1, 2, Qt.AlignRight | Qt.AlignVCenter)
         plane_layout.setColumnStretch(0, 0)
         plane_layout.setColumnStretch(1, 1)
         plane_layout.setColumnStretch(2, 0)
         display_split_layout.addWidget(plane_frame, 1)
         self.display_slot_frames.append(plane_frame)
+
+        display_split_layout.setStretch(0, 1)
+        display_split_layout.setStretch(1, 1)
         display_controls_layout.addWidget(display_split_row, 1, 0, 1, 4)
         display_controls_layout.addWidget(self.plot_cancel_btn, 2, 3, 1, 1, Qt.AlignRight | Qt.AlignVCenter)
         display_controls_layout.setColumnStretch(0, 1)
         display_controls_layout.setColumnStretch(1, 1)
         display_controls_layout.setColumnStretch(2, 1)
         display_controls_layout.setColumnStretch(3, 0)
-        controls_row_layout.addWidget(self.display_controls_tile, 1)
+        controls_row_layout.addWidget(self.display_controls_tile, 1, Qt.AlignVCenter)
         controls_row_layout.setStretch(0, 1)
         controls_row_layout.setStretch(1, 2)
         controls_row_layout.setStretch(2, 1)
@@ -5999,7 +6065,7 @@ class AnalysePage(QWidget):
         self._sync_band_custom_visibility()
         self._apply_stage_defaults()
         self._apply_stage_plot_layout()
-        QTimer.singleShot(0, self._stabilize_analyzer_controls_row_height)
+        QTimer.singleShot(0, self._sync_side_tile_heights)
         self.compute_btn.setEnabled(self._source_key() == "project")
         self._set_details(None)
         self.run_selector.addItem("(no versions)", "")
@@ -6165,6 +6231,21 @@ class AnalysePage(QWidget):
         self._sync_selection_action_button_sizes()
         self._sync_version_stepper()
         self._sync_batch_selector_tooltip()
+        self._sync_side_tile_heights()
+
+    def _sync_side_tile_heights(self) -> None:
+        if not hasattr(self, "analysis_controls_tile") or not hasattr(self, "display_controls_tile"):
+            return
+        hinted = max(
+            int(self.analysis_controls_tile.sizeHint().height()),
+            int(self.display_controls_tile.sizeHint().height()),
+        )
+        if hinted <= 0:
+            return
+        self.analysis_controls_tile.setMinimumHeight(hinted)
+        self.analysis_controls_tile.setMaximumHeight(hinted)
+        self.display_controls_tile.setMinimumHeight(hinted)
+        self.display_controls_tile.setMaximumHeight(hinted)
 
     def _stabilize_analyzer_controls_row_height(self) -> None:
         if self._analyzer_controls_row_min_height > 0:
@@ -6767,6 +6848,13 @@ class AnalysePage(QWidget):
         norm_angle_combo.setToolTip(str(self.norm_angle_selector.toolTip() or ""))
         form.addWidget(QLabel("Norm angle"), 1, 0, Qt.AlignLeft | Qt.AlignVCenter)
         form.addWidget(norm_angle_combo, 1, 1)
+        tol_spin = QDoubleSpinBox()
+        tol_spin.setRange(self.tol_spin.minimum(), self.tol_spin.maximum())
+        tol_spin.setDecimals(self.tol_spin.decimals())
+        tol_spin.setSingleStep(self.tol_spin.singleStep())
+        tol_spin.setValue(float(self.tol_spin.value()))
+        form.addWidget(QLabel("Tol (+/-deg)"), 1, 2, Qt.AlignLeft | Qt.AlignVCenter)
+        form.addWidget(tol_spin, 1, 3)
 
         clamp_check = QCheckBox("Clamp heatmap")
         clamp_check.setChecked(bool(self.heatmap_clamp_check.isChecked()))
@@ -6806,6 +6894,7 @@ class AnalysePage(QWidget):
                 plot_changed = True
             if str(self.norm_angle_selector.currentData() or "0") != str(norm_angle_combo.currentData() or "0"):
                 plot_changed = True
+            tol_changed = abs(float(self.tol_spin.value()) - float(tol_spin.value())) > 1.0e-9
             if bool(self.heatmap_clamp_check.isChecked()) != bool(clamp_check.isChecked()):
                 plot_changed = True
             if abs(float(self.heatmap_clamp_min_spin.value()) - float(clamp_min_spin.value())) > 1.0e-9:
@@ -6821,6 +6910,7 @@ class AnalysePage(QWidget):
             self._set_combo_current_by_data(self.x_axis_scale_combo, str(x_axis_combo.currentData() or "log"))
             self._set_combo_current_by_data(self.norm_mode_combo, str(norm_mode_combo.currentData() or "relative_zero"))
             self._set_combo_current_by_data(self.norm_angle_selector, str(norm_angle_combo.currentData() or "0"))
+            self.tol_spin.setValue(float(tol_spin.value()))
             self.heatmap_clamp_check.setChecked(bool(clamp_check.isChecked()))
             self.heatmap_clamp_min_spin.setValue(float(clamp_min_spin.value()))
             self.raw_bins_check.setChecked(bool(raw_bins_check.isChecked()))
@@ -6830,6 +6920,8 @@ class AnalysePage(QWidget):
 
             if plot_changed:
                 self._on_plot_config_changed()
+            if tol_changed:
+                self._on_kpi_config_changed()
             if smoothness_changed:
                 self._schedule_plot_refresh()
                 self._schedule_compare_plot_refresh()
@@ -8019,6 +8111,7 @@ class AnalysePage(QWidget):
             ath_param_rows=ath_rows,
             visible_ath_keys=list(self._ath_visible_param_keys),
             on_toggle_ath_param=self._set_ath_param_visibility,
+            max_visible_ath_params=int(self._ath_visible_param_limit),
             parent=self,
         )
         dialog.exec()
@@ -8076,6 +8169,15 @@ class AnalysePage(QWidget):
                 continue
             seen.add(key)
             ordered.append(key)
+        limit = max(1, int(getattr(self, "_ath_visible_param_limit", 5) or 5))
+        if len(ordered) > limit:
+            LOGGER.info(
+                "Analyzer ATH visible params clamped to %s entries for project %s (had %s).",
+                int(limit),
+                str(project_id),
+                len(ordered),
+            )
+            ordered = ordered[:limit]
         self._ath_visible_param_keys = ordered
         pin_payload = self.service.analyzer_get_ui_pref(project_id=project_id, pref_key=self._version_pin_pref_key)
         raw_pin_keys = list(pin_payload.get("keys", []) or []) if isinstance(pin_payload, dict) else []
@@ -8210,10 +8312,14 @@ class AnalysePage(QWidget):
         project_id = str(self._selected_project_id() or "").strip()
         if not project_id or self._source_key() != "project":
             return
+        limit = max(1, int(getattr(self, "_ath_visible_param_limit", 5) or 5))
+        sanitized = list(self._ath_visible_param_keys)[:limit]
+        if sanitized != list(self._ath_visible_param_keys):
+            self._ath_visible_param_keys = sanitized
         self.service.analyzer_set_ui_pref(
             project_id=project_id,
             pref_key=self._ath_visible_pref_key,
-            payload={"visible_keys": list(self._ath_visible_param_keys)},
+            payload={"visible_keys": list(sanitized)},
         )
 
     def _set_ath_param_visibility(self, key: str, visible: bool) -> None:
@@ -8221,7 +8327,10 @@ class AnalysePage(QWidget):
         if not token:
             return
         current = list(self._ath_visible_param_keys)
+        limit = max(1, int(getattr(self, "_ath_visible_param_limit", 5) or 5))
         if visible and token not in current:
+            if len(current) >= limit:
+                return
             current.append(token)
         if not visible and token in current:
             current = [item for item in current if item != token]
@@ -8257,19 +8366,64 @@ class AnalysePage(QWidget):
         identity = self._version_identity_key(payload)
         if not all(identity):
             return ["ATH params: --"]
+        visible_keys = list(self._ath_visible_param_keys)[: int(self._ath_visible_param_limit)]
         values = self.service.analyzer_version_param_values(
             project_id=identity[0],
             batch_id=identity[1],
             version_id=identity[2],
-            keys=self._ath_visible_param_keys,
+            keys=visible_keys,
         )
         lines: List[str] = []
-        for key in self._ath_visible_param_keys:
+        for key in visible_keys:
             if key not in values:
                 lines.append(f"{key}: --")
                 continue
             lines.append(f"{key}: {self._format_param_value(values.get(key))}")
         return lines or ["ATH params: --"]
+
+    @staticmethod
+    def _split_key_value_line(line: str) -> Tuple[str, str]:
+        text = str(line or "").strip()
+        if not text:
+            return ("--", "--")
+        if ":" not in text:
+            return (text, "--")
+        key, value = text.split(":", 1)
+        return (str(key or "").strip() or "--", str(value or "").strip() or "--")
+
+    @staticmethod
+    def _styled_key_value_text(key_text: str, value_text: str) -> str:
+        key = html.escape(str(key_text or "").strip() or "--")
+        value = html.escape(str(value_text or "").strip() or "--")
+        return (
+            "<span style='color:#A2A2A2;'>"
+            + key
+            + "</span>: <span style='color:#E2E2E2;'>"
+            + value
+            + "</span>"
+        )
+
+    def _render_ath_param_lines(self, lines: Sequence[str]) -> None:
+        entries = [self._split_key_value_line(item) for item in list(lines or []) if str(item or "").strip()]
+        entries = entries[: int(self._ath_visible_param_limit)]
+        for key_label, value_label in zip(self._version_ath_param_key_labels, self._version_ath_param_value_labels):
+            key_label.setVisible(False)
+            value_label.setVisible(False)
+            key_label.setText("--")
+            value_label.set_full_text("--")
+        if not entries:
+            self.version_ath_params_empty_label.set_full_text("ATH params: --")
+            self.version_ath_params_empty_label.setVisible(True)
+            return
+        self.version_ath_params_empty_label.setVisible(False)
+        for idx, (key_text, value_text) in enumerate(entries):
+            key_label = self._version_ath_param_key_labels[idx]
+            value_label = self._version_ath_param_value_labels[idx]
+            key_label.setText(f"{key_text}:")
+            key_label.setToolTip(key_text)
+            value_label.set_full_text(value_text)
+            key_label.setVisible(True)
+            value_label.setVisible(True)
 
     def _update_version_note_counter(self, *, remaining: int) -> None:
         self.version_note_counter.setText(f"{max(int(remaining), 0)} left")
@@ -8334,7 +8488,7 @@ class AnalysePage(QWidget):
                 label.setText("--")
                 label.setToolTip("missing")
             self.version_sweep_value_label.set_full_text("--")
-            self.version_ath_params_value_label.set_full_text("ATH params: --")
+            self._render_ath_param_lines(["ATH params: --"])
             self._refresh_version_pin_button(enabled=False, pinned=False)
             self.version_note_edit.setEnabled(False)
             self._note_sync_guard = True
@@ -8382,13 +8536,14 @@ class AnalysePage(QWidget):
         }
         for key, label in self._version_chip_labels.items():
             pair = chip_values.get(key)
-            if not pair:
+            if not isinstance(pair, tuple):
                 label.setText("--")
                 label.setToolTip("missing")
                 continue
+            key_text = str(pair[0] or "--")
             value_text = str(pair[1] or "--")
-            label.setText(self._render_dim_key_value(str(pair[0]), value_text))
-            label.setToolTip(f"{pair[0]}: {value_text}" if value_text != "--" else "missing")
+            label.setText(self._styled_key_value_text(key_text, value_text))
+            label.setToolTip(f"{key_text}: {value_text}" if value_text != "--" else "missing")
 
         sweep_params = dict(data.get("sweep_parameters") or {})
         if sweep_params:
@@ -8400,7 +8555,7 @@ class AnalysePage(QWidget):
             self.version_sweep_value_label.set_full_text("--")
 
         ath_lines = self._visible_ath_param_lines(data)
-        self.version_ath_params_value_label.set_full_text(" | ".join(ath_lines))
+        self._render_ath_param_lines(ath_lines)
 
         note_text = str(data.get("version_note") or "")
         can_edit_note = bool(self._source_key() == "project" and all(self._version_identity_key(data)))
