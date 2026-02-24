@@ -1,5 +1,10 @@
 ﻿# Analyzer Docs â€” Changelog
 
+## 2026-02-24 (Validation - stage/selection/plane E2E smoketest)
+- Added `docs/analyzer/e2e_stage_selection_plane_fix_smoketest.md` with end-to-end GUI smoke evidence on real project data (`P021`).
+- Logged Explorer stage-switch verification, stage-aware KPI rows, Refresh KPIs checks, Compare manual/auto-pick checks, and H/V/D propagation results.
+- Logged missing-plane graceful Compare status evidence (`Missing H: ...`) for mixed-plane candidate sets.
+
 ## 2026-02-24 (Fix 3 - compare plane propagation + missing-plane feedback)
 - Display plane button changes now propagate into Compare plane selection and trigger Compare plot refresh.
 - Compare shortlist rows now mark candidates missing the selected plane (for example `[missing H]`).
