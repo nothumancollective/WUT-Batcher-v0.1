@@ -1,5 +1,10 @@
 ﻿# Analyzer Docs â€” Changelog
 
+## 2026-02-24 (Stage visualization refactor audit)
+- Added docs/analyzer/09_stage_visualization_refactor_audit.md.
+- Documented current Explorer/Compare plot rendering paths, worker-threaded payload flow, and custom QPainter backend constraints.
+- Captured a display-only implementation plan for stage-specific visualization language (Concept decision view, Stabilization trend/consistency view, Final defect-hunting view) without KPI/runner/schema changes.
+
 ## 2026-02-24 (Compare left-panel regression coverage + docs sync)
 - Added tests/test_gui_analyzer_compare_left_panel_ui.py with focused coverage for fixed 5-slot compare table contract, stage-driven KPI column remap, active-slot to heatmap default sync, and safe remove-slot behavior.
 - Updated existing compare UI tests to match the redesigned left panel (no legacy compare_kpi_panel / compare_kpi_matrix assumptions).
@@ -794,6 +799,7 @@
 
 ## 2026-02-24 (Merge integration follow-up)
 - Aligned GUI regression `test_version_bar_widgets_are_updated_in_place` with the stacked ATH params widget model (`version_ath_params_rows_widget` + empty-label placeholder) after merging `ui/analyzer-versionbar-polish-final`.
+
 
 
 
