@@ -1017,3 +1017,8 @@
 - Metric band alpha now respects a global opacity factor while remaining bounded by per-size visual safety caps.
 - Compare curve overlays now render band fills only for the active selected candidate/slot, so the band color follows the active plot series.
 - Added regression coverage for opacity clamp/persistence and active-slot band ownership in compare overlays.
+## 2026-02-24 (Tile maximize: stable dblclick restore + drawer guard)
+- Hardened plot-tile double-click maximize state machine: when a tile is already maximized, double-clicks on other slots no longer switch focus.
+- Compare now ignores tile double-click maximize/restore while the compare drawer is expanded.
+- Restore remains deterministic: double-clicking the same maximized tile returns to the 2x2 grid.
+- Added regression coverage for compare double-click stability and drawer-expanded maximize blocking.

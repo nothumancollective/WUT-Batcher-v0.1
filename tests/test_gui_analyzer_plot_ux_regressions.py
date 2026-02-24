@@ -476,6 +476,51 @@ class AnalyzerPlotUxRegressionTests(unittest.TestCase):
             self.assertTrue(all(bool(panel["frame"].isVisible()) for panel in page._explorer_stage_panels.values()))
             page.hide()
 
+    @unittest.skipIf(QTest is None or Qt is None, "Qt test utilities are required")
+    def test_compare_double_click_restore_is_stable_and_disabled_when_drawer_expanded(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_plot_ux_compare_double_click_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            page.resize(1200, 780)
+            page.analysis_tabs.setCurrentWidget(page.compare_tab)
+            page.show()
+            self.app.processEvents()
+
+            page._set_compare_drawer_expanded(False, animated=False)
+            self.app.processEvents()
+            tile_primary = page._compare_stage_panels["B"]["heatmap_canvas"]
+            primary_slot = str(tile_primary.property("analyzerPlotTileSlot") or "").strip().upper()
+            self.assertIn(primary_slot, {"A", "B", "C", "D"})
+            QTest.mouseDClick(tile_primary, Qt.LeftButton)
+            self.app.processEvents()
+            self.assertEqual(str(page._maximized_plot_slots.get("compare") or ""), primary_slot)
+
+            # A double-click on another slot while maximized must not switch focus.
+            tile_other = None
+            for slot_key in ("A", "B", "C", "D"):
+                candidate = page._compare_stage_panels[slot_key]["curve_canvas"]
+                candidate_slot = str(candidate.property("analyzerPlotTileSlot") or "").strip().upper()
+                if candidate_slot != primary_slot:
+                    tile_other = candidate
+                    break
+            self.assertIsNotNone(tile_other)
+            assert tile_other is not None
+            QTest.mouseDClick(tile_other, Qt.LeftButton)
+            self.app.processEvents()
+            self.assertEqual(str(page._maximized_plot_slots.get("compare") or ""), primary_slot)
+
+            # Restore by double-clicking the maximized tile.
+            QTest.mouseDClick(tile_primary, Qt.LeftButton)
+            self.app.processEvents()
+            self.assertIsNone(page._maximized_plot_slots.get("compare"))
+
+            page._set_compare_drawer_expanded(True, animated=False)
+            self.app.processEvents()
+            QTest.mouseDClick(tile_primary, Qt.LeftButton)
+            self.app.processEvents()
+            self.assertIsNone(page._maximized_plot_slots.get("compare"))
+            page.hide()
+
     def test_compare_pareto_excludes_non_finite_values_without_crash(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_plot_ux_pareto_non_finite_") as tmp:
             service = _build_service(Path(tmp))

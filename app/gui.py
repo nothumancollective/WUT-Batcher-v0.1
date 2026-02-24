@@ -7359,7 +7359,11 @@ class AnalysePage(QWidget):
         slot = str(slot_token or "").strip().upper()
         if token not in {"explorer", "compare"} or slot not in {"A", "B", "C", "D"}:
             return
+        if token == "compare" and bool(getattr(self, "_compare_drawer_expanded", False)):
+            return
         current = str(self._maximized_plot_slots.get(token) or "").strip().upper()
+        if current and current != slot:
+            return
         self._maximized_plot_slots[token] = None if current == slot else slot
         self._reflow_plot_grid(token)
 
