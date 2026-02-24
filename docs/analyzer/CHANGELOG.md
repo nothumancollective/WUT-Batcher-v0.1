@@ -1,5 +1,11 @@
 # Analyzer Docs — Changelog
 
+## 2026-02-24 (Metric bands: smooth strip rendering + advanced control)
+- Added `Smooth metric bands` to `Display -> Advanced` (default ON), alongside `Show metric bands`.
+- Metric curve renderers now support both smooth filled bands and block-strip fallback mode via a shared `band_smooth` style flag.
+- Preserved existing KPI/math pipeline; changes are display-only and apply consistently across stabilization/final trend/consistency/defect render modes.
+- Persisted `metric_band_smooth` in analyzer analysis config load/save.
+
 ## 2026-02-24 (Plot surfaces: transparent tile/background cleanup)
 - Switched analyzer plot-tile frame background to transparent (border-only card framing) to avoid dark slab appearance.
 - Lightened compare drawer surface tint to UI-consistent translucent panel tone (no opaque black block).

@@ -1239,6 +1239,7 @@ class MetricCurveCanvas(QLabel):
             thresholds = sorted(set(thresholds))
             regime_markers = bool(row.get("regime_markers", False))
             show_band = bool(row.get("show_band", True))
+            smooth_band = bool(row.get("band_smooth", True))
             points: List[Tuple[float, float]] = []
             for item in points_raw:
                 if isinstance(item, Mapping):
@@ -1271,6 +1272,7 @@ class MetricCurveCanvas(QLabel):
                         "thresholds": thresholds,
                         "regime_markers": regime_markers,
                         "show_band": show_band,
+                        "band_smooth": smooth_band,
                         "hotspot_threshold": row.get("hotspot_threshold"),
                     }
                 )
@@ -1458,20 +1460,34 @@ class MetricCurveCanvas(QLabel):
             line_width = float(row.get("line_width", 2.0))
             style_token = str(row.get("style") or "line").strip().lower()
             show_band = bool(row.get("show_band", True))
+            smooth_band = bool(row.get("band_smooth", True))
             if style_token == "trend_band" and len(points) >= 2 and show_band:
                 values = [float(value) for _freq, value in points]
                 mean_value = float(sum(values) / float(len(values)))
                 fill_alpha = float(row.get("fill_alpha", 0.18))
                 fill_color = _band_color(color, fill_alpha)
-                band = QPainterPath()
-                first_x, first_y = points[0]
-                band.moveTo(x_of(first_x), y_of(first_y))
-                for freq_hz, value in points[1:]:
-                    band.lineTo(x_of(freq_hz), y_of(value))
-                for freq_hz, _value in reversed(points):
-                    band.lineTo(x_of(freq_hz), y_of(mean_value))
-                band.closeSubpath()
-                painter.fillPath(band, fill_color)
+                if smooth_band:
+                    band = QPainterPath()
+                    first_x, first_y = points[0]
+                    band.moveTo(x_of(first_x), y_of(first_y))
+                    for freq_hz, value in points[1:]:
+                        band.lineTo(x_of(freq_hz), y_of(value))
+                    for freq_hz, _value in reversed(points):
+                        band.lineTo(x_of(freq_hz), y_of(mean_value))
+                    band.closeSubpath()
+                    painter.fillPath(band, fill_color)
+                else:
+                    for idx in range(len(points) - 1):
+                        x1, v1 = points[idx]
+                        x2, _v2 = points[idx + 1]
+                        seg_left = int(round(min(x_of(x1), x_of(x2))))
+                        seg_right = int(round(max(x_of(x1), x_of(x2))))
+                        seg_w = max(seg_right - seg_left, 1)
+                        y_curve = int(round(y_of(v1)))
+                        y_mean = int(round(y_of(mean_value)))
+                        top = min(y_curve, y_mean)
+                        seg_h = max(abs(y_curve - y_mean), 1)
+                        painter.fillRect(seg_left, top, seg_w, seg_h, fill_color)
                 _draw_polyline(points, color, max(line_width, 1.0))
                 if bool(row.get("regime_markers")) and len(points) >= 3:
                     marker_brush = QColor(color)
@@ -1494,32 +1510,59 @@ class MetricCurveCanvas(QLabel):
             elif style_token == "consistency_strip" and len(points) >= 2 and show_band:
                 fill_alpha = float(row.get("fill_alpha", 0.12))
                 fill_color = _band_color(color, fill_alpha)
-                band_half_px = max(2.0, min(float(plot_h) * 0.025, 7.0))
-                band = QPainterPath()
-                first_x, first_value = points[0]
-                first_y = y_of(first_value)
-                band.moveTo(x_of(first_x), first_y - band_half_px)
-                for freq_hz, value in points[1:]:
-                    y_px = y_of(value)
-                    band.lineTo(x_of(freq_hz), y_px - band_half_px)
-                for freq_hz, value in reversed(points):
-                    y_px = y_of(value)
-                    band.lineTo(x_of(freq_hz), y_px + band_half_px)
-                band.closeSubpath()
-                painter.fillPath(band, fill_color)
+                if smooth_band:
+                    band_half_px = max(2.0, min(float(plot_h) * 0.025, 7.0))
+                    band = QPainterPath()
+                    first_x, first_value = points[0]
+                    first_y = y_of(first_value)
+                    band.moveTo(x_of(first_x), first_y - band_half_px)
+                    for freq_hz, value in points[1:]:
+                        y_px = y_of(value)
+                        band.lineTo(x_of(freq_hz), y_px - band_half_px)
+                    for freq_hz, value in reversed(points):
+                        y_px = y_of(value)
+                        band.lineTo(x_of(freq_hz), y_px + band_half_px)
+                    band.closeSubpath()
+                    painter.fillPath(band, fill_color)
+                else:
+                    strip_height = max(10, int(round(plot_h * 0.12)))
+                    strip_top = int(margin_top + 4)
+                    for idx in range(len(points) - 1):
+                        x1, value1 = points[idx]
+                        x2, _value2 = points[idx + 1]
+                        seg_left = int(round(min(x_of(x1), x_of(x2))))
+                        seg_right = int(round(max(x_of(x1), x_of(x2))))
+                        seg_w = max(seg_right - seg_left, 1)
+                        normalized = (float(value1) - float(y_min)) / max(float(y_max - y_min), 1.0e-6)
+                        strip_color = QColor(fill_color)
+                        strip_color.setAlpha(int(round(24 + (110.0 * max(0.0, min(normalized, 1.0))))))
+                        painter.fillRect(seg_left, strip_top, seg_w, strip_height, strip_color)
                 _draw_polyline(points, color, max(line_width, 1.0))
             elif style_token == "defect_band" and len(points) >= 2 and show_band:
                 fill_alpha = float(row.get("fill_alpha", 0.22))
                 fill_color = _band_color(color, fill_alpha)
-                band = QPainterPath()
-                first_x, first_y = points[0]
-                band.moveTo(x_of(first_x), y_of(first_y))
-                for freq_hz, value in points[1:]:
-                    band.lineTo(x_of(freq_hz), y_of(value))
-                for freq_hz, _value in reversed(points):
-                    band.lineTo(x_of(freq_hz), y_of(y_min))
-                band.closeSubpath()
-                painter.fillPath(band, fill_color)
+                if smooth_band:
+                    band = QPainterPath()
+                    first_x, first_y = points[0]
+                    band.moveTo(x_of(first_x), y_of(first_y))
+                    for freq_hz, value in points[1:]:
+                        band.lineTo(x_of(freq_hz), y_of(value))
+                    for freq_hz, _value in reversed(points):
+                        band.lineTo(x_of(freq_hz), y_of(y_min))
+                    band.closeSubpath()
+                    painter.fillPath(band, fill_color)
+                else:
+                    for idx in range(len(points) - 1):
+                        x1, v1 = points[idx]
+                        x2, _v2 = points[idx + 1]
+                        seg_left = int(round(min(x_of(x1), x_of(x2))))
+                        seg_right = int(round(max(x_of(x1), x_of(x2))))
+                        seg_w = max(seg_right - seg_left, 1)
+                        y_curve = int(round(y_of(v1)))
+                        y_base = int(round(y_of(y_min)))
+                        top = min(y_curve, y_base)
+                        seg_h = max(abs(y_curve - y_base), 1)
+                        painter.fillRect(seg_left, top, seg_w, seg_h, fill_color)
                 _draw_polyline(points, color, max(line_width, 1.0))
                 hotspot_raw = row.get("hotspot_threshold")
                 hotspot_threshold = None
@@ -5636,6 +5679,7 @@ class AnalysePage(QWidget):
         self._use_full_angles_for_smoothness = False
         self._show_mirrored_minus6_contour = False
         self._show_metric_bands = True
+        self._metric_band_smooth = True
         self._auto_scale_enabled = False
         self._stable_axis_ranges: Dict[str, Tuple[float, float]] = {}
         self._latest_plot_payload: Dict[str, Any] = {}
@@ -7845,11 +7889,19 @@ class AnalysePage(QWidget):
         metric_bands_check.setToolTip("Enable decorative trend/defect strip fills in stage metric plots.")
         form.addWidget(metric_bands_check, 4, 0, 1, 2, Qt.AlignLeft | Qt.AlignVCenter)
 
+        metric_band_smooth_check = QCheckBox("Smooth metric bands")
+        metric_band_smooth_check.setObjectName("AnalyzerMetricBandSmoothCheck")
+        metric_band_smooth_check.setChecked(bool(self._metric_band_smooth))
+        metric_band_smooth_check.setEnabled(bool(metric_bands_check.isChecked()))
+        metric_band_smooth_check.setToolTip("Smooth bands use anti-aliased fills. Disable for block-style strips.")
+        metric_bands_check.toggled.connect(metric_band_smooth_check.setEnabled)
+        form.addWidget(metric_band_smooth_check, 5, 0, 1, 2, Qt.AlignLeft | Qt.AlignVCenter)
+
         smoothness_check = QCheckBox("Use full angles for smoothness (S_theta)")
         smoothness_check.setObjectName("AnalyzerFullAnglesSmoothnessCheck")
         smoothness_check.setChecked(bool(self._use_full_angles_for_smoothness))
         smoothness_check.setToolTip("When enabled, S_theta uses all angles instead of the target window.")
-        form.addWidget(smoothness_check, 4, 2, 1, 2, Qt.AlignLeft | Qt.AlignVCenter)
+        form.addWidget(smoothness_check, 5, 2, 1, 2, Qt.AlignLeft | Qt.AlignVCenter)
         body.addLayout(form)
         close_row = QHBoxLayout()
         close_row.addStretch(1)
@@ -7879,6 +7931,9 @@ class AnalysePage(QWidget):
             metric_bands_changed = bool(self._show_metric_bands) != bool(metric_bands_check.isChecked())
             if metric_bands_changed:
                 plot_changed = True
+            metric_band_smooth_changed = bool(self._metric_band_smooth) != bool(metric_band_smooth_check.isChecked())
+            if metric_band_smooth_changed:
+                plot_changed = True
             smoothness_changed = bool(self._use_full_angles_for_smoothness) != bool(smoothness_check.isChecked())
 
             self._control_sync_guard = True
@@ -7891,6 +7946,7 @@ class AnalysePage(QWidget):
             self.raw_bins_check.setChecked(bool(raw_bins_check.isChecked()))
             self._show_mirrored_minus6_contour = bool(mirrored_minus6_check.isChecked())
             self._show_metric_bands = bool(metric_bands_check.isChecked())
+            self._metric_band_smooth = bool(metric_band_smooth_check.isChecked())
             self._use_full_angles_for_smoothness = bool(smoothness_check.isChecked())
             self._control_sync_guard = False
 
@@ -8204,6 +8260,7 @@ class AnalysePage(QWidget):
         key_token = str(metric_key or "").strip().lower()
         context_token = str(context or "explorer").strip().lower()
         show_bands = bool(self._show_metric_bands)
+        smooth_bands = bool(self._metric_band_smooth)
         if stage_token == "stabilization":
             if key_token == "di_proxy":
                 return {
@@ -8213,6 +8270,7 @@ class AnalysePage(QWidget):
                     "thresholds": [2.0, 4.0],
                     "line_width": 1.4 if context_token == "explorer" else 1.2,
                     "show_band": show_bands,
+                    "band_smooth": smooth_bands,
                 }
             if key_token in {"s_theta", "e_sym_shape"}:
                 return {
@@ -8221,6 +8279,7 @@ class AnalysePage(QWidget):
                     "fill_alpha": 0.12 if context_token == "explorer" else 0.10,
                     "thresholds": [0.20, 0.40] if key_token == "s_theta" else [0.35, 0.75],
                     "show_band": show_bands,
+                    "band_smooth": smooth_bands,
                 }
         if stage_token == "final":
             if key_token == "r_off":
@@ -8231,6 +8290,7 @@ class AnalysePage(QWidget):
                     "thresholds": [2.0, 4.0, 6.0],
                     "hotspot_threshold": 6.0,
                     "show_band": show_bands,
+                    "band_smooth": smooth_bands,
                 }
             if key_token in {"s_theta", "e_sym_shape"}:
                 return {
@@ -8239,6 +8299,7 @@ class AnalysePage(QWidget):
                     "fill_alpha": 0.12 if context_token == "explorer" else 0.10,
                     "thresholds": [0.20, 0.40] if key_token == "s_theta" else [0.35, 0.75],
                     "show_band": show_bands,
+                    "band_smooth": smooth_bands,
                 }
         return {}
 
@@ -8958,7 +9019,15 @@ class AnalysePage(QWidget):
                 "line_width": line_width,
                 "alpha": alpha,
             }
-            for style_key in ("style", "fill_alpha", "thresholds", "regime_markers", "hotspot_threshold", "show_band"):
+            for style_key in (
+                "style",
+                "fill_alpha",
+                "thresholds",
+                "regime_markers",
+                "hotspot_threshold",
+                "show_band",
+                "band_smooth",
+            ):
                 if style_key in style_profile:
                     series_row[style_key] = style_profile.get(style_key)
             series.append(series_row)
@@ -9226,6 +9295,7 @@ class AnalysePage(QWidget):
             "clamp_min_db": float(self.heatmap_clamp_min_spin.value()),
             "auto_scale": bool(self._auto_scale_enabled),
             "show_metric_bands": bool(self._show_metric_bands),
+            "metric_band_smooth": bool(self._metric_band_smooth),
             "use_full_angles_for_smoothness": bool(self._use_full_angles_for_smoothness),
             "compare": {
                 "strategy": str(self._compare_last_strategy),
@@ -9322,6 +9392,7 @@ class AnalysePage(QWidget):
             self._auto_scale_enabled = bool(config.get("auto_scale", self._auto_scale_enabled))
             self.auto_scale_btn.setChecked(bool(self._auto_scale_enabled))
             self._show_metric_bands = bool(config.get("show_metric_bands", self._show_metric_bands))
+            self._metric_band_smooth = bool(config.get("metric_band_smooth", self._metric_band_smooth))
             self._use_full_angles_for_smoothness = bool(
                 config.get("use_full_angles_for_smoothness", self._use_full_angles_for_smoothness)
             )

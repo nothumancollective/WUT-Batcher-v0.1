@@ -305,6 +305,7 @@ The Analyzer page is planned with two explicit subviews:
   - clamp min dB (default `-20`)
   - raw-bins toggle
   - show metric bands toggle (default ON; opacity-clamped so bands remain behind data)
+  - smooth metric bands toggle (default ON; optional block/strip style fallback)
   - `use_full_angles_for_smoothness` toggle for `S_theta` compute requests (stage defaults: Concept OFF, Stabilization/Final ON).
 - Display quick controls also include:
   - `Auto Scale` button (next to `Advanced...`) for stable axis ranges OFF vs per-selection autoscaling ON.

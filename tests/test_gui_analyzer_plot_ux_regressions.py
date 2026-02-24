@@ -336,6 +336,7 @@ class AnalyzerPlotUxRegressionTests(unittest.TestCase):
             service = _build_service(Path(tmp))
             page = AnalysePage(service=service)
             self.assertTrue(bool(page._show_metric_bands))
+            self.assertTrue(bool(page._metric_band_smooth))
             stabilization_profile = page._curve_style_profile(
                 stage_id="stabilization",
                 metric_key="di_proxy",
@@ -343,6 +344,7 @@ class AnalyzerPlotUxRegressionTests(unittest.TestCase):
             )
             self.assertIn("show_band", stabilization_profile)
             self.assertTrue(bool(stabilization_profile.get("show_band")))
+            self.assertTrue(bool(stabilization_profile.get("band_smooth")))
             page._apply_analysis_config({"show_metric_bands": False})
             self.assertFalse(bool(page._show_metric_bands))
             stabilization_profile_disabled = page._curve_style_profile(
@@ -351,6 +353,14 @@ class AnalyzerPlotUxRegressionTests(unittest.TestCase):
                 context="explorer",
             )
             self.assertFalse(bool(stabilization_profile_disabled.get("show_band")))
+            page._apply_analysis_config({"show_metric_bands": True, "metric_band_smooth": False})
+            stabilization_profile_blocks = page._curve_style_profile(
+                stage_id="stabilization",
+                metric_key="di_proxy",
+                context="explorer",
+            )
+            self.assertTrue(bool(stabilization_profile_blocks.get("show_band")))
+            self.assertFalse(bool(stabilization_profile_blocks.get("band_smooth")))
 
     def test_auto_scale_button_exists_and_changes_scaling_mode(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_plot_ux_auto_scale_") as tmp:
