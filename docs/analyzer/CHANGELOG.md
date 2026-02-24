@@ -1,5 +1,10 @@
 ﻿# Analyzer Docs â€” Changelog
 
+## 2026-02-24 (Metric bands: render good/warn/bad components from Advanced controls)
+- Updated metric-band rendering to consume explicit Advanced controls for good/warn/bad regions and warn/bad threshold lines.
+- Switched spec overlay colors to dedicated configurable good/warn/bad colors so band visuals no longer reuse compare slot/curve colors.
+- Removed fallback threshold-line drawing that bypassed Advanced component toggles; band lines now follow explicit spec-component rendering only.
+
 ## 2026-02-24 (Display Advanced: grouped metric-band controls UI)
 - Redesigned Analyzer -> Display -> Advanced into grouped blocks (Display Options, Metric Bands, Metric Colors) with compact grid spacing.
 - Added standard analyzer-style toggle buttons for metric-band component controls and a Reset defaults action.
@@ -1063,5 +1068,7 @@
   - metric-band smooth rendering config (`show`, `smooth`, `opacity`)
   - robust non-auto `e_sym_shape` y-range clamp under outlier input
   - resize probes (`1920x1080`, `1366x768`, `1100x700`) without exceptions.
+
+
 
 

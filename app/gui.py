@@ -1342,6 +1342,43 @@ class MetricCurveCanvas(QLabel):
             regime_markers = bool(row.get("regime_markers", False))
             show_band = bool(row.get("show_band", True))
             smooth_band = bool(row.get("band_smooth", True))
+            metric_band_components = {
+                "show_good_band": True,
+                "show_warn_band": True,
+                "show_bad_band": False,
+                "show_warn_line": True,
+                "show_bad_line": False,
+            }
+            raw_components = row.get("metric_band_components")
+            if isinstance(raw_components, Mapping):
+                metric_band_components = {
+                    "show_good_band": bool(raw_components.get("show_good_band", metric_band_components["show_good_band"])),
+                    "show_warn_band": bool(raw_components.get("show_warn_band", metric_band_components["show_warn_band"])),
+                    "show_bad_band": bool(raw_components.get("show_bad_band", metric_band_components["show_bad_band"])),
+                    "show_warn_line": bool(raw_components.get("show_warn_line", metric_band_components["show_warn_line"])),
+                    "show_bad_line": bool(raw_components.get("show_bad_line", metric_band_components["show_bad_line"])),
+                }
+            metric_band_colors = {
+                "good": _coerce_hex_rgb(
+                    ANALYZER_DISPLAY_COLOR_GOOD_DEFAULT,
+                    fallback=ANALYZER_DISPLAY_COLOR_GOOD_DEFAULT,
+                ),
+                "warn": _coerce_hex_rgb(
+                    ANALYZER_DISPLAY_COLOR_WARN_DEFAULT,
+                    fallback=ANALYZER_DISPLAY_COLOR_WARN_DEFAULT,
+                ),
+                "bad": _coerce_hex_rgb(
+                    ANALYZER_DISPLAY_COLOR_BAD_DEFAULT,
+                    fallback=ANALYZER_DISPLAY_COLOR_BAD_DEFAULT,
+                ),
+            }
+            raw_colors = row.get("metric_band_colors")
+            if isinstance(raw_colors, Mapping):
+                metric_band_colors = {
+                    "good": _coerce_hex_rgb(raw_colors.get("good"), fallback=metric_band_colors["good"]),
+                    "warn": _coerce_hex_rgb(raw_colors.get("warn"), fallback=metric_band_colors["warn"]),
+                    "bad": _coerce_hex_rgb(raw_colors.get("bad"), fallback=metric_band_colors["bad"]),
+                }
             points: List[Tuple[float, float]] = []
             for item in points_raw:
                 if isinstance(item, Mapping):
@@ -1375,6 +1412,8 @@ class MetricCurveCanvas(QLabel):
                         "regime_markers": regime_markers,
                         "show_band": show_band,
                         "band_smooth": smooth_band,
+                        "metric_band_components": metric_band_components,
+                        "metric_band_colors": metric_band_colors,
                         "band_spec": (dict(row.get("band_spec")) if isinstance(row.get("band_spec"), Mapping) else None),
                         "hotspot_threshold": row.get("hotspot_threshold"),
                     }
@@ -1532,6 +1571,41 @@ class MetricCurveCanvas(QLabel):
             painter.restore()
 
         def _build_metric_band_items() -> List[Dict[str, Any]]:
+            def _finite(value: Any) -> Optional[float]:
+                if value is None:
+                    return None
+                try:
+                    parsed = float(value)
+                except Exception:
+                    return None
+                if not math.isfinite(parsed):
+                    return None
+                return float(parsed)
+
+            def _spec_range(spec: Mapping[str, Any], key: str) -> Optional[Tuple[Optional[float], Optional[float]]]:
+                raw = spec.get(key)
+                if not isinstance(raw, (tuple, list)) or len(raw) < 2:
+                    return None
+                low = _finite(raw[0])
+                high = _finite(raw[1])
+                if low is None and high is None:
+                    return None
+                if low is not None and high is not None and high <= low:
+                    return None
+                return (low, high)
+
+            def _clip_interval(
+                interval: Optional[Tuple[Optional[float], Optional[float]]],
+            ) -> Optional[Tuple[float, float]]:
+                if interval is None:
+                    return None
+                lo_raw, hi_raw = interval
+                lo = float(y_min) if lo_raw is None else max(float(y_min), float(lo_raw))
+                hi = float(y_max) if hi_raw is None else min(float(y_max), float(hi_raw))
+                if not (math.isfinite(lo) and math.isfinite(hi) and hi > lo):
+                    return None
+                return (float(lo), float(hi))
+
             items: List[Dict[str, Any]] = []
             for row in points_by_series:
                 style_token = str(row.get("style") or "").strip().lower()
@@ -1542,14 +1616,37 @@ class MetricCurveCanvas(QLabel):
                 band_spec = row.get("band_spec")
                 if not isinstance(band_spec, Mapping):
                     continue
-                row_color = QColor(row.get("color")) if isinstance(row.get("color"), QColor) else QColor("#9AA4B2")
+                components = dict(row.get("metric_band_components") or {})
+                show_good_band = bool(components.get("show_good_band", True))
+                show_warn_band = bool(components.get("show_warn_band", False))
+                show_bad_band = bool(components.get("show_bad_band", False))
+                show_warn_line = bool(components.get("show_warn_line", True))
+                show_bad_line = bool(components.get("show_bad_line", False))
+                raw_colors = dict(row.get("metric_band_colors") or {})
+                role_colors = {
+                    "good": QColor(_coerce_hex_rgb(raw_colors.get("good"), fallback=ANALYZER_DISPLAY_COLOR_GOOD_DEFAULT)),
+                    "warn": QColor(_coerce_hex_rgb(raw_colors.get("warn"), fallback=ANALYZER_DISPLAY_COLOR_WARN_DEFAULT)),
+                    "bad": QColor(_coerce_hex_rgb(raw_colors.get("bad"), fallback=ANALYZER_DISPLAY_COLOR_BAD_DEFAULT)),
+                    "reference": QColor(_coerce_hex_rgb(raw_colors.get("warn"), fallback=ANALYZER_DISPLAY_COLOR_WARN_DEFAULT)),
+                }
                 fill_alpha = float(row.get("fill_alpha", 0.12))
                 mapping = metric_band_regions_from_spec(spec=band_spec, axis_min=float(y_min), axis_max=float(y_max))
                 regions = list(mapping.get("regions", []) or [])
                 reference_lines = list(mapping.get("reference_lines", []) or [])
                 for region in regions:
                     role = str(region.get("role") or "good").strip().lower()
-                    alpha_scale = 1.0 if role == "good" else 0.72
+                    if role == "good" and not show_good_band:
+                        continue
+                    if role == "warn" and not show_warn_band:
+                        continue
+                    if role == "bad" and not show_bad_band:
+                        continue
+                    if role == "good":
+                        alpha_scale = 1.0
+                    elif role == "warn":
+                        alpha_scale = 0.72
+                    else:
+                        alpha_scale = 0.64
                     items.append(
                         {
                             "item_type": "LinearRegionItem",
@@ -1557,13 +1654,101 @@ class MetricCurveCanvas(QLabel):
                             "y_low": float(region.get("y_low")),
                             "y_high": float(region.get("y_high")),
                             "role": role,
-                            "color": row_color,
+                            "color": QColor(role_colors.get(role, role_colors["good"])),
                             "fill_alpha": max(0.01, float(fill_alpha) * float(alpha_scale)),
                             "band_smooth": bool(row.get("band_smooth", True)),
                             "anchor": "spec",
                         }
                     )
-                if not regions:
+
+                direction = str(band_spec.get("direction") or "").strip().upper()
+                good_range = _spec_range(band_spec, "good_range")
+                warn_range = _spec_range(band_spec, "warn_range")
+                bad_range = _spec_range(band_spec, "bad_range")
+                warn_line_values: List[float] = []
+                bad_line_values: List[float] = []
+                if direction == "LOWER_IS_BETTER":
+                    warn_candidate = (good_range[1] if good_range is not None else None)
+                    if warn_candidate is None and warn_range is not None:
+                        warn_candidate = warn_range[0]
+                    bad_candidate = (warn_range[1] if warn_range is not None else None)
+                    if bad_candidate is None and bad_range is not None:
+                        bad_candidate = bad_range[0]
+                    if _finite(warn_candidate) is not None:
+                        warn_line_values.append(float(warn_candidate))
+                    if _finite(bad_candidate) is not None:
+                        bad_line_values.append(float(bad_candidate))
+                elif direction == "HIGHER_IS_BETTER":
+                    warn_candidate = (good_range[0] if good_range is not None else None)
+                    if warn_candidate is None and warn_range is not None:
+                        warn_candidate = warn_range[1]
+                    bad_candidate = (warn_range[0] if warn_range is not None else None)
+                    if bad_candidate is None and bad_range is not None:
+                        bad_candidate = bad_range[1]
+                    if _finite(warn_candidate) is not None:
+                        warn_line_values.append(float(warn_candidate))
+                    if _finite(bad_candidate) is not None:
+                        bad_line_values.append(float(bad_candidate))
+                elif direction == "TARGET_IS_BEST":
+                    if good_range is not None and warn_range is not None:
+                        if _finite(good_range[0]) is not None:
+                            warn_line_values.append(float(good_range[0]))
+                        if _finite(good_range[1]) is not None:
+                            warn_line_values.append(float(good_range[1]))
+                    if bad_range is not None:
+                        if _finite(bad_range[0]) is not None:
+                            bad_line_values.append(float(bad_range[0]))
+                        if _finite(bad_range[1]) is not None:
+                            bad_line_values.append(float(bad_range[1]))
+
+                if show_warn_line:
+                    for y_line in sorted(set(warn_line_values)):
+                        if not (math.isfinite(float(y_line)) and float(y_min) <= float(y_line) <= float(y_max)):
+                            continue
+                        items.append(
+                            {
+                                "item_type": "InfiniteLine",
+                                "style": style_token,
+                                "y": float(y_line),
+                                "role": "warn_line",
+                                "color": QColor(role_colors["warn"]),
+                                "fill_alpha": max(0.02, float(fill_alpha) * 0.90),
+                                "anchor": "spec",
+                            }
+                        )
+                if show_bad_line:
+                    for y_line in sorted(set(bad_line_values)):
+                        if not (math.isfinite(float(y_line)) and float(y_min) <= float(y_line) <= float(y_max)):
+                            continue
+                        items.append(
+                            {
+                                "item_type": "InfiniteLine",
+                                "style": style_token,
+                                "y": float(y_line),
+                                "role": "bad_line",
+                                "color": QColor(role_colors["bad"]),
+                                "fill_alpha": max(0.02, float(fill_alpha) * 0.90),
+                                "anchor": "spec",
+                            }
+                        )
+
+                bad_interval = _clip_interval(bad_range)
+                if show_bad_band and bad_interval is not None:
+                    items.append(
+                        {
+                            "item_type": "LinearRegionItem",
+                            "style": style_token,
+                            "y_low": float(bad_interval[0]),
+                            "y_high": float(bad_interval[1]),
+                            "role": "bad",
+                            "color": QColor(role_colors["bad"]),
+                            "fill_alpha": max(0.01, float(fill_alpha) * 0.64),
+                            "band_smooth": bool(row.get("band_smooth", True)),
+                            "anchor": "spec",
+                        }
+                    )
+
+                if not regions and not warn_line_values and not bad_line_values:
                     for y_line in reference_lines:
                         if not math.isfinite(float(y_line)):
                             continue
@@ -1573,19 +1758,19 @@ class MetricCurveCanvas(QLabel):
                                 "style": style_token,
                                 "y": float(y_line),
                                 "role": "reference",
-                                "color": row_color,
+                                "color": QColor(role_colors["reference"]),
                                 "fill_alpha": max(0.02, float(fill_alpha) * 0.80),
                                 "anchor": "spec",
                             }
                         )
-                elif len(reference_lines) == 1:
+                elif len(reference_lines) == 1 and show_warn_line:
                     items.append(
                         {
                             "item_type": "InfiniteLine",
                             "style": style_token,
                             "y": float(reference_lines[0]),
                             "role": "reference",
-                            "color": row_color,
+                            "color": QColor(role_colors["reference"]),
                             "fill_alpha": max(0.02, float(fill_alpha) * 0.80),
                             "anchor": "spec",
                         }
@@ -1615,26 +1800,6 @@ class MetricCurveCanvas(QLabel):
             if isinstance(color, QColor):
                 stored_item["color_rgba"] = (int(color.red()), int(color.green()), int(color.blue()), int(color.alpha()))
             self._metric_band_items.append(stored_item)
-
-        threshold_values = sorted(
-            {
-                float(value)
-                for row in points_by_series
-                for value in list(row.get("thresholds", []) or [])
-                if math.isfinite(float(value)) and y_min <= float(value) <= y_max
-            }
-        )
-        if threshold_values:
-            threshold_color = QColor(self._target_axis_color)
-            threshold_color.setAlpha(176 if len(threshold_values) == 1 else 132)
-            painter.save()
-            painter.setClipRect(margin_left, margin_top, plot_w, plot_h)
-            pen_style = Qt.SolidLine if len(threshold_values) == 1 else Qt.DashLine
-            painter.setPen(QPen(threshold_color, 1.2 if len(threshold_values) == 1 else 1.0, pen_style))
-            for threshold in threshold_values:
-                y_line = int(round(y_of(float(threshold))))
-                painter.drawLine(margin_left, y_line, margin_left + plot_w, y_line)
-            painter.restore()
 
         def _draw_polyline(points: List[Tuple[float, float]], color: QColor, width_px: float) -> None:
             painter.save()
@@ -9189,6 +9354,22 @@ class AnalysePage(QWidget):
             "contour_width": 2.1,
         }
 
+    def _metric_band_render_profile(self) -> Dict[str, Any]:
+        return {
+            "metric_band_components": {
+                "show_good_band": bool(self._metric_band_show_good_band),
+                "show_warn_band": bool(self._metric_band_show_warn_band),
+                "show_bad_band": bool(self._metric_band_show_bad_band),
+                "show_warn_line": bool(self._metric_band_show_warn_line),
+                "show_bad_line": bool(self._metric_band_show_bad_line),
+            },
+            "metric_band_colors": {
+                "good": _coerce_hex_rgb(self._metric_band_color_good_hex, fallback=ANALYZER_DISPLAY_COLOR_GOOD_DEFAULT),
+                "warn": _coerce_hex_rgb(self._metric_band_color_warn_hex, fallback=ANALYZER_DISPLAY_COLOR_WARN_DEFAULT),
+                "bad": _coerce_hex_rgb(self._metric_band_color_bad_hex, fallback=ANALYZER_DISPLAY_COLOR_BAD_DEFAULT),
+            },
+        }
+
     def _curve_style_profile(self, *, stage_id: str, metric_key: str, context: str) -> Dict[str, Any]:
         stage_token = normalize_stage_id(stage_id, fallback=DEFAULT_STAGE_ID)
         key_token = str(metric_key or "").strip().lower()
@@ -9206,6 +9387,7 @@ class AnalysePage(QWidget):
                 hotspot_threshold = float(hotspot_value)
         show_bands = bool(self._show_metric_bands)
         smooth_bands = bool(self._metric_band_smooth)
+        band_render_profile = self._metric_band_render_profile()
         if stage_token == "stabilization":
             if key_token == "di_proxy":
                 return {
@@ -9217,6 +9399,7 @@ class AnalysePage(QWidget):
                     "line_width": 1.4 if context_token == "explorer" else 1.2,
                     "show_band": show_bands,
                     "band_smooth": smooth_bands,
+                    **band_render_profile,
                 }
             if key_token in {"s_theta", "e_sym_shape"}:
                 return {
@@ -9227,6 +9410,7 @@ class AnalysePage(QWidget):
                     "band_spec": band_spec,
                     "show_band": show_bands,
                     "band_smooth": smooth_bands,
+                    **band_render_profile,
                 }
         if stage_token == "final":
             if key_token == "r_off":
@@ -9239,6 +9423,7 @@ class AnalysePage(QWidget):
                     "hotspot_threshold": hotspot_threshold,
                     "show_band": show_bands,
                     "band_smooth": smooth_bands,
+                    **band_render_profile,
                 }
             if key_token in {"s_theta", "e_sym_shape"}:
                 return {
@@ -9249,6 +9434,7 @@ class AnalysePage(QWidget):
                     "band_spec": band_spec,
                     "show_band": show_bands,
                     "band_smooth": smooth_bands,
+                    **band_render_profile,
                 }
         return {}
 
@@ -10043,6 +10229,8 @@ class AnalysePage(QWidget):
                 "hotspot_threshold",
                 "show_band",
                 "band_smooth",
+                "metric_band_components",
+                "metric_band_colors",
             ):
                 if style_key in style_profile:
                     if style_key == "show_band":
@@ -10321,6 +10509,23 @@ class AnalysePage(QWidget):
             "show_metric_bands": bool(self._show_metric_bands),
             "metric_band_smooth": bool(self._metric_band_smooth),
             "metric_band_opacity": float(max(0.05, min(float(self._metric_band_opacity), 1.0))),
+            "metric_band_show_good_band": bool(self._metric_band_show_good_band),
+            "metric_band_show_warn_band": bool(self._metric_band_show_warn_band),
+            "metric_band_show_bad_band": bool(self._metric_band_show_bad_band),
+            "metric_band_show_warn_line": bool(self._metric_band_show_warn_line),
+            "metric_band_show_bad_line": bool(self._metric_band_show_bad_line),
+            "metric_band_color_good": _coerce_hex_rgb(
+                self._metric_band_color_good_hex,
+                fallback=ANALYZER_DISPLAY_COLOR_GOOD_DEFAULT,
+            ),
+            "metric_band_color_warn": _coerce_hex_rgb(
+                self._metric_band_color_warn_hex,
+                fallback=ANALYZER_DISPLAY_COLOR_WARN_DEFAULT,
+            ),
+            "metric_band_color_bad": _coerce_hex_rgb(
+                self._metric_band_color_bad_hex,
+                fallback=ANALYZER_DISPLAY_COLOR_BAD_DEFAULT,
+            ),
             "use_full_angles_for_smoothness": bool(self._use_full_angles_for_smoothness),
             "target_axis_color": _coerce_hex_rgb(self._target_axis_color_hex),
             "compare": {
@@ -10424,6 +10629,33 @@ class AnalysePage(QWidget):
             except Exception:
                 metric_band_opacity = float(self._metric_band_opacity)
             self._metric_band_opacity = max(0.05, min(metric_band_opacity, 1.0))
+            self._metric_band_show_good_band = bool(
+                config.get("metric_band_show_good_band", self._metric_band_show_good_band)
+            )
+            self._metric_band_show_warn_band = bool(
+                config.get("metric_band_show_warn_band", self._metric_band_show_warn_band)
+            )
+            self._metric_band_show_bad_band = bool(
+                config.get("metric_band_show_bad_band", self._metric_band_show_bad_band)
+            )
+            self._metric_band_show_warn_line = bool(
+                config.get("metric_band_show_warn_line", self._metric_band_show_warn_line)
+            )
+            self._metric_band_show_bad_line = bool(
+                config.get("metric_band_show_bad_line", self._metric_band_show_bad_line)
+            )
+            self._metric_band_color_good_hex = _coerce_hex_rgb(
+                config.get("metric_band_color_good", self._metric_band_color_good_hex),
+                fallback=ANALYZER_DISPLAY_COLOR_GOOD_DEFAULT,
+            )
+            self._metric_band_color_warn_hex = _coerce_hex_rgb(
+                config.get("metric_band_color_warn", self._metric_band_color_warn_hex),
+                fallback=ANALYZER_DISPLAY_COLOR_WARN_DEFAULT,
+            )
+            self._metric_band_color_bad_hex = _coerce_hex_rgb(
+                config.get("metric_band_color_bad", self._metric_band_color_bad_hex),
+                fallback=ANALYZER_DISPLAY_COLOR_BAD_DEFAULT,
+            )
             self._use_full_angles_for_smoothness = bool(
                 config.get("use_full_angles_for_smoothness", self._use_full_angles_for_smoothness)
             )
