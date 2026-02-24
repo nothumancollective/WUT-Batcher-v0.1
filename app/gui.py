@@ -292,6 +292,17 @@ class IssueRowButton(QPushButton):
         self._apply_elide()
 
 
+class _DrawerScrim(QWidget):
+    clicked = Signal()
+
+    def mousePressEvent(self, event) -> None:  # type: ignore[override]
+        if event.button() == Qt.LeftButton:
+            self.clicked.emit()
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+
 def _format_freq_label(freq_hz: float) -> str:
     value = float(freq_hz)
     if value >= 1000.0:
@@ -5874,6 +5885,7 @@ class AnalysePage(QWidget):
         self._compare_drawer_expanded = True
         self._compare_drawer_collapsed_width = 88
         self._compare_drawer_expanded_width = 360
+        self._compare_drawer_current_width = int(self._compare_drawer_expanded_width)
         self._maximized_plot_slots: Dict[str, Optional[str]] = {"explorer": None, "compare": None}
         self._ath_visible_param_limit = 5
         self._active_plane = "H"
@@ -6366,7 +6378,12 @@ class AnalysePage(QWidget):
         self.compare_grid_layout.setVerticalSpacing(ANALYZER_PLOT_STYLE.tile_gap_px)
         compare_workspace_layout.addWidget(self.compare_grid_widget, 1)
 
-        self.compare_drawer = QFrame()
+        self.compare_drawer_scrim = _DrawerScrim(self.compare_workspace)
+        self.compare_drawer_scrim.setObjectName("AnalyzerCompareDrawerScrim")
+        self.compare_drawer_scrim.setVisible(False)
+        self.compare_drawer_scrim.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+
+        self.compare_drawer = QFrame(self.compare_workspace)
         self.compare_drawer.setObjectName("AnalyzerCompareDrawer")
         self.compare_drawer.setMinimumWidth(int(self._compare_drawer_expanded_width))
         self.compare_drawer.setMaximumWidth(int(self._compare_drawer_expanded_width))
@@ -6408,14 +6425,20 @@ class AnalysePage(QWidget):
             slot_btn.setToolButtonStyle(Qt.ToolButtonTextOnly)
             slot_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             slot_btn.setMinimumHeight(26)
-            slot_btn.setText(f"C{slot_index + 1} --")
+            slot_btn.setText(f"C{slot_index + 1} V---")
             slot_btn.clicked.connect(lambda _checked=False, idx=slot_index: self.compare_slots_table.selectRow(idx))
             compact_layout.addWidget(slot_btn, 0)
             self.compare_drawer_compact_buttons.append(slot_btn)
         compact_layout.addStretch(1)
         self.compare_drawer_stack.addWidget(self.compare_drawer_compact_widget)
         compare_drawer_layout.addWidget(self.compare_drawer_stack, 1)
-        compare_workspace_layout.addWidget(self.compare_drawer, 0, Qt.AlignLeft | Qt.AlignTop)
+        self._compare_drawer_width_anim = QPropertyAnimation(self.compare_drawer, b"maximumWidth", self)
+        self._compare_drawer_width_anim.setDuration(180)
+        self._compare_drawer_width_anim.setEasingCurve(QEasingCurve.InOutCubic)
+        self._compare_drawer_width_anim.valueChanged.connect(self._on_compare_drawer_width_anim_value)
+        self._compare_drawer_width_anim.finished.connect(self._layout_compare_drawer_overlay)
+        self.compare_drawer_scrim.clicked.connect(lambda: self._set_compare_drawer_expanded(False, animated=True))
+        self.compare_workspace.installEventFilter(self)
 
         self.compare_overlay_panel = self._create_stage_plot_panel(
             panel_id="CompareA",
@@ -8317,6 +8340,10 @@ class AnalysePage(QWidget):
 
     def eventFilter(self, watched: QObject, event) -> bool:  # type: ignore[override]
         try:
+            if watched is getattr(self, "compare_workspace", None) and event is not None:
+                if event.type() in {QEvent.Resize, QEvent.Show, QEvent.LayoutRequest}:
+                    QTimer.singleShot(0, self._layout_compare_drawer_overlay)
+                    return False
             if (
                 isinstance(watched, QWidget)
                 and event is not None
@@ -8349,6 +8376,7 @@ class AnalysePage(QWidget):
             self._set_compare_busy(False)
             self._update_compare_slots()
             self._schedule_compare_plot_refresh()
+            self._layout_compare_drawer_overlay()
             return
         self._stop_autopick_worker()
         self._stop_compare_plot_worker()
@@ -8947,13 +8975,49 @@ class AnalysePage(QWidget):
         self._update_compare_slots(message=message)
         self._schedule_compare_plot_refresh()
 
-    def _set_compare_drawer_expanded(self, expanded: bool) -> None:
+    def _on_compare_drawer_width_anim_value(self, value: Any) -> None:
+        try:
+            width = int(round(float(value)))
+        except Exception:
+            return
+        width = max(int(self._compare_drawer_collapsed_width), min(width, int(self._compare_drawer_expanded_width)))
+        self._compare_drawer_current_width = int(width)
+        if isinstance(getattr(self, "compare_drawer", None), QFrame):
+            self.compare_drawer.setMinimumWidth(int(width))
+            self.compare_drawer.setMaximumWidth(int(width))
+        self._layout_compare_drawer_overlay()
+
+    def _layout_compare_drawer_overlay(self) -> None:
+        workspace = getattr(self, "compare_workspace", None)
+        drawer = getattr(self, "compare_drawer", None)
+        scrim = getattr(self, "compare_drawer_scrim", None)
+        if not isinstance(workspace, QWidget) or not isinstance(drawer, QFrame):
+            return
+        width_total = max(int(workspace.width()), 0)
+        height_total = max(int(workspace.height()), 0)
+        drawer_width = max(
+            int(self._compare_drawer_collapsed_width),
+            min(int(self._compare_drawer_current_width), int(self._compare_drawer_expanded_width)),
+        )
+        drawer_width = min(drawer_width, width_total)
+        drawer.setGeometry(0, 0, int(drawer_width), int(height_total))
+        scrim_x = int(drawer_width)
+        scrim_w = max(int(width_total - scrim_x), 0)
+        scrim_enabled = bool(self._compare_drawer_expanded) and scrim_w > 0
+        if isinstance(scrim, QWidget):
+            scrim.setGeometry(scrim_x, 0, scrim_w, int(height_total))
+            scrim.setVisible(bool(scrim_enabled))
+            scrim.setAttribute(Qt.WA_TransparentForMouseEvents, not bool(scrim_enabled))
+            if scrim_enabled:
+                scrim.raise_()
+        drawer.raise_()
+
+    def _set_compare_drawer_expanded(self, expanded: bool, *, animated: bool = False) -> None:
         self._compare_drawer_expanded = bool(expanded)
         if not isinstance(getattr(self, "compare_drawer", None), QFrame):
             return
-        width = int(self._compare_drawer_expanded_width if self._compare_drawer_expanded else self._compare_drawer_collapsed_width)
-        self.compare_drawer.setMinimumWidth(width)
-        self.compare_drawer.setMaximumWidth(width)
+        width_target = int(self._compare_drawer_expanded_width if self._compare_drawer_expanded else self._compare_drawer_collapsed_width)
+        width_start = int(self._compare_drawer_current_width)
         if isinstance(getattr(self, "compare_drawer_stack", None), QStackedWidget):
             self.compare_drawer_stack.setCurrentIndex(0 if self._compare_drawer_expanded else 1)
         if isinstance(getattr(self, "compare_drawer_toggle_btn", None), QToolButton):
@@ -8961,9 +9025,23 @@ class AnalysePage(QWidget):
             self.compare_drawer_toggle_btn.setToolTip(
                 "Collapse compare drawer" if self._compare_drawer_expanded else "Expand compare drawer"
             )
+        anim = getattr(self, "_compare_drawer_width_anim", None)
+        if isinstance(anim, QPropertyAnimation):
+            anim.stop()
+            if bool(animated) and abs(width_start - width_target) > 1:
+                anim.setStartValue(int(width_start))
+                anim.setEndValue(int(width_target))
+                anim.start()
+            else:
+                self._on_compare_drawer_width_anim_value(width_target)
+        else:
+            self._compare_drawer_current_width = int(width_target)
+            self.compare_drawer.setMinimumWidth(int(width_target))
+            self.compare_drawer.setMaximumWidth(int(width_target))
+        self._layout_compare_drawer_overlay()
 
     def _toggle_compare_drawer(self) -> None:
-        self._set_compare_drawer_expanded(not bool(self._compare_drawer_expanded))
+        self._set_compare_drawer_expanded(not bool(self._compare_drawer_expanded), animated=True)
 
     def _refresh_compare_drawer_compact_rows(self) -> None:
         buttons = list(getattr(self, "compare_drawer_compact_buttons", []) or [])
@@ -8975,23 +9053,34 @@ class AnalysePage(QWidget):
             slot_label = f"C{index + 1}"
             if index < len(self._compare_candidates):
                 candidate = dict(self._compare_candidates[index] or {})
-                selection_label = f"{str(candidate.get('batch_id') or '--')}/{str(candidate.get('version_id') or '--')}"
-                button.setText(f"{slot_label} {selection_label}")
-                button.setToolTip(selection_label)
+                version_label = format_series_label(candidate.get("version_id"))
+                full_selection = f"{str(candidate.get('batch_id') or '--')}/{str(candidate.get('version_id') or '--')}"
+                button.setText(f"{slot_label} {version_label}")
+                button.setToolTip(full_selection)
                 color = QColor(*compare_overlay_color(index))
                 button.setStyleSheet(
                     "QToolButton {"
-                    f"background-color: rgba({color.red()}, {color.green()}, {color.blue()}, 68);"
+                    f"background-color: rgba({color.red()}, {color.green()}, {color.blue()}, 30);"
                     "border: 1px solid rgba(255,255,255,0.08);"
                     "border-radius: 4px;"
+                    f"border-left: 8px solid rgb({color.red()}, {color.green()}, {color.blue()});"
                     "padding: 2px 6px;"
                     "text-align: left;"
                     "}"
                 )
             else:
-                button.setText(f"{slot_label} --")
+                button.setText(f"{slot_label} V---")
                 button.setToolTip("")
-                button.setStyleSheet("")
+                button.setStyleSheet(
+                    "QToolButton {"
+                    "background-color: transparent;"
+                    "border: 1px solid rgba(255,255,255,0.08);"
+                    "border-radius: 4px;"
+                    "border-left: 8px solid rgba(140, 146, 160, 0.55);"
+                    "padding: 2px 6px;"
+                    "text-align: left;"
+                    "}"
+                )
 
     def _on_compare_add_selected(self) -> None:
         rows = [dict(item) for item in self._selected_row_payloads()]

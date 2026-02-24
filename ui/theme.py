@@ -798,9 +798,13 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     QWidget#AnalyzerCompareRightPanel,
     QWidget#AnalyzerCompareWorkspace,
     QWidget#AnalyzerCompareDrawerLayer,
+    QWidget#AnalyzerCompareDrawerScrim,
     QScrollArea#AnalyzerCompareDrawerScroll {{
         background-color: {c['surface']};
         border: none;
+    }}
+    QWidget#AnalyzerCompareDrawerScrim {{
+        background-color: rgba(0, 0, 0, 0.42);
     }}
     QScrollArea#AnalyzerCompareDrawerScroll > QWidget > QWidget {{
         background-color: transparent;

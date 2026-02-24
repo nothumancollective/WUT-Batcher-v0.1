@@ -13,9 +13,11 @@ from app.settings_store import SettingsStore, UserSettings
 
 try:
     from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
     from PySide6.QtWidgets import QApplication
 except ImportError:  # pragma: no cover
     Qt = None  # type: ignore[assignment]
+    QTest = None  # type: ignore[assignment]
     QApplication = None  # type: ignore[assignment]
 
 
@@ -177,6 +179,21 @@ class AnalyzerCompareLeftPanelUiTests(unittest.TestCase):
             self.assertGreaterEqual(page.compare_slots_table.columnWidth(remove_col), 70)
             assert button is not None
             self.assertLessEqual(button.sizeHint().width(), page.compare_slots_table.columnWidth(remove_col))
+
+    def test_compare_drawer_collapsed_compact_rows_show_v_tokens(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_compare_drawer_compact_v_tokens_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            page._set_compare_candidates(self._sample_candidates())
+            page.show()
+            self.app.processEvents()
+            page._set_compare_drawer_expanded(False)
+            self.app.processEvents()
+            first_btn = page.compare_drawer_compact_buttons[0]
+            second_btn = page.compare_drawer_compact_buttons[1]
+            self.assertIn("V001", first_btn.text())
+            self.assertIn("V002", second_btn.text())
+            self.assertNotIn("B001", first_btn.text())
 
 
 if __name__ == "__main__":
