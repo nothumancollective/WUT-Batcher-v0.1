@@ -1,5 +1,12 @@
 ﻿# Analyzer Docs â€” Changelog
 
+## 2026-02-24 (Analyzer stage/selection/plane regression audit)
+- Added `docs/analyzer/07_analyzer_stage_selection_plane_bug_audit.md` with deterministic Phase 0 repro evidence for:
+  - stage-dependent selection/version-info breakage (Concept vs Stabilization/Final),
+  - stage-invariant KPI info block binding,
+  - compare plane propagation gap from Display controls.
+- Documented confirmed root causes with file/line references and a surgical multi-commit fix/validation plan.
+
 ## 2026-02-24 (Run Batch regression root-cause note)
 - Added docs/analyzer/run_batch_regression_2026-02-24.md with deterministic repro and failure trace for immediate Run Batch failure.
 - Documented failing contract (app/services.py -> app/runtime_orchestrator.py) where akabak_solve_timeout_s was passed by service but not accepted by pipeline.
