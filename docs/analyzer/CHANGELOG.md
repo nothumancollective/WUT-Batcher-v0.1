@@ -1,5 +1,31 @@
 # Analyzer Docs — Changelog
 
+## 2026-02-23 (Analyzer UI stability pass - phase 4)
+- Stabilized Analyzer version-bar updates to prevent visible layout jumps during version switches and filter toggles.
+- Replaced dynamic multi-line Compare/ATH labels in hot update paths with single-line elided labels + tooltips.
+- Kept cancel buttons retain-size-when-hidden to avoid geometry reflow when busy state changes.
+- Removed dynamic toggle label text mutations (checkmark prefix) so filter chips no longer change width on toggle.
+- Added a minimum-height stabilization pass for the version bar row after initial layout activation.
+- Added GUI regression tests for stable version-bar height and in-place widget updates across selection changes.
+
+## 2026-02-23 (Analyzer UI polish - version info density)
+- Tightened KPI key/value spacing in Version Information so value columns no longer drift too far right on wide windows.
+- Added the missing divider between KPI metrics and the Basic Infos column for clearer visual grouping.
+- Styled sweep info as a compact badge (neutral container + muted sweep-blue text) to avoid hyperlink-like appearance.
+- Improved Basic Infos typography with dimmer keys and brighter values while keeping content unchanged.
+- Neutralized remaining blue-ish analyzer control surfaces to the monochrome panel palette.
+
+## 2026-02-23 (Analyzer UI polish - analysis block)
+- Reworked Analysis controls into a compact 2-column grid (Stage/Target + Min score).
+- Moved Exclude filters into a subtle inner section frame so they read as filter toggles instead of primary CTA buttons.
+- Kept filter behavior unchanged; only layout and presentation were updated.
+
+## 2026-02-23 (Analyzer UI polish - display block and plane segments)
+- Rebalanced Display block layout into two framed sections: Band and Plane/Tolerance/Advanced.
+- Moved `Advanced...` into the Plane/Tolerance section for tighter alignment and less dead space.
+- Removed the flat plane container fallback and kept subtle section framing consistent with the rest of the Version Bar.
+- Normalized segmented plane button styling so H/V/D share consistent selected/unselected visuals, including V-state parity.
+
 ## 2026-02-21
 - Created initial persistent Analyzer documentation set:
   - Context overview

@@ -51,6 +51,22 @@ It is written to be actionable for Codex implementation while minimizing risk to
 - Use eliding/word wrap for labels where needed; avoid text overlap.
 - Use ScrollArea for long forms rather than squeezing controls.
 
+## Layout Stability (Analyzer Version Bar)
+
+Root causes identified in Analyzer code:
+- Filter toggle labels were mutated on every toggle (`Exclude ...` vs checkmark-prefixed text), which changed size hints and caused horizontal relayout.
+- `version_ath_params_value_label` used word-wrap with variable line count per selection, which changed tile height and triggered vertical reflow.
+- Busy-state cancel buttons were shown/hidden, and hidden controls did not retain size, so control rows shifted when worker state changed.
+
+Stability strategy applied:
+- Keep dynamic text controls single-line with elide + tooltip (`ElidedTitleLabel`) in the hot update path.
+- Keep filter chip captions static; checked state is conveyed by button checked styling, not by changing text width.
+- Enable `retainSizeWhenHidden` for busy cancel controls so geometry stays stable when visibility toggles.
+- Apply a conservative minimum-height stabilization pass to the Analyzer version-bar row after initial layout activation.
+
+Scope guard:
+- No KPI/flags/runner logic changes; only Analyzer UI layout and update behavior were adjusted.
+
 ## Batch page: minimal-invasive changes
 
 Goal: remove the current bottom bar controls without damaging the polished Batch layout.
