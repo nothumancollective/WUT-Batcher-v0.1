@@ -6831,6 +6831,7 @@ class AnalysePage(QWidget):
     ) -> Dict[str, Any]:
         frame = QFrame()
         frame.setObjectName("ProjectIssuesPanel")
+        frame.setProperty("analyzerPlotTile", True)
         frame.setMinimumHeight(180)
         frame_layout = QVBoxLayout(frame)
         frame_layout.setContentsMargins(

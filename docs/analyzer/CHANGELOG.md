@@ -1,5 +1,10 @@
 # Analyzer Docs — Changelog
 
+## 2026-02-24 (Plot surfaces: black-slab root-cause background policy fix)
+- Added a dedicated Analyzer plot-tile frame contract (`ProjectIssuesPanel[analyzerPlotTile=true]`) with panel-consistent background/border styling.
+- Kept Heatmap/Curve/Pareto/TargetSummary canvases transparent so tile surfaces come from the themed parent frame, preventing black parent bleed-through.
+- Unified plot-surface rendering policy to card/panel tone instead of opaque black slabs.
+
 ## 2026-02-24 (Explorer concept: target deviation summary tile)
 - Replaced Explorer Concept tile `D` from single-point Pareto snapshot to `Target Deviation Summary` (single-candidate KPI bullet/bar view).
 - Added `TargetDeviationSummaryCanvas` and stage-panel routing (`summary` kind) without changing Compare Pareto behavior.

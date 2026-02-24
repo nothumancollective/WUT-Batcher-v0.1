@@ -1000,6 +1000,22 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         color: {c['muted']};
         font-size: 11px;
     }}
+    QFrame#ProjectIssuesPanel[analyzerPlotTile="true"] {{
+        background-color: #1f1f1f;
+        border: 1px solid {c['border']};
+        border-radius: {r['sm']}px;
+    }}
+    QFrame#ProjectIssuesPanel[analyzerPlotTile="true"] > QStackedWidget {{
+        background-color: transparent;
+        border: none;
+    }}
+    QLabel#AnalyzerHeatmapCanvas,
+    QLabel#AnalyzerMetricCurveCanvas,
+    QLabel#AnalyzerParetoScatterCanvas,
+    QLabel#AnalyzerTargetDeviationSummaryCanvas {{
+        background-color: transparent;
+        border: none;
+    }}
     QFrame#ProjectIssuesPanel {{
         background-color: transparent;
         border: none;
