@@ -1,5 +1,10 @@
 ﻿# Analyzer Docs â€” Changelog
 
+## 2026-02-24 (Metric bands: KPI semantics mapping + lower-is-better rendering)
+- Added canonical KPI metric-band specs in app/analyzer/metric_band_specs.py (direction + thresholds/targets) and switched Analyzer band rendering to spec-driven region mapping.
+- Smoothness (S_theta) now renders as lower-is-better: good zone near the bottom with warn zone above it (no curve-hugging veil).
+- Compare/Explorer now keep subtle, clipped spec regions behind curves while tile info tooltips state band meaning and KPI direction.
+
 ## 2026-02-24 (Auto Scale toggle: selected-state styling parity)
 - Switched Analyzer Auto Scale to the standard analyzer toggle style path (QToolButton + analyzerToggle=true) so :checked uses the same selected visuals as other analyzer toggle buttons.
 - Preserved Auto Scale behavior, sizing, spacing, and toolbar layout; this is visual-state parity only.

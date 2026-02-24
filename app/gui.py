@@ -19,6 +19,13 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, 
 
 from app.analyzer.cache import AnalyzerPlotCache, resolve_cache_policy
 from app.analyzer.heatmap_style import compare_overlay_color, get_vacs_like_lut
+from app.analyzer.metric_band_specs import (
+    metric_band_anchor_values,
+    metric_band_help_sentence,
+    metric_band_regions_from_spec,
+    metric_band_spec_for_key,
+    metric_band_thresholds_from_spec,
+)
 from app.analyzer.orientation import dedupe_orientations
 from app.analyzer.presets import (
     ALGO_VERSION,
@@ -1360,6 +1367,7 @@ class MetricCurveCanvas(QLabel):
                         "regime_markers": regime_markers,
                         "show_band": show_band,
                         "band_smooth": smooth_band,
+                        "band_spec": (dict(row.get("band_spec")) if isinstance(row.get("band_spec"), Mapping) else None),
                         "hotspot_threshold": row.get("hotspot_threshold"),
                     }
                 )
@@ -1413,6 +1421,20 @@ class MetricCurveCanvas(QLabel):
                     y_max = override_hi
             except Exception:
                 pass
+        band_anchor_values: List[float] = []
+        for row in points_by_series:
+            if not bool(row.get("show_band", True)):
+                continue
+            spec = row.get("band_spec")
+            if not isinstance(spec, Mapping):
+                continue
+            band_anchor_values.extend(metric_band_anchor_values(spec))
+        finite_anchor_values = [float(value) for value in band_anchor_values if math.isfinite(float(value))]
+        if finite_anchor_values:
+            y_min = min(float(y_min), float(min(finite_anchor_values)))
+            y_max = max(float(y_max), float(max(finite_anchor_values)))
+            if y_max <= y_min:
+                y_max = y_min + 1.0
 
         def x_of(freq_hz: float) -> float:
             if x_mode == "linear":
@@ -1503,51 +1525,61 @@ class MetricCurveCanvas(QLabel):
 
         def _build_metric_band_items() -> List[Dict[str, Any]]:
             items: List[Dict[str, Any]] = []
-            invalid_bounds_logged = False
             for row in points_by_series:
                 style_token = str(row.get("style") or "").strip().lower()
                 if style_token not in {"trend_band", "consistency_strip", "defect_band"}:
                     continue
                 if not bool(row.get("show_band", True)):
                     continue
+                band_spec = row.get("band_spec")
+                if not isinstance(band_spec, Mapping):
+                    continue
                 row_color = QColor(row.get("color")) if isinstance(row.get("color"), QColor) else QColor("#9AA4B2")
                 fill_alpha = float(row.get("fill_alpha", 0.12))
-                thresholds = sorted(
-                    {
-                        float(value)
-                        for value in list(row.get("thresholds", []) or [])
-                        if math.isfinite(float(value))
-                    }
-                )
-                if len(thresholds) >= 2:
-                    y_low = float(thresholds[0])
-                    y_high = float(thresholds[-1])
-                    if y_high <= y_low:
-                        if not invalid_bounds_logged:
-                            LOGGER.debug("Metric band rendering skipped invalid threshold bounds.")
-                            invalid_bounds_logged = True
-                        continue
+                mapping = metric_band_regions_from_spec(spec=band_spec, axis_min=float(y_min), axis_max=float(y_max))
+                regions = list(mapping.get("regions", []) or [])
+                reference_lines = list(mapping.get("reference_lines", []) or [])
+                for region in regions:
+                    role = str(region.get("role") or "good").strip().lower()
+                    alpha_scale = 1.0 if role == "good" else 0.72
                     items.append(
                         {
                             "item_type": "LinearRegionItem",
                             "style": style_token,
-                            "y_low": y_low,
-                            "y_high": y_high,
+                            "y_low": float(region.get("y_low")),
+                            "y_high": float(region.get("y_high")),
+                            "role": role,
                             "color": row_color,
-                            "fill_alpha": fill_alpha,
+                            "fill_alpha": max(0.01, float(fill_alpha) * float(alpha_scale)),
                             "band_smooth": bool(row.get("band_smooth", True)),
-                            "anchor": "thresholds",
+                            "anchor": "spec",
                         }
                     )
-                elif len(thresholds) == 1:
+                if not regions:
+                    for y_line in reference_lines:
+                        if not math.isfinite(float(y_line)):
+                            continue
+                        items.append(
+                            {
+                                "item_type": "InfiniteLine",
+                                "style": style_token,
+                                "y": float(y_line),
+                                "role": "reference",
+                                "color": row_color,
+                                "fill_alpha": max(0.02, float(fill_alpha) * 0.80),
+                                "anchor": "spec",
+                            }
+                        )
+                elif len(reference_lines) == 1:
                     items.append(
                         {
                             "item_type": "InfiniteLine",
                             "style": style_token,
-                            "y": float(thresholds[0]),
+                            "y": float(reference_lines[0]),
+                            "role": "reference",
                             "color": row_color,
-                            "fill_alpha": fill_alpha,
-                            "anchor": "thresholds",
+                            "fill_alpha": max(0.02, float(fill_alpha) * 0.80),
+                            "anchor": "spec",
                         }
                     )
             return items
@@ -7371,7 +7403,12 @@ class AnalysePage(QWidget):
                 title_label.setText(str(spec.get("title") or f"Plot {slot}"))
             help_btn = panel.get("help_btn")
             if isinstance(help_btn, QToolButton):
-                help_btn.setToolTip(str(spec.get("help") or "Stage plot panel."))
+                help_btn.setToolTip(
+                    self._metric_band_help_text(
+                        str(spec.get("help") or "Stage plot panel."),
+                        key,
+                    )
+                )
             if key == "heatmap":
                 self._set_stage_panel_kind(panel, "heatmap")
             elif key.startswith("target_deviation"):
@@ -7423,7 +7460,12 @@ class AnalysePage(QWidget):
                 title_label.setText(str(spec.get("title") or f"Plot {slot}"))
             help_btn = panel.get("help_btn")
             if isinstance(help_btn, QToolButton):
-                help_btn.setToolTip(str(spec.get("help") or "Compare stage plot panel."))
+                help_btn.setToolTip(
+                    self._metric_band_help_text(
+                        str(spec.get("help") or "Compare stage plot panel."),
+                        key,
+                    )
+                )
             self._set_stage_panel_kind(panel, kind)
             if slot == "B" and kind == "curve":
                 overlay_key = key
@@ -7437,7 +7479,10 @@ class AnalysePage(QWidget):
         if isinstance(getattr(self, "compare_overlay_help_btn", None), QToolButton):
             overlay_spec = dict(compare_lookup.get("B") or {})
             self.compare_overlay_help_btn.setToolTip(
-                str(overlay_spec.get("help") or "Overlay of shortlisted candidate curves.")
+                self._metric_band_help_text(
+                    str(overlay_spec.get("help") or "Overlay of shortlisted candidate curves."),
+                    overlay_key,
+                )
             )
 
         defaults = STAGE_PARETO_DEFAULTS.get(stage_id, STAGE_PARETO_DEFAULTS.get(DEFAULT_STAGE_ID, ("e_bw", "r_spill")))
@@ -8695,6 +8740,19 @@ class AnalysePage(QWidget):
         }
         return tuple(mapping.get(token, (160, 179, 205)))
 
+    @staticmethod
+    def _metric_band_help_text(base_help: str, metric_key: str) -> str:
+        help_text = str(base_help or "").strip()
+        spec = metric_band_spec_for_key(metric_key)
+        suffix = metric_band_help_sentence(spec)
+        if not suffix:
+            return help_text
+        if not help_text:
+            return str(suffix)
+        if str(suffix).lower() in help_text.lower():
+            return help_text
+        return f"{help_text} {suffix}"
+
     def _target_half_window_deg_for_plane(self, plane_key: str) -> float:
         target = self._selected_target()
         token = str(plane_key or "H").strip().upper()
@@ -8719,6 +8777,17 @@ class AnalysePage(QWidget):
         stage_token = normalize_stage_id(stage_id, fallback=DEFAULT_STAGE_ID)
         key_token = str(metric_key or "").strip().lower()
         context_token = str(context or "explorer").strip().lower()
+        band_spec = metric_band_spec_for_key(key_token)
+        spec_thresholds = metric_band_thresholds_from_spec(band_spec)
+        hotspot_threshold: Optional[float] = None
+        if isinstance(band_spec, Mapping):
+            hotspot_raw = band_spec.get("hotspot_threshold")
+            try:
+                hotspot_value = float(hotspot_raw) if hotspot_raw is not None else None
+            except Exception:
+                hotspot_value = None
+            if hotspot_value is not None and math.isfinite(hotspot_value):
+                hotspot_threshold = float(hotspot_value)
         show_bands = bool(self._show_metric_bands)
         smooth_bands = bool(self._metric_band_smooth)
         if stage_token == "stabilization":
@@ -8727,7 +8796,8 @@ class AnalysePage(QWidget):
                     "style": "trend_band",
                     "fill_alpha": 0.16 if context_token == "explorer" else 0.12,
                     "regime_markers": bool(context_token == "explorer"),
-                    "thresholds": [2.0, 4.0],
+                    "thresholds": spec_thresholds,
+                    "band_spec": band_spec,
                     "line_width": 1.4 if context_token == "explorer" else 1.2,
                     "show_band": show_bands,
                     "band_smooth": smooth_bands,
@@ -8737,7 +8807,8 @@ class AnalysePage(QWidget):
                     "style": "consistency_strip",
                     "line_width": 1.2,
                     "fill_alpha": 0.12 if context_token == "explorer" else 0.10,
-                    "thresholds": [0.20, 0.40] if key_token == "s_theta" else [0.35, 0.75],
+                    "thresholds": spec_thresholds,
+                    "band_spec": band_spec,
                     "show_band": show_bands,
                     "band_smooth": smooth_bands,
                 }
@@ -8747,8 +8818,9 @@ class AnalysePage(QWidget):
                     "style": "defect_band",
                     "fill_alpha": 0.18 if context_token == "explorer" else 0.14,
                     "line_width": 1.4 if context_token == "explorer" else 1.2,
-                    "thresholds": [2.0, 4.0, 6.0],
-                    "hotspot_threshold": 6.0,
+                    "thresholds": spec_thresholds,
+                    "band_spec": band_spec,
+                    "hotspot_threshold": hotspot_threshold,
                     "show_band": show_bands,
                     "band_smooth": smooth_bands,
                 }
@@ -8757,7 +8829,8 @@ class AnalysePage(QWidget):
                     "style": "consistency_strip",
                     "line_width": 1.2,
                     "fill_alpha": 0.12 if context_token == "explorer" else 0.10,
-                    "thresholds": [0.20, 0.40] if key_token == "s_theta" else [0.35, 0.75],
+                    "thresholds": spec_thresholds,
+                    "band_spec": band_spec,
                     "show_band": show_bands,
                     "band_smooth": smooth_bands,
                 }
@@ -9549,6 +9622,7 @@ class AnalysePage(QWidget):
                 "style",
                 "fill_alpha",
                 "thresholds",
+                "band_spec",
                 "regime_markers",
                 "hotspot_threshold",
                 "show_band",

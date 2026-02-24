@@ -307,6 +307,7 @@ The Analyzer page is planned with two explicit subviews:
   - raw-bins toggle
   - show metric bands toggle (default ON; opacity-clamped so bands remain behind data)
   - smooth metric bands toggle (default ON; optional block/strip style fallback)
+  - metric-band semantics come from `app/analyzer/metric_band_specs.py` (KPI direction + spec thresholds), and plot regions are derived from this spec mapping rather than curve geometry.
   - `use_full_angles_for_smoothness` toggle for `S_theta` compute requests (stage defaults: Concept OFF, Stabilization/Final ON).
   - global `target axis color` picker for target-window lines/shading and threshold/target helper lines.
 - Display quick controls also include:
