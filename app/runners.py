@@ -318,11 +318,13 @@ class AkabakRunner(_SubprocessRunner):
         *,
         version_logs_dir: str | Path,
         workdir: str | Path | None = None,
+        timeout_s: int | None = None,
     ) -> RunnerResult:
         return self.run(
             [str(abec_project)],
             version_logs_dir=version_logs_dir,
             workdir=workdir,
+            timeout_s=timeout_s,
             log_prefix="akabak",
         )
 

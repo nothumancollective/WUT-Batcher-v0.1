@@ -983,6 +983,7 @@ def _run_akabak_ui_driver_stage(
     abec_project_path: Path,
     version_logs_dir: Path,
     require_vacs_graph_import: bool,
+    akabak_solve_timeout_s: int = 600,
     preserve_vacs_for_export: bool = False,
 ) -> Tuple[StageExecution, Dict[str, Any], bool]:
     if AkabakDriver is None:
@@ -1024,13 +1025,14 @@ def _run_akabak_ui_driver_stage(
         solve = driver.run_solve()
         payload["steps"]["run_solve"] = {"ok": bool(solve.ok), "status": str(solve.status)}
 
+        timeout_s = max(1, int(akabak_solve_timeout_s))
         try:
             completed = driver.wait_for_completion(
-                timeout_s=600,
+                timeout_s=timeout_s,
                 require_vacs_graph_import=bool(require_vacs_graph_import),
             )
         except TypeError:
-            completed = driver.wait_for_completion(timeout_s=600)
+            completed = driver.wait_for_completion(timeout_s=timeout_s)
         payload["steps"]["wait_for_completion"] = {"ok": bool(completed.ok), "status": str(completed.status)}
         stage_ok = True
     except TimeoutError as exc:
@@ -1649,6 +1651,7 @@ def run_batch_pipeline(
     ath_base_args: Sequence[str] | None = None,
     akabak_base_args: Sequence[str] | None = None,
     vacs_base_args: Sequence[str] | None = None,
+    akabak_solve_timeout_s: int = 600,
     continue_on_error: bool = True,
     dry_run: bool = False,
     run_id: Optional[str] = None,
@@ -2076,6 +2079,7 @@ def run_batch_pipeline(
                     abec_project_path=_version_abec_path(project_root, version_id),
                     version_logs_dir=_version_logs_dir(project_root, version_id),
                     require_vacs_graph_import=require_vacs_graph_import,
+                    akabak_solve_timeout_s=akabak_solve_timeout_s,
                     preserve_vacs_for_export=preserve_vacs_for_export,
                 )
                 stage_results.append(akabak_stage)
@@ -2119,6 +2123,7 @@ def run_batch_pipeline(
                 akabak_result = akabak_runner.run_project(
                     _version_abec_path(project_root, version_id),
                     version_logs_dir=_version_logs_dir(project_root, version_id),
+                    timeout_s=max(1, int(akabak_solve_timeout_s)),
                 )
                 stage_results.append(_stage_from_result(version_id, "akabak", akabak_result))
                 _update_version_state(
