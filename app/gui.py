@@ -8139,6 +8139,49 @@ class AnalysePage(QWidget):
         pad = max((hi - lo) * 0.06, 1.0e-6)
         return (lo - pad, hi + pad)
 
+    @staticmethod
+    def _percentile(values: Sequence[float], q: float) -> Optional[float]:
+        ordered_values: List[float] = []
+        for raw_value in list(values or []):
+            try:
+                value = float(raw_value)
+            except Exception:
+                continue
+            if math.isfinite(value):
+                ordered_values.append(value)
+        ordered = sorted(ordered_values)
+        if not ordered:
+            return None
+        if len(ordered) == 1:
+            return float(ordered[0])
+        quantile = max(0.0, min(float(q), 1.0))
+        position = quantile * float(len(ordered) - 1)
+        lower = int(math.floor(position))
+        upper = int(math.ceil(position))
+        if lower == upper:
+            return float(ordered[lower])
+        fraction = float(position - lower)
+        return float(ordered[lower] + ((ordered[upper] - ordered[lower]) * fraction))
+
+    @staticmethod
+    def _robust_plane_consistency_fixed_range(values: Sequence[Any]) -> Optional[Tuple[float, float]]:
+        finite = AnalysePage._finite_numeric_values(values)
+        if not finite:
+            return None
+        clipped = sorted(max(float(value), 0.0) for value in finite)
+        core_count = max(1, int(math.floor(len(clipped) * 0.9)))
+        core_values = clipped[:core_count]
+        p95 = AnalysePage._percentile(core_values, 0.95)
+        robust_peak = float(max(core_values)) if core_values else 0.0
+        if p95 is not None:
+            robust_peak = max(robust_peak, float(p95))
+        max_reasonable = 4.0
+        y_max = min(max_reasonable, max(float(robust_peak) * 1.25, 0.25))
+        y_min = 0.0
+        if y_max <= y_min:
+            y_max = y_min + 0.5
+        return (float(y_min), float(y_max))
+
     def _resolve_axis_range(
         self,
         *,
@@ -8151,6 +8194,19 @@ class AnalysePage(QWidget):
         computed = self._expanded_axis_range(values)
         if bool(self._auto_scale_enabled):
             return computed
+        if key.endswith(":e_sym_shape:y"):
+            robust_range = self._robust_plane_consistency_fixed_range(values)
+            if robust_range is not None:
+                cached = self._stable_axis_ranges.get(key)
+                if cached is None:
+                    self._stable_axis_ranges[key] = robust_range
+                    return robust_range
+                merged = (
+                    min(float(cached[0]), float(robust_range[0])),
+                    min(4.0, max(float(cached[1]), float(robust_range[1]))),
+                )
+                self._stable_axis_ranges[key] = merged
+                return merged
         cached = self._stable_axis_ranges.get(key)
         if computed is None:
             return cached

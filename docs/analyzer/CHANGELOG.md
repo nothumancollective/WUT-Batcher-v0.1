@@ -1022,3 +1022,8 @@
 - Compare now ignores tile double-click maximize/restore while the compare drawer is expanded.
 - Restore remains deterministic: double-clicking the same maximized tile returns to the 2x2 grid.
 - Added regression coverage for compare double-click stability and drawer-expanded maximize blocking.
+## 2026-02-24 (Plane consistency fixed-scale: robust non-auto y-range)
+- Fixed non-auto-scale y-range inflation for `e_sym_shape` (Plane Consistency Strip) by adding a robust fixed-range helper with finite-value filtering and outlier-resistant core trimming.
+- In fixed mode, `e_sym_shape` now uses a bounded, sensible range (`y_min=0`, clamped `y_max`) instead of inheriting extreme spikes.
+- Auto-scale behavior remains unchanged.
+- Added regression coverage for the robust fixed-range helper and non-auto axis range resolution path.

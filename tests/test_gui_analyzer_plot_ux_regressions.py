@@ -411,6 +411,25 @@ class AnalyzerPlotUxRegressionTests(unittest.TestCase):
             assert auto_range is not None
             self.assertGreater(float(auto_range[0]), float(stable_range[0]))
 
+    def test_plane_consistency_fixed_range_uses_robust_outlier_clamp(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_plot_ux_plane_consistency_fixed_range_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            helper_range = AnalysePage._robust_plane_consistency_fixed_range([0.22, 0.28, 0.34, 48.0])
+            self.assertIsNotNone(helper_range)
+            assert helper_range is not None
+            self.assertAlmostEqual(float(helper_range[0]), 0.0, places=6)
+            self.assertLessEqual(float(helper_range[1]), 4.0)
+            self.assertGreater(float(helper_range[1]), 0.30)
+
+            fixed_range = page._resolve_axis_range(
+                axis_key="compare:stabilization:e_sym_shape:y",
+                values=[0.22, 0.28, 0.34, 48.0],
+            )
+            self.assertIsNotNone(fixed_range)
+            assert fixed_range is not None
+            self.assertLessEqual(float(fixed_range[1]), 4.0)
+
     def test_stage_switch_applies_full_angle_smoothness_defaults(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_plot_ux_stage_full_angles_defaults_") as tmp:
             service = _build_service(Path(tmp))
