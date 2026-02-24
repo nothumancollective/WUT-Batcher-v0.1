@@ -1,5 +1,10 @@
 ﻿# Analyzer Docs â€” Changelog
 
+## 2026-02-24 (Concept stage heatmap emphasis + decision tile)
+- Concept Explorer layout now uses a decision-focused Pareto snapshot tile (E_BW vs R_spill) instead of a separate beamwidth-error curve panel.
+- Added stage-aware heatmap overlay styling so Concept emphasizes target window shading and -6 dB contour visibility.
+- Applied the same stage-aware heatmap overlay profile to Compare heatmap rendering for visual consistency.
+
 ## 2026-02-24 (Stage visualization refactor audit)
 - Added docs/analyzer/09_stage_visualization_refactor_audit.md.
 - Documented current Explorer/Compare plot rendering paths, worker-threaded payload flow, and custom QPainter backend constraints.
@@ -799,6 +804,7 @@
 
 ## 2026-02-24 (Merge integration follow-up)
 - Aligned GUI regression `test_version_bar_widgets_are_updated_in_place` with the stacked ATH params widget model (`version_ath_params_rows_widget` + empty-label placeholder) after merging `ui/analyzer-versionbar-polish-final`.
+
 
 
 

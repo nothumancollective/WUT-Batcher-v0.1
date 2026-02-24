@@ -520,7 +520,12 @@ def _should_render_minus6_angle(
 STAGE_EXPLORER_LAYOUTS: Dict[str, List[Dict[str, str]]] = {
     "concept": [
         {"slot": "A", "key": "heatmap", "title": "Polar Map", "help": "Heatmap with -6 dB contour and target window."},
-        {"slot": "B", "key": "e_bw", "title": "Beamwidth Error vs Target", "help": "Absolute beamwidth deviation from the selected target."},
+        {
+            "slot": "B",
+            "key": "pareto_decision",
+            "title": "Decision Trade-off (E_BW vs Spill)",
+            "help": "Single-candidate Pareto snapshot for beamwidth error vs spill ratio.",
+        },
         {"slot": "C", "key": "e_cov", "title": "Coverage Uniformity vs f", "help": "RMS variation inside the target coverage window."},
         {"slot": "D", "key": "r_spill", "title": "Spill Index vs f", "help": "Relative outside-vs-inside target energy ratio."},
     ],
@@ -636,6 +641,10 @@ class HeatmapCanvas(QLabel):
         self._show_mirrored_minus6 = False
         self._x_label = "Frequency (Hz, log)"
         self._y_label = "Angle (deg)"
+        self._target_shade_alpha = 24
+        self._target_boundary_alpha = 140
+        self._contour_color = QColor("#FFE38A")
+        self._contour_width = 2.0
         self._applied_plot_margins: Tuple[int, int, int, int] = apply_analyzer_plot_margins(has_legend=False)
         self._lut = get_vacs_like_lut(256)
 
@@ -652,6 +661,10 @@ class HeatmapCanvas(QLabel):
         minus6_contour: Optional[List[Dict[str, float]]] = None,
         target_half_window_deg: Optional[float] = None,
         show_mirrored_minus6: bool = False,
+        target_shade_alpha: int = 24,
+        target_boundary_alpha: int = 140,
+        contour_color: Optional[Tuple[int, int, int]] = None,
+        contour_width: float = 2.0,
         status: str = "",
     ) -> None:
         self._matrix = [list(row) for row in list(matrix or [])]
@@ -666,6 +679,17 @@ class HeatmapCanvas(QLabel):
             float(target_half_window_deg) if target_half_window_deg is not None else None
         )
         self._show_mirrored_minus6 = bool(show_mirrored_minus6)
+        self._target_shade_alpha = max(0, min(int(target_shade_alpha), 255))
+        self._target_boundary_alpha = max(0, min(int(target_boundary_alpha), 255))
+        if isinstance(contour_color, tuple) and len(contour_color) >= 3:
+            self._contour_color = QColor(int(contour_color[0]), int(contour_color[1]), int(contour_color[2]))
+        else:
+            self._contour_color = QColor("#FFE38A")
+        try:
+            contour_width_value = float(contour_width)
+        except Exception:
+            contour_width_value = 2.0
+        self._contour_width = max(1.0, min(contour_width_value, 4.0))
         self._status = str(status or "").strip()
         self._rerender()
 
@@ -675,6 +699,10 @@ class HeatmapCanvas(QLabel):
         self._minus6_contour = []
         self._target_half_window_deg = None
         self._show_mirrored_minus6 = False
+        self._target_shade_alpha = 24
+        self._target_boundary_alpha = 140
+        self._contour_color = QColor("#FFE38A")
+        self._contour_width = 2.0
         self._rerender()
 
     def resizeEvent(self, event) -> None:  # type: ignore[override]
@@ -818,9 +846,15 @@ class HeatmapCanvas(QLabel):
                 y_lo = y_of(float(target_region[0]))
                 shade_top = min(int(y_hi), int(y_lo))
                 shade_height = max(abs(int(y_lo) - int(y_hi)), 1)
-                painter.fillRect(margin_left, shade_top, plot_w, shade_height, QColor(93, 168, 255, 24))
+                painter.fillRect(
+                    margin_left,
+                    shade_top,
+                    plot_w,
+                    shade_height,
+                    QColor(93, 168, 255, int(self._target_shade_alpha)),
+                )
             if boundary_lines:
-                painter.setPen(QPen(QColor(142, 196, 255, 140), 1, Qt.DashLine))
+                painter.setPen(QPen(QColor(142, 196, 255, int(self._target_boundary_alpha)), 1, Qt.DashLine))
                 for angle_line in boundary_lines:
                     y_line = y_of(float(angle_line))
                     painter.drawLine(margin_left, y_line, margin_left + plot_w, y_line)
@@ -871,7 +905,7 @@ class HeatmapCanvas(QLabel):
                     show_mirrored=bool(self._show_mirrored_minus6),
                 ):
                     right_points.append((x_of(freq_value), y_of(right_angle)))
-            painter.setPen(QPen(QColor("#FFE38A"), 2))
+            painter.setPen(QPen(QColor(self._contour_color), float(self._contour_width)))
             for idx in range(len(left_points) - 1):
                 x1, y1 = left_points[idx]
                 x2, y2 = left_points[idx + 1]
@@ -6239,7 +6273,12 @@ class AnalysePage(QWidget):
             help_btn = panel.get("help_btn")
             if isinstance(help_btn, QToolButton):
                 help_btn.setToolTip(str(spec.get("help") or "Stage plot panel."))
-            self._set_stage_panel_kind(panel, "heatmap" if key == "heatmap" else "curve")
+            if key == "heatmap":
+                self._set_stage_panel_kind(panel, "heatmap")
+            elif key.startswith("pareto"):
+                self._set_stage_panel_kind(panel, "pareto")
+            else:
+                self._set_stage_panel_kind(panel, "curve")
         for slot in slot_order[len(layout_spec):]:
             panel = self._explorer_stage_panels.get(slot)
             if not isinstance(panel, dict):
@@ -7106,6 +7145,9 @@ class AnalysePage(QWidget):
             curve_canvas = panel.get("curve_canvas")
             if isinstance(curve_canvas, MetricCurveCanvas):
                 curve_canvas.clear_series(msg)
+            pareto_canvas = panel.get("pareto_canvas")
+            if isinstance(pareto_canvas, ParetoScatterCanvas):
+                pareto_canvas.clear_points(msg)
             placeholder = panel.get("placeholder")
             if isinstance(placeholder, QLabel):
                 placeholder.setText(msg)
@@ -7159,6 +7201,23 @@ class AnalysePage(QWidget):
         }
         return str(mapping.get(str(key or "").strip().lower(), "Value"))
 
+    @staticmethod
+    def _heatmap_overlay_profile(stage_id: str) -> Dict[str, Any]:
+        stage_token = normalize_stage_id(stage_id, fallback=DEFAULT_STAGE_ID)
+        if stage_token == "concept":
+            return {
+                "target_shade_alpha": 44,
+                "target_boundary_alpha": 178,
+                "contour_color": (255, 230, 140),
+                "contour_width": 2.6,
+            }
+        return {
+            "target_shade_alpha": 18,
+            "target_boundary_alpha": 112,
+            "contour_color": (255, 226, 128),
+            "contour_width": 1.8,
+        }
+
     def _render_plot_payload(self, payload: Dict[str, Any]) -> None:
         self._latest_plot_payload = dict(payload or {})
         message = str(payload.get("message") or "").strip()
@@ -7171,6 +7230,7 @@ class AnalysePage(QWidget):
             return
         clamp_enabled = bool(self.heatmap_clamp_check.isChecked())
         clamp_min = float(self.heatmap_clamp_min_spin.value())
+        overlay_profile = self._heatmap_overlay_profile(self._selected_stage_id())
         status = ""
         ref_angle = payload.get("ref_angle_deg")
         if message:
@@ -7200,8 +7260,37 @@ class AnalysePage(QWidget):
                         else None
                     ),
                     show_mirrored_minus6=bool(self._show_mirrored_minus6_contour),
+                    target_shade_alpha=int(overlay_profile.get("target_shade_alpha", 24)),
+                    target_boundary_alpha=int(overlay_profile.get("target_boundary_alpha", 140)),
+                    contour_color=tuple(overlay_profile.get("contour_color", (255, 227, 138))),
+                    contour_width=float(overlay_profile.get("contour_width", 2.0)),
                     status=status,
                 )
+                continue
+
+            if key.startswith("pareto"):
+                pareto_canvas = panel.get("pareto_canvas")
+                if isinstance(pareto_canvas, ParetoScatterCanvas):
+                    summary = dict(stage_payload.get("summary") or {})
+                    x_value = summary.get("e_bw_mean")
+                    y_value = summary.get("r_spill_mean")
+                    if x_value is not None and y_value is not None:
+                        pareto_canvas.set_points(
+                            points=[
+                                {
+                                    "label": "Selected",
+                                    "x_value": float(x_value),
+                                    "y_value": float(y_value),
+                                    "color": compare_overlay_color(0),
+                                    "selected": True,
+                                }
+                            ],
+                            x_label="Beamwidth Error (deg)",
+                            y_label="Spill Ratio",
+                            status="",
+                        )
+                    else:
+                        pareto_canvas.clear_points(message or "Pareto snapshot unavailable for this selection.")
                 continue
 
             curve_canvas = panel.get("curve_canvas")
@@ -7764,6 +7853,7 @@ class AnalysePage(QWidget):
             return
         stage_plot = dict(plot.get("stage_plot") or {})
         overlays = dict(stage_plot.get("heatmap_overlays") or {})
+        overlay_profile = self._heatmap_overlay_profile(self._selected_stage_id())
         self.compare_heatmap_canvas.set_heatmap_data(
             matrix=matrix,
             freqs_hz=[float(value) for value in list(plot.get("display_freqs_hz", []) or [])],
@@ -7779,6 +7869,10 @@ class AnalysePage(QWidget):
                 else None
             ),
             show_mirrored_minus6=bool(self._show_mirrored_minus6_contour),
+            target_shade_alpha=int(overlay_profile.get("target_shade_alpha", 24)),
+            target_boundary_alpha=int(overlay_profile.get("target_boundary_alpha", 140)),
+            contour_color=tuple(overlay_profile.get("contour_color", (255, 227, 138))),
+            contour_width=float(overlay_profile.get("contour_width", 2.0)),
             status="",
         )
 
