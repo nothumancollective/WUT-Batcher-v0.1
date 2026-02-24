@@ -1,5 +1,10 @@
 # Analyzer Docs — Changelog
 
+## 2026-02-24 (Analyzer Version Bar final polish - plane segments)
+- Unified H/V/D segmented plane button visuals: consistent border/padding/radius behavior for all segments.
+- Removed the V-only border-width override that caused the visual inset/offset artifact.
+- Kept selected state monochrome (neutral highlight), no semantic-blue usage for generic selection state.
+
 ## 2026-02-24 (Analyzer Version Bar final polish - layout round 1)
 - Moved `Tol (+/-deg)` out of Display inline controls into the existing `Display Advanced...` dialog while preserving the same bound tolerance value/behavior.
 - Reworked Display internals to two equal-width framed sections (`Band` and `Plane`), with `Advanced...` anchored inside the Plane section.
