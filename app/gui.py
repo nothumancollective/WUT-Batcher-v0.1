@@ -577,6 +577,25 @@ COMPARE_DEFAULT_KPI_COLUMNS: Tuple[Tuple[str, str], ...] = (
     ("r_spill", "Spill Ratio"),
 )
 
+COMPARE_STAGE_KPI_COLUMNS: Dict[str, Tuple[Tuple[str, str], ...]] = {
+    "concept": (
+        ("b_pc_oct", "Pattern Ctrl (oct)"),
+        ("e_bw", "BW Err (deg)"),
+        ("e_cov", "Cov Err (dB)"),
+        ("r_spill", "Spill Ratio"),
+    ),
+    "stabilization": (
+        ("di_proxy", "DI Trend (dB)"),
+        ("s_theta", "Smoothness"),
+        ("e_sym_shape", "Plane Consistency"),
+    ),
+    "final": (
+        ("r_off", "Off-axis Ripple (dB)"),
+        ("s_theta", "Smoothness"),
+        ("e_sym_shape", "Plane Consistency"),
+    ),
+}
+
 VERSION_INFO_STAGE_METRICS: Dict[str, Tuple[str, ...]] = {
     "concept": ("score", "b_pc_oct", "e_bw", "e_cov", "r_spill", "flags"),
     "stabilization": ("score", "di_proxy", "s_theta", "e_sym_shape", "flags"),
@@ -7210,6 +7229,7 @@ class AnalysePage(QWidget):
         score_raw = row.get("kpi_score")
         if score_raw is None:
             score_raw = row.get("score")
+        aggregate = dict(dict(row.get("kpi", {}) or {}).get("aggregate", {}) or {})
         candidate = {
             "project_id": str(row.get("project_id") or self._selected_project_id() or "").strip(),
             "batch_id": batch_id,
@@ -7221,6 +7241,10 @@ class AnalysePage(QWidget):
             "kpi_e_bw": row.get("kpi_e_bw"),
             "kpi_e_cov": row.get("kpi_e_cov"),
             "kpi_r_spill": row.get("kpi_r_spill"),
+            "kpi_di_proxy": row.get("kpi_di_proxy", aggregate.get("di_proxy")),
+            "kpi_s_theta": row.get("kpi_s_theta", aggregate.get("s_theta")),
+            "kpi_e_sym_shape": row.get("kpi_e_sym_shape", aggregate.get("e_sym_shape")),
+            "kpi_r_off": row.get("kpi_r_off", aggregate.get("r_off")),
             "kpi_flags_count": int(row.get("kpi_flags_count") or 0) if score_raw is not None else None,
             "kpi_reason_codes": [str(code) for code in list(row.get("kpi_reason_codes", []) or []) if str(code).strip()],
             "planes": [str(item) for item in list(row.get("planes", []) or [])],
@@ -7232,7 +7256,18 @@ class AnalysePage(QWidget):
     def _compare_table_columns(self) -> List[Tuple[str, str]]:
         return list(COMPARE_BASE_COLUMNS) + list(self._compare_kpi_columns) + [("remove", "Remove")]
 
+    def _compare_stage_kpi_columns(self) -> List[Tuple[str, str]]:
+        stage_id = self._selected_stage_id()
+        configured = COMPARE_STAGE_KPI_COLUMNS.get(stage_id)
+        if configured:
+            return [tuple(item) for item in configured]
+        return [tuple(item) for item in COMPARE_DEFAULT_KPI_COLUMNS]
+
+    def _refresh_compare_table_column_mapping(self) -> None:
+        self._compare_kpi_columns = list(self._compare_stage_kpi_columns())
+
     def _configure_compare_slots_table(self) -> None:
+        self._refresh_compare_table_column_mapping()
         columns = self._compare_table_columns()
         self.compare_slots_table.setColumnCount(len(columns))
         self.compare_slots_table.setHorizontalHeaderLabels([str(label) for _key, label in columns])
@@ -7255,6 +7290,10 @@ class AnalysePage(QWidget):
             "e_bw": ("kpi_e_bw", 2),
             "e_cov": ("kpi_e_cov", 2),
             "r_spill": ("kpi_r_spill", 3),
+            "di_proxy": ("kpi_di_proxy", 2),
+            "s_theta": ("kpi_s_theta", 3),
+            "e_sym_shape": ("kpi_e_sym_shape", 3),
+            "r_off": ("kpi_r_off", 2),
         }
         field = direct_fields.get(token)
         value = None
@@ -7264,7 +7303,23 @@ class AnalysePage(QWidget):
             digits = int(field[1])
         if value is None:
             value = aggregate.get(token)
+        if value is None:
+            stage_summary = self._compare_stage_summary_for_candidate(candidate)
+            if stage_summary:
+                value = stage_summary.get(f"{token}_mean")
         return self._format_float(value, digits)
+
+    def _compare_stage_summary_for_candidate(self, candidate: Mapping[str, Any]) -> Dict[str, Any]:
+        target_identity = self._compare_identity(dict(candidate))
+        for item in self._compare_plot_items:
+            if not isinstance(item, dict):
+                continue
+            row_candidate = dict(item.get("candidate") or {})
+            if self._compare_identity(row_candidate) != target_identity:
+                continue
+            stage_plot = dict(dict(item.get("plot") or {}).get("stage_plot", {}) or {})
+            return dict(stage_plot.get("summary") or {})
+        return {}
 
     def _set_compare_candidates(self, candidates: Sequence[Dict[str, Any]], *, message: str = "") -> None:
         dedup: Dict[tuple[str, str, str, str], Dict[str, Any]] = {}
@@ -7383,7 +7438,9 @@ class AnalysePage(QWidget):
                         item = QTableWidgetItem(metric_text)
                         item.setTextAlignment(int(Qt.AlignRight | Qt.AlignVCenter))
                         if metric_text == "--":
-                            item.setToolTip("Compute KPIs to populate.")
+                            item.setToolTip(f"{key}: --\nCompute KPIs to populate.")
+                        else:
+                            item.setToolTip(f"{key}: {metric_text}")
                     self.compare_slots_table.setItem(row_index, int(idx), item)
                 self.compare_heatmap_selector.addItem(f"{slot_label} | {selection_text}", row_index)
             else:
@@ -8809,6 +8866,7 @@ class AnalysePage(QWidget):
                 self.min_score_spin.setValue(float(filters.get("min_score", 0.0) or 0.0))
             finally:
                 self._control_sync_guard = False
+        self._refresh_compare_table_column_mapping()
         self._apply_stage_column_visibility()
         self._apply_stage_plot_layout()
 
@@ -8978,6 +9036,7 @@ class AnalysePage(QWidget):
             return
         self._apply_stage_defaults(include_filters=False)
         self._update_version_information_panel(dict(self._selected_detail_payload or {}))
+        self._update_compare_slots()
         self._update_toolbar_context_chips()
         if not self._selected_project_id() or not self._selected_batch_id():
             self._schedule_plot_refresh()

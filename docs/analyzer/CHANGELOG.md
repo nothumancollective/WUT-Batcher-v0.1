@@ -5,6 +5,11 @@
 - Documented current Compare widget/layout wiring and state update paths (`_compare_candidates`, `_selected_compare_slot_index`, `_update_compare_slots`).
 - Captured surgical replacement plan: move KPI comparison into left combined table and remove in-grid `Selected Candidate KPIs` block.
 
+## 2026-02-24 (Compare table stage-specific KPI columns)
+- Added deterministic Compare-table Stage -> KPI-column mapping with friendly labels for Concept/Stabilization/Final.
+- Compare left table now reconfigures KPI columns immediately on stage changes and re-renders row values from cached candidate KPI payloads.
+- Added advanced-stage value fallback from candidate KPI aggregate and compare stage summary payloads, with `--` + compute hint when missing.
+
 ## 2026-02-24 (Compare left panel layout - combined table)
 - Removed the in-grid `Selected Candidate KPIs` block from Compare plot area.
 - Reworked Compare left side into a scrollable `Selection & KPIs` management panel with a single combined shortlist table.
