@@ -170,7 +170,7 @@ try:
         QSize,
         qInstallMessageHandler,
     )
-    from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPixmap, QIcon, QPalette, QImage, QPen
+    from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPixmap, QIcon, QPalette, QImage, QPen
     from PySide6.QtWidgets import (
         QAbstractItemView,
         QApplication,
@@ -355,17 +355,48 @@ def apply_plot_theme(
     tick_font_px = max(int(round(base_px * 0.65)), 7)
     legend_font_px = max(int(round(base_px * 0.70)), 7)
     em = max(float(tick_font_px), 7.0)
+    tick_font = _font_with_pixel_size(widget.font(), tick_font_px)
+    axis_font = _font_with_pixel_size(widget.font(), axis_font_px)
+    legend_font = _font_with_pixel_size(widget.font(), legend_font_px)
+    tick_fm = QFontMetrics(tick_font)
+    axis_fm = QFontMetrics(axis_font)
+    legend_fm = QFontMetrics(legend_font)
     if width < 520 or height < 280:
         size_class = "small"
     elif width < 860 or height < 420:
         size_class = "medium"
     else:
         size_class = "large"
+    axis_label_height_px = max(int(axis_fm.height() + 2), 14)
+    x_tick_label_height_px = max(int(tick_fm.height() + 2), 14)
+    x_tick_label_y_offset_px = max(int(round(1.2 * em)), 10)
+    x_axis_label_gap_px = max(int(round(0.55 * em)), 5)
+    x_axis_label_bottom_pad_px = max(int(round(0.35 * em)), 3)
+    y_axis_label_band_width_px = max(int(round(axis_fm.height() * 1.45)), 16)
+    y_axis_label_band_left_px = max(int(round(0.7 * em)), 4)
+    y_tick_label_right_pad_px = max(int(round(1.3 * em)), 8)
+    y_tick_sample_w = max(
+        tick_fm.horizontalAdvance("-120.00"),
+        tick_fm.horizontalAdvance("90°"),
+    )
+    left_margin = max(
+        58,
+        int(y_tick_sample_w + y_tick_label_right_pad_px + y_axis_label_band_width_px + (1.2 * em)),
+    )
+    right_margin = max(
+        20,
+        int(round((11.0 if has_legend else 2.4) * em)),
+    )
+    if has_legend:
+        right_margin = max(right_margin, int(legend_fm.horizontalAdvance("V000") + (2.8 * em)))
     margins = {
-        "left": max(40, int(round(6.0 * em))),
-        "top": max(12, int(round(2.0 * em))),
-        "right": max(18, int(round((12.0 if has_legend else 2.0) * em))),
-        "bottom": max(28, int(round(5.0 * em))),
+        "left": left_margin,
+        "top": max(12, int(round(1.8 * em))),
+        "right": right_margin,
+        "bottom": max(
+            44,
+            int(x_tick_label_y_offset_px + x_tick_label_height_px + x_axis_label_gap_px + axis_label_height_px + x_axis_label_bottom_pad_px),
+        ),
     }
     return {
         "context": str(context or "plot"),
@@ -375,11 +406,16 @@ def apply_plot_theme(
         "axis_font_px": axis_font_px,
         "tick_font_px": tick_font_px,
         "legend_font_px": legend_font_px,
-        "x_tick_label_height_px": max(14, int(round(2.0 * em))),
-        "x_tick_label_y_offset_px": max(16, int(round(2.3 * em))),
-        "y_tick_label_height_px": max(14, int(round(2.0 * em))),
-        "y_tick_label_right_pad_px": max(8, int(round(1.6 * em))),
+        "axis_label_height_px": axis_label_height_px,
+        "x_axis_label_gap_px": x_axis_label_gap_px,
+        "x_axis_label_bottom_pad_px": x_axis_label_bottom_pad_px,
+        "x_tick_label_height_px": x_tick_label_height_px,
+        "x_tick_label_y_offset_px": x_tick_label_y_offset_px,
+        "y_tick_label_height_px": max(int(tick_fm.height() + 2), 14),
+        "y_tick_label_right_pad_px": y_tick_label_right_pad_px,
         "y_tick_label_min_gap_px": max(12, int(round(1.8 * em))),
+        "y_axis_label_band_left_px": y_axis_label_band_left_px,
+        "y_axis_label_band_width_px": y_axis_label_band_width_px,
     }
 
 
@@ -401,6 +437,48 @@ def format_series_label(version_id: Any) -> str:
 
 def _plot_margins(*, has_legend: bool = False) -> Tuple[int, int, int, int]:
     return apply_analyzer_plot_margins(has_legend=has_legend)
+
+
+def compute_plot_layout_geometry(
+    *,
+    width: int,
+    height: int,
+    theme: Mapping[str, Any],
+    min_plot_w: int = 24,
+    min_plot_h: int = 24,
+) -> Dict[str, int]:
+    margins = dict(theme.get("margins") or {})
+    margin_left = max(int(margins.get("left", ANALYZER_PLOT_STYLE.left_margin_px)), 4)
+    margin_right = max(int(margins.get("right", ANALYZER_PLOT_STYLE.right_margin_no_legend_px)), 4)
+    margin_top = max(int(margins.get("top", ANALYZER_PLOT_STYLE.top_margin_px)), 4)
+    margin_bottom = max(int(margins.get("bottom", ANALYZER_PLOT_STYLE.bottom_margin_px)), 4)
+    plot_w = max(int(width) - margin_left - margin_right, int(min_plot_w))
+    plot_h = max(int(height) - margin_top - margin_bottom, int(min_plot_h))
+    x_tick_label_top = margin_top + plot_h + int(theme.get("x_tick_label_y_offset_px", ANALYZER_PLOT_STYLE.x_tick_label_y_offset_px))
+    x_tick_label_height = int(theme.get("x_tick_label_height_px", ANALYZER_PLOT_STYLE.x_tick_label_height_px))
+    x_tick_label_bottom = x_tick_label_top + x_tick_label_height
+    x_axis_label_height = int(theme.get("axis_label_height_px", ANALYZER_PLOT_STYLE.x_axis_label_height_px))
+    x_axis_label_gap = int(theme.get("x_axis_label_gap_px", 6))
+    x_axis_label_bottom_pad = int(theme.get("x_axis_label_bottom_pad_px", ANALYZER_PLOT_STYLE.x_axis_label_bottom_pad_px))
+    x_axis_label_top = max(
+        x_tick_label_bottom + x_axis_label_gap,
+        int(height) - x_axis_label_height - x_axis_label_bottom_pad,
+    )
+    if x_axis_label_top + x_axis_label_height > int(height):
+        x_axis_label_top = max(0, int(height) - x_axis_label_height)
+    return {
+        "margin_left": margin_left,
+        "margin_right": margin_right,
+        "margin_top": margin_top,
+        "margin_bottom": margin_bottom,
+        "plot_w": plot_w,
+        "plot_h": plot_h,
+        "x_tick_label_top": x_tick_label_top,
+        "x_tick_label_height": x_tick_label_height,
+        "x_tick_label_bottom": x_tick_label_bottom,
+        "x_axis_label_top": x_axis_label_top,
+        "x_axis_label_height": x_axis_label_height,
+    }
 
 
 def _log_tick_sets(freq_min: float, freq_max: float, *, size_class: str = "large") -> Tuple[List[float], List[float]]:
@@ -439,13 +517,18 @@ def _draw_analyzer_x_axis_label(
     margin_left: int,
     plot_w: int,
     canvas_height: int,
+    theme: Mapping[str, Any],
+    x_tick_label_bottom: int,
 ) -> None:
-    style = ANALYZER_PLOT_STYLE
-    label_h = int(style.x_axis_label_height_px)
+    label_h = int(theme.get("axis_label_height_px", ANALYZER_PLOT_STYLE.x_axis_label_height_px))
+    label_gap = int(theme.get("x_axis_label_gap_px", 6))
+    label_bottom_pad = int(theme.get("x_axis_label_bottom_pad_px", ANALYZER_PLOT_STYLE.x_axis_label_bottom_pad_px))
     label_y = max(
-        0,
-        int(canvas_height - style.x_axis_label_bottom_pad_px - label_h),
+        int(x_tick_label_bottom) + label_gap,
+        int(canvas_height) - label_bottom_pad - label_h,
     )
+    if label_y + label_h > int(canvas_height):
+        label_y = max(0, int(canvas_height) - label_h)
     painter.drawText(margin_left, label_y, plot_w, label_h, Qt.AlignHCenter | Qt.AlignVCenter, str(text or ""))
 
 
@@ -455,12 +538,12 @@ def _draw_analyzer_y_axis_label(
     text: str,
     margin_top: int,
     plot_h: int,
+    theme: Mapping[str, Any],
 ) -> None:
-    style = ANALYZER_PLOT_STYLE
     if plot_h <= 0:
         return
-    band_left = int(style.y_axis_label_band_left_px)
-    band_width = int(max(style.y_axis_label_band_width_px, 12))
+    band_left = int(theme.get("y_axis_label_band_left_px", ANALYZER_PLOT_STYLE.y_axis_label_band_left_px))
+    band_width = int(max(int(theme.get("y_axis_label_band_width_px", ANALYZER_PLOT_STYLE.y_axis_label_band_width_px)), 12))
     center_x = float(band_left + (band_width / 2.0))
     center_y = float(margin_top + (plot_h / 2.0))
     painter.save()
@@ -824,14 +907,14 @@ class HeatmapCanvas(QLabel):
             return
 
         theme = apply_plot_theme(self, has_legend=False, context="heatmap")
-        margins = dict(theme.get("margins") or {})
-        margin_left = int(margins.get("left", ANALYZER_PLOT_STYLE.left_margin_px))
-        margin_right = int(margins.get("right", ANALYZER_PLOT_STYLE.right_margin_no_legend_px))
-        margin_top = int(margins.get("top", ANALYZER_PLOT_STYLE.top_margin_px))
-        margin_bottom = int(margins.get("bottom", ANALYZER_PLOT_STYLE.bottom_margin_px))
+        layout = compute_plot_layout_geometry(width=width, height=height, theme=theme, min_plot_w=24, min_plot_h=24)
+        margin_left = int(layout["margin_left"])
+        margin_right = int(layout["margin_right"])
+        margin_top = int(layout["margin_top"])
+        margin_bottom = int(layout["margin_bottom"])
         self._applied_plot_margins = (margin_left, margin_right, margin_top, margin_bottom)
-        plot_w = max(width - margin_left - margin_right, 24)
-        plot_h = max(height - margin_top - margin_bottom, 24)
+        plot_w = int(layout["plot_w"])
+        plot_h = int(layout["plot_h"])
 
         min_db = float(self._clamp_min_db if self._clamp_enabled else -60.0)
         max_db = 0.0
@@ -883,14 +966,15 @@ class HeatmapCanvas(QLabel):
 
             painter.setPen(QPen(QColor(ANALYZER_PLOT_STYLE.grid_major_color), 1))
             painter.setFont(_font_with_pixel_size(self.font(), int(theme.get("tick_font_px", 8))))
+            tick_text_w = max(int(painter.fontMetrics().horizontalAdvance("16k")) + 12, 40)
             for tick in major_ticks:
                 x = x_of(float(tick))
                 painter.drawLine(x, margin_top, x, margin_top + plot_h)
                 painter.setPen(QColor("#A6AFBC"))
                 painter.drawText(
-                    x - 22,
-                    margin_top + plot_h + int(theme.get("x_tick_label_y_offset_px", ANALYZER_PLOT_STYLE.x_tick_label_y_offset_px)),
-                    44,
+                    x - (tick_text_w // 2),
+                    int(layout["x_tick_label_top"]),
+                    tick_text_w,
                     int(theme.get("x_tick_label_height_px", ANALYZER_PLOT_STYLE.x_tick_label_height_px)),
                     Qt.AlignCenter,
                     _format_freq_label(tick),
@@ -922,7 +1006,7 @@ class HeatmapCanvas(QLabel):
                     tick_text_w,
                     int(theme.get("y_tick_label_height_px", ANALYZER_PLOT_STYLE.y_tick_label_height_px)),
                     Qt.AlignRight | Qt.AlignVCenter,
-                    f"{angle_tick:.0f}",
+                    f"{angle_tick:.0f} deg",
                 )
                 painter.setPen(QPen(QColor(ANALYZER_PLOT_STYLE.grid_y_color), 1))
 
@@ -1016,12 +1100,15 @@ class HeatmapCanvas(QLabel):
             margin_left=margin_left,
             plot_w=plot_w,
             canvas_height=height,
+            theme=theme,
+            x_tick_label_bottom=int(layout["x_tick_label_bottom"]),
         )
         _draw_analyzer_y_axis_label(
             painter,
             text=self._y_label,
             margin_top=margin_top,
             plot_h=plot_h,
+            theme=theme,
         )
         painter.setPen(QPen(QColor("#3A4252")))
         painter.drawRect(0, 0, width - 1, height - 1)
@@ -1168,14 +1255,14 @@ class MetricCurveCanvas(QLabel):
 
         has_legend = any(bool(row.get("show_legend")) for row in points_by_series)
         theme = apply_plot_theme(self, has_legend=has_legend, context="curve")
-        margins = dict(theme.get("margins") or {})
-        margin_left = int(margins.get("left", ANALYZER_PLOT_STYLE.left_margin_px))
-        margin_right = int(margins.get("right", ANALYZER_PLOT_STYLE.right_margin_with_legend_px if has_legend else ANALYZER_PLOT_STYLE.right_margin_no_legend_px))
-        margin_top = int(margins.get("top", ANALYZER_PLOT_STYLE.top_margin_px))
-        margin_bottom = int(margins.get("bottom", ANALYZER_PLOT_STYLE.bottom_margin_px))
+        layout = compute_plot_layout_geometry(width=width, height=height, theme=theme, min_plot_w=36, min_plot_h=30)
+        margin_left = int(layout["margin_left"])
+        margin_right = int(layout["margin_right"])
+        margin_top = int(layout["margin_top"])
+        margin_bottom = int(layout["margin_bottom"])
         self._applied_plot_margins = (margin_left, margin_right, margin_top, margin_bottom)
-        plot_w = max(width - margin_left - margin_right, 36)
-        plot_h = max(height - margin_top - margin_bottom, 30)
+        plot_w = int(layout["plot_w"])
+        plot_h = int(layout["plot_h"])
 
         all_freqs = [point[0] for row in points_by_series for point in list(row.get("points", []) or [])]
         all_values = [point[1] for row in points_by_series for point in list(row.get("points", []) or [])]
@@ -1244,14 +1331,15 @@ class MetricCurveCanvas(QLabel):
             painter.drawLine(x, margin_top, x, margin_top + plot_h)
         painter.setPen(QPen(QColor(ANALYZER_PLOT_STYLE.grid_major_color), 1))
         painter.setFont(_font_with_pixel_size(self.font(), int(theme.get("tick_font_px", 8))))
+        tick_text_w = max(int(painter.fontMetrics().horizontalAdvance("16k")) + 12, 40)
         for tick in major_ticks:
             x = int(round(x_of(tick)))
             painter.drawLine(x, margin_top, x, margin_top + plot_h)
             painter.setPen(QColor("#A6AFBC"))
             painter.drawText(
-                x - 22,
-                margin_top + plot_h + int(theme.get("x_tick_label_y_offset_px", ANALYZER_PLOT_STYLE.x_tick_label_y_offset_px)),
-                44,
+                x - (tick_text_w // 2),
+                int(layout["x_tick_label_top"]),
+                tick_text_w,
                 int(theme.get("x_tick_label_height_px", ANALYZER_PLOT_STYLE.x_tick_label_height_px)),
                 Qt.AlignCenter,
                 _format_freq_label(tick),
@@ -1418,12 +1506,15 @@ class MetricCurveCanvas(QLabel):
             margin_left=margin_left,
             plot_w=plot_w,
             canvas_height=height,
+            theme=theme,
+            x_tick_label_bottom=int(layout["x_tick_label_bottom"]),
         )
         _draw_analyzer_y_axis_label(
             painter,
             text=self._y_label,
             margin_top=margin_top,
             plot_h=plot_h,
+            theme=theme,
         )
         if self._status:
             painter.setPen(QColor("#B8C1CF"))
@@ -1501,13 +1592,13 @@ class ParetoScatterCanvas(QLabel):
             return
 
         theme = apply_plot_theme(self, has_legend=False, context="pareto")
-        margins = dict(theme.get("margins") or {})
-        margin_left = int(margins.get("left", ANALYZER_PLOT_STYLE.left_margin_px))
-        margin_right = int(margins.get("right", ANALYZER_PLOT_STYLE.right_margin_no_legend_px))
-        margin_top = int(margins.get("top", ANALYZER_PLOT_STYLE.top_margin_px))
-        margin_bottom = int(margins.get("bottom", ANALYZER_PLOT_STYLE.bottom_margin_px))
-        plot_w = max(width - margin_left - margin_right, 36)
-        plot_h = max(height - margin_top - margin_bottom, 30)
+        layout = compute_plot_layout_geometry(width=width, height=height, theme=theme, min_plot_w=36, min_plot_h=30)
+        margin_left = int(layout["margin_left"])
+        margin_right = int(layout["margin_right"])
+        margin_top = int(layout["margin_top"])
+        margin_bottom = int(layout["margin_bottom"])
+        plot_w = int(layout["plot_w"])
+        plot_h = int(layout["plot_h"])
         x_values = [item[1] for item in valid]
         y_values = [item[2] for item in valid]
         x_min = min(x_values)
@@ -1542,15 +1633,16 @@ class ParetoScatterCanvas(QLabel):
                 Qt.AlignRight | Qt.AlignVCenter,
                 f"{y_tick:.2f}",
             )
+        tick_text_w = max(int(painter.fontMetrics().horizontalAdvance("16k")) + 12, 40)
         for x_tick in _linear_ticks(x_min, x_max, max_count=tick_max):
             x = int(round(x_of(x_tick)))
             painter.setPen(QPen(QColor("#2F3A4D"), 1))
             painter.drawLine(x, margin_top, x, margin_top + plot_h)
             painter.setPen(QColor("#A6AFBC"))
             painter.drawText(
-                x - 22,
-                margin_top + plot_h + int(theme.get("x_tick_label_y_offset_px", 18)),
-                44,
+                x - (tick_text_w // 2),
+                int(layout["x_tick_label_top"]),
+                tick_text_w,
                 int(theme.get("x_tick_label_height_px", 16)),
                 Qt.AlignCenter,
                 f"{x_tick:.2f}",
@@ -1584,8 +1676,22 @@ class ParetoScatterCanvas(QLabel):
         painter.drawRect(margin_left, margin_top, plot_w, plot_h)
         painter.setPen(QColor("#A6AFBC"))
         painter.setFont(_font_with_pixel_size(self.font(), int(theme.get("axis_font_px", 9))))
-        painter.drawText(4, margin_top - 2, margin_left - 8, max(int(theme.get("x_tick_label_height_px", 16)), 14), Qt.AlignLeft | Qt.AlignVCenter, self._y_label)
-        painter.drawText(margin_left, height - 8, plot_w, max(int(theme.get("x_tick_label_height_px", 16)), 16), Qt.AlignHCenter | Qt.AlignVCenter, self._x_label)
+        _draw_analyzer_x_axis_label(
+            painter,
+            text=self._x_label,
+            margin_left=margin_left,
+            plot_w=plot_w,
+            canvas_height=height,
+            theme=theme,
+            x_tick_label_bottom=int(layout["x_tick_label_bottom"]),
+        )
+        _draw_analyzer_y_axis_label(
+            painter,
+            text=self._y_label,
+            margin_top=margin_top,
+            plot_h=plot_h,
+            theme=theme,
+        )
         if self._status:
             painter.setPen(QColor("#B8C1CF"))
             painter.setFont(_font_with_pixel_size(self.font(), int(theme.get("tick_font_px", 8))))

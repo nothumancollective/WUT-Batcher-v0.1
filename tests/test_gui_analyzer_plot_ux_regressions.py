@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from app.gui import AnalysePage
+from app.gui import AnalysePage, apply_plot_theme, compute_plot_layout_geometry
 from app.services import OrchestratorService
 from app.settings_store import SettingsStore, UserSettings
 
@@ -219,6 +219,28 @@ class AnalyzerPlotUxRegressionTests(unittest.TestCase):
                 self.assertGreaterEqual(render_heatmap.call_count, 1)
                 self.assertGreaterEqual(render_focus.call_count, 1)
                 self.assertGreaterEqual(render_pareto.call_count, 1)
+
+    def test_layout_geometry_keeps_x_axis_title_below_tick_labels(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_plot_ux_layout_geom_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            canvases = [
+                page._explorer_stage_panels["A"]["heatmap_canvas"],
+                page._explorer_stage_panels["B"]["curve_canvas"],
+                page._compare_stage_panels["C"]["pareto_canvas"],
+            ]
+            for width, height in ((960, 480), (680, 360), (520, 280)):
+                for canvas in canvases:
+                    canvas.resize(width, height)
+                    self.app.processEvents()
+                    theme = apply_plot_theme(canvas, has_legend=False, context="test")
+                    layout = compute_plot_layout_geometry(width=canvas.width(), height=canvas.height(), theme=theme)
+                    gap = int(theme.get("x_axis_label_gap_px", 0))
+                    self.assertGreaterEqual(int(layout["x_axis_label_top"]), int(layout["x_tick_label_bottom"]) + gap)
+                    self.assertLessEqual(
+                        int(layout["x_axis_label_top"]) + int(layout["x_axis_label_height"]),
+                        int(canvas.height()),
+                    )
 
 
 if __name__ == "__main__":

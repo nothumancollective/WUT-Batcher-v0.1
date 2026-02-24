@@ -1,5 +1,13 @@
 # Analyzer Docs — Changelog
 
+## 2026-02-24 (Plot UX: axis/layout metrics hardening)
+- Reworked analyzer plot theme metrics to use dynamic `QFontMetrics`-derived margins and axis/tick spacing instead of fixed static label bands.
+- Added `compute_plot_layout_geometry(...)` as a shared/testable layout contract used by Heatmap, MetricCurve, and Pareto canvases.
+- Fixed x-axis title/tick collision paths by anchoring axis-title placement below tick-label bands with explicit gap contracts.
+- Updated Heatmap angle tick labeling to explicit degree text (`deg`) and moved tick/text placement to dynamic geometry.
+- Updated Pareto axis rendering to use the same shared axis-label path (including rotated y-label) to avoid clipping/inconsistent orientation.
+- Added regression coverage to lock the no-overlap x-axis title/tick layout contract across multiple viewport sizes.
+
 ## 2026-02-24 (Plot UX docs + E2E smoke report)
 - Updated `docs/analyzer/02_ui_architecture.md` with the current plot UX contracts: shared plot-theme system, 2x2 plot-only Explorer/Compare grids, stage-specific compare bottom-right rule, `V###` legend labels, and always-on heatmap target window overlays.
 - Added `docs/analyzer/e2e_plot_ux_polish_smoketest.md` with stage-by-stage Explorer/Compare smoke evidence and resize checks (`1920x1080`, `1366x768`).

@@ -145,3 +145,10 @@
 4. Tighten compare splitter width policy and remove redundant compare-top controls and under-plot hint text.
 5. Strengthen always-on target overlay visibility and header badge.
 6. Update help icon style and add focused UI regression coverage + E2E smoke report.
+
+## Status update (2026-02-24)
+- `FIXED/VERIFIED` issue cluster 1 (axis/label/layout):
+  - Dynamic `QFontMetrics` margins and axis/tick spacing are now shared across Heatmap/Curve/Pareto via `apply_plot_theme(...)`.
+  - Layout geometry contract added via `compute_plot_layout_geometry(...)` and covered by regression tests.
+  - Heatmap angle ticks now render with explicit `deg` labels and improved non-overlapping spacing.
+  - Pareto now uses the shared axis-label path (rotated y-label + dynamic bottom spacing), removing prior orientation/clipping drift.
