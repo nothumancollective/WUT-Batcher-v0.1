@@ -5,6 +5,15 @@
 - Mapped each reported Explorer/Compare UX issue to concrete file/line evidence in the current implementation.
 - Captured a surgical, ordered fix plan covering central plot theming, compare matrix/render guards, label rules, splitter layout, control cleanup, target visibility, and regression validation.
 
+## 2026-02-24 (Plot UX foundation + compare matrix polish)
+- Added dynamic plot theming via `apply_plot_theme(...)` and wired it into Heatmap/Curve/Pareto canvas rendering for consistent font scaling, margins, and adaptive tick density.
+- Enforced plot-series label contract to version-only tokens (V###) for compare overlays and compare pareto labels.
+- Updated compare matrix + routing so all 2x2 tiles remain plot widgets and final-stage bottom-right now renders Smoothness (S_theta) while stabilization bottom-right remains Plane Consistency (E_sym_shape).
+- Tightened compare line readability contract (active width 2, non-active width 1 with reduced alpha) and applied KPI-specific palette colors for explorer metric plots.
+- Hid redundant Compare top-row controls (Overlay plane, Heatmap candidate) from primary UI, removed under-grid hint text, and strengthened target-window visibility on all heatmaps with always-on overlay fallback + header badge.
+- Replaced text ? help glyphs in analyzer plot headers with icon-based help buttons aligned to existing icon style family.
+- Removed compare container dark-box artifacts by forcing transparent compare grid/left-scroll surfaces and splitter handle.
+
 ## 2026-02-24 (Stage plot matrix audit vs spec)
 - Added docs/analyzer/11_plot_matrix_stage_audit.md.
 - Documented exact Explorer/Compare stage-to-tile mappings and renderer modes with file/line references.
@@ -824,6 +833,7 @@
 
 ## 2026-02-24 (Merge integration follow-up)
 - Aligned GUI regression `test_version_bar_widgets_are_updated_in_place` with the stacked ATH params widget model (`version_ath_params_rows_widget` + empty-label placeholder) after merging `ui/analyzer-versionbar-polish-final`.
+
 
 
 

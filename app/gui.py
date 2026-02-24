@@ -9,6 +9,7 @@ import math
 import json
 import logging
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -299,6 +300,7 @@ def _format_freq_label(freq_hz: float) -> str:
 
 
 _ANALYZER_LOG_MAJOR_TICKS: Tuple[float, ...] = (200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 16000.0)
+_ANALYZER_LOG_MAJOR_TICKS_SMALL: Tuple[float, ...] = (500.0, 1000.0, 2000.0, 5000.0, 10000.0)
 
 
 @dataclass(frozen=True)
@@ -338,14 +340,74 @@ def apply_analyzer_plot_margins(*, has_legend: bool = False) -> Tuple[int, int, 
     )
 
 
+def apply_plot_theme(
+    widget: QWidget,
+    *,
+    has_legend: bool = False,
+    context: str = "plot",
+) -> Dict[str, Any]:
+    width = max(int(widget.width()), 1)
+    height = max(int(widget.height()), 1)
+    metrics = widget.fontMetrics()
+    base_px = max(float(metrics.height()) * 0.78, 11.0)
+    title_font_px = max(int(round(base_px * 1.05)), 9)
+    axis_font_px = max(int(round(base_px * 0.75)), 8)
+    tick_font_px = max(int(round(base_px * 0.65)), 7)
+    legend_font_px = max(int(round(base_px * 0.70)), 7)
+    em = max(float(tick_font_px), 7.0)
+    if width < 520 or height < 280:
+        size_class = "small"
+    elif width < 860 or height < 420:
+        size_class = "medium"
+    else:
+        size_class = "large"
+    margins = {
+        "left": max(40, int(round(6.0 * em))),
+        "top": max(12, int(round(2.0 * em))),
+        "right": max(18, int(round((12.0 if has_legend else 2.0) * em))),
+        "bottom": max(28, int(round(5.0 * em))),
+    }
+    return {
+        "context": str(context or "plot"),
+        "size_class": size_class,
+        "margins": margins,
+        "title_font_px": title_font_px,
+        "axis_font_px": axis_font_px,
+        "tick_font_px": tick_font_px,
+        "legend_font_px": legend_font_px,
+        "x_tick_label_height_px": max(14, int(round(2.0 * em))),
+        "x_tick_label_y_offset_px": max(16, int(round(2.3 * em))),
+        "y_tick_label_height_px": max(14, int(round(2.0 * em))),
+        "y_tick_label_right_pad_px": max(8, int(round(1.6 * em))),
+        "y_tick_label_min_gap_px": max(12, int(round(1.8 * em))),
+    }
+
+
+def _font_with_pixel_size(base_font: QFont, pixel_size: int) -> QFont:
+    font = QFont(base_font)
+    font.setPixelSize(max(int(pixel_size), 7))
+    return font
+
+
+def format_series_label(version_id: Any) -> str:
+    token = str(version_id or "").strip()
+    match = re.search(r"(\d+)", token)
+    if match:
+        return f"V{int(match.group(1)):03d}"
+    if token:
+        return f"V{token}"
+    return "V---"
+
+
 def _plot_margins(*, has_legend: bool = False) -> Tuple[int, int, int, int]:
     return apply_analyzer_plot_margins(has_legend=has_legend)
 
 
-def _log_tick_sets(freq_min: float, freq_max: float) -> Tuple[List[float], List[float]]:
+def _log_tick_sets(freq_min: float, freq_max: float, *, size_class: str = "large") -> Tuple[List[float], List[float]]:
     lo = max(float(freq_min), 1.0)
     hi = max(float(freq_max), lo + 1.0e-6)
-    major: List[float] = [tick for tick in _ANALYZER_LOG_MAJOR_TICKS if lo <= float(tick) <= hi]
+    source_ticks = _ANALYZER_LOG_MAJOR_TICKS_SMALL if str(size_class or "").strip().lower() == "small" else _ANALYZER_LOG_MAJOR_TICKS
+    major: List[float] = [tick for tick in source_ticks if lo <= float(tick) <= hi]
     if not major:
         decade_min = int(math.floor(math.log10(lo)))
         decade_max = int(math.ceil(math.log10(hi)))
@@ -442,12 +504,12 @@ def _linear_ticks(minimum: float, maximum: float, *, max_count: int = 6) -> List
     return sorted(set(round(item, 6) for item in ticks))
 
 
-def _angle_ticks(min_angle: float, max_angle: float) -> List[float]:
+def _angle_ticks(min_angle: float, max_angle: float, *, size_class: str = "large") -> List[float]:
     lo = float(min_angle)
     hi = float(max_angle)
     if hi <= lo:
         return [lo]
-    step = 15.0
+    step = 30.0 if str(size_class or "").strip().lower() == "small" else 15.0
     ticks: List[float] = []
     if lo < 0.0 < hi:
         max_abs = max(abs(lo), abs(hi))
@@ -520,14 +582,14 @@ def _should_render_minus6_angle(
 STAGE_EXPLORER_LAYOUTS: Dict[str, List[Dict[str, str]]] = {
     "concept": [
         {"slot": "A", "key": "heatmap", "title": "Polar Map", "help": "Heatmap with -6 dB contour and target window."},
+        {"slot": "B", "key": "e_cov", "title": "Coverage Uniformity vs f", "help": "RMS variation inside the target coverage window."},
+        {"slot": "C", "key": "r_spill", "title": "Spill Index vs f", "help": "Relative outside-vs-inside target energy ratio."},
         {
-            "slot": "B",
+            "slot": "D",
             "key": "pareto_decision",
             "title": "Decision Trade-off (E_BW vs Spill)",
             "help": "Single-candidate Pareto snapshot for beamwidth error vs spill ratio.",
         },
-        {"slot": "C", "key": "e_cov", "title": "Coverage Uniformity vs f", "help": "RMS variation inside the target coverage window."},
-        {"slot": "D", "key": "r_spill", "title": "Spill Index vs f", "help": "Relative outside-vs-inside target energy ratio."},
     ],
     "stabilization": [
         {"slot": "A", "key": "heatmap", "title": "Polar Map", "help": "Heatmap with -6 dB contour and target window."},
@@ -547,6 +609,27 @@ STAGE_COMPARE_OVERLAY_KEY: Dict[str, str] = {
     "concept": "beamwidth",
     "stabilization": "di_proxy",
     "final": "r_off",
+}
+
+STAGE_COMPARE_LAYOUTS: Dict[str, List[Dict[str, str]]] = {
+    "concept": [
+        {"slot": "A", "kind": "heatmap", "key": "heatmap", "title": "Polar Heatmap", "help": "Single-candidate heatmap view (select C1..C5 above)."},
+        {"slot": "B", "kind": "curve", "key": "beamwidth", "title": "Beamwidth Target Compare", "help": "Shortlist beamwidth overlay against target."},
+        {"slot": "C", "kind": "pareto", "key": "pareto", "title": "Pareto Scatter", "help": "Concept trade-off scatter for shortlisted candidates."},
+        {"slot": "D", "kind": "curve", "key": "e_cov", "title": "Coverage Compare (E_cov)", "help": "Coverage uniformity overlay across shortlisted candidates."},
+    ],
+    "stabilization": [
+        {"slot": "A", "kind": "heatmap", "key": "heatmap", "title": "Polar Heatmap", "help": "Single-candidate heatmap view (select C1..C5 above)."},
+        {"slot": "B", "kind": "curve", "key": "di_proxy", "title": "DI Trend Compare", "help": "DI-proxy trend overlay for shortlisted candidates."},
+        {"slot": "C", "kind": "curve", "key": "s_theta", "title": "Smoothness Compare", "help": "S_theta overlay across shortlisted candidates."},
+        {"slot": "D", "kind": "curve", "key": "e_sym_shape", "title": "Plane Consistency Compare", "help": "E_sym_shape overlay across shortlisted candidates."},
+    ],
+    "final": [
+        {"slot": "A", "kind": "heatmap", "key": "heatmap", "title": "Polar Heatmap", "help": "Single-candidate heatmap view (select C1..C5 above)."},
+        {"slot": "B", "kind": "curve", "key": "r_off", "title": "Ripple Defect Compare", "help": "Off-axis ripple defect overlay for shortlisted candidates."},
+        {"slot": "C", "kind": "curve", "key": "e_sym_shape", "title": "Plane Consistency Compare", "help": "E_sym_shape overlay across shortlisted candidates."},
+        {"slot": "D", "kind": "curve", "key": "s_theta", "title": "Smoothness Compare", "help": "S_theta overlay across shortlisted candidates."},
+    ],
 }
 
 PARETO_AXIS_OPTIONS: List[Tuple[str, str]] = [
@@ -707,7 +790,7 @@ class HeatmapCanvas(QLabel):
 
     def resizeEvent(self, event) -> None:  # type: ignore[override]
         super().resizeEvent(event)
-        self._rerender()
+        QTimer.singleShot(0, self._rerender)
 
     def _color_for_value(self, value_db: float) -> QColor:
         t = max(0.0, min(1.0, float(value_db)))
@@ -740,7 +823,12 @@ class HeatmapCanvas(QLabel):
             self.setPixmap(QPixmap.fromImage(image))
             return
 
-        margin_left, margin_right, margin_top, margin_bottom = apply_analyzer_plot_margins(has_legend=False)
+        theme = apply_plot_theme(self, has_legend=False, context="heatmap")
+        margins = dict(theme.get("margins") or {})
+        margin_left = int(margins.get("left", ANALYZER_PLOT_STYLE.left_margin_px))
+        margin_right = int(margins.get("right", ANALYZER_PLOT_STYLE.right_margin_no_legend_px))
+        margin_top = int(margins.get("top", ANALYZER_PLOT_STYLE.top_margin_px))
+        margin_bottom = int(margins.get("bottom", ANALYZER_PLOT_STYLE.bottom_margin_px))
         self._applied_plot_margins = (margin_left, margin_right, margin_top, margin_bottom)
         plot_w = max(width - margin_left - margin_right, 24)
         plot_h = max(height - margin_top - margin_bottom, 24)
@@ -781,7 +869,8 @@ class HeatmapCanvas(QLabel):
             log_min = math.log10(f_min)
             log_max = math.log10(f_max)
 
-            major_ticks, minor_ticks = _log_tick_sets(f_min, f_max)
+            size_class = str(theme.get("size_class") or "large")
+            major_ticks, minor_ticks = _log_tick_sets(f_min, f_max, size_class=size_class)
 
             def x_of(freq: float) -> int:
                 u = (math.log10(max(freq, 1.0)) - log_min) / max(log_max - log_min, 1.0e-6)
@@ -793,15 +882,16 @@ class HeatmapCanvas(QLabel):
                 painter.drawLine(x, margin_top, x, margin_top + plot_h)
 
             painter.setPen(QPen(QColor(ANALYZER_PLOT_STYLE.grid_major_color), 1))
+            painter.setFont(_font_with_pixel_size(self.font(), int(theme.get("tick_font_px", 8))))
             for tick in major_ticks:
                 x = x_of(float(tick))
                 painter.drawLine(x, margin_top, x, margin_top + plot_h)
                 painter.setPen(QColor("#A6AFBC"))
                 painter.drawText(
                     x - 22,
-                    margin_top + plot_h + ANALYZER_PLOT_STYLE.x_tick_label_y_offset_px,
+                    margin_top + plot_h + int(theme.get("x_tick_label_y_offset_px", ANALYZER_PLOT_STYLE.x_tick_label_y_offset_px)),
                     44,
-                    ANALYZER_PLOT_STYLE.x_tick_label_height_px,
+                    int(theme.get("x_tick_label_height_px", ANALYZER_PLOT_STYLE.x_tick_label_height_px)),
                     Qt.AlignCenter,
                     _format_freq_label(tick),
                 )
@@ -820,16 +910,17 @@ class HeatmapCanvas(QLabel):
                 return int(round(margin_top + ((1.0 - u) * plot_h)))
 
             painter.setPen(QPen(QColor(ANALYZER_PLOT_STYLE.grid_y_color), 1))
-            for angle_tick in _angle_ticks(angle_min, angle_max):
+            for angle_tick in _angle_ticks(angle_min, angle_max, size_class=str(theme.get("size_class") or "large")):
                 y = y_of(float(angle_tick))
                 painter.drawLine(margin_left, y, margin_left + plot_w, y)
                 painter.setPen(QColor("#A6AFBC"))
-                tick_text_w = max(int(margin_left - ANALYZER_PLOT_STYLE.y_tick_label_right_pad_px - 4), 20)
+                painter.setFont(_font_with_pixel_size(self.font(), int(theme.get("tick_font_px", 8))))
+                tick_text_w = max(int(margin_left - int(theme.get("y_tick_label_right_pad_px", ANALYZER_PLOT_STYLE.y_tick_label_right_pad_px)) - 4), 20)
                 painter.drawText(
                     4,
-                    y - (ANALYZER_PLOT_STYLE.y_tick_label_height_px // 2),
+                    y - (int(theme.get("y_tick_label_height_px", ANALYZER_PLOT_STYLE.y_tick_label_height_px)) // 2),
                     tick_text_w,
-                    ANALYZER_PLOT_STYLE.y_tick_label_height_px,
+                    int(theme.get("y_tick_label_height_px", ANALYZER_PLOT_STYLE.y_tick_label_height_px)),
                     Qt.AlignRight | Qt.AlignVCenter,
                     f"{angle_tick:.0f}",
                 )
@@ -918,6 +1009,7 @@ class HeatmapCanvas(QLabel):
         painter.setPen(QPen(QColor("#3A4252"), 1))
         painter.drawRect(margin_left, margin_top, plot_w, plot_h)
         painter.setPen(QColor("#A6AFBC"))
+        painter.setFont(_font_with_pixel_size(self.font(), int(theme.get("axis_font_px", 9))))
         _draw_analyzer_x_axis_label(
             painter,
             text=self._x_label,
@@ -935,6 +1027,7 @@ class HeatmapCanvas(QLabel):
         painter.drawRect(0, 0, width - 1, height - 1)
         if self._status:
             painter.setPen(QColor("#B8C1CF"))
+            painter.setFont(_font_with_pixel_size(self.font(), int(theme.get("tick_font_px", 8))))
             painter.drawText(margin_left + 4, margin_top + 16, self._status)
         painter.end()
         self.setPixmap(QPixmap.fromImage(image))
@@ -978,7 +1071,7 @@ class MetricCurveCanvas(QLabel):
 
     def resizeEvent(self, event) -> None:  # type: ignore[override]
         super().resizeEvent(event)
-        self._rerender()
+        QTimer.singleShot(0, self._rerender)
 
     def _rerender(self) -> None:
         width = max(int(self.width()), 180)
@@ -1017,7 +1110,7 @@ class MetricCurveCanvas(QLabel):
                 line_width = float(row.get("line_width", 2.0))
             except Exception:
                 line_width = 2.0
-            line_width = max(1.0, min(line_width, 4.0))
+            line_width = max(1.0, min(line_width, 2.0))
             try:
                 fill_alpha = float(row.get("fill_alpha", 0.18))
             except Exception:
@@ -1074,7 +1167,12 @@ class MetricCurveCanvas(QLabel):
             return
 
         has_legend = any(bool(row.get("show_legend")) for row in points_by_series)
-        margin_left, margin_right, margin_top, margin_bottom = apply_analyzer_plot_margins(has_legend=has_legend)
+        theme = apply_plot_theme(self, has_legend=has_legend, context="curve")
+        margins = dict(theme.get("margins") or {})
+        margin_left = int(margins.get("left", ANALYZER_PLOT_STYLE.left_margin_px))
+        margin_right = int(margins.get("right", ANALYZER_PLOT_STYLE.right_margin_with_legend_px if has_legend else ANALYZER_PLOT_STYLE.right_margin_no_legend_px))
+        margin_top = int(margins.get("top", ANALYZER_PLOT_STYLE.top_margin_px))
+        margin_bottom = int(margins.get("bottom", ANALYZER_PLOT_STYLE.bottom_margin_px))
         self._applied_plot_margins = (margin_left, margin_right, margin_top, margin_bottom)
         plot_w = max(width - margin_left - margin_right, 36)
         plot_h = max(height - margin_top - margin_bottom, 30)
@@ -1117,17 +1215,18 @@ class MetricCurveCanvas(QLabel):
             y_positions.append((float(y_tick), y))
             painter.setPen(QPen(QColor(ANALYZER_PLOT_STYLE.grid_y_color), 1))
             painter.drawLine(margin_left, y, margin_left + plot_w, y)
+        painter.setFont(_font_with_pixel_size(self.font(), int(theme.get("tick_font_px", 8))))
         last_label_y = -10_000
         for y_tick, y in sorted(y_positions, key=lambda item: item[1]):
-            if abs(int(y) - int(last_label_y)) < int(ANALYZER_PLOT_STYLE.y_tick_label_min_gap_px):
+            if abs(int(y) - int(last_label_y)) < int(theme.get("y_tick_label_min_gap_px", ANALYZER_PLOT_STYLE.y_tick_label_min_gap_px)):
                 continue
             painter.setPen(QColor("#A6AFBC"))
-            tick_text_w = max(int(margin_left - ANALYZER_PLOT_STYLE.y_tick_label_right_pad_px - 4), 20)
+            tick_text_w = max(int(margin_left - int(theme.get("y_tick_label_right_pad_px", ANALYZER_PLOT_STYLE.y_tick_label_right_pad_px)) - 4), 20)
             painter.drawText(
                 4,
-                y - (ANALYZER_PLOT_STYLE.y_tick_label_height_px // 2),
+                y - (int(theme.get("y_tick_label_height_px", ANALYZER_PLOT_STYLE.y_tick_label_height_px)) // 2),
                 tick_text_w,
-                ANALYZER_PLOT_STYLE.y_tick_label_height_px,
+                int(theme.get("y_tick_label_height_px", ANALYZER_PLOT_STYLE.y_tick_label_height_px)),
                 Qt.AlignRight | Qt.AlignVCenter,
                 f"{y_tick:.2f}",
             )
@@ -1137,22 +1236,23 @@ class MetricCurveCanvas(QLabel):
             major_ticks = _linear_ticks(x_min, x_max, max_count=6)
             minor_ticks: List[float] = []
         else:
-            major_ticks, minor_ticks = _log_tick_sets(x_min, x_max)
+            major_ticks, minor_ticks = _log_tick_sets(x_min, x_max, size_class=str(theme.get("size_class") or "large"))
 
         painter.setPen(QPen(QColor(ANALYZER_PLOT_STYLE.grid_minor_color), 1))
         for tick in minor_ticks:
             x = int(round(x_of(tick)))
             painter.drawLine(x, margin_top, x, margin_top + plot_h)
         painter.setPen(QPen(QColor(ANALYZER_PLOT_STYLE.grid_major_color), 1))
+        painter.setFont(_font_with_pixel_size(self.font(), int(theme.get("tick_font_px", 8))))
         for tick in major_ticks:
             x = int(round(x_of(tick)))
             painter.drawLine(x, margin_top, x, margin_top + plot_h)
             painter.setPen(QColor("#A6AFBC"))
             painter.drawText(
                 x - 22,
-                margin_top + plot_h + ANALYZER_PLOT_STYLE.x_tick_label_y_offset_px,
+                margin_top + plot_h + int(theme.get("x_tick_label_y_offset_px", ANALYZER_PLOT_STYLE.x_tick_label_y_offset_px)),
                 44,
-                ANALYZER_PLOT_STYLE.x_tick_label_height_px,
+                int(theme.get("x_tick_label_height_px", ANALYZER_PLOT_STYLE.x_tick_label_height_px)),
                 Qt.AlignCenter,
                 _format_freq_label(tick),
             )
@@ -1234,7 +1334,7 @@ class MetricCurveCanvas(QLabel):
                     band.lineTo(x_of(freq_hz), y_of(mean_value))
                 band.closeSubpath()
                 painter.fillPath(band, fill_color)
-                _draw_polyline(points, color, max(line_width, 2.8))
+                _draw_polyline(points, color, max(line_width, 1.0))
                 if bool(row.get("regime_markers")) and len(points) >= 3:
                     marker_brush = QColor(color)
                     marker_brush.setAlpha(196)
@@ -1266,7 +1366,7 @@ class MetricCurveCanvas(QLabel):
                     strip_color = QColor(color)
                     strip_color.setAlpha(int(round(34 + (150.0 * max(0.0, min(normalized, 1.0))))))
                     painter.fillRect(seg_left, strip_top, seg_w, strip_height, strip_color)
-                _draw_polyline(points, color, max(line_width, 2.2))
+                _draw_polyline(points, color, max(line_width, 1.0))
             elif style_token == "defect_band" and len(points) >= 2:
                 fill_alpha = float(row.get("fill_alpha", 0.22))
                 fill_color = QColor(color)
@@ -1280,7 +1380,7 @@ class MetricCurveCanvas(QLabel):
                     band.lineTo(x_of(freq_hz), y_of(y_min))
                 band.closeSubpath()
                 painter.fillPath(band, fill_color)
-                _draw_polyline(points, color, max(line_width, 2.6))
+                _draw_polyline(points, color, max(line_width, 1.0))
                 hotspot_raw = row.get("hotspot_threshold")
                 hotspot_threshold = None
                 if hotspot_raw is not None:
@@ -1302,13 +1402,16 @@ class MetricCurveCanvas(QLabel):
                 _draw_polyline(points, color, line_width)
             if has_legend and show_legend:
                 painter.setPen(QPen(color, 1))
+                painter.setFont(_font_with_pixel_size(self.font(), int(theme.get("legend_font_px", 8))))
                 text = painter.fontMetrics().elidedText(label, Qt.ElideRight, margin_right - 10)
-                painter.drawText(width - margin_right + 4, legend_y, margin_right - 8, 14, Qt.AlignLeft | Qt.AlignVCenter, text)
-                legend_y += 14
+                legend_h = max(int(theme.get("x_tick_label_height_px", 14)), 12)
+                painter.drawText(width - margin_right + 4, legend_y, margin_right - 8, legend_h, Qt.AlignLeft | Qt.AlignVCenter, text)
+                legend_y += legend_h
 
         painter.setPen(QPen(QColor("#3A4252"), 1))
         painter.drawRect(margin_left, margin_top, plot_w, plot_h)
         painter.setPen(QColor("#A6AFBC"))
+        painter.setFont(_font_with_pixel_size(self.font(), int(theme.get("axis_font_px", 9))))
         _draw_analyzer_x_axis_label(
             painter,
             text=self._x_label,
@@ -1324,6 +1427,7 @@ class MetricCurveCanvas(QLabel):
         )
         if self._status:
             painter.setPen(QColor("#B8C1CF"))
+            painter.setFont(_font_with_pixel_size(self.font(), int(theme.get("tick_font_px", 8))))
             painter.drawText(margin_left + 4, margin_top + 16, self._status)
         painter.end()
         self.setPixmap(QPixmap.fromImage(image))
@@ -1362,7 +1466,7 @@ class ParetoScatterCanvas(QLabel):
 
     def resizeEvent(self, event) -> None:  # type: ignore[override]
         super().resizeEvent(event)
-        self._rerender()
+        QTimer.singleShot(0, self._rerender)
 
     def _rerender(self) -> None:
         width = max(int(self.width()), 180)
@@ -1396,7 +1500,12 @@ class ParetoScatterCanvas(QLabel):
             self.setPixmap(QPixmap.fromImage(image))
             return
 
-        margin_left, margin_right, margin_top, margin_bottom = _plot_margins(has_legend=False)
+        theme = apply_plot_theme(self, has_legend=False, context="pareto")
+        margins = dict(theme.get("margins") or {})
+        margin_left = int(margins.get("left", ANALYZER_PLOT_STYLE.left_margin_px))
+        margin_right = int(margins.get("right", ANALYZER_PLOT_STYLE.right_margin_no_legend_px))
+        margin_top = int(margins.get("top", ANALYZER_PLOT_STYLE.top_margin_px))
+        margin_bottom = int(margins.get("bottom", ANALYZER_PLOT_STYLE.bottom_margin_px))
         plot_w = max(width - margin_left - margin_right, 36)
         plot_h = max(height - margin_top - margin_bottom, 30)
         x_values = [item[1] for item in valid]
@@ -1418,18 +1527,34 @@ class ParetoScatterCanvas(QLabel):
             u = (float(value) - float(y_min)) / max(float(y_max - y_min), 1.0e-6)
             return float(margin_top + ((1.0 - u) * plot_h))
 
-        for y_tick in _linear_ticks(y_min, y_max, max_count=6):
+        tick_max = 4 if str(theme.get("size_class") or "large") == "small" else 6
+        painter.setFont(_font_with_pixel_size(self.font(), int(theme.get("tick_font_px", 8))))
+        for y_tick in _linear_ticks(y_min, y_max, max_count=tick_max):
             y = int(round(y_of(y_tick)))
             painter.setPen(QPen(QColor("#2A3344"), 1))
             painter.drawLine(margin_left, y, margin_left + plot_w, y)
             painter.setPen(QColor("#A6AFBC"))
-            painter.drawText(4, y - 8, margin_left - 12, 16, Qt.AlignRight | Qt.AlignVCenter, f"{y_tick:.2f}")
-        for x_tick in _linear_ticks(x_min, x_max, max_count=6):
+            painter.drawText(
+                4,
+                y - (int(theme.get("y_tick_label_height_px", 16)) // 2),
+                max(int(margin_left - int(theme.get("y_tick_label_right_pad_px", 12)) - 4), 20),
+                int(theme.get("y_tick_label_height_px", 16)),
+                Qt.AlignRight | Qt.AlignVCenter,
+                f"{y_tick:.2f}",
+            )
+        for x_tick in _linear_ticks(x_min, x_max, max_count=tick_max):
             x = int(round(x_of(x_tick)))
             painter.setPen(QPen(QColor("#2F3A4D"), 1))
             painter.drawLine(x, margin_top, x, margin_top + plot_h)
             painter.setPen(QColor("#A6AFBC"))
-            painter.drawText(x - 22, margin_top + plot_h + 18, 44, 16, Qt.AlignCenter, f"{x_tick:.2f}")
+            painter.drawText(
+                x - 22,
+                margin_top + plot_h + int(theme.get("x_tick_label_y_offset_px", 18)),
+                44,
+                int(theme.get("x_tick_label_height_px", 16)),
+                Qt.AlignCenter,
+                f"{x_tick:.2f}",
+            )
 
         collision_counts: Dict[Tuple[int, int], int] = {}
         offsets = [(0, 0), (-4, -4), (4, -4), (-4, 4), (4, 4), (0, -6), (0, 6)]
@@ -1451,16 +1576,19 @@ class ParetoScatterCanvas(QLabel):
             painter.setBrush(color)
             painter.drawEllipse(x - radius, y - radius, radius * 2, radius * 2)
             painter.setPen(QPen(QColor("#D8E2F0"), 1))
+            painter.setFont(_font_with_pixel_size(self.font(), int(theme.get("legend_font_px", 8))))
             painter.drawText(x + 6, y - 2, label)
 
         painter.setBrush(Qt.NoBrush)
         painter.setPen(QPen(QColor("#3A4252"), 1))
         painter.drawRect(margin_left, margin_top, plot_w, plot_h)
         painter.setPen(QColor("#A6AFBC"))
-        painter.drawText(4, margin_top - 2, margin_left - 8, 14, Qt.AlignLeft | Qt.AlignVCenter, self._y_label)
-        painter.drawText(margin_left, height - 8, plot_w, 16, Qt.AlignHCenter | Qt.AlignVCenter, self._x_label)
+        painter.setFont(_font_with_pixel_size(self.font(), int(theme.get("axis_font_px", 9))))
+        painter.drawText(4, margin_top - 2, margin_left - 8, max(int(theme.get("x_tick_label_height_px", 16)), 14), Qt.AlignLeft | Qt.AlignVCenter, self._y_label)
+        painter.drawText(margin_left, height - 8, plot_w, max(int(theme.get("x_tick_label_height_px", 16)), 16), Qt.AlignHCenter | Qt.AlignVCenter, self._x_label)
         if self._status:
             painter.setPen(QColor("#B8C1CF"))
+            painter.setFont(_font_with_pixel_size(self.font(), int(theme.get("tick_font_px", 8))))
             painter.drawText(margin_left + 4, margin_top + 16, self._status)
         painter.end()
         self.setPixmap(QPixmap.fromImage(image))
@@ -5185,6 +5313,7 @@ class AnalysePage(QWidget):
         self._show_mirrored_minus6_contour = False
         self._latest_plot_payload: Dict[str, Any] = {}
         self._explorer_stage_panels: Dict[str, Dict[str, Any]] = {}
+        self._compare_stage_panels: Dict[str, Dict[str, Any]] = {}
         self._compare_overlay_curve_key = "beamwidth"
         self._compare_kpi_columns: List[Tuple[str, str]] = list(COMPARE_DEFAULT_KPI_COLUMNS)
         self._ath_visible_param_limit = 5
@@ -5563,6 +5692,7 @@ class AnalysePage(QWidget):
         self.compare_splitter.setChildrenCollapsible(False)
 
         compare_left_content = QWidget()
+        compare_left_content.setObjectName("AnalyzerCompareLeftContent")
         compare_left_layout = QVBoxLayout(compare_left_content)
         compare_left_layout.setContentsMargins(0, 0, 0, 0)
         compare_left_layout.setSpacing(8)
@@ -5626,10 +5756,13 @@ class AnalysePage(QWidget):
         compare_left_scroll.setWidgetResizable(True)
         compare_left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         compare_left_scroll.setWidget(compare_left_content)
-        compare_left_scroll.setMinimumWidth(300)
+        compare_left_scroll.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
+        compare_left_scroll.setMinimumWidth(240)
+        compare_left_scroll.setMaximumWidth(360)
         self.compare_splitter.addWidget(compare_left_scroll)
 
         compare_right = QWidget()
+        compare_right.setObjectName("AnalyzerCompareRightPanel")
         compare_right_layout = QVBoxLayout(compare_right)
         compare_right_layout.setContentsMargins(0, 0, 0, 0)
         compare_right_layout.setSpacing(8)
@@ -5649,6 +5782,10 @@ class AnalysePage(QWidget):
         compare_top_layout.addWidget(self.compare_heatmap_selector, 0)
         compare_top_layout.addStretch(1)
         compare_right_layout.addWidget(compare_top_row, 0)
+        compare_top_row.setVisible(False)
+        compare_top_row.setMaximumHeight(0)
+        self.compare_plane_combo.setVisible(False)
+        self.compare_heatmap_selector.setVisible(False)
 
         self.compare_grid_widget = QWidget()
         self.compare_grid_widget.setObjectName("AnalyzerCompareGrid")
@@ -5667,7 +5804,7 @@ class AnalysePage(QWidget):
         self.compare_overlay_canvas.setObjectName("AnalyzerCompareOverlayCanvas")
         self.compare_overlay_title_label = self.compare_overlay_panel["title_label"]
         self.compare_overlay_help_btn = self.compare_overlay_panel["help_btn"]
-        self.compare_grid_layout.addWidget(self.compare_overlay_panel["frame"], 0, 0, 1, 1)
+        self.compare_grid_layout.addWidget(self.compare_overlay_panel["frame"], 0, 1, 1, 1)
 
         self.compare_heatmap_panel = self._create_stage_plot_panel(
             panel_id="CompareB",
@@ -5677,7 +5814,7 @@ class AnalysePage(QWidget):
         )
         self.compare_heatmap_canvas = self.compare_heatmap_panel["heatmap_canvas"]
         self.compare_heatmap_canvas.setObjectName("AnalyzerCompareHeatmapCanvas")
-        self.compare_grid_layout.addWidget(self.compare_heatmap_panel["frame"], 0, 1, 1, 1)
+        self.compare_grid_layout.addWidget(self.compare_heatmap_panel["frame"], 0, 0, 1, 1)
 
         self.compare_focus_panel = self._create_stage_plot_panel(
             panel_id="CompareC",
@@ -5717,6 +5854,12 @@ class AnalysePage(QWidget):
         if isinstance(header_layout, QHBoxLayout):
             header_layout.addWidget(self.compare_pareto_axis_row, 0)
         self.compare_grid_layout.addWidget(self.compare_pareto_panel["frame"], 1, 1, 1, 1)
+        self._compare_stage_panels = {
+            "A": self.compare_heatmap_panel,
+            "B": self.compare_overlay_panel,
+            "C": self.compare_focus_panel,
+            "D": self.compare_pareto_panel,
+        }
 
         self.compare_grid_layout.setColumnStretch(0, 1)
         self.compare_grid_layout.setColumnStretch(1, 1)
@@ -5735,16 +5878,12 @@ class AnalysePage(QWidget):
             compare_header.setSectionResizeMode(idx, QHeaderView.ResizeToContents)
         self.compare_table.setVisible(False)
 
-        compare_hint = QLabel("Shortlist supports up to five candidates; overlays reuse cached polar data.")
-        compare_hint.setObjectName("SummaryMeta")
-        compare_hint.setWordWrap(True)
-        compare_right_layout.addWidget(compare_hint, 0, Qt.AlignLeft | Qt.AlignVCenter)
-
-        compare_right.setMinimumWidth(500)
+        compare_right.setMinimumWidth(0)
+        compare_right.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.compare_splitter.addWidget(compare_right)
-        self.compare_splitter.setStretchFactor(0, 2)
-        self.compare_splitter.setStretchFactor(1, 5)
-        self.compare_splitter.setSizes([300, 1040])
+        self.compare_splitter.setStretchFactor(0, 0)
+        self.compare_splitter.setStretchFactor(1, 1)
+        self.compare_splitter.setSizes([300, 900])
         compare_layout.addWidget(self.compare_splitter, 1)
         self.analysis_tabs.addTab(self.compare_tab, "Compare")
 
@@ -5864,8 +6003,11 @@ class AnalysePage(QWidget):
         self.run_summary_flags_chip.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self.flags_help_btn = QToolButton(self)
         self.flags_help_btn.setObjectName("AnalyzerFlagsHelpButton")
-        self.flags_help_btn.setText("?")
-        self.flags_help_btn.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        self.flags_help_btn.setText("")
+        self.flags_help_btn.setIcon(QIcon(":/icons/settings.svg"))
+        self.flags_help_btn.setToolButtonStyle(Qt.ToolButtonIconOnly)
+        self.flags_help_btn.setAutoRaise(True)
+        self.flags_help_btn.setIconSize(QSize(14, 14))
         self.flags_help_btn.setToolTip("Show reason severities and recommended actions for current flags.")
         self.flags_help_btn.setMinimumHeight(24)
         self.flags_help_btn.setMaximumHeight(24)
@@ -6359,9 +6501,19 @@ class AnalysePage(QWidget):
         title_label.setObjectName("SectionTitle")
         title_label.setProperty("analyzerPlotTitle", True)
         header_layout.addWidget(title_label, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        target_badge_label = QLabel("")
+        target_badge_label.setObjectName("SummaryMeta")
+        target_badge_label.setProperty("analyzerTargetBadge", True)
+        target_badge_label.setVisible(False)
+        header_layout.addWidget(target_badge_label, 0, Qt.AlignLeft | Qt.AlignVCenter)
         help_btn = QToolButton()
         help_btn.setObjectName("BatchSecondaryToolButton")
-        help_btn.setText("?")
+        help_btn.setText("")
+        help_btn.setIcon(QIcon(":/icons/settings.svg"))
+        help_btn.setToolButtonStyle(Qt.ToolButtonIconOnly)
+        help_btn.setAutoRaise(True)
+        help_btn.setIconSize(QSize(14, 14))
+        help_btn.setFixedSize(18, 18)
         help_btn.setToolTip(str(help_text or "Analyzer stage panel."))
         header_layout.addWidget(help_btn, 0, Qt.AlignLeft | Qt.AlignVCenter)
         header_layout.addStretch(1)
@@ -6391,6 +6543,7 @@ class AnalysePage(QWidget):
             "header": header,
             "header_layout": header_layout,
             "title_label": title_label,
+            "target_badge_label": target_badge_label,
             "help_btn": help_btn,
             "stack": stack,
             "heatmap_canvas": heatmap_canvas,
@@ -6453,26 +6606,103 @@ class AnalysePage(QWidget):
                 title_label.setText(f"Plot {slot}")
             self._set_stage_panel_kind(panel, "placeholder")
 
+        compare_layout = list(
+            STAGE_COMPARE_LAYOUTS.get(stage_id, STAGE_COMPARE_LAYOUTS.get(DEFAULT_STAGE_ID, []))
+        )
+        compare_lookup = {
+            str(spec.get("slot") or "").strip().upper(): dict(spec)
+            for spec in compare_layout
+            if isinstance(spec, Mapping)
+        }
+        compare_slot_order = ("A", "B", "C", "D")
+        active_pareto_panel: Optional[Dict[str, Any]] = None
         overlay_key = str(STAGE_COMPARE_OVERLAY_KEY.get(stage_id, "beamwidth")).strip().lower() or "beamwidth"
+        for slot in compare_slot_order:
+            panel = self._compare_stage_panels.get(slot)
+            if not isinstance(panel, dict):
+                continue
+            spec = dict(compare_lookup.get(slot) or {})
+            key = str(spec.get("key") or "").strip().lower()
+            kind = str(spec.get("kind") or "").strip().lower()
+            if not key:
+                key = "heatmap" if kind == "heatmap" else "beamwidth"
+            if kind not in {"heatmap", "curve", "pareto", "placeholder"}:
+                if key == "heatmap":
+                    kind = "heatmap"
+                elif key.startswith("pareto"):
+                    kind = "pareto"
+                else:
+                    kind = "curve"
+            panel["metric_key"] = key
+            title_label = panel.get("title_label")
+            if isinstance(title_label, QLabel):
+                title_label.setText(str(spec.get("title") or f"Plot {slot}"))
+            help_btn = panel.get("help_btn")
+            if isinstance(help_btn, QToolButton):
+                help_btn.setToolTip(str(spec.get("help") or "Compare stage plot panel."))
+            self._set_stage_panel_kind(panel, kind)
+            if slot == "B" and kind == "curve":
+                overlay_key = key
+            if kind == "pareto":
+                active_pareto_panel = panel
         self._compare_overlay_curve_key = overlay_key
-        overlay_titles = {
-            "beamwidth": "Beamwidth Overlay (-6 dB)",
-            "di_proxy": "DI Proxy Overlay",
-            "r_off": "Off-axis Ripple Overlay",
-        }
-        overlay_help = {
-            "beamwidth": "Overlay of shortlisted candidate beamwidth curves across frequency.",
-            "di_proxy": "Overlay of shortlisted candidate DI-proxy curves across frequency.",
-            "r_off": "Overlay of shortlisted candidate off-axis ripple curves across frequency.",
-        }
+
         if isinstance(getattr(self, "compare_overlay_title_label", None), QLabel):
-            self.compare_overlay_title_label.setText(overlay_titles.get(overlay_key, "Key Curve Overlay"))
+            overlay_spec = dict(compare_lookup.get("B") or {})
+            self.compare_overlay_title_label.setText(str(overlay_spec.get("title") or "Key Curve Compare"))
         if isinstance(getattr(self, "compare_overlay_help_btn", None), QToolButton):
-            self.compare_overlay_help_btn.setToolTip(overlay_help.get(overlay_key, "Overlay of shortlisted candidate curves."))
+            overlay_spec = dict(compare_lookup.get("B") or {})
+            self.compare_overlay_help_btn.setToolTip(
+                str(overlay_spec.get("help") or "Overlay of shortlisted candidate curves.")
+            )
 
         defaults = STAGE_PARETO_DEFAULTS.get(stage_id, STAGE_PARETO_DEFAULTS.get(DEFAULT_STAGE_ID, ("e_bw", "r_spill")))
         self._set_combo_current_by_data(self.compare_pareto_x_combo, defaults[0])
         self._set_combo_current_by_data(self.compare_pareto_y_combo, defaults[1])
+        if isinstance(getattr(self, "compare_pareto_axis_row", None), QWidget):
+            self.compare_pareto_axis_row.setVisible(active_pareto_panel is not None)
+            if active_pareto_panel is not None:
+                header_layout = active_pareto_panel.get("header_layout")
+                if isinstance(header_layout, QHBoxLayout):
+                    header_layout.addWidget(self.compare_pareto_axis_row, 0)
+        self._update_stage_target_badges()
+        self._apply_plot_panel_header_theme()
+
+    def _update_stage_target_badges(self) -> None:
+        target = self._selected_target()
+        badge_text = f"Target {int(round(float(target.get('h_deg') or 90.0)))}x{int(round(float(target.get('v_deg') or 40.0)))}"
+        for panel in list(self._explorer_stage_panels.values()) + list(self._compare_stage_panels.values()):
+            if not isinstance(panel, dict):
+                continue
+            badge = panel.get("target_badge_label")
+            if not isinstance(badge, QLabel):
+                continue
+            metric_key = str(panel.get("metric_key") or "").strip().lower()
+            is_heatmap = metric_key == "heatmap"
+            badge.setVisible(is_heatmap)
+            if is_heatmap:
+                badge.setText(badge_text)
+                badge.setToolTip("Active target window used for heatmap overlay.")
+
+    def _apply_plot_panel_header_theme(self) -> None:
+        all_panels = list(self._explorer_stage_panels.values()) + list(self._compare_stage_panels.values())
+        for panel in all_panels:
+            if not isinstance(panel, dict):
+                continue
+            frame = panel.get("frame")
+            if not isinstance(frame, QWidget):
+                continue
+            theme = apply_plot_theme(frame, has_legend=False, context="header")
+            title_label = panel.get("title_label")
+            if isinstance(title_label, QLabel):
+                title_label.setFont(_font_with_pixel_size(title_label.font(), int(theme.get("title_font_px", 11))))
+            target_badge = panel.get("target_badge_label")
+            if isinstance(target_badge, QLabel):
+                target_badge.setFont(_font_with_pixel_size(target_badge.font(), int(theme.get("legend_font_px", 8))))
+            help_btn = panel.get("help_btn")
+            if isinstance(help_btn, QToolButton):
+                icon_px = max(12, int(theme.get("title_font_px", 11)))
+                help_btn.setIconSize(QSize(icon_px, icon_px))
 
     def _update_toolbar_compaction(self) -> None:
         width = max(int(self.width()), 1)
@@ -6520,6 +6750,7 @@ class AnalysePage(QWidget):
     def resizeEvent(self, event) -> None:  # type: ignore[override]
         super().resizeEvent(event)
         self._update_toolbar_compaction()
+        QTimer.singleShot(0, self._apply_plot_panel_header_theme)
 
     def _sync_selection_action_button_sizes(self) -> None:
         refresh_width = max(int(self.compute_btn.sizeHint().width()), 128)
@@ -7064,9 +7295,7 @@ class AnalysePage(QWidget):
             self._render_plot_payload(dict(self._latest_plot_payload))
         self._schedule_plot_refresh()
         self._schedule_compare_plot_refresh()
-        self._render_compare_overlay()
-        self._render_compare_heatmap_selection()
-        self._render_compare_pareto()
+        self._render_compare_visuals()
 
     def _open_display_advanced_dialog(self) -> None:
         dialog = StyledDialogBase(title="Display Advanced", parent=self, min_width=560, min_height=360)
@@ -7315,10 +7544,11 @@ class AnalysePage(QWidget):
             placeholder = panel.get("placeholder")
             if isinstance(placeholder, QLabel):
                 placeholder.setText(msg)
-        if isinstance(getattr(self, "compare_pareto_canvas", None), ParetoScatterCanvas):
-            self.compare_pareto_canvas.clear_points("Select candidates to render Pareto scatter.")
-        if isinstance(getattr(self, "compare_focus_canvas", None), MetricCurveCanvas):
-            self.compare_focus_canvas.clear_series("Select an active candidate to inspect a single curve.")
+        self._clear_compare_stage_canvases(
+            curve_message="Select candidates to display compare plot.",
+            heatmap_message="Select candidates to display compare heatmap.",
+            pareto_message="Select candidates to render Pareto scatter.",
+        )
 
     @staticmethod
     def _stage_curve_points(curves: Mapping[str, Any], key: str) -> List[Dict[str, Any]]:
@@ -7366,20 +7596,39 @@ class AnalysePage(QWidget):
         return str(mapping.get(str(key or "").strip().lower(), "Value"))
 
     @staticmethod
+    def _metric_palette_color(metric_key: str) -> Tuple[int, int, int]:
+        token = str(metric_key or "").strip().lower()
+        mapping: Dict[str, Tuple[int, int, int]] = {
+            "e_cov": (98, 197, 214),
+            "r_spill": (223, 163, 88),
+            "di_proxy": (154, 172, 197),
+            "r_off": (216, 121, 96),
+            "s_theta": (137, 194, 128),
+            "e_sym_shape": (182, 151, 214),
+            "beamwidth": (210, 194, 98),
+            "e_bw": (210, 194, 98),
+        }
+        return tuple(mapping.get(token, (160, 179, 205)))
+
+    def _target_half_window_deg_for_plane(self, plane_key: str) -> float:
+        target = self._selected_target()
+        token = str(plane_key or "H").strip().upper()
+        h_deg = float(target.get("h_deg") or 90.0)
+        v_deg = float(target.get("v_deg") or 40.0)
+        if token == "H":
+            return max(h_deg * 0.5, 0.5)
+        if token == "V":
+            return max(v_deg * 0.5, 0.5)
+        return max(((h_deg + v_deg) * 0.5) * 0.5, 0.5)
+
+    @staticmethod
     def _heatmap_overlay_profile(stage_id: str) -> Dict[str, Any]:
         stage_token = normalize_stage_id(stage_id, fallback=DEFAULT_STAGE_ID)
-        if stage_token == "concept":
-            return {
-                "target_shade_alpha": 44,
-                "target_boundary_alpha": 178,
-                "contour_color": (255, 230, 140),
-                "contour_width": 2.6,
-            }
         return {
-            "target_shade_alpha": 18,
-            "target_boundary_alpha": 112,
+            "target_shade_alpha": 48 if stage_token == "concept" else 44,
+            "target_boundary_alpha": 186 if stage_token == "concept" else 172,
             "contour_color": (255, 226, 128),
-            "contour_width": 1.8,
+            "contour_width": 2.2 if stage_token == "concept" else 2.0,
         }
 
     @staticmethod
@@ -7394,12 +7643,12 @@ class AnalysePage(QWidget):
                     "fill_alpha": 0.24 if context_token == "explorer" else 0.14,
                     "regime_markers": bool(context_token == "explorer"),
                     "thresholds": [2.0, 4.0],
-                    "line_width": 3.0 if context_token == "explorer" else 2.4,
+                    "line_width": 1.4 if context_token == "explorer" else 1.2,
                 }
             if key_token in {"s_theta", "e_sym_shape"}:
                 return {
                     "style": "consistency_strip",
-                    "line_width": 2.2 if context_token == "explorer" else 2.0,
+                    "line_width": 1.2,
                     "thresholds": [0.20, 0.40] if key_token == "s_theta" else [0.35, 0.75],
                 }
         if stage_token == "final":
@@ -7407,14 +7656,14 @@ class AnalysePage(QWidget):
                 return {
                     "style": "defect_band",
                     "fill_alpha": 0.28 if context_token == "explorer" else 0.18,
-                    "line_width": 3.2 if context_token == "explorer" else 2.6,
+                    "line_width": 1.4 if context_token == "explorer" else 1.2,
                     "thresholds": [2.0, 4.0, 6.0],
                     "hotspot_threshold": 6.0,
                 }
             if key_token in {"s_theta", "e_sym_shape"}:
                 return {
                     "style": "consistency_strip",
-                    "line_width": 2.1 if context_token == "explorer" else 2.0,
+                    "line_width": 1.2,
                     "thresholds": [0.20, 0.40] if key_token == "s_theta" else [0.35, 0.75],
                 }
         return {}
@@ -7458,7 +7707,7 @@ class AnalysePage(QWidget):
                     target_half_window_deg=(
                         float(heatmap_overlays.get("target_half_window_deg"))
                         if heatmap_overlays.get("target_half_window_deg") is not None
-                        else None
+                        else float(self._target_half_window_deg_for_plane(self._active_plane))
                     ),
                     show_mirrored_minus6=bool(self._show_mirrored_minus6_contour),
                     target_shade_alpha=int(overlay_profile.get("target_shade_alpha", 24)),
@@ -7479,7 +7728,7 @@ class AnalysePage(QWidget):
                         pareto_canvas.set_points(
                             points=[
                                 {
-                                    "label": "Selected",
+                                    "label": format_series_label(dict(self._selected_detail_payload or {}).get("version_id")),
                                     "x_value": float(x_value),
                                     "y_value": float(y_value),
                                     "color": compare_overlay_color(0),
@@ -7508,7 +7757,7 @@ class AnalysePage(QWidget):
                     "label": "",
                     "show_legend": False,
                     "points": curve_points,
-                    "color": compare_overlay_color(0),
+                    "color": self._metric_palette_color(key),
                 }
                 series_row.update(style_profile)
                 curve_canvas.set_series(
@@ -7673,21 +7922,18 @@ class AnalysePage(QWidget):
         if model is None:
             self._selected_compare_slot_index = None
             self._update_compare_kpi_panel()
-            self._render_compare_overlay()
-            self._render_compare_focus_curve()
+            self._render_compare_visuals()
             return
         selected = model.selectedRows()
         if not selected:
             self._selected_compare_slot_index = None
             self._update_compare_kpi_panel()
-            self._render_compare_overlay()
-            self._render_compare_focus_curve()
+            self._render_compare_visuals()
             return
         row_index = int(selected[0].row())
         self._selected_compare_slot_index = row_index if row_index < len(self._compare_candidates) else None
         self._update_compare_kpi_panel()
-        self._render_compare_overlay()
-        self._render_compare_focus_curve()
+        self._render_compare_visuals()
 
     def _update_compare_kpi_panel(self) -> None:
         idx = self._selected_compare_slot_index
@@ -7779,10 +8025,11 @@ class AnalysePage(QWidget):
                 desired = int(self._selected_compare_slot_index)
             self.compare_heatmap_selector.setCurrentIndex(desired)
         else:
-            self.compare_heatmap_canvas.clear_heatmap("Select candidates to display compare heatmap.")
-            self.compare_overlay_canvas.clear_series("Select candidates to display overlay.")
-            self.compare_focus_canvas.clear_series("Select an active candidate to inspect a single curve.")
-            self.compare_pareto_canvas.clear_points("Select candidates to render Pareto scatter.")
+            self._clear_compare_stage_canvases(
+                curve_message="Select candidates to display compare plot.",
+                heatmap_message="Select candidates to display compare heatmap.",
+                pareto_message="Select candidates to render Pareto scatter.",
+            )
         if self._selected_compare_slot_index is None and slots:
             self._selected_compare_slot_index = 0
         if self._selected_compare_slot_index is not None and (self._selected_compare_slot_index >= len(slots)):
@@ -7790,9 +8037,7 @@ class AnalysePage(QWidget):
         if self._selected_compare_slot_index is not None:
             self.compare_slots_table.selectRow(int(self._selected_compare_slot_index))
         self._update_compare_kpi_panel()
-        self._render_compare_pareto()
-        self._render_compare_overlay()
-        self._render_compare_focus_curve()
+        self._render_compare_visuals()
 
         if message:
             self._set_compare_busy(False, message)
@@ -7821,6 +8066,26 @@ class AnalysePage(QWidget):
         if not has_d and self._compare_plane() == "D":
             self._set_combo_current_by_data(self.compare_plane_combo, "H")
 
+    def _clear_compare_stage_canvases(
+        self,
+        *,
+        curve_message: str,
+        heatmap_message: str,
+        pareto_message: str,
+    ) -> None:
+        for panel in self._compare_stage_panels.values():
+            if not isinstance(panel, dict):
+                continue
+            curve_canvas = panel.get("curve_canvas")
+            if isinstance(curve_canvas, MetricCurveCanvas):
+                curve_canvas.clear_series(curve_message)
+            heatmap_canvas = panel.get("heatmap_canvas")
+            if isinstance(heatmap_canvas, HeatmapCanvas):
+                heatmap_canvas.clear_heatmap(heatmap_message)
+            pareto_canvas = panel.get("pareto_canvas")
+            if isinstance(pareto_canvas, ParetoScatterCanvas):
+                pareto_canvas.clear_points(pareto_message)
+
     def _schedule_compare_plot_refresh(self) -> None:
         if self.analysis_tabs.currentWidget() is not self.compare_tab:
             return
@@ -7831,16 +8096,18 @@ class AnalysePage(QWidget):
             return
         project_id = str(self._selected_project_id() or "").strip()
         if not project_id:
-            self.compare_overlay_canvas.clear_series("Open a project to compare candidates.")
-            self.compare_heatmap_canvas.clear_heatmap("Open a project to compare candidates.")
-            self.compare_focus_canvas.clear_series("Open a project to compare candidates.")
-            self.compare_pareto_canvas.clear_points("Open a project to compare candidates.")
+            self._clear_compare_stage_canvases(
+                curve_message="Open a project to compare candidates.",
+                heatmap_message="Open a project to compare candidates.",
+                pareto_message="Open a project to compare candidates.",
+            )
             return
         if not self._compare_candidates:
-            self.compare_overlay_canvas.clear_series("Select candidates to display overlay.")
-            self.compare_heatmap_canvas.clear_heatmap("Select candidates to display compare heatmap.")
-            self.compare_focus_canvas.clear_series("Select an active candidate to inspect a single curve.")
-            self.compare_pareto_canvas.clear_points("Select candidates to render Pareto scatter.")
+            self._clear_compare_stage_canvases(
+                curve_message="Select candidates to display compare plot.",
+                heatmap_message="Select candidates to display compare heatmap.",
+                pareto_message="Select candidates to render Pareto scatter.",
+            )
             return
         band_low_hz, band_high_hz = self._resolved_band_limits()
         target = self._selected_target()
@@ -7900,10 +8167,7 @@ class AnalysePage(QWidget):
             item["candidate"] = self._apply_pin_state_to_row(dict(item.get("candidate") or {}))
             normalized_items.append(item)
         self._compare_plot_items = normalized_items
-        self._render_compare_overlay()
-        self._render_compare_heatmap_selection()
-        self._render_compare_focus_curve()
-        self._render_compare_pareto()
+        self._render_compare_visuals()
         self._set_compare_busy(False, "Compare plots ready.")
 
     def _on_compare_plot_failed(self, request_id: int, message: str) -> None:
@@ -7911,68 +8175,102 @@ class AnalysePage(QWidget):
             return
         self._set_compare_busy(False, "Compare plot load failed.")
         self._set_error(str(message or "Compare plot load failed."))
-        self.compare_overlay_canvas.clear_series("Compare plot load failed.")
-        self.compare_heatmap_canvas.clear_heatmap("Compare heatmap load failed.")
-        self.compare_focus_canvas.clear_series("Compare focus plot load failed.")
-        self.compare_pareto_canvas.clear_points("Compare plot load failed.")
+        self._clear_compare_stage_canvases(
+            curve_message="Compare plot load failed.",
+            heatmap_message="Compare heatmap load failed.",
+            pareto_message="Compare plot load failed.",
+        )
 
     def _on_compare_plot_canceled(self, request_id: int, message: str) -> None:
         if int(request_id) != int(self._compare_plot_request_id):
             return
         self._set_compare_busy(False, str(message or "Compare plot load canceled."))
 
+    def _compare_panel_for_slot(self, slot: str) -> Optional[Dict[str, Any]]:
+        token = str(slot or "").strip().upper()
+        panel = self._compare_stage_panels.get(token)
+        return panel if isinstance(panel, dict) else None
+
+    def _render_compare_visuals(self) -> None:
+        self._render_compare_overlay()
+        self._render_compare_heatmap_selection()
+        self._render_compare_focus_curve()
+        self._render_compare_slot_panel(
+            self._compare_panel_for_slot("D"),
+            empty_message="Select candidates to display compare plot.",
+        )
+        self._render_compare_pareto()
+
     def _render_compare_focus_curve(self) -> None:
-        selected_index = (
-            int(self._selected_compare_slot_index)
-            if self._selected_compare_slot_index is not None and 0 <= int(self._selected_compare_slot_index) < len(self._compare_plot_items)
-            else None
-        )
-        if selected_index is None:
-            self.compare_focus_canvas.clear_series("Select an active candidate to inspect a single curve.")
-            return
-        item = dict(self._compare_plot_items[selected_index] or {})
-        candidate = dict(item.get("candidate") or {})
-        plot = dict(item.get("plot") or {})
-        stage_plot = dict(plot.get("stage_plot") or {})
-        curves = dict(stage_plot.get("curves") or {})
-        curve_key = str(self._compare_overlay_curve_key or "beamwidth").strip().lower()
-        points = self._stage_curve_points(curves, curve_key)
-        if not points:
-            self.compare_focus_canvas.clear_series(str(plot.get("message") or "No curve data for active candidate."))
-            return
-        label = (
-            f"[PIN] C{selected_index + 1} {candidate.get('batch_id')}/{candidate.get('version_id')}"
-            if bool(candidate.get("version_pinned"))
-            else f"C{selected_index + 1} {candidate.get('batch_id')}/{candidate.get('version_id')}"
-        )
-        self.compare_focus_canvas.set_series(
-            series=[
-                {
-                    "label": label,
-                    "points": points,
-                    "color": compare_overlay_color(selected_index),
-                }
-            ],
-            x_scale_mode=self._x_axis_mode(),
-            x_label="Frequency (Hz, log)" if self._x_axis_mode() == "log" else "Frequency (Hz)",
-            y_label=self._stage_curve_y_label(curve_key),
-            status="",
-        )
+        panel = self._compare_panel_for_slot("C")
+        self._render_compare_slot_panel(panel, empty_message="Select candidates to display compare plot.")
 
     def _render_compare_overlay(self) -> None:
-        if not self._compare_plot_items:
-            self.compare_overlay_canvas.clear_series("Select candidates to display overlay.")
+        panel = self._compare_panel_for_slot("B")
+        self._render_compare_slot_panel(panel, empty_message="Select candidates to display overlay.")
+
+    def _render_compare_heatmap_selection(self) -> None:
+        for slot in ("A", "B", "C", "D"):
+            panel = self._compare_panel_for_slot(slot)
+            if not isinstance(panel, dict):
+                continue
+            if str(panel.get("kind") or "").strip().lower() != "heatmap":
+                continue
+            self._render_compare_heatmap_panel(panel)
+
+    def _render_compare_slot_panel(self, panel: Optional[Dict[str, Any]], *, empty_message: str) -> None:
+        if not isinstance(panel, dict):
             return
-        curve_key = str(self._compare_overlay_curve_key or "beamwidth").strip().lower()
+        kind = str(panel.get("kind") or "").strip().lower()
+        metric_key = str(panel.get("metric_key") or "").strip().lower()
+        if kind == "heatmap":
+            self._render_compare_heatmap_panel(panel)
+            return
+        if kind == "pareto":
+            self._render_compare_pareto_panel(panel, empty_message="Select candidates with available KPI values.")
+            return
+        if kind == "curve":
+            key = metric_key or "beamwidth"
+            self._render_compare_curve_panel(panel, metric_key=key, empty_message=empty_message)
+            return
+        curve_canvas = panel.get("curve_canvas")
+        if isinstance(curve_canvas, MetricCurveCanvas):
+            curve_canvas.clear_series(empty_message)
+        pareto_canvas = panel.get("pareto_canvas")
+        if isinstance(pareto_canvas, ParetoScatterCanvas):
+            pareto_canvas.clear_points(empty_message)
+        heatmap_canvas = panel.get("heatmap_canvas")
+        if isinstance(heatmap_canvas, HeatmapCanvas):
+            heatmap_canvas.clear_heatmap(empty_message)
+
+    def _render_compare_curve_panel(
+        self,
+        panel: Dict[str, Any],
+        *,
+        metric_key: str,
+        empty_message: str,
+    ) -> None:
+        curve_canvas = panel.get("curve_canvas")
+        if not isinstance(curve_canvas, MetricCurveCanvas):
+            return
+        if not self._compare_plot_items:
+            curve_canvas.clear_series(empty_message)
+            return
+        curve_key = str(metric_key or "beamwidth").strip().lower()
         selected_index = (
             int(self._selected_compare_slot_index)
             if self._selected_compare_slot_index is not None and 0 <= int(self._selected_compare_slot_index) < len(self._compare_plot_items)
             else None
+        )
+        selected_plane = self._compare_plane()
+        style_profile = self._curve_style_profile(
+            stage_id=self._selected_stage_id(),
+            metric_key=curve_key,
+            context="compare",
         )
         series: List[Dict[str, Any]] = []
         saturated_bins = 0
         missing_plane_labels: List[str] = []
-        selected_plane = self._compare_plane()
         for index, item in enumerate(self._compare_plot_items):
             candidate = dict(item.get("candidate") or {})
             plot = dict(item.get("plot") or {})
@@ -7983,30 +8281,30 @@ class AnalysePage(QWidget):
                 planes_present = {str(token).strip().upper() for token in list(candidate.get("planes", []) or []) if str(token).strip()}
                 plot_message = str(plot.get("message") or "").strip().lower()
                 if selected_plane not in planes_present or "plane not available" in plot_message:
-                    missing_plane_labels.append(f"C{index + 1} {candidate.get('batch_id')}/{candidate.get('version_id')}")
+                    missing_plane_labels.append(format_series_label(candidate.get("version_id")))
                 continue
             saturated_bins += sum(1 for point in points if bool(point.get("saturated")))
-            color_rgb = compare_overlay_color(index)
-            series.append(
-                {
-                    "label": (
-                        f"[PIN] C{index + 1} {candidate.get('batch_id')}/{candidate.get('version_id')}"
-                        if bool(candidate.get("version_pinned"))
-                        else f"C{index + 1} {candidate.get('batch_id')}/{candidate.get('version_id')}"
-                    ),
-                    "points": points,
-                    "color": color_rgb,
-                    "line_width": 3.0 if selected_index == index else 1.8,
-                    "alpha": 1.0 if selected_index is None or selected_index == index else 0.45,
-                }
-            )
+            is_active = bool(selected_index is not None and selected_index == index)
+            line_width = 2.0 if is_active else 1.0
+            alpha = 1.0 if selected_index is None or is_active else 0.62
+            series_row: Dict[str, Any] = {
+                "label": format_series_label(candidate.get("version_id")),
+                "points": points,
+                "color": compare_overlay_color(index),
+                "line_width": line_width,
+                "alpha": alpha,
+            }
+            for style_key in ("style", "fill_alpha", "thresholds", "regime_markers", "hotspot_threshold"):
+                if style_key in style_profile:
+                    series_row[style_key] = style_profile.get(style_key)
+            series.append(series_row)
         if not series:
             if missing_plane_labels:
-                self.compare_overlay_canvas.clear_series(
-                    f"No curve data for {selected_plane}. Missing plane: {', '.join(missing_plane_labels)}"
-                )
+                curve_canvas.clear_series(f"No curve data for {selected_plane}. Missing plane: {', '.join(missing_plane_labels)}")
+            elif self._compare_candidates:
+                curve_canvas.clear_series("Compute KPIs to populate.")
             else:
-                self.compare_overlay_canvas.clear_series("No curve data available for overlay.")
+                curve_canvas.clear_series(empty_message)
             return
         status = ""
         if curve_key == "beamwidth":
@@ -8028,7 +8326,8 @@ class AnalysePage(QWidget):
             if freq_union:
                 series.append(
                     {
-                        "label": f"Target {target_deg:.0f} deg",
+                        "label": "",
+                        "show_legend": False,
                         "points": [{"freq_hz": float(freq), "value": float(target_deg)} for freq in freq_union],
                         "color": (140, 145, 160),
                     }
@@ -8038,7 +8337,7 @@ class AnalysePage(QWidget):
         if missing_plane_labels:
             missing_note = f"Missing {selected_plane}: {', '.join(missing_plane_labels)}."
             status = f"{status} {missing_note}".strip() if status else missing_note
-        self.compare_overlay_canvas.set_series(
+        curve_canvas.set_series(
             series=series,
             x_scale_mode=self._x_axis_mode(),
             x_label="Frequency (Hz, log)" if self._x_axis_mode() == "log" else "Frequency (Hz)",
@@ -8046,21 +8345,27 @@ class AnalysePage(QWidget):
             status=status,
         )
 
-    def _render_compare_heatmap_selection(self) -> None:
+    def _render_compare_heatmap_panel(self, panel: Dict[str, Any]) -> None:
+        heatmap_canvas = panel.get("heatmap_canvas")
+        if not isinstance(heatmap_canvas, HeatmapCanvas):
+            return
         index = int(self.compare_heatmap_selector.currentData() or 0)
         if index < 0 or index >= len(self._compare_plot_items):
-            self.compare_heatmap_canvas.clear_heatmap("Select candidate for compare heatmap.")
+            if self._compare_candidates:
+                heatmap_canvas.clear_heatmap("Compute KPIs to populate.")
+            else:
+                heatmap_canvas.clear_heatmap("Select candidate for compare heatmap.")
             return
         item = dict(self._compare_plot_items[index])
         plot = dict(item.get("plot") or {})
         matrix = [list(row) for row in list(plot.get("display_matrix_db", []) or [])]
         if not matrix:
-            self.compare_heatmap_canvas.clear_heatmap(str(plot.get("message") or "No heatmap data for candidate."))
+            heatmap_canvas.clear_heatmap(str(plot.get("message") or "No heatmap data for candidate."))
             return
         stage_plot = dict(plot.get("stage_plot") or {})
         overlays = dict(stage_plot.get("heatmap_overlays") or {})
         overlay_profile = self._heatmap_overlay_profile(self._selected_stage_id())
-        self.compare_heatmap_canvas.set_heatmap_data(
+        heatmap_canvas.set_heatmap_data(
             matrix=matrix,
             freqs_hz=[float(value) for value in list(plot.get("display_freqs_hz", []) or [])],
             angles_deg=[float(value) for value in list(plot.get("angles_deg", []) or [])],
@@ -8072,7 +8377,7 @@ class AnalysePage(QWidget):
             target_half_window_deg=(
                 float(overlays.get("target_half_window_deg"))
                 if overlays.get("target_half_window_deg") is not None
-                else None
+                else float(self._target_half_window_deg_for_plane(self._compare_plane()))
             ),
             show_mirrored_minus6=bool(self._show_mirrored_minus6_contour),
             target_shade_alpha=int(overlay_profile.get("target_shade_alpha", 24)),
@@ -8117,7 +8422,27 @@ class AnalysePage(QWidget):
             return None
 
     def _render_compare_pareto(self, _index: int = 0) -> None:
-        if not isinstance(getattr(self, "compare_pareto_canvas", None), ParetoScatterCanvas):
+        rendered = False
+        for slot in ("A", "B", "C", "D"):
+            panel = self._compare_panel_for_slot(slot)
+            if not isinstance(panel, dict):
+                continue
+            if str(panel.get("kind") or "").strip().lower() != "pareto":
+                continue
+            self._render_compare_pareto_panel(panel, empty_message="Select candidates with available KPI values.")
+            rendered = True
+        if rendered:
+            return
+        panel = self._compare_panel_for_slot("D")
+        if not isinstance(panel, dict):
+            return
+        pareto_canvas = panel.get("pareto_canvas")
+        if isinstance(pareto_canvas, ParetoScatterCanvas):
+            pareto_canvas.clear_points("Pareto panel is not active in this stage.")
+
+    def _render_compare_pareto_panel(self, panel: Dict[str, Any], *, empty_message: str) -> None:
+        pareto_canvas = panel.get("pareto_canvas")
+        if not isinstance(pareto_canvas, ParetoScatterCanvas):
             return
         x_key = str(self.compare_pareto_x_combo.currentData() or "e_bw").strip().lower()
         y_key = str(self.compare_pareto_y_combo.currentData() or "r_spill").strip().lower()
@@ -8140,7 +8465,7 @@ class AnalysePage(QWidget):
                 continue
             points.append(
                 {
-                    "label": f"C{index + 1}",
+                    "label": format_series_label(candidate.get("version_id")),
                     "x_value": float(x_value),
                     "y_value": float(y_value),
                     "color": compare_overlay_color(index),
@@ -8148,9 +8473,12 @@ class AnalysePage(QWidget):
                 }
             )
         if not points:
-            self.compare_pareto_canvas.clear_points("Select candidates with available KPI values.")
+            if self._compare_candidates:
+                pareto_canvas.clear_points("Compute KPIs to populate.")
+            else:
+                pareto_canvas.clear_points(empty_message)
             return
-        self.compare_pareto_canvas.set_points(
+        pareto_canvas.set_points(
             points=points,
             x_label=x_label,
             y_label=y_label,
@@ -9323,10 +9651,11 @@ class AnalysePage(QWidget):
         self._ath_all_param_rows_by_version.clear()
         self._loaded_analysis_id = None
         self._clear_plot_views("Select version + plane to render plots.")
-        self.compare_overlay_canvas.clear_series("Select candidates to display overlay.")
-        self.compare_heatmap_canvas.clear_heatmap("Select candidates to display compare heatmap.")
-        self.compare_focus_canvas.clear_series("Select an active candidate to inspect a single curve.")
-        self.compare_pareto_canvas.clear_points("Select candidates to render Pareto scatter.")
+        self._clear_compare_stage_canvases(
+            curve_message="Select candidates to display compare plot.",
+            heatmap_message="Select candidates to display compare heatmap.",
+            pareto_message="Select candidates to render Pareto scatter.",
+        )
         self.project_selector.setEnabled(False)
         if self._compute_thread is None or not self._compute_thread.isRunning():
             self.compute_btn.setEnabled(self._source_key() == "project")
@@ -9376,6 +9705,7 @@ class AnalysePage(QWidget):
         if self._control_sync_guard:
             return
         self._update_toolbar_context_chips()
+        self._update_stage_target_badges()
         if not self._selected_project_id() or not self._selected_batch_id():
             self._schedule_plot_refresh()
             self._schedule_compare_plot_refresh()

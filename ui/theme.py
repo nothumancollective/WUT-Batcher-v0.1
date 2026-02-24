@@ -792,6 +792,20 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         background-color: transparent;
         border: none;
     }}
+    QWidget#AnalyzerCompareGrid,
+    QWidget#AnalyzerCompareLeftContent,
+    QWidget#AnalyzerCompareRightPanel,
+    QScrollArea#AnalyzerCompareLeftScroll {{
+        background-color: transparent;
+        border: none;
+    }}
+    QScrollArea#AnalyzerCompareLeftScroll > QWidget > QWidget {{
+        background-color: transparent;
+    }}
+    QSplitter#AnalyzerCompareSplitter::handle {{
+        background-color: transparent;
+        width: 2px;
+    }}
     QDoubleSpinBox[analyzerBandEdge="true"]:disabled {{
         color: #9A9A9A;
         background-color: #1a1a1a;
@@ -1230,6 +1244,24 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     QPushButton#BatchSecondaryButton:hover {{
         border-color: {c['accent']};
         background-color: #272727;
+    }}
+    QToolButton#BatchSecondaryToolButton,
+    QToolButton#AnalyzerFlagsHelpButton {{
+        background-color: transparent;
+        color: {c['muted']};
+        border: 1px solid transparent;
+        border-radius: {r['sm']}px;
+        min-width: 18px;
+        max-width: 18px;
+        min-height: 18px;
+        max-height: 18px;
+        padding: 0px;
+    }}
+    QToolButton#BatchSecondaryToolButton:hover,
+    QToolButton#AnalyzerFlagsHelpButton:hover {{
+        color: {c['text']};
+        border-color: {c['accent']};
+        background-color: #232323;
     }}
     QPushButton#BatchRunButton {{
         background-color: #2a2a2a;
