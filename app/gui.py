@@ -7070,6 +7070,7 @@ class AnalysePage(QWidget):
         self.analysis_explorer_btn.setChecked(True)
         self._update_toolbar_context_chips()
         self._update_toolbar_compaction()
+        QTimer.singleShot(0, self._log_plot_surface_diagnostics)
 
     def _create_stage_plot_panel(
         self,
@@ -7159,6 +7160,33 @@ class AnalysePage(QWidget):
         self._attach_plot_tile_interactions(panel, panel_id=panel_id)
         self._set_stage_panel_kind(panel, kind)
         return panel
+
+    def _log_plot_surface_diagnostics(self) -> None:
+        widgets: List[QWidget] = []
+        for attr_name in (
+            "explorer_grid_widget",
+            "compare_grid_widget",
+            "compare_workspace",
+            "compare_drawer",
+            "compare_tab",
+        ):
+            widget = getattr(self, attr_name, None)
+            if isinstance(widget, QWidget):
+                widgets.append(widget)
+        for widget in widgets:
+            try:
+                palette_window = widget.palette().color(QPalette.Window).name(QColor.HexRgb)
+            except Exception:
+                palette_window = "n/a"
+            style_sheet = str(widget.styleSheet() or "").strip()
+            LOGGER.debug(
+                "AnalyzerPlotSurface widget=%s autoFill=%s styledBg=%s paletteWindow=%s styleSheet=%s",
+                str(widget.objectName() or widget.__class__.__name__),
+                bool(widget.autoFillBackground()),
+                bool(widget.testAttribute(Qt.WA_StyledBackground)),
+                palette_window,
+                style_sheet[:160],
+            )
 
     @staticmethod
     def _plot_panel_slot_token(panel_id: str) -> str:

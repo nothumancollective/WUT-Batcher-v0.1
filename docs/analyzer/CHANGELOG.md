@@ -1,5 +1,9 @@
 ﻿# Analyzer Docs â€” Changelog
 
+## 2026-02-24 (Plot surfaces: remove residual black slab source)
+- Switched Analyzer plot workspace containers (`Explorer`/`Compare` grid surfaces) and analyzer plot-tile frames to the theme surface color instead of transparent-on-black fallback.
+- This centralizes plot-surface background policy at the style source, removing pure-black slab bleed-through while keeping tile borders subtle.
+- Added analyzer plot-surface diagnostics (`LOGGER.debug`) that report effective background-relevant widget flags/palette/style for root-cause visibility.
 ## 2026-02-24 (Metric band rendering: crisp band/line visuals)
 - Reworked analyzer metric-band rendering to use explicit in-plot band geometries (trend corridor / consistency strip / defect region) instead of diffuse glow-like fills.
 - For smooth band mode, fills now render with crisp clipped polygons and explicit boundary lines; block mode keeps segmented rect strips.
@@ -967,6 +971,7 @@
 
 ## 2026-02-24 (Merge integration follow-up)
 - Aligned GUI regression `test_version_bar_widgets_are_updated_in_place` with the stacked ATH params widget model (`version_ath_params_rows_widget` + empty-label placeholder) after merging `ui/analyzer-versionbar-polish-final`.
+
 
 
 

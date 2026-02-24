@@ -792,13 +792,14 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         background-color: transparent;
         border: none;
     }}
+    QWidget#AnalyzerExplorerGrid,
     QWidget#AnalyzerCompareGrid,
     QWidget#AnalyzerCompareLeftContent,
     QWidget#AnalyzerCompareRightPanel,
     QWidget#AnalyzerCompareWorkspace,
     QWidget#AnalyzerCompareDrawerLayer,
     QScrollArea#AnalyzerCompareDrawerScroll {{
-        background-color: transparent;
+        background-color: {c['surface']};
         border: none;
     }}
     QScrollArea#AnalyzerCompareDrawerScroll > QWidget > QWidget {{
@@ -1019,7 +1020,7 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         font-size: 11px;
     }}
     QFrame#ProjectIssuesPanel[analyzerPlotTile="true"] {{
-        background-color: transparent;
+        background-color: {c['surface']};
         border: 1px solid {c['border']};
         border-radius: {r['sm']}px;
     }}
