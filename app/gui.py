@@ -563,6 +563,20 @@ STAGE_PARETO_DEFAULTS: Dict[str, Tuple[str, str]] = {
     "final": ("r_off", "s_theta"),
 }
 
+COMPARE_BASE_COLUMNS: Tuple[Tuple[str, str], ...] = (
+    ("slot", "Slot"),
+    ("selection", "Selection"),
+    ("score", "Score"),
+    ("flags", "Flags"),
+)
+
+COMPARE_DEFAULT_KPI_COLUMNS: Tuple[Tuple[str, str], ...] = (
+    ("b_pc_oct", "Pattern Ctrl (oct)"),
+    ("e_bw", "BW Err (deg)"),
+    ("e_cov", "Cov Err (dB)"),
+    ("r_spill", "Spill Ratio"),
+)
+
 VERSION_INFO_STAGE_METRICS: Dict[str, Tuple[str, ...]] = {
     "concept": ("score", "b_pc_oct", "e_bw", "e_cov", "r_spill", "flags"),
     "stabilization": ("score", "di_proxy", "s_theta", "e_sym_shape", "flags"),
@@ -4940,6 +4954,7 @@ class AnalysePage(QWidget):
         self._latest_plot_payload: Dict[str, Any] = {}
         self._explorer_stage_panels: Dict[str, Dict[str, Any]] = {}
         self._compare_overlay_curve_key = "beamwidth"
+        self._compare_kpi_columns: List[Tuple[str, str]] = list(COMPARE_DEFAULT_KPI_COLUMNS)
         self._ath_visible_param_limit = 5
         self._active_plane = "H"
         self._analyzer_controls_row_min_height = 0
@@ -5315,8 +5330,8 @@ class AnalysePage(QWidget):
         self.compare_splitter.setObjectName("AnalyzerCompareSplitter")
         self.compare_splitter.setChildrenCollapsible(False)
 
-        compare_left = QWidget()
-        compare_left_layout = QVBoxLayout(compare_left)
+        compare_left_content = QWidget()
+        compare_left_layout = QVBoxLayout(compare_left_content)
         compare_left_layout.setContentsMargins(0, 0, 0, 0)
         compare_left_layout.setSpacing(8)
 
@@ -5362,61 +5377,25 @@ class AnalysePage(QWidget):
         compare_controls_layout.addWidget(self.compare_notice, 2, 0, 1, 5)
         compare_left_layout.addWidget(self.compare_controls, 0)
 
-        self.compare_slots_table = QTableWidget(5, 5)
+        self.compare_slots_table = QTableWidget(5, 1)
         self.compare_slots_table.setObjectName("AnalyzerCompareSlotsTable")
         self.compare_slots_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.compare_slots_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.compare_slots_table.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.compare_slots_table.setHorizontalHeaderLabels(["Slot", "Selection", "Score", "Flags", "Remove"])
-        slots_header = self.compare_slots_table.horizontalHeader()
-        slots_header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        slots_header.setSectionResizeMode(1, QHeaderView.Stretch)
-        slots_header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        slots_header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
-        slots_header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        self.compare_slots_table.setWordWrap(False)
+        self.compare_slots_table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.compare_slots_table.verticalHeader().setVisible(False)
         compare_left_layout.addWidget(self.compare_slots_table, 1)
+        self._configure_compare_slots_table()
 
-        self.compare_kpi_panel = QFrame()
-        self.compare_kpi_panel.setObjectName("ProjectIssuesPanel")
-        compare_kpi_layout = QVBoxLayout(self.compare_kpi_panel)
-        compare_kpi_layout.setContentsMargins(8, 8, 8, 8)
-        compare_kpi_layout.setSpacing(6)
-        compare_kpi_title = QLabel("Selected Candidate KPIs")
-        compare_kpi_title.setObjectName("SectionTitle")
-        compare_kpi_layout.addWidget(compare_kpi_title, 0, Qt.AlignLeft | Qt.AlignVCenter)
-        self.compare_kpi_notice = QLabel("Select a candidate to view KPIs.")
-        self.compare_kpi_notice.setObjectName("SummaryMeta")
-        self.compare_kpi_notice.setWordWrap(True)
-        compare_kpi_layout.addWidget(self.compare_kpi_notice, 0, Qt.AlignLeft | Qt.AlignVCenter)
-        self._compare_kpi_rows: List[Tuple[str, str]] = [
-            ("score", "Score"),
-            ("b_pc_oct", "Pattern Ctrl (oct)"),
-            ("e_bw", "BW Err (deg)"),
-            ("e_cov", "Cov Err (dB)"),
-            ("r_spill", "Spill Ratio"),
-            ("flags", "Flags"),
-        ]
-        self.compare_kpi_matrix = QTableWidget(len(self._compare_kpi_rows), 6)
-        self.compare_kpi_matrix.setObjectName("AnalyzerCompareKpiMatrix")
-        self.compare_kpi_matrix.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.compare_kpi_matrix.setSelectionMode(QAbstractItemView.NoSelection)
-        self.compare_kpi_matrix.setHorizontalHeaderLabels(["KPI", "C1", "C2", "C3", "C4", "C5"])
-        self.compare_kpi_matrix.verticalHeader().setVisible(False)
-        matrix_header = self.compare_kpi_matrix.horizontalHeader()
-        matrix_header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        for col_idx in range(1, 6):
-            matrix_header.setSectionResizeMode(col_idx, QHeaderView.Stretch)
-        for row_idx, (_key, label_text) in enumerate(self._compare_kpi_rows):
-            label_item = QTableWidgetItem(label_text)
-            self.compare_kpi_matrix.setItem(row_idx, 0, label_item)
-            for col_idx in range(1, 6):
-                self.compare_kpi_matrix.setItem(row_idx, col_idx, QTableWidgetItem("--"))
-        compare_kpi_layout.addWidget(self.compare_kpi_matrix, 1)
-        compare_left_layout.addStretch(1)
-
-        compare_left.setMinimumWidth(240)
-        self.compare_splitter.addWidget(compare_left)
+        compare_left_scroll = QScrollArea()
+        compare_left_scroll.setObjectName("AnalyzerCompareLeftScroll")
+        compare_left_scroll.setFrameShape(QFrame.NoFrame)
+        compare_left_scroll.setWidgetResizable(True)
+        compare_left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        compare_left_scroll.setWidget(compare_left_content)
+        compare_left_scroll.setMinimumWidth(300)
+        self.compare_splitter.addWidget(compare_left_scroll)
 
         compare_right = QWidget()
         compare_right_layout = QVBoxLayout(compare_right)
@@ -5468,7 +5447,15 @@ class AnalysePage(QWidget):
         self.compare_heatmap_canvas.setObjectName("AnalyzerCompareHeatmapCanvas")
         self.compare_grid_layout.addWidget(self.compare_heatmap_panel["frame"], 0, 1, 1, 1)
 
-        self.compare_grid_layout.addWidget(self.compare_kpi_panel, 1, 0, 1, 1)
+        self.compare_focus_panel = self._create_stage_plot_panel(
+            panel_id="CompareC",
+            title="Active Candidate Curve",
+            help_text="Focused view for the currently active shortlist candidate.",
+            kind="curve",
+        )
+        self.compare_focus_canvas = self.compare_focus_panel["curve_canvas"]
+        self.compare_focus_canvas.setObjectName("AnalyzerCompareFocusCanvas")
+        self.compare_grid_layout.addWidget(self.compare_focus_panel["frame"], 1, 0, 1, 1)
 
         self.compare_pareto_panel = self._create_stage_plot_panel(
             panel_id="CompareD",
@@ -7090,6 +7077,8 @@ class AnalysePage(QWidget):
                 placeholder.setText(msg)
         if isinstance(getattr(self, "compare_pareto_canvas", None), ParetoScatterCanvas):
             self.compare_pareto_canvas.clear_points("Select candidates to render Pareto scatter.")
+        if isinstance(getattr(self, "compare_focus_canvas", None), MetricCurveCanvas):
+            self.compare_focus_canvas.clear_series("Select an active candidate to inspect a single curve.")
 
     @staticmethod
     def _stage_curve_points(curves: Mapping[str, Any], key: str) -> List[Dict[str, Any]]:
@@ -7235,9 +7224,47 @@ class AnalysePage(QWidget):
             "kpi_flags_count": int(row.get("kpi_flags_count") or 0) if score_raw is not None else None,
             "kpi_reason_codes": [str(code) for code in list(row.get("kpi_reason_codes", []) or []) if str(code).strip()],
             "planes": [str(item) for item in list(row.get("planes", []) or [])],
+            "kpi": dict(row.get("kpi", {}) or {}) if isinstance(row.get("kpi"), dict) else {},
             "imported_at": row.get("imported_at"),
         }
         return self._apply_pin_state_to_row(candidate)
+
+    def _compare_table_columns(self) -> List[Tuple[str, str]]:
+        return list(COMPARE_BASE_COLUMNS) + list(self._compare_kpi_columns) + [("remove", "Remove")]
+
+    def _configure_compare_slots_table(self) -> None:
+        columns = self._compare_table_columns()
+        self.compare_slots_table.setColumnCount(len(columns))
+        self.compare_slots_table.setHorizontalHeaderLabels([str(label) for _key, label in columns])
+        header = self.compare_slots_table.horizontalHeader()
+        for index, (key, _label) in enumerate(columns):
+            if key == "selection":
+                header.setSectionResizeMode(index, QHeaderView.Stretch)
+            elif key == "slot":
+                header.setSectionResizeMode(index, QHeaderView.ResizeToContents)
+            elif key == "remove":
+                header.setSectionResizeMode(index, QHeaderView.ResizeToContents)
+            else:
+                header.setSectionResizeMode(index, QHeaderView.ResizeToContents)
+
+    def _compare_candidate_metric_text(self, candidate: Mapping[str, Any], metric_key: str) -> str:
+        token = str(metric_key or "").strip().lower()
+        aggregate = dict(dict(candidate.get("kpi", {}) or {}).get("aggregate", {}) or {})
+        direct_fields = {
+            "b_pc_oct": ("kpi_b_pc_oct", 2),
+            "e_bw": ("kpi_e_bw", 2),
+            "e_cov": ("kpi_e_cov", 2),
+            "r_spill": ("kpi_r_spill", 3),
+        }
+        field = direct_fields.get(token)
+        value = None
+        digits = 2
+        if field is not None:
+            value = candidate.get(field[0])
+            digits = int(field[1])
+        if value is None:
+            value = aggregate.get(token)
+        return self._format_float(value, digits)
 
     def _set_compare_candidates(self, candidates: Sequence[Dict[str, Any]], *, message: str = "") -> None:
         dedup: Dict[tuple[str, str, str, str], Dict[str, Any]] = {}
@@ -7281,74 +7308,51 @@ class AnalysePage(QWidget):
         if model is None:
             self._selected_compare_slot_index = None
             self._update_compare_kpi_panel()
+            self._render_compare_focus_curve()
             return
         selected = model.selectedRows()
         if not selected:
             self._selected_compare_slot_index = None
             self._update_compare_kpi_panel()
+            self._render_compare_focus_curve()
             return
         row_index = int(selected[0].row())
         self._selected_compare_slot_index = row_index if row_index < len(self._compare_candidates) else None
         self._update_compare_kpi_panel()
+        self._render_compare_focus_curve()
 
     def _update_compare_kpi_panel(self) -> None:
         idx = self._selected_compare_slot_index
         selected_col = int(idx) if idx is not None and 0 <= int(idx) < len(self._compare_candidates) else None
         if selected_col is None:
-            self.compare_kpi_notice.setText("Select a candidate to focus one column.")
+            self.compare_notice.set_full_text("Select up to 5 versions, then add or auto-pick top candidates.")
         else:
             selected = dict(self._compare_candidates[selected_col] or {})
             marker = "[PIN] " if bool(selected.get("version_pinned")) else ""
-            self.compare_kpi_notice.setText(
-                f"Selected: C{selected_col + 1} {marker}{selected.get('batch_id')}/{selected.get('version_id')}"
+            self.compare_notice.set_full_text(
+                f"Active: C{selected_col + 1} {marker}{selected.get('batch_id')}/{selected.get('version_id')}"
             )
-
-        for row_idx, (metric_key, _label) in enumerate(self._compare_kpi_rows):
-            for col_idx in range(1, 6):
-                item = self.compare_kpi_matrix.item(row_idx, col_idx)
-                if item is None:
-                    item = QTableWidgetItem("--")
-                    self.compare_kpi_matrix.setItem(row_idx, col_idx, item)
-                candidate_index = col_idx - 1
-                if candidate_index >= len(self._compare_candidates):
-                    item.setText("--")
-                    item.setBackground(QColor())
-                    continue
-                candidate = dict(self._compare_candidates[candidate_index] or {})
-                if metric_key == "score":
-                    value_text = self._format_float(candidate.get("score"), 2)
-                elif metric_key == "b_pc_oct":
-                    value_text = self._format_float(candidate.get("kpi_b_pc_oct"), 2)
-                elif metric_key == "e_bw":
-                    value_text = self._format_float(candidate.get("kpi_e_bw"), 2)
-                elif metric_key == "e_cov":
-                    value_text = self._format_float(candidate.get("kpi_e_cov"), 2)
-                elif metric_key == "r_spill":
-                    value_text = self._format_float(candidate.get("kpi_r_spill"), 3)
-                elif metric_key == "flags":
-                    flags_count = candidate.get("kpi_flags_count")
-                    value_text = "--" if flags_count is None else str(int(flags_count))
-                else:
-                    value_text = "--"
-                item.setText(value_text)
-                if selected_col is not None and selected_col == candidate_index:
-                    item.setBackground(QColor(42, 51, 68, 140))
-                else:
-                    item.setBackground(QColor())
+        if self.compare_heatmap_selector.count() > 0 and selected_col is not None:
+            if 0 <= int(selected_col) < int(self.compare_heatmap_selector.count()):
+                self.compare_heatmap_selector.setCurrentIndex(int(selected_col))
 
     def _update_compare_slots(self, *, message: str = "") -> None:
         slots = list(self._compare_candidates)
+        self._configure_compare_slots_table()
         self.compare_slots_table.setRowCount(5)
-        self.compare_table.setRowCount(len(slots))
         self.compare_heatmap_selector.clear()
         selected_plane = self._compare_plane()
+        columns = self._compare_table_columns()
+        col_index = {key: idx for idx, (key, _label) in enumerate(columns)}
+        remove_col = int(col_index.get("remove", max(len(columns) - 1, 0)))
         for row_index in range(5):
             slot_label = f"C{row_index + 1}"
             color_item = QTableWidgetItem(slot_label)
             color_rgb = compare_overlay_color(row_index)
             color_item.setBackground(QColor(*color_rgb))
             color_item.setForeground(QColor("#0D1117"))
-            self.compare_slots_table.setItem(row_index, 0, color_item)
+            if "slot" in col_index:
+                self.compare_slots_table.setItem(row_index, int(col_index["slot"]), color_item)
             candidate = dict(slots[row_index]) if row_index < len(slots) else {}
             if candidate:
                 selection_label = f"{str(candidate.get('batch_id') or '--')}/{str(candidate.get('version_id') or '--')}"
@@ -7359,33 +7363,43 @@ class AnalysePage(QWidget):
                 score_text = self._format_float(candidate.get("score"), 2)
                 flags_count = candidate.get("kpi_flags_count")
                 flags_text = "--" if flags_count is None else str(int(flags_count))
-                selection_item = QTableWidgetItem(selection_text)
-                selection_item.setToolTip(selection_text)
-                self.compare_slots_table.setItem(row_index, 1, selection_item)
-                self.compare_slots_table.setItem(row_index, 2, QTableWidgetItem(score_text))
-                self.compare_slots_table.setItem(row_index, 3, QTableWidgetItem(flags_text))
+                for key, idx in col_index.items():
+                    if key in {"slot", "remove"}:
+                        continue
+                    if key == "selection":
+                        item = QTableWidgetItem(selection_text)
+                        item.setToolTip(selection_text)
+                    elif key == "score":
+                        item = QTableWidgetItem(score_text)
+                        item.setTextAlignment(int(Qt.AlignRight | Qt.AlignVCenter))
+                    elif key == "flags":
+                        item = QTableWidgetItem(flags_text)
+                        item.setTextAlignment(int(Qt.AlignRight | Qt.AlignVCenter))
+                        codes = [str(code) for code in list(candidate.get("kpi_reason_codes", []) or []) if str(code).strip()]
+                        if codes:
+                            item.setToolTip(", ".join(codes))
+                    else:
+                        metric_text = self._compare_candidate_metric_text(candidate, key)
+                        item = QTableWidgetItem(metric_text)
+                        item.setTextAlignment(int(Qt.AlignRight | Qt.AlignVCenter))
+                        if metric_text == "--":
+                            item.setToolTip("Compute KPIs to populate.")
+                    self.compare_slots_table.setItem(row_index, int(idx), item)
                 self.compare_heatmap_selector.addItem(f"{slot_label} | {selection_text}", row_index)
-                compare_values = [
-                    slot_label,
-                    score_text,
-                    self._format_float(candidate.get("kpi_b_pc_oct"), 2),
-                    self._format_float(candidate.get("kpi_e_bw"), 2),
-                    self._format_float(candidate.get("kpi_e_cov"), 2),
-                    self._format_float(candidate.get("kpi_r_spill"), 3),
-                    flags_text,
-                ]
-                for col_index, value in enumerate(compare_values):
-                    self.compare_table.setItem(row_index, col_index, QTableWidgetItem(value))
             else:
-                self.compare_slots_table.setItem(row_index, 1, QTableWidgetItem("--"))
-                self.compare_slots_table.setItem(row_index, 2, QTableWidgetItem("--"))
-                self.compare_slots_table.setItem(row_index, 3, QTableWidgetItem("--"))
+                for key, idx in col_index.items():
+                    if key in {"slot", "remove"}:
+                        continue
+                    item = QTableWidgetItem("--")
+                    if key != "selection":
+                        item.setTextAlignment(int(Qt.AlignRight | Qt.AlignVCenter))
+                    self.compare_slots_table.setItem(row_index, int(idx), item)
 
             remove_btn = QPushButton("Remove")
             remove_btn.setObjectName("BatchSecondaryButton")
             remove_btn.setEnabled(bool(candidate))
             remove_btn.clicked.connect(lambda _checked=False, idx=row_index: self._remove_compare_candidate(idx))
-            self.compare_slots_table.setCellWidget(row_index, 4, remove_btn)
+            self.compare_slots_table.setCellWidget(row_index, remove_col, remove_btn)
 
         self._sync_compare_plane_options()
 
@@ -7397,6 +7411,7 @@ class AnalysePage(QWidget):
         else:
             self.compare_heatmap_canvas.clear_heatmap("Select candidates to display compare heatmap.")
             self.compare_overlay_canvas.clear_series("Select candidates to display overlay.")
+            self.compare_focus_canvas.clear_series("Select an active candidate to inspect a single curve.")
             self.compare_pareto_canvas.clear_points("Select candidates to render Pareto scatter.")
         if self._selected_compare_slot_index is None and slots:
             self._selected_compare_slot_index = 0
@@ -7406,6 +7421,7 @@ class AnalysePage(QWidget):
             self.compare_slots_table.selectRow(int(self._selected_compare_slot_index))
         self._update_compare_kpi_panel()
         self._render_compare_pareto()
+        self._render_compare_focus_curve()
 
         if message:
             self._set_compare_busy(False, message)
@@ -7446,11 +7462,13 @@ class AnalysePage(QWidget):
         if not project_id:
             self.compare_overlay_canvas.clear_series("Open a project to compare candidates.")
             self.compare_heatmap_canvas.clear_heatmap("Open a project to compare candidates.")
+            self.compare_focus_canvas.clear_series("Open a project to compare candidates.")
             self.compare_pareto_canvas.clear_points("Open a project to compare candidates.")
             return
         if not self._compare_candidates:
             self.compare_overlay_canvas.clear_series("Select candidates to display overlay.")
             self.compare_heatmap_canvas.clear_heatmap("Select candidates to display compare heatmap.")
+            self.compare_focus_canvas.clear_series("Select an active candidate to inspect a single curve.")
             self.compare_pareto_canvas.clear_points("Select candidates to render Pareto scatter.")
             return
         band_low_hz, band_high_hz = self._resolved_band_limits()
@@ -7513,6 +7531,7 @@ class AnalysePage(QWidget):
         self._compare_plot_items = normalized_items
         self._render_compare_overlay()
         self._render_compare_heatmap_selection()
+        self._render_compare_focus_curve()
         self._render_compare_pareto()
         self._set_compare_busy(False, "Compare plots ready.")
 
@@ -7523,12 +7542,51 @@ class AnalysePage(QWidget):
         self._set_error(str(message or "Compare plot load failed."))
         self.compare_overlay_canvas.clear_series("Compare plot load failed.")
         self.compare_heatmap_canvas.clear_heatmap("Compare heatmap load failed.")
+        self.compare_focus_canvas.clear_series("Compare focus plot load failed.")
         self.compare_pareto_canvas.clear_points("Compare plot load failed.")
 
     def _on_compare_plot_canceled(self, request_id: int, message: str) -> None:
         if int(request_id) != int(self._compare_plot_request_id):
             return
         self._set_compare_busy(False, str(message or "Compare plot load canceled."))
+
+    def _render_compare_focus_curve(self) -> None:
+        selected_index = (
+            int(self._selected_compare_slot_index)
+            if self._selected_compare_slot_index is not None and 0 <= int(self._selected_compare_slot_index) < len(self._compare_plot_items)
+            else None
+        )
+        if selected_index is None:
+            self.compare_focus_canvas.clear_series("Select an active candidate to inspect a single curve.")
+            return
+        item = dict(self._compare_plot_items[selected_index] or {})
+        candidate = dict(item.get("candidate") or {})
+        plot = dict(item.get("plot") or {})
+        stage_plot = dict(plot.get("stage_plot") or {})
+        curves = dict(stage_plot.get("curves") or {})
+        curve_key = str(self._compare_overlay_curve_key or "beamwidth").strip().lower()
+        points = self._stage_curve_points(curves, curve_key)
+        if not points:
+            self.compare_focus_canvas.clear_series(str(plot.get("message") or "No curve data for active candidate."))
+            return
+        label = (
+            f"[PIN] C{selected_index + 1} {candidate.get('batch_id')}/{candidate.get('version_id')}"
+            if bool(candidate.get("version_pinned"))
+            else f"C{selected_index + 1} {candidate.get('batch_id')}/{candidate.get('version_id')}"
+        )
+        self.compare_focus_canvas.set_series(
+            series=[
+                {
+                    "label": label,
+                    "points": points,
+                    "color": compare_overlay_color(selected_index),
+                }
+            ],
+            x_scale_mode=self._x_axis_mode(),
+            x_label="Frequency (Hz, log)" if self._x_axis_mode() == "log" else "Frequency (Hz)",
+            y_label=self._stage_curve_y_label(curve_key),
+            status="",
+        )
 
     def _render_compare_overlay(self) -> None:
         if not self._compare_plot_items:
@@ -8883,6 +8941,7 @@ class AnalysePage(QWidget):
         self._clear_plot_views("Select version + plane to render plots.")
         self.compare_overlay_canvas.clear_series("Select candidates to display overlay.")
         self.compare_heatmap_canvas.clear_heatmap("Select candidates to display compare heatmap.")
+        self.compare_focus_canvas.clear_series("Select an active candidate to inspect a single curve.")
         self.compare_pareto_canvas.clear_points("Select candidates to render Pareto scatter.")
         self.project_selector.setEnabled(False)
         if self._compute_thread is None or not self._compute_thread.isRunning():
