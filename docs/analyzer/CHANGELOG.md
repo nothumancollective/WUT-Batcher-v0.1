@@ -1027,3 +1027,8 @@
 - In fixed mode, `e_sym_shape` now uses a bounded, sensible range (`y_min=0`, clamped `y_max`) instead of inheriting extreme spikes.
 - Auto-scale behavior remains unchanged.
 - Added regression coverage for the robust fixed-range helper and non-auto axis range resolution path.
+## 2026-02-24 (Plot surfaces: black background diagnosis + source policy fix)
+- Expanded Analyzer plot-surface diagnostics (`LOGGER.debug`) to include widget class, palette window/base colors, style flags, and parent-chain background metadata for one-pass root-cause tracing.
+- Normalized plot-surface background policy at the source: workspace containers (`AnalyzerExplorerGrid`, `AnalyzerCompareGrid`, `AnalyzerCompareWorkspace`, `AnalyzerCompareRightPanel`) now provide the panel tone, while analyzer plot tiles are transparent frames with borders only.
+- This removes the separate black-slab look without introducing opaque canvas fills.
+- Added regression coverage asserting the stylesheet contract for workspace-surface + transparent tile backgrounds.

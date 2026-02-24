@@ -1023,8 +1023,15 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         color: {c['muted']};
         font-size: 11px;
     }}
-    QFrame#ProjectIssuesPanel[analyzerPlotTile="true"] {{
+    QWidget#AnalyzerExplorerGrid,
+    QWidget#AnalyzerCompareGrid,
+    QWidget#AnalyzerCompareWorkspace,
+    QWidget#AnalyzerCompareRightPanel {{
         background-color: {c['surface']};
+        border: none;
+    }}
+    QFrame#ProjectIssuesPanel[analyzerPlotTile="true"] {{
+        background-color: transparent;
         border: 1px solid {c['border']};
         border-radius: {r['sm']}px;
     }}

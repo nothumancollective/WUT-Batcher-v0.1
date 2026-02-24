@@ -12,6 +12,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from app.gui import AnalysePage, MetricCurveCanvas, _traffic_status_color, apply_plot_theme, compute_plot_layout_geometry
 from app.services import OrchestratorService
 from app.settings_store import SettingsStore, UserSettings
+from ui.theme import build_stylesheet
 
 try:
     from PySide6.QtCore import QBuffer, QIODevice, Qt
@@ -292,6 +293,13 @@ class AnalyzerPlotUxRegressionTests(unittest.TestCase):
                 # Corners must stay transparent: no opaque full-canvas black slab.
                 self.assertLessEqual(int(image.pixelColor(1, 1).alpha()), 10)
                 self.assertLessEqual(int(image.pixelColor(max(image.width() - 2, 1), 1).alpha()), 10)
+
+    def test_theme_uses_workspace_surface_with_transparent_plot_tiles(self) -> None:
+        stylesheet = build_stylesheet()
+        self.assertIn("QWidget#AnalyzerCompareWorkspace", stylesheet)
+        self.assertIn("QWidget#AnalyzerExplorerGrid", stylesheet)
+        self.assertIn("QFrame#ProjectIssuesPanel[analyzerPlotTile=\"true\"]", stylesheet)
+        self.assertIn("background-color: transparent;", stylesheet)
 
     def test_target_overlay_visibility_floor_is_stage_invariant(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_plot_ux_target_visibility_") as tmp:

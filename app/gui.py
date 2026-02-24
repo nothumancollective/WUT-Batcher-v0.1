@@ -15,7 +15,7 @@ import subprocess
 import sys
 import threading
 import traceback
-from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 from app.analyzer.cache import AnalyzerPlotCache, resolve_cache_policy
 from app.analyzer.heatmap_style import compare_overlay_color, get_vacs_like_lut
@@ -6350,9 +6350,9 @@ class AnalysePage(QWidget):
         compare_left_scroll.setMaximumWidth(440)
         compare_left_scroll.setObjectName("AnalyzerCompareDrawerScroll")
 
-        compare_right = QWidget()
-        compare_right.setObjectName("AnalyzerCompareRightPanel")
-        compare_right_layout = QVBoxLayout(compare_right)
+        self.compare_right = QWidget()
+        self.compare_right.setObjectName("AnalyzerCompareRightPanel")
+        compare_right_layout = QVBoxLayout(self.compare_right)
         compare_right_layout.setContentsMargins(0, 0, 0, 0)
         compare_right_layout.setSpacing(8)
 
@@ -6537,9 +6537,9 @@ class AnalysePage(QWidget):
             compare_header.setSectionResizeMode(idx, QHeaderView.ResizeToContents)
         self.compare_table.setVisible(False)
 
-        compare_right.setMinimumWidth(0)
-        compare_right.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.compare_splitter.addWidget(compare_right)
+        self.compare_right.setMinimumWidth(0)
+        self.compare_right.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.compare_splitter.addWidget(self.compare_right)
         self.compare_splitter.setStretchFactor(0, 1)
         self.compare_splitter.setSizes([1200])
         compare_layout.addWidget(self.compare_splitter, 1)
@@ -7241,30 +7241,63 @@ class AnalysePage(QWidget):
         return panel
 
     def _log_plot_surface_diagnostics(self) -> None:
+        if not LOGGER.isEnabledFor(logging.DEBUG):
+            return
         widgets: List[QWidget] = []
         for attr_name in (
             "explorer_grid_widget",
             "compare_grid_widget",
             "compare_workspace",
+            "compare_right",
             "compare_drawer",
             "compare_tab",
         ):
             widget = getattr(self, attr_name, None)
             if isinstance(widget, QWidget):
                 widgets.append(widget)
+        for panel in list(getattr(self, "_explorer_stage_panels", {}).values()) + list(
+            getattr(self, "_compare_stage_panels", {}).values()
+        ):
+            if not isinstance(panel, dict):
+                continue
+            for key in ("frame", "stack", "heatmap_canvas", "curve_canvas", "pareto_canvas", "summary_canvas"):
+                widget = panel.get(key)
+                if isinstance(widget, QWidget):
+                    widgets.append(widget)
+
+        seen: Set[int] = set()
         for widget in widgets:
+            if id(widget) in seen:
+                continue
+            seen.add(id(widget))
             try:
                 palette_window = widget.palette().color(QPalette.Window).name(QColor.HexRgb)
+                palette_base = widget.palette().color(QPalette.Base).name(QColor.HexRgb)
             except Exception:
                 palette_window = "n/a"
+                palette_base = "n/a"
             style_sheet = str(widget.styleSheet() or "").strip()
+            parent_chain: List[str] = []
+            current = widget.parentWidget()
+            depth = 0
+            while isinstance(current, QWidget) and depth < 6:
+                parent_chain.append(
+                    f"{str(current.objectName() or current.__class__.__name__)}"
+                    f"(autoFill={bool(current.autoFillBackground())},"
+                    f"styledBg={bool(current.testAttribute(Qt.WA_StyledBackground))})"
+                )
+                current = current.parentWidget()
+                depth += 1
             LOGGER.debug(
-                "AnalyzerPlotSurface widget=%s autoFill=%s styledBg=%s paletteWindow=%s styleSheet=%s",
+                "AnalyzerPlotSurface widget=%s class=%s autoFill=%s styledBg=%s paletteWindow=%s paletteBase=%s styleSheet=%s parentChain=%s",
                 str(widget.objectName() or widget.__class__.__name__),
+                widget.__class__.__name__,
                 bool(widget.autoFillBackground()),
                 bool(widget.testAttribute(Qt.WA_StyledBackground)),
                 palette_window,
+                palette_base,
                 style_sheet[:160],
+                " -> ".join(parent_chain)[:420],
             )
 
     @staticmethod
