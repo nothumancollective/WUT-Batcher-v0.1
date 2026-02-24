@@ -1,5 +1,10 @@
 ﻿# Analyzer Docs â€” Changelog
 
+## 2026-02-24 (Plot UX audit + fix plan)
+- Added docs/analyzer/12_plot_ux_audit_and_fix_plan.md.
+- Mapped each reported Explorer/Compare UX issue to concrete file/line evidence in the current implementation.
+- Captured a surgical, ordered fix plan covering central plot theming, compare matrix/render guards, label rules, splitter layout, control cleanup, target visibility, and regression validation.
+
 ## 2026-02-24 (Stage plot matrix audit vs spec)
 - Added docs/analyzer/11_plot_matrix_stage_audit.md.
 - Documented exact Explorer/Compare stage-to-tile mappings and renderer modes with file/line references.
@@ -819,6 +824,7 @@
 
 ## 2026-02-24 (Merge integration follow-up)
 - Aligned GUI regression `test_version_bar_widgets_are_updated_in_place` with the stacked ATH params widget model (`version_ath_params_rows_widget` + empty-label placeholder) after merging `ui/analyzer-versionbar-polish-final`.
+
 
 
 
