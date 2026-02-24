@@ -169,3 +169,6 @@
   - Added `Show metric bands` toggle to `Display Advanced`; default is OFF to avoid plot-content obstruction.
   - Trend/consistency/defect style renderers now respect `show_band` and fall back to clean line rendering when disabled.
   - Decorative defect-zone horizontal fills are now drawn only when metric bands are enabled.
+- `VERIFIED` issue cluster 7.1 (marker determinism):
+  - Added regression check proving metric-curve marker rendering is deterministic across repeated renders with identical payload/style inputs.
+  - No stochastic marker toggling path was found; marker visibility remains mode-driven (`regime_markers` / thresholds), not random.

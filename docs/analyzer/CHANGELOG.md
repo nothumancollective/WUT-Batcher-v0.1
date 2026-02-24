@@ -1,5 +1,9 @@
 # Analyzer Docs — Changelog
 
+## 2026-02-24 (Plot UX: marker determinism verification)
+- Added regression coverage validating deterministic metric-curve marker rendering across repeated renders with identical payloads.
+- Confirmed marker visibility is deterministic and style-driven (`regime_markers`, thresholds), not random.
+
 ## 2026-02-24 (Plot UX: metric-band overlay toggle)
 - Added `Show metric bands` toggle to `Display Advanced` (default OFF) to keep trend/defect decorative overlays from covering plot data.
 - Extended analysis display config persistence to include `show_metric_bands` and applied it in analysis config reload flow.

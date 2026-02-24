@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from app.gui import AnalysePage, apply_plot_theme, compute_plot_layout_geometry
+from app.gui import AnalysePage, MetricCurveCanvas, apply_plot_theme, compute_plot_layout_geometry
 from app.services import OrchestratorService
 from app.settings_store import SettingsStore, UserSettings
 
@@ -102,6 +102,18 @@ def _icon_png_bytes(icon: QIcon, size: int = 14) -> bytes:
     if QBuffer is None or QIODevice is None:
         return b""
     pixmap = icon.pixmap(size, size)
+    buffer = QBuffer()
+    buffer.open(QIODevice.WriteOnly)
+    pixmap.save(buffer, "PNG")
+    return bytes(buffer.data())
+
+
+def _pixmap_png_bytes(canvas, size: int = 16) -> bytes:
+    if QBuffer is None or QIODevice is None:
+        return b""
+    pixmap = canvas.pixmap()
+    if pixmap is None:
+        return b""
     buffer = QBuffer()
     buffer.open(QIODevice.WriteOnly)
     pixmap.save(buffer, "PNG")
@@ -339,6 +351,35 @@ class AnalyzerPlotUxRegressionTests(unittest.TestCase):
                 context="explorer",
             )
             self.assertTrue(bool(stabilization_profile_enabled.get("show_band")))
+
+    def test_metric_curve_marker_rendering_is_deterministic(self) -> None:
+        canvas = MetricCurveCanvas()
+        canvas.resize(540, 320)
+        series = [
+            {
+                "label": "V001",
+                "show_legend": True,
+                "style": "trend_band",
+                "show_band": True,
+                "regime_markers": True,
+                "thresholds": [2.0, 4.0],
+                "points": [
+                    {"freq_hz": 200.0, "value": 2.2},
+                    {"freq_hz": 500.0, "value": 3.6},
+                    {"freq_hz": 1000.0, "value": 2.9},
+                    {"freq_hz": 2000.0, "value": 4.1},
+                ],
+                "color": (154, 172, 197),
+            }
+        ]
+        canvas.set_series(series=series, x_scale_mode="log", x_label="Frequency (Hz, log)", y_label="DI Proxy (dB)")
+        self.app.processEvents()
+        first = _pixmap_png_bytes(canvas)
+        canvas.set_series(series=series, x_scale_mode="log", x_label="Frequency (Hz, log)", y_label="DI Proxy (dB)")
+        self.app.processEvents()
+        second = _pixmap_png_bytes(canvas)
+        self.assertTrue(first)
+        self.assertEqual(first, second)
 
 
 if __name__ == "__main__":
