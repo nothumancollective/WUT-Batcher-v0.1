@@ -13,13 +13,14 @@ from app.gui import AnalysePage, MetricCurveCanvas, _traffic_status_color, apply
 from app.analyzer.metric_band_specs import metric_band_spec_for_key, metric_band_thresholds_from_spec
 from app.services import OrchestratorService
 from app.settings_store import SettingsStore, UserSettings
+from ui.styled_dialog import StyledDialogBase
 from ui.theme import build_stylesheet
 
 try:
     from PySide6.QtCore import QBuffer, QIODevice, Qt
     from PySide6.QtGui import QIcon
     from PySide6.QtTest import QTest
-    from PySide6.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication, QGroupBox
 except ImportError:  # pragma: no cover
     QBuffer = None  # type: ignore[assignment]
     QIODevice = None  # type: ignore[assignment]
@@ -27,6 +28,7 @@ except ImportError:  # pragma: no cover
     QIcon = None  # type: ignore[assignment]
     QTest = None  # type: ignore[assignment]
     QApplication = None  # type: ignore[assignment]
+    QGroupBox = None  # type: ignore[assignment]
 
 
 def _build_service(tmp_root: Path) -> OrchestratorService:
@@ -417,6 +419,87 @@ class AnalyzerPlotUxRegressionTests(unittest.TestCase):
             items = list(canvas._metric_band_items)
             self.assertTrue(any(str(item.get("item_type") or "") == "LinearRegionItem" for item in items))
             self.assertTrue(all(str(item.get("anchor") or "") in {"spec", ""} for item in items))
+
+    def test_metric_band_component_toggles_drive_region_and_line_items(self) -> None:
+        canvas = MetricCurveCanvas()
+        canvas.resize(540, 320)
+        spec = metric_band_spec_for_key("s_theta")
+        assert spec is not None
+        series = [
+            {
+                "label": "V001",
+                "show_legend": False,
+                "style": "consistency_strip",
+                "show_band": True,
+                "band_smooth": True,
+                "band_spec": spec,
+                "points": [
+                    {"freq_hz": 200.0, "value": 0.15},
+                    {"freq_hz": 1000.0, "value": 0.31},
+                    {"freq_hz": 2000.0, "value": 0.41},
+                ],
+                "metric_band_components": {
+                    "show_good_band": True,
+                    "show_warn_band": False,
+                    "show_bad_band": False,
+                    "show_warn_line": True,
+                    "show_bad_line": True,
+                },
+                "metric_band_colors": {
+                    "good": "#5A7488",
+                    "warn": "#6A8296",
+                    "bad": "#7A8B9D",
+                },
+            }
+        ]
+        canvas.set_series(series=series, x_scale_mode="log", x_label="Frequency (Hz, log)", y_label="Smoothness")
+        self.app.processEvents()
+        items = [dict(item) for item in list(canvas._metric_band_items)]
+        good_regions = [
+            item
+            for item in items
+            if str(item.get("item_type") or "") == "LinearRegionItem" and str(item.get("role") or "") == "good"
+        ]
+        warn_regions = [
+            item
+            for item in items
+            if str(item.get("item_type") or "") == "LinearRegionItem" and str(item.get("role") or "") == "warn"
+        ]
+        warn_lines = [
+            item
+            for item in items
+            if str(item.get("item_type") or "") == "InfiniteLine" and str(item.get("role") or "") == "warn_line"
+        ]
+        bad_lines = [
+            item
+            for item in items
+            if str(item.get("item_type") or "") == "InfiniteLine" and str(item.get("role") or "") == "bad_line"
+        ]
+        self.assertEqual(len(good_regions), 1)
+        self.assertEqual(len(warn_regions), 0)
+        self.assertEqual(len(warn_lines), 1)
+        self.assertEqual(len(bad_lines), 1)
+        warn_rgb = tuple(int(value) for value in tuple(warn_lines[0].get("color_rgba") or (0, 0, 0, 0))[:3])
+        self.assertEqual(warn_rgb, (106, 130, 150))
+
+    def test_display_advanced_dialog_exposes_grouped_metric_blocks(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_plot_ux_display_advanced_blocks_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            captured: dict[str, object] = {}
+
+            def _capture_exec(dialog_obj):
+                captured["dialog"] = dialog_obj
+                return 0
+
+            with patch.object(StyledDialogBase, "exec", _capture_exec):
+                page._open_display_advanced_dialog()
+            dialog = captured.get("dialog")
+            self.assertIsNotNone(dialog)
+            assert dialog is not None
+            self.assertIsNotNone(dialog.findChild(QGroupBox, "AnalyzerDisplayAdvancedDisplayGroup"))
+            self.assertIsNotNone(dialog.findChild(QGroupBox, "AnalyzerDisplayAdvancedMetricBandsGroup"))
+            self.assertIsNotNone(dialog.findChild(QGroupBox, "AnalyzerDisplayAdvancedMetricColorsGroup"))
 
     def test_auto_scale_button_exists_and_changes_scaling_mode(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_plot_ux_auto_scale_") as tmp:
