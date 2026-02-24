@@ -1032,3 +1032,10 @@
 - Normalized plot-surface background policy at the source: workspace containers (`AnalyzerExplorerGrid`, `AnalyzerCompareGrid`, `AnalyzerCompareWorkspace`, `AnalyzerCompareRightPanel`) now provide the panel tone, while analyzer plot tiles are transparent frames with borders only.
 - This removes the separate black-slab look without introducing opaque canvas fills.
 - Added regression coverage asserting the stylesheet contract for workspace-surface + transparent tile backgrounds.
+## 2026-02-24 (Analyzer Compare UX stabilizer follow-up smoke)
+- `E2E_SMOKE_OK`: offscreen interactive smoke run passed after latest fixes, covering:
+  - compare drawer expand/collapse + scrim click-to-close
+  - compare tile double-click maximize/restore with expanded-drawer guard
+  - metric-band smooth rendering config (`show`, `smooth`, `opacity`)
+  - robust non-auto `e_sym_shape` y-range clamp under outlier input
+  - resize probes (`1920x1080`, `1366x768`, `1100x700`) without exceptions.
