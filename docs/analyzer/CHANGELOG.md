@@ -1,5 +1,10 @@
 ﻿# Analyzer Docs â€” Changelog
 
+## 2026-02-24 (Stage plot matrix audit vs spec)
+- Added docs/analyzer/11_plot_matrix_stage_audit.md.
+- Documented exact Explorer/Compare stage-to-tile mappings and renderer modes with file/line references.
+- Captured concrete deviations from the required Compare matrix and a surgical fix plan for stage-specific 2x2 plot routing.
+
 ## 2026-02-24 (Final stage ripple defect visualization)
 - Added `defect_band` rendering mode in `MetricCurveCanvas` with threshold-zone shading, filled ripple band, and hotspot markers.
 - Final-stage `r_off` Explorer panel now uses defect-view styling (risk-band language) instead of plain line rendering.
@@ -814,6 +819,7 @@
 
 ## 2026-02-24 (Merge integration follow-up)
 - Aligned GUI regression `test_version_bar_widgets_are_updated_in_place` with the stacked ATH params widget model (`version_ath_params_rows_widget` + empty-label placeholder) after merging `ui/analyzer-versionbar-polish-final`.
+
 
 
 
