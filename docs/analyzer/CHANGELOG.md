@@ -676,3 +676,10 @@
   - `docs/analyzer/02_ui_architecture.md`
   - `docs/analyzer/03_kpi_scoring_model.md`
 - Added/updated regression tests for the migrated stage model and polar-only final defaults.
+
+## 2026-02-24 (Analyzer stage migration smoke validation)
+- Added `docs/analyzer/e2e_stage_migration_smoketest.md` with real-dataset offscreen E2E verification:
+  - confirmed stage selector now exposes only `concept`, `stabilization`, `final`
+  - confirmed `P021/B006` has no H rows in DB and UI correctly disables H
+  - confirmed `P_SMOKE/B_SMOKE` includes `H/V/D` and UI enables all three planes
+  - confirmed compare overlay/pareto render paths complete without crashes in smoke flow.
