@@ -1,5 +1,9 @@
 # Analyzer Docs — Changelog
 
+## 2026-02-24 (Docs: final plot UX smoke update)
+- Refreshed `docs/analyzer/e2e_plot_ux_polish_smoketest.md` with final resize probes (`1920x1080`, `1366x768`, `1100x700`) and acceptance checklist outcomes.
+- Updated `docs/analyzer/02_ui_architecture.md` with the current compare-left width contract, transparent-canvas contract, info-icon help semantics, and `Show metric bands` display toggle.
+
 ## 2026-02-24 (Plot UX: marker determinism verification)
 - Added regression coverage validating deterministic metric-curve marker rendering across repeated renders with identical payloads.
 - Confirmed marker visibility is deterministic and style-driven (`regime_markers`, thresholds), not random.

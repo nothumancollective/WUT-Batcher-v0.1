@@ -172,3 +172,6 @@
 - `VERIFIED` issue cluster 7.1 (marker determinism):
   - Added regression check proving metric-curve marker rendering is deterministic across repeated renders with identical payload/style inputs.
   - No stochastic marker toggling path was found; marker visibility remains mode-driven (`regime_markers` / thresholds), not random.
+
+## Completion summary
+- All issue clusters listed in this audit have now been marked `FIXED/VERIFIED` or `VERIFIED` with dedicated code/test/doc commits.

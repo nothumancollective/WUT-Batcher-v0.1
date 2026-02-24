@@ -275,6 +275,10 @@ The Analyzer page is planned with two explicit subviews:
   - Hard UI rule: compare bottom-right tile is stage-specific and always rendered:
     - stabilization `D -> E_sym_shape`
     - final `D -> S_theta`
+  - Left panel/table layout contract:
+    - compare splitter keeps a bounded left pane (`260..440` px)
+    - shortlist table keeps horizontal scrollbar hidden by default
+    - critical action column (`Remove`) remains fixed-width and reachable while identity/KPI columns elide with tooltips
 
 - Plot UX foundation (shared theme + label contract):
   - all plot canvases use a shared dynamic theme (`apply_plot_theme`) for margins, font scaling, tick density and resize reflow.
@@ -282,6 +286,8 @@ The Analyzer page is planned with two explicit subviews:
   - compare legend/series labels use version-only tokens (`V###`).
   - compare overlay readability contract: active candidate line width 2, non-active width 1 with reduced alpha.
   - heatmap target window overlay is always visible in Explorer and Compare across all stages.
+  - active canvases render transparent outer backgrounds (no opaque black full-canvas slabs); only subtle in-plot wash and plot-rect borders remain.
+  - analyzer plot-header help affordances use info-icon semantics (`info.svg`), not settings-gear semantics.
 
 - Artifact probes for stage surfaces are polar-first:
   - `POLAR` (active)
@@ -297,6 +303,7 @@ The Analyzer page is planned with two explicit subviews:
 - Display advanced options currently include:
   - clamp min dB (default `-20`)
   - raw-bins toggle
+  - show metric bands toggle (default OFF; when OFF stage curves fall back to plain line mode)
   - `use_full_angles_for_smoothness` toggle for `S_theta` compute requests.
 
 ## Implementation status (Batch stabilization follow-up)
