@@ -1,5 +1,11 @@
 # Analyzer Docs — Changelog
 
+## 2026-02-24 (Plot controls: Auto Scale toggle in version bar)
+- Added an `Auto Scale` toggle button in the Display block (next to `Advanced...`) with analyzer-state wiring.
+- Introduced stable axis-range caching for Explorer/Compare metric curves and Compare Pareto axes when Auto Scale is OFF.
+- Auto Scale ON now uses per-selection/per-candidate dynamic ranges; OFF keeps comparable ranges across version/candidate swipes.
+- Persisted `auto_scale` in saved analyzer analysis config load/save payloads.
+
 ## 2026-02-24 (Docs: final plot UX smoke update)
 - Refreshed `docs/analyzer/e2e_plot_ux_polish_smoketest.md` with final resize probes (`1920x1080`, `1366x768`, `1100x700`) and acceptance checklist outcomes.
 - Updated `docs/analyzer/02_ui_architecture.md` with the current compare-left width contract, transparent-canvas contract, info-icon help semantics, and `Show metric bands` display toggle.

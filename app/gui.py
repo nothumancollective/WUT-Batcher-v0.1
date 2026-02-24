@@ -1132,6 +1132,7 @@ class MetricCurveCanvas(QLabel):
         self._x_label = "Frequency (Hz, log)"
         self._y_label = "Value"
         self._status = "Curve not available."
+        self._y_range_override: Optional[Tuple[float, float]] = None
         self._applied_plot_margins: Tuple[int, int, int, int] = apply_analyzer_plot_margins(has_legend=False)
 
     def set_series(
@@ -1141,6 +1142,7 @@ class MetricCurveCanvas(QLabel):
         x_scale_mode: str = "log",
         x_label: str = "Frequency (Hz, log)",
         y_label: str = "Value",
+        y_range: Optional[Tuple[float, float]] = None,
         status: str = "",
     ) -> None:
         self._series = [dict(item) for item in list(series or []) if isinstance(item, Mapping)]
@@ -1148,11 +1150,29 @@ class MetricCurveCanvas(QLabel):
         self._x_scale_mode = token if token in {"log", "linear"} else "log"
         self._x_label = str(x_label or "Frequency")
         self._y_label = str(y_label or "Value")
+        if (
+            isinstance(y_range, (tuple, list))
+            and len(y_range) >= 2
+            and y_range[0] is not None
+            and y_range[1] is not None
+        ):
+            try:
+                y_lo = float(y_range[0])
+                y_hi = float(y_range[1])
+                if math.isfinite(y_lo) and math.isfinite(y_hi) and y_hi > y_lo:
+                    self._y_range_override = (y_lo, y_hi)
+                else:
+                    self._y_range_override = None
+            except Exception:
+                self._y_range_override = None
+        else:
+            self._y_range_override = None
         self._status = str(status or "").strip()
         self._rerender()
 
     def clear_series(self, message: str) -> None:
         self._series = []
+        self._y_range_override = None
         self._status = str(message or "Curve not available.")
         self._rerender()
 
@@ -1286,6 +1306,15 @@ class MetricCurveCanvas(QLabel):
         y_max = float(max(all_values))
         if y_max <= y_min:
             y_max = y_min + 1.0
+        if self._y_range_override is not None:
+            try:
+                override_lo = float(self._y_range_override[0])
+                override_hi = float(self._y_range_override[1])
+                if math.isfinite(override_lo) and math.isfinite(override_hi) and override_hi > override_lo:
+                    y_min = override_lo
+                    y_max = override_hi
+            except Exception:
+                pass
 
         def x_of(freq_hz: float) -> float:
             if x_mode == "linear":
@@ -1543,6 +1572,8 @@ class ParetoScatterCanvas(QLabel):
         self._x_label = "X"
         self._y_label = "Y"
         self._status = "Select candidates to render Pareto scatter."
+        self._x_range_override: Optional[Tuple[float, float]] = None
+        self._y_range_override: Optional[Tuple[float, float]] = None
 
     def set_points(
         self,
@@ -1550,22 +1581,41 @@ class ParetoScatterCanvas(QLabel):
         points: Sequence[Mapping[str, Any]],
         x_label: str,
         y_label: str,
+        x_range: Optional[Tuple[float, float]] = None,
+        y_range: Optional[Tuple[float, float]] = None,
         status: str = "",
     ) -> None:
         self._points = [dict(item) for item in list(points or []) if isinstance(item, Mapping)]
         self._x_label = str(x_label or "X")
         self._y_label = str(y_label or "Y")
+        self._x_range_override = self._coerce_range(x_range)
+        self._y_range_override = self._coerce_range(y_range)
         self._status = str(status or "").strip()
         self._rerender()
 
     def clear_points(self, message: str) -> None:
         self._points = []
+        self._x_range_override = None
+        self._y_range_override = None
         self._status = str(message or "Select candidates to render Pareto scatter.")
         self._rerender()
 
     def resizeEvent(self, event) -> None:  # type: ignore[override]
         super().resizeEvent(event)
         QTimer.singleShot(0, self._rerender)
+
+    @staticmethod
+    def _coerce_range(value: Optional[Tuple[float, float]]) -> Optional[Tuple[float, float]]:
+        if not isinstance(value, (tuple, list)) or len(value) < 2:
+            return None
+        try:
+            lo = float(value[0])
+            hi = float(value[1])
+        except Exception:
+            return None
+        if not (math.isfinite(lo) and math.isfinite(hi) and hi > lo):
+            return None
+        return (lo, hi)
 
     def _rerender(self) -> None:
         width = max(int(self.width()), 180)
@@ -1618,6 +1668,10 @@ class ParetoScatterCanvas(QLabel):
             x_max = x_min + 1.0
         if y_max <= y_min:
             y_max = y_min + 1.0
+        if self._x_range_override is not None:
+            x_min, x_max = self._x_range_override
+        if self._y_range_override is not None:
+            y_min, y_max = self._y_range_override
 
         def x_of(value: float) -> float:
             u = (float(value) - float(x_min)) / max(float(x_max - x_min), 1.0e-6)
@@ -5427,6 +5481,8 @@ class AnalysePage(QWidget):
         self._use_full_angles_for_smoothness = False
         self._show_mirrored_minus6_contour = False
         self._show_metric_bands = False
+        self._auto_scale_enabled = False
+        self._stable_axis_ranges: Dict[str, Tuple[float, float]] = {}
         self._latest_plot_payload: Dict[str, Any] = {}
         self._explorer_stage_panels: Dict[str, Dict[str, Any]] = {}
         self._compare_stage_panels: Dict[str, Dict[str, Any]] = {}
@@ -6410,6 +6466,13 @@ class AnalysePage(QWidget):
         self.raw_bins_check = QCheckBox("Show raw bins")
         self.raw_bins_check.setObjectName("AnalyzerRawBinsCheck")
         self.raw_bins_check.setChecked(False)
+        self.auto_scale_btn = QPushButton("Auto Scale")
+        self.auto_scale_btn.setObjectName("BatchSecondaryButton")
+        self.auto_scale_btn.setCheckable(True)
+        self.auto_scale_btn.setChecked(bool(self._auto_scale_enabled))
+        self.auto_scale_btn.setMinimumHeight(24)
+        self.auto_scale_btn.setMaximumHeight(24)
+        self.auto_scale_btn.setToolTip("Toggle between stable axis ranges and per-selection auto scaling.")
         self.display_advanced_btn = QPushButton("Advanced...")
         self.display_advanced_btn.setObjectName("BatchSecondaryButton")
         self.display_advanced_btn.setMinimumHeight(24)
@@ -6460,6 +6523,7 @@ class AnalysePage(QWidget):
         plane_box_layout.addStretch(1)
         plane_layout.addWidget(QLabel("Plane"), 0, 0, Qt.AlignLeft | Qt.AlignVCenter)
         plane_layout.addWidget(plane_box, 0, 1, 1, 2)
+        plane_layout.addWidget(self.auto_scale_btn, 1, 1, Qt.AlignRight | Qt.AlignVCenter)
         plane_layout.addWidget(self.display_advanced_btn, 1, 2, Qt.AlignRight | Qt.AlignVCenter)
         plane_layout.setColumnStretch(0, 0)
         plane_layout.setColumnStretch(1, 1)
@@ -6540,6 +6604,7 @@ class AnalysePage(QWidget):
         self.x_axis_scale_combo.currentIndexChanged.connect(self._on_plot_config_changed)
         self.norm_mode_combo.currentIndexChanged.connect(self._on_plot_config_changed)
         self.raw_bins_check.toggled.connect(self._on_plot_config_changed)
+        self.auto_scale_btn.toggled.connect(self._on_auto_scale_toggled)
         self.display_advanced_btn.clicked.connect(self._open_display_advanced_dialog)
         self.heatmap_clamp_check.toggled.connect(self._on_plot_config_changed)
         self.heatmap_clamp_min_spin.valueChanged.connect(self._on_plot_config_changed)
@@ -7418,6 +7483,59 @@ class AnalysePage(QWidget):
         self._schedule_compare_plot_refresh()
         self._render_compare_visuals()
 
+    @staticmethod
+    def _finite_numeric_values(values: Sequence[Any]) -> List[float]:
+        out: List[float] = []
+        for value in list(values or []):
+            try:
+                numeric = float(value)
+            except Exception:
+                continue
+            if math.isfinite(numeric):
+                out.append(numeric)
+        return out
+
+    @staticmethod
+    def _expanded_axis_range(values: Sequence[Any]) -> Optional[Tuple[float, float]]:
+        finite = AnalysePage._finite_numeric_values(values)
+        if not finite:
+            return None
+        lo = float(min(finite))
+        hi = float(max(finite))
+        if hi <= lo:
+            pad = max(abs(lo) * 0.08, 1.0)
+            return (lo - pad, hi + pad)
+        pad = max((hi - lo) * 0.06, 1.0e-6)
+        return (lo - pad, hi + pad)
+
+    def _resolve_axis_range(
+        self,
+        *,
+        axis_key: str,
+        values: Sequence[Any],
+    ) -> Optional[Tuple[float, float]]:
+        key = str(axis_key or "").strip()
+        if not key:
+            return None
+        computed = self._expanded_axis_range(values)
+        if bool(self._auto_scale_enabled):
+            return computed
+        cached = self._stable_axis_ranges.get(key)
+        if computed is None:
+            return cached
+        if cached is None:
+            self._stable_axis_ranges[key] = computed
+            return computed
+        merged = (min(float(cached[0]), float(computed[0])), max(float(cached[1]), float(computed[1])))
+        self._stable_axis_ranges[key] = merged
+        return merged
+
+    def _on_auto_scale_toggled(self, checked: bool) -> None:
+        if self._control_sync_guard:
+            return
+        self._auto_scale_enabled = bool(checked)
+        self._on_plot_config_changed()
+
     def _open_display_advanced_dialog(self) -> None:
         dialog = StyledDialogBase(title="Display Advanced", parent=self, min_width=560, min_height=360)
         body = dialog.body_layout()
@@ -7887,6 +8005,10 @@ class AnalysePage(QWidget):
                     metric_key=key,
                     context="explorer",
                 )
+                y_range = self._resolve_axis_range(
+                    axis_key=f"explorer:{self._selected_stage_id()}:{key}:y",
+                    values=[point.get("value") for point in curve_points],
+                )
                 series_row: Dict[str, Any] = {
                     "label": "",
                     "show_legend": False,
@@ -7899,6 +8021,7 @@ class AnalysePage(QWidget):
                     x_scale_mode=self._x_axis_mode(),
                     x_label="Frequency (Hz, log)" if self._x_axis_mode() == "log" else "Frequency (Hz)",
                     y_label=self._stage_curve_y_label(key),
+                    y_range=y_range,
                     status="",
                 )
             else:
@@ -8482,11 +8605,20 @@ class AnalysePage(QWidget):
         if missing_plane_labels:
             missing_note = f"Missing {selected_plane}: {', '.join(missing_plane_labels)}."
             status = f"{status} {missing_note}".strip() if status else missing_note
+        y_range = self._resolve_axis_range(
+            axis_key=f"compare:{self._selected_stage_id()}:{curve_key}:y",
+            values=[
+                point.get("value")
+                for row in series
+                for point in list(row.get("points", []) or [])
+            ],
+        )
         curve_canvas.set_series(
             series=series,
             x_scale_mode=self._x_axis_mode(),
             x_label="Frequency (Hz, log)" if self._x_axis_mode() == "log" else "Frequency (Hz)",
             y_label=self._stage_curve_y_label(curve_key),
+            y_range=y_range,
             status=status,
         )
 
@@ -8623,10 +8755,20 @@ class AnalysePage(QWidget):
             else:
                 pareto_canvas.clear_points(empty_message)
             return
+        x_range = self._resolve_axis_range(
+            axis_key=f"compare:{self._selected_stage_id()}:pareto:{x_key}:x",
+            values=[row.get("x_value") for row in points],
+        )
+        y_range = self._resolve_axis_range(
+            axis_key=f"compare:{self._selected_stage_id()}:pareto:{y_key}:y",
+            values=[row.get("y_value") for row in points],
+        )
         pareto_canvas.set_points(
             points=points,
             x_label=x_label,
             y_label=y_label,
+            x_range=x_range,
+            y_range=y_range,
             status="",
         )
 
@@ -8680,6 +8822,7 @@ class AnalysePage(QWidget):
             "tol_deg": float(self.tol_spin.value()),
             "clamp_enabled": bool(self.heatmap_clamp_check.isChecked()),
             "clamp_min_db": float(self.heatmap_clamp_min_spin.value()),
+            "auto_scale": bool(self._auto_scale_enabled),
             "show_metric_bands": bool(self._show_metric_bands),
             "use_full_angles_for_smoothness": bool(self._use_full_angles_for_smoothness),
             "compare": {
@@ -8774,6 +8917,8 @@ class AnalysePage(QWidget):
             self.tol_spin.setValue(float(config.get("tol_deg") or self.tol_spin.value()))
             self.heatmap_clamp_check.setChecked(bool(config.get("clamp_enabled", True)))
             self.heatmap_clamp_min_spin.setValue(float(config.get("clamp_min_db") or self.heatmap_clamp_min_spin.value()))
+            self._auto_scale_enabled = bool(config.get("auto_scale", self._auto_scale_enabled))
+            self.auto_scale_btn.setChecked(bool(self._auto_scale_enabled))
             self._show_metric_bands = bool(config.get("show_metric_bands", self._show_metric_bands))
             self._use_full_angles_for_smoothness = bool(
                 config.get("use_full_angles_for_smoothness", self._use_full_angles_for_smoothness)
