@@ -1961,7 +1961,7 @@ class BeamwidthCanvas(QLabel):
         width = max(int(self.width()), 140)
         height = max(int(self.height()), 120)
         image = QImage(width, height, QImage.Format_ARGB32_Premultiplied)
-        image.fill(QColor("#111217"))
+        image.fill(Qt.transparent)
         painter = QPainter(image)
         painter.setRenderHint(QPainter.Antialiasing, True)
 
@@ -2137,7 +2137,7 @@ class BeamwidthOverlayCanvas(QLabel):
         width = max(int(self.width()), 180)
         height = max(int(self.height()), 140)
         image = QImage(width, height, QImage.Format_ARGB32_Premultiplied)
-        image.fill(QColor("#111217"))
+        image.fill(Qt.transparent)
         painter = QPainter(image)
         painter.setRenderHint(QPainter.Antialiasing, True)
 

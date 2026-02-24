@@ -1,5 +1,10 @@
 # Analyzer Docs — Changelog
 
+## 2026-02-24 (Plot surfaces: transparent tile/background cleanup)
+- Switched analyzer plot-tile frame background to transparent (border-only card framing) to avoid dark slab appearance.
+- Lightened compare drawer surface tint to UI-consistent translucent panel tone (no opaque black block).
+- Removed hard `#111217` full-canvas fills from legacy beamwidth canvases so all analyzer plot canvases follow transparent outer-surface policy.
+
 ## 2026-02-24 (Compare UI: overlay drawer sidebar)
 - Replaced the compare left-pane splitter layout with an overlay drawer layered above the 2x2 plot workspace.
 - Added drawer collapse/expand behavior (`~88 px` collapsed, `~360 px` expanded) with a header chevron toggle.

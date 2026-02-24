@@ -805,7 +805,7 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         background-color: transparent;
     }}
     QFrame#AnalyzerCompareDrawer {{
-        background-color: rgba(0, 0, 0, 0.24);
+        background-color: rgba(255, 255, 255, 0.04);
         border: 1px solid {c['border']};
         border-radius: {r['sm']}px;
     }}
@@ -1019,7 +1019,7 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         font-size: 11px;
     }}
     QFrame#ProjectIssuesPanel[analyzerPlotTile="true"] {{
-        background-color: #1f1f1f;
+        background-color: transparent;
         border: 1px solid {c['border']};
         border-radius: {r['sm']}px;
     }}
