@@ -5,6 +5,7 @@
 - Wired the selected target color through all relevant Analyzer renderers: heatmap target window shading/boundaries, curve threshold lines, and target-summary marker lines.
 - Added plot-tile double-click behavior (`Explorer`/`Compare`) to toggle maximize/restore inside the existing 2x2 workspace (no new windows).
 - Expanded `Target Deviation Summary` panel help tooltip text to explain Concept KPI components and interpretation (`closer to target = better`).
+- `E2E_SMOKE_OK`: offscreen interactive smoke run completed (`1920x1080`, `1366x768`, `1100x700`) covering Compare drawer collapse/expand, metric-band settings, target-axis color application, and tile double-click maximize/restore.
 
 ## 2026-02-24 (Plot UX: adaptive x-tick label spacing guard)
 - Added a shared `x_tick_label_min_gap_px` theme metric so Heatmap, metric-curve, and Pareto x-axis labels skip overly-dense neighboring labels instead of colliding.
