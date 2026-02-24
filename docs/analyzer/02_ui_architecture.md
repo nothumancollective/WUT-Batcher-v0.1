@@ -248,27 +248,40 @@ The Analyzer page is planned with two explicit subviews:
 ## Implementation status (Analyzer Stage Plot System)
 
 - Analyzer Explorer now uses a fixed **2x2 stage matrix** (always four panels):
-  - Stage 1 (`concept`):
-    - A `Polar Map` (heatmap + `-6 dB` contour + target window shading)
-    - B `Beamwidth Error vs Target`
-    - C `Coverage Uniformity vs f`
-    - D `Spill Index vs f`
-  - Stage 2 (`stabilization`):
+  - Stage `concept`:
+    - A `Polar Map` (heatmap + `-6 dB` contour + always-on target window overlay)
+    - B `Coverage Uniformity vs f`
+    - C `Spill Index vs f`
+    - D `Decision Trade-off (Pareto)`
+  - Stage `stabilization`:
     - A `Polar Map`
-    - B `DI proxy vs f`
+    - B `DI proxy Trend Compare/Trend Band`
     - C `Pattern Smoothness (S_theta) vs f`
     - D `Plane Consistency (E_sym_shape) vs f`
-  - Stage 3 (`final`):
+  - Stage `final`:
     - A `Polar Map`
-    - B `Off-axis Ripple (R_off) vs f`
-    - C `Pattern Smoothness (S_theta) vs f`
-    - D `Plane Consistency (E_sym_shape) vs f`
+    - B `Off-axis Ripple Defect View (R_off)`
+    - C `Plane Consistency (E_sym_shape) vs f`
+    - D `Pattern Smoothness (S_theta) vs f`
 
 - Analyzer Compare now uses a fixed **2x2 matrix**:
-  - A stage-dependent key-curve overlay
-  - B single-candidate heatmap (candidate switcher)
-  - C KPI breakdown panel
-  - D Pareto scatter (selectable KPI axes)
+  - All four tiles are always plot widgets (no KPI tables/placeholders in-grid).
+  - Stage `concept`:
+    - A heatmap, B beamwidth/target compare, C pareto, D coverage compare.
+  - Stage `stabilization`:
+    - A heatmap, B DI trend compare, C smoothness compare, D plane consistency compare.
+  - Stage `final`:
+    - A heatmap, B ripple defect compare, C plane consistency compare, D smoothness compare.
+  - Hard UI rule: compare bottom-right tile is stage-specific and always rendered:
+    - stabilization `D -> E_sym_shape`
+    - final `D -> S_theta`
+
+- Plot UX foundation (shared theme + label contract):
+  - all plot canvases use a shared dynamic theme (`apply_plot_theme`) for margins, font scaling, tick density and resize reflow.
+  - tile titles are rendered in panel headers (not inside plot canvases).
+  - compare legend/series labels use version-only tokens (`V###`).
+  - compare overlay readability contract: active candidate line width 2, non-active width 1 with reduced alpha.
+  - heatmap target window overlay is always visible in Explorer and Compare across all stages.
 
 - Artifact probes for stage surfaces are polar-first:
   - `POLAR` (active)

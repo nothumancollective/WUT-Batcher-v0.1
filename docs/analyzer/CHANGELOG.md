@@ -1,5 +1,9 @@
 # Analyzer Docs — Changelog
 
+## 2026-02-24 (Plot UX docs + E2E smoke report)
+- Updated `docs/analyzer/02_ui_architecture.md` with the current plot UX contracts: shared plot-theme system, 2x2 plot-only Explorer/Compare grids, stage-specific compare bottom-right rule, `V###` legend labels, and always-on heatmap target window overlays.
+- Added `docs/analyzer/e2e_plot_ux_polish_smoketest.md` with stage-by-stage Explorer/Compare smoke evidence and resize checks (`1920x1080`, `1366x768`).
+
 ## 2026-02-24 (Plot UX regression coverage)
 - Added `tests/test_gui_analyzer_plot_ux_regressions.py` to lock stage/tab 4-plot grid invariants, compare bottom-right stage rule (`stabilization=D:e_sym_shape`, `final=D:s_theta`), version-only compare legend labels (`V###`), no internal duplicate canvas titles, and compare redraw propagation on plane changes.
 - Updated compare/page analyzer UI tests for the new legend target-line contract and dynamic theme margin assertions.
@@ -837,6 +841,7 @@
 
 ## 2026-02-24 (Merge integration follow-up)
 - Aligned GUI regression `test_version_bar_widgets_are_updated_in_place` with the stacked ATH params widget model (`version_ath_params_rows_widget` + empty-label placeholder) after merging `ui/analyzer-versionbar-polish-final`.
+
 
 
 
