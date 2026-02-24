@@ -1,5 +1,9 @@
 ﻿# Analyzer Docs â€” Changelog
 
+## 2026-02-24 (Plot UX: remove grey strip overlays above canvases)
+- Removed the consistency-strip block-mode top-strip rendering that painted opaque header-like bars above curve content.
+- Block-style consistency bands now render as narrow curve-aligned in-plot segments, keeping all overlays inside data coordinates.
+- Preserved tile-header titles/help outside the canvas; no new overlay widgets were added on top of plot data.
 ## 2026-02-24 (Compare drawer: left overlay + scrim + animation)
 - Reworked Compare drawer into a left-anchored overlay that is parented to the matrix workspace only (no full-page event-capturing layer).
 - Added dedicated scrim behavior: shown only while expanded, blocks plot interaction, and click-to-collapse closes the drawer.
@@ -987,6 +991,7 @@
 
 ## 2026-02-24 (Merge integration follow-up)
 - Aligned GUI regression `test_version_bar_widgets_are_updated_in_place` with the stacked ATH params widget model (`version_ath_params_rows_widget` + empty-label placeholder) after merging `ui/analyzer-versionbar-polish-final`.
+
 
 
 

@@ -1648,18 +1648,20 @@ class MetricCurveCanvas(QLabel):
                     painter.save()
                     painter.setClipRect(margin_left, margin_top, plot_w, plot_h)
                     painter.setRenderHint(QPainter.Antialiasing, False)
-                    strip_height = max(10, int(round(plot_h * 0.12)))
-                    strip_top = int(margin_top + 4)
+                    band_half_px = max(2, int(round(min(float(plot_h) * 0.022, 6.0))))
                     for idx in range(len(points) - 1):
                         x1, value1 = points[idx]
                         x2, _value2 = points[idx + 1]
                         seg_left = int(round(min(x_of(x1), x_of(x2))))
                         seg_right = int(round(max(x_of(x1), x_of(x2))))
                         seg_w = max(seg_right - seg_left, 1)
-                        normalized = (float(value1) - float(y_min)) / max(float(y_max - y_min), 1.0e-6)
-                        strip_color = QColor(fill_color)
-                        strip_color.setAlpha(int(round(24 + (110.0 * max(0.0, min(normalized, 1.0))))))
-                        painter.fillRect(seg_left, strip_top, seg_w, strip_height, strip_color)
+                        y_center = int(round(y_of(value1)))
+                        top = max(int(margin_top), int(y_center - band_half_px))
+                        seg_h = min(
+                            int(plot_h - (top - margin_top)),
+                            max((band_half_px * 2), 1),
+                        )
+                        painter.fillRect(seg_left, top, seg_w, max(seg_h, 1), fill_color)
                     painter.restore()
                 _draw_polyline(points, color, max(line_width, 1.0))
             elif style_token == "defect_band" and len(points) >= 2 and show_band:
