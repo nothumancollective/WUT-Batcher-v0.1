@@ -4,6 +4,7 @@ from pathlib import Path
 import re
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from app.services import OrchestratorService, _apply_stl_export_hook
 from app.settings_store import SettingsStore, UserSettings
@@ -177,6 +178,39 @@ class ServiceExportTests(unittest.TestCase):
             )
             summary = service.run_batch(project.project_id, batch_summary.batch_id, continue_on_error=True)
             self.assertTrue(summary.dry_run)
+
+    def test_run_batch_forwards_configured_simulation_timeout(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            library_root = Path(tmp_dir) / "projects"
+            settings_path = Path(tmp_dir) / "settings.json"
+            store = SettingsStore(settings_path)
+            store.save(
+                UserSettings(
+                    library_root=str(library_root),
+                    simulation_timeout_minutes=17,
+                )
+            )
+            service = OrchestratorService(settings_store=store)
+            project = service.create_project("Timeout project", {"fixed_params": {"Length": 100}, "limits": {}})
+            batch_summary = service.create_batch(
+                project_id=project.project_id,
+                batch_name="Timeout batch",
+                selected_params={"Throat.Diameter": 30.0},
+                sweeps={},
+                sweep_mode="single",
+                sim_export_params={},
+            )
+            expected_summary = object()
+            with patch("app.services.run_batch_pipeline", return_value=expected_summary) as pipeline_mock:
+                result = service.run_batch(
+                    project.project_id,
+                    batch_summary.batch_id,
+                    continue_on_error=True,
+                    dry_run=True,
+                )
+
+            self.assertIs(result, expected_summary)
+            self.assertEqual(int(pipeline_mock.call_args.kwargs.get("akabak_solve_timeout_s", 0) or 0), 17 * 60)
 
     def test_evaluate_batch_definition_missing_project_returns_structured_issue(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

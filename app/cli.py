@@ -11,7 +11,7 @@ from typing import Any, Dict, Optional
 
 from app.models import AppConfig, Batch, Project
 from app.services import OrchestratorService
-from app.settings_store import SettingsStore, UserSettings
+from app.settings_store import SIMULATION_TIMEOUT_MINUTES_DEFAULT, SettingsStore, UserSettings
 
 
 def _read_json(path: Path) -> Dict[str, Any]:
@@ -169,6 +169,10 @@ def cmd_dataset_sync_global(args: argparse.Namespace) -> int:
             vacs_exe=settings.vacs_exe,
             template_cfg=settings.template_cfg,
             background_automation_mode=bool(getattr(settings, "background_automation_mode", True)),
+            simulation_timeout_minutes=int(
+                getattr(settings, "simulation_timeout_minutes", SIMULATION_TIMEOUT_MINUTES_DEFAULT)
+                or SIMULATION_TIMEOUT_MINUTES_DEFAULT
+            ),
         )
         settings_store.save(settings)
     service = OrchestratorService(settings_store=settings_store)
@@ -227,6 +231,10 @@ def cmd_run_sample(args: argparse.Namespace) -> int:
             vacs_exe=settings.vacs_exe,
             template_cfg=settings.template_cfg,
             background_automation_mode=bool(getattr(settings, "background_automation_mode", True)),
+            simulation_timeout_minutes=int(
+                getattr(settings, "simulation_timeout_minutes", SIMULATION_TIMEOUT_MINUTES_DEFAULT)
+                or SIMULATION_TIMEOUT_MINUTES_DEFAULT
+            ),
         )
         settings_store.save(settings)
     service = OrchestratorService(settings_store=settings_store)
@@ -379,6 +387,10 @@ def cmd_compat_verify(args: argparse.Namespace) -> int:
             vacs_exe=settings.vacs_exe,
             template_cfg=settings.template_cfg,
             background_automation_mode=bool(getattr(settings, "background_automation_mode", True)),
+            simulation_timeout_minutes=int(
+                getattr(settings, "simulation_timeout_minutes", SIMULATION_TIMEOUT_MINUTES_DEFAULT)
+                or SIMULATION_TIMEOUT_MINUTES_DEFAULT
+            ),
         )
         settings_store.save(settings)
     service = OrchestratorService(settings_store=settings_store)
@@ -514,6 +526,10 @@ def cmd_ath_experiments_minimal_completion_search(args: argparse.Namespace) -> i
         vacs_exe=loaded.vacs_exe,
         template_cfg=(args.template_cfg or loaded.template_cfg),
         background_automation_mode=bool(getattr(loaded, "background_automation_mode", True)),
+        simulation_timeout_minutes=int(
+            getattr(loaded, "simulation_timeout_minutes", SIMULATION_TIMEOUT_MINUTES_DEFAULT)
+            or SIMULATION_TIMEOUT_MINUTES_DEFAULT
+        ),
     )
     summary = run_minimal_completion_search(
         settings=settings,
