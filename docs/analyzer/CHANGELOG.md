@@ -1,5 +1,10 @@
 ﻿# Analyzer Docs â€” Changelog
 
+## 2026-02-24 (Metric bands: threshold-anchored spec regions only)
+- Replaced curve-attached metric band fills (trend/consistency/defect glow-style envelopes) with threshold-anchored region/line primitives.
+- Metric bands now render as in-plot spec references (LinearRegionItem/InfiniteLine semantics) independent of the data-curve shape.
+- Preserved Show metric bands, Smooth metric bands, and opacity clamp behavior; curve styling/KPI math unchanged.
+
 ## 2026-02-24 (Plot UX: remove grey strip overlays above canvases)
 - Removed the consistency-strip block-mode top-strip rendering that painted opaque header-like bars above curve content.
 - Block-style consistency bands now render as narrow curve-aligned in-plot segments, keeping all overlays inside data coordinates.

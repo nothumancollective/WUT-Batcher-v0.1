@@ -610,6 +610,54 @@ class AnalyzerPlotUxRegressionTests(unittest.TestCase):
         self.assertTrue(first)
         self.assertEqual(first, second)
 
+    def test_metric_band_uses_threshold_region_items_not_curve_envelope(self) -> None:
+        canvas = MetricCurveCanvas()
+        canvas.resize(540, 320)
+        base_row = {
+            "label": "V001",
+            "show_legend": False,
+            "style": "trend_band",
+            "show_band": True,
+            "band_smooth": True,
+            "thresholds": [2.0, 4.0],
+            "points": [
+                {"freq_hz": 200.0, "value": 2.2},
+                {"freq_hz": 500.0, "value": 3.6},
+                {"freq_hz": 1000.0, "value": 2.9},
+                {"freq_hz": 2000.0, "value": 4.1},
+            ],
+            "color": (154, 172, 197),
+        }
+        canvas.set_series(series=[base_row], x_scale_mode="log", x_label="Frequency (Hz, log)", y_label="DI Proxy (dB)")
+        self.app.processEvents()
+        first_items = [dict(item) for item in list(canvas._metric_band_items)]
+        item_types = {str(item.get("item_type") or "") for item in first_items}
+        self.assertTrue({"LinearRegionItem", "InfiniteLine", "FillBetweenItem"} & item_types)
+        first_region = next((item for item in first_items if str(item.get("item_type") or "") == "LinearRegionItem"), None)
+        self.assertIsNotNone(first_region)
+        assert first_region is not None
+        self.assertEqual(str(first_region.get("anchor") or ""), "thresholds")
+        self.assertAlmostEqual(float(first_region.get("y_low") or 0.0), 2.0, places=6)
+        self.assertAlmostEqual(float(first_region.get("y_high") or 0.0), 4.0, places=6)
+
+        shifted_row = dict(base_row)
+        shifted_row["points"] = [
+            {"freq_hz": 200.0, "value": 0.5},
+            {"freq_hz": 500.0, "value": 1.0},
+            {"freq_hz": 1000.0, "value": 4.9},
+            {"freq_hz": 2000.0, "value": 5.5},
+        ]
+        canvas.set_series(series=[shifted_row], x_scale_mode="log", x_label="Frequency (Hz, log)", y_label="DI Proxy (dB)")
+        self.app.processEvents()
+        second_region = next(
+            (item for item in list(canvas._metric_band_items) if str(item.get("item_type") or "") == "LinearRegionItem"),
+            None,
+        )
+        self.assertIsNotNone(second_region)
+        assert second_region is not None
+        self.assertEqual((float(second_region.get("y_low") or 0.0), float(second_region.get("y_high") or 0.0)), (2.0, 4.0))
+        self.assertFalse(any(str(item.get("anchor") or "").strip().lower() == "curve" for item in list(canvas._metric_band_items)))
+
     def test_target_deviation_traffic_color_mapping_uses_three_buckets(self) -> None:
         good = _traffic_status_color(0.12)
         mid = _traffic_status_color(0.52)

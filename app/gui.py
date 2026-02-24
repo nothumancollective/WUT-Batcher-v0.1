@@ -1203,6 +1203,7 @@ class MetricCurveCanvas(QLabel):
         self._status = "Curve not available."
         self._y_range_override: Optional[Tuple[float, float]] = None
         self._applied_plot_margins: Tuple[int, int, int, int] = apply_analyzer_plot_margins(has_legend=False)
+        self._metric_band_items: List[Dict[str, Any]] = []
 
     def set_series(
         self,
@@ -1257,6 +1258,7 @@ class MetricCurveCanvas(QLabel):
     def clear_series(self, message: str) -> None:
         self._series = []
         self._y_range_override = None
+        self._metric_band_items = []
         self._status = str(message or "Curve not available.")
         self._rerender()
 
@@ -1271,6 +1273,8 @@ class MetricCurveCanvas(QLabel):
         image.fill(Qt.transparent)
         painter = QPainter(image)
         painter.setRenderHint(QPainter.Antialiasing, True)
+        self._metric_band_items = []
+        invalid_threshold_logged = False
 
         points_by_series: List[Dict[str, Any]] = []
         for index, row in enumerate(self._series):
@@ -1310,9 +1314,15 @@ class MetricCurveCanvas(QLabel):
             thresholds: List[float] = []
             for threshold_raw in list(row.get("thresholds", []) or []):
                 try:
-                    thresholds.append(float(threshold_raw))
+                    threshold_value = float(threshold_raw)
                 except Exception:
                     continue
+                if not math.isfinite(threshold_value):
+                    if not invalid_threshold_logged:
+                        LOGGER.debug("Metric band rendering skipped non-finite threshold bounds.")
+                        invalid_threshold_logged = True
+                    continue
+                thresholds.append(float(threshold_value))
             thresholds = sorted(set(thresholds))
             regime_markers = bool(row.get("regime_markers", False))
             show_band = bool(row.get("show_band", True))
@@ -1471,12 +1481,6 @@ class MetricCurveCanvas(QLabel):
             )
             painter.setPen(QPen(QColor(ANALYZER_PLOT_STYLE.grid_major_color), 1))
 
-        defect_rows = [
-            row
-            for row in points_by_series
-            if str(row.get("style") or "").strip().lower() == "defect_band" and bool(row.get("show_band", True))
-        ]
-
         def _band_color(base: QColor, alpha_value: float) -> QColor:
             color = QColor(base)
             opacity_factor = max(0.05, min(float(self._band_opacity), 1.0))
@@ -1497,31 +1501,87 @@ class MetricCurveCanvas(QLabel):
             painter.fillRect(margin_left, top, plot_w, height_px, color)
             painter.restore()
 
-        if defect_rows:
-            defect_thresholds = sorted(
-                {
-                    float(item)
-                    for row in defect_rows
-                    for item in list(row.get("thresholds", []) or [])
-                    if y_min <= float(item) <= y_max
-                }
-            )
-            if len(defect_thresholds) >= 3:
-                _fill_horizontal_band(y_min, defect_thresholds[0], _band_color(QColor(74, 124, 90), 0.10))
-                _fill_horizontal_band(defect_thresholds[0], defect_thresholds[1], _band_color(QColor(170, 142, 72), 0.12))
-                _fill_horizontal_band(defect_thresholds[1], defect_thresholds[2], _band_color(QColor(186, 96, 82), 0.14))
-                _fill_horizontal_band(defect_thresholds[2], y_max, _band_color(QColor(204, 78, 78), 0.16))
-            elif len(defect_thresholds) >= 2:
-                _fill_horizontal_band(y_min, defect_thresholds[0], _band_color(QColor(74, 124, 90), 0.10))
-                _fill_horizontal_band(defect_thresholds[0], defect_thresholds[1], _band_color(QColor(170, 142, 72), 0.12))
-                _fill_horizontal_band(defect_thresholds[1], y_max, _band_color(QColor(196, 82, 82), 0.16))
+        def _build_metric_band_items() -> List[Dict[str, Any]]:
+            items: List[Dict[str, Any]] = []
+            invalid_bounds_logged = False
+            for row in points_by_series:
+                style_token = str(row.get("style") or "").strip().lower()
+                if style_token not in {"trend_band", "consistency_strip", "defect_band"}:
+                    continue
+                if not bool(row.get("show_band", True)):
+                    continue
+                row_color = QColor(row.get("color")) if isinstance(row.get("color"), QColor) else QColor("#9AA4B2")
+                fill_alpha = float(row.get("fill_alpha", 0.12))
+                thresholds = sorted(
+                    {
+                        float(value)
+                        for value in list(row.get("thresholds", []) or [])
+                        if math.isfinite(float(value))
+                    }
+                )
+                if len(thresholds) >= 2:
+                    y_low = float(thresholds[0])
+                    y_high = float(thresholds[-1])
+                    if y_high <= y_low:
+                        if not invalid_bounds_logged:
+                            LOGGER.debug("Metric band rendering skipped invalid threshold bounds.")
+                            invalid_bounds_logged = True
+                        continue
+                    items.append(
+                        {
+                            "item_type": "LinearRegionItem",
+                            "style": style_token,
+                            "y_low": y_low,
+                            "y_high": y_high,
+                            "color": row_color,
+                            "fill_alpha": fill_alpha,
+                            "band_smooth": bool(row.get("band_smooth", True)),
+                            "anchor": "thresholds",
+                        }
+                    )
+                elif len(thresholds) == 1:
+                    items.append(
+                        {
+                            "item_type": "InfiniteLine",
+                            "style": style_token,
+                            "y": float(thresholds[0]),
+                            "color": row_color,
+                            "fill_alpha": fill_alpha,
+                            "anchor": "thresholds",
+                        }
+                    )
+            return items
+
+        metric_band_items = _build_metric_band_items()
+        self._metric_band_items = []
+        for item in metric_band_items:
+            item_type = str(item.get("item_type") or "").strip()
+            if item_type == "LinearRegionItem":
+                fill_color = _band_color(QColor(item.get("color")), float(item.get("fill_alpha", 0.12)))
+                _fill_horizontal_band(float(item.get("y_low")), float(item.get("y_high")), fill_color)
+            elif item_type == "InfiniteLine":
+                y_target = float(item.get("y"))
+                if y_min <= y_target <= y_max:
+                    line_color = _band_color(QColor(item.get("color")), float(item.get("fill_alpha", 0.12)))
+                    line_color.setAlpha(max(132, int(line_color.alpha())))
+                    painter.save()
+                    painter.setClipRect(margin_left, margin_top, plot_w, plot_h)
+                    painter.setPen(QPen(line_color, 1.0, Qt.SolidLine))
+                    y_px = int(round(y_of(y_target)))
+                    painter.drawLine(margin_left, y_px, margin_left + plot_w, y_px)
+                    painter.restore()
+            stored_item = dict(item)
+            color = stored_item.pop("color", None)
+            if isinstance(color, QColor):
+                stored_item["color_rgba"] = (int(color.red()), int(color.green()), int(color.blue()), int(color.alpha()))
+            self._metric_band_items.append(stored_item)
 
         threshold_values = sorted(
             {
                 float(value)
                 for row in points_by_series
                 for value in list(row.get("thresholds", []) or [])
-                if y_min <= float(value) <= y_max
+                if math.isfinite(float(value)) and y_min <= float(value) <= y_max
             }
         )
         if threshold_values:
@@ -1554,63 +1614,7 @@ class MetricCurveCanvas(QLabel):
             show_legend = bool(row.get("show_legend"))
             line_width = float(row.get("line_width", 2.0))
             style_token = str(row.get("style") or "line").strip().lower()
-            show_band = bool(row.get("show_band", True))
-            smooth_band = bool(row.get("band_smooth", True))
-            if style_token == "trend_band" and len(points) >= 2 and show_band:
-                band_span = max((float(y_max - y_min) * 0.045), 0.02)
-                fill_alpha = float(row.get("fill_alpha", 0.18))
-                fill_color = _band_color(color, fill_alpha)
-                if smooth_band:
-                    painter.save()
-                    painter.setClipRect(margin_left, margin_top, plot_w, plot_h)
-                    painter.setRenderHint(QPainter.Antialiasing, False)
-                    band = QPainterPath()
-                    first_x, first_y = points[0]
-                    band.moveTo(x_of(first_x), y_of(first_y + band_span))
-                    for freq_hz, value in points[1:]:
-                        band.lineTo(x_of(freq_hz), y_of(value + band_span))
-                    for freq_hz, value in reversed(points):
-                        band.lineTo(x_of(freq_hz), y_of(value - band_span))
-                    band.closeSubpath()
-                    painter.fillPath(band, fill_color)
-                    painter.restore()
-                else:
-                    painter.save()
-                    painter.setClipRect(margin_left, margin_top, plot_w, plot_h)
-                    painter.setRenderHint(QPainter.Antialiasing, False)
-                    for idx in range(len(points) - 1):
-                        x1, v1 = points[idx]
-                        x2, _v2 = points[idx + 1]
-                        seg_left = int(round(min(x_of(x1), x_of(x2))))
-                        seg_right = int(round(max(x_of(x1), x_of(x2))))
-                        seg_w = max(seg_right - seg_left, 1)
-                        y_hi = int(round(y_of(v1 + band_span)))
-                        y_lo = int(round(y_of(v1 - band_span)))
-                        top = min(y_hi, y_lo)
-                        seg_h = max(abs(y_hi - y_lo), 1)
-                        painter.fillRect(seg_left, top, seg_w, seg_h, fill_color)
-                    painter.restore()
-                boundary_color = QColor(color)
-                boundary_color.setAlpha(min(220, max(150, int(round(fill_color.alpha() * 1.35)))))
-                painter.save()
-                painter.setClipRect(margin_left, margin_top, plot_w, plot_h)
-                painter.setPen(QPen(boundary_color, 1))
-                for idx in range(len(points) - 1):
-                    x1, y1 = points[idx]
-                    x2, y2 = points[idx + 1]
-                    painter.drawLine(
-                        int(round(x_of(x1))),
-                        int(round(y_of(y1 + band_span))),
-                        int(round(x_of(x2))),
-                        int(round(y_of(y2 + band_span))),
-                    )
-                    painter.drawLine(
-                        int(round(x_of(x1))),
-                        int(round(y_of(y1 - band_span))),
-                        int(round(x_of(x2))),
-                        int(round(y_of(y2 - band_span))),
-                    )
-                painter.restore()
+            if style_token == "trend_band" and len(points) >= 2:
                 _draw_polyline(points, color, max(line_width, 1.0))
                 if bool(row.get("regime_markers")) and len(points) >= 3:
                     marker_brush = QColor(color)
@@ -1633,80 +1637,9 @@ class MetricCurveCanvas(QLabel):
                             painter.drawEllipse(QPoint(marker_x, marker_y), 3, 3)
                     painter.setBrush(Qt.NoBrush)
                     painter.restore()
-            elif style_token == "consistency_strip" and len(points) >= 2 and show_band:
-                fill_alpha = float(row.get("fill_alpha", 0.12))
-                fill_color = _band_color(color, fill_alpha)
-                if smooth_band:
-                    painter.save()
-                    painter.setClipRect(margin_left, margin_top, plot_w, plot_h)
-                    painter.setRenderHint(QPainter.Antialiasing, False)
-                    band_half_px = max(2.0, min(float(plot_h) * 0.025, 7.0))
-                    band = QPainterPath()
-                    first_x, first_value = points[0]
-                    first_y = y_of(first_value)
-                    band.moveTo(x_of(first_x), first_y - band_half_px)
-                    for freq_hz, value in points[1:]:
-                        y_px = y_of(value)
-                        band.lineTo(x_of(freq_hz), y_px - band_half_px)
-                    for freq_hz, value in reversed(points):
-                        y_px = y_of(value)
-                        band.lineTo(x_of(freq_hz), y_px + band_half_px)
-                    band.closeSubpath()
-                    painter.fillPath(band, fill_color)
-                    painter.restore()
-                else:
-                    painter.save()
-                    painter.setClipRect(margin_left, margin_top, plot_w, plot_h)
-                    painter.setRenderHint(QPainter.Antialiasing, False)
-                    band_half_px = max(2, int(round(min(float(plot_h) * 0.022, 6.0))))
-                    for idx in range(len(points) - 1):
-                        x1, value1 = points[idx]
-                        x2, _value2 = points[idx + 1]
-                        seg_left = int(round(min(x_of(x1), x_of(x2))))
-                        seg_right = int(round(max(x_of(x1), x_of(x2))))
-                        seg_w = max(seg_right - seg_left, 1)
-                        y_center = int(round(y_of(value1)))
-                        top = max(int(margin_top), int(y_center - band_half_px))
-                        seg_h = min(
-                            int(plot_h - (top - margin_top)),
-                            max((band_half_px * 2), 1),
-                        )
-                        painter.fillRect(seg_left, top, seg_w, max(seg_h, 1), fill_color)
-                    painter.restore()
+            elif style_token == "consistency_strip" and len(points) >= 2:
                 _draw_polyline(points, color, max(line_width, 1.0))
-            elif style_token == "defect_band" and len(points) >= 2 and show_band:
-                fill_alpha = float(row.get("fill_alpha", 0.22))
-                fill_color = _band_color(color, fill_alpha)
-                if smooth_band:
-                    painter.save()
-                    painter.setClipRect(margin_left, margin_top, plot_w, plot_h)
-                    painter.setRenderHint(QPainter.Antialiasing, False)
-                    band = QPainterPath()
-                    first_x, first_y = points[0]
-                    band.moveTo(x_of(first_x), y_of(first_y))
-                    for freq_hz, value in points[1:]:
-                        band.lineTo(x_of(freq_hz), y_of(value))
-                    for freq_hz, _value in reversed(points):
-                        band.lineTo(x_of(freq_hz), y_of(y_min))
-                    band.closeSubpath()
-                    painter.fillPath(band, fill_color)
-                    painter.restore()
-                else:
-                    painter.save()
-                    painter.setClipRect(margin_left, margin_top, plot_w, plot_h)
-                    painter.setRenderHint(QPainter.Antialiasing, False)
-                    for idx in range(len(points) - 1):
-                        x1, v1 = points[idx]
-                        x2, _v2 = points[idx + 1]
-                        seg_left = int(round(min(x_of(x1), x_of(x2))))
-                        seg_right = int(round(max(x_of(x1), x_of(x2))))
-                        seg_w = max(seg_right - seg_left, 1)
-                        y_curve = int(round(y_of(v1)))
-                        y_base = int(round(y_of(y_min)))
-                        top = min(y_curve, y_base)
-                        seg_h = max(abs(y_curve - y_base), 1)
-                        painter.fillRect(seg_left, top, seg_w, seg_h, fill_color)
-                    painter.restore()
+            elif style_token == "defect_band" and len(points) >= 2:
                 _draw_polyline(points, color, max(line_width, 1.0))
                 hotspot_raw = row.get("hotspot_threshold")
                 hotspot_threshold = None
