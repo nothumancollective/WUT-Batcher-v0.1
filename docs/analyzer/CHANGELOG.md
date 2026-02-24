@@ -1,5 +1,12 @@
 # Analyzer Docs — Changelog
 
+## 2026-02-24 (Analyzer Version Bar final polish - layout round 1)
+- Moved `Tol (+/-deg)` out of Display inline controls into the existing `Display Advanced...` dialog while preserving the same bound tolerance value/behavior.
+- Reworked Display internals to two equal-width framed sections (`Band` and `Plane`), with `Advanced...` anchored inside the Plane section.
+- Removed the framed sub-block around Analysis exclude toggles while preserving spacing/height in the Analysis tile.
+- Added side-tile height synchronization so Analysis and Display maintain matched height and centered vertical alignment in the Version Bar.
+- Updated GUI assertions to verify Tol relocation, equal Display split widths, and side-tile height parity.
+
 ## 2026-02-21
 - Created initial persistent Analyzer documentation set:
   - Context overview

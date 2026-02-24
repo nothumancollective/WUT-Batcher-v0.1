@@ -4887,6 +4887,7 @@ class AnalysePage(QWidget):
         self._latest_plot_payload: Dict[str, Any] = {}
         self._explorer_stage_panels: Dict[str, Dict[str, Any]] = {}
         self._compare_overlay_curve_key = "beamwidth"
+        self._ath_visible_param_limit = 5
         self._active_plane = "H"
         self._plane_buttons: Dict[str, QToolButton] = {}
         self._plot_debounce_timer = QTimer(self)
@@ -5599,6 +5600,7 @@ class AnalysePage(QWidget):
         self.analysis_controls_tile = QFrame()
         self.analysis_controls_tile.setObjectName("ProjectSummaryPanel")
         self.analysis_controls_tile.setProperty("analyzerSurface", "1")
+        self.analysis_controls_tile.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         analysis_controls_layout = QGridLayout(self.analysis_controls_tile)
         analysis_controls_layout.setContentsMargins(8, 4, 8, 4)
         analysis_controls_layout.setHorizontalSpacing(4)
@@ -5614,13 +5616,19 @@ class AnalysePage(QWidget):
         analysis_controls_layout.addWidget(self.target_selector, 1, 3)
         analysis_controls_layout.addWidget(QLabel("Min score"), 2, 0, Qt.AlignLeft | Qt.AlignVCenter)
         analysis_controls_layout.addWidget(self.min_score_spin, 2, 1)
-        analysis_controls_layout.addWidget(self.exclude_flagged_check, 3, 0, 1, 2)
-        analysis_controls_layout.addWidget(self.exclude_warnings_check, 3, 2, 1, 2)
+        analysis_filter_row = QWidget()
+        analysis_filter_row_layout = QHBoxLayout(analysis_filter_row)
+        analysis_filter_row_layout.setContentsMargins(0, 0, 0, 0)
+        analysis_filter_row_layout.setSpacing(4)
+        analysis_filter_row_layout.addWidget(self.exclude_flagged_check, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        analysis_filter_row_layout.addWidget(self.exclude_warnings_check, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        analysis_filter_row_layout.addStretch(1)
+        analysis_controls_layout.addWidget(analysis_filter_row, 3, 0, 1, 4)
         analysis_controls_layout.setColumnStretch(0, 0)
         analysis_controls_layout.setColumnStretch(1, 1)
         analysis_controls_layout.setColumnStretch(2, 0)
         analysis_controls_layout.setColumnStretch(3, 1)
-        controls_row_layout.addWidget(self.analysis_controls_tile, 1)
+        controls_row_layout.addWidget(self.analysis_controls_tile, 1, Qt.AlignVCenter)
 
         self.kpi_controls_tile = QFrame()
         self.kpi_controls_tile.setObjectName("ProjectSummaryPanel")
@@ -5783,6 +5791,7 @@ class AnalysePage(QWidget):
         self.display_controls_tile = QFrame()
         self.display_controls_tile.setObjectName("ProjectSummaryPanel")
         self.display_controls_tile.setProperty("analyzerSurface", "1")
+        self.display_controls_tile.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         display_controls_layout = QGridLayout(self.display_controls_tile)
         display_controls_layout.setContentsMargins(8, 4, 8, 4)
         display_controls_layout.setHorizontalSpacing(4)
@@ -5846,7 +5855,6 @@ class AnalysePage(QWidget):
 
         plane_frame = QFrame()
         plane_frame.setObjectName("AnalyzerDisplaySlotFrame")
-        plane_frame.setProperty("analyzerPlaneFlat", True)
         plane_layout = QGridLayout(plane_frame)
         plane_layout.setContentsMargins(6, 4, 6, 4)
         plane_layout.setHorizontalSpacing(4)
@@ -5855,28 +5863,29 @@ class AnalysePage(QWidget):
         plane_box_layout = QHBoxLayout(plane_box)
         plane_box_layout.setContentsMargins(0, 0, 0, 0)
         plane_box_layout.setSpacing(0)
-        plane_box_layout.addWidget(QLabel("Plane"), 0, Qt.AlignLeft | Qt.AlignVCenter)
         for plane_key in ("H", "V", "D"):
             btn = self._plane_buttons.get(plane_key)
             if btn is not None:
                 plane_box_layout.addWidget(btn, 0, Qt.AlignLeft | Qt.AlignVCenter)
         plane_box_layout.addStretch(1)
-        plane_layout.addWidget(plane_box, 0, 0, 1, 2)
-        plane_layout.addWidget(QLabel("Tol (+/-deg)"), 1, 0, Qt.AlignLeft | Qt.AlignVCenter)
-        plane_layout.addWidget(self.tol_spin, 1, 1)
+        plane_layout.addWidget(QLabel("Plane"), 0, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        plane_layout.addWidget(plane_box, 0, 1, 1, 2)
+        plane_layout.addWidget(self.display_advanced_btn, 1, 2, Qt.AlignRight | Qt.AlignVCenter)
         plane_layout.setColumnStretch(0, 0)
         plane_layout.setColumnStretch(1, 1)
+        plane_layout.setColumnStretch(2, 0)
         display_split_layout.addWidget(plane_frame, 1)
         self.display_slot_frames.append(plane_frame)
 
-        display_split_layout.addWidget(self.display_advanced_btn, 0, Qt.AlignRight | Qt.AlignTop)
+        display_split_layout.setStretch(0, 1)
+        display_split_layout.setStretch(1, 1)
         display_controls_layout.addWidget(display_split_row, 1, 0, 1, 4)
         display_controls_layout.addWidget(self.plot_cancel_btn, 2, 3, 1, 1, Qt.AlignRight | Qt.AlignVCenter)
         display_controls_layout.setColumnStretch(0, 1)
         display_controls_layout.setColumnStretch(1, 1)
         display_controls_layout.setColumnStretch(2, 1)
         display_controls_layout.setColumnStretch(3, 0)
-        controls_row_layout.addWidget(self.display_controls_tile, 1)
+        controls_row_layout.addWidget(self.display_controls_tile, 1, Qt.AlignVCenter)
         controls_row_layout.setStretch(0, 1)
         controls_row_layout.setStretch(1, 2)
         controls_row_layout.setStretch(2, 1)
@@ -5976,6 +5985,7 @@ class AnalysePage(QWidget):
         self._sync_band_custom_visibility()
         self._apply_stage_defaults()
         self._apply_stage_plot_layout()
+        QTimer.singleShot(0, self._sync_side_tile_heights)
         self.compute_btn.setEnabled(self._source_key() == "project")
         self._set_details(None)
         self.run_selector.addItem("(no versions)", "")
@@ -6142,6 +6152,21 @@ class AnalysePage(QWidget):
         self._sync_selection_action_button_sizes()
         self._sync_version_stepper()
         self._sync_batch_selector_tooltip()
+        self._sync_side_tile_heights()
+
+    def _sync_side_tile_heights(self) -> None:
+        if not hasattr(self, "analysis_controls_tile") or not hasattr(self, "display_controls_tile"):
+            return
+        hinted = max(
+            int(self.analysis_controls_tile.sizeHint().height()),
+            int(self.display_controls_tile.sizeHint().height()),
+        )
+        if hinted <= 0:
+            return
+        self.analysis_controls_tile.setMinimumHeight(hinted)
+        self.analysis_controls_tile.setMaximumHeight(hinted)
+        self.display_controls_tile.setMinimumHeight(hinted)
+        self.display_controls_tile.setMaximumHeight(hinted)
 
     def resizeEvent(self, event) -> None:  # type: ignore[override]
         super().resizeEvent(event)
@@ -6722,6 +6747,13 @@ class AnalysePage(QWidget):
         norm_angle_combo.setToolTip(str(self.norm_angle_selector.toolTip() or ""))
         form.addWidget(QLabel("Norm angle"), 1, 0, Qt.AlignLeft | Qt.AlignVCenter)
         form.addWidget(norm_angle_combo, 1, 1)
+        tol_spin = QDoubleSpinBox()
+        tol_spin.setRange(self.tol_spin.minimum(), self.tol_spin.maximum())
+        tol_spin.setDecimals(self.tol_spin.decimals())
+        tol_spin.setSingleStep(self.tol_spin.singleStep())
+        tol_spin.setValue(float(self.tol_spin.value()))
+        form.addWidget(QLabel("Tol (+/-deg)"), 1, 2, Qt.AlignLeft | Qt.AlignVCenter)
+        form.addWidget(tol_spin, 1, 3)
 
         clamp_check = QCheckBox("Clamp heatmap")
         clamp_check.setChecked(bool(self.heatmap_clamp_check.isChecked()))
@@ -6761,6 +6793,7 @@ class AnalysePage(QWidget):
                 plot_changed = True
             if str(self.norm_angle_selector.currentData() or "0") != str(norm_angle_combo.currentData() or "0"):
                 plot_changed = True
+            tol_changed = abs(float(self.tol_spin.value()) - float(tol_spin.value())) > 1.0e-9
             if bool(self.heatmap_clamp_check.isChecked()) != bool(clamp_check.isChecked()):
                 plot_changed = True
             if abs(float(self.heatmap_clamp_min_spin.value()) - float(clamp_min_spin.value())) > 1.0e-9:
@@ -6776,6 +6809,7 @@ class AnalysePage(QWidget):
             self._set_combo_current_by_data(self.x_axis_scale_combo, str(x_axis_combo.currentData() or "log"))
             self._set_combo_current_by_data(self.norm_mode_combo, str(norm_mode_combo.currentData() or "relative_zero"))
             self._set_combo_current_by_data(self.norm_angle_selector, str(norm_angle_combo.currentData() or "0"))
+            self.tol_spin.setValue(float(tol_spin.value()))
             self.heatmap_clamp_check.setChecked(bool(clamp_check.isChecked()))
             self.heatmap_clamp_min_spin.setValue(float(clamp_min_spin.value()))
             self.raw_bins_check.setChecked(bool(raw_bins_check.isChecked()))
@@ -6785,6 +6819,8 @@ class AnalysePage(QWidget):
 
             if plot_changed:
                 self._on_plot_config_changed()
+            if tol_changed:
+                self._on_kpi_config_changed()
             if smoothness_changed:
                 self._schedule_plot_refresh()
                 self._schedule_compare_plot_refresh()

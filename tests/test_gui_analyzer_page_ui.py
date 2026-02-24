@@ -140,18 +140,14 @@ class AnalyzerPageUiTests(unittest.TestCase):
             self.assertEqual(str(page.kpi_controls_tile.property("analyzerSurface") or ""), "2")
             self.assertEqual(str(page.display_controls_tile.property("analyzerSurface") or ""), "1")
 
-    def test_version_info_uses_dividers_and_plane_frame_is_flat_segment_container(self) -> None:
+    def test_version_info_uses_dividers_and_display_sections_keep_equal_frames(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_ui2x_dividers_segments_") as tmp:
             service = _build_service(Path(tmp))
             page = AnalysePage(service=service)
             dividers = page.findChildren(QFrame, "AnalyzerInfoDivider")
             self.assertGreaterEqual(len(dividers), 2)
-            flat_plane_frames = [
-                frame
-                for frame in page.findChildren(QFrame, "AnalyzerDisplaySlotFrame")
-                if bool(frame.property("analyzerPlaneFlat"))
-            ]
-            self.assertEqual(len(flat_plane_frames), 1)
+            display_frames = page.findChildren(QFrame, "AnalyzerDisplaySlotFrame")
+            self.assertGreaterEqual(len(display_frames), 2)
             self.assertTrue(bool(page.custom_band_low_label.property("analyzerBandEdgeLabel")))
             self.assertTrue(bool(page.custom_band_high_label.property("analyzerBandEdgeLabel")))
 
@@ -162,6 +158,22 @@ class AnalyzerPageUiTests(unittest.TestCase):
             for value_label in page._version_info_metric_labels.values():
                 self.assertEqual(int(value_label.alignment() & Qt.AlignRight), int(Qt.AlignRight))
                 self.assertTrue(bool(value_label.property("analyzerMetricValue")))
+
+    def test_display_section_hides_tol_control_and_uses_balanced_internal_widths(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_ui2x_display_tol_advanced_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            page.resize(1680, 980)
+            page.show()
+            self.app.processEvents()
+            labels = [str(label.text() or "").strip() for label in page.display_controls_tile.findChildren(QLabel)]
+            self.assertNotIn("Tol (+/-deg)", labels)
+            self.assertEqual(len(page.display_slot_frames), 2)
+            left_w = int(page.display_slot_frames[0].width())
+            right_w = int(page.display_slot_frames[1].width())
+            self.assertLessEqual(abs(left_w - right_w), 8)
+            self.assertGreater(int(page.display_advanced_btn.width()), 0)
+            self.assertEqual(int(page.analysis_controls_tile.height()), int(page.display_controls_tile.height()))
 
     def test_plot_titles_and_tile_gaps_use_compact_analyzer_style(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_ui2x_plot_title_compact_") as tmp:

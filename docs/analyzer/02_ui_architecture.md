@@ -51,6 +51,14 @@ It is written to be actionable for Codex implementation while minimizing risk to
 - Use eliding/word wrap for labels where needed; avoid text overlap.
 - Use ScrollArea for long forms rather than squeezing controls.
 
+## Analyzer Version Bar layout semantics
+
+- Display and Analysis side tiles are constrained to matched dynamic height (derived from runtime `sizeHint`) to keep aligned centerlines while staying responsive.
+- Display inline controls are intentionally split into two equal-width framed sections:
+  - left: `Band` + `Low/High`
+  - right: `Plane` + `Advanced...`
+- `Tol (+/-deg)` is configured in `Display Advanced...` (not inline in Display) but remains bound to the same analyzer tolerance state.
+
 ## Batch page: minimal-invasive changes
 
 Goal: remove the current bottom bar controls without damaging the polished Batch layout.
