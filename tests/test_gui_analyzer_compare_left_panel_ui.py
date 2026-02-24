@@ -143,23 +143,24 @@ class AnalyzerCompareLeftPanelUiTests(unittest.TestCase):
             self.assertNotIn("B001/V001", first_item.text())
             self.assertEqual(second_item.text(), "--")
 
-    def test_compare_left_panel_width_contract_and_no_horizontal_scroll(self) -> None:
-        with tempfile.TemporaryDirectory(prefix="wut_compare_left_width_contract_") as tmp:
+    def test_compare_drawer_width_contract_and_no_horizontal_scroll(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_compare_drawer_width_contract_") as tmp:
             service = _build_service(Path(tmp))
             page = AnalysePage(service=service)
             page._set_compare_candidates(self._sample_candidates())
             page.show()
             self.app.processEvents()
-            left_panel = page.compare_splitter.widget(0)
-            self.assertIsNotNone(left_panel)
             for width, height in ((1920, 1080), (1366, 768), (1100, 700)):
                 page.resize(width, height)
                 self.app.processEvents()
-                assert left_panel is not None
-                self.assertGreaterEqual(int(left_panel.width()), 260)
-                self.assertLessEqual(int(left_panel.width()), 440)
+                self.assertGreaterEqual(int(page.compare_drawer.width()), 320)
+                self.assertLessEqual(int(page.compare_drawer.width()), 420)
                 self.assertEqual(page.compare_slots_table.horizontalScrollBarPolicy(), Qt.ScrollBarAlwaysOff)
                 self.assertFalse(page.compare_slots_table.horizontalScrollBar().isVisible())
+            page._set_compare_drawer_expanded(False)
+            self.app.processEvents()
+            self.assertGreaterEqual(int(page.compare_drawer.width()), 72)
+            self.assertLessEqual(int(page.compare_drawer.width()), 96)
 
     def test_remove_column_remains_reachable(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_compare_left_remove_reachable_") as tmp:

@@ -795,12 +795,30 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     QWidget#AnalyzerCompareGrid,
     QWidget#AnalyzerCompareLeftContent,
     QWidget#AnalyzerCompareRightPanel,
-    QScrollArea#AnalyzerCompareLeftScroll {{
+    QWidget#AnalyzerCompareWorkspace,
+    QWidget#AnalyzerCompareDrawerLayer,
+    QScrollArea#AnalyzerCompareDrawerScroll {{
         background-color: transparent;
         border: none;
     }}
-    QScrollArea#AnalyzerCompareLeftScroll > QWidget > QWidget {{
+    QScrollArea#AnalyzerCompareDrawerScroll > QWidget > QWidget {{
         background-color: transparent;
+    }}
+    QFrame#AnalyzerCompareDrawer {{
+        background-color: rgba(0, 0, 0, 0.24);
+        border: 1px solid {c['border']};
+        border-radius: {r['sm']}px;
+    }}
+    QToolButton#AnalyzerCompareDrawerSlotButton {{
+        background-color: transparent;
+        color: {c['text']};
+        border: 1px solid transparent;
+        border-radius: {r['sm']}px;
+        padding: 2px 4px;
+        text-align: left;
+    }}
+    QToolButton#AnalyzerCompareDrawerSlotButton:hover {{
+        border-color: {c['accent']};
     }}
     QSplitter#AnalyzerCompareSplitter::handle {{
         background-color: transparent;

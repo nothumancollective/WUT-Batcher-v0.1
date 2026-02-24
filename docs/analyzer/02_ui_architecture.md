@@ -276,8 +276,9 @@ The Analyzer page is planned with two explicit subviews:
     - stabilization `D -> E_sym_shape`
     - final `D -> S_theta`
   - Left panel/table layout contract:
-    - compare splitter keeps a bounded left pane (`260..440` px)
-    - shortlist table keeps horizontal scrollbar hidden by default
+    - compare selection panel is now an overlay drawer over the plot workspace (no permanent grid-width reservation)
+    - drawer width contract: collapsed `~88 px`, expanded `~360 px` (bounded)
+    - shortlist table keeps horizontal scrollbar hidden by default in expanded drawer mode
     - critical action column (`Remove`) remains fixed-width and reachable while identity/KPI columns elide with tooltips
 
 - Plot UX foundation (shared theme + label contract):

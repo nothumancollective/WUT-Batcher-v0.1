@@ -512,6 +512,53 @@ class AnalyzerCompareUiTests(unittest.TestCase):
             stored_points = list(getattr(page.compare_pareto_canvas, "_points", []) or [])
             self.assertTrue(any(bool(item.get("selected")) for item in stored_points))
 
+    def test_compare_drawer_toggle_collapses_and_expands(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_compare_drawer_toggle_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            page._set_compare_candidates(
+                [
+                    {
+                        "project_id": "P001",
+                        "batch_id": "B001",
+                        "run_id": "R001",
+                        "version_id": "V001",
+                        "planes": ["H", "V"],
+                        "kpi_score": 88.0,
+                    }
+                ]
+            )
+            page.show()
+            self.app.processEvents()
+            self.assertGreaterEqual(int(page.compare_drawer.width()), 320)
+            page.compare_drawer_toggle_btn.click()
+            self.app.processEvents()
+            self.assertLessEqual(int(page.compare_drawer.width()), 96)
+            self.assertEqual(int(page.compare_drawer_stack.currentIndex()), 1)
+            page.compare_drawer_toggle_btn.click()
+            self.app.processEvents()
+            self.assertGreaterEqual(int(page.compare_drawer.width()), 320)
+            self.assertEqual(int(page.compare_drawer_stack.currentIndex()), 0)
+
+    def test_compare_drawer_overlays_workspace_without_shrinking_grid(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_compare_drawer_overlay_geometry_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            page.resize(1600, 900)
+            page.show()
+            self.app.processEvents()
+            grid_width_before = int(page.compare_grid_widget.width())
+            self.assertGreater(grid_width_before, 0)
+            page._set_compare_drawer_expanded(False)
+            self.app.processEvents()
+            grid_width_collapsed = int(page.compare_grid_widget.width())
+            page._set_compare_drawer_expanded(True)
+            self.app.processEvents()
+            grid_width_expanded = int(page.compare_grid_widget.width())
+            self.assertAlmostEqual(grid_width_before, grid_width_collapsed, delta=2)
+            self.assertAlmostEqual(grid_width_before, grid_width_expanded, delta=2)
+            self.assertLessEqual(int(page.compare_drawer.x()), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

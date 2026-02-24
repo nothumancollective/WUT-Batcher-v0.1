@@ -1,5 +1,11 @@
 # Analyzer Docs — Changelog
 
+## 2026-02-24 (Compare UI: overlay drawer sidebar)
+- Replaced the compare left-pane splitter layout with an overlay drawer layered above the 2x2 plot workspace.
+- Added drawer collapse/expand behavior (`~88 px` collapsed, `~360 px` expanded) with a header chevron toggle.
+- Added compact slot view for collapsed mode and kept expanded shortlist table semantics (no horizontal scrollbar by default).
+- Added UI regression coverage for drawer toggle behavior and overlay geometry (grid width no longer shrinks with drawer state).
+
 ## 2026-02-24 (Test/docs: plot controls regression + E2E smoke)
 - Extended `tests/test_gui_analyzer_plot_ux_regressions.py` with targeted coverage for:
   - Auto Scale toggle state/range behavior

@@ -201,6 +201,7 @@ try:
         QSplitter,
         QSplashScreen,
         QSpinBox,
+        QStackedLayout,
         QStackedWidget,
         QStatusBar,
         QTableWidget,
@@ -5642,6 +5643,9 @@ class AnalysePage(QWidget):
         self._compare_stage_panels: Dict[str, Dict[str, Any]] = {}
         self._compare_overlay_curve_key = "beamwidth"
         self._compare_kpi_columns: List[Tuple[str, str]] = list(COMPARE_DEFAULT_KPI_COLUMNS)
+        self._compare_drawer_expanded = True
+        self._compare_drawer_collapsed_width = 88
+        self._compare_drawer_expanded_width = 360
         self._ath_visible_param_limit = 5
         self._active_plane = "H"
         self._analyzer_controls_row_min_height = 0
@@ -6090,13 +6094,20 @@ class AnalysePage(QWidget):
         compare_left_scroll.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         compare_left_scroll.setMinimumWidth(260)
         compare_left_scroll.setMaximumWidth(440)
-        self.compare_splitter.addWidget(compare_left_scroll)
+        compare_left_scroll.setObjectName("AnalyzerCompareDrawerScroll")
 
         compare_right = QWidget()
         compare_right.setObjectName("AnalyzerCompareRightPanel")
         compare_right_layout = QVBoxLayout(compare_right)
         compare_right_layout.setContentsMargins(0, 0, 0, 0)
         compare_right_layout.setSpacing(8)
+
+        self.compare_workspace = QWidget()
+        self.compare_workspace.setObjectName("AnalyzerCompareWorkspace")
+        compare_workspace_stack = QStackedLayout(self.compare_workspace)
+        compare_workspace_stack.setStackingMode(QStackedLayout.StackAll)
+        compare_workspace_stack.setContentsMargins(0, 0, 0, 0)
+        compare_workspace_stack.setSpacing(0)
 
         compare_top_row = QWidget()
         compare_top_layout = QHBoxLayout(compare_top_row)
@@ -6112,7 +6123,7 @@ class AnalysePage(QWidget):
         )
         compare_top_layout.addWidget(self.compare_heatmap_selector, 0)
         compare_top_layout.addStretch(1)
-        compare_right_layout.addWidget(compare_top_row, 0)
+        compare_workspace_stack.addWidget(compare_top_row)
         compare_top_row.setVisible(False)
         compare_top_row.setMaximumHeight(0)
         self.compare_plane_combo.setVisible(False)
@@ -6124,6 +6135,66 @@ class AnalysePage(QWidget):
         self.compare_grid_layout.setContentsMargins(0, 0, 0, 0)
         self.compare_grid_layout.setHorizontalSpacing(ANALYZER_PLOT_STYLE.tile_gap_px)
         self.compare_grid_layout.setVerticalSpacing(ANALYZER_PLOT_STYLE.tile_gap_px)
+        compare_workspace_stack.addWidget(self.compare_grid_widget)
+
+        self.compare_drawer_layer = QWidget()
+        self.compare_drawer_layer.setObjectName("AnalyzerCompareDrawerLayer")
+        drawer_layer_layout = QHBoxLayout(self.compare_drawer_layer)
+        drawer_layer_layout.setContentsMargins(0, 0, 0, 0)
+        drawer_layer_layout.setSpacing(0)
+
+        self.compare_drawer = QFrame()
+        self.compare_drawer.setObjectName("AnalyzerCompareDrawer")
+        self.compare_drawer.setMinimumWidth(int(self._compare_drawer_expanded_width))
+        self.compare_drawer.setMaximumWidth(int(self._compare_drawer_expanded_width))
+        compare_drawer_layout = QVBoxLayout(self.compare_drawer)
+        compare_drawer_layout.setContentsMargins(8, 8, 8, 8)
+        compare_drawer_layout.setSpacing(6)
+
+        compare_drawer_head = QWidget()
+        compare_drawer_head_layout = QHBoxLayout(compare_drawer_head)
+        compare_drawer_head_layout.setContentsMargins(0, 0, 0, 0)
+        compare_drawer_head_layout.setSpacing(6)
+        compare_drawer_title = QLabel("Compare")
+        compare_drawer_title.setObjectName("SummaryMeta")
+        compare_drawer_head_layout.addWidget(compare_drawer_title, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        compare_drawer_head_layout.addStretch(1)
+        self.compare_drawer_toggle_btn = QToolButton()
+        self.compare_drawer_toggle_btn.setObjectName("BatchSecondaryToolButton")
+        self.compare_drawer_toggle_btn.setAutoRaise(True)
+        self.compare_drawer_toggle_btn.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        self.compare_drawer_toggle_btn.setText("◀")
+        self.compare_drawer_toggle_btn.setToolTip("Collapse compare drawer")
+        compare_drawer_head_layout.addWidget(self.compare_drawer_toggle_btn, 0, Qt.AlignRight | Qt.AlignVCenter)
+        compare_drawer_layout.addWidget(compare_drawer_head, 0)
+
+        self.compare_drawer_stack = QStackedWidget()
+        self.compare_drawer_stack.setObjectName("AnalyzerCompareDrawerStack")
+        self.compare_drawer_stack.addWidget(compare_left_scroll)
+
+        self.compare_drawer_compact_widget = QWidget()
+        self.compare_drawer_compact_widget.setObjectName("AnalyzerCompareDrawerCompact")
+        compact_layout = QVBoxLayout(self.compare_drawer_compact_widget)
+        compact_layout.setContentsMargins(0, 0, 0, 0)
+        compact_layout.setSpacing(4)
+        self.compare_drawer_compact_buttons: List[QToolButton] = []
+        for slot_index in range(5):
+            slot_btn = QToolButton()
+            slot_btn.setObjectName("AnalyzerCompareDrawerSlotButton")
+            slot_btn.setToolButtonStyle(Qt.ToolButtonTextOnly)
+            slot_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            slot_btn.setMinimumHeight(26)
+            slot_btn.setText(f"C{slot_index + 1} --")
+            slot_btn.clicked.connect(lambda _checked=False, idx=slot_index: self.compare_slots_table.selectRow(idx))
+            compact_layout.addWidget(slot_btn, 0)
+            self.compare_drawer_compact_buttons.append(slot_btn)
+        compact_layout.addStretch(1)
+        self.compare_drawer_stack.addWidget(self.compare_drawer_compact_widget)
+        compare_drawer_layout.addWidget(self.compare_drawer_stack, 1)
+
+        drawer_layer_layout.addWidget(self.compare_drawer, 0, Qt.AlignLeft | Qt.AlignTop)
+        drawer_layer_layout.addStretch(1)
+        compare_workspace_stack.addWidget(self.compare_drawer_layer)
 
         self.compare_overlay_panel = self._create_stage_plot_panel(
             panel_id="CompareA",
@@ -6196,7 +6267,7 @@ class AnalysePage(QWidget):
         self.compare_grid_layout.setColumnStretch(1, 1)
         self.compare_grid_layout.setRowStretch(0, 1)
         self.compare_grid_layout.setRowStretch(1, 1)
-        compare_right_layout.addWidget(self.compare_grid_widget, 1)
+        compare_right_layout.addWidget(self.compare_workspace, 1)
 
         self.compare_table = QTableWidget(0, 7)
         self.compare_table.setObjectName("AnalyzerCompareTable")
@@ -6212,9 +6283,8 @@ class AnalysePage(QWidget):
         compare_right.setMinimumWidth(0)
         compare_right.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.compare_splitter.addWidget(compare_right)
-        self.compare_splitter.setStretchFactor(0, 0)
-        self.compare_splitter.setStretchFactor(1, 1)
-        self.compare_splitter.setSizes([340, 900])
+        self.compare_splitter.setStretchFactor(0, 1)
+        self.compare_splitter.setSizes([1200])
         compare_layout.addWidget(self.compare_splitter, 1)
         self.analysis_tabs.addTab(self.compare_tab, "Compare")
 
@@ -6781,6 +6851,7 @@ class AnalysePage(QWidget):
         self.compare_auto_pick_btn.clicked.connect(self._open_compare_autopick_dialog)
         self.compare_save_btn.clicked.connect(self._save_compare_analysis)
         self.compare_load_btn.clicked.connect(self._load_selected_analysis)
+        self.compare_drawer_toggle_btn.clicked.connect(self._toggle_compare_drawer)
         self.compare_plane_combo.currentIndexChanged.connect(self._schedule_compare_plot_refresh)
         self.compare_heatmap_selector.currentIndexChanged.connect(self._render_compare_heatmap_selection)
         self.compare_pareto_x_combo.currentIndexChanged.connect(self._render_compare_pareto)
@@ -6817,6 +6888,7 @@ class AnalysePage(QWidget):
         self._clear_plot_views("Select version + plane to render plots.")
         self._refresh_saved_analyses()
         self._update_compare_slots()
+        self._set_compare_drawer_expanded(bool(self._compare_drawer_expanded))
         self.analysis_explorer_btn.setChecked(True)
         self._update_toolbar_context_chips()
         self._update_toolbar_compaction()
@@ -8443,6 +8515,52 @@ class AnalysePage(QWidget):
         self._update_compare_slots(message=message)
         self._schedule_compare_plot_refresh()
 
+    def _set_compare_drawer_expanded(self, expanded: bool) -> None:
+        self._compare_drawer_expanded = bool(expanded)
+        if not isinstance(getattr(self, "compare_drawer", None), QFrame):
+            return
+        width = int(self._compare_drawer_expanded_width if self._compare_drawer_expanded else self._compare_drawer_collapsed_width)
+        self.compare_drawer.setMinimumWidth(width)
+        self.compare_drawer.setMaximumWidth(width)
+        if isinstance(getattr(self, "compare_drawer_stack", None), QStackedWidget):
+            self.compare_drawer_stack.setCurrentIndex(0 if self._compare_drawer_expanded else 1)
+        if isinstance(getattr(self, "compare_drawer_toggle_btn", None), QToolButton):
+            self.compare_drawer_toggle_btn.setText("◀" if self._compare_drawer_expanded else "▶")
+            self.compare_drawer_toggle_btn.setToolTip(
+                "Collapse compare drawer" if self._compare_drawer_expanded else "Expand compare drawer"
+            )
+
+    def _toggle_compare_drawer(self) -> None:
+        self._set_compare_drawer_expanded(not bool(self._compare_drawer_expanded))
+
+    def _refresh_compare_drawer_compact_rows(self) -> None:
+        buttons = list(getattr(self, "compare_drawer_compact_buttons", []) or [])
+        if not buttons:
+            return
+        for index, button in enumerate(buttons):
+            if not isinstance(button, QToolButton):
+                continue
+            slot_label = f"C{index + 1}"
+            if index < len(self._compare_candidates):
+                candidate = dict(self._compare_candidates[index] or {})
+                selection_label = f"{str(candidate.get('batch_id') or '--')}/{str(candidate.get('version_id') or '--')}"
+                button.setText(f"{slot_label} {selection_label}")
+                button.setToolTip(selection_label)
+                color = QColor(*compare_overlay_color(index))
+                button.setStyleSheet(
+                    "QToolButton {"
+                    f"background-color: rgba({color.red()}, {color.green()}, {color.blue()}, 68);"
+                    "border: 1px solid rgba(255,255,255,0.08);"
+                    "border-radius: 4px;"
+                    "padding: 2px 6px;"
+                    "text-align: left;"
+                    "}"
+                )
+            else:
+                button.setText(f"{slot_label} --")
+                button.setToolTip("")
+                button.setStyleSheet("")
+
     def _on_compare_add_selected(self) -> None:
         rows = [dict(item) for item in self._selected_row_payloads()]
         if not rows:
@@ -8582,6 +8700,7 @@ class AnalysePage(QWidget):
         if self._selected_compare_slot_index is not None:
             self.compare_slots_table.selectRow(int(self._selected_compare_slot_index))
         self._update_compare_kpi_panel()
+        self._refresh_compare_drawer_compact_rows()
         self._render_compare_visuals()
 
         if message:
