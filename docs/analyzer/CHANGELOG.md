@@ -1,5 +1,10 @@
 ﻿# Analyzer Docs â€” Changelog
 
+## 2026-02-24 (Compare left-panel KPI redesign audit)
+- Added `docs/analyzer/08_compare_left_panel_kpi_table_audit.md`.
+- Documented current Compare widget/layout wiring and state update paths (`_compare_candidates`, `_selected_compare_slot_index`, `_update_compare_slots`).
+- Captured surgical replacement plan: move KPI comparison into left combined table and remove in-grid `Selected Candidate KPIs` block.
+
 ## 2026-02-24 (Validation - stage/selection/plane E2E smoketest)
 - Added `docs/analyzer/e2e_stage_selection_plane_fix_smoketest.md` with end-to-end GUI smoke evidence on real project data (`P021`).
 - Logged Explorer stage-switch verification, stage-aware KPI rows, Refresh KPIs checks, Compare manual/auto-pick checks, and H/V/D propagation results.
