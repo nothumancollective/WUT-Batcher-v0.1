@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from app.gui import AnalysePage, MetricCurveCanvas, apply_plot_theme, compute_plot_layout_geometry
+from app.gui import AnalysePage, MetricCurveCanvas, _traffic_status_color, apply_plot_theme, compute_plot_layout_geometry
 from app.services import OrchestratorService
 from app.settings_store import SettingsStore, UserSettings
 
@@ -508,6 +508,14 @@ class AnalyzerPlotUxRegressionTests(unittest.TestCase):
         second = _pixmap_png_bytes(canvas)
         self.assertTrue(first)
         self.assertEqual(first, second)
+
+    def test_target_deviation_traffic_color_mapping_uses_three_buckets(self) -> None:
+        good = _traffic_status_color(0.12)
+        mid = _traffic_status_color(0.52)
+        bad = _traffic_status_color(0.88)
+        self.assertGreater(good.green(), good.red())
+        self.assertGreater(mid.red(), good.red())
+        self.assertGreater(bad.red(), bad.green())
 
 
 if __name__ == "__main__":

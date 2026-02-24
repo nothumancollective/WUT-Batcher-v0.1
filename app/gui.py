@@ -310,6 +310,18 @@ def _coerce_hex_rgb(value: Any, *, fallback: str = "#8EC4FF") -> str:
     return str(color.name(QColor.HexRgb)).upper()
 
 
+def _traffic_status_color(deviation_norm: float, *, alpha: int = 176) -> QColor:
+    value = float(deviation_norm)
+    if not math.isfinite(value):
+        return QColor(126, 136, 150, max(120, min(int(alpha), 255)))
+    clamped = max(0.0, min(value, 1.0))
+    if clamped <= 0.33:
+        return QColor(92, 164, 112, max(120, min(int(alpha), 255)))
+    if clamped <= 0.66:
+        return QColor(182, 152, 86, max(120, min(int(alpha), 255)))
+    return QColor(188, 98, 92, max(120, min(int(alpha), 255)))
+
+
 _ANALYZER_LOG_MAJOR_TICKS: Tuple[float, ...] = (200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 16000.0)
 _ANALYZER_LOG_MAJOR_TICKS_SMALL: Tuple[float, ...] = (500.0, 1000.0, 2000.0, 5000.0, 10000.0)
 
@@ -685,9 +697,9 @@ STAGE_EXPLORER_LAYOUTS: Dict[str, List[Dict[str, str]]] = {
             "key": "target_deviation_summary",
             "title": "Target Deviation Summary",
             "help": (
-                "Shows normalized target deviation for Pattern Ctrl (B_PC), BW Err (E_BW), "
-                "Cov Err (E_cov), and Spill Ratio (R_spill). Lower bars mean closer-to-target behavior; "
-                "Overall Score aggregates the same Concept metrics."
+                "Shows per-metric target deviation for Pattern Ctrl, BW Error, Coverage Error, and Spill Ratio. "
+                "Greener/shorter bars indicate closer-to-target behavior, while yellow/red bars indicate larger deviation. "
+                "Overall Score is the aggregate concept ranking view for the selected version."
             ),
         },
     ],
@@ -2007,11 +2019,19 @@ class TargetDeviationSummaryCanvas(QLabel):
             deviation = max(0.0, min(deviation, 1.0))
             color_raw = row.get("color")
             if isinstance(color_raw, QColor):
-                bar_color = QColor(color_raw)
+                metric_tint = QColor(color_raw)
             elif isinstance(color_raw, tuple):
-                bar_color = QColor(*color_raw)
+                metric_tint = QColor(*color_raw)
             else:
-                bar_color = QColor("#7FA9D8")
+                metric_tint = QColor("#7FA9D8")
+            status_color = _traffic_status_color(deviation, alpha=176)
+            # Keep a subtle metric tint while preserving traffic-light status readability.
+            bar_color = QColor(
+                int(round((status_color.red() * 0.82) + (metric_tint.red() * 0.18))),
+                int(round((status_color.green() * 0.82) + (metric_tint.green() * 0.18))),
+                int(round((status_color.blue() * 0.82) + (metric_tint.blue() * 0.18))),
+                int(status_color.alpha()),
+            )
 
             painter.fillRect(bar_left, bar_top, int(round(bar_w * 0.33)), bar_h, QColor(74, 124, 90, 32))
             painter.fillRect(
@@ -2032,7 +2052,6 @@ class TargetDeviationSummaryCanvas(QLabel):
             fill_width = max(int(round(bar_w * deviation)), 0)
             if fill_width > 0:
                 fill_color = QColor(bar_color)
-                fill_color.setAlpha(168)
                 painter.fillRect(bar_left, bar_top, fill_width, bar_h, fill_color)
 
             marker_color = QColor(self._target_axis_color)

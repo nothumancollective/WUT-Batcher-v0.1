@@ -1,5 +1,9 @@
 ﻿# Analyzer Docs â€” Changelog
 
+## 2026-02-24 (Target Deviation Summary: traffic-light bar semantics)
+- Updated Target Deviation Summary bar fills to status-driven traffic colors (green/yellow/red) based on normalized deviation buckets, without changing KPI values/math.
+- Kept the qualitative background reference bands and added per-bar status color blending for clearer single-candidate readability.
+- Refined summary help tooltip text to explicitly describe metric meaning and score interpretation in short UI-friendly sentences.
 ## 2026-02-24 (Plot surfaces: remove residual black slab source)
 - Switched Analyzer plot workspace containers (`Explorer`/`Compare` grid surfaces) and analyzer plot-tile frames to the theme surface color instead of transparent-on-black fallback.
 - This centralizes plot-surface background policy at the style source, removing pure-black slab bleed-through while keeping tile borders subtle.
@@ -971,6 +975,7 @@
 
 ## 2026-02-24 (Merge integration follow-up)
 - Aligned GUI regression `test_version_bar_widgets_are_updated_in_place` with the stacked ATH params widget model (`version_ath_params_rows_widget` + empty-label placeholder) after merging `ui/analyzer-versionbar-polish-final`.
+
 
 
 
