@@ -1,5 +1,10 @@
 ﻿# Analyzer Docs â€” Changelog
 
+## 2026-02-24 (Compare active candidate wiring: heatmap default + overlay emphasis)
+- Compare slot row selection now immediately redraws overlay with active-candidate emphasis while preserving C1..C5 color mapping.
+- Added overlay series style support (`alpha`, `line_width`) in `MetricCurveCanvas` so non-active candidates are visually de-emphasized.
+- Compare slot refresh now reapplies overlay emphasis after selection/default-slot sync, keeping heatmap default and overlay focus in lockstep.
+
 ## 2026-02-24 (Compare left-panel KPI redesign audit)
 - Added `docs/analyzer/08_compare_left_panel_kpi_table_audit.md`.
 - Documented current Compare widget/layout wiring and state update paths (`_compare_candidates`, `_selected_compare_slot_index`, `_update_compare_slots`).
@@ -783,4 +788,5 @@
 
 ## 2026-02-24 (Merge integration follow-up)
 - Aligned GUI regression `test_version_bar_widgets_are_updated_in_place` with the stacked ATH params widget model (`version_ath_params_rows_widget` + empty-label placeholder) after merging `ui/analyzer-versionbar-polish-final`.
+
 

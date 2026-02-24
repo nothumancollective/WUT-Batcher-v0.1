@@ -954,7 +954,7 @@ class MetricCurveCanvas(QLabel):
         painter = QPainter(image)
         painter.setRenderHint(QPainter.Antialiasing, True)
 
-        points_by_series: List[Tuple[str, List[Tuple[float, float]], QColor, bool]] = []
+        points_by_series: List[Tuple[str, List[Tuple[float, float]], QColor, bool, float]] = []
         for index, row in enumerate(self._series):
             label = str(row.get("label") or f"S{index + 1}")
             show_legend = bool(row.get("show_legend", bool(label.strip())))
@@ -966,6 +966,21 @@ class MetricCurveCanvas(QLabel):
                 color = QColor(*color_raw)
             else:
                 color = QColor(*compare_overlay_color(index))
+            alpha_raw = row.get("alpha")
+            if alpha_raw is not None:
+                try:
+                    alpha_value = float(alpha_raw)
+                    if alpha_value <= 1.0:
+                        color.setAlphaF(max(0.0, min(alpha_value, 1.0)))
+                    else:
+                        color.setAlpha(max(0, min(int(round(alpha_value)), 255)))
+                except Exception:
+                    pass
+            try:
+                line_width = float(row.get("line_width", 2.0))
+            except Exception:
+                line_width = 2.0
+            line_width = max(1.0, min(line_width, 4.0))
             points: List[Tuple[float, float]] = []
             for item in points_raw:
                 if isinstance(item, Mapping):
@@ -986,7 +1001,7 @@ class MetricCurveCanvas(QLabel):
                     continue
                 points.append((freq, value))
             if points:
-                points_by_series.append((label, points, color, show_legend))
+                points_by_series.append((label, points, color, show_legend, line_width))
 
         if not points_by_series:
             painter.setPen(QColor("#9AA4B2"))
@@ -995,14 +1010,14 @@ class MetricCurveCanvas(QLabel):
             self.setPixmap(QPixmap.fromImage(image))
             return
 
-        has_legend = any(show for _label, _points, _color, show in points_by_series)
+        has_legend = any(show for _label, _points, _color, show, _line_width in points_by_series)
         margin_left, margin_right, margin_top, margin_bottom = apply_analyzer_plot_margins(has_legend=has_legend)
         self._applied_plot_margins = (margin_left, margin_right, margin_top, margin_bottom)
         plot_w = max(width - margin_left - margin_right, 36)
         plot_h = max(height - margin_top - margin_bottom, 30)
 
-        all_freqs = [point[0] for _label, points, _color, _show in points_by_series for point in points]
-        all_values = [point[1] for _label, points, _color, _show in points_by_series for point in points]
+        all_freqs = [point[0] for _label, points, _color, _show, _line_width in points_by_series for point in points]
+        all_values = [point[1] for _label, points, _color, _show, _line_width in points_by_series for point in points]
         x_mode = self._x_scale_mode
         if x_mode == "linear":
             x_min = float(min(all_freqs))
@@ -1081,8 +1096,8 @@ class MetricCurveCanvas(QLabel):
             painter.setPen(QPen(QColor(ANALYZER_PLOT_STYLE.grid_major_color), 1))
 
         legend_y = margin_top + 4
-        for label, points, color, show_legend in points_by_series:
-            painter.setPen(QPen(color, 2))
+        for label, points, color, show_legend, line_width in points_by_series:
+            painter.setPen(QPen(color, float(line_width)))
             for idx in range(len(points) - 1):
                 x1, y1 = points[idx]
                 x2, y2 = points[idx + 1]
@@ -7363,17 +7378,20 @@ class AnalysePage(QWidget):
         if model is None:
             self._selected_compare_slot_index = None
             self._update_compare_kpi_panel()
+            self._render_compare_overlay()
             self._render_compare_focus_curve()
             return
         selected = model.selectedRows()
         if not selected:
             self._selected_compare_slot_index = None
             self._update_compare_kpi_panel()
+            self._render_compare_overlay()
             self._render_compare_focus_curve()
             return
         row_index = int(selected[0].row())
         self._selected_compare_slot_index = row_index if row_index < len(self._compare_candidates) else None
         self._update_compare_kpi_panel()
+        self._render_compare_overlay()
         self._render_compare_focus_curve()
 
     def _update_compare_kpi_panel(self) -> None:
@@ -7478,6 +7496,7 @@ class AnalysePage(QWidget):
             self.compare_slots_table.selectRow(int(self._selected_compare_slot_index))
         self._update_compare_kpi_panel()
         self._render_compare_pareto()
+        self._render_compare_overlay()
         self._render_compare_focus_curve()
 
         if message:
@@ -7650,6 +7669,11 @@ class AnalysePage(QWidget):
             self.compare_overlay_canvas.clear_series("Select candidates to display overlay.")
             return
         curve_key = str(self._compare_overlay_curve_key or "beamwidth").strip().lower()
+        selected_index = (
+            int(self._selected_compare_slot_index)
+            if self._selected_compare_slot_index is not None and 0 <= int(self._selected_compare_slot_index) < len(self._compare_plot_items)
+            else None
+        )
         series: List[Dict[str, Any]] = []
         saturated_bins = 0
         missing_plane_labels: List[str] = []
@@ -7677,6 +7701,8 @@ class AnalysePage(QWidget):
                     ),
                     "points": points,
                     "color": color_rgb,
+                    "line_width": 3.0 if selected_index == index else 1.8,
+                    "alpha": 1.0 if selected_index is None or selected_index == index else 0.45,
                 }
             )
         if not series:
