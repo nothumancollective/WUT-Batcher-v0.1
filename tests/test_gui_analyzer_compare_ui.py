@@ -253,6 +253,30 @@ class AnalyzerCompareUiTests(unittest.TestCase):
             self.assertIn("MISSING_PLANE", h_button.toolTip())
             self.assertIn("includes H/V/D", h_button.toolTip())
 
+    def test_plane_controls_enable_h_when_h_plane_is_present(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_stage_plane_has_h_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            payload = {
+                "mode": "runs",
+                "project_id": "P001",
+                "batch_id": "B001",
+                "runs": [
+                    {
+                        "project_id": "P001",
+                        "batch_id": "B001",
+                        "run_id": "R001",
+                        "version_id": "V001",
+                        "planes": ["H", "V", "D"],
+                    }
+                ],
+            }
+            page._apply_runs_payload(payload)
+            h_button = page._plane_buttons["H"]
+            self.assertFalse(h_button.isHidden())
+            self.assertTrue(h_button.isEnabled())
+            self.assertEqual(str(h_button.toolTip() or ""), "")
+
     def test_reason_severity_summary_is_shown_in_details_and_enables_help(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_stage_reason_help_") as tmp:
             service = _build_service(Path(tmp))

@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 import json
 import hashlib
 import logging
+import math
 import os
 import re
 import statistics
@@ -32,6 +33,7 @@ from app.analyzer.presets import (
     DEFAULT_STAGE_ID,
     DEFAULT_TOL_DEG,
     STAGE_PRESETS,
+    normalize_stage_id,
 )
 from app.analyzer.reason_codes import reason_items_for_codes
 from app.analyzer.stage_plot_engine import compute_di_proxy_curve, compute_stage_plot_payload
@@ -166,6 +168,26 @@ def _split_csv_tokens(raw: Optional[str]) -> List[str]:
 
 def _normalize_orientation_tokens(values: Sequence[str]) -> List[str]:
     return dedupe_orientations([str(raw or "").strip() for raw in values])
+
+
+def _orientation_tokens_from_raw_values(values: Sequence[str]) -> List[str]:
+    tokens: List[str] = []
+    for raw in values:
+        text = str(raw or "").strip()
+        if not text:
+            continue
+        try:
+            numeric = float(text)
+        except Exception:
+            continue
+        if math.isnan(numeric) or math.isinf(numeric):
+            continue
+        if abs(numeric - round(numeric)) <= 1.0e-6:
+            tokens.append(f"X3_{int(round(numeric))}")
+        else:
+            compact = f"{numeric:.6f}".rstrip("0").rstrip(".")
+            tokens.append(f"X3_{compact}")
+    return tokens
 
 
 def _analyzer_source_hash(file_hashes: Sequence[str]) -> str:
@@ -2248,6 +2270,7 @@ class OrchestratorService:
                         COALESCE(pm.run_id, '') AS run_id,
                         pm.version_id AS version_id,
                         GROUP_CONCAT(DISTINCT pm.orientation) AS orientations_csv,
+                        GROUP_CONCAT(DISTINCT pm.orientation_raw) AS orientation_raw_csv,
                         MIN(pm.freq_min_hz) AS freq_min_hz,
                         MAX(pm.freq_max_hz) AS freq_max_hz,
                         MAX(pm.freq_count) AS freq_count,
@@ -2278,7 +2301,9 @@ class OrchestratorService:
 
         result: List[Dict[str, Any]] = []
         for row in query_rows:
-            planes = _normalize_orientation_tokens(_split_csv_tokens(row["orientations_csv"]))
+            orientation_tokens = _split_csv_tokens(row["orientations_csv"])
+            orientation_tokens.extend(_orientation_tokens_from_raw_values(_split_csv_tokens(row["orientation_raw_csv"])))
+            planes = _normalize_orientation_tokens(orientation_tokens)
             source_files = sorted(set(_split_csv_tokens(row["source_files_csv"])))
             file_hashes = sorted(set(_split_csv_tokens(row["file_hashes_csv"])))
             run_id = str(row["run_id"] or "").strip()
@@ -2648,13 +2673,13 @@ class OrchestratorService:
                         batch_id=batch_token,
                         run_id=run_token,
                         version_id=version_token,
-                        artifact_types=("POLAR", "SPL_FR", "IMPEDANCE", "PHASE_GD"),
+                        artifact_types=("POLAR", "SPL_FR"),
                     )
             except sqlite3.Error:
                 artifact_status = {}
 
         stage_payload = compute_stage_plot_payload(
-            stage_mode=str(stage_mode or DEFAULT_STAGE_ID),
+            stage_mode=normalize_stage_id(stage_mode, fallback=DEFAULT_STAGE_ID),
             target_deg=_target_for_plane(plane_token),
             tol_deg=float(tol_deg),
             freqs_hz=freqs_hz,
@@ -2667,14 +2692,6 @@ class OrchestratorService:
             di_curves_by_plane=di_by_plane,
             artifact_status=artifact_status,
         )
-        stage_token = str(stage_mode or "").strip().lower()
-        if stage_token == "final":
-            curves = dict(stage_payload.get("curves", {}) or {})
-            if not bool(dict(artifact_status.get("IMPEDANCE") or {}).get("available")):
-                curves.setdefault("impedance_loading", [])
-            if not bool(dict(artifact_status.get("PHASE_GD") or {}).get("available")):
-                curves.setdefault("phase_gd", [])
-            stage_payload["curves"] = curves
         result = dict(base_plot)
         result["stage_plot"] = stage_payload
         return result
@@ -2860,7 +2877,7 @@ class OrchestratorService:
             source_hash = str(row.get("source_hash") or "")
             cache_by_identity[(run_token, version_id, source_hash)] = row
 
-        stage_key = str(stage_mode or DEFAULT_STAGE_ID).strip().lower() or DEFAULT_STAGE_ID
+        stage_key = normalize_stage_id(stage_mode, fallback=DEFAULT_STAGE_ID)
         result: List[Dict[str, Any]] = []
         for row in runs:
             payload = dict(row)
@@ -3134,7 +3151,7 @@ class OrchestratorService:
         skipped_cached = 0
         failed = 0
         rows_to_write: List[Dict[str, Any]] = []
-        stage_key = str(stage_mode or DEFAULT_STAGE_ID).strip().lower() or DEFAULT_STAGE_ID
+        stage_key = normalize_stage_id(stage_mode, fallback=DEFAULT_STAGE_ID)
 
         if callable(progress_cb):
             progress_cb(0, total, "Preparing KPI compute...")

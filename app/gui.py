@@ -25,7 +25,9 @@ from app.analyzer.presets import (
     DEFAULT_COVERAGE_PRESET_ID,
     DEFAULT_STAGE_ID,
     DEFAULT_TOL_DEG,
+    STAGE_ORDER,
     STAGE_PRESETS,
+    normalize_stage_id,
     resolve_band_limits,
 )
 from app.analyzer.reason_codes import reason_items_for_codes
@@ -521,12 +523,6 @@ STAGE_EXPLORER_LAYOUTS: Dict[str, List[Dict[str, str]]] = {
         {"slot": "C", "key": "e_cov", "title": "Coverage Uniformity vs f", "help": "RMS variation inside the target coverage window."},
         {"slot": "D", "key": "r_spill", "title": "Spill Index vs f", "help": "Relative outside-vs-inside target energy ratio."},
     ],
-    "shaping": [
-        {"slot": "A", "key": "heatmap", "title": "Polar Map", "help": "Heatmap with -6 dB contour and target window."},
-        {"slot": "B", "key": "e_bw", "title": "Beamwidth Error vs Target", "help": "Absolute beamwidth deviation from the selected target."},
-        {"slot": "C", "key": "e_cov", "title": "Coverage Uniformity vs f", "help": "RMS variation inside the target coverage window."},
-        {"slot": "D", "key": "r_spill", "title": "Spill Index vs f", "help": "Relative outside-vs-inside target energy ratio."},
-    ],
     "stabilization": [
         {"slot": "A", "key": "heatmap", "title": "Polar Map", "help": "Heatmap with -6 dB contour and target window."},
         {"slot": "B", "key": "di_proxy", "title": "DI Proxy vs f", "help": "Local-window level minus wide-angle proxy level."},
@@ -536,14 +532,13 @@ STAGE_EXPLORER_LAYOUTS: Dict[str, List[Dict[str, str]]] = {
     "final": [
         {"slot": "A", "key": "heatmap", "title": "Polar Map", "help": "Heatmap with -6 dB contour and target window."},
         {"slot": "B", "key": "r_off", "title": "Off-axis Ripple vs f", "help": "Ripple spread across key off-axis angles."},
-        {"slot": "C", "key": "impedance_loading", "title": "Impedance / Loading", "help": "Available when impedance artifacts exist."},
-        {"slot": "D", "key": "phase_gd", "title": "Group Delay / Phase", "help": "Available when phase/group-delay artifacts exist."},
+        {"slot": "C", "key": "s_theta", "title": "Pattern Smoothness vs f", "help": "RMS angular gradient in the active window."},
+        {"slot": "D", "key": "e_sym_shape", "title": "Plane Consistency vs f", "help": "Inter-plane spread of beamwidth/DI behavior."},
     ],
 }
 
 STAGE_COMPARE_OVERLAY_KEY: Dict[str, str] = {
     "concept": "beamwidth",
-    "shaping": "beamwidth",
     "stabilization": "di_proxy",
     "final": "r_off",
 }
@@ -563,9 +558,8 @@ PARETO_AXIS_OPTIONS: List[Tuple[str, str]] = [
 
 STAGE_PARETO_DEFAULTS: Dict[str, Tuple[str, str]] = {
     "concept": ("e_bw", "r_spill"),
-    "shaping": ("e_bw", "e_cov"),
     "stabilization": ("di_proxy", "s_theta"),
-    "final": ("r_off", "e_cov"),
+    "final": ("r_off", "s_theta"),
 }
 
 
@@ -4905,14 +4899,16 @@ class AnalysePage(QWidget):
         presets = self.service.analyzer_presets()
         self._coverage_presets = [dict(item) for item in list(presets.get("coverage_presets", []) or []) if isinstance(item, dict)]
         self._band_presets = [dict(item) for item in list(presets.get("band_presets", []) or []) if isinstance(item, dict)]
-        self._stage_presets = {
-            str(key): dict(value) for key, value in dict(presets.get("stages", STAGE_PRESETS) or STAGE_PRESETS).items()
+        raw_stage_presets = {
+            normalize_stage_id(str(key)): dict(value)
+            for key, value in dict(presets.get("stages", STAGE_PRESETS) or STAGE_PRESETS).items()
         }
-        if "final" not in self._stage_presets:
-            final_base = dict(self._stage_presets.get("stabilization", {}) or self._stage_presets.get(DEFAULT_STAGE_ID, {}) or {})
-            final_base["label"] = "Final"
-            self._stage_presets["final"] = final_base
-        self._default_stage_id = str(presets.get("default_stage_id") or DEFAULT_STAGE_ID).strip().lower() or DEFAULT_STAGE_ID
+        self._stage_presets = {}
+        for stage_id in STAGE_ORDER:
+            stage_payload = dict(raw_stage_presets.get(stage_id) or STAGE_PRESETS.get(stage_id, {}))
+            stage_payload["label"] = str(stage_payload.get("label") or stage_id.title())
+            self._stage_presets[stage_id] = stage_payload
+        self._default_stage_id = normalize_stage_id(str(presets.get("default_stage_id") or DEFAULT_STAGE_ID))
         self._default_coverage_preset_id = str(
             presets.get("default_coverage_preset_id") or DEFAULT_COVERAGE_PRESET_ID
         ).strip() or DEFAULT_COVERAGE_PRESET_ID
@@ -4958,7 +4954,7 @@ class AnalysePage(QWidget):
 
         self.stage_selector = QComboBox()
         self.stage_selector.setObjectName("AnalyzerStageCombo")
-        for stage_id in ("concept", "shaping", "stabilization", "final"):
+        for stage_id in STAGE_ORDER:
             stage = dict(self._stage_presets.get(stage_id, {}) or {})
             self.stage_selector.addItem(str(stage.get("label") or stage_id.title()), stage_id)
         self.target_selector = QComboBox()
@@ -6250,8 +6246,10 @@ class AnalysePage(QWidget):
         return token or None
 
     def _selected_stage_id(self) -> str:
-        token = str(self.stage_selector.currentData() or self._default_stage_id).strip().lower()
-        return token if token in self._stage_presets else self._default_stage_id
+        return normalize_stage_id(
+            str(self.stage_selector.currentData() or self._default_stage_id),
+            fallback=self._default_stage_id,
+        )
 
     def _selected_target(self) -> Dict[str, Any]:
         preset_id = str(self.target_selector.currentData() or self._default_coverage_preset_id).strip()
@@ -6965,8 +6963,6 @@ class AnalysePage(QWidget):
             "s_theta": "Pattern smoothness",
             "e_sym_shape": "Plane consistency",
             "r_off": "Off-axis ripple (dB)",
-            "impedance_loading": "Impedance / Loading",
-            "phase_gd": "Group Delay / Phase",
         }
         return str(mapping.get(str(key or "").strip().lower(), "Value"))
 
@@ -6977,7 +6973,6 @@ class AnalysePage(QWidget):
         stage_payload = dict(payload.get("stage_plot") or {})
         curves = dict(stage_payload.get("curves") or {})
         heatmap_overlays = dict(stage_payload.get("heatmap_overlays") or {})
-        artifact_status = dict(stage_payload.get("artifact_status") or {})
         if not display_matrix:
             self._clear_plot_views(message or "No polar matrix available for this selection.")
             return
@@ -7037,16 +7032,6 @@ class AnalysePage(QWidget):
                 )
             else:
                 missing_msg = message or "Curve unavailable for selected stage."
-                if key == "impedance_loading":
-                    missing_msg = str(
-                        dict(artifact_status.get("IMPEDANCE") or {}).get("message")
-                        or "Impedance/loading data missing for this Batch/Version."
-                    )
-                elif key == "phase_gd":
-                    missing_msg = str(
-                        dict(artifact_status.get("PHASE_GD") or {}).get("message")
-                        or "Phase/group-delay data missing for this Batch/Version."
-                    )
                 curve_canvas.clear_series(missing_msg)
             placeholder = panel.get("placeholder")
             if isinstance(placeholder, QLabel):

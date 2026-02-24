@@ -1,75 +1,27 @@
-# KPI Scoring & Ranking Model
+# KPI Scoring and Ranking Model
 
-**Last updated:** 2026-02-22
+Last updated: 2026-02-24
 
-## Scope (MVP / Phase 2A)
+## Scope
 
 - Ranking is based on cached per-run KPI scalars from polar magnitude data.
-- Hard filters are applied before sorting (flags/warnings/thresholds).
+- Hard filters are applied before sorting (flags and warning filters).
 - Soft score (`0..100`) is stage-weighted and deterministic.
 
-## Cache + identity
+## Cache and identity
 
-- Storage table: `analyzer_run_kpis` (project and global DB via replication queue).
-- A cache row is uniquely identified by:
-  - project/batch/run/version
+- Storage table: `analyzer_run_kpis`.
+- A cache row is identified by:
+  - `project_id`, `batch_id`, `run_id`, `version_id`
   - compute config (`band_low_hz`, `band_high_hz`, `target_h_deg`, `target_v_deg`, `tol_deg`)
   - `algo_version`
-  - `source_hash` (derived from polar file hashes for the run/version)
-- Recompute trigger:
-  - missing cache row
-  - `algo_version` changed
-  - `source_hash` changed
+  - `source_hash`
 
-## Default presets (MVP)
-
-### Coverage target presets
-
-- `90x40` (default)
-- `60x60`
-- `60x40`
-- `90x60`
-- `80x40`
-- `75x50`
-- `60x30`
-- `50x50`
-- `40x40`
-
-### Tolerance preset
-
-- Beamwidth tolerance default: `+/- 5 deg`
-
-### Frequency-band presets
-
-- `Full (auto)`
-- `200-16k Hz` (default scoring band, starts at 200 Hz)
-- `200-500 Hz`
-- `500-1k Hz`
-- `1-2k Hz`
-- `2-4k Hz`
-- `4-8k Hz`
-- `8-16k Hz`
-- `Custom...`
-
-## Stage presets (weights + defaults)
+## Stage presets (3-stage model)
 
 ### Concept
 
-- Emphasis: pattern-control + beamwidth + flag sanity.
-- Default visible columns: `score`, `B_PC`, `E_BW`, `flags`.
-- Default filters:
-  - `exclude_flagged = false`
-  - `exclude_warnings = false`
-- Weights:
-  - `B_PC = 0.42`
-  - `E_BW = 0.36`
-  - `E_cov = 0.08`
-  - `R_spill = 0.06`
-  - `flags = 0.08`
-
-### Shaping
-
-- Emphasis: balanced control + uniformity + spill.
+- Focus: pattern control and broad beam shaping quality.
 - Default visible columns: `score`, `B_PC`, `E_BW`, `E_cov`, `R_spill`, `flags`.
 - Default filters:
   - `exclude_flagged = false`
@@ -83,46 +35,53 @@
 
 ### Stabilization
 
-- Emphasis: smooth coverage + spill suppression + robustness flags.
-- Default visible columns: `score`, `E_cov`, `R_spill`, `flags`, `B_PC`, `E_BW`.
+- Focus: directivity stability, smoothness, and inter-plane consistency.
+- Default visible columns: `score`, `DI_proxy`, `S_theta`, `E_sym_shape`, `flags`.
 - Default filters:
   - `exclude_flagged = true`
   - `exclude_warnings = true`
 - Weights:
-  - `B_PC = 0.18`
-  - `E_BW = 0.18`
-  - `E_cov = 0.30`
-  - `R_spill = 0.22`
+  - `DI_proxy = 0.34`
+  - `S_theta = 0.30`
+  - `E_sym_shape = 0.24`
   - `flags = 0.12`
 
-## Score normalization (MVP implementation)
+### Final
 
-- `B_PC` component (higher better):
-  - normalized with soft cap around `3 octaves`
-- `E_BW` component (lower better):
-  - linear mapping, `0 deg -> 1.0`, `20 deg -> 0.0`
-- `E_cov` component (lower better):
-  - linear mapping, `0 dB -> 1.0`, `6 dB -> 0.0`
-- `R_spill` component (lower better):
-  - computed as outside/inside energy ratio
-  - mapped in dB-like space (`-15 dB` good, `+5 dB` poor)
-- `flags` component:
-  - no flags -> full component score
-  - flagged rows receive penalty based on flag count
+- Focus: off-axis ripple finishing quality plus smoothness/consistency guardrails.
+- Default visible columns: `score`, `R_off`, `S_theta`, `E_sym_shape`, `flags`.
+- Default filters:
+  - `exclude_flagged = true`
+  - `exclude_warnings = true`
+- Weights:
+  - `R_off = 0.38`
+  - `S_theta = 0.28`
+  - `E_sym_shape = 0.22`
+  - `flags = 0.12`
 
-Final score:
+## Score normalization
 
-- Weighted sum of normalized components
-- Clamped to `0..100`
-- If `insufficient_coverage=true`, score is forced to `0`
+- Higher-better metrics:
+  - `B_PC`: normalized with soft cap around `3 octaves`.
+  - `DI_proxy`: normalized with soft cap around `6 dB`.
+- Lower-better metrics:
+  - `E_BW`: `0 deg -> 1.0`, `20 deg -> 0.0`.
+  - `E_cov`: `0 dB -> 1.0`, `6 dB -> 0.0`.
+  - `R_spill`: mapped via ratio in dB-like space.
+  - `S_theta`: lower angular-gradient RMS is better.
+  - `E_sym_shape`: lower inter-plane spread is better.
+  - `R_off`: lower off-axis ripple spread is better.
+- Flags component:
+  - no flags -> full score
+  - flagged rows receive penalty by flag count
+- Coverage guardrail:
+  - `insufficient_coverage` applies an additional penalty multiplier.
 
-## Stage plot mapping (UI defaults)
-
-This mapping is used by Analyzer Explorer/Compare panels and does not by itself change score math.
+## Stage plot mapping (Explorer/Compare defaults)
 
 ### Explorer 2x2 by stage
 
-- `concept` / `shaping`:
+- `concept`:
   - A `Polar Map`
   - B `E_BW(f)`
   - C `E_cov(f)`
@@ -135,18 +94,22 @@ This mapping is used by Analyzer Explorer/Compare panels and does not by itself 
 - `final`:
   - A `Polar Map`
   - B `R_off(f)`
-  - C `Impedance/Loading` (if available)
-  - D `Group Delay/Phase` (if available)
+  - C `S_theta(f)`
+  - D `E_sym_shape(f)`
 
 ### Compare overlay default per stage
 
-- `concept` / `shaping`: `beamwidth`
+- `concept`: `beamwidth`
 - `stabilization`: `di_proxy`
-- `final`: `r_off` (fallback handled when data is missing)
+- `final`: `r_off`
 
 ### Pareto defaults per stage
 
 - `concept`: `E_BW` vs `R_spill`
-- `shaping`: `E_BW` vs `E_cov`
 - `stabilization`: `DI_proxy` vs `S_theta`
-- `final`: `R_off` vs `E_cov`
+- `final`: `R_off` vs `S_theta`
+
+## Polar-only policy
+
+- Final-stage defaults are polar-only.
+- No impedance, phase, or group-delay stage slots are part of stage defaults.

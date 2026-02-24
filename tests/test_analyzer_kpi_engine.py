@@ -51,8 +51,8 @@ class AnalyzerKpiEngineTests(unittest.TestCase):
         self.assertLess(float(aggregate.get("e_bw") or 0.0), 1.5)
         self.assertGreater(float(aggregate.get("b_pc_oct") or 0.0), 2.5)
         self.assertEqual(int(aggregate.get("flags_count") or 0), 0)
-        shaping_score = compute_stage_score(payload, stage_id="shaping")
-        self.assertGreater(shaping_score, 70.0)
+        concept_score = compute_stage_score(payload, stage_id="concept")
+        self.assertGreater(concept_score, 70.0)
 
     def test_compute_run_kpis_detects_jump_and_collapse_flags(self) -> None:
         freqs = [200.0, 400.0, 800.0, 1600.0]
@@ -95,7 +95,7 @@ class AnalyzerKpiEngineTests(unittest.TestCase):
         self.assertIn("INSUFFICIENT_ANGLE_COVERAGE", reason_codes)
         aggregate = dict(payload.get("aggregate", {}) or {})
         self.assertEqual(int(aggregate.get("flags_count") or 0), 0)
-        score = compute_stage_score(payload, stage_id="shaping")
+        score = compute_stage_score(payload, stage_id="concept")
         self.assertIsNotNone(score)
 
     def test_empty_band_intersection_marks_payload_unscorable(self) -> None:

@@ -37,24 +37,38 @@ DEFAULT_BAND_PRESET_ID = "200-16000"
 STAGE_PRESETS: Dict[str, Dict[str, Any]] = {
     "concept": {
         "label": "Concept",
-        "weights": {"b_pc_oct": 0.42, "e_bw": 0.36, "e_cov": 0.08, "r_spill": 0.06, "flags": 0.08},
-        "visible_columns": ["score", "b_pc_oct", "e_bw", "flags_count"],
-        "filters": {"exclude_flagged": False, "exclude_warnings": False, "min_score": 0.0},
-    },
-    "shaping": {
-        "label": "Shaping",
         "weights": {"b_pc_oct": 0.30, "e_bw": 0.30, "e_cov": 0.18, "r_spill": 0.14, "flags": 0.08},
         "visible_columns": ["score", "b_pc_oct", "e_bw", "e_cov", "r_spill", "flags_count"],
         "filters": {"exclude_flagged": False, "exclude_warnings": False, "min_score": 0.0},
     },
     "stabilization": {
         "label": "Stabilization",
-        "weights": {"b_pc_oct": 0.18, "e_bw": 0.18, "e_cov": 0.30, "r_spill": 0.22, "flags": 0.12},
-        "visible_columns": ["score", "e_cov", "r_spill", "flags_count", "b_pc_oct", "e_bw"],
+        "weights": {"di_proxy": 0.34, "s_theta": 0.30, "e_sym_shape": 0.24, "flags": 0.12},
+        "visible_columns": ["score", "di_proxy", "s_theta", "e_sym_shape", "flags_count"],
+        "filters": {"exclude_flagged": True, "exclude_warnings": True, "min_score": 0.0},
+    },
+    "final": {
+        "label": "Final",
+        "weights": {"r_off": 0.38, "s_theta": 0.28, "e_sym_shape": 0.22, "flags": 0.12},
+        "visible_columns": ["score", "r_off", "s_theta", "e_sym_shape", "flags_count"],
         "filters": {"exclude_flagged": True, "exclude_warnings": True, "min_score": 0.0},
     },
 }
-DEFAULT_STAGE_ID = "shaping"
+DEFAULT_STAGE_ID = "concept"
+STAGE_ORDER: Tuple[str, ...] = ("concept", "stabilization", "final")
+LEGACY_STAGE_ALIASES: Dict[str, str] = {"shaping": "concept"}
+
+
+def normalize_stage_id(stage_id: Optional[str], fallback: str = DEFAULT_STAGE_ID) -> str:
+    token = str(stage_id or "").strip().lower()
+    if token in LEGACY_STAGE_ALIASES:
+        token = str(LEGACY_STAGE_ALIASES[token]).strip().lower()
+    if token in STAGE_PRESETS:
+        return token
+    fallback_token = str(fallback or DEFAULT_STAGE_ID).strip().lower() or DEFAULT_STAGE_ID
+    if fallback_token in LEGACY_STAGE_ALIASES:
+        fallback_token = str(LEGACY_STAGE_ALIASES[fallback_token]).strip().lower()
+    return fallback_token if fallback_token in STAGE_PRESETS else DEFAULT_STAGE_ID
 
 
 def coverage_preset_map() -> Dict[str, Dict[str, Any]]:

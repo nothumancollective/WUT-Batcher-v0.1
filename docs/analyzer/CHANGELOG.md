@@ -653,3 +653,26 @@
   - current non-polar final-stage dependencies (`IMPEDANCE`, `PHASE_GD`) and where they are wired
   - live DB orientation evidence from `cleanup/runtime/postmerge_lib/P021/dataset/project.sqlite`
   - explicit target state + implementation risks/unknowns.
+
+## 2026-02-24 (Analyzer stage model migration: Concept/Stabilization/Final, polar-only)
+- Consolidated active stage model to exactly three stages:
+  - `concept`
+  - `stabilization`
+  - `final`
+- Removed active `shaping` stage wiring from UI/services and kept backward compatibility via alias normalization (`shaping -> concept`) for legacy saved configs/cache rows.
+- Updated stage presets (`app/analyzer/presets.py`):
+  - new three-stage weights/visible columns/default filters
+  - default stage is now `concept`.
+- Switched stage-plot defaults to polar-only final mode:
+  - `final` explorer tiles now use `R_off`, `S_theta`, `E_sym_shape`
+  - removed non-polar final tile references (`Impedance/Loading`, `Phase/GD`).
+- Removed non-polar final-stage artifact fallback wiring from Analyzer stage payload path (`app/services.py`).
+- Hardened plane discovery for legacy orientation storage by augmenting `polar_measurements.orientation` tokens with `orientation_raw`-derived `X3_*` aliases before canonicalization.
+- Extended KPI aggregate/scoring path (`app/analyzer/kpi_engine.py`) with polar-derived stage metrics:
+  - `di_proxy`, `s_theta`, `e_sym_shape`, `r_off`
+  - stage-score normalization now supports both MVP metrics and stage-2/3 metrics.
+- Updated stage architecture docs:
+  - `docs/analyzer/01_kpi_foundations.md`
+  - `docs/analyzer/02_ui_architecture.md`
+  - `docs/analyzer/03_kpi_scoring_model.md`
+- Added/updated regression tests for the migrated stage model and polar-only final defaults.

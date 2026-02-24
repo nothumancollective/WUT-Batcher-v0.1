@@ -222,7 +222,7 @@ The Analyzer page is planned with two explicit subviews:
 ## Implementation status (Analyzer Stage Plot System)
 
 - Analyzer Explorer now uses a fixed **2x2 stage matrix** (always four panels):
-  - Stage 1 (`concept` / `shaping`):
+  - Stage 1 (`concept`):
     - A `Polar Map` (heatmap + `-6 dB` contour + target window shading)
     - B `Beamwidth Error vs Target`
     - C `Coverage Uniformity vs f`
@@ -235,8 +235,8 @@ The Analyzer page is planned with two explicit subviews:
   - Stage 3 (`final`):
     - A `Polar Map`
     - B `Off-axis Ripple (R_off) vs f`
-    - C `Impedance/Loading` (conditional availability)
-    - D `Group Delay/Phase` (conditional availability)
+    - C `Pattern Smoothness (S_theta) vs f`
+    - D `Plane Consistency (E_sym_shape) vs f`
 
 - Analyzer Compare now uses a fixed **2x2 matrix**:
   - A stage-dependent key-curve overlay
@@ -244,12 +244,10 @@ The Analyzer page is planned with two explicit subviews:
   - C KPI breakdown panel
   - D Pareto scatter (selectable KPI axes)
 
-- Stage-3 non-polar artifacts are availability-gated through analyzer artifact probes:
+- Artifact probes for stage surfaces are polar-first:
   - `POLAR` (active)
   - `SPL_FR` (scaffold)
-  - `IMPEDANCE` (scaffold)
-  - `PHASE_GD` (scaffold)
-  Missing artifacts render explicit non-crashing guidance text in the corresponding tiles.
+  Non-polar stage tiles are not part of active stage defaults.
 
 - Plot execution/dataflow:
   - list views stay metadata-only
@@ -279,7 +277,7 @@ The Analyzer page is planned with two explicit subviews:
 ## Implementation status (Analyzer Phase 2A: Batch Review KPI MVP)
 
 - Analyzer `Batch Review` now includes KPI-focused control surface:
-  - stage selector: `Concept | Shaping | Stabilization`
+  - stage selector: `Concept | Stabilization | Final`
   - target preset selector (`H x V`)
   - tolerance control (`+/- deg`)
   - frequency-band preset selector (including `Full (auto)` and `Custom`)

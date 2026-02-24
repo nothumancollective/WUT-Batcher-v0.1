@@ -703,12 +703,21 @@ class AnalyzerPageUiTests(unittest.TestCase):
             service = _build_service(Path(tmp))
             page = AnalysePage(service=service)
             self.assertEqual(sorted(page._explorer_stage_panels.keys()), ["A", "B", "C", "D"])
+            stage_ids = [str(page.stage_selector.itemData(idx) or "") for idx in range(page.stage_selector.count())]
+            self.assertEqual(stage_ids, ["concept", "stabilization", "final"])
             self.assertIn("Beamwidth Error", page._explorer_stage_panels["B"]["title_label"].text())
             for idx in range(page.stage_selector.count()):
                 if str(page.stage_selector.itemData(idx) or "") == "stabilization":
                     page.stage_selector.setCurrentIndex(idx)
                     break
             self.assertIn("DI Proxy", page._explorer_stage_panels["B"]["title_label"].text())
+            self.assertIn("Pattern Smoothness", page._explorer_stage_panels["C"]["title_label"].text())
+            self.assertIn("Plane Consistency", page._explorer_stage_panels["D"]["title_label"].text())
+            for idx in range(page.stage_selector.count()):
+                if str(page.stage_selector.itemData(idx) or "") == "final":
+                    page.stage_selector.setCurrentIndex(idx)
+                    break
+            self.assertIn("Off-axis Ripple", page._explorer_stage_panels["B"]["title_label"].text())
             self.assertIn("Pattern Smoothness", page._explorer_stage_panels["C"]["title_label"].text())
             self.assertIn("Plane Consistency", page._explorer_stage_panels["D"]["title_label"].text())
 

@@ -63,6 +63,17 @@ def _write_synthetic_run(
     angles = [-90.0, -60.0, -45.0, -30.0, -15.0, 0.0, 15.0, 30.0, 45.0, 60.0, 90.0]
     points = _build_points(freqs=freqs, angles=angles, bw_deg=60.0)
     for orientation in orientations:
+        orientation_token = str(orientation or "").strip().upper()
+        orientation_raw = 0.0
+        if orientation_token == "V":
+            orientation_raw = 90.0
+        elif orientation_token == "D":
+            orientation_raw = 45.0
+        elif orientation_token.startswith("X3_"):
+            try:
+                orientation_raw = float(orientation_token[3:])
+            except Exception:
+                orientation_raw = 0.0
         measurement = {
             "project_id": str(project_id),
             "batch_id": str(batch_id),
@@ -70,7 +81,7 @@ def _write_synthetic_run(
             "run_id": str(run_id),
             "graph_id": None,
             "orientation": orientation,
-            "orientation_raw": 0.0,
+            "orientation_raw": orientation_raw,
             "norm_angle_deg": norm_angle_deg,
             "data_level_type": "SPL",
             "data_base_unit": "dB",
@@ -124,7 +135,7 @@ class AnalyzerKpiServiceTests(unittest.TestCase):
                 tol_deg=5.0,
                 band_low_hz=200.0,
                 band_high_hz=1600.0,
-                stage_mode="shaping",
+                stage_mode="concept",
                 algo_version=ALGO_VERSION,
             )
             self.assertEqual(int(summary_1.get("computed") or 0), 2)
@@ -139,7 +150,7 @@ class AnalyzerKpiServiceTests(unittest.TestCase):
                 tol_deg=5.0,
                 band_low_hz=200.0,
                 band_high_hz=1600.0,
-                stage_mode="shaping",
+                stage_mode="concept",
                 algo_version=ALGO_VERSION,
             )
             self.assertEqual(int(summary_2.get("computed") or 0), 0)
@@ -149,7 +160,7 @@ class AnalyzerKpiServiceTests(unittest.TestCase):
                 project_id=project.project_id,
                 batch_id="B001",
                 source="project",
-                stage_mode="shaping",
+                stage_mode="concept",
                 band_low_hz=200.0,
                 band_high_hz=1600.0,
                 target_h_deg=60.0,
@@ -168,7 +179,7 @@ class AnalyzerKpiServiceTests(unittest.TestCase):
                 tol_deg=5.0,
                 band_low_hz=200.0,
                 band_high_hz=1600.0,
-                stage_mode="shaping",
+                stage_mode="concept",
                 algo_version=f"{ALGO_VERSION}-bump",
             )
             self.assertEqual(int(summary_3.get("computed") or 0), 2)
@@ -183,6 +194,19 @@ class AnalyzerKpiServiceTests(unittest.TestCase):
             self.assertIn(default_band_id, by_id)
             default_band = dict(by_id[default_band_id])
             self.assertGreaterEqual(float(default_band.get("low_hz") or 0.0), 200.0)
+
+    def test_presets_expose_three_stage_polar_model(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_kpi_stage_presets_") as tmp:
+            service = _build_service(Path(tmp))
+            presets = service.analyzer_presets()
+            stages = {str(key): dict(value) for key, value in dict(presets.get("stages") or {}).items()}
+            self.assertEqual(set(stages.keys()), {"concept", "stabilization", "final"})
+            self.assertEqual(str(presets.get("default_stage_id") or ""), "concept")
+            self.assertNotIn("shaping", stages)
+            final_weights = dict(stages.get("final", {}).get("weights") or {})
+            self.assertIn("r_off", final_weights)
+            self.assertIn("s_theta", final_weights)
+            self.assertIn("e_sym_shape", final_weights)
 
     def test_batch_review_rows_mark_missing_kpi_rows_with_reason_code(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_kpi_missing_rows_") as tmp:
@@ -260,6 +284,66 @@ class AnalyzerKpiServiceTests(unittest.TestCase):
             del service
             gc.collect()
 
+    def test_orientation_alias_x3_0_is_exposed_as_h(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_kpi_alias_h_") as tmp:
+            service = _build_service(Path(tmp))
+            project = service.create_project("Analyzer Alias H", {})
+            paths = service.repo.project_paths(project.project_id, ensure=True)
+            dataset = TidyDatasetWriter(paths.project_dir, library_root=service.settings.library_root)
+            _write_synthetic_run(
+                dataset=dataset,
+                project_id=project.project_id,
+                batch_id="B001",
+                run_id="R001",
+                version_id="V001",
+                hash_seed="hash_alias_h",
+                orientations=("V", "X3_0"),
+            )
+            runs = service.analyzer_list_polar_runs(project_id=project.project_id, batch_id="B001", source="project")
+            self.assertEqual(len(runs), 1)
+            self.assertEqual(list(runs[0].get("planes") or []), ["H", "V"])
+
+    def test_orientation_raw_fallback_resolves_h_when_orientation_token_is_blank(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_kpi_alias_h_raw_") as tmp:
+            service = _build_service(Path(tmp))
+            project = service.create_project("Analyzer Alias H Raw", {})
+            paths = service.repo.project_paths(project.project_id, ensure=True)
+            dataset = TidyDatasetWriter(paths.project_dir, library_root=service.settings.library_root)
+            freqs = [200.0, 400.0]
+            angles = [-30.0, 0.0, 30.0]
+            points = _build_points(freqs=freqs, angles=angles, bw_deg=60.0)
+            dataset.write_polar_measurement(
+                measurement={
+                    "project_id": project.project_id,
+                    "batch_id": "B001",
+                    "version_id": "V001",
+                    "run_id": "R001",
+                    "graph_id": None,
+                    "orientation": "",
+                    "orientation_raw": 0.0,
+                    "norm_angle_deg": 0.0,
+                    "data_level_type": "SPL",
+                    "data_base_unit": "dB",
+                    "data_absc_unit": "Hz",
+                    "freq_min_hz": min(freqs),
+                    "freq_max_hz": max(freqs),
+                    "freq_count": len(freqs),
+                    "angle_min_deg": min(angles),
+                    "angle_max_deg": max(angles),
+                    "angle_step_deg": 30.0,
+                    "angle_count": len(angles),
+                    "angles_deg_json": json.dumps(angles),
+                    "source_file": "raw_h.txt",
+                    "file_hash": "hash_raw_h",
+                    "export_meta_json": json.dumps({"fixture": True}),
+                    "created_at": _now_iso(),
+                },
+                points=points,
+            )
+            runs = service.analyzer_list_polar_runs(project_id=project.project_id, batch_id="B001", source="project")
+            self.assertEqual(len(runs), 1)
+            self.assertEqual(list(runs[0].get("planes") or []), ["H"])
+
     def test_batch_review_surfaces_missing_plane_as_warn_reason(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_kpi_missing_plane_warn_") as tmp:
             service = _build_service(Path(tmp))
@@ -283,14 +367,14 @@ class AnalyzerKpiServiceTests(unittest.TestCase):
                 tol_deg=5.0,
                 band_low_hz=200.0,
                 band_high_hz=1600.0,
-                stage_mode="shaping",
+                stage_mode="concept",
                 algo_version=ALGO_VERSION,
             )
             rows = service.analyzer_list_batch_review_runs(
                 project_id=project.project_id,
                 batch_id="B001",
                 source="project",
-                stage_mode="shaping",
+                stage_mode="concept",
                 band_low_hz=200.0,
                 band_high_hz=1600.0,
                 target_h_deg=60.0,
@@ -367,7 +451,7 @@ class AnalyzerKpiServiceTests(unittest.TestCase):
                 kpi_key="score",
                 filters={"exclude_flags": False, "exclude_missing_kpi": False},
                 top_n=5,
-                stage_mode="shaping",
+                stage_mode="concept",
                 band_low_hz=200.0,
                 band_high_hz=1600.0,
                 target_h_deg=60.0,
@@ -410,7 +494,7 @@ class AnalyzerKpiServiceTests(unittest.TestCase):
                     tol_deg=5.0,
                     band_low_hz=200.0,
                     band_high_hz=1600.0,
-                    stage_mode="shaping",
+                    stage_mode="concept",
                     algo_version=ALGO_VERSION,
                 )
             payload = service.analyzer_autopick_candidates(
@@ -420,7 +504,7 @@ class AnalyzerKpiServiceTests(unittest.TestCase):
                 kpi_key="score",
                 filters={"exclude_flags": False, "exclude_missing_kpi": False},
                 top_n=5,
-                stage_mode="shaping",
+                stage_mode="concept",
                 band_low_hz=200.0,
                 band_high_hz=1600.0,
                 target_h_deg=60.0,

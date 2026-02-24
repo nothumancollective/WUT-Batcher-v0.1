@@ -120,6 +120,36 @@ class AnalyzerStagePlotEngineTests(unittest.TestCase):
         self.assertEqual(len(di_consistency), 1)
         self.assertGreater(float(di_consistency[0]["value"]), 0.0)
 
+    def test_final_stage_payload_is_polar_only(self) -> None:
+        freqs = [500.0, 1000.0, 2000.0]
+        angles = [-60.0, -30.0, 0.0, 30.0, 60.0]
+        matrix = _build_matrix(
+            freqs=freqs,
+            angles=angles,
+            half_bw_by_freq={500.0: 35.0, 1000.0: 30.0, 2000.0: 26.0},
+        )
+        bw_curve = compute_beamwidth_curve(freqs_hz=freqs, angles_deg=angles, matrix_db=matrix)
+        payload = compute_stage_plot_payload(
+            stage_mode="final",
+            target_deg=60.0,
+            tol_deg=5.0,
+            freqs_hz=freqs,
+            angles_deg=angles,
+            matrix_db=matrix,
+            beamwidth_curve=bw_curve,
+            norm_angle_deg=0.0,
+            use_full_angles_for_smoothness=False,
+            bw_curves_by_plane={"H": bw_curve, "V": bw_curve},
+            di_curves_by_plane={},
+            artifact_status={"POLAR": {"available": True}},
+        )
+        curves = dict(payload.get("curves") or {})
+        self.assertIn("r_off", curves)
+        self.assertIn("s_theta", curves)
+        self.assertIn("e_sym_shape", curves)
+        self.assertNotIn("impedance_loading", curves)
+        self.assertNotIn("phase_gd", curves)
+
 
 if __name__ == "__main__":
     unittest.main()

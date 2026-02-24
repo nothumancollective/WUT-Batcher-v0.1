@@ -5,8 +5,15 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
-from app.analyzer.presets import DEFAULT_STAGE_ID, STAGE_PRESETS
+from app.analyzer.presets import DEFAULT_STAGE_ID, STAGE_PRESETS, normalize_stage_id
 from app.analyzer.reason_codes import reason_items_for_codes
+from app.analyzer.stage_plot_engine import (
+    compute_di_proxy_curve,
+    compute_plane_consistency_curve,
+    compute_r_off_curve,
+    compute_s_theta_curve,
+    summarize_curve,
+)
 
 _EPS = 1.0e-12
 
@@ -182,6 +189,84 @@ def _weighted_mean(values: Mapping[str, Optional[float]], weights: Mapping[str, 
     if denominator <= 0.0:
         return None
     return numerator / denominator
+
+
+def _build_plane_matrix(
+    rows: Sequence[Mapping[str, Any]],
+) -> Tuple[List[float], List[float], List[List[Optional[float]]]]:
+    freqs = sorted({float(item["freq_hz"]) for item in rows if item.get("freq_hz") is not None})
+    angles = sorted({float(item["angle_deg"]) for item in rows if item.get("angle_deg") is not None})
+    if not freqs or not angles:
+        return ([], [], [])
+
+    freq_idx = {freq: idx for idx, freq in enumerate(freqs)}
+    angle_idx = {angle: idx for idx, angle in enumerate(angles)}
+    matrix: List[List[Optional[float]]] = [[None for _ in freqs] for _ in angles]
+    for item in rows:
+        try:
+            freq_hz = float(item.get("freq_hz"))
+            angle_deg = float(item.get("angle_deg"))
+            re = float(item.get("re"))
+            im = float(item.get("im"))
+        except Exception:
+            continue
+        if freq_hz not in freq_idx or angle_deg not in angle_idx:
+            continue
+        matrix[angle_idx[angle_deg]][freq_idx[freq_hz]] = _mag_db(re, im)
+    return (freqs, angles, matrix)
+
+
+def _compute_advanced_stage_metrics(
+    *,
+    planes_points: Mapping[str, Sequence[Mapping[str, Any]]],
+    target_h_deg: float,
+    target_v_deg: float,
+) -> Dict[str, Optional[float]]:
+    plane_weights = _plane_weights(planes_points.keys())
+    di_means: Dict[str, Optional[float]] = {}
+    smooth_means: Dict[str, Optional[float]] = {}
+    ripple_means: Dict[str, Optional[float]] = {}
+    di_curves_by_plane: Dict[str, List[Dict[str, float]]] = {}
+
+    for plane, rows in planes_points.items():
+        token = str(plane or "").strip().upper()
+        if token not in {"H", "V", "D"}:
+            continue
+        freqs_hz, angles_deg, matrix_db = _build_plane_matrix(list(rows or []))
+        if not freqs_hz or not angles_deg or not matrix_db:
+            continue
+        target_deg = _orientation_target_deg(token, float(target_h_deg), float(target_v_deg))
+        di_curve = compute_di_proxy_curve(
+            freqs_hz=freqs_hz,
+            angles_deg=angles_deg,
+            matrix_db=matrix_db,
+            target_deg=float(target_deg),
+            norm_angle_deg=0.0,
+        )
+        smooth_curve = compute_s_theta_curve(
+            freqs_hz=freqs_hz,
+            angles_deg=angles_deg,
+            matrix_db=matrix_db,
+            target_deg=float(target_deg),
+            use_full_angles=False,
+        )
+        ripple_curve = compute_r_off_curve(
+            freqs_hz=freqs_hz,
+            angles_deg=angles_deg,
+            matrix_db=matrix_db,
+        )
+        di_curves_by_plane[token] = [dict(item) for item in list(di_curve or []) if isinstance(item, Mapping)]
+        di_means[token] = summarize_curve(di_curve)
+        smooth_means[token] = summarize_curve(smooth_curve)
+        ripple_means[token] = summarize_curve(ripple_curve)
+
+    e_sym_curve = compute_plane_consistency_curve(bw_by_plane={}, di_by_plane=di_curves_by_plane)
+    return {
+        "di_proxy": _weighted_mean(di_means, plane_weights),
+        "s_theta": _weighted_mean(smooth_means, plane_weights),
+        "r_off": _weighted_mean(ripple_means, plane_weights),
+        "e_sym_shape": summarize_curve(e_sym_curve),
+    }
 
 
 def _normalize_rows(points: Sequence[Mapping[str, Any]]) -> Dict[float, Dict[float, float]]:
@@ -381,6 +466,7 @@ def compute_run_kpis(
     band_high_hz: float,
 ) -> Dict[str, Any]:
     per_plane: Dict[str, Dict[str, Any]] = {}
+    per_plane_points: Dict[str, List[Mapping[str, Any]]] = {}
     reason_codes: Set[str] = set()
     for orientation, rows in planes_points.items():
         token = str(orientation or "").strip().upper()
@@ -388,6 +474,7 @@ def compute_run_kpis(
             continue
         if not rows:
             continue
+        per_plane_points[token] = [dict(item) for item in list(rows or []) if isinstance(item, Mapping)]
         plane_payload = compute_plane_kpis(
             orientation=token,
             points=rows,
@@ -425,6 +512,13 @@ def compute_run_kpis(
         "reason_codes": sorted(reason_codes),
         "reason_items": reason_items_for_codes(sorted(reason_codes)),
     }
+    aggregate.update(
+        _compute_advanced_stage_metrics(
+            planes_points=per_plane_points,
+            target_h_deg=float(target_h_deg),
+            target_v_deg=float(target_v_deg),
+        )
+    )
 
     flags = {
         "jump_hz": {
@@ -461,7 +555,7 @@ def compute_stage_score(kpi_payload: Mapping[str, Any], stage_id: str = DEFAULT_
     aggregate = dict(kpi_payload.get("aggregate", {}) or {})
     if bool(aggregate.get("unscorable")):
         return None
-    stage_key = str(stage_id or DEFAULT_STAGE_ID).strip().lower()
+    stage_key = normalize_stage_id(stage_id, fallback=DEFAULT_STAGE_ID)
     stage = dict(STAGE_PRESETS.get(stage_key) or STAGE_PRESETS[DEFAULT_STAGE_ID])
     weights = dict(stage.get("weights", {}) or {})
 
@@ -469,6 +563,10 @@ def compute_stage_score(kpi_payload: Mapping[str, Any], stage_id: str = DEFAULT_
     e_bw = aggregate.get("e_bw")
     e_cov = aggregate.get("e_cov")
     r_spill = aggregate.get("r_spill")
+    di_proxy = aggregate.get("di_proxy")
+    s_theta = aggregate.get("s_theta")
+    e_sym_shape = aggregate.get("e_sym_shape")
+    r_off = aggregate.get("r_off")
     flags_count = int(aggregate.get("flags_count") or 0)
     flagged = bool(aggregate.get("flagged"))
 
@@ -477,17 +575,29 @@ def compute_stage_score(kpi_payload: Mapping[str, Any], stage_id: str = DEFAULT_
     e_cov_norm = _clamp(1.0 - (_safe_float(e_cov, 100.0) / 6.0), 0.0, 1.0)
     spill_db = 10.0 * math.log10(max(_safe_float(r_spill, 10.0), _EPS))
     spill_norm = _clamp((5.0 - spill_db) / 20.0, 0.0, 1.0)
+    di_proxy_norm = _clamp(_safe_float(di_proxy, 0.0) / 6.0, 0.0, 1.0)
+    s_theta_norm = _clamp(1.0 - (_safe_float(s_theta, 10.0) / 0.35), 0.0, 1.0)
+    e_sym_norm = _clamp(1.0 - (_safe_float(e_sym_shape, 100.0) / 12.0), 0.0, 1.0)
+    r_off_norm = _clamp(1.0 - (_safe_float(r_off, 100.0) / 8.0), 0.0, 1.0)
     if not flagged:
         flags_norm = 1.0
     else:
         flags_norm = _clamp(1.0 - (min(flags_count, 3) / 3.0), 0.0, 1.0)
 
-    weighted = (
-        (_safe_float(weights.get("b_pc_oct"), 0.0) * b_pc_norm)
-        + (_safe_float(weights.get("e_bw"), 0.0) * e_bw_norm)
-        + (_safe_float(weights.get("e_cov"), 0.0) * e_cov_norm)
-        + (_safe_float(weights.get("r_spill"), 0.0) * spill_norm)
-        + (_safe_float(weights.get("flags"), 0.0) * flags_norm)
+    normalized_metrics = {
+        "b_pc_oct": b_pc_norm,
+        "e_bw": e_bw_norm,
+        "e_cov": e_cov_norm,
+        "r_spill": spill_norm,
+        "di_proxy": di_proxy_norm,
+        "s_theta": s_theta_norm,
+        "e_sym_shape": e_sym_norm,
+        "r_off": r_off_norm,
+        "flags": flags_norm,
+    }
+    weighted = sum(
+        _safe_float(weights.get(metric_key), 0.0) * float(metric_value)
+        for metric_key, metric_value in normalized_metrics.items()
     )
     if bool(aggregate.get("insufficient_coverage")):
         weighted *= 0.75
