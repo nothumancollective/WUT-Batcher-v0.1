@@ -563,6 +563,25 @@ STAGE_PARETO_DEFAULTS: Dict[str, Tuple[str, str]] = {
     "final": ("r_off", "s_theta"),
 }
 
+VERSION_INFO_STAGE_METRICS: Dict[str, Tuple[str, ...]] = {
+    "concept": ("score", "b_pc_oct", "e_bw", "e_cov", "r_spill", "flags"),
+    "stabilization": ("score", "di_proxy", "s_theta", "e_sym_shape", "flags"),
+    "final": ("score", "r_off", "s_theta", "e_sym_shape", "flags"),
+}
+
+VERSION_INFO_METRIC_META: Dict[str, Dict[str, Any]] = {
+    "score": {"label": "Score", "tip": "Stage score for the selected Batch/Version.", "digits": 2},
+    "b_pc_oct": {"label": "Pattern Ctrl", "tip": "Pattern control, in octave units.", "digits": 2},
+    "e_bw": {"label": "BW Error", "tip": "Beamwidth error in degrees.", "digits": 2},
+    "e_cov": {"label": "Cov Error", "tip": "Coverage uniformity error in dB.", "digits": 2},
+    "r_spill": {"label": "Spill", "tip": "Spill ratio in the selected window.", "digits": 3},
+    "di_proxy": {"label": "DI Proxy", "tip": "Local-window level minus wide-angle proxy level.", "digits": 2},
+    "s_theta": {"label": "Smoothness", "tip": "RMS angular gradient in the active window.", "digits": 3},
+    "e_sym_shape": {"label": "Plane Consistency", "tip": "Inter-plane spread of beamwidth/DI behavior.", "digits": 3},
+    "r_off": {"label": "Off-axis Ripple", "tip": "Ripple spread across key off-axis angles.", "digits": 2},
+    "flags": {"label": "Flags", "tip": "Flag summary count and severity tags."},
+}
+
 
 class HeatmapCanvas(QLabel):
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -5702,21 +5721,21 @@ class AnalysePage(QWidget):
         scores_layout.setHorizontalSpacing(4)
         scores_layout.setVerticalSpacing(3)
         self._version_info_metric_labels: Dict[str, QLabel] = {}
+        self._version_info_metric_rows: List[Dict[str, Any]] = []
         metric_value_font = QFont()
         metric_value_font.setStyleHint(QFont.Monospace)
         metric_value_font.setFixedPitch(True)
-        for row_idx, (key, label_text, tip) in enumerate(
-            (
-            ("score", "Score", "Stage score for the selected Batch/Version."),
-            ("b_pc_oct", "Pattern Ctrl", "Pattern control, in octave units."),
-            ("e_bw", "BW Error", "Beamwidth error in degrees."),
-            ("e_cov", "Cov Error", "Coverage uniformity error in dB."),
-            ("r_spill", "Spill", "Spill ratio in the selected window."),
-            ("flags", "Flags", "Flag summary count and severity tags."),
+        default_metric_keys = list(
+            VERSION_INFO_STAGE_METRICS.get(
+                DEFAULT_STAGE_ID,
+                ("score", "b_pc_oct", "e_bw", "e_cov", "r_spill", "flags"),
             )
-        ):
-            label = QLabel(label_text)
+        )
+        for row_idx, metric_key in enumerate(default_metric_keys):
+            meta = dict(VERSION_INFO_METRIC_META.get(str(metric_key), {}) or {})
+            label = QLabel(str(meta.get("label") or str(metric_key)))
             label.setObjectName("SummaryMeta")
+            tip = str(meta.get("tip") or "")
             label.setToolTip(tip)
             label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
             label.setMinimumWidth(66)
@@ -5730,7 +5749,14 @@ class AnalysePage(QWidget):
             value.setFont(metric_value_font)
             value.setMinimumWidth(58)
             value.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Preferred)
-            self._version_info_metric_labels[key] = value
+            self._version_info_metric_labels[f"row_{row_idx}"] = value
+            self._version_info_metric_rows.append(
+                {
+                    "metric_key": str(metric_key),
+                    "key_label": label,
+                    "value_label": value,
+                }
+            )
             scores_layout.addWidget(label, row_idx, 0, Qt.AlignLeft | Qt.AlignVCenter)
             scores_layout.addWidget(value, row_idx, 1)
         scores_layout.setColumnStretch(0, 0)
@@ -8478,11 +8504,70 @@ class AnalysePage(QWidget):
         value = html.escape(str(value_text or "--").strip() or "--")
         return f"<span style='color:#A2A2A2'>{key}</span>: <span style='color:#E6E6E6'>{value}</span>"
 
+    def _stage_version_metric_keys(self) -> List[str]:
+        stage_id = self._selected_stage_id()
+        configured = VERSION_INFO_STAGE_METRICS.get(stage_id)
+        if configured:
+            return [str(key) for key in configured]
+        return [str(key) for key in VERSION_INFO_STAGE_METRICS.get(DEFAULT_STAGE_ID, ("score", "flags"))]
+
+    @staticmethod
+    def _version_aggregate_payload(data: Dict[str, Any]) -> Dict[str, Any]:
+        return dict(dict(data.get("kpi", {}) or {}).get("aggregate", {}) or {})
+
+    def _version_metric_value_text(self, data: Dict[str, Any], metric_key: str) -> str:
+        token = str(metric_key or "").strip().lower()
+        if token == "flags":
+            return self._flags_text(data)
+        if token == "score":
+            return self._format_float(data.get("kpi_score"), 2)
+        direct_field_map = {
+            "b_pc_oct": "kpi_b_pc_oct",
+            "e_bw": "kpi_e_bw",
+            "e_cov": "kpi_e_cov",
+            "r_spill": "kpi_r_spill",
+        }
+        value = None
+        field_name = direct_field_map.get(token)
+        if field_name:
+            value = data.get(field_name)
+        if value is None:
+            value = self._version_aggregate_payload(data).get(token)
+        digits = int(dict(VERSION_INFO_METRIC_META.get(token, {}) or {}).get("digits", 2) or 2)
+        return self._format_float(value, digits)
+
+    def _sync_version_metric_rows(self, data: Dict[str, Any]) -> None:
+        metric_keys = self._stage_version_metric_keys()
+        hint = "Compute KPIs to populate this metric."
+        for index, row in enumerate(self._version_info_metric_rows):
+            key_label = row.get("key_label")
+            value_label = row.get("value_label")
+            if not isinstance(key_label, QLabel) or not isinstance(value_label, QLabel):
+                continue
+            if index >= len(metric_keys):
+                row["metric_key"] = ""
+                key_label.setVisible(False)
+                value_label.setVisible(False)
+                continue
+            metric_key = str(metric_keys[index] or "").strip().lower()
+            meta = dict(VERSION_INFO_METRIC_META.get(metric_key, {}) or {})
+            tip = str(meta.get("tip") or "")
+            row["metric_key"] = metric_key
+            key_label.setVisible(True)
+            value_label.setVisible(True)
+            key_label.setText(str(meta.get("label") or metric_key))
+            key_label.setToolTip(tip)
+            value_text = self._version_metric_value_text(data, metric_key) if data else "--"
+            value_label.setText(value_text)
+            if value_text == "--":
+                value_label.setToolTip(f"{tip}\n{hint}" if tip else hint)
+            else:
+                value_label.setToolTip(tip)
+
     def _update_version_information_panel(self, payload: Dict[str, Any]) -> None:
         data = dict(payload or {})
+        self._sync_version_metric_rows(data)
         if not data:
-            for label in self._version_info_metric_labels.values():
-                label.setText("--")
             self.version_dims_label.set_full_text("--")
             for label in self._version_chip_labels.values():
                 label.setText("--")
@@ -8496,13 +8581,6 @@ class AnalysePage(QWidget):
             self._note_sync_guard = False
             self._update_version_note_counter(remaining=self._version_note_max_chars)
             return
-
-        self._version_info_metric_labels["score"].setText(self._format_float(data.get("kpi_score"), 2))
-        self._version_info_metric_labels["b_pc_oct"].setText(self._format_float(data.get("kpi_b_pc_oct"), 2))
-        self._version_info_metric_labels["e_bw"].setText(self._format_float(data.get("kpi_e_bw"), 2))
-        self._version_info_metric_labels["e_cov"].setText(self._format_float(data.get("kpi_e_cov"), 2))
-        self._version_info_metric_labels["r_spill"].setText(self._format_float(data.get("kpi_r_spill"), 3))
-        self._version_info_metric_labels["flags"].setText(self._flags_text(data))
 
         length_mm = data.get("ath_length_mm")
         width_mm = data.get("ath_width_mm")
@@ -8819,6 +8897,7 @@ class AnalysePage(QWidget):
         if self._control_sync_guard:
             return
         self._apply_stage_defaults(include_filters=False)
+        self._update_version_information_panel(dict(self._selected_detail_payload or {}))
         self._update_toolbar_context_chips()
         if not self._selected_project_id() or not self._selected_batch_id():
             self._schedule_plot_refresh()

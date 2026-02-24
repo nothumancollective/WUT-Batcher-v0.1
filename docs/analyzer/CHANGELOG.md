@@ -1,5 +1,11 @@
 ﻿# Analyzer Docs â€” Changelog
 
+## 2026-02-24 (Fix 2 - stage-specific KPI mapping in Version Information)
+- Added explicit stage-to-metric mapping for the Version Information KPI block (Concept/Stabilization/Final).
+- KPI row labels now switch to stage-friendly names (for example DI Proxy, Smoothness, Plane Consistency, Off-axis Ripple).
+- KPI values now resolve from cached KPI aggregate payload for stage-specific metrics, with explicit `--` and compute hints when unavailable.
+- Added UI regression coverage validating stage-dependent KPI labels and values across Concept -> Stabilization -> Final.
+
 ## 2026-02-24 (Fix 1 - stage switch preserves selection context)
 - Updated Analyzer stage-change behavior so stage switches no longer overwrite active filter toggles.
 - Stage transitions now preserve the current selection/version context while still updating stage plot layout/column visibility.

@@ -440,6 +440,67 @@ class AnalyzerPageUiTests(unittest.TestCase):
             self.assertEqual(page.run_table.rowCount(), 1)
             self.assertEqual(str(page._selected_detail_payload.get("version_id") or ""), "V001")
 
+    def test_version_info_metrics_follow_stage_mapping_and_labels(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_ui_stage_metric_labels_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            payload = {
+                "project_id": "P001",
+                "batch_id": "B001",
+                "run_id": "R001",
+                "version_id": "V001",
+                "planes": ["H", "V", "D"],
+                "kpi_score": 88.2,
+                "kpi_b_pc_oct": 1.9,
+                "kpi_e_bw": 1.5,
+                "kpi_e_cov": 0.8,
+                "kpi_r_spill": 0.13,
+                "kpi_flags_count": 0,
+                "kpi": {
+                    "aggregate": {
+                        "di_proxy": 8.74,
+                        "s_theta": 0.197,
+                        "e_sym_shape": 0.501,
+                        "r_off": 12.95,
+                    }
+                },
+            }
+            page._set_details(payload)
+            self.app.processEvents()
+
+            def _visible_metric_rows() -> list[tuple[str, str]]:
+                rows: list[tuple[str, str]] = []
+                for row in page._version_info_metric_rows:
+                    key_label = row.get("key_label")
+                    value_label = row.get("value_label")
+                    if key_label is None or value_label is None:
+                        continue
+                    if key_label.isHidden() or value_label.isHidden():
+                        continue
+                    rows.append((str(key_label.text() or ""), str(value_label.text() or "")))
+                return rows
+
+            concept_rows = _visible_metric_rows()
+            self.assertEqual([item[0] for item in concept_rows], ["Score", "Pattern Ctrl", "BW Error", "Cov Error", "Spill", "Flags"])
+            self.assertEqual(concept_rows[1][1], "1.90")
+            self.assertEqual(concept_rows[4][1], "0.130")
+
+            page._set_combo_current_by_data(page.stage_selector, "stabilization")
+            self.app.processEvents()
+            stabilization_rows = _visible_metric_rows()
+            self.assertEqual([item[0] for item in stabilization_rows], ["Score", "DI Proxy", "Smoothness", "Plane Consistency", "Flags"])
+            self.assertEqual(stabilization_rows[1][1], "8.74")
+            self.assertEqual(stabilization_rows[2][1], "0.197")
+            self.assertEqual(stabilization_rows[3][1], "0.501")
+
+            page._set_combo_current_by_data(page.stage_selector, "final")
+            self.app.processEvents()
+            final_rows = _visible_metric_rows()
+            self.assertEqual([item[0] for item in final_rows], ["Score", "Off-axis Ripple", "Smoothness", "Plane Consistency", "Flags"])
+            self.assertEqual(final_rows[1][1], "12.95")
+            self.assertEqual(final_rows[2][1], "0.197")
+            self.assertEqual(final_rows[3][1], "0.501")
+
     def test_sweep_value_label_is_single_line_elided_with_tooltip(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_ui2x_sweep_elide_") as tmp:
             service = _build_service(Path(tmp))

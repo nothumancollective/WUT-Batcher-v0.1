@@ -469,7 +469,10 @@ The Analyzer page is planned with two explicit subviews:
 
 ### Version Information content model
 - The center block is split into:
-  - left sub-block (1/4): vertical score/KPI list (`Score`, `Pattern Ctrl`, `BW Error`, `Cov Error`, `Spill`, `Flags`)
+  - left sub-block (1/4): stage-aware vertical score/KPI list:
+    - `concept`: `Score`, `Pattern Ctrl`, `BW Error`, `Cov Error`, `Spill`, `Flags`
+    - `stabilization`: `Score`, `DI Proxy`, `Smoothness`, `Plane Consistency`, `Flags`
+    - `final`: `Score`, `Off-axis Ripple`, `Smoothness`, `Plane Consistency`, `Flags`
   - right sub-block (3/4): 3 equal columns.
 - Column 1:
   - final dimensions (`L x W x H mm`, 1 decimal)

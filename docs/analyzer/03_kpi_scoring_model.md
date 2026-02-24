@@ -59,6 +59,15 @@ Last updated: 2026-02-24
   - `E_sym_shape = 0.22`
   - `flags = 0.12`
 
+## Version Information KPI rows (stage-aware UI mapping)
+
+- The Analyzer Version Information KPI block is stage-mapped in the UI:
+  - `concept`: `Score`, `Pattern Ctrl`, `BW Error`, `Cov Error`, `Spill`, `Flags`
+  - `stabilization`: `Score`, `DI Proxy`, `Smoothness`, `Plane Consistency`, `Flags`
+  - `final`: `Score`, `Off-axis Ripple`, `Smoothness`, `Plane Consistency`, `Flags`
+- Stage-specific UI values are sourced from cached KPI aggregate fields.
+- Missing values render as `--` with a `Compute KPIs` hint (no empty KPI block).
+
 ## Score normalization
 
 - Higher-better metrics:
