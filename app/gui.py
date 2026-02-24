@@ -8393,15 +8393,97 @@ class AnalysePage(QWidget):
             color = QColor("#8EC4FF")
         return (int(color.red()), int(color.green()), int(color.blue()))
 
+    @staticmethod
+    def _metric_spec_range(
+        spec: Optional[Mapping[str, Any]],
+        range_key: str,
+    ) -> Optional[Tuple[Optional[float], Optional[float]]]:
+        if not isinstance(spec, Mapping):
+            return None
+        value = spec.get(range_key)
+        if not isinstance(value, (tuple, list)) or len(value) < 2:
+            return None
+
+        def _finite(item: Any) -> Optional[float]:
+            if item is None:
+                return None
+            try:
+                parsed = float(item)
+            except Exception:
+                return None
+            if not math.isfinite(parsed):
+                return None
+            return float(parsed)
+
+        low = _finite(value[0])
+        high = _finite(value[1])
+        if low is None and high is None:
+            return None
+        if low is not None and high is not None and high <= low:
+            return None
+        return (low, high)
+
+    @classmethod
+    def _metric_band_capabilities_for_spec(cls, spec: Optional[Mapping[str, Any]]) -> Dict[str, bool]:
+        if not isinstance(spec, Mapping):
+            return {
+                "warn_line": False,
+                "bad_line": False,
+                "warn_band": False,
+                "bad_band": False,
+            }
+        direction = str(spec.get("direction") or "").strip().upper()
+        good_range = cls._metric_spec_range(spec, "good_range")
+        warn_range = cls._metric_spec_range(spec, "warn_range")
+        bad_range = cls._metric_spec_range(spec, "bad_range")
+
+        warn_line_defined = False
+        bad_line_defined = False
+
+        if direction == "LOWER_IS_BETTER":
+            warn_line_defined = bool(good_range and good_range[1] is not None) or bool(warn_range and warn_range[0] is not None)
+            bad_line_defined = bool(warn_range and warn_range[1] is not None) or bool(bad_range and bad_range[0] is not None)
+        elif direction == "HIGHER_IS_BETTER":
+            warn_line_defined = bool(good_range and good_range[0] is not None) or bool(warn_range and warn_range[1] is not None)
+            bad_line_defined = bool(warn_range and warn_range[0] is not None) or bool(bad_range and bad_range[1] is not None)
+        elif direction == "TARGET_IS_BEST":
+            warn_line_defined = bool(good_range and warn_range)
+            bad_line_defined = bool(bad_range)
+        elif direction == "RANGE_IS_BEST":
+            warn_line_defined = bool(good_range)
+            bad_line_defined = bool(bad_range)
+
+        return {
+            "warn_line": bool(warn_line_defined),
+            "bad_line": bool(bad_line_defined),
+            "warn_band": bool(warn_range),
+            "bad_band": bool(bad_range),
+        }
+
+    def _display_advanced_metric_context(self) -> Tuple[str, Dict[str, bool]]:
+        metric_key = ""
+        if self.analysis_tabs.currentWidget() is self.compare_tab:
+            metric_key = str(self._compare_overlay_curve_key or "").strip().lower()
+        if not metric_key:
+            panel = dict(self._explorer_stage_panels.get("B", {}) or {})
+            metric_key = str(panel.get("metric_key") or "").strip().lower()
+        spec = metric_band_spec_for_key(metric_key)
+        return (
+            metric_key,
+            self._metric_band_capabilities_for_spec(spec),
+        )
+
     def _open_display_advanced_dialog(self) -> None:
-        dialog = StyledDialogBase(title="Display Advanced", parent=self, min_width=560, min_height=360)
+        dialog = StyledDialogBase(title="Display Advanced", parent=self, min_width=640, min_height=420)
         body = dialog.body_layout()
-        intro = QLabel("Configure hidden display options and rendering toggles.")
+        intro = QLabel("Configure display options and metric-band rendering controls.")
         intro.setObjectName("SummaryText")
         intro.setWordWrap(True)
         body.addWidget(intro, 0)
 
-        form = QGridLayout()
+        display_group = QGroupBox("Display Options")
+        display_group.setObjectName("AnalyzerDisplayAdvancedDisplayGroup")
+        form = QGridLayout(display_group)
         form.setContentsMargins(0, 0, 0, 0)
         form.setHorizontalSpacing(8)
         form.setVerticalSpacing(6)
@@ -8453,48 +8535,17 @@ class AnalysePage(QWidget):
         mirrored_minus6_check.setChecked(bool(getattr(self, "_show_mirrored_minus6_contour", False)))
         form.addWidget(mirrored_minus6_check, 3, 2, 1, 2, Qt.AlignLeft | Qt.AlignVCenter)
 
-        metric_bands_check = QCheckBox("Show metric bands")
-        metric_bands_check.setObjectName("AnalyzerMetricBandsCheck")
-        metric_bands_check.setChecked(bool(self._show_metric_bands))
-        metric_bands_check.setToolTip("Enable decorative trend/defect strip fills in stage metric plots.")
-        form.addWidget(metric_bands_check, 4, 0, 1, 2, Qt.AlignLeft | Qt.AlignVCenter)
-
-        metric_band_smooth_check = QCheckBox("Smooth metric bands")
-        metric_band_smooth_check.setObjectName("AnalyzerMetricBandSmoothCheck")
-        metric_band_smooth_check.setChecked(bool(self._metric_band_smooth))
-        metric_band_smooth_check.setEnabled(bool(metric_bands_check.isChecked()))
-        metric_band_smooth_check.setToolTip("Smooth bands use anti-aliased fills. Disable for block-style strips.")
-        metric_bands_check.toggled.connect(metric_band_smooth_check.setEnabled)
-        form.addWidget(metric_band_smooth_check, 5, 0, 1, 2, Qt.AlignLeft | Qt.AlignVCenter)
-
         smoothness_check = QCheckBox("Use full angles for smoothness (S_theta)")
         smoothness_check.setObjectName("AnalyzerFullAnglesSmoothnessCheck")
         smoothness_check.setChecked(bool(self._use_full_angles_for_smoothness))
         smoothness_check.setToolTip("When enabled, S_theta uses all angles instead of the target window.")
-        form.addWidget(smoothness_check, 5, 2, 1, 2, Qt.AlignLeft | Qt.AlignVCenter)
-
-        metric_band_opacity_slider = QSlider(Qt.Horizontal)
-        metric_band_opacity_slider.setObjectName("AnalyzerMetricBandOpacitySlider")
-        metric_band_opacity_slider.setRange(5, 100)
-        metric_band_opacity_slider.setSingleStep(5)
-        metric_band_opacity_slider.setPageStep(10)
-        metric_band_opacity_slider.setValue(int(round(max(0.05, min(float(self._metric_band_opacity), 1.0)) * 100.0)))
-        metric_band_opacity_slider.setEnabled(bool(metric_bands_check.isChecked()))
-        metric_band_opacity_slider.setToolTip("Global metric band opacity (low values recommended).")
-        metric_band_opacity_value = QLabel(f"{int(metric_band_opacity_slider.value())}%")
-        metric_band_opacity_value.setObjectName("SummaryMeta")
-        metric_band_opacity_value.setMinimumWidth(42)
-        metric_band_opacity_slider.valueChanged.connect(lambda value: metric_band_opacity_value.setText(f"{int(value)}%"))
-        metric_bands_check.toggled.connect(metric_band_opacity_slider.setEnabled)
-        form.addWidget(QLabel("Band opacity"), 6, 0, Qt.AlignLeft | Qt.AlignVCenter)
-        form.addWidget(metric_band_opacity_slider, 6, 1, 1, 2)
-        form.addWidget(metric_band_opacity_value, 6, 3, Qt.AlignRight | Qt.AlignVCenter)
+        form.addWidget(smoothness_check, 4, 0, 1, 4, Qt.AlignLeft | Qt.AlignVCenter)
 
         target_axis_color_state = {"hex": _coerce_hex_rgb(self._target_axis_color_hex)}
-        form.addWidget(QLabel("Target axis color"), 7, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        form.addWidget(QLabel("Target axis color"), 5, 0, Qt.AlignLeft | Qt.AlignVCenter)
         target_axis_color_preview = QLabel("")
         target_axis_color_preview.setObjectName("SummaryMeta")
-        target_axis_color_preview.setFixedHeight(22)
+        target_axis_color_preview.setMinimumHeight(22)
         target_axis_color_preview.setMinimumWidth(62)
 
         def _refresh_target_axis_preview() -> None:
@@ -8506,12 +8557,9 @@ class AnalysePage(QWidget):
             target_axis_color_preview.setToolTip(f"Target line color: {color_hex}")
 
         _refresh_target_axis_preview()
-        form.addWidget(target_axis_color_preview, 7, 1, Qt.AlignLeft | Qt.AlignVCenter)
+        form.addWidget(target_axis_color_preview, 5, 1, Qt.AlignLeft | Qt.AlignVCenter)
         target_axis_color_btn = QPushButton("Pick...")
         target_axis_color_btn.setObjectName("BatchSecondaryButton")
-        target_axis_color_btn.setMinimumHeight(24)
-        target_axis_color_btn.setMaximumHeight(24)
-        target_axis_color_btn.setMinimumWidth(88)
 
         def _pick_target_axis_color() -> None:
             initial = QColor(str(target_axis_color_state.get("hex") or "#8EC4FF"))
@@ -8522,14 +8570,195 @@ class AnalysePage(QWidget):
             _refresh_target_axis_preview()
 
         target_axis_color_btn.clicked.connect(_pick_target_axis_color)
-        form.addWidget(target_axis_color_btn, 7, 2, Qt.AlignLeft | Qt.AlignVCenter)
-        body.addLayout(form)
+        form.addWidget(target_axis_color_btn, 5, 2, Qt.AlignLeft | Qt.AlignVCenter)
+        form.setColumnStretch(1, 1)
+        form.setColumnStretch(3, 1)
+        body.addWidget(display_group)
+
+        metric_group = QGroupBox("Metric Bands")
+        metric_group.setObjectName("AnalyzerDisplayAdvancedMetricBandsGroup")
+        metric_form = QGridLayout(metric_group)
+        metric_form.setContentsMargins(0, 0, 0, 0)
+        metric_form.setHorizontalSpacing(8)
+        metric_form.setVerticalSpacing(6)
+
+        def _make_metric_toggle(label: str, *, checked: bool, object_name: str, tooltip: str = "") -> QToolButton:
+            toggle = QToolButton()
+            toggle.setObjectName(object_name)
+            toggle.setText(label)
+            toggle.setCheckable(True)
+            toggle.setToolButtonStyle(Qt.ToolButtonTextOnly)
+            toggle.setProperty("analyzerToggle", True)
+            toggle.setChecked(bool(checked))
+            if tooltip:
+                toggle.setToolTip(tooltip)
+            return toggle
+
+        metric_bands_check = _make_metric_toggle(
+            "Show metric bands",
+            checked=bool(self._show_metric_bands),
+            object_name="AnalyzerMetricBandsCheck",
+            tooltip="Show metric spec overlays in stage metric plots.",
+        )
+        metric_band_smooth_check = _make_metric_toggle(
+            "Smooth edges",
+            checked=bool(self._metric_band_smooth),
+            object_name="AnalyzerMetricBandSmoothCheck",
+            tooltip="Smooth uses continuous edges; blocks uses stepped edges when available.",
+        )
+        metric_good_band_toggle = _make_metric_toggle(
+            "Good band",
+            checked=bool(self._metric_band_show_good_band),
+            object_name="AnalyzerMetricBandShowGoodToggle",
+        )
+        metric_warn_line_toggle = _make_metric_toggle(
+            "Warn line",
+            checked=bool(self._metric_band_show_warn_line),
+            object_name="AnalyzerMetricBandShowWarnLineToggle",
+        )
+        metric_bad_line_toggle = _make_metric_toggle(
+            "Bad line",
+            checked=bool(self._metric_band_show_bad_line),
+            object_name="AnalyzerMetricBandShowBadLineToggle",
+        )
+        metric_warn_band_toggle = _make_metric_toggle(
+            "Warn band",
+            checked=bool(self._metric_band_show_warn_band),
+            object_name="AnalyzerMetricBandShowWarnBandToggle",
+        )
+        metric_bad_band_toggle = _make_metric_toggle(
+            "Bad band",
+            checked=bool(self._metric_band_show_bad_band),
+            object_name="AnalyzerMetricBandShowBadBandToggle",
+        )
+
+        metric_band_opacity_slider = QSlider(Qt.Horizontal)
+        metric_band_opacity_slider.setObjectName("AnalyzerMetricBandOpacitySlider")
+        metric_band_opacity_slider.setRange(5, 100)
+        metric_band_opacity_slider.setSingleStep(5)
+        metric_band_opacity_slider.setPageStep(10)
+        metric_band_opacity_slider.setValue(int(round(max(0.05, min(float(self._metric_band_opacity), 1.0)) * 100.0)))
+        metric_band_opacity_slider.setToolTip("Global metric-band opacity (low values recommended).")
+        metric_band_opacity_value = QLabel(f"{int(metric_band_opacity_slider.value())}%")
+        metric_band_opacity_value.setObjectName("SummaryMeta")
+        metric_band_opacity_value.setMinimumWidth(42)
+        metric_band_opacity_slider.valueChanged.connect(lambda value: metric_band_opacity_value.setText(f"{int(value)}%"))
+
+        active_metric_key, metric_capabilities = self._display_advanced_metric_context()
+        metric_capability_hint = QLabel(f"KPI context: {active_metric_key or 'unavailable'}")
+        metric_capability_hint.setObjectName("SummaryMeta")
+        metric_capability_hint.setWordWrap(True)
+
+        def _set_metric_capability(toggle: QToolButton, *, enabled: bool) -> None:
+            if enabled:
+                toggle.setEnabled(True)
+                toggle.setToolTip("")
+                return
+            toggle.setEnabled(False)
+            toggle.setToolTip("Not defined for this KPI")
+
+        def _refresh_metric_band_controls() -> None:
+            enabled = bool(metric_bands_check.isChecked())
+            metric_band_smooth_check.setEnabled(enabled)
+            metric_band_opacity_slider.setEnabled(enabled)
+            metric_good_band_toggle.setEnabled(enabled)
+            _set_metric_capability(metric_warn_line_toggle, enabled=enabled and bool(metric_capabilities.get("warn_line")))
+            _set_metric_capability(metric_bad_line_toggle, enabled=enabled and bool(metric_capabilities.get("bad_line")))
+            _set_metric_capability(metric_warn_band_toggle, enabled=enabled and bool(metric_capabilities.get("warn_band")))
+            _set_metric_capability(metric_bad_band_toggle, enabled=enabled and bool(metric_capabilities.get("bad_band")))
+
+        metric_bands_check.toggled.connect(_refresh_metric_band_controls)
+        _refresh_metric_band_controls()
+
+        metric_form.addWidget(metric_bands_check, 0, 0, 1, 2, Qt.AlignLeft | Qt.AlignVCenter)
+        metric_form.addWidget(metric_band_smooth_check, 0, 2, 1, 2, Qt.AlignLeft | Qt.AlignVCenter)
+        metric_form.addWidget(metric_good_band_toggle, 1, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        metric_form.addWidget(metric_warn_line_toggle, 1, 1, Qt.AlignLeft | Qt.AlignVCenter)
+        metric_form.addWidget(metric_bad_line_toggle, 1, 2, Qt.AlignLeft | Qt.AlignVCenter)
+        metric_form.addWidget(metric_warn_band_toggle, 2, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        metric_form.addWidget(metric_bad_band_toggle, 2, 1, Qt.AlignLeft | Qt.AlignVCenter)
+        metric_form.addWidget(QLabel("Band opacity"), 3, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        metric_form.addWidget(metric_band_opacity_slider, 3, 1, 1, 2)
+        metric_form.addWidget(metric_band_opacity_value, 3, 3, Qt.AlignRight | Qt.AlignVCenter)
+        metric_form.addWidget(metric_capability_hint, 4, 0, 1, 4)
+        body.addWidget(metric_group)
+
+        colors_group = QGroupBox("Metric Colors")
+        colors_group.setObjectName("AnalyzerDisplayAdvancedMetricColorsGroup")
+        colors_form = QGridLayout(colors_group)
+        colors_form.setContentsMargins(0, 0, 0, 0)
+        colors_form.setHorizontalSpacing(8)
+        colors_form.setVerticalSpacing(6)
+        metric_color_state = {
+            "good": _coerce_hex_rgb(self._metric_band_color_good_hex, fallback=ANALYZER_DISPLAY_COLOR_GOOD_DEFAULT),
+            "warn": _coerce_hex_rgb(self._metric_band_color_warn_hex, fallback=ANALYZER_DISPLAY_COLOR_WARN_DEFAULT),
+            "bad": _coerce_hex_rgb(self._metric_band_color_bad_hex, fallback=ANALYZER_DISPLAY_COLOR_BAD_DEFAULT),
+        }
+        metric_color_chips: Dict[str, QLabel] = {}
+
+        def _refresh_metric_color_chip(role: str) -> None:
+            chip = metric_color_chips.get(role)
+            if chip is None:
+                return
+            role_hex = _coerce_hex_rgb(metric_color_state.get(role), fallback=ANALYZER_DISPLAY_COLOR_GOOD_DEFAULT)
+            chip.setText(role_hex)
+            chip.setStyleSheet(
+                f"padding: 2px 8px; border: 1px solid #4A5668; border-radius: 4px; background: {role_hex}; color: #0E131A;"
+            )
+
+        def _pick_metric_color(role: str, title: str) -> None:
+            initial = QColor(_coerce_hex_rgb(metric_color_state.get(role), fallback=ANALYZER_DISPLAY_COLOR_GOOD_DEFAULT))
+            picked = QColorDialog.getColor(initial, dialog, title)
+            if not picked.isValid():
+                return
+            metric_color_state[role] = _coerce_hex_rgb(picked.name(QColor.HexRgb))
+            _refresh_metric_color_chip(role)
+
+        for row_index, (label, role) in enumerate((("Good", "good"), ("Warn", "warn"), ("Bad", "bad"))):
+            chip = QLabel("")
+            chip.setObjectName(f"AnalyzerMetricBandColorChip{role.title()}")
+            chip.setMinimumHeight(22)
+            metric_color_chips[role] = chip
+            _refresh_metric_color_chip(role)
+            pick_btn = QPushButton("Pick...")
+            pick_btn.setObjectName("BatchSecondaryButton")
+            pick_btn.clicked.connect(
+                lambda _checked=False, role_token=role, label_token=label: _pick_metric_color(
+                    role_token, f"Metric {label_token.lower()} color"
+                )
+            )
+            colors_form.addWidget(QLabel(label), row_index, 0, Qt.AlignLeft | Qt.AlignVCenter)
+            colors_form.addWidget(chip, row_index, 1, Qt.AlignLeft | Qt.AlignVCenter)
+            colors_form.addWidget(pick_btn, row_index, 2, Qt.AlignLeft | Qt.AlignVCenter)
+        colors_form.setColumnStretch(1, 1)
+        body.addWidget(colors_group)
+
         close_row = QHBoxLayout()
-        close_row.addStretch(1)
+        reset_btn = QPushButton("Reset defaults")
+        reset_btn.setObjectName("AnalyzerDisplayAdvancedResetButton")
+        reset_btn.setProperty("analyzerAction", True)
         apply_btn = QPushButton("Apply")
         apply_btn.setObjectName("BatchSecondaryButton")
         close_btn = QPushButton("Close")
         close_btn.setObjectName("BatchSecondaryButton")
+
+        def _reset_metric_band_defaults() -> None:
+            defaults = self._metric_band_display_defaults()
+            metric_bands_check.setChecked(True)
+            metric_band_smooth_check.setChecked(True)
+            metric_band_opacity_slider.setValue(60)
+            metric_good_band_toggle.setChecked(bool(defaults["show_good_band"]))
+            metric_warn_line_toggle.setChecked(bool(defaults["show_warn_line"]))
+            metric_bad_line_toggle.setChecked(bool(defaults["show_bad_line"]))
+            metric_warn_band_toggle.setChecked(bool(defaults["show_warn_band"]))
+            metric_bad_band_toggle.setChecked(bool(defaults["show_bad_band"]))
+            metric_color_state["good"] = str(defaults["color_good"])
+            metric_color_state["warn"] = str(defaults["color_warn"])
+            metric_color_state["bad"] = str(defaults["color_bad"])
+            _refresh_metric_color_chip("good")
+            _refresh_metric_color_chip("warn")
+            _refresh_metric_color_chip("bad")
+            _refresh_metric_band_controls()
 
         def _apply_and_close() -> None:
             plot_changed = False
@@ -8559,6 +8788,21 @@ class AnalysePage(QWidget):
             metric_band_opacity_changed = abs(float(self._metric_band_opacity) - float(metric_band_opacity_next)) > 1.0e-6
             if metric_band_opacity_changed:
                 plot_changed = True
+            metric_display_changed = (
+                bool(self._metric_band_show_good_band) != bool(metric_good_band_toggle.isChecked())
+                or bool(self._metric_band_show_warn_band) != bool(metric_warn_band_toggle.isChecked())
+                or bool(self._metric_band_show_bad_band) != bool(metric_bad_band_toggle.isChecked())
+                or bool(self._metric_band_show_warn_line) != bool(metric_warn_line_toggle.isChecked())
+                or bool(self._metric_band_show_bad_line) != bool(metric_bad_line_toggle.isChecked())
+                or _coerce_hex_rgb(self._metric_band_color_good_hex, fallback=ANALYZER_DISPLAY_COLOR_GOOD_DEFAULT)
+                != _coerce_hex_rgb(metric_color_state.get("good"), fallback=ANALYZER_DISPLAY_COLOR_GOOD_DEFAULT)
+                or _coerce_hex_rgb(self._metric_band_color_warn_hex, fallback=ANALYZER_DISPLAY_COLOR_WARN_DEFAULT)
+                != _coerce_hex_rgb(metric_color_state.get("warn"), fallback=ANALYZER_DISPLAY_COLOR_WARN_DEFAULT)
+                or _coerce_hex_rgb(self._metric_band_color_bad_hex, fallback=ANALYZER_DISPLAY_COLOR_BAD_DEFAULT)
+                != _coerce_hex_rgb(metric_color_state.get("bad"), fallback=ANALYZER_DISPLAY_COLOR_BAD_DEFAULT)
+            )
+            if metric_display_changed:
+                plot_changed = True
             smoothness_changed = bool(self._use_full_angles_for_smoothness) != bool(smoothness_check.isChecked())
             target_axis_color_next = _coerce_hex_rgb(target_axis_color_state.get("hex"), fallback=self._target_axis_color_hex)
             target_axis_color_changed = target_axis_color_next != _coerce_hex_rgb(self._target_axis_color_hex)
@@ -8577,10 +8821,29 @@ class AnalysePage(QWidget):
             self._show_metric_bands = bool(metric_bands_check.isChecked())
             self._metric_band_smooth = bool(metric_band_smooth_check.isChecked())
             self._metric_band_opacity = float(metric_band_opacity_next)
+            self._metric_band_show_good_band = bool(metric_good_band_toggle.isChecked())
+            self._metric_band_show_warn_band = bool(metric_warn_band_toggle.isChecked())
+            self._metric_band_show_bad_band = bool(metric_bad_band_toggle.isChecked())
+            self._metric_band_show_warn_line = bool(metric_warn_line_toggle.isChecked())
+            self._metric_band_show_bad_line = bool(metric_bad_line_toggle.isChecked())
+            self._metric_band_color_good_hex = _coerce_hex_rgb(
+                metric_color_state.get("good"),
+                fallback=ANALYZER_DISPLAY_COLOR_GOOD_DEFAULT,
+            )
+            self._metric_band_color_warn_hex = _coerce_hex_rgb(
+                metric_color_state.get("warn"),
+                fallback=ANALYZER_DISPLAY_COLOR_WARN_DEFAULT,
+            )
+            self._metric_band_color_bad_hex = _coerce_hex_rgb(
+                metric_color_state.get("bad"),
+                fallback=ANALYZER_DISPLAY_COLOR_BAD_DEFAULT,
+            )
             self._use_full_angles_for_smoothness = bool(smoothness_check.isChecked())
             self._target_axis_color_hex = target_axis_color_next
             self._control_sync_guard = False
 
+            if metric_display_changed:
+                self._persist_metric_band_display_settings_to_user_settings()
             if plot_changed:
                 self._on_plot_config_changed()
             if tol_changed:
@@ -8590,8 +8853,11 @@ class AnalysePage(QWidget):
                 self._schedule_compare_plot_refresh()
             dialog.accept()
 
+        reset_btn.clicked.connect(_reset_metric_band_defaults)
         apply_btn.clicked.connect(_apply_and_close)
         close_btn.clicked.connect(dialog.accept)
+        close_row.addWidget(reset_btn)
+        close_row.addStretch(1)
         close_row.addWidget(apply_btn)
         close_row.addWidget(close_btn)
         body.addLayout(close_row)
