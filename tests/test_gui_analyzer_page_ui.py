@@ -510,7 +510,8 @@ class AnalyzerPageUiTests(unittest.TestCase):
                 "col2": page.version_info_col2,
                 "col3": page.version_info_col3,
                 "sweep": page.version_sweep_value_label,
-                "ath": page.version_ath_params_value_label,
+                "ath_rows": page.version_ath_params_rows_widget,
+                "ath_empty": page.version_ath_params_empty_label,
             }
             page._update_version_information_panel(payload_a)
             self.app.processEvents()
@@ -522,7 +523,8 @@ class AnalyzerPageUiTests(unittest.TestCase):
             self.assertIs(refs["col2"], page.version_info_col2)
             self.assertIs(refs["col3"], page.version_info_col3)
             self.assertIs(refs["sweep"], page.version_sweep_value_label)
-            self.assertIs(refs["ath"], page.version_ath_params_value_label)
+            self.assertIs(refs["ath_rows"], page.version_ath_params_rows_widget)
+            self.assertIs(refs["ath_empty"], page.version_ath_params_empty_label)
 
     def test_version_note_persists_per_project_batch_version(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_ui2x_note_persist_") as tmp:

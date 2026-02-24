@@ -730,3 +730,6 @@
   - confirmed `P021/B006` has no H rows in DB and UI correctly disables H
   - confirmed `P_SMOKE/B_SMOKE` includes `H/V/D` and UI enables all three planes
   - confirmed compare overlay/pareto render paths complete without crashes in smoke flow.
+
+## 2026-02-24 (Merge integration follow-up)
+- Aligned GUI regression `test_version_bar_widgets_are_updated_in_place` with the stacked ATH params widget model (`version_ath_params_rows_widget` + empty-label placeholder) after merging `ui/analyzer-versionbar-polish-final`.
