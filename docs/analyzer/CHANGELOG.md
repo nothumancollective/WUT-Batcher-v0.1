@@ -1,5 +1,9 @@
 ﻿# Analyzer Docs â€” Changelog
 
+## 2026-02-24 (Metric band rendering: crisp band/line visuals)
+- Reworked analyzer metric-band rendering to use explicit in-plot band geometries (trend corridor / consistency strip / defect region) instead of diffuse glow-like fills.
+- For smooth band mode, fills now render with crisp clipped polygons and explicit boundary lines; block mode keeps segmented rect strips.
+- Preserved `Show metric bands` + `Smooth metric bands` behavior and defaults; this is rendering-only with no KPI math/schema changes.
 ## 2026-02-24 (Compare drawer interaction stability fix)
 - Replaced the compare `StackAll` overlay layering with a safe side-by-side workspace layout so no full-area overlay widget can intercept plot/control events.
 - Kept drawer behavior (`~88 px` collapsed / `~360 px` expanded) with the same controls/content, but constrained event handling to the drawer rect only.
@@ -963,6 +967,7 @@
 
 ## 2026-02-24 (Merge integration follow-up)
 - Aligned GUI regression `test_version_bar_widgets_are_updated_in_place` with the stacked ATH params widget model (`version_ath_params_rows_widget` + empty-label placeholder) after merging `ui/analyzer-versionbar-polish-final`.
+
 
 
 

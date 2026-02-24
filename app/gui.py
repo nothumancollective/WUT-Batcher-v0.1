@@ -1515,32 +1515,55 @@ class MetricCurveCanvas(QLabel):
             show_band = bool(row.get("show_band", True))
             smooth_band = bool(row.get("band_smooth", True))
             if style_token == "trend_band" and len(points) >= 2 and show_band:
-                values = [float(value) for _freq, value in points]
-                mean_value = float(sum(values) / float(len(values)))
+                band_span = max((float(y_max - y_min) * 0.045), 0.02)
                 fill_alpha = float(row.get("fill_alpha", 0.18))
                 fill_color = _band_color(color, fill_alpha)
                 if smooth_band:
+                    painter.save()
+                    painter.setRenderHint(QPainter.Antialiasing, False)
                     band = QPainterPath()
                     first_x, first_y = points[0]
-                    band.moveTo(x_of(first_x), y_of(first_y))
+                    band.moveTo(x_of(first_x), y_of(first_y + band_span))
                     for freq_hz, value in points[1:]:
-                        band.lineTo(x_of(freq_hz), y_of(value))
-                    for freq_hz, _value in reversed(points):
-                        band.lineTo(x_of(freq_hz), y_of(mean_value))
+                        band.lineTo(x_of(freq_hz), y_of(value + band_span))
+                    for freq_hz, value in reversed(points):
+                        band.lineTo(x_of(freq_hz), y_of(value - band_span))
                     band.closeSubpath()
                     painter.fillPath(band, fill_color)
+                    painter.restore()
                 else:
+                    painter.save()
+                    painter.setRenderHint(QPainter.Antialiasing, False)
                     for idx in range(len(points) - 1):
                         x1, v1 = points[idx]
                         x2, _v2 = points[idx + 1]
                         seg_left = int(round(min(x_of(x1), x_of(x2))))
                         seg_right = int(round(max(x_of(x1), x_of(x2))))
                         seg_w = max(seg_right - seg_left, 1)
-                        y_curve = int(round(y_of(v1)))
-                        y_mean = int(round(y_of(mean_value)))
-                        top = min(y_curve, y_mean)
-                        seg_h = max(abs(y_curve - y_mean), 1)
+                        y_hi = int(round(y_of(v1 + band_span)))
+                        y_lo = int(round(y_of(v1 - band_span)))
+                        top = min(y_hi, y_lo)
+                        seg_h = max(abs(y_hi - y_lo), 1)
                         painter.fillRect(seg_left, top, seg_w, seg_h, fill_color)
+                    painter.restore()
+                boundary_color = QColor(color)
+                boundary_color.setAlpha(min(220, max(150, int(round(fill_color.alpha() * 1.35)))))
+                painter.setPen(QPen(boundary_color, 1))
+                for idx in range(len(points) - 1):
+                    x1, y1 = points[idx]
+                    x2, y2 = points[idx + 1]
+                    painter.drawLine(
+                        int(round(x_of(x1))),
+                        int(round(y_of(y1 + band_span))),
+                        int(round(x_of(x2))),
+                        int(round(y_of(y2 + band_span))),
+                    )
+                    painter.drawLine(
+                        int(round(x_of(x1))),
+                        int(round(y_of(y1 - band_span))),
+                        int(round(x_of(x2))),
+                        int(round(y_of(y2 - band_span))),
+                    )
                 _draw_polyline(points, color, max(line_width, 1.0))
                 if bool(row.get("regime_markers")) and len(points) >= 3:
                     marker_brush = QColor(color)
@@ -1564,6 +1587,8 @@ class MetricCurveCanvas(QLabel):
                 fill_alpha = float(row.get("fill_alpha", 0.12))
                 fill_color = _band_color(color, fill_alpha)
                 if smooth_band:
+                    painter.save()
+                    painter.setRenderHint(QPainter.Antialiasing, False)
                     band_half_px = max(2.0, min(float(plot_h) * 0.025, 7.0))
                     band = QPainterPath()
                     first_x, first_value = points[0]
@@ -1577,7 +1602,10 @@ class MetricCurveCanvas(QLabel):
                         band.lineTo(x_of(freq_hz), y_px + band_half_px)
                     band.closeSubpath()
                     painter.fillPath(band, fill_color)
+                    painter.restore()
                 else:
+                    painter.save()
+                    painter.setRenderHint(QPainter.Antialiasing, False)
                     strip_height = max(10, int(round(plot_h * 0.12)))
                     strip_top = int(margin_top + 4)
                     for idx in range(len(points) - 1):
@@ -1590,11 +1618,14 @@ class MetricCurveCanvas(QLabel):
                         strip_color = QColor(fill_color)
                         strip_color.setAlpha(int(round(24 + (110.0 * max(0.0, min(normalized, 1.0))))))
                         painter.fillRect(seg_left, strip_top, seg_w, strip_height, strip_color)
+                    painter.restore()
                 _draw_polyline(points, color, max(line_width, 1.0))
             elif style_token == "defect_band" and len(points) >= 2 and show_band:
                 fill_alpha = float(row.get("fill_alpha", 0.22))
                 fill_color = _band_color(color, fill_alpha)
                 if smooth_band:
+                    painter.save()
+                    painter.setRenderHint(QPainter.Antialiasing, False)
                     band = QPainterPath()
                     first_x, first_y = points[0]
                     band.moveTo(x_of(first_x), y_of(first_y))
@@ -1604,7 +1635,10 @@ class MetricCurveCanvas(QLabel):
                         band.lineTo(x_of(freq_hz), y_of(y_min))
                     band.closeSubpath()
                     painter.fillPath(band, fill_color)
+                    painter.restore()
                 else:
+                    painter.save()
+                    painter.setRenderHint(QPainter.Antialiasing, False)
                     for idx in range(len(points) - 1):
                         x1, v1 = points[idx]
                         x2, _v2 = points[idx + 1]
@@ -1616,6 +1650,7 @@ class MetricCurveCanvas(QLabel):
                         top = min(y_curve, y_base)
                         seg_h = max(abs(y_curve - y_base), 1)
                         painter.fillRect(seg_left, top, seg_w, seg_h, fill_color)
+                    painter.restore()
                 _draw_polyline(points, color, max(line_width, 1.0))
                 hotspot_raw = row.get("hotspot_threshold")
                 hotspot_threshold = None
