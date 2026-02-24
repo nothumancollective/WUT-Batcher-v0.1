@@ -531,9 +531,9 @@ STAGE_EXPLORER_LAYOUTS: Dict[str, List[Dict[str, str]]] = {
     ],
     "stabilization": [
         {"slot": "A", "key": "heatmap", "title": "Polar Map", "help": "Heatmap with -6 dB contour and target window."},
-        {"slot": "B", "key": "di_proxy", "title": "DI Proxy vs f", "help": "Local-window level minus wide-angle proxy level."},
-        {"slot": "C", "key": "s_theta", "title": "Pattern Smoothness vs f", "help": "RMS angular gradient in the active window."},
-        {"slot": "D", "key": "e_sym_shape", "title": "Plane Consistency vs f", "help": "Inter-plane spread of beamwidth/DI behavior."},
+        {"slot": "B", "key": "di_proxy", "title": "DI Trend Band vs f", "help": "Trend-focused DI proxy view with regime guides."},
+        {"slot": "C", "key": "s_theta", "title": "Smoothness Stability Strip", "help": "Compact smoothness trend strip over frequency."},
+        {"slot": "D", "key": "e_sym_shape", "title": "Plane Consistency Strip", "help": "Compact inter-plane consistency trend strip."},
     ],
     "final": [
         {"slot": "A", "key": "heatmap", "title": "Polar Map", "help": "Heatmap with -6 dB contour and target window."},
@@ -988,11 +988,14 @@ class MetricCurveCanvas(QLabel):
         painter = QPainter(image)
         painter.setRenderHint(QPainter.Antialiasing, True)
 
-        points_by_series: List[Tuple[str, List[Tuple[float, float]], QColor, bool, float]] = []
+        points_by_series: List[Dict[str, Any]] = []
         for index, row in enumerate(self._series):
             label = str(row.get("label") or f"S{index + 1}")
             show_legend = bool(row.get("show_legend", bool(label.strip())))
             points_raw = list(row.get("points", []) or [])
+            style_token = str(row.get("style") or "line").strip().lower()
+            if style_token not in {"line", "trend_band", "consistency_strip", "defect_band"}:
+                style_token = "line"
             color_raw = row.get("color")
             if isinstance(color_raw, QColor):
                 color = color_raw
@@ -1015,6 +1018,19 @@ class MetricCurveCanvas(QLabel):
             except Exception:
                 line_width = 2.0
             line_width = max(1.0, min(line_width, 4.0))
+            try:
+                fill_alpha = float(row.get("fill_alpha", 0.18))
+            except Exception:
+                fill_alpha = 0.18
+            fill_alpha = max(0.0, min(fill_alpha, 0.95))
+            thresholds: List[float] = []
+            for threshold_raw in list(row.get("thresholds", []) or []):
+                try:
+                    thresholds.append(float(threshold_raw))
+                except Exception:
+                    continue
+            thresholds = sorted(set(thresholds))
+            regime_markers = bool(row.get("regime_markers", False))
             points: List[Tuple[float, float]] = []
             for item in points_raw:
                 if isinstance(item, Mapping):
@@ -1035,7 +1051,20 @@ class MetricCurveCanvas(QLabel):
                     continue
                 points.append((freq, value))
             if points:
-                points_by_series.append((label, points, color, show_legend, line_width))
+                points_by_series.append(
+                    {
+                        "label": label,
+                        "points": points,
+                        "color": color,
+                        "show_legend": show_legend,
+                        "line_width": line_width,
+                        "style": style_token,
+                        "fill_alpha": fill_alpha,
+                        "thresholds": thresholds,
+                        "regime_markers": regime_markers,
+                        "hotspot_threshold": row.get("hotspot_threshold"),
+                    }
+                )
 
         if not points_by_series:
             painter.setPen(QColor("#9AA4B2"))
@@ -1044,14 +1073,14 @@ class MetricCurveCanvas(QLabel):
             self.setPixmap(QPixmap.fromImage(image))
             return
 
-        has_legend = any(show for _label, _points, _color, show, _line_width in points_by_series)
+        has_legend = any(bool(row.get("show_legend")) for row in points_by_series)
         margin_left, margin_right, margin_top, margin_bottom = apply_analyzer_plot_margins(has_legend=has_legend)
         self._applied_plot_margins = (margin_left, margin_right, margin_top, margin_bottom)
         plot_w = max(width - margin_left - margin_right, 36)
         plot_h = max(height - margin_top - margin_bottom, 30)
 
-        all_freqs = [point[0] for _label, points, _color, _show, _line_width in points_by_series for point in points]
-        all_values = [point[1] for _label, points, _color, _show, _line_width in points_by_series for point in points]
+        all_freqs = [point[0] for row in points_by_series for point in list(row.get("points", []) or [])]
+        all_values = [point[1] for row in points_by_series for point in list(row.get("points", []) or [])]
         x_mode = self._x_scale_mode
         if x_mode == "linear":
             x_min = float(min(all_freqs))
@@ -1129,13 +1158,85 @@ class MetricCurveCanvas(QLabel):
             )
             painter.setPen(QPen(QColor(ANALYZER_PLOT_STYLE.grid_major_color), 1))
 
-        legend_y = margin_top + 4
-        for label, points, color, show_legend, line_width in points_by_series:
-            painter.setPen(QPen(color, float(line_width)))
+        threshold_values = sorted(
+            {
+                float(value)
+                for row in points_by_series
+                for value in list(row.get("thresholds", []) or [])
+                if y_min <= float(value) <= y_max
+            }
+        )
+        if threshold_values:
+            painter.setPen(QPen(QColor(110, 118, 134, 120), 1, Qt.DashLine))
+            for threshold in threshold_values:
+                y_line = int(round(y_of(float(threshold))))
+                painter.drawLine(margin_left, y_line, margin_left + plot_w, y_line)
+
+        def _draw_polyline(points: List[Tuple[float, float]], color: QColor, width_px: float) -> None:
+            painter.setPen(QPen(color, float(width_px)))
             for idx in range(len(points) - 1):
                 x1, y1 = points[idx]
                 x2, y2 = points[idx + 1]
                 painter.drawLine(int(round(x_of(x1))), int(round(y_of(y1))), int(round(x_of(x2))), int(round(y_of(y2))))
+
+        legend_y = margin_top + 4
+        for row in points_by_series:
+            label = str(row.get("label") or "")
+            points = list(row.get("points", []) or [])
+            color = QColor(row.get("color")) if isinstance(row.get("color"), QColor) else QColor("#9AA4B2")
+            show_legend = bool(row.get("show_legend"))
+            line_width = float(row.get("line_width", 2.0))
+            style_token = str(row.get("style") or "line").strip().lower()
+            if style_token == "trend_band" and len(points) >= 2:
+                values = [float(value) for _freq, value in points]
+                mean_value = float(sum(values) / float(len(values)))
+                fill_alpha = float(row.get("fill_alpha", 0.18))
+                fill_color = QColor(color)
+                fill_color.setAlphaF(max(0.0, min(fill_alpha, 0.95)))
+                band = QPainterPath()
+                first_x, first_y = points[0]
+                band.moveTo(x_of(first_x), y_of(first_y))
+                for freq_hz, value in points[1:]:
+                    band.lineTo(x_of(freq_hz), y_of(value))
+                for freq_hz, _value in reversed(points):
+                    band.lineTo(x_of(freq_hz), y_of(mean_value))
+                band.closeSubpath()
+                painter.fillPath(band, fill_color)
+                _draw_polyline(points, color, max(line_width, 2.8))
+                if bool(row.get("regime_markers")) and len(points) >= 3:
+                    marker_brush = QColor(color)
+                    marker_brush.setAlpha(196)
+                    painter.setBrush(marker_brush)
+                    painter.setPen(QPen(color, 1))
+                    for idx in range(1, len(points) - 1):
+                        prev_value = float(points[idx - 1][1])
+                        curr_value = float(points[idx][1])
+                        next_value = float(points[idx + 1][1])
+                        slope_left = curr_value - prev_value
+                        slope_right = next_value - curr_value
+                        if abs(slope_left) <= 1.0e-9 or abs(slope_right) <= 1.0e-9:
+                            continue
+                        if slope_left * slope_right < 0.0:
+                            marker_x = int(round(x_of(points[idx][0])))
+                            marker_y = int(round(y_of(points[idx][1])))
+                            painter.drawEllipse(QPoint(marker_x, marker_y), 3, 3)
+                    painter.setBrush(Qt.NoBrush)
+            elif style_token == "consistency_strip" and len(points) >= 2:
+                strip_height = max(10, int(round(plot_h * 0.13)))
+                strip_top = int(margin_top + 4)
+                for idx in range(len(points) - 1):
+                    x1, value1 = points[idx]
+                    x2, _value2 = points[idx + 1]
+                    seg_left = int(round(min(x_of(x1), x_of(x2))))
+                    seg_right = int(round(max(x_of(x1), x_of(x2))))
+                    seg_w = max(seg_right - seg_left, 1)
+                    normalized = (float(value1) - float(y_min)) / max(float(y_max - y_min), 1.0e-6)
+                    strip_color = QColor(color)
+                    strip_color.setAlpha(int(round(34 + (150.0 * max(0.0, min(normalized, 1.0))))))
+                    painter.fillRect(seg_left, strip_top, seg_w, strip_height, strip_color)
+                _draw_polyline(points, color, max(line_width, 2.2))
+            else:
+                _draw_polyline(points, color, line_width)
             if has_legend and show_legend:
                 painter.setPen(QPen(color, 1))
                 text = painter.fontMetrics().elidedText(label, Qt.ElideRight, margin_right - 10)
@@ -7218,6 +7319,29 @@ class AnalysePage(QWidget):
             "contour_width": 1.8,
         }
 
+    @staticmethod
+    def _curve_style_profile(*, stage_id: str, metric_key: str, context: str) -> Dict[str, Any]:
+        stage_token = normalize_stage_id(stage_id, fallback=DEFAULT_STAGE_ID)
+        key_token = str(metric_key or "").strip().lower()
+        context_token = str(context or "explorer").strip().lower()
+        if stage_token != "stabilization":
+            return {}
+        if key_token == "di_proxy":
+            return {
+                "style": "trend_band",
+                "fill_alpha": 0.24 if context_token == "explorer" else 0.14,
+                "regime_markers": bool(context_token == "explorer"),
+                "thresholds": [2.0, 4.0],
+                "line_width": 3.0 if context_token == "explorer" else 2.4,
+            }
+        if key_token in {"s_theta", "e_sym_shape"}:
+            return {
+                "style": "consistency_strip",
+                "line_width": 2.2 if context_token == "explorer" else 2.0,
+                "thresholds": [0.20, 0.40] if key_token == "s_theta" else [0.35, 0.75],
+            }
+        return {}
+
     def _render_plot_payload(self, payload: Dict[str, Any]) -> None:
         self._latest_plot_payload = dict(payload or {})
         message = str(payload.get("message") or "").strip()
@@ -7298,15 +7422,20 @@ class AnalysePage(QWidget):
                 continue
             curve_points = self._stage_curve_points(curves, key)
             if curve_points:
+                style_profile = self._curve_style_profile(
+                    stage_id=self._selected_stage_id(),
+                    metric_key=key,
+                    context="explorer",
+                )
+                series_row: Dict[str, Any] = {
+                    "label": "",
+                    "show_legend": False,
+                    "points": curve_points,
+                    "color": compare_overlay_color(0),
+                }
+                series_row.update(style_profile)
                 curve_canvas.set_series(
-                    series=[
-                        {
-                            "label": "",
-                            "show_legend": False,
-                            "points": curve_points,
-                            "color": compare_overlay_color(0),
-                        }
-                    ],
+                    series=[series_row],
                     x_scale_mode=self._x_axis_mode(),
                     x_label="Frequency (Hz, log)" if self._x_axis_mode() == "log" else "Frequency (Hz)",
                     y_label=self._stage_curve_y_label(key),

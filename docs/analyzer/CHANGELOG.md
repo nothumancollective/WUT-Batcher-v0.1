@@ -1,5 +1,10 @@
 ﻿# Analyzer Docs â€” Changelog
 
+## 2026-02-24 (Stabilization stage trend/consistency visualization)
+- Added stage-aware curve rendering modes in `MetricCurveCanvas`: `trend_band` and `consistency_strip` (display-only style metadata).
+- Stabilization DI proxy now renders as a trend band with regime guides instead of a plain thin line.
+- Stabilization smoothness and plane-consistency panels now use compact strip-style rendering to emphasize stability regime behavior.
+
 ## 2026-02-24 (Concept stage heatmap emphasis + decision tile)
 - Concept Explorer layout now uses a decision-focused Pareto snapshot tile (E_BW vs R_spill) instead of a separate beamwidth-error curve panel.
 - Added stage-aware heatmap overlay styling so Concept emphasizes target window shading and -6 dB contour visibility.
@@ -804,6 +809,7 @@
 
 ## 2026-02-24 (Merge integration follow-up)
 - Aligned GUI regression `test_version_bar_widgets_are_updated_in_place` with the stacked ATH params widget model (`version_ath_params_rows_widget` + empty-label placeholder) after merging `ui/analyzer-versionbar-polish-final`.
+
 
 
 
