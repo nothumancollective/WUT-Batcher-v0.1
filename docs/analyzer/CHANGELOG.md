@@ -646,3 +646,10 @@
 - Tightened the KPI subblock into a compact two-column key/value grid with modest label widths and right-aligned values.
 - Applied monospaced/tabular-friendly value labels (`analyzerMetricValue`) for more stable numeric scanning.
 - Added GUI regression coverage to assert right alignment and metric-value label tagging.
+
+## 2026-02-24 (Analyzer stage migration Phase-0 audit)
+- Added `docs/analyzer/05_stage_migration_audit.md` with discovery-only inventory before migration:
+  - exact stage-definition/code-path map (`presets`, UI stage selector, Explorer/Compare defaults)
+  - current non-polar final-stage dependencies (`IMPEDANCE`, `PHASE_GD`) and where they are wired
+  - live DB orientation evidence from `cleanup/runtime/postmerge_lib/P021/dataset/project.sqlite`
+  - explicit target state + implementation risks/unknowns.
