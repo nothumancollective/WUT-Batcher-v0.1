@@ -6255,13 +6255,13 @@ class AnalysePage(QWidget):
 
         self.compare_workspace = QWidget()
         self.compare_workspace.setObjectName("AnalyzerCompareWorkspace")
-        compare_workspace_stack = QStackedLayout(self.compare_workspace)
-        compare_workspace_stack.setStackingMode(QStackedLayout.StackAll)
-        compare_workspace_stack.setContentsMargins(0, 0, 0, 0)
-        compare_workspace_stack.setSpacing(0)
+        compare_workspace_layout = QHBoxLayout(self.compare_workspace)
+        compare_workspace_layout.setContentsMargins(0, 0, 0, 0)
+        compare_workspace_layout.setSpacing(0)
 
-        compare_top_row = QWidget()
-        compare_top_layout = QHBoxLayout(compare_top_row)
+        # Keep legacy controls instantiated for existing state/signal wiring, but do not surface them.
+        self.compare_hidden_controls = QWidget(self.compare_workspace)
+        compare_top_layout = QHBoxLayout(self.compare_hidden_controls)
         compare_top_layout.setContentsMargins(0, 0, 0, 0)
         compare_top_layout.setSpacing(6)
         compare_top_layout.addWidget(QLabel("Overlay plane"), 0, Qt.AlignLeft | Qt.AlignVCenter)
@@ -6274,30 +6274,25 @@ class AnalysePage(QWidget):
         )
         compare_top_layout.addWidget(self.compare_heatmap_selector, 0)
         compare_top_layout.addStretch(1)
-        compare_workspace_stack.addWidget(compare_top_row)
-        compare_top_row.setVisible(False)
-        compare_top_row.setMaximumHeight(0)
+        self.compare_hidden_controls.setVisible(False)
+        self.compare_hidden_controls.setMaximumHeight(0)
         self.compare_plane_combo.setVisible(False)
         self.compare_heatmap_selector.setVisible(False)
 
         self.compare_grid_widget = QWidget()
         self.compare_grid_widget.setObjectName("AnalyzerCompareGrid")
+        self.compare_grid_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.compare_grid_layout = QGridLayout(self.compare_grid_widget)
         self.compare_grid_layout.setContentsMargins(0, 0, 0, 0)
         self.compare_grid_layout.setHorizontalSpacing(ANALYZER_PLOT_STYLE.tile_gap_px)
         self.compare_grid_layout.setVerticalSpacing(ANALYZER_PLOT_STYLE.tile_gap_px)
-        compare_workspace_stack.addWidget(self.compare_grid_widget)
-
-        self.compare_drawer_layer = QWidget()
-        self.compare_drawer_layer.setObjectName("AnalyzerCompareDrawerLayer")
-        drawer_layer_layout = QHBoxLayout(self.compare_drawer_layer)
-        drawer_layer_layout.setContentsMargins(0, 0, 0, 0)
-        drawer_layer_layout.setSpacing(0)
+        compare_workspace_layout.addWidget(self.compare_grid_widget, 1)
 
         self.compare_drawer = QFrame()
         self.compare_drawer.setObjectName("AnalyzerCompareDrawer")
         self.compare_drawer.setMinimumWidth(int(self._compare_drawer_expanded_width))
         self.compare_drawer.setMaximumWidth(int(self._compare_drawer_expanded_width))
+        self.compare_drawer.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
         compare_drawer_layout = QVBoxLayout(self.compare_drawer)
         compare_drawer_layout.setContentsMargins(8, 8, 8, 8)
         compare_drawer_layout.setSpacing(6)
@@ -6342,10 +6337,7 @@ class AnalysePage(QWidget):
         compact_layout.addStretch(1)
         self.compare_drawer_stack.addWidget(self.compare_drawer_compact_widget)
         compare_drawer_layout.addWidget(self.compare_drawer_stack, 1)
-
-        drawer_layer_layout.addWidget(self.compare_drawer, 0, Qt.AlignLeft | Qt.AlignTop)
-        drawer_layer_layout.addStretch(1)
-        compare_workspace_stack.addWidget(self.compare_drawer_layer)
+        compare_workspace_layout.addWidget(self.compare_drawer, 0, Qt.AlignLeft | Qt.AlignTop)
 
         self.compare_overlay_panel = self._create_stage_plot_panel(
             panel_id="CompareA",

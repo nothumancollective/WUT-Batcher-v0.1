@@ -13,8 +13,12 @@ from app.services import OrchestratorService
 from app.settings_store import SettingsStore, UserSettings
 
 try:
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
     from PySide6.QtWidgets import QApplication, QComboBox, QTableWidget
 except ImportError:  # pragma: no cover
+    Qt = None  # type: ignore[assignment]
+    QTest = None  # type: ignore[assignment]
     QApplication = None  # type: ignore[assignment]
     QComboBox = None  # type: ignore[assignment]
     QTableWidget = None  # type: ignore[assignment]
@@ -545,19 +549,57 @@ class AnalyzerCompareUiTests(unittest.TestCase):
             service = _build_service(Path(tmp))
             page = AnalysePage(service=service)
             page.resize(1600, 900)
+            page.analysis_tabs.setCurrentWidget(page.compare_tab)
             page.show()
             self.app.processEvents()
-            grid_width_before = int(page.compare_grid_widget.width())
-            self.assertGreater(grid_width_before, 0)
-            page._set_compare_drawer_expanded(False)
-            self.app.processEvents()
-            grid_width_collapsed = int(page.compare_grid_widget.width())
             page._set_compare_drawer_expanded(True)
             self.app.processEvents()
             grid_width_expanded = int(page.compare_grid_widget.width())
-            self.assertAlmostEqual(grid_width_before, grid_width_collapsed, delta=2)
-            self.assertAlmostEqual(grid_width_before, grid_width_expanded, delta=2)
-            self.assertLessEqual(int(page.compare_drawer.x()), 2)
+            self.assertGreater(grid_width_expanded, 0)
+            page._set_compare_drawer_expanded(False)
+            self.app.processEvents()
+            self.assertFalse(page.compare_drawer.geometry().intersects(page.compare_grid_widget.geometry()))
+            self.assertLessEqual(int(page.compare_drawer.x() + page.compare_drawer.width()), int(page.compare_workspace.width()))
+
+    @unittest.skipIf(QTest is None or Qt is None, "Qt test utilities are required")
+    def test_compare_drawer_refactor_keeps_add_remove_controls_interactive(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_compare_drawer_interactive_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            payload = self._sample_runs_payload("P001")
+            page._apply_runs_payload(payload)
+            page.analysis_tabs.setCurrentWidget(page.compare_tab)
+            page.resize(1400, 860)
+            page.show()
+            self.app.processEvents()
+            page.run_table.selectRow(0)
+            self.app.processEvents()
+            selected_rows = list(page._selected_row_payloads() or [])
+            self.assertTrue(selected_rows)
+            selected = dict(selected_rows[0])
+            expected_label = f"{selected.get('batch_id')}/{selected.get('version_id')}"
+
+            QTest.mouseClick(page.compare_add_selected_btn, Qt.LeftButton)
+            self.app.processEvents()
+            selection_item = page.compare_slots_table.item(0, 1)
+            self.assertIsNotNone(selection_item)
+            assert selection_item is not None
+            self.assertEqual(selection_item.text(), expected_label)
+
+            remove_col = [
+                str(page.compare_slots_table.horizontalHeaderItem(i).text() or "")
+                for i in range(page.compare_slots_table.columnCount())
+            ].index("Remove")
+            remove_btn = page.compare_slots_table.cellWidget(0, remove_col)
+            self.assertIsNotNone(remove_btn)
+            assert remove_btn is not None
+            QTest.mouseClick(remove_btn, Qt.LeftButton)
+            self.app.processEvents()
+
+            cleared_item = page.compare_slots_table.item(0, 1)
+            self.assertIsNotNone(cleared_item)
+            assert cleared_item is not None
+            self.assertEqual(cleared_item.text(), "--")
 
 
 if __name__ == "__main__":

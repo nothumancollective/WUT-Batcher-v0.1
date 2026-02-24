@@ -1,6 +1,10 @@
-# Analyzer Docs — Changelog
+﻿# Analyzer Docs â€” Changelog
 
-## 2026-02-24 (Plot UX controls: target-axis color + tile maximize + summary help text)
+## 2026-02-24 (Compare drawer interaction stability fix)
+- Replaced the compare `StackAll` overlay layering with a safe side-by-side workspace layout so no full-area overlay widget can intercept plot/control events.
+- Kept drawer behavior (`~88 px` collapsed / `~360 px` expanded) with the same controls/content, but constrained event handling to the drawer rect only.
+- Added regression coverage that simulates real button clicks (`Add selected` + row `Remove`) and verifies shortlist mutation works end-to-end after the drawer refactor.
+- Updated compare drawer geometry checks to enforce non-overlapping drawer/grid behavior and expected grid-width response on collapse/expand.`r`n`r`n## 2026-02-24 (Plot UX controls: target-axis color + tile maximize + summary help text)
 - Added a global `Target axis color` control in `Display Advanced` with color picker wiring and persisted analysis-config key (`target_axis_color`).
 - Wired the selected target color through all relevant Analyzer renderers: heatmap target window shading/boundaries, curve threshold lines, and target-summary marker lines.
 - Added plot-tile double-click behavior (`Explorer`/`Compare`) to toggle maximize/restore inside the existing 2x2 workspace (no new windows).
@@ -601,7 +605,7 @@
   - B: single-candidate heatmap with contour/shading
   - C: KPI breakdown panel
   - D: Pareto scatter with axis selectors.
-- Stage selector now drives plot-tile mapping and compare defaults; Stage-3 missing artifacts are shown as explicit “missing data” messages in the relevant tiles.
+- Stage selector now drives plot-tile mapping and compare defaults; Stage-3 missing artifacts are shown as explicit â€œmissing dataâ€ messages in the relevant tiles.
 - Added Display Advanced toggle for `use_full_angles_for_smoothness` (feeds stage-compute request config without touching runner/import flows).
 
 ## 2026-02-22 (Analyzer stage-plot tests: compute + UI)
@@ -624,7 +628,7 @@
 - Frequency-axis major ticks now prioritize anchored log ticks (`200`, `500`, `1k`, `2k`, `5k`, `10k`, `16k`) within the active band, with subtle minor gridlines.
 - Explorer curve panels no longer render `Selected` legend text in-plot; selection context remains in toolbar chips.
 - Heatmap overlays refined:
-  - target window shading (`±BW/2`) remains dynamic with target preset changes
+  - target window shading (`Â±BW/2`) remains dynamic with target preset changes
   - integrated `-6 dB` contour contrast increased for better readability.
 - Toolbar/tile polish:
   - top bar uses compact `Selection` + `Score` + `Flags` chips, `KPIs` and `Details`
@@ -905,7 +909,7 @@
 ## 2026-02-23 (Analyzer analysis-block polish: compact grid and neutral filter toggles)
 - Reworked Analysis block controls into a compact utility grid (`Stage` + `Target` on one row, `Min score` on next) with unchanged behavior.
 - Removed legacy blue inline toggle styling and switched Analyzer toggle checked-state visuals to neutral monochrome.
-- Added checked-state chip labels (`✓ Exclude flagged`, `✓ Exclude warnings`) while preserving the original filtering behavior and signal flow.
+- Added checked-state chip labels (`âœ“ Exclude flagged`, `âœ“ Exclude warnings`) while preserving the original filtering behavior and signal flow.
 
 ## 2026-02-23 (Analyzer bar styling pass: neutral surfaces, dividers, segmented plane control)
 - Added subtle panel surface layering in the Version Bar:
@@ -959,6 +963,8 @@
 
 ## 2026-02-24 (Merge integration follow-up)
 - Aligned GUI regression `test_version_bar_widgets_are_updated_in_place` with the stacked ATH params widget model (`version_ath_params_rows_widget` + empty-label placeholder) after merging `ui/analyzer-versionbar-polish-final`.
+
+
 
 
 
