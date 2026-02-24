@@ -5801,6 +5801,7 @@ class AnalysePage(QWidget):
 
         compare_left_content = QWidget()
         compare_left_content.setObjectName("AnalyzerCompareLeftContent")
+        compare_left_content.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         compare_left_layout = QVBoxLayout(compare_left_content)
         compare_left_layout.setContentsMargins(0, 0, 0, 0)
         compare_left_layout.setSpacing(8)
@@ -5854,7 +5855,11 @@ class AnalysePage(QWidget):
         self.compare_slots_table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.compare_slots_table.setWordWrap(False)
         self.compare_slots_table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.compare_slots_table.setTextElideMode(Qt.ElideRight)
+        self.compare_slots_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.compare_slots_table.verticalHeader().setVisible(False)
+        self.compare_slots_table.verticalHeader().setSectionResizeMode(QHeaderView.Fixed)
+        self.compare_slots_table.verticalHeader().setDefaultSectionSize(34)
         compare_left_layout.addWidget(self.compare_slots_table, 1)
         self._configure_compare_slots_table()
 
@@ -5865,8 +5870,8 @@ class AnalysePage(QWidget):
         compare_left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         compare_left_scroll.setWidget(compare_left_content)
         compare_left_scroll.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
-        compare_left_scroll.setMinimumWidth(240)
-        compare_left_scroll.setMaximumWidth(360)
+        compare_left_scroll.setMinimumWidth(260)
+        compare_left_scroll.setMaximumWidth(440)
         self.compare_splitter.addWidget(compare_left_scroll)
 
         compare_right = QWidget()
@@ -5991,7 +5996,7 @@ class AnalysePage(QWidget):
         self.compare_splitter.addWidget(compare_right)
         self.compare_splitter.setStretchFactor(0, 0)
         self.compare_splitter.setStretchFactor(1, 1)
-        self.compare_splitter.setSizes([300, 900])
+        self.compare_splitter.setSizes([340, 900])
         compare_layout.addWidget(self.compare_splitter, 1)
         self.analysis_tabs.addTab(self.compare_tab, "Compare")
 
@@ -7938,15 +7943,23 @@ class AnalysePage(QWidget):
         self.compare_slots_table.setColumnCount(len(columns))
         self.compare_slots_table.setHorizontalHeaderLabels([str(label) for _key, label in columns])
         header = self.compare_slots_table.horizontalHeader()
+        header.setStretchLastSection(False)
+        header.setMinimumSectionSize(36)
+        header.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         for index, (key, _label) in enumerate(columns):
-            if key == "selection":
+            if key == "slot":
+                header.setSectionResizeMode(index, QHeaderView.Fixed)
+                self.compare_slots_table.setColumnWidth(index, 46)
+            elif key == "selection":
                 header.setSectionResizeMode(index, QHeaderView.Stretch)
-            elif key == "slot":
-                header.setSectionResizeMode(index, QHeaderView.ResizeToContents)
+            elif key in {"score", "flags"}:
+                header.setSectionResizeMode(index, QHeaderView.Fixed)
+                self.compare_slots_table.setColumnWidth(index, 62 if key == "score" else 56)
             elif key == "remove":
-                header.setSectionResizeMode(index, QHeaderView.ResizeToContents)
+                header.setSectionResizeMode(index, QHeaderView.Fixed)
+                self.compare_slots_table.setColumnWidth(index, 92)
             else:
-                header.setSectionResizeMode(index, QHeaderView.ResizeToContents)
+                header.setSectionResizeMode(index, QHeaderView.Stretch)
 
     def _compare_candidate_metric_text(self, candidate: Mapping[str, Any], metric_key: str) -> str:
         token = str(metric_key or "").strip().lower()
@@ -8089,6 +8102,7 @@ class AnalysePage(QWidget):
                         continue
                     if key == "selection":
                         item = QTableWidgetItem(selection_text)
+                        item.setTextAlignment(int(Qt.AlignLeft | Qt.AlignVCenter))
                         item.setToolTip(selection_text)
                     elif key == "score":
                         item = QTableWidgetItem(score_text)
@@ -8120,6 +8134,8 @@ class AnalysePage(QWidget):
 
             remove_btn = QPushButton("Remove")
             remove_btn.setObjectName("BatchSecondaryButton")
+            remove_btn.setMinimumWidth(62)
+            remove_btn.setMaximumWidth(84)
             remove_btn.setEnabled(bool(candidate))
             remove_btn.clicked.connect(lambda _checked=False, idx=row_index: self._remove_compare_candidate(idx))
             self.compare_slots_table.setCellWidget(row_index, remove_col, remove_btn)

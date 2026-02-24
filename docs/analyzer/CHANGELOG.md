@@ -1,5 +1,11 @@
 # Analyzer Docs — Changelog
 
+## 2026-02-24 (Compare UI: left-panel table layout contract hardening)
+- Tightened compare-left splitter contract to bounded widths (`260..440`) with stable default sizing so the left panel does not overlap or collapse in smaller windows.
+- Reworked compare shortlist table column sizing: fixed widths for slot/score/flags/remove, stretch for selection and stage KPI columns to avoid default clipping.
+- Stabilized table row heights and remove-button sizing so action controls remain reachable in all rows.
+- Added regression coverage for width-bounds behavior (`1920x1080`, `1366x768`, `1100x700`) and remove-column reachability.
+
 ## 2026-02-24 (Plot UX: target overlay visibility floor)
 - Removed stage-dependent target-window dimming and switched heatmap target overlay profile to a consistent visibility contract across Concept/Stabilization/Final.
 - Added minimum alpha floors for both target shading and boundary lines in `HeatmapCanvas` so target overlays remain visible in Explorer and Compare.

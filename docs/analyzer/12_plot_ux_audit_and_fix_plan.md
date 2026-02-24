@@ -158,3 +158,7 @@
 - `FIXED/VERIFIED` issue cluster 2.1 (target-window visibility):
   - Heatmap target overlay profile is now stage-invariant with minimum visibility floors for both shading and boundary lines.
   - Boundary lines now render as solid contrast lines and no longer fade out via stage-dependent alpha dimming.
+- `FIXED/VERIFIED` issue cluster 4.1 (compare-left table clipping/layout):
+  - Compare left panel now uses explicit width bounds (`260..440`) with splitter default sizing to prevent overlap and clipping on narrow windows.
+  - Compare shortlist table now uses fixed critical columns (`slot/score/flags/remove`) plus stretch columns (`selection` + KPI fields) to avoid default horizontal clipping.
+  - Row heights and remove-button column widths are stabilized so remove actions remain reachable without horizontal scrolling.

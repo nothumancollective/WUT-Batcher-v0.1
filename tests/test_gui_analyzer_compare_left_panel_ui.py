@@ -12,8 +12,10 @@ from app.services import OrchestratorService
 from app.settings_store import SettingsStore, UserSettings
 
 try:
+    from PySide6.QtCore import Qt
     from PySide6.QtWidgets import QApplication
 except ImportError:  # pragma: no cover
+    Qt = None  # type: ignore[assignment]
     QApplication = None  # type: ignore[assignment]
 
 
@@ -140,6 +142,40 @@ class AnalyzerCompareLeftPanelUiTests(unittest.TestCase):
             assert second_item is not None
             self.assertNotIn("B001/V001", first_item.text())
             self.assertEqual(second_item.text(), "--")
+
+    def test_compare_left_panel_width_contract_and_no_horizontal_scroll(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_compare_left_width_contract_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            page._set_compare_candidates(self._sample_candidates())
+            page.show()
+            self.app.processEvents()
+            left_panel = page.compare_splitter.widget(0)
+            self.assertIsNotNone(left_panel)
+            for width, height in ((1920, 1080), (1366, 768), (1100, 700)):
+                page.resize(width, height)
+                self.app.processEvents()
+                assert left_panel is not None
+                self.assertGreaterEqual(int(left_panel.width()), 260)
+                self.assertLessEqual(int(left_panel.width()), 440)
+                self.assertEqual(page.compare_slots_table.horizontalScrollBarPolicy(), Qt.ScrollBarAlwaysOff)
+                self.assertFalse(page.compare_slots_table.horizontalScrollBar().isVisible())
+
+    def test_remove_column_remains_reachable(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_compare_left_remove_reachable_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            page._set_compare_candidates(self._sample_candidates())
+            page.resize(1366, 768)
+            page.show()
+            self.app.processEvents()
+            headers = _header_labels(page)
+            remove_col = headers.index("Remove")
+            button = page.compare_slots_table.cellWidget(0, remove_col)
+            self.assertIsNotNone(button)
+            self.assertGreaterEqual(page.compare_slots_table.columnWidth(remove_col), 70)
+            assert button is not None
+            self.assertLessEqual(button.sizeHint().width(), page.compare_slots_table.columnWidth(remove_col))
 
 
 if __name__ == "__main__":
