@@ -14,13 +14,16 @@ from app.services import OrchestratorService
 from app.settings_store import SettingsStore, UserSettings
 
 try:
-    from PySide6.QtCore import QBuffer, QIODevice
+    from PySide6.QtCore import QBuffer, QIODevice, Qt
     from PySide6.QtGui import QIcon
+    from PySide6.QtTest import QTest
     from PySide6.QtWidgets import QApplication
 except ImportError:  # pragma: no cover
     QBuffer = None  # type: ignore[assignment]
     QIODevice = None  # type: ignore[assignment]
+    Qt = None  # type: ignore[assignment]
     QIcon = None  # type: ignore[assignment]
+    QTest = None  # type: ignore[assignment]
     QApplication = None  # type: ignore[assignment]
 
 
@@ -403,6 +406,46 @@ class AnalyzerPlotUxRegressionTests(unittest.TestCase):
             self.assertEqual(str(panel_d.get("metric_key") or ""), "target_deviation_summary")
             self.assertEqual(str(panel_d.get("kind") or ""), "summary")
             self.assertIn("Target Deviation Summary", str(panel_d.get("title_label").text()))
+            help_tip = str(panel_d.get("help_btn").toolTip() or "")
+            self.assertIn("Pattern Ctrl", help_tip)
+            self.assertIn("Overall Score", help_tip)
+
+    def test_target_axis_color_setting_propagates_to_relevant_canvases(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_plot_ux_target_axis_color_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            page._apply_analysis_config({"target_axis_color": "#FF7A4D"})
+            cfg = page._current_analysis_config()
+            self.assertEqual(str(cfg.get("target_axis_color") or ""), "#FF7A4D")
+            plot_payload = dict(_sample_compare_plot_items()[0]["plot"])
+            page._render_plot_payload(plot_payload)
+            self.app.processEvents()
+            explorer_heatmap = page._explorer_stage_panels["A"]["heatmap_canvas"]
+            explorer_curve = page._explorer_stage_panels["B"]["curve_canvas"]
+            explorer_summary = page._explorer_stage_panels["D"]["summary_canvas"]
+            self.assertEqual(str(explorer_heatmap._target_axis_color.name()).upper(), "#FF7A4D")
+            self.assertEqual(str(explorer_curve._target_axis_color.name()).upper(), "#FF7A4D")
+            self.assertEqual(str(explorer_summary._target_axis_color.name()).upper(), "#FF7A4D")
+
+    @unittest.skipIf(QTest is None or Qt is None, "Qt test utilities are required")
+    def test_plot_tile_double_click_toggles_maximize_restore(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_plot_ux_double_click_maximize_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            page.resize(1200, 780)
+            page.show()
+            self.app.processEvents()
+            tile_canvas = page._explorer_stage_panels["A"]["heatmap_canvas"]
+            QTest.mouseDClick(tile_canvas, Qt.LeftButton)
+            self.app.processEvents()
+            self.assertEqual(str(page._maximized_plot_slots.get("explorer") or ""), "A")
+            self.assertTrue(bool(page._explorer_stage_panels["A"]["frame"].isVisible()))
+            self.assertFalse(bool(page._explorer_stage_panels["B"]["frame"].isVisible()))
+            QTest.mouseDClick(tile_canvas, Qt.LeftButton)
+            self.app.processEvents()
+            self.assertIsNone(page._maximized_plot_slots.get("explorer"))
+            self.assertTrue(all(bool(panel["frame"].isVisible()) for panel in page._explorer_stage_panels.values()))
+            page.hide()
 
     def test_compare_pareto_excludes_non_finite_values_without_crash(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_plot_ux_pareto_non_finite_") as tmp:

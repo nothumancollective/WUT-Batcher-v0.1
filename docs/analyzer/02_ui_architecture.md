@@ -284,6 +284,7 @@ The Analyzer page is planned with two explicit subviews:
 - Plot UX foundation (shared theme + label contract):
   - all plot canvases use a shared dynamic theme (`apply_plot_theme`) for margins, font scaling, tick density and resize reflow.
   - tile titles are rendered in panel headers (not inside plot canvases).
+  - plot tiles support double-click maximize/restore within the existing 2x2 grid (per-tab state for Explorer/Compare).
   - compare legend/series labels use version-only tokens (`V###`).
   - compare overlay readability contract: active candidate line width 2, non-active width 1 with reduced alpha.
   - heatmap target window overlay is always visible in Explorer and Compare across all stages.
@@ -307,6 +308,7 @@ The Analyzer page is planned with two explicit subviews:
   - show metric bands toggle (default ON; opacity-clamped so bands remain behind data)
   - smooth metric bands toggle (default ON; optional block/strip style fallback)
   - `use_full_angles_for_smoothness` toggle for `S_theta` compute requests (stage defaults: Concept OFF, Stabilization/Final ON).
+  - global `target axis color` picker for target-window lines/shading and threshold/target helper lines.
 - Display quick controls also include:
   - `Auto Scale` button (next to `Advanced...`) for stable axis ranges OFF vs per-selection autoscaling ON.
 

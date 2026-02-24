@@ -1,5 +1,11 @@
 # Analyzer Docs — Changelog
 
+## 2026-02-24 (Plot UX controls: target-axis color + tile maximize + summary help text)
+- Added a global `Target axis color` control in `Display Advanced` with color picker wiring and persisted analysis-config key (`target_axis_color`).
+- Wired the selected target color through all relevant Analyzer renderers: heatmap target window shading/boundaries, curve threshold lines, and target-summary marker lines.
+- Added plot-tile double-click behavior (`Explorer`/`Compare`) to toggle maximize/restore inside the existing 2x2 workspace (no new windows).
+- Expanded `Target Deviation Summary` panel help tooltip text to explain Concept KPI components and interpretation (`closer to target = better`).
+
 ## 2026-02-24 (Plot UX: adaptive x-tick label spacing guard)
 - Added a shared `x_tick_label_min_gap_px` theme metric so Heatmap, metric-curve, and Pareto x-axis labels skip overly-dense neighboring labels instead of colliding.
 - Kept all major grid lines/ticks while reducing text clutter on narrower tile widths; improves readability at `1366x768` and below.

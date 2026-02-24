@@ -177,6 +177,7 @@ try:
         QButtonGroup,
         QComboBox,
         QCheckBox,
+        QColorDialog,
         QDialog,
         QDoubleSpinBox,
         QFormLayout,
@@ -298,6 +299,15 @@ def _format_freq_label(freq_hz: float) -> str:
             return f"{int(round(value / 1000.0))}k"
         return f"{value / 1000.0:.1f}k"
     return str(int(round(value)))
+
+
+def _coerce_hex_rgb(value: Any, *, fallback: str = "#8EC4FF") -> str:
+    color = QColor(str(value or "").strip())
+    if not color.isValid():
+        color = QColor(str(fallback or "#8EC4FF"))
+    if not color.isValid():
+        color = QColor("#8EC4FF")
+    return str(color.name(QColor.HexRgb)).upper()
 
 
 _ANALYZER_LOG_MAJOR_TICKS: Tuple[float, ...] = (200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 16000.0)
@@ -674,7 +684,11 @@ STAGE_EXPLORER_LAYOUTS: Dict[str, List[Dict[str, str]]] = {
             "slot": "D",
             "key": "target_deviation_summary",
             "title": "Target Deviation Summary",
-            "help": "Single-candidate normalized deviation summary for Concept KPIs.",
+            "help": (
+                "Shows normalized target deviation for Pattern Ctrl (B_PC), BW Err (E_BW), "
+                "Cov Err (E_cov), and Spill Ratio (R_spill). Lower bars mean closer-to-target behavior; "
+                "Overall Score aggregates the same Concept metrics."
+            ),
         },
     ],
     "stabilization": [
@@ -818,6 +832,7 @@ class HeatmapCanvas(QLabel):
         self._y_label = "Angle (deg)"
         self._target_shade_alpha = 24
         self._target_boundary_alpha = 140
+        self._target_axis_color = QColor("#8EC4FF")
         self._contour_color = QColor("#FFE38A")
         self._contour_width = 2.0
         self._applied_plot_margins: Tuple[int, int, int, int] = apply_analyzer_plot_margins(has_legend=False)
@@ -838,6 +853,7 @@ class HeatmapCanvas(QLabel):
         show_mirrored_minus6: bool = False,
         target_shade_alpha: int = 24,
         target_boundary_alpha: int = 140,
+        target_axis_color: Optional[Tuple[int, int, int]] = None,
         contour_color: Optional[Tuple[int, int, int]] = None,
         contour_width: float = 2.0,
         status: str = "",
@@ -858,6 +874,14 @@ class HeatmapCanvas(QLabel):
         self._target_shade_alpha = max(44, self._target_shade_alpha)
         self._target_boundary_alpha = max(0, min(int(target_boundary_alpha), 255))
         self._target_boundary_alpha = max(180, self._target_boundary_alpha)
+        if isinstance(target_axis_color, tuple) and len(target_axis_color) >= 3:
+            self._target_axis_color = QColor(
+                int(target_axis_color[0]),
+                int(target_axis_color[1]),
+                int(target_axis_color[2]),
+            )
+        else:
+            self._target_axis_color = QColor("#8EC4FF")
         if isinstance(contour_color, tuple) and len(contour_color) >= 3:
             self._contour_color = QColor(int(contour_color[0]), int(contour_color[1]), int(contour_color[2]))
         else:
@@ -878,6 +902,7 @@ class HeatmapCanvas(QLabel):
         self._show_mirrored_minus6 = False
         self._target_shade_alpha = 24
         self._target_boundary_alpha = 140
+        self._target_axis_color = QColor("#8EC4FF")
         self._contour_color = QColor("#FFE38A")
         self._contour_width = 2.0
         self._rerender()
@@ -1037,15 +1062,19 @@ class HeatmapCanvas(QLabel):
                 y_lo = y_of(float(target_region[0]))
                 shade_top = min(int(y_hi), int(y_lo))
                 shade_height = max(abs(int(y_lo) - int(y_hi)), 1)
+                shade_color = QColor(self._target_axis_color)
+                shade_color.setAlpha(int(self._target_shade_alpha))
                 painter.fillRect(
                     margin_left,
                     shade_top,
                     plot_w,
                     shade_height,
-                    QColor(93, 168, 255, int(self._target_shade_alpha)),
+                    shade_color,
                 )
             if boundary_lines:
-                painter.setPen(QPen(QColor(142, 196, 255, int(self._target_boundary_alpha)), 1, Qt.SolidLine))
+                boundary_color = QColor(self._target_axis_color)
+                boundary_color.setAlpha(int(self._target_boundary_alpha))
+                painter.setPen(QPen(boundary_color, 1, Qt.SolidLine))
                 for angle_line in boundary_lines:
                     y_line = y_of(float(angle_line))
                     painter.drawLine(margin_left, y_line, margin_left + plot_w, y_line)
@@ -1145,6 +1174,7 @@ class MetricCurveCanvas(QLabel):
         self._x_scale_mode = "log"
         self._x_label = "Frequency (Hz, log)"
         self._y_label = "Value"
+        self._target_axis_color = QColor("#8EC4FF")
         self._status = "Curve not available."
         self._y_range_override: Optional[Tuple[float, float]] = None
         self._applied_plot_margins: Tuple[int, int, int, int] = apply_analyzer_plot_margins(has_legend=False)
@@ -1157,6 +1187,7 @@ class MetricCurveCanvas(QLabel):
         x_label: str = "Frequency (Hz, log)",
         y_label: str = "Value",
         y_range: Optional[Tuple[float, float]] = None,
+        target_axis_color: Optional[Tuple[int, int, int]] = None,
         status: str = "",
     ) -> None:
         self._series = [dict(item) for item in list(series or []) if isinstance(item, Mapping)]
@@ -1164,6 +1195,14 @@ class MetricCurveCanvas(QLabel):
         self._x_scale_mode = token if token in {"log", "linear"} else "log"
         self._x_label = str(x_label or "Frequency")
         self._y_label = str(y_label or "Value")
+        if isinstance(target_axis_color, tuple) and len(target_axis_color) >= 3:
+            self._target_axis_color = QColor(
+                int(target_axis_color[0]),
+                int(target_axis_color[1]),
+                int(target_axis_color[2]),
+            )
+        else:
+            self._target_axis_color = QColor("#8EC4FF")
         if (
             isinstance(y_range, (tuple, list))
             and len(y_range) >= 2
@@ -1451,7 +1490,9 @@ class MetricCurveCanvas(QLabel):
             }
         )
         if threshold_values:
-            painter.setPen(QPen(QColor(110, 118, 134, 120), 1, Qt.DashLine))
+            threshold_color = QColor(self._target_axis_color)
+            threshold_color.setAlpha(132)
+            painter.setPen(QPen(threshold_color, 1, Qt.DashLine))
             for threshold in threshold_values:
                 y_line = int(round(y_of(float(threshold))))
                 painter.drawLine(margin_left, y_line, margin_left + plot_w, y_line)
@@ -1848,10 +1889,25 @@ class TargetDeviationSummaryCanvas(QLabel):
         self.setMinimumHeight(180)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self._rows: List[Dict[str, Any]] = []
+        self._target_axis_color = QColor("#8EC4FF")
         self._status = "Target deviation summary unavailable."
 
-    def set_summary_rows(self, *, rows: Sequence[Mapping[str, Any]], status: str = "") -> None:
+    def set_summary_rows(
+        self,
+        *,
+        rows: Sequence[Mapping[str, Any]],
+        target_axis_color: Optional[Tuple[int, int, int]] = None,
+        status: str = "",
+    ) -> None:
         self._rows = [dict(item) for item in list(rows or []) if isinstance(item, Mapping)]
+        if isinstance(target_axis_color, tuple) and len(target_axis_color) >= 3:
+            self._target_axis_color = QColor(
+                int(target_axis_color[0]),
+                int(target_axis_color[1]),
+                int(target_axis_color[2]),
+            )
+        else:
+            self._target_axis_color = QColor("#8EC4FF")
         self._status = str(status or "").strip()
         self._rerender()
 
@@ -1944,7 +2000,9 @@ class TargetDeviationSummaryCanvas(QLabel):
                 fill_color.setAlpha(168)
                 painter.fillRect(bar_left, bar_top, fill_width, bar_h, fill_color)
 
-            painter.setPen(QPen(QColor("#D7DEE9"), 1))
+            marker_color = QColor(self._target_axis_color)
+            marker_color.setAlpha(190)
+            painter.setPen(QPen(marker_color, 1))
             painter.drawLine(bar_left, bar_top - 2, bar_left, bar_top + bar_h + 2)
             painter.setPen(QPen(QColor("#404B60"), 1))
             painter.drawRect(bar_left, bar_top, bar_w, bar_h)
@@ -1988,6 +2046,7 @@ class BeamwidthCanvas(QLabel):
         self._curve: List[Dict[str, float]] = []
         self._target_deg = 0.0
         self._tol_deg = 0.0
+        self._target_axis_color = QColor("#8EC4FF")
         self._x_scale_mode = "log"
         self._status = "Beamwidth curve not available."
 
@@ -1997,12 +2056,21 @@ class BeamwidthCanvas(QLabel):
         curve: List[Dict[str, float]],
         target_deg: float,
         tol_deg: float,
+        target_axis_color: Optional[Tuple[int, int, int]] = None,
         x_scale_mode: str = "log",
         status: str = "",
     ) -> None:
         self._curve = [dict(item) for item in list(curve or []) if isinstance(item, dict)]
         self._target_deg = float(target_deg)
         self._tol_deg = float(tol_deg)
+        if isinstance(target_axis_color, tuple) and len(target_axis_color) >= 3:
+            self._target_axis_color = QColor(
+                int(target_axis_color[0]),
+                int(target_axis_color[1]),
+                int(target_axis_color[2]),
+            )
+        else:
+            self._target_axis_color = QColor("#8EC4FF")
         scale = str(x_scale_mode or "log").strip().lower()
         self._x_scale_mode = scale if scale in {"log", "linear"} else "log"
         self._status = str(status or "").strip()
@@ -2114,9 +2182,14 @@ class BeamwidthCanvas(QLabel):
             int(round(band_top)),
             plot_w,
             max(int(round(band_height)), 1),
-            QColor(93, 168, 255, 36),
+            QColor(
+                self._target_axis_color.red(),
+                self._target_axis_color.green(),
+                self._target_axis_color.blue(),
+                36,
+            ),
         )
-        painter.setPen(QPen(QColor("#5DA8FF"), 1))
+        painter.setPen(QPen(QColor(self._target_axis_color), 1))
         y_target = int(round(y_of(self._target_deg)))
         painter.drawLine(margin_left, y_target, margin_left + plot_w, y_target)
 
@@ -2164,6 +2237,7 @@ class BeamwidthOverlayCanvas(QLabel):
         self._series: List[Dict[str, Any]] = []
         self._target_deg = 0.0
         self._tol_deg = 0.0
+        self._target_axis_color = QColor("#8EC4FF")
         self._x_scale_mode = "log"
         self._status = "Compare overlay not available."
 
@@ -2173,12 +2247,21 @@ class BeamwidthOverlayCanvas(QLabel):
         series: List[Dict[str, Any]],
         target_deg: float,
         tol_deg: float,
+        target_axis_color: Optional[Tuple[int, int, int]] = None,
         x_scale_mode: str = "log",
         status: str = "",
     ) -> None:
         self._series = [dict(item) for item in list(series or []) if isinstance(item, dict)]
         self._target_deg = float(target_deg)
         self._tol_deg = float(tol_deg)
+        if isinstance(target_axis_color, tuple) and len(target_axis_color) >= 3:
+            self._target_axis_color = QColor(
+                int(target_axis_color[0]),
+                int(target_axis_color[1]),
+                int(target_axis_color[2]),
+            )
+        else:
+            self._target_axis_color = QColor("#8EC4FF")
         scale = str(x_scale_mode or "log").strip().lower()
         self._x_scale_mode = scale if scale in {"log", "linear"} else "log"
         self._status = str(status or "").strip()
@@ -2295,9 +2378,14 @@ class BeamwidthOverlayCanvas(QLabel):
             int(round(band_top)),
             plot_w,
             max(int(round(band_height)), 1),
-            QColor(93, 168, 255, 28),
+            QColor(
+                self._target_axis_color.red(),
+                self._target_axis_color.green(),
+                self._target_axis_color.blue(),
+                28,
+            ),
         )
-        painter.setPen(QPen(QColor("#5DA8FF"), 1))
+        painter.setPen(QPen(QColor(self._target_axis_color), 1))
         y_target = int(round(y_of(self._target_deg)))
         painter.drawLine(margin_left, y_target, margin_left + plot_w, y_target)
 
@@ -5697,6 +5785,7 @@ class AnalysePage(QWidget):
         self._show_mirrored_minus6_contour = False
         self._show_metric_bands = True
         self._metric_band_smooth = True
+        self._target_axis_color_hex = _coerce_hex_rgb("#8EC4FF")
         self._auto_scale_enabled = False
         self._stable_axis_ranges: Dict[str, Tuple[float, float]] = {}
         self._latest_plot_payload: Dict[str, Any] = {}
@@ -5707,6 +5796,7 @@ class AnalysePage(QWidget):
         self._compare_drawer_expanded = True
         self._compare_drawer_collapsed_width = 88
         self._compare_drawer_expanded_width = 360
+        self._maximized_plot_slots: Dict[str, Optional[str]] = {"explorer": None, "compare": None}
         self._ath_visible_param_limit = 5
         self._active_plane = "H"
         self._analyzer_controls_row_min_height = 0
@@ -7039,8 +7129,105 @@ class AnalysePage(QWidget):
             "kind": "",
             "metric_key": "",
         }
+        self._attach_plot_tile_interactions(panel, panel_id=panel_id)
         self._set_stage_panel_kind(panel, kind)
         return panel
+
+    @staticmethod
+    def _plot_panel_slot_token(panel_id: str) -> str:
+        token = str(panel_id or "").strip()
+        if not token:
+            return ""
+        slot = token[-1:].upper()
+        return slot if slot in {"A", "B", "C", "D"} else ""
+
+    @staticmethod
+    def _plot_panel_tab_token(panel_id: str) -> str:
+        token = str(panel_id or "").strip().lower()
+        if token.startswith("compare"):
+            return "compare"
+        if token.startswith("explorer"):
+            return "explorer"
+        return ""
+
+    def _attach_plot_tile_interactions(self, panel: Dict[str, Any], *, panel_id: str) -> None:
+        tab_token = self._plot_panel_tab_token(panel_id)
+        slot_token = self._plot_panel_slot_token(panel_id)
+        if tab_token not in {"explorer", "compare"} or slot_token not in {"A", "B", "C", "D"}:
+            return
+        for key in ("frame", "header", "stack", "heatmap_canvas", "curve_canvas", "pareto_canvas", "summary_canvas", "placeholder"):
+            widget = panel.get(key)
+            if not isinstance(widget, QWidget):
+                continue
+            widget.setProperty("analyzerPlotTileTab", tab_token)
+            widget.setProperty("analyzerPlotTileSlot", slot_token)
+            widget.installEventFilter(self)
+
+    def _reflow_plot_grid(self, tab_token: str) -> None:
+        token = str(tab_token or "").strip().lower()
+        if token == "explorer":
+            layout = self.explorer_grid_layout
+            panels = self._explorer_stage_panels
+        elif token == "compare":
+            layout = self.compare_grid_layout
+            panels = self._compare_stage_panels
+        else:
+            return
+        slot_order = ("A", "B", "C", "D")
+        slot_pos = {"A": (0, 0), "B": (0, 1), "C": (1, 0), "D": (1, 1)}
+        max_slot = str(self._maximized_plot_slots.get(token) or "").strip().upper()
+        if max_slot not in slot_pos:
+            max_slot = ""
+            self._maximized_plot_slots[token] = None
+        for slot in slot_order:
+            panel = panels.get(slot)
+            if not isinstance(panel, dict):
+                continue
+            frame = panel.get("frame")
+            if not isinstance(frame, QWidget):
+                continue
+            layout.removeWidget(frame)
+            frame.setVisible(True)
+            frame.setProperty("analyzerPlotTileMaximized", False)
+        if max_slot:
+            target_panel = panels.get(max_slot)
+            if isinstance(target_panel, dict):
+                target_frame = target_panel.get("frame")
+                if isinstance(target_frame, QWidget):
+                    layout.addWidget(target_frame, 0, 0, 2, 2)
+                    target_frame.setProperty("analyzerPlotTileMaximized", True)
+            for slot in slot_order:
+                if slot == max_slot:
+                    continue
+                panel = panels.get(slot)
+                if not isinstance(panel, dict):
+                    continue
+                frame = panel.get("frame")
+                if isinstance(frame, QWidget):
+                    frame.setVisible(False)
+        else:
+            for slot, (row, col) in slot_pos.items():
+                panel = panels.get(slot)
+                if not isinstance(panel, dict):
+                    continue
+                frame = panel.get("frame")
+                if not isinstance(frame, QWidget):
+                    continue
+                layout.addWidget(frame, row, col, 1, 1)
+        layout.invalidate()
+        parent = layout.parentWidget()
+        if isinstance(parent, QWidget):
+            parent.updateGeometry()
+            parent.update()
+
+    def _toggle_plot_tile_maximize(self, tab_token: str, slot_token: str) -> None:
+        token = str(tab_token or "").strip().lower()
+        slot = str(slot_token or "").strip().upper()
+        if token not in {"explorer", "compare"} or slot not in {"A", "B", "C", "D"}:
+            return
+        current = str(self._maximized_plot_slots.get(token) or "").strip().upper()
+        self._maximized_plot_slots[token] = None if current == slot else slot
+        self._reflow_plot_grid(token)
 
     @staticmethod
     def _set_stage_panel_kind(panel: Dict[str, Any], kind: str) -> None:
@@ -7157,6 +7344,8 @@ class AnalysePage(QWidget):
                     header_layout.addWidget(self.compare_pareto_axis_row, 0)
         self._update_stage_target_badges()
         self._apply_plot_panel_header_theme()
+        self._reflow_plot_grid("explorer")
+        self._reflow_plot_grid("compare")
 
     def _update_stage_target_badges(self) -> None:
         target = self._selected_target()
@@ -7840,6 +8029,12 @@ class AnalysePage(QWidget):
         self._auto_scale_enabled = bool(checked)
         self._on_plot_config_changed()
 
+    def _target_axis_color_rgb(self) -> Tuple[int, int, int]:
+        color = QColor(str(self._target_axis_color_hex or "").strip())
+        if not color.isValid():
+            color = QColor("#8EC4FF")
+        return (int(color.red()), int(color.green()), int(color.blue()))
+
     def _open_display_advanced_dialog(self) -> None:
         dialog = StyledDialogBase(title="Display Advanced", parent=self, min_width=560, min_height=360)
         body = dialog.body_layout()
@@ -7919,6 +8114,40 @@ class AnalysePage(QWidget):
         smoothness_check.setChecked(bool(self._use_full_angles_for_smoothness))
         smoothness_check.setToolTip("When enabled, S_theta uses all angles instead of the target window.")
         form.addWidget(smoothness_check, 5, 2, 1, 2, Qt.AlignLeft | Qt.AlignVCenter)
+
+        target_axis_color_state = {"hex": _coerce_hex_rgb(self._target_axis_color_hex)}
+        form.addWidget(QLabel("Target axis color"), 6, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        target_axis_color_preview = QLabel("")
+        target_axis_color_preview.setObjectName("SummaryMeta")
+        target_axis_color_preview.setFixedHeight(22)
+        target_axis_color_preview.setMinimumWidth(62)
+
+        def _refresh_target_axis_preview() -> None:
+            color_hex = str(target_axis_color_state.get("hex") or "#8EC4FF").strip() or "#8EC4FF"
+            target_axis_color_preview.setText(color_hex)
+            target_axis_color_preview.setStyleSheet(
+                f"padding: 2px 8px; border: 1px solid #4A5668; border-radius: 4px; background: {color_hex}; color: #0E131A;"
+            )
+            target_axis_color_preview.setToolTip(f"Target line color: {color_hex}")
+
+        _refresh_target_axis_preview()
+        form.addWidget(target_axis_color_preview, 6, 1, Qt.AlignLeft | Qt.AlignVCenter)
+        target_axis_color_btn = QPushButton("Pick...")
+        target_axis_color_btn.setObjectName("BatchSecondaryButton")
+        target_axis_color_btn.setMinimumHeight(24)
+        target_axis_color_btn.setMaximumHeight(24)
+        target_axis_color_btn.setMinimumWidth(88)
+
+        def _pick_target_axis_color() -> None:
+            initial = QColor(str(target_axis_color_state.get("hex") or "#8EC4FF"))
+            picked = QColorDialog.getColor(initial, dialog, "Target axis / threshold line color")
+            if not picked.isValid():
+                return
+            target_axis_color_state["hex"] = _coerce_hex_rgb(picked.name(QColor.HexRgb))
+            _refresh_target_axis_preview()
+
+        target_axis_color_btn.clicked.connect(_pick_target_axis_color)
+        form.addWidget(target_axis_color_btn, 6, 2, Qt.AlignLeft | Qt.AlignVCenter)
         body.addLayout(form)
         close_row = QHBoxLayout()
         close_row.addStretch(1)
@@ -7952,6 +8181,10 @@ class AnalysePage(QWidget):
             if metric_band_smooth_changed:
                 plot_changed = True
             smoothness_changed = bool(self._use_full_angles_for_smoothness) != bool(smoothness_check.isChecked())
+            target_axis_color_next = _coerce_hex_rgb(target_axis_color_state.get("hex"), fallback=self._target_axis_color_hex)
+            target_axis_color_changed = target_axis_color_next != _coerce_hex_rgb(self._target_axis_color_hex)
+            if target_axis_color_changed:
+                plot_changed = True
 
             self._control_sync_guard = True
             self._set_combo_current_by_data(self.x_axis_scale_combo, str(x_axis_combo.currentData() or "log"))
@@ -7965,6 +8198,7 @@ class AnalysePage(QWidget):
             self._show_metric_bands = bool(metric_bands_check.isChecked())
             self._metric_band_smooth = bool(metric_band_smooth_check.isChecked())
             self._use_full_angles_for_smoothness = bool(smoothness_check.isChecked())
+            self._target_axis_color_hex = target_axis_color_next
             self._control_sync_guard = False
 
             if plot_changed:
@@ -7982,6 +8216,25 @@ class AnalysePage(QWidget):
         close_row.addWidget(close_btn)
         body.addLayout(close_row)
         dialog.exec()
+
+    def eventFilter(self, watched: QObject, event) -> bool:  # type: ignore[override]
+        try:
+            if (
+                isinstance(watched, QWidget)
+                and event is not None
+                and event.type() == QEvent.MouseButtonDblClick
+                and hasattr(event, "button")
+                and event.button() == Qt.LeftButton
+            ):
+                tab_token = str(watched.property("analyzerPlotTileTab") or "").strip().lower()
+                slot_token = str(watched.property("analyzerPlotTileSlot") or "").strip().upper()
+                if tab_token in {"explorer", "compare"} and slot_token in {"A", "B", "C", "D"}:
+                    self._toggle_plot_tile_maximize(tab_token, slot_token)
+                    event.accept()
+                    return True
+        except Exception:
+            pass
+        return super().eventFilter(watched, event)
 
     def _on_analysis_tab_changed(self, _index: int = 0) -> None:
         is_compare = self.analysis_tabs.currentWidget() is self.compare_tab
@@ -8333,6 +8586,7 @@ class AnalysePage(QWidget):
         clamp_enabled = bool(self.heatmap_clamp_check.isChecked())
         clamp_min = float(self.heatmap_clamp_min_spin.value())
         overlay_profile = self._heatmap_overlay_profile(self._selected_stage_id())
+        target_axis_color = self._target_axis_color_rgb()
         status = ""
         ref_angle = payload.get("ref_angle_deg")
         if message:
@@ -8364,6 +8618,7 @@ class AnalysePage(QWidget):
                     show_mirrored_minus6=bool(self._show_mirrored_minus6_contour),
                     target_shade_alpha=int(overlay_profile.get("target_shade_alpha", 24)),
                     target_boundary_alpha=int(overlay_profile.get("target_boundary_alpha", 140)),
+                    target_axis_color=target_axis_color,
                     contour_color=tuple(overlay_profile.get("contour_color", (255, 227, 138))),
                     contour_width=float(overlay_profile.get("contour_width", 2.0)),
                     status=status,
@@ -8375,7 +8630,7 @@ class AnalysePage(QWidget):
                 if isinstance(summary_canvas, TargetDeviationSummaryCanvas):
                     rows = self._target_deviation_summary_rows(stage_payload=stage_payload)
                     if rows:
-                        summary_canvas.set_summary_rows(rows=rows, status="")
+                        summary_canvas.set_summary_rows(rows=rows, target_axis_color=target_axis_color, status="")
                     else:
                         summary_canvas.clear_summary(message or "Compute KPIs to populate.")
                 continue
@@ -8443,6 +8698,7 @@ class AnalysePage(QWidget):
                     x_label="Frequency (Hz, log)" if self._x_axis_mode() == "log" else "Frequency (Hz)",
                     y_label=self._stage_curve_y_label(key),
                     y_range=y_range,
+                    target_axis_color=target_axis_color,
                     status="",
                 )
             else:
@@ -9087,6 +9343,7 @@ class AnalysePage(QWidget):
         if missing_plane_labels:
             missing_note = f"Missing {selected_plane}: {', '.join(missing_plane_labels)}."
             status = f"{status} {missing_note}".strip() if status else missing_note
+        target_axis_color = self._target_axis_color_rgb()
         y_range = self._resolve_axis_range(
             axis_key=f"compare:{self._selected_stage_id()}:{curve_key}:y",
             values=[
@@ -9101,6 +9358,7 @@ class AnalysePage(QWidget):
             x_label="Frequency (Hz, log)" if self._x_axis_mode() == "log" else "Frequency (Hz)",
             y_label=self._stage_curve_y_label(curve_key),
             y_range=y_range,
+            target_axis_color=target_axis_color,
             status=status,
         )
 
@@ -9124,6 +9382,7 @@ class AnalysePage(QWidget):
         stage_plot = dict(plot.get("stage_plot") or {})
         overlays = dict(stage_plot.get("heatmap_overlays") or {})
         overlay_profile = self._heatmap_overlay_profile(self._selected_stage_id())
+        target_axis_color = self._target_axis_color_rgb()
         heatmap_canvas.set_heatmap_data(
             matrix=matrix,
             freqs_hz=[float(value) for value in list(plot.get("display_freqs_hz", []) or [])],
@@ -9141,6 +9400,7 @@ class AnalysePage(QWidget):
             show_mirrored_minus6=bool(self._show_mirrored_minus6_contour),
             target_shade_alpha=int(overlay_profile.get("target_shade_alpha", 24)),
             target_boundary_alpha=int(overlay_profile.get("target_boundary_alpha", 140)),
+            target_axis_color=target_axis_color,
             contour_color=tuple(overlay_profile.get("contour_color", (255, 227, 138))),
             contour_width=float(overlay_profile.get("contour_width", 2.0)),
             status="",
@@ -9314,6 +9574,7 @@ class AnalysePage(QWidget):
             "show_metric_bands": bool(self._show_metric_bands),
             "metric_band_smooth": bool(self._metric_band_smooth),
             "use_full_angles_for_smoothness": bool(self._use_full_angles_for_smoothness),
+            "target_axis_color": _coerce_hex_rgb(self._target_axis_color_hex),
             "compare": {
                 "strategy": str(self._compare_last_strategy),
                 "kpi_key": str(self._compare_last_kpi_key),
@@ -9412,6 +9673,10 @@ class AnalysePage(QWidget):
             self._metric_band_smooth = bool(config.get("metric_band_smooth", self._metric_band_smooth))
             self._use_full_angles_for_smoothness = bool(
                 config.get("use_full_angles_for_smoothness", self._use_full_angles_for_smoothness)
+            )
+            self._target_axis_color_hex = _coerce_hex_rgb(
+                config.get("target_axis_color", self._target_axis_color_hex),
+                fallback=self._target_axis_color_hex,
             )
             compare_cfg = dict(config.get("compare") or {})
             self._compare_last_strategy = str(compare_cfg.get("strategy") or self._compare_last_strategy)
