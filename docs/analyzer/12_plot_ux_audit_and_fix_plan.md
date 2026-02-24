@@ -166,12 +166,18 @@
   - Analyzer plot-header help buttons and flags help now use `:/icons/info.svg` (info icon) instead of the settings gear icon.
   - Added new QRC icon asset (`info.svg`) and regression coverage validating the rendered icon bytes against the info asset.
 - `FIXED/VERIFIED` issue cluster 6.1 (metric stripe/band overdraw):
-  - Added `Show metric bands` toggle to `Display Advanced`; default is OFF to avoid plot-content obstruction.
-  - Trend/consistency/defect style renderers now respect `show_band` and fall back to clean line rendering when disabled.
-  - Decorative defect-zone horizontal fills are now drawn only when metric bands are enabled.
+  - Added `Show metric bands` toggle to `Display Advanced`; default is ON with a global alpha safety clamp (`<= 0.18`) so curves remain readable.
+  - Trend/consistency/defect style renderers respect `show_band` and fall back to clean line rendering when disabled.
+  - Decorative consistency/defect fills now render behind data with low-alpha smoothing (no blocky top-strip overdraw).
 - `VERIFIED` issue cluster 7.1 (marker determinism):
   - Added regression check proving metric-curve marker rendering is deterministic across repeated renders with identical payload/style inputs.
   - No stochastic marker toggling path was found; marker visibility remains mode-driven (`regime_markers` / thresholds), not random.
+- `FIXED/VERIFIED` follow-up controls (post-audit decisions):
+  - Added a version-bar `Auto Scale` button (next to `Advanced...`) with stable cached axis ranges when OFF and per-selection autoscaling when ON.
+  - Added stage defaults for `Use full angles for smoothness`: Concept OFF, Stabilization ON, Final ON.
+  - Hardened pareto/value mapping guards so non-finite values (`NaN`/`inf`) are treated as missing and excluded rather than coerced.
+  - Replaced Explorer Concept single-point Pareto tile with a single-candidate `Target Deviation Summary` visualization.
+  - Finalized plot tile surface policy with panel-consistent frame backgrounds (`analyzerPlotTile`) and transparent canvases to eliminate black-slab perception.
 
 ## Completion summary
 - All issue clusters listed in this audit have now been marked `FIXED/VERIFIED` or `VERIFIED` with dedicated code/test/doc commits.

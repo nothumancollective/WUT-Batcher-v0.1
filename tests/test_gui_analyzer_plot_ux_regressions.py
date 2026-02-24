@@ -335,22 +335,97 @@ class AnalyzerPlotUxRegressionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="wut_plot_ux_metric_band_toggle_") as tmp:
             service = _build_service(Path(tmp))
             page = AnalysePage(service=service)
-            self.assertFalse(bool(page._show_metric_bands))
+            self.assertTrue(bool(page._show_metric_bands))
             stabilization_profile = page._curve_style_profile(
                 stage_id="stabilization",
                 metric_key="di_proxy",
                 context="explorer",
             )
             self.assertIn("show_band", stabilization_profile)
-            self.assertFalse(bool(stabilization_profile.get("show_band")))
-            page._apply_analysis_config({"show_metric_bands": True})
-            self.assertTrue(bool(page._show_metric_bands))
-            stabilization_profile_enabled = page._curve_style_profile(
+            self.assertTrue(bool(stabilization_profile.get("show_band")))
+            page._apply_analysis_config({"show_metric_bands": False})
+            self.assertFalse(bool(page._show_metric_bands))
+            stabilization_profile_disabled = page._curve_style_profile(
                 stage_id="stabilization",
                 metric_key="di_proxy",
                 context="explorer",
             )
-            self.assertTrue(bool(stabilization_profile_enabled.get("show_band")))
+            self.assertFalse(bool(stabilization_profile_disabled.get("show_band")))
+
+    def test_auto_scale_button_exists_and_changes_scaling_mode(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_plot_ux_auto_scale_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            self.assertIsNotNone(page.auto_scale_btn)
+            self.assertFalse(bool(page._auto_scale_enabled))
+            stable_range = page._resolve_axis_range(axis_key="test:axis", values=[0.0, 1.0, 2.0])
+            self.assertIsNotNone(stable_range)
+            page.auto_scale_btn.setChecked(True)
+            self.app.processEvents()
+            self.assertTrue(bool(page._auto_scale_enabled))
+            auto_range = page._resolve_axis_range(axis_key="test:axis", values=[10.0, 12.0])
+            self.assertIsNotNone(auto_range)
+            assert stable_range is not None
+            assert auto_range is not None
+            self.assertGreater(float(auto_range[0]), float(stable_range[0]))
+
+    def test_stage_switch_applies_full_angle_smoothness_defaults(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_plot_ux_stage_full_angles_defaults_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            _set_stage(page, "concept")
+            self.app.processEvents()
+            self.assertFalse(bool(page._use_full_angles_for_smoothness))
+            _set_stage(page, "stabilization")
+            self.app.processEvents()
+            self.assertTrue(bool(page._use_full_angles_for_smoothness))
+            _set_stage(page, "final")
+            self.app.processEvents()
+            self.assertTrue(bool(page._use_full_angles_for_smoothness))
+
+    def test_explorer_concept_uses_target_deviation_summary_not_pareto(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_plot_ux_explorer_concept_summary_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            _set_stage(page, "concept")
+            self.app.processEvents()
+            panel_d = page._explorer_stage_panels["D"]
+            self.assertEqual(str(panel_d.get("metric_key") or ""), "target_deviation_summary")
+            self.assertEqual(str(panel_d.get("kind") or ""), "summary")
+            self.assertIn("Target Deviation Summary", str(panel_d.get("title_label").text()))
+
+    def test_compare_pareto_excludes_non_finite_values_without_crash(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_plot_ux_pareto_non_finite_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            page._compare_candidates = [
+                {"batch_id": "B001", "version_id": "V001"},
+                {"batch_id": "B002", "version_id": "V002"},
+            ]
+            page._compare_plot_items = [
+                {
+                    "candidate": {"batch_id": "B001", "version_id": "V001", "kpi_e_bw": float("nan"), "kpi_r_spill": 0.2},
+                    "plot": {"stage_plot": {"summary": {"e_bw_mean": float("nan"), "r_spill_mean": 0.2}}},
+                },
+                {
+                    "candidate": {"batch_id": "B002", "version_id": "V002", "kpi_e_bw": 1.1, "kpi_r_spill": float("inf")},
+                    "plot": {"stage_plot": {"summary": {"e_bw_mean": 1.1, "r_spill_mean": float("inf")}}},
+                },
+            ]
+            _set_stage(page, "concept")
+            self.app.processEvents()
+            page._render_compare_pareto()
+            pareto_panel = next(
+                (
+                    panel
+                    for panel in page._compare_stage_panels.values()
+                    if str(panel.get("kind") or "").strip().lower() == "pareto"
+                ),
+                None,
+            )
+            assert pareto_panel is not None
+            status = str(pareto_panel["pareto_canvas"]._status or "")
+            self.assertIn("Compute KPIs", status)
 
     def test_metric_curve_marker_rendering_is_deterministic(self) -> None:
         canvas = MetricCurveCanvas()

@@ -1,5 +1,15 @@
 # Analyzer Docs — Changelog
 
+## 2026-02-24 (Test/docs: plot controls regression + E2E smoke)
+- Extended `tests/test_gui_analyzer_plot_ux_regressions.py` with targeted coverage for:
+  - Auto Scale toggle state/range behavior
+  - Metric-band default ON + toggle propagation
+  - Stage defaults for full-angle smoothness (`concept`/`stabilization`/`final`)
+  - Explorer Concept tile contract (`Target Deviation Summary` instead of Pareto)
+  - Non-finite Pareto value exclusion guardrails (`NaN`/`inf`)
+- Added `docs/analyzer/e2e_plot_controls_smoketest.md` with real local-project smoke evidence (`P001`, batch `B005`).
+- Updated docs contracts in `02_ui_architecture.md` and `12_plot_ux_audit_and_fix_plan.md` to match final control defaults/behavior.
+
 ## 2026-02-24 (Docs: defer 3D balloon plot scope)
 - Added a scope note to `docs/analyzer/02_ui_architecture.md` clarifying why true 3D directivity balloon plotting is deferred.
 - Documented that current `H/V/D` slice coverage is insufficient for reliable balloon rendering without heavy interpolation artifacts.
