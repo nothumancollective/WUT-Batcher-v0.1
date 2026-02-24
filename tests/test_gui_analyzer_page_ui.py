@@ -1020,7 +1020,7 @@ class AnalyzerPageUiTests(unittest.TestCase):
             self.assertEqual(stage_ids, ["concept", "stabilization", "final"])
             self.assertIn("Coverage Uniformity", page._explorer_stage_panels["B"]["title_label"].text())
             self.assertIn("Spill Index", page._explorer_stage_panels["C"]["title_label"].text())
-            self.assertIn("Decision Trade-off", page._explorer_stage_panels["D"]["title_label"].text())
+            self.assertIn("Target Deviation Summary", page._explorer_stage_panels["D"]["title_label"].text())
             for idx in range(page.stage_selector.count()):
                 if str(page.stage_selector.itemData(idx) or "") == "stabilization":
                     page.stage_selector.setCurrentIndex(idx)

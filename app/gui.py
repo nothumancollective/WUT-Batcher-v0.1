@@ -669,9 +669,9 @@ STAGE_EXPLORER_LAYOUTS: Dict[str, List[Dict[str, str]]] = {
         {"slot": "C", "key": "r_spill", "title": "Spill Index vs f", "help": "Relative outside-vs-inside target energy ratio."},
         {
             "slot": "D",
-            "key": "pareto_decision",
-            "title": "Decision Trade-off (E_BW vs Spill)",
-            "help": "Single-candidate Pareto snapshot for beamwidth error vs spill ratio.",
+            "key": "target_deviation_summary",
+            "title": "Target Deviation Summary",
+            "help": "Single-candidate normalized deviation summary for Concept KPIs.",
         },
     ],
     "stabilization": [
@@ -1771,6 +1771,144 @@ class ParetoScatterCanvas(QLabel):
             plot_h=plot_h,
             theme=theme,
         )
+        if self._status:
+            painter.setPen(QColor("#B8C1CF"))
+            painter.setFont(_font_with_pixel_size(self.font(), int(theme.get("tick_font_px", 8))))
+            painter.drawText(margin_left + 4, margin_top + 16, self._status)
+        painter.end()
+        self.setPixmap(QPixmap.fromImage(image))
+
+
+class TargetDeviationSummaryCanvas(QLabel):
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("AnalyzerTargetDeviationSummaryCanvas")
+        self.setAlignment(Qt.AlignCenter)
+        self.setMinimumHeight(180)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self._rows: List[Dict[str, Any]] = []
+        self._status = "Target deviation summary unavailable."
+
+    def set_summary_rows(self, *, rows: Sequence[Mapping[str, Any]], status: str = "") -> None:
+        self._rows = [dict(item) for item in list(rows or []) if isinstance(item, Mapping)]
+        self._status = str(status or "").strip()
+        self._rerender()
+
+    def clear_summary(self, message: str) -> None:
+        self._rows = []
+        self._status = str(message or "Target deviation summary unavailable.")
+        self._rerender()
+
+    def resizeEvent(self, event) -> None:  # type: ignore[override]
+        super().resizeEvent(event)
+        QTimer.singleShot(0, self._rerender)
+
+    def _rerender(self) -> None:
+        width = max(int(self.width()), 180)
+        height = max(int(self.height()), 140)
+        image = QImage(width, height, QImage.Format_ARGB32_Premultiplied)
+        image.fill(Qt.transparent)
+        painter = QPainter(image)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+
+        if not self._rows:
+            painter.setPen(QColor("#9AA4B2"))
+            painter.drawText(image.rect(), Qt.AlignCenter, self._status or "Target deviation summary unavailable.")
+            painter.end()
+            self.setPixmap(QPixmap.fromImage(image))
+            return
+
+        theme = apply_plot_theme(self, has_legend=False, context="target_deviation_summary")
+        layout = compute_plot_layout_geometry(width=width, height=height, theme=theme, min_plot_w=48, min_plot_h=36)
+        margin_left = int(layout["margin_left"])
+        margin_top = int(layout["margin_top"])
+        plot_w = int(layout["plot_w"])
+        plot_h = int(layout["plot_h"])
+
+        painter.fillRect(margin_left, margin_top, plot_w, plot_h, QColor(255, 255, 255, 6))
+        painter.setPen(QPen(QColor("#3A4252"), 1))
+        painter.drawRect(margin_left, margin_top, plot_w, plot_h)
+
+        row_count = max(len(self._rows), 1)
+        row_h = max(int(plot_h / row_count), 24)
+        label_w = max(min(int(plot_w * 0.38), 220), 122)
+        bar_left = margin_left + label_w + 10
+        bar_right = margin_left + plot_w - 10
+        bar_w = max(bar_right - bar_left, 28)
+        tick_font = _font_with_pixel_size(self.font(), int(theme.get("tick_font_px", 8)))
+        value_font = _font_with_pixel_size(self.font(), int(theme.get("legend_font_px", 8)))
+
+        for index, row in enumerate(self._rows):
+            row_top = margin_top + (index * row_h)
+            row_mid = row_top + max(int(row_h * 0.5), 10)
+            bar_h = max(min(int(row_h * 0.46), 18), 9)
+            bar_top = row_mid - (bar_h // 2)
+            label = str(row.get("label") or f"Metric {index + 1}")
+            value_text = str(row.get("value_text") or "--")
+            try:
+                deviation = float(row.get("deviation_norm"))
+            except Exception:
+                deviation = float("nan")
+            if not math.isfinite(deviation):
+                deviation = 1.0
+                value_text = "--"
+            deviation = max(0.0, min(deviation, 1.0))
+            color_raw = row.get("color")
+            if isinstance(color_raw, QColor):
+                bar_color = QColor(color_raw)
+            elif isinstance(color_raw, tuple):
+                bar_color = QColor(*color_raw)
+            else:
+                bar_color = QColor("#7FA9D8")
+
+            painter.fillRect(bar_left, bar_top, int(round(bar_w * 0.33)), bar_h, QColor(74, 124, 90, 32))
+            painter.fillRect(
+                bar_left + int(round(bar_w * 0.33)),
+                bar_top,
+                int(round(bar_w * 0.33)),
+                bar_h,
+                QColor(170, 142, 72, 36),
+            )
+            painter.fillRect(
+                bar_left + int(round(bar_w * 0.66)),
+                bar_top,
+                max(bar_w - int(round(bar_w * 0.66)), 1),
+                bar_h,
+                QColor(186, 96, 82, 42),
+            )
+
+            fill_width = max(int(round(bar_w * deviation)), 0)
+            if fill_width > 0:
+                fill_color = QColor(bar_color)
+                fill_color.setAlpha(168)
+                painter.fillRect(bar_left, bar_top, fill_width, bar_h, fill_color)
+
+            painter.setPen(QPen(QColor("#D7DEE9"), 1))
+            painter.drawLine(bar_left, bar_top - 2, bar_left, bar_top + bar_h + 2)
+            painter.setPen(QPen(QColor("#404B60"), 1))
+            painter.drawRect(bar_left, bar_top, bar_w, bar_h)
+
+            painter.setPen(QColor("#D8E2F0"))
+            painter.setFont(tick_font)
+            painter.drawText(
+                margin_left + 6,
+                row_top,
+                max(label_w - 10, 40),
+                row_h,
+                Qt.AlignLeft | Qt.AlignVCenter,
+                painter.fontMetrics().elidedText(label, Qt.ElideRight, max(label_w - 10, 40)),
+            )
+            painter.setPen(QColor("#AFC0D9"))
+            painter.setFont(value_font)
+            painter.drawText(
+                bar_left + 4,
+                row_top,
+                max(bar_w - 8, 24),
+                row_h,
+                Qt.AlignRight | Qt.AlignVCenter,
+                value_text,
+            )
+
         if self._status:
             painter.setPen(QColor("#B8C1CF"))
             painter.setFont(_font_with_pixel_size(self.font(), int(theme.get("tick_font_px", 8))))
@@ -6488,11 +6626,15 @@ class AnalysePage(QWidget):
         self.auto_scale_btn.setChecked(bool(self._auto_scale_enabled))
         self.auto_scale_btn.setMinimumHeight(24)
         self.auto_scale_btn.setMaximumHeight(24)
+        self.auto_scale_btn.setMinimumWidth(96)
+        self.auto_scale_btn.setMaximumWidth(108)
         self.auto_scale_btn.setToolTip("Toggle between stable axis ranges and per-selection auto scaling.")
         self.display_advanced_btn = QPushButton("Advanced...")
         self.display_advanced_btn.setObjectName("BatchSecondaryButton")
         self.display_advanced_btn.setMinimumHeight(24)
         self.display_advanced_btn.setMaximumHeight(24)
+        self.display_advanced_btn.setMinimumWidth(96)
+        self.display_advanced_btn.setMaximumWidth(108)
         self.band_selector.setToolTip("Affects plotted range and KPI computation window.")
         self.tol_spin.setToolTip("Affects plotted range and KPI computation window.")
         self.display_slot_frames: List[QFrame] = []
@@ -6544,6 +6686,10 @@ class AnalysePage(QWidget):
         plane_layout.setColumnStretch(0, 0)
         plane_layout.setColumnStretch(1, 1)
         plane_layout.setColumnStretch(2, 0)
+        shared_display_slot_min = min(max(band_frame.sizeHint().width(), plane_frame.sizeHint().width()), 280)
+        for frame in (band_frame, plane_frame):
+            frame.setMinimumWidth(int(shared_display_slot_min))
+            frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         display_split_layout.addWidget(plane_frame, 1)
         self.display_slot_frames.append(plane_frame)
 
@@ -6729,6 +6875,8 @@ class AnalysePage(QWidget):
         curve_canvas.setObjectName(f"AnalyzerStageMetricCanvas{panel_id}")
         pareto_canvas = ParetoScatterCanvas()
         pareto_canvas.setObjectName(f"AnalyzerStageParetoCanvas{panel_id}")
+        summary_canvas = TargetDeviationSummaryCanvas()
+        summary_canvas.setObjectName(f"AnalyzerStageTargetDeviationCanvas{panel_id}")
         placeholder = QLabel("No data available for this stage panel.")
         placeholder.setObjectName("SummaryMeta")
         placeholder.setAlignment(Qt.AlignCenter)
@@ -6736,6 +6884,7 @@ class AnalysePage(QWidget):
         stack.addWidget(heatmap_canvas)
         stack.addWidget(curve_canvas)
         stack.addWidget(pareto_canvas)
+        stack.addWidget(summary_canvas)
         stack.addWidget(placeholder)
         frame_layout.addWidget(stack, 1)
 
@@ -6751,6 +6900,7 @@ class AnalysePage(QWidget):
             "heatmap_canvas": heatmap_canvas,
             "curve_canvas": curve_canvas,
             "pareto_canvas": pareto_canvas,
+            "summary_canvas": summary_canvas,
             "placeholder": placeholder,
             "kind": "",
             "metric_key": "",
@@ -6761,7 +6911,7 @@ class AnalysePage(QWidget):
     @staticmethod
     def _set_stage_panel_kind(panel: Dict[str, Any], kind: str) -> None:
         token = str(kind or "curve").strip().lower()
-        if token not in {"heatmap", "curve", "pareto", "placeholder"}:
+        if token not in {"heatmap", "curve", "pareto", "summary", "placeholder"}:
             token = "curve"
         panel["kind"] = token
         stack = panel.get("stack")
@@ -6773,6 +6923,8 @@ class AnalysePage(QWidget):
             stack.setCurrentWidget(panel.get("curve_canvas"))
         elif token == "pareto":
             stack.setCurrentWidget(panel.get("pareto_canvas"))
+        elif token == "summary":
+            stack.setCurrentWidget(panel.get("summary_canvas"))
         else:
             stack.setCurrentWidget(panel.get("placeholder"))
 
@@ -6794,6 +6946,8 @@ class AnalysePage(QWidget):
                 help_btn.setToolTip(str(spec.get("help") or "Stage plot panel."))
             if key == "heatmap":
                 self._set_stage_panel_kind(panel, "heatmap")
+            elif key.startswith("target_deviation"):
+                self._set_stage_panel_kind(panel, "summary")
             elif key.startswith("pareto"):
                 self._set_stage_panel_kind(panel, "pareto")
             else:
@@ -7806,6 +7960,9 @@ class AnalysePage(QWidget):
             pareto_canvas = panel.get("pareto_canvas")
             if isinstance(pareto_canvas, ParetoScatterCanvas):
                 pareto_canvas.clear_points(msg)
+            summary_canvas = panel.get("summary_canvas")
+            if isinstance(summary_canvas, TargetDeviationSummaryCanvas):
+                summary_canvas.clear_summary(msg)
             placeholder = panel.get("placeholder")
             if isinstance(placeholder, QLabel):
                 placeholder.setText(msg)
@@ -7861,6 +8018,78 @@ class AnalysePage(QWidget):
             "r_off": "Off-axis ripple (dB)",
         }
         return str(mapping.get(str(key or "").strip().lower(), "Value"))
+
+    def _target_deviation_summary_rows(self, *, stage_payload: Mapping[str, Any]) -> List[Dict[str, Any]]:
+        selected = dict(self._selected_detail_payload or {})
+        summary = dict(stage_payload.get("summary") or {})
+
+        def _safe_value(
+            *,
+            field_key: str,
+            summary_key: str,
+        ) -> Optional[float]:
+            raw = selected.get(field_key)
+            if raw is None:
+                raw = summary.get(summary_key)
+            try:
+                numeric = float(raw) if raw is not None else None
+            except Exception:
+                return None
+            if numeric is None or not math.isfinite(numeric):
+                return None
+            return numeric
+
+        rows: List[Dict[str, Any]] = []
+        specs = [
+            ("Pattern Ctrl (B_PC)", "b_pc_oct", "kpi_b_pc_oct", "b_pc_oct_mean", "maximize", 1.0, 1.0, 2),
+            ("BW Err (E_BW)", "e_bw", "kpi_e_bw", "e_bw_mean", "minimize", 0.0, 20.0, 2),
+            ("Cov Err (E_cov)", "e_cov", "kpi_e_cov", "e_cov_mean", "minimize", 0.0, 6.0, 2),
+            ("Spill Ratio (R_spill)", "r_spill", "kpi_r_spill", "r_spill_mean", "minimize", 0.0, 1.0, 3),
+        ]
+        for label, metric_key, field_key, summary_key, mode, target, scale, digits in specs:
+            value = _safe_value(field_key=field_key, summary_key=summary_key)
+            if value is None:
+                rows.append(
+                    {
+                        "label": label,
+                        "deviation_norm": 1.0,
+                        "value_text": "--",
+                        "color": self._metric_palette_color(metric_key),
+                    }
+                )
+                continue
+            if mode == "maximize":
+                deviation = max(0.0, float(target) - float(value)) / max(float(scale), 1.0e-9)
+            else:
+                deviation = abs(float(value) - float(target)) / max(float(scale), 1.0e-9)
+            rows.append(
+                {
+                    "label": label,
+                    "deviation_norm": max(0.0, min(float(deviation), 1.0)),
+                    "value_text": self._format_float(value, int(digits)),
+                    "color": self._metric_palette_color(metric_key),
+                }
+            )
+
+        score_raw = selected.get("kpi_score", selected.get("score"))
+        try:
+            score_value = float(score_raw) if score_raw is not None else None
+        except Exception:
+            score_value = None
+        if score_value is not None and math.isfinite(score_value):
+            normalized_score = float(score_value)
+            if normalized_score > 1.5:
+                normalized_score = normalized_score / 100.0
+            normalized_score = max(0.0, min(normalized_score, 1.0))
+            rows.append(
+                {
+                    "label": "Overall Score",
+                    "deviation_norm": max(0.0, min(1.0 - normalized_score, 1.0)),
+                    "value_text": self._format_float(score_value, 2),
+                    "color": QColor("#9FD3A9"),
+                }
+            )
+        return rows
 
     @staticmethod
     def _metric_palette_color(metric_key: str) -> Tuple[int, int, int]:
@@ -7988,6 +8217,16 @@ class AnalysePage(QWidget):
                     contour_width=float(overlay_profile.get("contour_width", 2.0)),
                     status=status,
                 )
+                continue
+
+            if key.startswith("target_deviation"):
+                summary_canvas = panel.get("summary_canvas")
+                if isinstance(summary_canvas, TargetDeviationSummaryCanvas):
+                    rows = self._target_deviation_summary_rows(stage_payload=stage_payload)
+                    if rows:
+                        summary_canvas.set_summary_rows(rows=rows, status="")
+                    else:
+                        summary_canvas.clear_summary(message or "Compute KPIs to populate.")
                 continue
 
             if key.startswith("pareto"):

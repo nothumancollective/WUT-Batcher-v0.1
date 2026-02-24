@@ -252,7 +252,7 @@ The Analyzer page is planned with two explicit subviews:
     - A `Polar Map` (heatmap + `-6 dB` contour + always-on target window overlay)
     - B `Coverage Uniformity vs f`
     - C `Spill Index vs f`
-    - D `Decision Trade-off (Pareto)`
+    - D `Target Deviation Summary` (single-candidate concept KPI bullet/bar summary)
   - Stage `stabilization`:
     - A `Polar Map`
     - B `DI proxy Trend Compare/Trend Band`

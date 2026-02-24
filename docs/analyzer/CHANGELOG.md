@@ -1,5 +1,11 @@
 # Analyzer Docs — Changelog
 
+## 2026-02-24 (Explorer concept: target deviation summary tile)
+- Replaced Explorer Concept tile `D` from single-point Pareto snapshot to `Target Deviation Summary` (single-candidate KPI bullet/bar view).
+- Added `TargetDeviationSummaryCanvas` and stage-panel routing (`summary` kind) without changing Compare Pareto behavior.
+- New summary view renders normalized Concept KPI deviations (`B_PC`, `E_BW`, `E_cov`, `R_spill`) plus optional overall score when available.
+- Updated UI architecture stage matrix docs to reflect the new Explorer Concept tile contract.
+
 ## 2026-02-24 (Plot controls: stage defaults for full-angle smoothness + pareto guards)
 - Added stage defaults for `Use full angles for smoothness (S_theta)`: Concept OFF, Stabilization ON, Final ON.
 - Stage-switch defaults are now applied in Analyzer stage defaults, while loaded analysis configs can still restore explicit saved overrides.
