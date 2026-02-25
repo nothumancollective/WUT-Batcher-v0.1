@@ -156,7 +156,15 @@ class SqlDatasetStore:
             self.dataset_dir = self.project_root / "dataset"
         self.tables_dir = self.project_root / "tables"
         self.project_db_path = self.dataset_dir / "project.sqlite"
-        self.global_db_path = self.library_root / "global.sqlite"
+        if use_project_library_storage():
+            preferred_global = self.library_root / "library.sqlite"
+            legacy_global = self.library_root / "global.sqlite"
+            if preferred_global.exists() or not legacy_global.exists():
+                self.global_db_path = preferred_global
+            else:
+                self.global_db_path = legacy_global
+        else:
+            self.global_db_path = self.library_root / "global.sqlite"
         self.schema_path = self.dataset_dir / "schema.json"
         self.project_table_csv = self.tables_dir / "project_versions.csv"
 

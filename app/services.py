@@ -1978,6 +1978,14 @@ class OrchestratorService:
         dataset = TidyDatasetWriter(project_paths.project_dir, library_root=self.settings.library_root)
         return dataset.list_runs(batch_id=batch_id, status=status)
 
+    def _library_index_db_path(self) -> Path:
+        root = Path(self.settings.library_root).expanduser()
+        preferred = root / "library.sqlite"
+        legacy = root / "global.sqlite"
+        if use_project_library_storage():
+            return preferred if preferred.exists() or not legacy.exists() else legacy
+        return legacy
+
     def analyzer_list_polar_projects(
         self,
         *,
@@ -1987,7 +1995,7 @@ class OrchestratorService:
         source_key = str(source or "project").strip().lower()
         rows: List[Dict[str, Any]] = []
         if source_key == "global":
-            global_db = Path(self.settings.library_root) / "global.sqlite"
+            global_db = self._library_index_db_path()
             if not global_db.exists():
                 return []
             try:
@@ -2065,7 +2073,7 @@ class OrchestratorService:
             return []
         source_key = str(source or "project").strip().lower()
         if source_key == "global":
-            db_path = Path(self.settings.library_root) / "global.sqlite"
+            db_path = self._library_index_db_path()
         else:
             db_path = self.repo.project_paths(project_token, ensure=False).dataset_dir / "project.sqlite"
         if not db_path.exists():
@@ -2142,7 +2150,7 @@ class OrchestratorService:
             return []
         source_key = str(source or "project").strip().lower()
         if source_key == "global":
-            db_path = Path(self.settings.library_root) / "global.sqlite"
+            db_path = self._library_index_db_path()
         else:
             db_path = self.repo.project_paths(project_token, ensure=False).dataset_dir / "project.sqlite"
         if not db_path.exists():
@@ -2663,7 +2671,7 @@ class OrchestratorService:
     def _analyzer_db_path(self, *, project_id: str, source: str) -> Path:
         source_key = str(source or "project").strip().lower()
         if source_key == "global":
-            return Path(self.settings.library_root) / "global.sqlite"
+            return self._library_index_db_path()
         return self.repo.project_paths(str(project_id), ensure=False).dataset_dir / "project.sqlite"
 
     def analyzer_load_plot_payload(
