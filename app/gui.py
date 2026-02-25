@@ -6474,6 +6474,10 @@ class AnalysePage(QWidget):
         compare_controls_layout.setVerticalSpacing(6)
         self.compare_add_selected_btn = QPushButton("Add selected")
         self.compare_add_selected_btn.setObjectName("BatchSecondaryButton")
+        self.compare_remove_selected_btn = QPushButton("Remove selected")
+        self.compare_remove_selected_btn.setObjectName("BatchSecondaryButton")
+        self.compare_remove_selected_btn.setEnabled(False)
+        self.compare_remove_selected_btn.setToolTip("Select a shortlist row to remove.")
         self.compare_auto_pick_btn = QPushButton("Auto-pick...")
         self.compare_auto_pick_btn.setObjectName("BatchSecondaryButton")
         self.compare_save_btn = QPushButton("Save Analysis...")
@@ -6495,8 +6499,9 @@ class AnalysePage(QWidget):
         self.compare_plane_combo.addItem("V", "V")
         self.compare_plane_combo.addItem("D", "D")
         compare_controls_layout.addWidget(self.compare_add_selected_btn, 0, 0)
-        compare_controls_layout.addWidget(self.compare_auto_pick_btn, 0, 1)
-        compare_controls_layout.addWidget(self.compare_save_btn, 0, 2)
+        compare_controls_layout.addWidget(self.compare_remove_selected_btn, 0, 1)
+        compare_controls_layout.addWidget(self.compare_auto_pick_btn, 0, 2)
+        compare_controls_layout.addWidget(self.compare_save_btn, 0, 3)
         compare_controls_layout.addWidget(QLabel("Saved"), 1, 0, Qt.AlignRight | Qt.AlignVCenter)
         compare_controls_layout.addWidget(self.compare_analysis_selector, 1, 1, 1, 2)
         compare_controls_layout.addWidget(self.compare_load_btn, 1, 3)
@@ -6514,7 +6519,7 @@ class AnalysePage(QWidget):
         self.compare_slots_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.compare_slots_table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.compare_slots_table.setWordWrap(False)
-        self.compare_slots_table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.compare_slots_table.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.compare_slots_table.setTextElideMode(Qt.ElideRight)
         self.compare_slots_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.compare_slots_table.verticalHeader().setVisible(False)
@@ -7294,6 +7299,7 @@ class AnalysePage(QWidget):
         self.analysis_explorer_btn.clicked.connect(lambda: self.analysis_tabs.setCurrentWidget(self.explorer_tab))
         self.analysis_compare_btn.clicked.connect(lambda: self.analysis_tabs.setCurrentWidget(self.compare_tab))
         self.compare_add_selected_btn.clicked.connect(self._on_compare_add_selected)
+        self.compare_remove_selected_btn.clicked.connect(self._on_compare_remove_selected)
         self.compare_auto_pick_btn.clicked.connect(self._open_compare_autopick_dialog)
         self.compare_save_btn.clicked.connect(self._save_compare_analysis)
         self.compare_load_btn.clicked.connect(self._load_selected_analysis)
@@ -9718,6 +9724,21 @@ class AnalysePage(QWidget):
 
         budget = self._compare_drawer_table_column_budget(drawer_width=drawer_width)
         visible_metric_cols = [int(idx) for _key, idx in metric_columns]
+        if bool(self._compare_drawer_expanded):
+            # Expanded table view keeps all KPI columns available and relies on internal horizontal scrolling.
+            for idx in visible_metric_cols:
+                table.setColumnHidden(int(idx), False)
+                table.setColumnWidth(int(idx), int(metric_preferred.get(idx, 96)))
+            table.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+            required_total = int(required_fixed + sum(metric_preferred.get(idx, 0) for idx in visible_metric_cols))
+            if required_total <= budget and visible_metric_cols:
+                remaining = max(budget - required_fixed, 0)
+                base = sum(metric_preferred.get(idx, 0) for idx in visible_metric_cols)
+                per_col_extra = max((remaining - base) // max(len(visible_metric_cols), 1), 0)
+                for idx in visible_metric_cols:
+                    width = int(metric_preferred.get(idx, 96) + per_col_extra)
+                    table.setColumnWidth(int(idx), int(min(width, 220)))
+            return
         required_total = int(required_fixed + sum(metric_preferred.get(idx, 0) for idx in visible_metric_cols))
         while required_total > budget and len(visible_metric_cols) > 1:
             hide_idx = int(visible_metric_cols[-1])
@@ -9955,8 +9976,58 @@ class AnalysePage(QWidget):
         merged = list(self._compare_candidates) + [self._candidate_from_row(row) for row in rows]
         self._set_compare_candidates(merged, message="Added selected versions to compare set.")
 
+    def _selected_compare_row_index(self) -> Optional[int]:
+        model = self.compare_slots_table.selectionModel() if isinstance(getattr(self, "compare_slots_table", None), QTableWidget) else None
+        if model is not None:
+            selected = model.selectedRows()
+            if selected:
+                row_index = int(selected[0].row())
+                if 0 <= row_index < len(self._compare_candidates):
+                    return row_index
+        idx = self._selected_compare_slot_index
+        if idx is None:
+            return None
+        row_index = int(idx)
+        if 0 <= row_index < len(self._compare_candidates):
+            return row_index
+        return None
+
+    def _refresh_compare_remove_selected_button_state(self) -> None:
+        btn = getattr(self, "compare_remove_selected_btn", None)
+        if not isinstance(btn, QPushButton):
+            return
+        row_index = self._selected_compare_row_index()
+        if row_index is None:
+            btn.setEnabled(False)
+            btn.setToolTip("Select a shortlist row to remove.")
+            return
+        candidate = dict(self._compare_candidates[row_index] or {})
+        if bool(candidate.get("version_pinned")):
+            btn.setEnabled(False)
+            btn.setToolTip("Unpin to remove.")
+            return
+        btn.setEnabled(True)
+        btn.setToolTip("Remove selected shortlist candidate.")
+
+    def _on_compare_remove_selected(self) -> None:
+        row_index = self._selected_compare_row_index()
+        if row_index is None:
+            self._set_compare_busy(False, "Select a shortlist row to remove.")
+            return
+        candidate = dict(self._compare_candidates[row_index] or {})
+        if bool(candidate.get("version_pinned")):
+            self._set_compare_busy(False, "Unpin to remove.")
+            self._refresh_compare_remove_selected_button_state()
+            return
+        self._remove_compare_candidate(row_index)
+
     def _remove_compare_candidate(self, row_index: int) -> None:
         if row_index < 0 or row_index >= len(self._compare_candidates):
+            return
+        candidate = dict(self._compare_candidates[row_index] or {})
+        if bool(candidate.get("version_pinned")):
+            self._set_compare_busy(False, "Unpin to remove.")
+            self._refresh_compare_remove_selected_button_state()
             return
         remaining = [dict(item) for idx, item in enumerate(self._compare_candidates) if idx != row_index]
         if self._selected_compare_slot_index is not None and int(self._selected_compare_slot_index) == int(row_index):
@@ -9968,17 +10039,20 @@ class AnalysePage(QWidget):
         if model is None:
             self._selected_compare_slot_index = None
             self._update_compare_kpi_panel()
+            self._refresh_compare_remove_selected_button_state()
             self._render_compare_visuals()
             return
         selected = model.selectedRows()
         if not selected:
             self._selected_compare_slot_index = None
             self._update_compare_kpi_panel()
+            self._refresh_compare_remove_selected_button_state()
             self._render_compare_visuals()
             return
         row_index = int(selected[0].row())
         self._selected_compare_slot_index = row_index if row_index < len(self._compare_candidates) else None
         self._update_compare_kpi_panel()
+        self._refresh_compare_remove_selected_button_state()
         self._render_compare_visuals()
 
     def _update_compare_kpi_panel(self) -> None:
@@ -10014,6 +10088,7 @@ class AnalysePage(QWidget):
             color_item.setBackground(QColor(*color_rgb))
             color_item.setForeground(QColor("#0D1117"))
             color_item.setTextAlignment(int(Qt.AlignLeft | Qt.AlignVCenter))
+            color_item.setIcon(self._build_pin_icon(pinned=True) if bool(candidate.get("version_pinned")) else QIcon())
             if "slot" in col_index:
                 self.compare_slots_table.setItem(row_index, int(col_index["slot"]), color_item)
             if candidate:
@@ -10060,7 +10135,14 @@ class AnalysePage(QWidget):
             remove_btn.setObjectName("BatchSecondaryButton")
             remove_btn.setMinimumWidth(62)
             remove_btn.setMaximumWidth(84)
-            remove_btn.setEnabled(bool(candidate))
+            candidate_is_pinned = bool(candidate.get("version_pinned")) if candidate else False
+            remove_btn.setEnabled(bool(candidate) and not bool(candidate_is_pinned))
+            if candidate_is_pinned:
+                remove_btn.setToolTip("Unpin to remove.")
+            elif candidate:
+                remove_btn.setToolTip("Remove this shortlist candidate.")
+            else:
+                remove_btn.setToolTip("No candidate in this slot.")
             remove_btn.clicked.connect(lambda _checked=False, idx=row_index: self._remove_compare_candidate(idx))
             self.compare_slots_table.setCellWidget(row_index, remove_col, remove_btn)
 
@@ -10093,8 +10175,9 @@ class AnalysePage(QWidget):
             )
         if self._selected_compare_slot_index is not None:
             self.compare_slots_table.selectRow(int(self._selected_compare_slot_index))
-        self._apply_compare_slots_table_layout(drawer_width=(self._compare_drawer_current_width if self._compare_drawer_expanded else self._compare_drawer_expanded_width))
+        self._apply_compare_slots_table_layout(drawer_width=int(self._compare_drawer_current_width))
         self._update_compare_kpi_panel()
+        self._refresh_compare_remove_selected_button_state()
         self._refresh_compare_drawer_compact_rows()
         self._render_compare_visuals()
 

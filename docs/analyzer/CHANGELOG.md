@@ -1,5 +1,12 @@
 ﻿# Analyzer Docs â€” Changelog
 
+## 2026-02-25 (Compare: drawer table polish + remove-selected + pin icon)
+- Added `Remove selected` action for the compare shortlist, enabled only for a valid selected row and disabled with `Unpin to remove.` when the row is pinned.
+- Slot cells now render `V###` with a purple pin decoration icon when the candidate is pinned, while preserving row swatch coloring.
+- Improved expanded drawer table behavior to keep KPI columns available with internal horizontal scrolling (no half-visible clipped columns).
+- Enforced pin guard on both per-row `Remove` and `Remove selected` actions so pinned candidates cannot be removed until unpinned.
+
+
 ## 2026-02-25 (Compare: reserved gutter + right-plot label suppression)
 - Reserved a fixed left compare-workspace gutter equal to collapsed drawer width so the collapsed drawer no longer overlaps the 2x2 plot matrix.
 - Kept expanded drawer overlay behavior with scrim dimming only over the plot matrix region (gutter excluded).
