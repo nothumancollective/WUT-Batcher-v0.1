@@ -1249,6 +1249,35 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         border-radius: {r['sm']}px;
         padding: 1px 6px;
     }}
+    QLabel[analyzerScoreChip="true"] {{
+        border-radius: {r['sm']}px;
+        padding: 1px 6px;
+        border: 1px solid {c['border']};
+        background-color: #242424;
+        color: {c['muted']};
+        qproperty-alignment: AlignCenter;
+        font-weight: 700;
+    }}
+    QLabel[analyzerScoreChip="true"][scoreQuality="good"] {{
+        color: {c['risk_ok']};
+        border: 1px solid #3d5e49;
+        background-color: rgba(92, 164, 112, 0.18);
+    }}
+    QLabel[analyzerScoreChip="true"][scoreQuality="medium"] {{
+        color: {c['warning_border']};
+        border: 1px solid #4a3d23;
+        background-color: rgba(125, 91, 34, 0.18);
+    }}
+    QLabel[analyzerScoreChip="true"][scoreQuality="poor"] {{
+        color: {c['danger_border']};
+        border: 1px solid #4d2d2d;
+        background-color: rgba(110, 50, 50, 0.18);
+    }}
+    QLabel[analyzerScoreChip="true"][scoreQuality="missing"] {{
+        color: {c['muted']};
+        border: 1px solid {c['border']};
+        background-color: #242424;
+    }}
     QPushButton[segment=\"true\"][disclosureHint="true"] {{
         border: 1px solid {c['accent']};
     }}

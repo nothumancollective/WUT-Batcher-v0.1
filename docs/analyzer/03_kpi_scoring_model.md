@@ -86,6 +86,24 @@ Last updated: 2026-02-24
 - Coverage guardrail:
   - `insufficient_coverage` applies an additional penalty multiplier.
 
+## Version Information score chip mapping
+
+- The Version Information `Score` row is rendered as a chip with quality color state.
+- Chip quality thresholds use a normalized `0..100` score space:
+  - `good`: score `>= 80`
+  - `medium`: score `>= 60` and `< 80`
+  - `poor`: score `< 60`
+  - `missing`: score unavailable
+- UI normalization before thresholding:
+  - `0..1` scores are treated as fractions and multiplied by `100`
+  - `0..10` scores are treated as decile-style and multiplied by `10`
+  - values above `10` are treated as direct `0..100` scores (clamped to `0..100`)
+- Color/token mapping in theme:
+  - `good` -> subtle green family (`risk_ok`)
+  - `medium` -> subtle yellow family (`warning_border`)
+  - `poor` -> subtle red family (`danger_border`)
+  - `missing` -> neutral muted style
+
 ## Stage plot mapping (Explorer/Compare defaults)
 
 ### Explorer 2x2 by stage

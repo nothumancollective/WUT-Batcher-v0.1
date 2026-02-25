@@ -7238,12 +7238,6 @@ class AnalysePage(QWidget):
         col1_layout = QVBoxLayout(self.version_info_col1)
         col1_layout.setContentsMargins(0, 0, 0, 0)
         col1_layout.setSpacing(3)
-        self.version_dims_label = ElidedTitleLabel("")
-        self.version_dims_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.version_dims_label.setObjectName("SummaryMeta")
-        self.version_dims_label.setToolTip("Final dimensions (L×M×H) in mm.")
-        self.version_dims_label.setVisible(False)
-        col1_layout.addWidget(self.version_dims_label, 0, Qt.AlignLeft | Qt.AlignVCenter)
         self._version_chip_labels: Dict[str, QLabel] = {}
         for key in ("throat", "gcurve", "morph", "driver", "enclosure"):
             chip = QLabel("--")
@@ -7264,6 +7258,23 @@ class AnalysePage(QWidget):
         col2_layout = QVBoxLayout(self.version_info_col2)
         col2_layout.setContentsMargins(0, 0, 0, 0)
         col2_layout.setSpacing(3)
+        self.version_dims_row = QWidget()
+        dims_layout = QHBoxLayout(self.version_dims_row)
+        dims_layout.setContentsMargins(0, 0, 0, 0)
+        dims_layout.setSpacing(6)
+        self.version_dims_key_label = QLabel("Dim (LxWxH)")
+        self.version_dims_key_label.setObjectName("SummaryMeta")
+        self.version_dims_key_label.setProperty("analyzerInfoKey", True)
+        self.version_dims_key_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.version_dims_value_label = ElidedTitleLabel("—")
+        self.version_dims_value_label.setObjectName("SummaryMeta")
+        self.version_dims_value_label.setProperty("analyzerInfoValue", True)
+        self.version_dims_value_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.version_dims_value_label.setToolTip("Not available")
+        self.version_dims_value_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        dims_layout.addWidget(self.version_dims_key_label, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        dims_layout.addWidget(self.version_dims_value_label, 1)
+        col2_layout.addWidget(self.version_dims_row, 0)
         self.version_sweep_value_label = ElidedTitleLabel("--")
         self.version_sweep_value_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.version_sweep_value_label.setObjectName("SummaryMeta")
@@ -7302,6 +7313,7 @@ class AnalysePage(QWidget):
         self.version_ath_params_empty_label.setVisible(True)
         col2_layout.addWidget(self.version_ath_params_rows_widget, 1, Qt.AlignLeft | Qt.AlignTop)
         col2_layout.addWidget(self.version_ath_params_empty_label, 0, Qt.AlignLeft | Qt.AlignTop)
+        self.version_dims_label = self.version_dims_value_label
         extra_layout.addWidget(self.version_info_col2, 1)
         divider_2 = QFrame()
         divider_2.setObjectName("AnalyzerInfoDivider")
@@ -11971,6 +11983,31 @@ class AnalysePage(QWidget):
                 return float(numeric)
         return None
 
+    @staticmethod
+    def _score_chip_percent(raw_value: Any) -> Optional[float]:
+        try:
+            score = float(raw_value) if raw_value is not None else None
+        except Exception:
+            return None
+        if score is None or not math.isfinite(score):
+            return None
+        if score <= 1.0:
+            score = score * 100.0
+        elif score <= 10.0:
+            score = score * 10.0
+        return float(max(0.0, min(score, 100.0)))
+
+    @classmethod
+    def _score_chip_quality(cls, raw_value: Any) -> str:
+        percent = cls._score_chip_percent(raw_value)
+        if percent is None:
+            return "missing"
+        if percent >= 80.0:
+            return "good"
+        if percent >= 60.0:
+            return "medium"
+        return "poor"
+
     def _sync_version_metric_rows(self, data: Dict[str, Any]) -> None:
         metric_keys = self._stage_version_metric_keys()
         hint = "Compute KPIs to populate this metric."
@@ -11994,6 +12031,19 @@ class AnalysePage(QWidget):
             key_label.setToolTip(tip)
             value_text = self._version_metric_value_text(data, metric_key) if data else "--"
             value_label.setText(value_text)
+            is_score_metric = metric_key == "score"
+            value_label.setProperty("analyzerScoreChip", bool(is_score_metric))
+            if is_score_metric:
+                quality = self._score_chip_quality(data.get("kpi_score") if data else None)
+                value_label.setProperty("scoreQuality", quality)
+                value_label.setAlignment(Qt.AlignCenter)
+            else:
+                value_label.setProperty("scoreQuality", "")
+                value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            style = value_label.style()
+            if style is not None:
+                style.unpolish(value_label)
+                style.polish(value_label)
             if value_text == "--":
                 value_label.setToolTip(f"{tip}\n{hint}" if tip else hint)
             else:
@@ -12003,8 +12053,8 @@ class AnalysePage(QWidget):
         data = dict(payload or {})
         self._sync_version_metric_rows(data)
         if not data:
-            self.version_dims_label.set_full_text("")
-            self.version_dims_label.setVisible(False)
+            self.version_dims_label.set_full_text("—")
+            self.version_dims_label.setToolTip("Not available")
             for label in self._version_chip_labels.values():
                 label.setText("--")
                 label.setToolTip("missing")
@@ -12034,14 +12084,13 @@ class AnalysePage(QWidget):
             data.get("height_mm"),
         )
         if None in (length_mm, width_mm, height_mm):
-            self.version_dims_label.set_full_text("")
-            self.version_dims_label.setVisible(False)
+            self.version_dims_label.set_full_text("—")
+            self.version_dims_label.setToolTip("Not available")
         else:
             self.version_dims_label.set_full_text(
-                f"L×M×H  {float(length_mm):.1f} × {float(width_mm):.1f} × {float(height_mm):.1f} mm"
+                f"{float(length_mm):.1f} × {float(width_mm):.1f} × {float(height_mm):.1f} mm"
             )
-            self.version_dims_label.setToolTip("Final dimensions (L×M×H) in mm.")
-            self.version_dims_label.setVisible(True)
+            self.version_dims_label.setToolTip("Final dimensions (LxWxH) in mm.")
 
         def _mode_text(mapping: Dict[int, str], raw_value: Any, default: str) -> str:
             try:

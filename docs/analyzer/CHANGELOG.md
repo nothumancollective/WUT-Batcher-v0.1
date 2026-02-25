@@ -1,9 +1,22 @@
-# Analyzer Docs â€” Changelog
+﻿# Analyzer Docs Ã¢â‚¬â€ Changelog
 
+## 2026-02-25 (Version Information: dimensions row + score quality chip)
+- Version Information now renders final dimensions in a dedicated row above ATH params:
+  - key: `Dim (LxWxH)`
+  - value format: `<L:.1f> × <W:.1f> × <H:.1f> mm`
+  - missing values render as `—` with tooltip `Not available`.
+- Score in Version Information now renders as a chip with quality state:
+  - `good >= 80`, `medium >= 60`, `poor < 60`, `missing` when unavailable
+  - chip colors reuse existing subtle green/yellow/red token families.
+- Final-dim write-side persistence was hardened:
+  - ATH parser accepts split-line dimension output,
+  - runner persists dimensions when full numeric triplet exists,
+  - write remains first post-ATH export-data persistence step,
+  - dual-write updates both project DB and library DB.
 ## 2026-02-25 (A/B/C rerun: runtime-validated polish)
 - Plane selector: fixed middle (`V`) checked-state overlap by resetting checked middle-segment margins, so all four selected edges render with the bright stroke in live UI rendering.
 - Final dimensions: hardened read-side fallback to recover `ath_dimensions` by `run_id/version_id` when legacy rows have mismatched scope keys, and added optional `experiment_metrics` (`final_*_mm`) fallback by run where present.
-- Final dimensions UI now accepts canonical and fallback payload keys (`ath_*`, `final_*`, raw `length/width/height`) and parses numeric strings with comma/`mm` suffixes before formatting `L×M×H ... mm`.
+- Final dimensions UI now accepts canonical and fallback payload keys (`ath_*`, `final_*`, raw `length/width/height`) and parses numeric strings with comma/`mm` suffixes before formatting `LÃ—MÃ—H ... mm`.
 - Headful Analyzer E2E probe (non-offscreen) verified:
   - dimensions line visible from real DB read-side payload,
   - High Contrast ON/OFF toggles tile-container fill (`transparent` vs normal fill) without touching Compare drawer styling,
@@ -760,7 +773,7 @@
   - B: single-candidate heatmap with contour/shading
   - C: KPI breakdown panel
   - D: Pareto scatter with axis selectors.
-- Stage selector now drives plot-tile mapping and compare defaults; Stage-3 missing artifacts are shown as explicit â€œmissing dataâ€ messages in the relevant tiles.
+- Stage selector now drives plot-tile mapping and compare defaults; Stage-3 missing artifacts are shown as explicit Ã¢â‚¬Å“missing dataÃ¢â‚¬Â messages in the relevant tiles.
 - Added Display Advanced toggle for `use_full_angles_for_smoothness` (feeds stage-compute request config without touching runner/import flows).
 
 ## 2026-02-22 (Analyzer stage-plot tests: compute + UI)
@@ -783,7 +796,7 @@
 - Frequency-axis major ticks now prioritize anchored log ticks (`200`, `500`, `1k`, `2k`, `5k`, `10k`, `16k`) within the active band, with subtle minor gridlines.
 - Explorer curve panels no longer render `Selected` legend text in-plot; selection context remains in toolbar chips.
 - Heatmap overlays refined:
-  - target window shading (`Â±BW/2`) remains dynamic with target preset changes
+  - target window shading (`Ã‚Â±BW/2`) remains dynamic with target preset changes
   - integrated `-6 dB` contour contrast increased for better readability.
 - Toolbar/tile polish:
   - top bar uses compact `Selection` + `Score` + `Flags` chips, `KPIs` and `Details`
@@ -1064,7 +1077,7 @@
 ## 2026-02-23 (Analyzer analysis-block polish: compact grid and neutral filter toggles)
 - Reworked Analysis block controls into a compact utility grid (`Stage` + `Target` on one row, `Min score` on next) with unchanged behavior.
 - Removed legacy blue inline toggle styling and switched Analyzer toggle checked-state visuals to neutral monochrome.
-- Added checked-state chip labels (`âœ“ Exclude flagged`, `âœ“ Exclude warnings`) while preserving the original filtering behavior and signal flow.
+- Added checked-state chip labels (`Ã¢Å“â€œ Exclude flagged`, `Ã¢Å“â€œ Exclude warnings`) while preserving the original filtering behavior and signal flow.
 
 ## 2026-02-23 (Analyzer bar styling pass: neutral surfaces, dividers, segmented plane control)
 - Added subtle panel surface layering in the Version Bar:
@@ -1166,3 +1179,5 @@
   - metric-band smooth rendering config (`show`, `smooth`, `opacity`)
   - robust non-auto `e_sym_shape` y-range clamp under outlier input
   - resize probes (`1920x1080`, `1366x768`, `1100x700`) without exceptions.
+
+

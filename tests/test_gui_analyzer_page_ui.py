@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import os
 from pathlib import Path
@@ -763,6 +763,7 @@ class AnalyzerPageUiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="wut_ui2x_dims_lxmxh_") as tmp:
             service = _build_service(Path(tmp))
             page = AnalysePage(service=service)
+            self.assertEqual(str(page.version_dims_key_label.text() or ""), "Dim (LxWxH)")
             payload = {
                 "project_id": "P001",
                 "batch_id": "B001",
@@ -772,8 +773,7 @@ class AnalyzerPageUiTests(unittest.TestCase):
                 "ath_height_mm": 89.01,
             }
             page._update_version_information_panel(payload)
-            self.assertFalse(bool(page.version_dims_label.isHidden()))
-            self.assertEqual(str(page.version_dims_label.text() or ""), "L×M×H  123.4 × 56.7 × 89.0 mm")
+            self.assertEqual(str(page.version_dims_label.text() or ""), "123.4 × 56.7 × 89.0 mm")
 
             payload = {
                 "project_id": "P001",
@@ -784,15 +784,35 @@ class AnalyzerPageUiTests(unittest.TestCase):
                 "final_height_mm": "89,01",
             }
             page._update_version_information_panel(payload)
-            self.assertFalse(bool(page.version_dims_label.isHidden()))
             self.assertIn("123.4", str(page.version_dims_label.text() or ""))
             self.assertIn("56.7", str(page.version_dims_label.text() or ""))
             self.assertIn("89.0", str(page.version_dims_label.text() or ""))
 
             payload["final_width_mm"] = None
             page._update_version_information_panel(payload)
-            self.assertTrue(bool(page.version_dims_label.isHidden()))
-            self.assertEqual(str(page.version_dims_label.text() or ""), "")
+            self.assertEqual(str(page.version_dims_label.text() or ""), "—")
+            self.assertIn("Not available", str(page.version_dims_label.toolTip() or ""))
+
+    def test_version_information_score_metric_is_rendered_as_quality_chip(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_ui2x_score_chip_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            score_row = page._version_info_metric_rows[0]
+            value_label = score_row["value_label"]
+            self.assertEqual(str(score_row.get("metric_key") or ""), "score")
+
+            page._update_version_information_panel({"project_id": "P001", "batch_id": "B001", "version_id": "V001", "kpi_score": 88.2})
+            self.assertTrue(bool(value_label.property("analyzerScoreChip")))
+            self.assertEqual(str(value_label.property("scoreQuality") or ""), "good")
+
+            page._update_version_information_panel({"project_id": "P001", "batch_id": "B001", "version_id": "V001", "kpi_score": 65.0})
+            self.assertEqual(str(value_label.property("scoreQuality") or ""), "medium")
+
+            page._update_version_information_panel({"project_id": "P001", "batch_id": "B001", "version_id": "V001", "kpi_score": 40.0})
+            self.assertEqual(str(value_label.property("scoreQuality") or ""), "poor")
+
+            page._update_version_information_panel({"project_id": "P001", "batch_id": "B001", "version_id": "V001"})
+            self.assertEqual(str(value_label.property("scoreQuality") or ""), "missing")
 
     def test_ath_param_visibility_pref_persists_per_project(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_ui2x_ath_pref_") as tmp:
@@ -1245,3 +1265,4 @@ class AnalyzerPageUiTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

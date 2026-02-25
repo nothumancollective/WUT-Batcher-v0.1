@@ -447,3 +447,51 @@ Validation mode: Qt offscreen scripted GUI flow using real dialog/controller wir
 - Added safe-browse tests:
   - successful directory selection path updates field
   - picker failure path shows error and keeps current path
+
+## 15) Merge + Analyzer dimensions/score follow-up
+
+Date: 2026-02-25
+
+### Merge operation
+- Target branch: `feature/polar-analyzer-ui`
+- Source branch: `feature/project-library-storage`
+- Merge command: non-squash merge (`--no-ff`)
+- Result: clean merge, no manual conflict blocks.
+
+### Conflict-resolution summary
+- Analyzer UI branch behavior preserved for existing stage/plot workflows.
+- Project-library branch remained authoritative for storage-root/bootstrap and path wiring.
+- No duplicate storage module introduced; `app/storage_manager.py` remains the single root authority.
+
+### Root cause analysis: missing final dimensions in some runs
+- Write gate in runtime path depended on `dims.raw_line` being populated.
+- `parse_ath_dimensions` originally expected all three tokens (`Length`, `Width`, `Height`) on a single line.
+- ATH outputs with split lines could yield numeric values but no accepted single-line raw marker, so no DB write happened.
+- In DB write path, `versions` ATH update used `WHERE version_id = ?` only; scope was tightened to include project and batch keys for safer writes.
+
+### Implemented correction
+- Runner parser now accepts split-line ATH dimension output and still assembles a raw trace string.
+- Runtime persists dimensions when the numeric triplet is present, not only when a single raw line matches.
+- Persistence remains the first post-ATH export-data write before downstream export/ingest stages.
+- Dual-write path remains `SqlDatasetStore._dual_write(...)`, so both project DB and library DB receive:
+  - `ath_dimensions.length_mm/width_mm/height_mm`
+  - `versions.ath_length_mm/ath_width_mm/ath_height_mm`
+
+### UI mapping updates
+- Project page Export bar no longer shows `Testdaten aufraeumen...` in normal UI.
+  - Dev-only escape hatch remains via `WUT_SHOW_CLEANUP_BUTTON=1`.
+- Analyzer Version Information now shows dimensions as a dedicated row above ATH params:
+  - label: `Dim (LxWxH)`
+  - value: `<L:.1f> × <W:.1f> × <H:.1f> mm`
+  - missing data: `—` with `Not available` tooltip.
+- Version score in Version Information is now rendered as a chip with quality states:
+  - thresholds (normalized to 0..100): `>=80 good`, `>=60 medium`, `<60 poor`
+  - styles map to existing subtle token families (`risk_ok`, `warning_border`, `danger_border`).
+
+### Validation executed
+- `python -m pytest tests/test_runners.py -q`
+- `python -m pytest tests/test_runtime_orchestrator.py::RuntimeOrchestratorTests::test_pipeline_runs_ath_stage_and_writes_dimensions -q`
+- `python -m pytest tests/test_gui_analyzer_page_ui.py::AnalyzerPageUiTests::test_version_information_renders_final_dimensions_as_lxmxh_mm tests/test_gui_analyzer_page_ui.py::AnalyzerPageUiTests::test_version_information_score_metric_is_rendered_as_quality_chip -q`
+- `python -m pytest tests/test_gui_project_open_and_batch_nav_ui.py -q`
+
+All executed checks passed in this patch set.
