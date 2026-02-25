@@ -8,6 +8,7 @@ import csv
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
 import re
 import shutil
@@ -40,6 +41,29 @@ except Exception:
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def _debug_stage_logging_enabled() -> bool:
+    value = str(os.environ.get("WUT_DEBUG_PIPELINE_STAGES", "")).strip().lower()
+    return value in {"1", "true", "yes", "on"}
+
+
+def _append_stage_debug_log(version_logs_dir: Path, *, event: str, payload: Dict[str, Any]) -> None:
+    if not _debug_stage_logging_enabled():
+        return
+    path = version_logs_dir / "pipeline.stage_debug.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    row = {
+        "time": _now_iso(),
+        "event": str(event),
+        **dict(payload),
+    }
+    try:
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
+    except Exception:
+        # Debug logging must never break runtime execution.
+        return
 
 
 def _write_json(path: Path, payload: Dict[str, Any]) -> None:
@@ -1757,6 +1781,7 @@ def run_batch_pipeline(
             version_params = dict(version_payload.get("parameters", {}) or {})
             runner_mode = str(batch.runner_mode or project.constraints.runner_mode)
             persist_sync_errors: List[str] = []
+            version_logs_dir = _version_logs_dir(project_root, version_id)
 
             cfg_path = _version_cfg_path(project_root, version_id)
             cfg_basename = _runtime_cfg_basename(
@@ -1795,6 +1820,21 @@ def run_batch_pipeline(
                     "constraints_snapshot": project.constraints.to_dict(),
                     "sweep_parameters_snapshot": dict(version_payload.get("sweep_parameters", {}) or {}),
                     "template_cfg_path_effective": template_cfg_effective,
+                },
+            )
+            _append_stage_debug_log(
+                version_logs_dir,
+                event="version_runtime_prepared",
+                payload={
+                    "version_id": version_id,
+                    "run_id": effective_run_id,
+                    "project_id": project.project_id,
+                    "batch_id": batch.batch_id,
+                    "cfg_path": str(cfg_path),
+                    "run_cfg_path": str(run_cfg_path),
+                    "ath_export_dir": str(ath_export_dir) if ath_export_dir is not None else None,
+                    "export_specs_count": len(export_specs),
+                    "akabak_ui_driver_enabled": bool(akabak_ui_driver_enabled),
                 },
             )
 
@@ -1856,10 +1896,35 @@ def run_batch_pipeline(
                     ath_export_root=ath_export_root_path,
                     ath_executable=ath_executable,
                 )
+                _append_stage_debug_log(
+                    version_logs_dir,
+                    event="stage_start",
+                    payload={
+                        "stage": "ath",
+                        "version_id": version_id,
+                        "workdir": str(ath_work_dir),
+                        "cfg_path": str(ath_work_cfg_path),
+                        "ath_runtime_cfg": ath_runtime_cfg,
+                    },
+                )
                 ath_result = ath_runner.run_cfg(
                     ath_work_cfg_path,
-                    version_logs_dir=_version_logs_dir(project_root, version_id),
+                    version_logs_dir=version_logs_dir,
                     workdir=ath_work_dir,
+                )
+                _append_stage_debug_log(
+                    version_logs_dir,
+                    event="stage_end",
+                    payload={
+                        "stage": "ath",
+                        "version_id": version_id,
+                        "ok": bool(ath_result.ok),
+                        "exit_code": int(ath_result.exit_code),
+                        "timed_out": bool(ath_result.timed_out),
+                        "stdout_log": str(ath_result.stdout_log),
+                        "stderr_log": str(ath_result.stderr_log),
+                        "summary_log": str(ath_result.summary_log),
+                    },
                 )
                 stage_results.append(_stage_from_result(version_id, "ath", ath_result))
                 _update_version_state(
@@ -1935,8 +2000,19 @@ def run_batch_pipeline(
                     if not bool(abec_sync.get("ok")):
                         ath_stage_ok = False
                         ath_failure_reason = "ath_abec_missing"
-                        abec_sync_log = _version_logs_dir(project_root, version_id) / "ath.abec_sync.json"
+                        abec_sync_log = version_logs_dir / "ath.abec_sync.json"
                         _write_json(abec_sync_log, abec_sync)
+                        _append_stage_debug_log(
+                            version_logs_dir,
+                            event="stage_end",
+                            payload={
+                                "stage": "ath_abec_sync",
+                                "version_id": version_id,
+                                "ok": False,
+                                "error": "ath_abec_missing",
+                                "summary_log": str(abec_sync_log),
+                            },
+                        )
                         stage_results.append(
                             StageExecution(
                                 version_id=version_id,
@@ -1970,10 +2046,30 @@ def run_batch_pipeline(
                     continue
 
                 if ath_stage_ok and (akabak_runner is not None or akabak_ui_driver_enabled or vacs_required):
+                    _append_stage_debug_log(
+                        version_logs_dir,
+                        event="stage_start",
+                        payload={
+                            "stage": "post_ath_le_repair",
+                            "version_id": version_id,
+                            "abec_path": str(_version_abec_path(project_root, version_id)),
+                        },
+                    )
                     driver_sync = repair_post_ath_le_binding(
                         abec_path=_version_abec_path(project_root, version_id),
                         ath_executable=ath_executable,
-                        diagnostics_dir=_version_logs_dir(project_root, version_id),
+                        diagnostics_dir=version_logs_dir,
+                    )
+                    _append_stage_debug_log(
+                        version_logs_dir,
+                        event="stage_end",
+                        payload={
+                            "stage": "post_ath_le_repair",
+                            "version_id": version_id,
+                            "ok": bool(driver_sync.ok),
+                            "status": str(driver_sync.status),
+                            "diagnostics_path": str(driver_sync.diagnostics_path or ""),
+                        },
                     )
                     stage_results.append(
                         StageExecution(
@@ -2106,14 +2202,40 @@ def run_batch_pipeline(
             if ath_stage_ok and akabak_ui_driver_enabled and akabak_executable:
                 preserve_vacs_for_export = bool(vacs_required and vacs_executable and export_specs)
                 require_vacs_graph_import = bool(vacs_required)
+                _append_stage_debug_log(
+                    version_logs_dir,
+                    event="stage_start",
+                    payload={
+                        "stage": "akabak",
+                        "version_id": version_id,
+                        "mode": "uia_driver",
+                        "abec_path": str(_version_abec_path(project_root, version_id)),
+                        "preserve_vacs_for_export": bool(preserve_vacs_for_export),
+                        "require_vacs_graph_import": bool(require_vacs_graph_import),
+                        "timeout_s": int(akabak_solve_timeout_s),
+                    },
+                )
                 akabak_stage, akabak_payload, akabak_stage_ok = _run_akabak_ui_driver_stage(
                     version_id=version_id,
                     executable=akabak_executable,
                     abec_project_path=_version_abec_path(project_root, version_id),
-                    version_logs_dir=_version_logs_dir(project_root, version_id),
+                    version_logs_dir=version_logs_dir,
                     require_vacs_graph_import=require_vacs_graph_import,
                     akabak_solve_timeout_s=akabak_solve_timeout_s,
                     preserve_vacs_for_export=preserve_vacs_for_export,
+                )
+                _append_stage_debug_log(
+                    version_logs_dir,
+                    event="stage_end",
+                    payload={
+                        "stage": "akabak",
+                        "version_id": version_id,
+                        "mode": "uia_driver",
+                        "ok": bool(akabak_stage_ok),
+                        "status": str(akabak_stage.status),
+                        "summary_log": str(akabak_stage.summary_log),
+                        "exit_code": int(akabak_stage.exit_code),
+                    },
                 )
                 stage_results.append(akabak_stage)
                 _update_version_state(
@@ -2153,10 +2275,34 @@ def run_batch_pipeline(
                     continue
 
             elif ath_stage_ok and akabak_runner is not None:
+                _append_stage_debug_log(
+                    version_logs_dir,
+                    event="stage_start",
+                    payload={
+                        "stage": "akabak",
+                        "version_id": version_id,
+                        "mode": "subprocess",
+                        "abec_path": str(_version_abec_path(project_root, version_id)),
+                        "timeout_s": max(1, int(akabak_solve_timeout_s)),
+                    },
+                )
                 akabak_result = akabak_runner.run_project(
                     _version_abec_path(project_root, version_id),
-                    version_logs_dir=_version_logs_dir(project_root, version_id),
+                    version_logs_dir=version_logs_dir,
                     timeout_s=max(1, int(akabak_solve_timeout_s)),
+                )
+                _append_stage_debug_log(
+                    version_logs_dir,
+                    event="stage_end",
+                    payload={
+                        "stage": "akabak",
+                        "version_id": version_id,
+                        "mode": "subprocess",
+                        "ok": bool(akabak_result.ok),
+                        "exit_code": int(akabak_result.exit_code),
+                        "timed_out": bool(akabak_result.timed_out),
+                        "summary_log": str(akabak_result.summary_log),
+                    },
                 )
                 stage_results.append(_stage_from_result(version_id, "akabak", akabak_result))
                 _update_version_state(
@@ -2202,7 +2348,17 @@ def run_batch_pipeline(
 
             if ath_stage_ok and vacs_required and not vacs_executable:
                 vacs_stage_ok = False
-                summary_path = _version_logs_dir(project_root, version_id) / "vacs.export_pipeline.json"
+                summary_path = version_logs_dir / "vacs.export_pipeline.json"
+                _append_stage_debug_log(
+                    version_logs_dir,
+                    event="stage_start",
+                    payload={
+                        "stage": "vacs",
+                        "version_id": version_id,
+                        "mode": "export_specs",
+                        "error": "vacs_executable_missing",
+                    },
+                )
                 _write_json(
                     summary_path,
                     {
@@ -2220,6 +2376,17 @@ def run_batch_pipeline(
                         timed_out=False,
                         summary_log=str(summary_path),
                     )
+                )
+                _append_stage_debug_log(
+                    version_logs_dir,
+                    event="stage_end",
+                    payload={
+                        "stage": "vacs",
+                        "version_id": version_id,
+                        "ok": False,
+                        "error": "vacs_executable_missing",
+                        "summary_log": str(summary_path),
+                    },
                 )
                 _update_version_state(
                     project_root,
@@ -2261,7 +2428,20 @@ def run_batch_pipeline(
             elif ath_stage_ok and vacs_executable and export_specs:
                 exports_dir = _version_exports_dir(project_root, version_id, effective_run_id)
                 exports_dir.mkdir(parents=True, exist_ok=True)
-                vacs_summary_path = _version_logs_dir(project_root, version_id) / "vacs.export_pipeline.json"
+                vacs_summary_path = version_logs_dir / "vacs.export_pipeline.json"
+                _append_stage_debug_log(
+                    version_logs_dir,
+                    event="stage_start",
+                    payload={
+                        "stage": "vacs",
+                        "version_id": version_id,
+                        "mode": "export_specs",
+                        "exports_dir": str(exports_dir),
+                        "vacs_version": str(vacs_version),
+                        "export_specs_count": len(export_specs),
+                        "using_external_script": bool(akabak_ui_driver_enabled and akabak_executable),
+                    },
+                )
                 try:
                     vacs_export_summary = run_vacs_export_specs(
                         executable=vacs_executable,
@@ -2304,6 +2484,26 @@ def run_batch_pipeline(
                     )
                     if int(vacs_ingest.get("files_found", 0)) <= 0 or int(vacs_ingest.get("rows_prepared", 0)) <= 0:
                         vacs_stage_ok = False
+                    _append_stage_debug_log(
+                        version_logs_dir,
+                        event="stage_end",
+                        payload={
+                            "stage": "vacs",
+                            "version_id": version_id,
+                            "mode": "export_specs",
+                            "ok": bool(vacs_stage_ok),
+                            "executed": bool(vacs_export_summary.get("executed")),
+                            "export_count": int(vacs_export_summary.get("export_count", 0) or 0),
+                            "files_found": int(vacs_ingest.get("files_found", 0) or 0),
+                            "rows_prepared": int(vacs_ingest.get("rows_prepared", 0) or 0),
+                            "parse_errors": int(len(list(vacs_ingest.get("parse_errors", []) or []))),
+                            "mapping_errors": int(len(list(vacs_ingest.get("mapping_errors", []) or []))),
+                            "missing_contract_files": int(
+                                len(list(vacs_ingest.get("missing_contract_files", []) or []))
+                            ),
+                            "summary_log": str(vacs_summary_path),
+                        },
+                    )
                     vacs_status = "vacs_ok" if vacs_stage_ok else "vacs_failed"
                     _update_version_state(
                         project_root,
@@ -2329,6 +2529,19 @@ def run_batch_pipeline(
                         persist_sync_errors.append("write_measurements")
                 except (VacsExportPipelineError, Exception) as exc:
                     vacs_stage_ok = False
+                    _append_stage_debug_log(
+                        version_logs_dir,
+                        event="stage_end",
+                        payload={
+                            "stage": "vacs",
+                            "version_id": version_id,
+                            "mode": "export_specs",
+                            "ok": False,
+                            "error_type": type(exc).__name__,
+                            "error": str(exc),
+                            "summary_log": str(vacs_summary_path),
+                        },
+                    )
                     _write_json(vacs_summary_path, {"error": str(exc), "vacs_version": vacs_version})
                     stage_results.append(
                         StageExecution(
@@ -2385,9 +2598,20 @@ def run_batch_pipeline(
             elif ath_stage_ok and vacs_runner is not None and bool(vacs_base_args_list):
                 exports_dir = _version_exports_dir(project_root, version_id, effective_run_id)
                 exports_dir.mkdir(parents=True, exist_ok=True)
+                _append_stage_debug_log(
+                    version_logs_dir,
+                    event="stage_start",
+                    payload={
+                        "stage": "vacs",
+                        "version_id": version_id,
+                        "mode": "legacy_runner",
+                        "exports_dir": str(exports_dir),
+                        "base_args": list(vacs_base_args_list),
+                    },
+                )
                 vacs_result = vacs_runner.run_export(
                     _version_abec_path(project_root, version_id),
-                    version_logs_dir=_version_logs_dir(project_root, version_id),
+                    version_logs_dir=version_logs_dir,
                     workdir=exports_dir,
                 )
                 stage_results.append(_stage_from_result(version_id, "vacs", vacs_result))
@@ -2409,6 +2633,21 @@ def run_batch_pipeline(
                         or vacs_ingest.get("mapping_errors")
                     ):
                         vacs_stage_ok = False
+                _append_stage_debug_log(
+                    version_logs_dir,
+                    event="stage_end",
+                    payload={
+                        "stage": "vacs",
+                        "version_id": version_id,
+                        "mode": "legacy_runner",
+                        "ok": bool(vacs_stage_ok),
+                        "runner_exit_code": int(vacs_result.exit_code),
+                        "runner_timed_out": bool(vacs_result.timed_out),
+                        "files_found": int(vacs_ingest.get("files_found", 0) or 0),
+                        "rows_prepared": int(vacs_ingest.get("rows_prepared", 0) or 0),
+                        "summary_log": str(vacs_result.summary_log),
+                    },
+                )
                 vacs_status = "vacs_ok" if vacs_stage_ok else "vacs_failed"
                 _update_version_state(
                     project_root,

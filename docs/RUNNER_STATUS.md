@@ -110,3 +110,28 @@ Stage sequence in `run_batch_pipeline`:
 DBs in active project-library storage mode:
 - Project DB: `<project_root>/db/project.sqlite`
 - Library DB/index: `<library_root>/library.sqlite`
+
+## VACS SystemExit Forensics (2026-02-25)
+
+Observed symptom in manual runs:
+- run abort around VACS export with script tail pointing to:
+  - `scripts/vacs_export_save_all.py` -> `raise SystemExit(main())`
+
+Reproduced call-chain and failure boundary:
+- GUI batch run path:
+  - `app/gui.py` `_BatchRunWorker.run()`
+  - `app/services.py` `OrchestratorService.run_batch()`
+  - `app/runtime_orchestrator.py` `run_batch_pipeline(...)`
+  - `app/vacs_export_pipeline.py` `run_vacs_export_specs(...)`
+  - external process call to `scripts/vacs_export_save_all.py`
+
+Stage-level diagnostics added (DEBUG-gated):
+- New env flag: `WUT_DEBUG_PIPELINE_STAGES=1`
+- Per-version JSONL log:
+  - `<project>/versions/<version_id>/logs/pipeline.stage_debug.jsonl`
+- Captured before/after records for ATH, AKABAK, and VACS stages, including paths, mode, exit/timed-out state, and short error details.
+
+Root-cause hypothesis before fix:
+- The runner currently catches `Exception` for VACS export stage errors, but not `SystemExit` (`BaseException` path).
+- A `SystemExit` raised inside a VACS stage call boundary can bypass normal stage-fail conversion and escape the pipeline thread.
+- Existing runtime logs also show non-crash VACS hard failures (`rc=1`) with root reason `vacs_not_ready_after_f4`; these should remain stage failures with clear diagnostics, never process termination.
