@@ -160,6 +160,8 @@ class Project:
     root_path: str
     schema_version: str = "1.1"
     constraints: ProjectConstraints = field(default_factory=ProjectConstraints)
+    created_at: str = field(default_factory=_now_iso)
+    created_by: str = ""
     display_number: str = ""
     project_uid: str = ""
     library_uid: str = ""
@@ -181,6 +183,8 @@ class Project:
             name=str(data.get("name", "")),
             root_path=str(data.get("root_path", "")),
             constraints=ProjectConstraints.from_dict(dict(constraints_raw)),
+            created_at=str(data.get("created_at", _now_iso())),
+            created_by=str(data.get("created_by", "")),
             display_number=display_number,
             project_uid=project_uid,
             library_uid=str(data.get("library_uid", "")),
@@ -193,6 +197,8 @@ class Project:
             "name": self.name,
             "root_path": self.root_path,
             "constraints": self.constraints.to_dict(),
+            "created_at": self.created_at,
+            "created_by": self.created_by,
             "display_number": self.display_number,
             "project_uid": self.project_uid,
             "library_uid": self.library_uid,

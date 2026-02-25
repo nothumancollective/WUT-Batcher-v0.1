@@ -148,6 +148,14 @@ def _detect_git_commit() -> Optional[str]:
     return value or None
 
 
+def _current_username() -> str:
+    for key in ("USERNAME", "USER", "LOGNAME"):
+        value = str(os.environ.get(key, "")).strip()
+        if value:
+            return value
+    return ""
+
+
 def _percentile(sorted_values: List[float], p: float) -> Optional[float]:
     if not sorted_values:
         return None
@@ -3511,6 +3519,7 @@ class OrchestratorService:
                     "notes": constraints.get("notes"),
                 }
             ),
+            created_by=_current_username(),
             display_number=display_number,
             project_uid=project_uid,
             library_uid=str(self.library_state.get("library_uid", "") or ""),
