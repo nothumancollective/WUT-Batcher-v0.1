@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+import math
 import re
 import os
 import subprocess
@@ -14,6 +15,7 @@ from typing import Iterable, List, Optional, Sequence
 _ATH_DIM_RE = re.compile(
     r"(?i)\b(length|width|height)\b[^0-9\-+]*([-+]?\d+(?:[.,]\d+)?)"
 )
+_ATH_DIM_CONTEXT_RE = re.compile(r"(?i)\b(final|dimension|dimensions|overall|result)\b")
 
 
 def _now_iso() -> str:
@@ -47,31 +49,52 @@ class AthDimensions:
 
 
 def parse_ath_dimensions(stdout_text: str) -> AthDimensions:
-    length = None
-    width = None
-    height = None
-    raw = ""
+    context_values: dict[str, Optional[float]] = {"length": None, "width": None, "height": None}
+    fallback_values: dict[str, Optional[float]] = {"length": None, "width": None, "height": None}
+    context_lines: List[str] = []
+    fallback_lines: List[str] = []
     for line in stdout_text.splitlines():
         line_matches = list(_ATH_DIM_RE.finditer(line))
         if not line_matches:
             continue
-        lowered = line.lower()
-        if not ("length" in lowered and "width" in lowered and "height" in lowered):
-            continue
-        raw = line.strip()
+        stripped = line.strip()
+        has_context_hint = bool(_ATH_DIM_CONTEXT_RE.search(line))
+        updated_context = False
+        updated_fallback = False
         for match in line_matches:
+            label_start = int(match.start(1))
+            if label_start > 0 and line[label_start - 1] == ".":
+                # Ignore parameter-path echoes like "GCurve.Width".
+                continue
             label = match.group(1).lower()
             try:
                 value = float(match.group(2).replace(",", "."))
             except ValueError:
                 continue
-            if label == "length":
-                length = value
-            elif label == "width":
-                width = value
-            elif label == "height":
-                height = value
-        break
+            if not math.isfinite(value):
+                continue
+            if label not in context_values:
+                continue
+            if has_context_hint:
+                context_values[label] = value
+                updated_context = True
+            else:
+                fallback_values[label] = value
+                updated_fallback = True
+        if stripped and updated_context:
+            context_lines.append(stripped)
+        elif stripped and updated_fallback:
+            fallback_lines.append(stripped)
+
+    merged_values = {
+        key: (context_values.get(key) if context_values.get(key) is not None else fallback_values.get(key))
+        for key in ("length", "width", "height")
+    }
+    length = merged_values.get("length")
+    width = merged_values.get("width")
+    height = merged_values.get("height")
+    source_lines = context_lines if context_lines else fallback_lines
+    raw = " | ".join(source_lines[-3:]) if source_lines else ""
     return AthDimensions(
         horn_length_mm=length,
         horn_width_mm=width,
@@ -318,11 +341,13 @@ class AkabakRunner(_SubprocessRunner):
         *,
         version_logs_dir: str | Path,
         workdir: str | Path | None = None,
+        timeout_s: int | None = None,
     ) -> RunnerResult:
         return self.run(
             [str(abec_project)],
             version_logs_dir=version_logs_dir,
             workdir=workdir,
+            timeout_s=timeout_s,
             log_prefix="akabak",
         )
 

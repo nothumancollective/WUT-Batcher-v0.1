@@ -84,6 +84,15 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         font-size: 18px;
         font-weight: 700;
     }}
+    QLabel[analyzerPlotTitle="true"] {{
+        font-size: 9px;
+        font-weight: 600;
+    }}
+    QLabel[analyzerBlockTitle="true"] {{
+        font-size: 11px;
+        font-weight: 600;
+        color: {c['muted']};
+    }}
     QLabel#StatusSymbol {{
         color: {c['muted']};
         font-size: 16px;
@@ -108,6 +117,131 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     QLabel#StatusBrand {{
         font-weight: 700;
         padding-right: {s['xs']}px;
+    }}
+    QWidget#GlobalTopBar {{
+        background-color: #161616;
+        border-bottom: 1px solid {c['border']};
+    }}
+    QToolButton#TopBarIconButton {{
+        background-color: transparent;
+        color: {c['text']};
+        border: 1px solid transparent;
+        border-radius: {r['sm']}px;
+        min-width: 26px;
+        max-width: 26px;
+        min-height: 26px;
+        max-height: 26px;
+        padding: 0px;
+    }}
+    QToolButton#TopBarIconButton:hover {{
+        border-color: {c['accent']};
+        background-color: #232323;
+    }}
+    QToolButton#TopBarIconButton:pressed {{
+        background-color: #1f1f1f;
+    }}
+    QWidget#GlobalModeBar {{
+        background-color: #141414;
+        border-top: 1px solid {c['border']};
+    }}
+    QToolButton#ModeBarButton {{
+        background-color: transparent;
+        color: {c['muted']};
+        border: 1px solid transparent;
+        border-radius: {r['sm']}px;
+        padding: 0px {s['sm']}px;
+        font-size: 12px;
+        font-weight: 600;
+        text-align: center;
+    }}
+    QToolButton#ModeBarButton:hover {{
+        color: {c['text']};
+        background-color: #1f1f1f;
+        border-color: {c['border']};
+    }}
+    QToolButton#ModeBarButton:checked {{
+        color: {c['text']};
+        background-color: #202020;
+        border: 1px solid {c['accent']};
+    }}
+    QToolButton#ModeBarButton:pressed {{
+        background-color: #1b1b1b;
+    }}
+    QToolButton[analyzerAction="true"],
+    QPushButton[analyzerAction="true"],
+    QToolButton[analyzerToggle="true"],
+    QToolButton[analyzerPlaneToggle="true"] {{
+        background-color: #202020;
+        color: {c['text']};
+        border: 1px solid {c['border']};
+        border-radius: {r['sm']}px;
+        padding: 1px {s['sm']}px;
+        min-height: 24px;
+        font-size: 12px;
+        font-weight: 600;
+    }}
+    QToolButton[analyzerAction="true"]:hover,
+    QPushButton[analyzerAction="true"]:hover,
+    QToolButton[analyzerToggle="true"]:hover,
+    QToolButton[analyzerPlaneToggle="true"]:hover {{
+        border-color: {c['accent']};
+        background-color: #282828;
+    }}
+    QToolButton[analyzerToggle="true"]:checked,
+    QToolButton[analyzerPlaneToggle="true"]:checked {{
+        border-color: #9a9a9a;
+        background-color: #2a2a2a;
+        color: {c['text']};
+    }}
+    QToolButton[analyzerAction="true"]:pressed,
+    QPushButton[analyzerAction="true"]:pressed,
+    QToolButton[analyzerToggle="true"]:pressed,
+    QToolButton[analyzerPlaneToggle="true"]:pressed {{
+        background-color: #1b1b1b;
+    }}
+    QToolButton[analyzerPlaneToggle="true"] {{
+        border-radius: 0px;
+        padding: 1px 10px;
+        background-color: #202020;
+    }}
+    QToolButton[analyzerPlaneToggle="true"]:hover {{
+        border-color: {c['accent']};
+        background-color: #262626;
+    }}
+    QToolButton[analyzerPlaneToggle="true"]:checked {{
+        border: 1px solid #C3CBD8;
+        background-color: #2b2b2b;
+        color: {c['text']};
+    }}
+    QToolButton[analyzerPlaneToggle="true"][analyzerPlaneSegment="middle"]:checked {{
+        border-top: 1px solid #C3CBD8;
+        border-bottom: 1px solid #C3CBD8;
+        border-left: 1px solid #C3CBD8;
+        border-right: 1px solid #C3CBD8;
+        margin-left: 0px;
+        margin-right: 0px;
+    }}
+    QToolButton[analyzerPlaneToggle="true"][analyzerPlaneSegment="middle"],
+    QToolButton[analyzerPlaneToggle="true"][analyzerPlaneSegment="last"] {{
+        margin-left: -1px;
+    }}
+    QToolButton#AnalyzerPlaneHButton {{
+        border-top-left-radius: {r['sm']}px;
+        border-bottom-left-radius: {r['sm']}px;
+    }}
+    QToolButton#AnalyzerPlaneDButton {{
+        border-top-right-radius: {r['sm']}px;
+        border-bottom-right-radius: {r['sm']}px;
+    }}
+    QToolButton#AnalyzerVersionPinButton {{
+        padding: 0px;
+    }}
+    QToolButton#AnalyzerVersionPinButton:checked {{
+        border-color: #9A86CC;
+        background-color: #27222d;
+    }}
+    QToolButton#AnalyzerVersionPinButton:hover {{
+        border-color: #9A86CC;
     }}
     QFrame#Card {{
         background-color: {c['surface']};
@@ -281,6 +415,24 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         selection-background-color: {c['selection']};
         selection-color: {c['button_text']};
     }}
+    QComboBox {{
+        padding-right: 24px;
+    }}
+    QComboBox::drop-down {{
+        subcontrol-origin: padding;
+        subcontrol-position: top right;
+        border-left: 1px solid {c['border']};
+        width: 22px;
+        background-color: #232323;
+        border-top-right-radius: {r['md']}px;
+        border-bottom-right-radius: {r['md']}px;
+    }}
+    QComboBox::down-arrow {{
+        image: url(:/icons/chevron_down.svg);
+        width: 12px;
+        height: 12px;
+        margin-right: 4px;
+    }}
     QSpinBox, QDoubleSpinBox {{
         padding-right: 22px;
     }}
@@ -303,39 +455,17 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         border-bottom-right-radius: {r['md']}px;
     }}
     QSpinBox::up-arrow, QDoubleSpinBox::up-arrow, QAbstractSpinBox::up-arrow {{
-        image: none;
-        width: 0px;
-        height: 0px;
-        border-left: 5px solid transparent;
-        border-right: 5px solid transparent;
-        border-bottom: 7px solid {c['muted']};
+        image: url(:/icons/chevron_up.svg);
+        width: 10px;
+        height: 10px;
     }}
     QSpinBox::down-arrow, QDoubleSpinBox::down-arrow, QAbstractSpinBox::down-arrow {{
-        image: none;
-        width: 0px;
-        height: 0px;
-        border-left: 5px solid transparent;
-        border-right: 5px solid transparent;
-        border-top: 7px solid {c['muted']};
+        image: url(:/icons/chevron_down.svg);
+        width: 10px;
+        height: 10px;
     }}
     QComboBox#BatchExportCombo, QComboBox#BatchFieldCombo {{
         padding-right: 24px;
-    }}
-    QComboBox#BatchExportCombo::drop-down, QComboBox#BatchFieldCombo::drop-down {{
-        border-left: 1px solid {c['border']};
-        width: 22px;
-        background-color: #232323;
-        border-top-right-radius: {r['md']}px;
-        border-bottom-right-radius: {r['md']}px;
-    }}
-    QComboBox#BatchExportCombo::down-arrow, QComboBox#BatchFieldCombo::down-arrow {{
-        image: none;
-        width: 0px;
-        height: 0px;
-        border-left: 5px solid transparent;
-        border-right: 5px solid transparent;
-        border-top: 7px solid {c['muted']};
-        margin-right: 5px;
     }}
     QSpinBox[batchField="true"], QDoubleSpinBox[batchField="true"], QAbstractSpinBox[batchField="true"] {{
         padding-right: 24px;
@@ -417,16 +547,30 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         background-color: rgba(110, 50, 50, 0.16);
     }}
     QLineEdit[fieldState="warn"], QComboBox[fieldState="warn"],
-    QTextEdit[fieldState="warn"], QPlainTextEdit[fieldState="warn"] {{
+    QTextEdit[fieldState="warn"], QPlainTextEdit[fieldState="warn"],
+    QSpinBox[fieldState="warn"], QDoubleSpinBox[fieldState="warn"], QAbstractSpinBox[fieldState="warn"],
+    QSpinBox[fieldState="warn"] QLineEdit, QDoubleSpinBox[fieldState="warn"] QLineEdit,
+    QAbstractSpinBox[fieldState="warn"] QLineEdit {{
         border: 1px solid {c['warning_border']};
     }}
     QLineEdit[fieldState="fatal"], QComboBox[fieldState="fatal"],
-    QTextEdit[fieldState="fatal"], QPlainTextEdit[fieldState="fatal"] {{
+    QTextEdit[fieldState="fatal"], QPlainTextEdit[fieldState="fatal"],
+    QSpinBox[fieldState="fatal"], QDoubleSpinBox[fieldState="fatal"], QAbstractSpinBox[fieldState="fatal"],
+    QSpinBox[fieldState="fatal"] QLineEdit, QDoubleSpinBox[fieldState="fatal"] QLineEdit,
+    QAbstractSpinBox[fieldState="fatal"] QLineEdit {{
         border: 1px solid {c['danger_border']};
     }}
     QLineEdit[fieldState="ok"], QComboBox[fieldState="ok"],
-    QTextEdit[fieldState="ok"], QPlainTextEdit[fieldState="ok"] {{
+    QTextEdit[fieldState="ok"], QPlainTextEdit[fieldState="ok"],
+    QSpinBox[fieldState="ok"], QDoubleSpinBox[fieldState="ok"], QAbstractSpinBox[fieldState="ok"],
+    QSpinBox[fieldState="ok"] QLineEdit, QDoubleSpinBox[fieldState="ok"] QLineEdit,
+    QAbstractSpinBox[fieldState="ok"] QLineEdit {{
         border: 1px solid {c['risk_ok']};
+    }}
+    QLineEdit[warn="true"], QAbstractSpinBox[warn="true"],
+    QSpinBox[warn="true"], QDoubleSpinBox[warn="true"],
+    QAbstractSpinBox[warn="true"] QLineEdit {{
+        border: 1px solid {c['warning_border']};
     }}
     QLineEdit[disclosureHint="true"], QComboBox[disclosureHint="true"],
     QTextEdit[disclosureHint="true"], QPlainTextEdit[disclosureHint="true"] {{
@@ -486,15 +630,24 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     }}
     /* Backward compatibility for legacy riskLevel property. */
     QLineEdit[riskLevel="warn"], QComboBox[riskLevel="warn"],
-    QTextEdit[riskLevel="warn"], QPlainTextEdit[riskLevel="warn"] {{
+    QTextEdit[riskLevel="warn"], QPlainTextEdit[riskLevel="warn"],
+    QSpinBox[riskLevel="warn"], QDoubleSpinBox[riskLevel="warn"], QAbstractSpinBox[riskLevel="warn"],
+    QSpinBox[riskLevel="warn"] QLineEdit, QDoubleSpinBox[riskLevel="warn"] QLineEdit,
+    QAbstractSpinBox[riskLevel="warn"] QLineEdit {{
         border: 1px solid {c['warning_border']};
     }}
     QLineEdit[riskLevel="fatal"], QComboBox[riskLevel="fatal"],
-    QTextEdit[riskLevel="fatal"], QPlainTextEdit[riskLevel="fatal"] {{
+    QTextEdit[riskLevel="fatal"], QPlainTextEdit[riskLevel="fatal"],
+    QSpinBox[riskLevel="fatal"], QDoubleSpinBox[riskLevel="fatal"], QAbstractSpinBox[riskLevel="fatal"],
+    QSpinBox[riskLevel="fatal"] QLineEdit, QDoubleSpinBox[riskLevel="fatal"] QLineEdit,
+    QAbstractSpinBox[riskLevel="fatal"] QLineEdit {{
         border: 1px solid {c['danger_border']};
     }}
     QLineEdit[riskLevel="ok"], QComboBox[riskLevel="ok"],
-    QTextEdit[riskLevel="ok"], QPlainTextEdit[riskLevel="ok"] {{
+    QTextEdit[riskLevel="ok"], QPlainTextEdit[riskLevel="ok"],
+    QSpinBox[riskLevel="ok"], QDoubleSpinBox[riskLevel="ok"], QAbstractSpinBox[riskLevel="ok"],
+    QSpinBox[riskLevel="ok"] QLineEdit, QDoubleSpinBox[riskLevel="ok"] QLineEdit,
+    QAbstractSpinBox[riskLevel="ok"] QLineEdit {{
         border: 1px solid {c['risk_ok']};
     }}
     QLabel#FieldStateHint {{
@@ -502,6 +655,24 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         font-size: 11px;
         padding-left: 2px;
         margin-top: 1px;
+    }}
+    QFrame#HelperRow {{
+        background-color: rgba(255, 255, 255, 0.03);
+        border: 1px solid #2a2a2a;
+        border-radius: {r['sm']}px;
+    }}
+    QFrame#HelperRow[severity="warn"] {{
+        border: 1px solid #4a3d23;
+    }}
+    QFrame#HelperRow[severity="fatal"] {{
+        border: 1px solid #4d2d2d;
+    }}
+    QLabel#HelperRowIcon {{
+        color: {c['accent']};
+        min-width: 12px;
+        max-width: 12px;
+        font-size: 10px;
+        font-weight: 700;
     }}
     QLabel#FieldStateHint[severity="warn"] {{
         color: {c['warning_text_muted']};
@@ -558,6 +729,12 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         padding: 0px;
         font-weight: 700;
     }}
+    QPushButton#SweepButton[role="sweep"],
+    QPushButton#SweepButton[role="sweep"][warn="true"] {{
+        background-color: {c['surface2']};
+        color: {c['text']};
+        border: 1px solid {c['border']};
+    }}
     QPushButton#SweepButton:hover {{
         border-color: {c['accent']};
     }}
@@ -569,6 +746,17 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     QWidget#BatchFieldCell {{
         background: transparent;
     }}
+    QFrame#BatchSubgroupFrame {{
+        background-color: #1d1d1d;
+        border: 1px solid #2a2a2a;
+        border-radius: {r['sm']}px;
+    }}
+    QFrame#BatchSubtleDivider {{
+        background-color: #2a2a2a;
+        border: none;
+        min-height: 1px;
+        max-height: 1px;
+    }}
     QLineEdit[invalidMultiple="true"] {{
         border: 1px solid {c['warning_border']};
     }}
@@ -576,6 +764,86 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         background-color: #1f1f1f;
         border: 1px solid {c['border']};
         border-radius: {r['md']}px;
+    }}
+    QFrame#ProjectSummaryPanel[analyzerSurface="1"] {{
+        background-color: #1e1e1e;
+    }}
+    QFrame#ProjectSummaryPanel[analyzerSurface="2"] {{
+        background-color: #222222;
+        border-color: #464646;
+    }}
+    QFrame#ProjectSummaryPanel[analyzerKpiTile="true"] {{
+        background-color: #232323;
+    }}
+    QFrame#ProjectSummaryPanel[analyzerPinned="true"] {{
+        border: 1px solid #9A86CC;
+    }}
+    QFrame#AnalyzerInfoDivider {{
+        background-color: #303030;
+        border: none;
+        min-width: 1px;
+        max-width: 1px;
+    }}
+    QLabel[analyzerSweepBadge="true"] {{
+        color: #7FA9D8;
+        background-color: #232323;
+        border: 1px solid #3A3A3A;
+        border-radius: {r['sm']}px;
+        padding: 1px 6px;
+    }}
+    QFrame#AnalyzerDisplaySlotFrame {{
+        background-color: #1d1d1d;
+        border: 1px solid {c['border']};
+        border-radius: {r['sm']}px;
+    }}
+    QFrame#AnalyzerDisplaySlotFrame[analyzerPlaneFlat="true"] {{
+        background-color: transparent;
+        border: none;
+    }}
+    QWidget#AnalyzerExplorerGrid,
+    QWidget#AnalyzerCompareGrid,
+    QWidget#AnalyzerCompareLeftContent,
+    QWidget#AnalyzerCompareRightPanel,
+    QWidget#AnalyzerCompareWorkspace,
+    QWidget#AnalyzerCompareDrawerLayer,
+    QWidget#AnalyzerCompareDrawerScrim,
+    QScrollArea#AnalyzerCompareDrawerScroll {{
+        background-color: {c['surface']};
+        border: none;
+    }}
+    QWidget#AnalyzerCompareDrawerScrim {{
+        background-color: rgba(0, 0, 0, 0.48);
+    }}
+    QScrollArea#AnalyzerCompareDrawerScroll > QWidget > QWidget {{
+        background-color: transparent;
+    }}
+    QFrame#AnalyzerCompareDrawer {{
+        background-color: rgba(20, 20, 20, 0.96);
+        border: 1px solid {c['border']};
+        border-radius: {r['sm']}px;
+    }}
+    QToolButton#AnalyzerCompareDrawerSlotButton {{
+        background-color: transparent;
+        color: {c['text']};
+        border: 1px solid transparent;
+        border-radius: {r['sm']}px;
+        padding: 2px 4px;
+        text-align: left;
+    }}
+    QToolButton#AnalyzerCompareDrawerSlotButton:hover {{
+        border-color: {c['accent']};
+    }}
+    QSplitter#AnalyzerCompareSplitter::handle {{
+        background-color: transparent;
+        width: 2px;
+    }}
+    QDoubleSpinBox[analyzerBandEdge="true"]:disabled {{
+        color: #9A9A9A;
+        background-color: #1a1a1a;
+        border-color: #323232;
+    }}
+    QLabel[analyzerBandEdgeLabel="true"]:disabled {{
+        color: #8f8f8f;
     }}
     QFrame#ConstraintCard {{
         background-color: #1c1c1c;
@@ -647,6 +915,14 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         font-size: 11px;
         font-weight: 600;
     }}
+    QLabel[analyzerInfoKey="true"] {{
+        color: #a2a2a2;
+        font-weight: 600;
+    }}
+    QLabel[analyzerInfoValue="true"] {{
+        color: #e2e2e2;
+        font-weight: 600;
+    }}
     QLabel#BatchSummaryMeta {{
         color: {c['muted']};
         font-size: 11px;
@@ -681,6 +957,60 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         color: {c['muted']};
         border-color: #2a2a2a;
         background-color: #1b1b1b;
+    }}
+    QFrame#CommandHeaderWidget {{
+        background-color: #171717;
+        border: 1px solid {c['border']};
+        border-radius: {r['md']}px;
+    }}
+    QLabel#BatchCommandLabel {{
+        color: {c['muted']};
+        font-size: 11px;
+        font-weight: 700;
+        min-width: 74px;
+    }}
+    QWidget#CommandStatusDeck {{
+        background-color: transparent;
+        border-top: 1px solid #272727;
+    }}
+    QPushButton#CommandIssuesChip {{
+        background-color: #242424;
+        color: {c['muted']};
+        border: 1px solid {c['border']};
+        border-radius: {r['sm']}px;
+        min-height: 24px;
+        padding: 0px 10px;
+        font-size: 11px;
+        font-weight: 600;
+    }}
+    QPushButton#CommandIssuesChip:hover {{
+        border-color: {c['accent']};
+    }}
+    QPushButton#CommandIssuesChip[severity="warn"] {{
+        color: {c['warning_border']};
+        border: 1px solid #4a3d23;
+        background-color: rgba(125, 91, 34, 0.16);
+    }}
+    QPushButton#CommandIssuesChip[severity="fatal"] {{
+        color: {c['danger_border']};
+        border: 1px solid #4d2d2d;
+        background-color: rgba(110, 50, 50, 0.18);
+    }}
+    QPushButton#CommandIssuesChip[severity="incomplete"] {{
+        color: {c['accent']};
+        border: 1px solid #2f4768;
+        background-color: rgba(63, 113, 169, 0.14);
+    }}
+    QPushButton#CommandIssuesChip[severity="ok"] {{
+        color: {c['risk_ok']};
+        border: 1px solid #2f5b37;
+        background-color: rgba(56, 98, 66, 0.14);
+    }}
+    QMenu#CommandIssuesPopover {{
+        background-color: #1f1f1f;
+        border: 1px solid {c['border']};
+        border-radius: {r['sm']}px;
+        padding: 0px;
     }}
     QFrame#ProjectActionBar {{
         background-color: #1a1a1a;
@@ -728,6 +1058,32 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     QLabel#BatchActionHint {{
         color: {c['muted']};
         font-size: 11px;
+    }}
+    QWidget#AnalyzerExplorerGrid,
+    QWidget#AnalyzerCompareGrid,
+    QWidget#AnalyzerCompareWorkspace,
+    QWidget#AnalyzerCompareRightPanel {{
+        background-color: {c['surface']};
+        border: none;
+    }}
+    QFrame#ProjectIssuesPanel[analyzerPlotTile="true"] {{
+        background-color: #1f1f1f;
+        border: 1px solid {c['border']};
+        border-radius: {r['sm']}px;
+    }}
+    QFrame#ProjectIssuesPanel[analyzerPlotTile="true"][analyzerPlotTileHighContrast="true"] {{
+        background-color: transparent;
+    }}
+    QFrame#ProjectIssuesPanel[analyzerPlotTile="true"] > QStackedWidget {{
+        background-color: transparent;
+        border: none;
+    }}
+    QLabel#AnalyzerHeatmapCanvas,
+    QLabel#AnalyzerMetricCurveCanvas,
+    QLabel#AnalyzerParetoScatterCanvas,
+    QLabel#AnalyzerTargetDeviationSummaryCanvas {{
+        background-color: transparent;
+        border: none;
     }}
     QFrame#ProjectIssuesPanel {{
         background-color: transparent;
@@ -897,19 +1253,58 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         border: 1px solid #a9a9a9;
         color: #ffffff;
     }}
+    QPushButton[segment=\"true\"][warn="true"],
+    QPushButton[segment=\"true\"][hasWarning="true"],
+    QPushButton[segment=\"true\"][fieldState="warn"] {{
+        border: 1px solid {c['warning_border']};
+        color: {c['warning_border']};
+    }}
+    QPushButton[segment=\"true\"][fieldState="fatal"] {{
+        border: 1px solid {c['danger_border']};
+        color: {c['danger_border']};
+    }}
     QPushButton[segment=\"true\"][batchField="true"] {{
         min-height: 30px;
         padding: 0px {max(int(s['sm']) + 1, 4)}px;
     }}
-    QPushButton#SweepButton[sweepActive="true"] {{
+    QPushButton#SweepButton[sweepActive="true"],
+    QLabel[analyzerSweepChip="true"] {{
         border: 1px solid #4f8cff;
         color: #d9e7ff;
         background-color: rgba(79, 140, 255, 0.22);
     }}
-    QPushButton#SweepButton[sweepActive="true"][riskLevel="warn"] {{
-        border: 1px solid {c['warning_border']};
-        color: {c['warning_text_muted']};
-        background-color: rgba(125, 91, 34, 0.2);
+    QLabel[analyzerSweepChip="true"] {{
+        border-radius: {r['sm']}px;
+        padding: 1px 6px;
+    }}
+    QLabel[analyzerScoreChip="true"] {{
+        border-radius: {r['sm']}px;
+        padding: 1px 6px;
+        border: 1px solid {c['border']};
+        background-color: #242424;
+        color: {c['muted']};
+        qproperty-alignment: AlignCenter;
+        font-weight: 700;
+    }}
+    QLabel[analyzerScoreChip="true"][scoreQuality="good"] {{
+        color: {c['risk_ok']};
+        border: 1px solid #3d5e49;
+        background-color: rgba(92, 164, 112, 0.18);
+    }}
+    QLabel[analyzerScoreChip="true"][scoreQuality="medium"] {{
+        color: {c['warning_border']};
+        border: 1px solid #4a3d23;
+        background-color: rgba(125, 91, 34, 0.18);
+    }}
+    QLabel[analyzerScoreChip="true"][scoreQuality="poor"] {{
+        color: {c['danger_border']};
+        border: 1px solid #4d2d2d;
+        background-color: rgba(110, 50, 50, 0.18);
+    }}
+    QLabel[analyzerScoreChip="true"][scoreQuality="missing"] {{
+        color: {c['muted']};
+        border: 1px solid {c['border']};
+        background-color: #242424;
     }}
     QPushButton[segment=\"true\"][disclosureHint="true"] {{
         border: 1px solid {c['accent']};
@@ -964,18 +1359,36 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         border-color: {c['accent']};
         background-color: #272727;
     }}
-    QPushButton#BatchRunButton {{
-        background-color: #222222;
+    QToolButton#BatchSecondaryToolButton,
+    QToolButton#AnalyzerFlagsHelpButton {{
+        background-color: transparent;
+        color: {c['muted']};
+        border: 1px solid transparent;
+        border-radius: {r['sm']}px;
+        min-width: 18px;
+        max-width: 18px;
+        min-height: 18px;
+        max-height: 18px;
+        padding: 0px;
+    }}
+    QToolButton#BatchSecondaryToolButton:hover,
+    QToolButton#AnalyzerFlagsHelpButton:hover {{
         color: {c['text']};
-        border: 1px solid {c['border']};
+        border-color: {c['accent']};
+        background-color: #232323;
+    }}
+    QPushButton#BatchRunButton {{
+        background-color: #2a2a2a;
+        color: {c['text']};
+        border: 1px solid #555555;
         border-radius: {r['md']}px;
         min-height: 30px;
         padding: 0px {s['md']}px;
-        font-weight: 600;
+        font-weight: 700;
     }}
     QPushButton#BatchRunButton:hover {{
         border-color: {c['accent']};
-        background-color: #272727;
+        background-color: #303030;
     }}
     QPushButton#BatchRunButton[runReady="true"] {{
         background-color: #213327;

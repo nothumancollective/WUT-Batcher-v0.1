@@ -86,6 +86,46 @@ class BatchExportPanelTests(unittest.TestCase):
         options = dict(polar_specs[0].get("options", {}) or {})
         self.assertEqual(int(options.get("norm_angle")), 35)
 
+    def test_footer_copy_and_action_buttons_are_consistent(self) -> None:
+        panel = BatchExportPanel()
+        self.assertEqual(str(panel.default_export_hint.text()), "Default exports:")
+        self.assertEqual(str(panel.default_export_chip.text()), "Polars (H/V/D)")
+        self.assertEqual(panel.enclosure_btn.objectName(), "BatchPrimaryButton")
+        self.assertEqual(panel.advanced_btn.objectName(), "BatchSecondaryButton")
+        self.assertEqual(panel.enclosure_btn.height(), panel.advanced_btn.height())
+        panel.resize(520, 250)
+        panel._apply_footer_layout_mode()  # type: ignore[attr-defined]
+        self.assertEqual(str(panel._footer_layout_mode), "compact")
+        panel.resize(880, 250)
+        panel._apply_footer_layout_mode()  # type: ignore[attr-defined]
+        self.assertEqual(str(panel._footer_layout_mode), "wide")
+
+    def test_polar_defaults_use_h_v_d_inclinations(self) -> None:
+        panel = BatchExportPanel()
+        for idx in range(3):
+            panel._advanced_state.polars[idx].enabled = True  # type: ignore[attr-defined]
+        payload = panel.sim_export_params_payload()
+        specs = [item for item in list(payload.get("export_specs", [])) if str(item.get("graph_kind", "")).lower() == "polar"]
+        self.assertEqual(len(specs), 3)
+        self.assertEqual(
+            [int(dict(spec.get("options", {}) or {}).get("inclination", -999)) for spec in specs],
+            [0, 90, 45],
+        )
+        self.assertEqual(
+            [str(dict(spec.get("options", {}) or {}).get("polar_name", "")) for spec in specs],
+            ["SPL_H", "SPL_V", "SPL_D"],
+        )
+
+    def test_polar_defaults_roundtrip_through_payload(self) -> None:
+        source = BatchExportPanel()
+        for idx in range(3):
+            source._advanced_state.polars[idx].enabled = True  # type: ignore[attr-defined]
+        payload = source.sim_export_params_payload()
+        target = BatchExportPanel()
+        target.set_from_payload(payload)
+        for idx, expected in enumerate([0, 90, 45]):
+            self.assertEqual(int(target._advanced_state.polars[idx].inclination), expected)  # type: ignore[attr-defined]
+
 
 if __name__ == "__main__":
     unittest.main()

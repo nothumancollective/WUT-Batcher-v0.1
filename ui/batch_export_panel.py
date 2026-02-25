@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Set
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
+
+from ui.styled_dialog import StyledDialogBase
 
 try:
-    from PySide6.QtCore import QPoint, Qt, Signal
+    from PySide6.QtCore import Qt, Signal
     from PySide6.QtGui import QDoubleValidator, QIntValidator
     from PySide6.QtWidgets import (
         QComboBox,
@@ -114,6 +116,36 @@ class _PolarCardState:
         }
 
 
+_POLAR_SLOT_DEFAULT_NAMES: Tuple[str, str, str] = ("SPL_H", "SPL_V", "SPL_D")
+_POLAR_SLOT_DEFAULT_INCLINATIONS: Tuple[int, int, int] = (0, 90, 45)
+
+
+def _polar_slot_default_name(index: int) -> str:
+    if 0 <= int(index) < len(_POLAR_SLOT_DEFAULT_NAMES):
+        return str(_POLAR_SLOT_DEFAULT_NAMES[int(index)])
+    return f"SPL_V_{int(index) + 1}"
+
+
+def _polar_slot_default_inclination(index: int) -> int:
+    if 0 <= int(index) < len(_POLAR_SLOT_DEFAULT_INCLINATIONS):
+        return int(_POLAR_SLOT_DEFAULT_INCLINATIONS[int(index)])
+    return 90
+
+
+def _polar_slot_default_state(index: int) -> _PolarCardState:
+    return _PolarCardState(
+        enabled=False,
+        polar_name=_polar_slot_default_name(index),
+        map_angle_start=0,
+        map_angle_end=90,
+        map_angle_steps=19,
+        distance_m=2.0,
+        offset=145,
+        inclination=_polar_slot_default_inclination(index),
+        norm_angle=0,
+    )
+
+
 @dataclass
 class _AdvancedState:
     spl: _SimpleGraphState
@@ -125,7 +157,7 @@ class _AdvancedState:
         return cls(
             spl=_SimpleGraphState(enabled=False),
             impedance=_SimpleGraphState(enabled=False),
-            polars=[_PolarCardState(enabled=False) for _ in range(3)],
+            polars=[_polar_slot_default_state(idx) for idx in range(3)],
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -136,15 +168,14 @@ class _AdvancedState:
         }
 
 
-class _AdvancedDialog(QDialog):
+class _AdvancedDialog(StyledDialogBase):
     def __init__(self, state: _AdvancedState, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
-        self.setAttribute(Qt.WA_TranslucentBackground, True)
-        self.setProperty("framelessShell", True)
-        self.setModal(True)
-        self.setMinimumSize(760, 620)
-        self._drag_offset: Optional[QPoint] = None
+        super().__init__(
+            title="Advanced Export Settings",
+            parent=parent,
+            min_width=760,
+            min_height=620,
+        )
 
         self._initial = state.to_dict()
         self._current = _AdvancedState(
@@ -153,33 +184,7 @@ class _AdvancedDialog(QDialog):
             polars=[_PolarCardState.from_dict(item.to_dict()) for item in list(state.polars)],
         )
 
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(10, 10, 10, 10)
-        outer.setSpacing(0)
-        shell = QFrame()
-        shell.setObjectName("FramelessShell")
-        outer.addWidget(shell)
-        root = QVBoxLayout(shell)
-        root.setContentsMargins(12, 10, 12, 12)
-        root.setSpacing(10)
-
-        title_bar = QWidget()
-        title_row = QHBoxLayout(title_bar)
-        title_row.setContentsMargins(0, 0, 0, 0)
-        title_row.setSpacing(8)
-        title = QLabel("Advanced Export Settings")
-        title.setObjectName("SectionTitle")
-        title_row.addWidget(title)
-        title_row.addStretch(1)
-        close_btn = QPushButton("X")
-        close_btn.setObjectName("WindowCloseButton")
-        close_btn.setFixedSize(28, 24)
-        close_btn.clicked.connect(self.reject)
-        title_row.addWidget(close_btn, alignment=Qt.AlignRight)
-        root.addWidget(title_bar)
-        title_bar.mousePressEvent = self._title_mouse_press  # type: ignore[assignment]
-        title_bar.mouseMoveEvent = self._title_mouse_move  # type: ignore[assignment]
-        title_bar.mouseReleaseEvent = self._title_mouse_release  # type: ignore[assignment]
+        root = self.body_layout()
 
         scroll = QScrollArea()
         scroll.setObjectName("BatchAdvancedScroll")
@@ -217,30 +222,13 @@ class _AdvancedDialog(QDialog):
         buttons.addStretch(1)
         cancel_btn = QPushButton("Cancel")
         apply_btn = QPushButton("Apply")
-        apply_btn.setObjectName("PrimaryButton")
+        cancel_btn.setObjectName("BatchSecondaryButton")
+        apply_btn.setObjectName("BatchPrimaryButton")
         cancel_btn.clicked.connect(self.reject)
         apply_btn.clicked.connect(self.accept)
         buttons.addWidget(cancel_btn)
         buttons.addWidget(apply_btn)
         root.addLayout(buttons)
-
-    def _title_mouse_press(self, event) -> None:  # type: ignore[override]
-        if event.button() != Qt.LeftButton:
-            return
-        self._drag_offset = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
-        event.accept()
-
-    def _title_mouse_move(self, event) -> None:  # type: ignore[override]
-        if self._drag_offset is None:
-            return
-        if not (event.buttons() & Qt.LeftButton):
-            return
-        self.move(event.globalPosition().toPoint() - self._drag_offset)
-        event.accept()
-
-    def _title_mouse_release(self, event) -> None:  # type: ignore[override]
-        self._drag_offset = None
-        event.accept()
 
     def _build_simple_card(self, title: str, state: _SimpleGraphState, *, graph_key: str) -> QWidget:
         card = QFrame()
@@ -285,7 +273,7 @@ class _AdvancedDialog(QDialog):
         grid.setHorizontalSpacing(8)
         grid.setVerticalSpacing(4)
         name_edit = QLineEdit(str(state.polar_name or ""))
-        name_edit.setPlaceholderText("Polars Name")
+        name_edit.setPlaceholderText(_polar_slot_default_name(index))
         map_start = QLineEdit(str(int(state.map_angle_start)))
         map_start.setValidator(QIntValidator(-360, 360, map_start))
         map_end = QLineEdit(str(int(state.map_angle_end)))
@@ -327,7 +315,13 @@ class _AdvancedDialog(QDialog):
         )
         distance.textChanged.connect(lambda value, idx=index: self._set_polar(idx, "distance_m", _float_or_default(value, 2.0)))
         offset.textChanged.connect(lambda value, idx=index: self._set_polar(idx, "offset", _int_or_default(value, 145)))
-        inclination.textChanged.connect(lambda value, idx=index: self._set_polar(idx, "inclination", _int_or_default(value, 90)))
+        inclination.textChanged.connect(
+            lambda value, idx=index: self._set_polar(
+                idx,
+                "inclination",
+                _int_or_default(value, _polar_slot_default_inclination(idx)),
+            )
+        )
         norm_angle.textChanged.connect(lambda value, idx=index: self._set_polar(idx, "norm_angle", _int_or_default(value, 0)))
 
         row = 0
@@ -396,11 +390,11 @@ class BatchExportPanel(QFrame):
         super().__init__(parent)
         self.setObjectName("ProjectSummaryPanel")
         self._advanced_state = _AdvancedState.defaults()
-        self.setMinimumHeight(240)
-        self.setMaximumHeight(260)
+        self.setMinimumHeight(232)
+        self.setMaximumHeight(16777215)
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(10, 10, 10, 10)
+        root.setContentsMargins(10, 10, 10, 12)
         root.setSpacing(8)
 
         title = QLabel("Exports")
@@ -449,25 +443,49 @@ class BatchExportPanel(QFrame):
         settings_grid.setColumnStretch(2, 1)
         root.addLayout(settings_grid)
 
-        actions_row = QHBoxLayout()
-        actions_row.setContentsMargins(0, 0, 0, 0)
-        actions_row.setSpacing(8)
-        default_hint = QLabel("Default export: Polars SPL_H, SPL_V, SPL_D")
-        default_hint.setObjectName("BatchSummaryMeta")
-        actions_row.addWidget(default_hint)
+        self.footer_row = QWidget()
+        self.footer_row.setObjectName("BatchExportsFooter")
+        self.footer_layout = QGridLayout(self.footer_row)
+        self.footer_layout.setContentsMargins(0, 2, 0, 2)
+        self.footer_layout.setHorizontalSpacing(8)
+        self.footer_layout.setVerticalSpacing(6)
+        self.footer_layout.setColumnStretch(0, 1)
+        self.footer_layout.setColumnStretch(1, 0)
+
+        self.footer_left = QWidget()
+        left_layout = QHBoxLayout(self.footer_left)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(6)
+        self.default_export_hint = QLabel("Default exports:")
+        self.default_export_hint.setObjectName("BatchSummaryMeta")
+        left_layout.addWidget(self.default_export_hint, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        self.default_export_chip = QLabel("Polars (H/V/D)")
+        self.default_export_chip.setObjectName("SummaryChip")
+        self.default_export_chip.setToolTip("Auto-generated by default: SPL_H, SPL_V, SPL_D txt exports.")
+        left_layout.addWidget(self.default_export_chip, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        left_layout.addStretch(1)
+
+        self.footer_buttons = QWidget()
+        footer_buttons_layout = QHBoxLayout(self.footer_buttons)
+        footer_buttons_layout.setContentsMargins(0, 0, 0, 1)
+        footer_buttons_layout.setSpacing(8)
         self.enclosure_btn = QPushButton("Simulate Enclosure")
-        self.enclosure_btn.setObjectName("BatchSecondaryButton")
-        self.enclosure_btn.setFixedHeight(30)
-        self.enclosure_btn.setMinimumWidth(152)
-        actions_row.addWidget(self.enclosure_btn)
-        actions_row.addStretch(1)
+        self.enclosure_btn.setObjectName("BatchPrimaryButton")
+        self.enclosure_btn.setMinimumHeight(30)
+        self.enclosure_btn.setMinimumWidth(148)
+        self.enclosure_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.advanced_btn = QPushButton("Advanced")
-        self.advanced_btn.setProperty("segment", "true")
-        self.advanced_btn.setFixedHeight(32)
-        self.advanced_btn.setMinimumWidth(92)
-        actions_row.addWidget(self.advanced_btn, 0, Qt.AlignRight)
-        root.addLayout(actions_row)
+        self.advanced_btn.setObjectName("BatchSecondaryButton")
+        self.advanced_btn.setMinimumHeight(30)
+        self.advanced_btn.setMinimumWidth(112)
+        self.advanced_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        footer_buttons_layout.addWidget(self.enclosure_btn)
+        footer_buttons_layout.addWidget(self.advanced_btn)
+        root.addWidget(self.footer_row)
         root.addStretch(1)
+
+        self._footer_layout_mode = ""
+        self._apply_footer_layout_mode()
 
         self.sweep_mode.currentTextChanged.connect(lambda _value: self.changed.emit())
         self.simulation_mode.currentIndexChanged.connect(lambda _value: self.changed.emit())
@@ -477,6 +495,26 @@ class BatchExportPanel(QFrame):
         self.mesh_frequency.textChanged.connect(lambda _value: self.changed.emit())
         self.advanced_btn.clicked.connect(self._open_advanced)
         self.enclosure_btn.clicked.connect(self.open_enclosure.emit)
+
+    def resizeEvent(self, event) -> None:  # type: ignore[override]
+        super().resizeEvent(event)
+        self._apply_footer_layout_mode()
+
+    def _apply_footer_layout_mode(self) -> None:
+        compact = int(self.width()) < 620
+        mode = "compact" if compact else "wide"
+        if mode == self._footer_layout_mode:
+            return
+
+        while self.footer_layout.count():
+            self.footer_layout.takeAt(0)
+        if compact:
+            self.footer_layout.addWidget(self.footer_left, 0, 0, 1, 2)
+            self.footer_layout.addWidget(self.footer_buttons, 1, 0, 1, 2, Qt.AlignRight)
+        else:
+            self.footer_layout.addWidget(self.footer_left, 0, 0, 1, 1)
+            self.footer_layout.addWidget(self.footer_buttons, 0, 1, 1, 1, Qt.AlignRight)
+        self._footer_layout_mode = mode
 
     @staticmethod
     def _field_stack(label: str, widget: QWidget) -> QWidget:
@@ -532,6 +570,7 @@ class BatchExportPanel(QFrame):
                     **base_options,
                     "polar_name": "SPL_H",
                     "offset": 145,
+                    "inclination": 0,
                 },
                 "output_name_template": "{version_id}_{graph_kind}_{export_id}.{format}",
             },
@@ -559,7 +598,7 @@ class BatchExportPanel(QFrame):
                     **base_options,
                     "polar_name": "SPL_D",
                     "offset_from_length_mm": 40,
-                    "inclination": 42,
+                    "inclination": 45,
                 },
                 "output_name_template": "{version_id}_{graph_kind}_{export_id}.{format}",
             },
@@ -594,7 +633,7 @@ class BatchExportPanel(QFrame):
         for idx, polar in enumerate(list(self._advanced_state.polars), start=1):
             if not polar.enabled:
                 continue
-            polar_name = str(polar.polar_name or "").strip() or f"SPL_V_{idx}"
+            polar_name = str(polar.polar_name or "").strip() or _polar_slot_default_name(idx - 1)
             specs.append(
                 {
                     "id": f"adv_polar_{idx}",
@@ -697,18 +736,21 @@ class BatchExportPanel(QFrame):
                 self._advanced_state.impedance.enabled = True
                 continue
             if graph_kind == "polar" and polar_slot < len(self._advanced_state.polars):
+                slot_default = _polar_slot_default_state(polar_slot)
                 map_range = list(options.get("map_angle_range", [0, 90, 19]) or [0, 90, 19])
                 while len(map_range) < 3:
                     map_range.append([0, 90, 19][len(map_range)])
                 self._advanced_state.polars[polar_slot] = _PolarCardState(
                     enabled=True,
-                    polar_name=str(options.get("polar_name", "") or "").strip(),
-                    map_angle_start=int(map_range[0] or 0),
-                    map_angle_end=int(map_range[1] or 90),
-                    map_angle_steps=max(1, int(map_range[2] or 19)),
-                    distance_m=float(options.get("distance_m", 2.0) or 2.0),
-                    offset=int(options.get("offset", 145) or 145),
-                    inclination=int(options.get("inclination", 90) or 90),
+                    polar_name=str(options.get("polar_name", "") or "").strip() or slot_default.polar_name,
+                    map_angle_start=int(map_range[0] or slot_default.map_angle_start),
+                    map_angle_end=int(map_range[1] or slot_default.map_angle_end),
+                    map_angle_steps=max(1, int(map_range[2] or slot_default.map_angle_steps)),
+                    distance_m=float(options.get("distance_m", slot_default.distance_m) or slot_default.distance_m),
+                    offset=int(options.get("offset", slot_default.offset) or slot_default.offset),
+                    inclination=int(
+                        options.get("inclination", slot_default.inclination) or slot_default.inclination
+                    ),
                     norm_angle=int(options.get("norm_angle", 0) or 0),
                 )
                 polar_slot += 1

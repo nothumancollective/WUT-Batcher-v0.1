@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import unittest
+from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -13,10 +14,15 @@ from ui.form_metrics import FORM_METRICS
 from ui.theme import build_stylesheet
 
 try:
-    from PySide6.QtWidgets import QApplication, QLabel
+    from PySide6.QtWidgets import QApplication, QComboBox, QDialog, QLabel, QLineEdit, QPushButton, QWidget
 except ImportError:  # pragma: no cover
     QApplication = None  # type: ignore[assignment]
+    QComboBox = None  # type: ignore[assignment]
+    QDialog = None  # type: ignore[assignment]
     QLabel = None  # type: ignore[assignment]
+    QLineEdit = None  # type: ignore[assignment]
+    QPushButton = None  # type: ignore[assignment]
+    QWidget = None  # type: ignore[assignment]
 
 
 @unittest.skipIf(QApplication is None, "PySide6 is required")
@@ -166,6 +172,48 @@ class BatchPageUiTests(unittest.TestCase):
         self.assertEqual(float(value["R"]), 120.0)
         self.assertEqual(float(value["r0"]), 17.0)
 
+    def test_rosse_property_rows_are_sweepable_in_rosse_mode(self) -> None:
+        page = BatchPage()
+        state = self._compat_state(selected_params={"Throat.Profile": 2})
+        page.parameter_form.set_selected_params({"Throat.Profile": 2})
+        page.apply_compatibility(state)
+        self.assertIn("R-OSSE", set(str(item) for item in list(state.get("sweepable_keys", []) or [])))
+
+        for key in ("R-OSSE.R", "R-OSSE.r0"):
+            row = page.parameter_form._rows.get(key)
+            if row is None:
+                self.skipTest(f"{key} row missing.")
+            self.assertFalse(row.container.isHidden())
+            self.assertTrue(row.sweep_capable)
+            self.assertTrue(row.sweep_toggle.isEnabled())
+            row.sweep_toggle.setChecked(True)
+            row.start_edit.setText("10")
+            row.end_edit.setText("12")
+            row.steps_edit.setText("3")
+
+        sweeps = page.parameter_form.sweeps_payload()
+        self.assertIn("R-OSSE.R", sweeps)
+        self.assertIn("R-OSSE.r0", sweeps)
+
+    def test_rosse_property_rows_remain_visible_when_compat_only_flags_parent_key(self) -> None:
+        page = BatchPage()
+        state = self._compat_state(selected_params={"Throat.Profile": 2})
+        visible = [str(item) for item in list(state.get("visible_keys", []) or [])]
+        state["visible_keys"] = [key for key in visible if not key.startswith("R-OSSE.")]
+        state["visible_keys"].append("R-OSSE")
+        sweepable = [str(item) for item in list(state.get("sweepable_keys", []) or [])]
+        state["sweepable_keys"] = [key for key in sweepable if not key.startswith("R-OSSE.")]
+        state["sweepable_keys"].append("R-OSSE")
+        page.parameter_form.set_selected_params({"Throat.Profile": 2})
+        page.apply_compatibility(state)
+
+        rosse_r = page.parameter_form._rows.get("R-OSSE.R")
+        rosse_r0 = page.parameter_form._rows.get("R-OSSE.r0")
+        if rosse_r is None or rosse_r0 is None:
+            self.skipTest("R-OSSE property rows are unavailable.")
+        self.assertFalse(rosse_r.container.isHidden())
+        self.assertFalse(rosse_r0.container.isHidden())
+
     def test_disclosure_hint_marks_selected_segment_button(self) -> None:
         page = BatchPage()
         initial = self._compat_state()
@@ -203,6 +251,16 @@ class BatchPageUiTests(unittest.TestCase):
         self.assertIsNotNone(selected)
         assert selected is not None
         self.assertEqual(str(selected.property("disclosureHint")), "true")
+
+    def test_helper_row_component_is_used_for_inline_hints(self) -> None:
+        page = BatchPage()
+        row = page.parameter_form._rows.get("Throat.Profile")
+        if row is None:
+            self.skipTest("Throat.Profile not available.")
+        page.parameter_form._set_row_helper(row, "Test helper", severity="info", icon_text="i")  # type: ignore[attr-defined]
+        self.assertEqual(str(row.helper_row.objectName()), "HelperRow")
+        self.assertFalse(row.helper_row.isHidden())
+        self.assertEqual(str(row.helper_label.text()), "Test helper")
 
     def test_core_group_is_renamed_to_mesh(self) -> None:
         page = BatchPage()
@@ -248,29 +306,29 @@ class BatchPageUiTests(unittest.TestCase):
         text_candidates = [label.text() for label in row.container.findChildren(QLabel)]
         self.assertTrue(any(str(text).strip() == "Length" for text in text_candidates))
 
-    def test_summary_cards_and_right_column_use_thirds(self) -> None:
+    def test_command_header_layout_and_right_column_use_thirds(self) -> None:
         page = BatchPage()
         page.resize(1500, 900)
         page.show()
         self.app.processEvents()
-        widths = [page.summary_left_card.width(), page.summary_center_card.width(), page.summary_right_card.width()]
-        self.assertTrue(all(width > 0 for width in widths))
-        self.assertAlmostEqual(widths[0], widths[1], delta=3)
-        self.assertAlmostEqual(widths[1], widths[2], delta=3)
+        self.assertTrue(hasattr(page, "command_header"))
+        self.assertFalse(hasattr(page, "summary_left_card"))
+        self.assertEqual(page.command_header.objectName(), "CommandHeaderWidget")
 
         margins = page._root_layout.contentsMargins()
         available = int(page.width() - margins.left() - margins.right())
         expected_right = max((available - int(page._body_layout.spacing())) // 3, 1)
         self.assertAlmostEqual(page._right_panel.width(), expected_right, delta=5)
 
-    def test_batch_name_input_uses_one_third_width(self) -> None:
+    def test_batch_name_input_uses_responsive_soft_cap(self) -> None:
         page = BatchPage()
         page.resize(1500, 900)
         page.show()
         self.app.processEvents()
-        summary_width = int(page.summary_left_card.width())
-        expected = max(240, summary_width)
-        self.assertAlmostEqual(page.batch_name.width(), expected, delta=5)
+        margins = page._root_layout.contentsMargins()
+        available = int(page.width() - margins.left() - margins.right())
+        expected_max = max(320, min(int(available * 0.45), 720))
+        self.assertEqual(int(page.batch_name.maximumWidth()), expected_max)
 
     def test_controller_keys_are_not_sweepable_and_mesh_keys_are_not(self) -> None:
         page = BatchPage()
@@ -316,6 +374,61 @@ class BatchPageUiTests(unittest.TestCase):
         ]
         # Compact batch layout omits GCurve subgroup titles; mode chips provide the context instead.
         self.assertFalse(headers)
+
+    def test_basics_and_gcurve_share_same_form_grid_spec(self) -> None:
+        page = BatchPage()
+        basics_spec = page.parameter_form._grid_spec_for_group("Basics")  # type: ignore[attr-defined]
+        gcurve_spec = page.parameter_form._grid_spec_for_group("GCurve")  # type: ignore[attr-defined]
+        self.assertEqual(basics_spec, gcurve_spec)
+
+    def test_basics_rows_use_same_subgroup_frame_pattern(self) -> None:
+        page = BatchPage()
+        state = self._compat_state()
+        page.apply_compatibility(state)
+        basics_row = page.parameter_form._rows.get("Length")
+        morph_row = page.parameter_form._rows.get("Morph.TargetWidth")
+        if basics_row is None or morph_row is None:
+            self.skipTest("Required rows are missing.")
+
+        def _ancestor_subgroup(widget):
+            current = widget
+            while current is not None:
+                if str(current.objectName() or "") == "BatchSubgroupFrame":
+                    return current
+                current = current.parentWidget()
+            return None
+
+        basics_frame = _ancestor_subgroup(basics_row.container)
+        morph_frame = _ancestor_subgroup(morph_row.container)
+        self.assertIsNotNone(basics_frame)
+        self.assertIsNotNone(morph_frame)
+
+    def test_circular_arc_termangle_and_radius_share_row_alignment(self) -> None:
+        page = BatchPage()
+        state = self._compat_state(selected_params={"Throat.Profile": 3})
+        page.parameter_form.set_selected_params({"Throat.Profile": 3})
+        page.apply_compatibility(state)
+        page.resize(1500, 900)
+        page.show()
+        self.app.processEvents()
+
+        throat_box = page.parameter_form._group_boxes.get("Throat Profile")  # type: ignore[attr-defined]
+        if throat_box is None:
+            self.skipTest("Throat Profile group missing.")
+        throat_box.set_collapsed(False)
+        self.app.processEvents()
+
+        term_row = page.parameter_form._rows.get("CircArc.TermAngle")
+        radius_row = page.parameter_form._rows.get("CircArc.Radius")
+        if term_row is None or radius_row is None:
+            self.skipTest("Circular Arc rows are missing.")
+        self.assertFalse(term_row.container.isHidden())
+        self.assertFalse(radius_row.container.isHidden())
+
+        term_pos = term_row.container.mapToGlobal(term_row.container.rect().topLeft())
+        radius_pos = radius_row.container.mapToGlobal(radius_row.container.rect().topLeft())
+        self.assertLessEqual(abs(int(term_pos.y()) - int(radius_pos.y())), 6)
+        self.assertLess(int(term_pos.x()), int(radius_pos.x()))
 
     def test_sweep_button_locks_base_editor_when_active(self) -> None:
         page = BatchPage()
@@ -409,7 +522,7 @@ class BatchPageUiTests(unittest.TestCase):
         self.assertEqual(float(enclosure.get("Depth", 0.0)), 180.0)
         self.assertEqual(int(enclosure.get("EdgeType", 0)), 1)
 
-    def test_sweep_remains_enabled_under_warning_and_turns_warn_tint(self) -> None:
+    def test_sweep_remains_enabled_under_warning_without_warn_tint(self) -> None:
         page = BatchPage()
         state = self._compat_state()
         page.apply_compatibility(state)
@@ -437,7 +550,7 @@ class BatchPageUiTests(unittest.TestCase):
         )
         self.assertTrue(toggle.isEnabled())
         toggle.setChecked(True)
-        self.assertEqual(str(toggle.property("riskLevel")), "warn")
+        self.assertEqual(str(toggle.property("riskLevel") or ""), "")
 
     def test_batch_ui_risks_colorize_fields_and_warn_summary(self) -> None:
         page = BatchPage()
@@ -459,7 +572,8 @@ class BatchPageUiTests(unittest.TestCase):
         assert editor is not None
         self.assertEqual(str(editor.property("fieldState")), "warn")
         self.assertEqual(str(page.summary_issue_hint.property("severity")), "warn")
-        self.assertIn("Length outside safe range.", page.summary_issue_hint.text())
+        self.assertIn("Warnings: 1", page.summary_issue_hint.text())
+        self.assertIn("Length outside safe range.", str(page.summary_issue_hint.toolTip() or ""))
 
     def test_warning_summary_sorts_messages_and_sets_hover_tooltip(self) -> None:
         page = BatchPage()
@@ -484,11 +598,11 @@ class BatchPageUiTests(unittest.TestCase):
             ]
         )
         text = str(page.summary_issue_hint.text())
-        self.assertTrue(text.startswith("Alpha warning"))
-        self.assertIn("Zulu warning", text)
+        self.assertTrue(text.startswith("Warnings:"))
         tooltip = str(page.summary_issue_hint.toolTip() or "")
-        self.assertIn("1. Alpha warning", tooltip)
-        self.assertIn("2. Zulu warning", tooltip)
+        self.assertIn("Alpha warning", tooltip)
+        self.assertIn("Zulu warning", tooltip)
+        self.assertLess(tooltip.index("Alpha warning"), tooltip.index("Zulu warning"))
 
     def test_hidden_field_value_is_cleared_after_visibility_change(self) -> None:
         page = BatchPage()
@@ -649,6 +763,12 @@ class BatchPageUiTests(unittest.TestCase):
         css = build_stylesheet()
         self.assertIn('QPushButton#SweepButton[sweepActive="true"]', css)
 
+    def test_warning_stylesheet_covers_spinboxes_without_sweep_warn_tint(self) -> None:
+        css = build_stylesheet()
+        self.assertIn('QSpinBox[fieldState="warn"]', css)
+        self.assertIn('QSpinBox[riskLevel="warn"]', css)
+        self.assertNotIn('QPushButton#SweepButton[sweepActive="true"][riskLevel="warn"]', css)
+
     def test_block_reset_clears_all_overrides_in_group(self) -> None:
         page = BatchPage()
         state = self._compat_state()
@@ -670,6 +790,48 @@ class BatchPageUiTests(unittest.TestCase):
         self.assertIsNone(payload.get("Length"))
         self.assertIsNone(payload.get("Coverage.Angle"))
         self.assertFalse(reset_btn.isEnabled())
+
+    def test_block_reset_button_visible_only_when_collapsed_and_overridden(self) -> None:
+        page = BatchPage()
+        state = self._compat_state()
+        page.apply_compatibility(state)
+        row = page.parameter_form._rows.get("Length")
+        if row is None:
+            self.skipTest("Length row not available.")
+        row.base_editor.set_value(320.0)  # type: ignore[attr-defined]
+        page.parameter_form._update_group_reset_buttons()  # type: ignore[attr-defined]
+
+        reset_btn = page.parameter_form.block_reset_button_for_group("Basics")
+        self.assertIsNotNone(reset_btn)
+        assert reset_btn is not None
+        basics_box = page.parameter_form._group_boxes.get("Basics")  # type: ignore[attr-defined]
+        self.assertIsNotNone(basics_box)
+        assert basics_box is not None
+
+        # Expanded block with overrides: reset action stays hidden in header.
+        basics_box.set_collapsed(False)
+        self.app.processEvents()
+        self.assertTrue(reset_btn.isEnabled())
+        self.assertTrue(reset_btn.isHidden())
+
+        # Collapsed + overrides: reset action becomes visible.
+        basics_box.set_collapsed(True)
+        self.app.processEvents()
+        self.assertFalse(reset_btn.isHidden())
+
+        reset_btn.click()
+        self.app.processEvents()
+        self.assertTrue(reset_btn.isHidden())
+
+    def test_block_reset_button_starts_hidden_without_overrides(self) -> None:
+        page = BatchPage()
+        state = self._compat_state()
+        page.apply_compatibility(state)
+        reset_btn = page.parameter_form.block_reset_button_for_group("Basics")
+        self.assertIsNotNone(reset_btn)
+        assert reset_btn is not None
+        self.assertFalse(reset_btn.isEnabled())
+        self.assertTrue(reset_btn.isHidden())
 
     def test_mesh_angular_segments_step_and_multiple_validation(self) -> None:
         page = BatchPage()
@@ -733,6 +895,90 @@ class BatchPageUiTests(unittest.TestCase):
         self.assertTrue(row.container.isHidden())
         self.assertEqual(str(row.container.property("meshAdvancedDetached") or "false").lower(), "true")
 
+    def test_mesh_advanced_dialog_populates_rows(self) -> None:
+        page = BatchPage()
+        state = self._compat_state()
+        page.apply_compatibility(state)
+
+        observed = {"host_found": False, "controls": 0, "frameless_shell": False, "still_populated_after_edit": False}
+
+        def _fake_exec(dialog) -> int:
+            if dialog is not None:
+                observed["frameless_shell"] = bool(str(dialog.property("framelessShell") or "").lower() == "true")
+                host = dialog.findChild(QWidget, "MeshAdvancedDialogHost")
+                observed["host_found"] = host is not None
+                if host is not None:
+                    edits = host.findChildren(QLineEdit)
+                    combos = host.findChildren(QComboBox)
+                    observed["controls"] = len(edits) + len(combos)
+                    if edits:
+                        edits[0].setFocus()
+                        edits[0].setText(f"{edits[0].text()}1")
+                        edits[0].editingFinished.emit()
+                        self.app.processEvents()
+                    observed["still_populated_after_edit"] = bool(host.findChildren(QWidget))
+            return int(QDialog.Accepted)
+
+        with patch("ui.batch_parameter_form.StyledDialogBase.exec", new=_fake_exec):
+            page.parameter_form.open_mesh_advanced_dialog()
+        self.assertTrue(observed["host_found"])
+        self.assertGreater(observed["controls"], 0)
+        self.assertTrue(observed["frameless_shell"])
+        self.assertTrue(observed["still_populated_after_edit"])
+
+    def test_enclosure_dialog_contains_enclosure_group(self) -> None:
+        page = BatchPage()
+        state = self._compat_state()
+        page.apply_compatibility(state)
+        row = page.parameter_form._rows.get("Mesh.Enclosure")
+        if row is None:
+            self.skipTest("Mesh.Enclosure row not available.")
+
+        observed = {
+            "host_found": False,
+            "controls": 0,
+            "enabled_checked": False,
+            "frameless_shell": False,
+            "host_stable_after_toggle": False,
+        }
+
+        def _fake_exec(dialog) -> int:
+            if dialog is not None:
+                observed["frameless_shell"] = bool(str(dialog.property("framelessShell") or "").lower() == "true")
+                host = dialog.findChild(QWidget, "EnclosureDialogHost")
+                observed["host_found"] = host is not None
+                if host is not None:
+                    edits = host.findChildren(QLineEdit)
+                    combos = host.findChildren(QComboBox)
+                    observed["controls"] = len(edits) + len(combos)
+                enabled_btn = next(
+                    (button for button in dialog.findChildren(QPushButton) if str(button.text()).strip().lower() == "enabled"),
+                    None,
+                )
+                observed["enabled_checked"] = bool(enabled_btn is not None and enabled_btn.isChecked())
+                disabled_btn = next(
+                    (button for button in dialog.findChildren(QPushButton) if str(button.text()).strip().lower() == "disabled"),
+                    None,
+                )
+                if enabled_btn is not None and disabled_btn is not None:
+                    enabled_btn.click()
+                    self.app.processEvents()
+                    disabled_btn.click()
+                    self.app.processEvents()
+                    enabled_btn.click()
+                    self.app.processEvents()
+                    host_after = dialog.findChild(QWidget, "EnclosureDialogHost")
+                    observed["host_stable_after_toggle"] = bool(host_after is not None and host_after.findChildren(QWidget))
+            return int(QDialog.Accepted)
+
+        with patch("ui.batch_parameter_form.StyledDialogBase.exec", new=_fake_exec):
+            page.parameter_form.open_enclosure_dialog()
+        self.assertTrue(observed["host_found"])
+        self.assertGreater(observed["controls"], 0)
+        self.assertIsInstance(observed["enabled_checked"], bool)
+        self.assertTrue(observed["frameless_shell"])
+        self.assertTrue(observed["host_stable_after_toggle"])
+
     def test_batch_form_has_no_horizontal_overflow_at_1920x1080(self) -> None:
         page = BatchPage()
         page.resize(1920, 1080)
@@ -740,6 +986,23 @@ class BatchPageUiTests(unittest.TestCase):
         self.app.processEvents()
         hbar = page.parameter_form.scroll.horizontalScrollBar()
         self.assertEqual(int(hbar.maximum()), 0)
+
+    def test_batch_left_panel_stays_within_column_when_resizing(self) -> None:
+        page = BatchPage()
+        state = self._compat_state()
+        page.apply_compatibility(state)
+        basics_box = page.parameter_form._group_boxes.get("Basics")  # type: ignore[attr-defined]
+        if basics_box is not None:
+            basics_box.set_collapsed(False)
+        for width in (1100, 1280, 1600, 1920):
+            page.resize(width, 900)
+            page.show()
+            self.app.processEvents()
+            left = page._left_panel  # type: ignore[attr-defined]
+            right = page._right_panel  # type: ignore[attr-defined]
+            self.assertLess(int(left.geometry().right()), int(right.geometry().left()))
+            viewport = page.parameter_form.scroll.viewport()
+            self.assertLessEqual(int(viewport.mapToGlobal(viewport.rect().topRight()).x()), int(right.mapToGlobal(right.rect().topLeft()).x()))
 
     def test_blocked_batch_segment_option_emits_interaction_and_keeps_selection(self) -> None:
         page = BatchPage()

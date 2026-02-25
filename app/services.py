@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import datetime, timezone
 import json
 import hashlib
 import logging
+import math
 import os
 import re
 import statistics
@@ -18,6 +19,24 @@ import shutil
 import subprocess
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
+from app.analyzer.artifacts import available_artifact_statuses
+from app.analyzer.cache import AnalyzerPlotCache
+from app.analyzer.kpi_engine import compute_run_kpis, compute_stage_score
+from app.analyzer.orientation import canonical_orientation_token, dedupe_orientations
+from app.analyzer.plot_service import AnalyzerPlotService
+from app.analyzer.presets import (
+    ALGO_VERSION,
+    BAND_PRESETS,
+    COVERAGE_PRESETS,
+    DEFAULT_BAND_PRESET_ID,
+    DEFAULT_COVERAGE_PRESET_ID,
+    DEFAULT_STAGE_ID,
+    DEFAULT_TOL_DEG,
+    STAGE_PRESETS,
+    normalize_stage_id,
+)
+from app.analyzer.reason_codes import reason_items_for_codes
+from app.analyzer.stage_plot_engine import compute_di_proxy_curve, compute_stage_plot_payload
 from app.batch_orchestrator import PlanningSummary, materialize_batch_plan
 from app.ath_knowledge import load_ath_knowledge
 from app.ath_driver_assets import repair_post_ath_le_binding
@@ -32,11 +51,17 @@ from app.constants import (
     PREVIEW_CACHE_MAX_AGE_DAYS,
 )
 from app.cfg_renderer import render_cfg_text
+from app.feature_flags import use_project_library_storage
 from app.models import Batch, ParamSelection, Project, ProjectConstraints, SweepSpec
 from app.project_storage import ProjectRepository
 from app.runtime_orchestrator import RuntimeSummary, run_batch_pipeline
 from app.runners import AthRunner
-from app.settings_store import SettingsStore, UserSettings
+from app.storage_manager import LibraryState, StorageManager
+from app.settings_store import (
+    SIMULATION_TIMEOUT_MINUTES_DEFAULT,
+    SettingsStore,
+    UserSettings,
+)
 from app.tidy_dataset import TidyDatasetWriter
 from app.version_resolver import resolve_versions
 
@@ -94,6 +119,10 @@ def _settings_hash(settings: UserSettings) -> str:
         "vacs_exe": settings.vacs_exe,
         "template_cfg": settings.template_cfg,
         "background_automation_mode": bool(getattr(settings, "background_automation_mode", True)),
+        "simulation_timeout_minutes": int(
+            getattr(settings, "simulation_timeout_minutes", SIMULATION_TIMEOUT_MINUTES_DEFAULT)
+            or SIMULATION_TIMEOUT_MINUTES_DEFAULT
+        ),
     }
     canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
@@ -119,6 +148,14 @@ def _detect_git_commit() -> Optional[str]:
     return value or None
 
 
+def _current_username() -> str:
+    for key in ("USERNAME", "USER", "LOGNAME"):
+        value = str(os.environ.get(key, "")).strip()
+        if value:
+            return value
+    return ""
+
+
 def _percentile(sorted_values: List[float], p: float) -> Optional[float]:
     if not sorted_values:
         return None
@@ -131,6 +168,180 @@ def _percentile(sorted_values: List[float], p: float) -> Optional[float]:
     if lower == upper:
         return float(sorted_values[lower])
     return float(sorted_values[lower] + ((sorted_values[upper] - sorted_values[lower]) * fraction))
+
+
+def _split_csv_tokens(raw: Optional[str]) -> List[str]:
+    if raw is None:
+        return []
+    return [str(token).strip() for token in str(raw).split(",") if str(token).strip()]
+
+
+def _normalize_orientation_tokens(values: Sequence[str]) -> List[str]:
+    return dedupe_orientations([str(raw or "").strip() for raw in values])
+
+
+def _orientation_tokens_from_raw_values(values: Sequence[str]) -> List[str]:
+    tokens: List[str] = []
+    for raw in values:
+        text = str(raw or "").strip()
+        if not text:
+            continue
+        try:
+            numeric = float(text)
+        except Exception:
+            continue
+        if math.isnan(numeric) or math.isinf(numeric):
+            continue
+        if abs(numeric - round(numeric)) <= 1.0e-6:
+            tokens.append(f"X3_{int(round(numeric))}")
+        else:
+            compact = f"{numeric:.6f}".rstrip("0").rstrip(".")
+            tokens.append(f"X3_{compact}")
+    return tokens
+
+
+def _analyzer_source_hash(file_hashes: Sequence[str]) -> str:
+    tokens = sorted({str(item).strip() for item in list(file_hashes or []) if str(item).strip()})
+    raw = "|".join(tokens) if tokens else "<missing>"
+    return hashlib.sha1(raw.encode("utf-8")).hexdigest()
+
+
+def _safe_json_load(raw: Any) -> Dict[str, Any]:
+    try:
+        payload = json.loads(str(raw or "{}"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _safe_float_or_none(raw: Any) -> Optional[float]:
+    if raw is None:
+        return None
+    try:
+        return float(raw)
+    except Exception:
+        return None
+
+
+def _safe_mm_value_or_none(raw: Any) -> Optional[float]:
+    numeric = _safe_float_or_none(raw)
+    if numeric is not None and math.isfinite(float(numeric)):
+        return float(numeric)
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    match = re.search(r"[-+]?\d+(?:[.,]\d+)?", text)
+    if not match:
+        return None
+    token = str(match.group(0)).replace(",", ".")
+    try:
+        numeric = float(token)
+    except Exception:
+        return None
+    return float(numeric) if math.isfinite(float(numeric)) else None
+
+
+def _safe_json_load_any(raw: Any) -> Any:
+    try:
+        return json.loads(str(raw or "null"))
+    except Exception:
+        return None
+
+
+def _decode_db_value(raw: Any) -> Any:
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if not text:
+        return None
+    parsed = _safe_json_load_any(text)
+    if parsed is not None:
+        return parsed
+    return text
+
+
+def _snapshot_sweep_parameters(raw_snapshot: Any) -> Dict[str, Any]:
+    payload = _safe_json_load(raw_snapshot)
+    sweep_payload = payload.get("sweep_parameters")
+    if isinstance(sweep_payload, Mapping):
+        return {str(key): value for key, value in dict(sweep_payload).items() if str(key).strip()}
+    return {}
+
+
+def _parse_unambiguous_batch_norm_angle(sim_export_params_raw: Any) -> Optional[float]:
+    payload = _safe_json_load(sim_export_params_raw)
+    specs = payload.get("export_specs")
+    if not isinstance(specs, list):
+        return None
+    values: List[float] = []
+    for spec in specs:
+        if not isinstance(spec, dict):
+            continue
+        if str(spec.get("graph_kind", "") or "").strip().lower() != "polar":
+            continue
+        options = spec.get("options") if isinstance(spec.get("options"), dict) else {}
+        parsed = _safe_float_or_none(options.get("norm_angle"))
+        if parsed is not None:
+            values.append(float(parsed))
+    if not values:
+        return None
+    if max(values) - min(values) <= 1.0e-6:
+        return float(values[0])
+    return None
+
+
+def _resolve_effective_norm_angle(
+    *,
+    measurement_rows: Sequence[sqlite3.Row],
+    batch_norm_angle_deg: Optional[float],
+) -> Tuple[Optional[float], str, str]:
+    stored_values: List[float] = []
+    for row in measurement_rows:
+        parsed = _safe_float_or_none(row["norm_angle_deg"])
+        if parsed is not None:
+            stored_values.append(parsed)
+    if stored_values:
+        if max(stored_values) - min(stored_values) <= 1.0e-6:
+            value = float(stored_values[0])
+            return (value, "stored", "Stored in polar_measurements.norm_angle_deg.")
+        value = float(sum(stored_values) / float(len(stored_values)))
+        return (value, "stored_mixed", "Mixed stored norm angles; using mean value.")
+
+    if batch_norm_angle_deg is not None:
+        return (
+            float(batch_norm_angle_deg),
+            "batch_export_settings",
+            "Derived from batches.sim_export_params export_specs[].options.norm_angle.",
+        )
+
+    all_angles: List[float] = []
+    for row in measurement_rows:
+        raw_angles = str(row["angles_deg_json"] or "").strip()
+        if not raw_angles:
+            continue
+        try:
+            payload = json.loads(raw_angles)
+        except Exception:
+            continue
+        if not isinstance(payload, list):
+            continue
+        for value in payload:
+            parsed = _safe_float_or_none(value)
+            if parsed is not None:
+                all_angles.append(float(parsed))
+    if all_angles:
+        ref_angle = min(all_angles, key=lambda angle: abs(float(angle)))
+        return (
+            float(ref_angle),
+            "nearest_zero_angle",
+            "Fallback: nearest available polar angle to 0 deg.",
+        )
+
+    return (
+        None,
+        "missing",
+        "Norm angle not stored and no polar angle grid available for fallback.",
+    )
 
 
 class PreviewGenerationCancelled(RuntimeError):
@@ -1274,23 +1485,125 @@ class OrchestratorService:
     def __init__(self, settings_store: SettingsStore | None = None) -> None:
         self.settings_store = settings_store or SettingsStore()
         self.settings = self.settings_store.load()
-        self.repo = ProjectRepository(self.settings.library_root)
+        self.storage = StorageManager(UserSettings().library_root)
+        self._bootstrap_library_root_with_fallback()
         self.compatibility = CompatibilityService()
 
     def reload_settings(self) -> UserSettings:
         self.settings = self.settings_store.load()
-        self.repo = ProjectRepository(self.settings.library_root)
+        self._bootstrap_library_root_with_fallback()
         return self.settings
 
     def save_settings(self, settings: UserSettings) -> Dict[str, Any]:
-        self.settings_store.save(settings)
-        self.settings = settings
-        self.repo = ProjectRepository(self.settings.library_root)
+        if LOGGER.isEnabledFor(logging.DEBUG):
+            LOGGER.debug("save_settings start: requested_library_root=%s", str(settings.library_root))
+        root_result = StorageManager.try_set_library_root(settings.library_root)
+        if not root_result.ok or root_result.manager is None or root_result.state is None:
+            return {
+                "saved": False,
+                "path": str(self.settings_store.path),
+                "validation": self.settings_store.validate(self.settings),
+                "error": str(root_result.error_message or "Could not switch Project Library Location."),
+            }
+
+        canonical_root = str(root_result.manager.paths.root)
+        persisted_settings = replace(settings, library_root=canonical_root)
+        try:
+            self.settings_store.save(persisted_settings)
+        except Exception as exc:
+            if LOGGER.isEnabledFor(logging.DEBUG):
+                LOGGER.debug("save_settings failed writing settings file.", exc_info=True)
+            return {
+                "saved": False,
+                "path": str(self.settings_store.path),
+                "validation": self.settings_store.validate(self.settings),
+                "error": self._settings_write_error_message(exc),
+            }
+
+        if LOGGER.isEnabledFor(logging.DEBUG):
+            LOGGER.debug("save_settings settings_store.write ok: path=%s", str(self.settings_store.path))
+        self._apply_library_state(
+            settings=persisted_settings,
+            manager=root_result.manager,
+            state=root_result.state,
+        )
         return {
             "saved": True,
             "path": str(self.settings_store.path),
-            "validation": self.settings_store.validate(settings),
+            "validation": self.settings_store.validate(self.settings),
         }
+
+    def _bootstrap_library_root(self) -> None:
+        root_result = StorageManager.try_set_library_root(self.settings.library_root)
+        if not root_result.ok or root_result.manager is None or root_result.state is None:
+            raise RuntimeError(str(root_result.error_message or "Could not bootstrap Project Library Location."))
+        canonical_root = str(root_result.manager.paths.root)
+        bootstrapped_settings = self.settings
+        if str(bootstrapped_settings.library_root) != canonical_root:
+            bootstrapped_settings = replace(bootstrapped_settings, library_root=canonical_root)
+            self.settings_store.save(bootstrapped_settings)
+        self._apply_library_state(
+            settings=bootstrapped_settings,
+            manager=root_result.manager,
+            state=root_result.state,
+        )
+
+    def _bootstrap_library_root_with_fallback(self) -> None:
+        try:
+            self._bootstrap_library_root()
+            return
+        except Exception:
+            if LOGGER.isEnabledFor(logging.DEBUG):
+                LOGGER.debug("Primary library-root bootstrap failed; attempting default fallback.", exc_info=True)
+        default_root = UserSettings().library_root
+        fallback_result = StorageManager.try_set_library_root(default_root)
+        if not fallback_result.ok or fallback_result.manager is None or fallback_result.state is None:
+            raise RuntimeError(
+                str(
+                    fallback_result.error_message
+                    or "Could not bootstrap configured or default Project Library Location."
+                )
+            )
+        fallback_settings = replace(self.settings, library_root=str(fallback_result.manager.paths.root))
+        self.settings_store.save(fallback_settings)
+        self._apply_library_state(
+            settings=fallback_settings,
+            manager=fallback_result.manager,
+            state=fallback_result.state,
+        )
+        LOGGER.warning(
+            "Configured Project Library Location could not be opened; switched to default: %s",
+            str(fallback_settings.library_root),
+        )
+
+    def _apply_library_state(
+        self,
+        *,
+        settings: UserSettings,
+        manager: StorageManager,
+        state: LibraryState,
+    ) -> None:
+        self.settings = settings
+        self.storage = manager
+        repo_root = self.storage.paths.projects_dir if use_project_library_storage() else self.storage.paths.root
+        self.repo = ProjectRepository(repo_root)
+        self.library_state = {
+            "library_uid": state.library_uid,
+            "schema_version": state.schema_version,
+            "created_at": state.created_at,
+            "project_counter_next": state.project_counter_next,
+            "library_root": self.settings.library_root,
+            "projects_root": str(repo_root),
+            "use_project_library_storage": bool(use_project_library_storage()),
+        }
+
+    @staticmethod
+    def _settings_write_error_message(exc: Exception) -> str:
+        if isinstance(exc, PermissionError):
+            return "Could not save settings file because access was denied."
+        if isinstance(exc, OSError):
+            return "Could not save settings file. Check disk space and folder permissions."
+        return "Could not save settings file."
 
     def validate_settings(self, settings: Optional[UserSettings] = None) -> Dict[str, str]:
         return self.settings_store.validate(settings or self.settings)
@@ -1754,6 +2067,1468 @@ class OrchestratorService:
         dataset = TidyDatasetWriter(project_paths.project_dir, library_root=self.settings.library_root)
         return dataset.list_runs(batch_id=batch_id, status=status)
 
+    def _library_index_db_path(self) -> Path:
+        root = Path(self.settings.library_root).expanduser()
+        preferred = root / "library.sqlite"
+        legacy = root / "global.sqlite"
+        if use_project_library_storage():
+            return preferred if preferred.exists() or not legacy.exists() else legacy
+        return legacy
+
+    def analyzer_list_polar_projects(
+        self,
+        *,
+        source: str = "project",
+        project_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        source_key = str(source or "project").strip().lower()
+        rows: List[Dict[str, Any]] = []
+        if source_key == "global":
+            global_db = self._library_index_db_path()
+            if not global_db.exists():
+                return []
+            try:
+                with closing(sqlite3.connect(str(global_db))) as conn:
+                    conn.row_factory = sqlite3.Row
+                    query_rows = conn.execute(
+                        """
+                        SELECT
+                            pm.project_id AS project_id,
+                            COUNT(*) AS measurement_count,
+                            COUNT(DISTINCT pm.batch_id) AS batch_count
+                        FROM polar_measurements pm
+                        GROUP BY pm.project_id
+                        ORDER BY pm.project_id
+                        """
+                    ).fetchall()
+            except sqlite3.Error:
+                return []
+            for row in query_rows:
+                rows.append(
+                    {
+                        "project_id": str(row["project_id"]),
+                        "measurement_count": int(row["measurement_count"] or 0),
+                        "batch_count": int(row["batch_count"] or 0),
+                    }
+                )
+            return rows
+
+        target_ids: List[str]
+        if project_id:
+            target_ids = [str(project_id)]
+        else:
+            target_ids = [str(project.project_id) for project in self.repo.list_projects()]
+        for target_id in sorted(set(target_ids)):
+            project_db = self.repo.project_paths(target_id, ensure=False).dataset_dir / "project.sqlite"
+            if not project_db.exists():
+                continue
+            try:
+                with closing(sqlite3.connect(str(project_db))) as conn:
+                    conn.row_factory = sqlite3.Row
+                    row = conn.execute(
+                        """
+                        SELECT
+                            COUNT(*) AS measurement_count,
+                            COUNT(DISTINCT batch_id) AS batch_count
+                        FROM polar_measurements
+                        WHERE project_id = ?
+                        """,
+                        (target_id,),
+                    ).fetchone()
+            except sqlite3.Error:
+                continue
+            if row is None:
+                continue
+            measurement_count = int(row["measurement_count"] or 0)
+            if measurement_count <= 0:
+                continue
+            rows.append(
+                {
+                    "project_id": target_id,
+                    "measurement_count": measurement_count,
+                    "batch_count": int(row["batch_count"] or 0),
+                }
+            )
+        return rows
+
+    def analyzer_list_polar_batches(
+        self,
+        *,
+        project_id: str,
+        source: str = "project",
+    ) -> List[Dict[str, Any]]:
+        project_token = str(project_id or "").strip()
+        if not project_token:
+            return []
+        source_key = str(source or "project").strip().lower()
+        if source_key == "global":
+            db_path = self._library_index_db_path()
+        else:
+            db_path = self.repo.project_paths(project_token, ensure=False).dataset_dir / "project.sqlite"
+        if not db_path.exists():
+            return []
+        try:
+            with closing(sqlite3.connect(str(db_path))) as conn:
+                conn.row_factory = sqlite3.Row
+                has_batches_table = bool(
+                    conn.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='batches' LIMIT 1"
+                    ).fetchone()
+                )
+                if has_batches_table:
+                    query_rows = conn.execute(
+                        """
+                        SELECT
+                            pm.project_id AS project_id,
+                            pm.batch_id AS batch_id,
+                            COALESCE(NULLIF(TRIM(b.batch_name), ''), pm.batch_id) AS batch_name,
+                            COUNT(DISTINCT (COALESCE(pm.run_id, '') || '|' || pm.version_id)) AS run_version_count,
+                            COUNT(*) AS measurement_count,
+                            MAX(pm.created_at) AS imported_at
+                        FROM polar_measurements pm
+                        LEFT JOIN batches b
+                          ON b.project_id = pm.project_id
+                         AND b.batch_id = pm.batch_id
+                        WHERE pm.project_id = ?
+                        GROUP BY pm.project_id, pm.batch_id, COALESCE(NULLIF(TRIM(b.batch_name), ''), pm.batch_id)
+                        ORDER BY pm.batch_id
+                        """,
+                        (project_token,),
+                    ).fetchall()
+                else:
+                    query_rows = conn.execute(
+                        """
+                        SELECT
+                            pm.project_id AS project_id,
+                            pm.batch_id AS batch_id,
+                            pm.batch_id AS batch_name,
+                            COUNT(DISTINCT (COALESCE(pm.run_id, '') || '|' || pm.version_id)) AS run_version_count,
+                            COUNT(*) AS measurement_count,
+                            MAX(pm.created_at) AS imported_at
+                        FROM polar_measurements pm
+                        WHERE pm.project_id = ?
+                        GROUP BY pm.project_id, pm.batch_id
+                        ORDER BY pm.batch_id
+                        """,
+                        (project_token,),
+                    ).fetchall()
+        except sqlite3.Error:
+            return []
+        return [
+            {
+                "project_id": str(row["project_id"]),
+                "batch_id": str(row["batch_id"]),
+                "batch_name": str(row["batch_name"] or row["batch_id"]),
+                "run_version_count": int(row["run_version_count"] or 0),
+                "measurement_count": int(row["measurement_count"] or 0),
+                "imported_at": row["imported_at"],
+            }
+            for row in query_rows
+        ]
+
+    def analyzer_list_polar_runs(
+        self,
+        *,
+        project_id: str,
+        batch_id: str,
+        source: str = "project",
+    ) -> List[Dict[str, Any]]:
+        project_token = str(project_id or "").strip()
+        batch_token = str(batch_id or "").strip()
+        if not project_token or not batch_token:
+            return []
+        source_key = str(source or "project").strip().lower()
+        if source_key == "global":
+            db_path = self._library_index_db_path()
+        else:
+            db_path = self.repo.project_paths(project_token, ensure=False).dataset_dir / "project.sqlite"
+        if not db_path.exists():
+            return []
+        try:
+            with closing(sqlite3.connect(str(db_path))) as conn:
+                conn.row_factory = sqlite3.Row
+                has_batches_table = bool(
+                    conn.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='batches' LIMIT 1"
+                    ).fetchone()
+                )
+                has_versions_table = bool(
+                    conn.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='versions' LIMIT 1"
+                    ).fetchone()
+                )
+                has_version_params_table = bool(
+                    conn.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='version_params' LIMIT 1"
+                    ).fetchone()
+                )
+                has_ath_dimensions_table = bool(
+                    conn.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='ath_dimensions' LIMIT 1"
+                    ).fetchone()
+                )
+                has_notes_table = bool(
+                    conn.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='analyzer_version_notes' LIMIT 1"
+                    ).fetchone()
+                )
+                has_experiment_metrics_table = bool(
+                    conn.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='experiment_metrics' LIMIT 1"
+                    ).fetchone()
+                )
+                batch_row = conn.execute(
+                    (
+                        """
+                        SELECT sim_export_params
+                        FROM batches
+                        WHERE project_id = ? AND batch_id = ?
+                        LIMIT 1
+                        """
+                        if has_batches_table
+                        else "SELECT NULL AS sim_export_params"
+                    ),
+                    ((project_token, batch_token) if has_batches_table else ()),
+                ).fetchone()
+                batch_norm_angle_deg = _parse_unambiguous_batch_norm_angle(
+                    batch_row["sim_export_params"] if batch_row is not None else None
+                )
+                measurement_rows = conn.execute(
+                    """
+                    SELECT
+                        COALESCE(run_id, '') AS run_id,
+                        version_id,
+                        norm_angle_deg,
+                        angles_deg_json
+                    FROM polar_measurements
+                    WHERE project_id = ? AND batch_id = ?
+                    """,
+                    (project_token, batch_token),
+                ).fetchall()
+                measurement_by_identity: Dict[Tuple[str, str], List[sqlite3.Row]] = {}
+                for measurement_row in measurement_rows:
+                    key = (
+                        str(measurement_row["run_id"] or "").strip(),
+                        str(measurement_row["version_id"] or "").strip(),
+                    )
+                    measurement_by_identity.setdefault(key, []).append(measurement_row)
+                version_meta_by_version: Dict[str, Dict[str, Any]] = {}
+                if has_versions_table:
+                    version_rows = conn.execute(
+                        """
+                        SELECT
+                            version_id,
+                            ath_length_mm,
+                            ath_width_mm,
+                            ath_height_mm,
+                            resolved_parameters_snapshot
+                        FROM versions
+                        WHERE project_id = ? AND batch_id = ?
+                        """,
+                        (project_token, batch_token),
+                    ).fetchall()
+                    for version_row in version_rows:
+                        version_token = str(version_row["version_id"] or "").strip()
+                        if not version_token:
+                            continue
+                        version_meta_by_version[version_token] = {
+                            "ath_length_mm": _safe_mm_value_or_none(version_row["ath_length_mm"]),
+                            "ath_width_mm": _safe_mm_value_or_none(version_row["ath_width_mm"]),
+                            "ath_height_mm": _safe_mm_value_or_none(version_row["ath_height_mm"]),
+                            "sweep_parameters": _snapshot_sweep_parameters(version_row["resolved_parameters_snapshot"]),
+                        }
+
+                control_values_by_version: Dict[str, Dict[str, Any]] = {}
+                if has_version_params_table:
+                    control_rows = conn.execute(
+                        """
+                        SELECT version_id, param_name, value, is_set
+                        FROM version_params
+                        WHERE project_id = ?
+                          AND batch_id = ?
+                          AND param_name IN ('Throat.Profile', 'GCurve.Type', 'Morph.TargetShape', 'Mesh.Enclosure')
+                        """,
+                        (project_token, batch_token),
+                    ).fetchall()
+                    for control_row in control_rows:
+                        version_token = str(control_row["version_id"] or "").strip()
+                        param_name = str(control_row["param_name"] or "").strip()
+                        if not version_token or not param_name:
+                            continue
+                        entry = control_values_by_version.setdefault(version_token, {})
+                        if not bool(control_row["is_set"]):
+                            entry[param_name] = None
+                            continue
+                        entry[param_name] = _decode_db_value(control_row["value"])
+
+                ath_dims_by_identity: Dict[Tuple[str, str], Dict[str, Optional[float]]] = {}
+                ath_dims_by_version: Dict[str, Dict[str, Optional[float]]] = {}
+                if has_ath_dimensions_table:
+                    ath_rows = conn.execute(
+                        """
+                        SELECT
+                            COALESCE(run_id, '') AS run_id,
+                            version_id,
+                            length_mm,
+                            width_mm,
+                            height_mm
+                        FROM ath_dimensions
+                        WHERE project_id = ? AND batch_id = ?
+                        """,
+                        (project_token, batch_token),
+                    ).fetchall()
+                    for ath_row in ath_rows:
+                        version_token = str(ath_row["version_id"] or "").strip()
+                        run_token = str(ath_row["run_id"] or "").strip()
+                        if not version_token:
+                            continue
+                        dims_payload = {
+                            "ath_length_mm": _safe_mm_value_or_none(ath_row["length_mm"]),
+                            "ath_width_mm": _safe_mm_value_or_none(ath_row["width_mm"]),
+                            "ath_height_mm": _safe_mm_value_or_none(ath_row["height_mm"]),
+                        }
+                        ath_dims_by_identity[(run_token, version_token)] = dict(dims_payload)
+                        if version_token not in ath_dims_by_version:
+                            ath_dims_by_version[version_token] = dict(dims_payload)
+                    # Legacy datasets can carry ath_dimensions rows keyed by run/version
+                    # with stale or mismatched project/batch fields.
+                    relaxed_identity_keys = [
+                        key
+                        for key in measurement_by_identity.keys()
+                        if key not in ath_dims_by_identity and str(key[1] or "").strip()
+                    ]
+                    if relaxed_identity_keys:
+                        relaxed_run_tokens = sorted({str(key[0] or "").strip() for key in relaxed_identity_keys if str(key[0] or "").strip()})
+                        relaxed_version_tokens = sorted(
+                            {str(key[1] or "").strip() for key in relaxed_identity_keys if str(key[1] or "").strip()}
+                        )
+                        relaxed_where: List[str] = []
+                        relaxed_params: List[Any] = []
+                        if relaxed_version_tokens:
+                            placeholders = ", ".join("?" for _ in relaxed_version_tokens)
+                            relaxed_where.append(f"version_id IN ({placeholders})")
+                            relaxed_params.extend(relaxed_version_tokens)
+                        if relaxed_run_tokens:
+                            run_placeholders = ", ".join("?" for _ in relaxed_run_tokens)
+                            relaxed_where.append(f"COALESCE(run_id, '') IN ({run_placeholders})")
+                            relaxed_params.extend(relaxed_run_tokens)
+                        if relaxed_where:
+                            relaxed_rows = conn.execute(
+                                f"""
+                                SELECT
+                                    COALESCE(run_id, '') AS run_id,
+                                    version_id,
+                                    length_mm,
+                                    width_mm,
+                                    height_mm
+                                FROM ath_dimensions
+                                WHERE {" AND ".join(relaxed_where)}
+                                """,
+                                tuple(relaxed_params),
+                            ).fetchall()
+                            for ath_row in relaxed_rows:
+                                version_token = str(ath_row["version_id"] or "").strip()
+                                run_token = str(ath_row["run_id"] or "").strip()
+                                if not version_token:
+                                    continue
+                                key = (run_token, version_token)
+                                if key in ath_dims_by_identity:
+                                    continue
+                                dims_payload = {
+                                    "ath_length_mm": _safe_mm_value_or_none(ath_row["length_mm"]),
+                                    "ath_width_mm": _safe_mm_value_or_none(ath_row["width_mm"]),
+                                    "ath_height_mm": _safe_mm_value_or_none(ath_row["height_mm"]),
+                                }
+                                ath_dims_by_identity[key] = dict(dims_payload)
+                                if version_token not in ath_dims_by_version:
+                                    ath_dims_by_version[version_token] = dict(dims_payload)
+
+                experiment_dims_by_run: Dict[str, Dict[str, Optional[float]]] = {}
+                if has_experiment_metrics_table:
+                    experiment_cols = {
+                        str(col["name"] or "").strip()
+                        for col in conn.execute("PRAGMA table_info(experiment_metrics)").fetchall()
+                    }
+                    required_cols = {"run_id", "final_length_mm", "final_width_mm", "final_height_mm"}
+                    if required_cols.issubset(experiment_cols):
+                        where_parts: List[str] = []
+                        where_params: List[Any] = []
+                        if "project_id" in experiment_cols:
+                            where_parts.append("project_id = ?")
+                            where_params.append(project_token)
+                        if "batch_id" in experiment_cols:
+                            where_parts.append("batch_id = ?")
+                            where_params.append(batch_token)
+                        where_sql = f"WHERE {' AND '.join(where_parts)}" if where_parts else ""
+                        experiment_rows = conn.execute(
+                            f"""
+                            SELECT
+                                COALESCE(run_id, '') AS run_id,
+                                final_length_mm,
+                                final_width_mm,
+                                final_height_mm
+                            FROM experiment_metrics
+                            {where_sql}
+                            """,
+                            tuple(where_params),
+                        ).fetchall()
+                        for metric_row in experiment_rows:
+                            run_token = str(metric_row["run_id"] or "").strip()
+                            if not run_token:
+                                continue
+                            dims_payload = {
+                                "ath_length_mm": _safe_mm_value_or_none(metric_row["final_length_mm"]),
+                                "ath_width_mm": _safe_mm_value_or_none(metric_row["final_width_mm"]),
+                                "ath_height_mm": _safe_mm_value_or_none(metric_row["final_height_mm"]),
+                            }
+                            dim_count = sum(1 for value in dims_payload.values() if value is not None)
+                            existing = dict(experiment_dims_by_run.get(run_token, {}) or {})
+                            existing_count = sum(1 for value in existing.values() if value is not None)
+                            if dim_count > existing_count:
+                                experiment_dims_by_run[run_token] = dict(dims_payload)
+
+                notes_by_version: Dict[str, Dict[str, Any]] = {}
+                if has_notes_table:
+                    note_rows = conn.execute(
+                        """
+                        SELECT version_id, note_text, updated_at
+                        FROM analyzer_version_notes
+                        WHERE project_id = ? AND batch_id = ?
+                        """,
+                        (project_token, batch_token),
+                    ).fetchall()
+                    for note_row in note_rows:
+                        version_token = str(note_row["version_id"] or "").strip()
+                        if not version_token:
+                            continue
+                        notes_by_version[version_token] = {
+                            "note_text": str(note_row["note_text"] or ""),
+                            "note_updated_at": str(note_row["updated_at"] or ""),
+                        }
+                query_rows = conn.execute(
+                    """
+                    SELECT
+                        pm.project_id AS project_id,
+                        pm.batch_id AS batch_id,
+                        COALESCE(pm.run_id, '') AS run_id,
+                        pm.version_id AS version_id,
+                        GROUP_CONCAT(DISTINCT pm.orientation) AS orientations_csv,
+                        GROUP_CONCAT(DISTINCT pm.orientation_raw) AS orientation_raw_csv,
+                        MIN(pm.freq_min_hz) AS freq_min_hz,
+                        MAX(pm.freq_max_hz) AS freq_max_hz,
+                        MAX(pm.freq_count) AS freq_count,
+                        MAX(pm.angle_count) AS angle_count,
+                        MAX(pm.norm_angle_deg) AS norm_angle_deg,
+                        MAX(pm.created_at) AS imported_at,
+                        MAX(COALESCE(r.started_at, v.created_at, pm.created_at)) AS created_at,
+                        MAX(r.status) AS run_status,
+                        GROUP_CONCAT(DISTINCT pm.source_file) AS source_files_csv,
+                        GROUP_CONCAT(DISTINCT pm.file_hash) AS file_hashes_csv
+                    FROM polar_measurements pm
+                    LEFT JOIN runs r
+                        ON r.run_id = pm.run_id
+                       AND r.project_id = pm.project_id
+                       AND r.batch_id = pm.batch_id
+                    LEFT JOIN versions v
+                        ON v.version_id = pm.version_id
+                       AND v.project_id = pm.project_id
+                       AND v.batch_id = pm.batch_id
+                    WHERE pm.project_id = ? AND pm.batch_id = ?
+                    GROUP BY pm.project_id, pm.batch_id, COALESCE(pm.run_id, ''), pm.version_id
+                    ORDER BY imported_at DESC, pm.version_id DESC
+                    """,
+                    (project_token, batch_token),
+                ).fetchall()
+        except sqlite3.Error:
+            return []
+
+        result: List[Dict[str, Any]] = []
+        for row in query_rows:
+            orientation_tokens = _split_csv_tokens(row["orientations_csv"])
+            orientation_tokens.extend(_orientation_tokens_from_raw_values(_split_csv_tokens(row["orientation_raw_csv"])))
+            planes = _normalize_orientation_tokens(orientation_tokens)
+            source_files = sorted(set(_split_csv_tokens(row["source_files_csv"])))
+            file_hashes = sorted(set(_split_csv_tokens(row["file_hashes_csv"])))
+            run_id = str(row["run_id"] or "").strip()
+            version_id = str(row["version_id"] or "").strip()
+            run_version_measurements = measurement_by_identity.get((run_id, str(row["version_id"])), [])
+            norm_angle_deg, norm_angle_source, norm_angle_note = _resolve_effective_norm_angle(
+                measurement_rows=run_version_measurements,
+                batch_norm_angle_deg=batch_norm_angle_deg,
+            )
+            version_meta = dict(version_meta_by_version.get(version_id, {}) or {})
+            identity_dims = dict(ath_dims_by_identity.get((run_id, version_id), {}) or {})
+            if not identity_dims:
+                identity_dims = dict(ath_dims_by_identity.get(("", version_id), {}) or {})
+            if not identity_dims:
+                identity_dims = dict(ath_dims_by_version.get(version_id, {}) or {})
+            control_values = dict(control_values_by_version.get(version_id, {}) or {})
+            note_payload = dict(notes_by_version.get(version_id, {}) or {})
+
+            throat_profile = control_values.get("Throat.Profile")
+            gcurve_type = control_values.get("GCurve.Type")
+            morph_shape = control_values.get("Morph.TargetShape")
+            enclosure_value = control_values.get("Mesh.Enclosure")
+
+            ath_length_mm = identity_dims.get("ath_length_mm")
+            if ath_length_mm is None:
+                ath_length_mm = _safe_mm_value_or_none(version_meta.get("ath_length_mm"))
+            ath_width_mm = identity_dims.get("ath_width_mm")
+            if ath_width_mm is None:
+                ath_width_mm = _safe_mm_value_or_none(version_meta.get("ath_width_mm"))
+            ath_height_mm = identity_dims.get("ath_height_mm")
+            if ath_height_mm is None:
+                ath_height_mm = _safe_mm_value_or_none(version_meta.get("ath_height_mm"))
+            if None in (ath_length_mm, ath_width_mm, ath_height_mm):
+                experiment_dims = dict(experiment_dims_by_run.get(run_id, {}) or {})
+                if ath_length_mm is None:
+                    ath_length_mm = _safe_mm_value_or_none(experiment_dims.get("ath_length_mm"))
+                if ath_width_mm is None:
+                    ath_width_mm = _safe_mm_value_or_none(experiment_dims.get("ath_width_mm"))
+                if ath_height_mm is None:
+                    ath_height_mm = _safe_mm_value_or_none(experiment_dims.get("ath_height_mm"))
+
+            result.append(
+                {
+                    "project_id": str(row["project_id"]),
+                    "batch_id": str(row["batch_id"]),
+                    "run_id": run_id or None,
+                    "run_label": run_id or "(no run id)",
+                    "version_id": version_id,
+                    "planes": planes,
+                    "freq_min_hz": row["freq_min_hz"],
+                    "freq_max_hz": row["freq_max_hz"],
+                    "freq_count": int(row["freq_count"] or 0),
+                    "angle_count": int(row["angle_count"] or 0),
+                    "norm_angle_deg": norm_angle_deg,
+                    "norm_angle_source": norm_angle_source,
+                    "norm_angle_note": norm_angle_note,
+                    "imported_at": row["imported_at"],
+                    "created_at": row["created_at"],
+                    "run_status": row["run_status"],
+                    "source_files": source_files,
+                    "file_hashes": file_hashes,
+                    "ath_length_mm": ath_length_mm,
+                    "ath_width_mm": ath_width_mm,
+                    "ath_height_mm": ath_height_mm,
+                    "throat_profile": throat_profile,
+                    "gcurve_type": gcurve_type,
+                    "morph_shape": morph_shape,
+                    "enclosure_enabled": bool(enclosure_value not in (None, 0, 0.0, False, "", "0", "false", "False")),
+                    "driver_label": "Generic25",
+                    "sweep_parameters": dict(version_meta.get("sweep_parameters", {}) or {}),
+                    "version_note": str(note_payload.get("note_text") or ""),
+                    "version_note_updated_at": str(note_payload.get("note_updated_at") or ""),
+                }
+            )
+        return result
+
+    def analyzer_presets(self) -> Dict[str, Any]:
+        return {
+            "algo_version": str(ALGO_VERSION),
+            "coverage_presets": [dict(item) for item in COVERAGE_PRESETS],
+            "default_coverage_preset_id": str(DEFAULT_COVERAGE_PRESET_ID),
+            "band_presets": [dict(item) for item in BAND_PRESETS],
+            "default_band_preset_id": str(DEFAULT_BAND_PRESET_ID),
+            "default_tol_deg": float(DEFAULT_TOL_DEG),
+            "stages": {str(key): dict(value) for key, value in STAGE_PRESETS.items()},
+            "default_stage_id": str(DEFAULT_STAGE_ID),
+        }
+
+    def analyzer_list_version_param_rows(
+        self,
+        *,
+        project_id: str,
+        batch_id: str,
+        version_id: str,
+    ) -> List[Dict[str, Any]]:
+        project_token = str(project_id or "").strip()
+        batch_token = str(batch_id or "").strip()
+        version_token = str(version_id or "").strip()
+        if not project_token or not batch_token or not version_token:
+            return []
+        db_path = self.repo.project_paths(project_token, ensure=False).dataset_dir / "project.sqlite"
+        if not db_path.exists():
+            return []
+        try:
+            with closing(sqlite3.connect(str(db_path))) as conn:
+                conn.row_factory = sqlite3.Row
+                rows = conn.execute(
+                    """
+                    SELECT param_name, value, is_set
+                    FROM version_params
+                    WHERE project_id = ?
+                      AND batch_id = ?
+                      AND version_id = ?
+                    ORDER BY param_name
+                    """,
+                    (project_token, batch_token, version_token),
+                ).fetchall()
+        except sqlite3.Error:
+            return []
+        result: List[Dict[str, Any]] = []
+        for row in rows:
+            param_name = str(row["param_name"] or "").strip()
+            if not param_name:
+                continue
+            if not bool(row["is_set"]):
+                result.append({"param_name": param_name, "is_set": False, "value": None})
+                continue
+            result.append({"param_name": param_name, "is_set": True, "value": _decode_db_value(row["value"])})
+        return result
+
+    def analyzer_version_param_values(
+        self,
+        *,
+        project_id: str,
+        batch_id: str,
+        version_id: str,
+        keys: Sequence[str],
+    ) -> Dict[str, Any]:
+        rows = self.analyzer_list_version_param_rows(
+            project_id=project_id,
+            batch_id=batch_id,
+            version_id=version_id,
+        )
+        target_keys = {str(key).strip() for key in list(keys or []) if str(key).strip()}
+        if not target_keys:
+            return {}
+        result: Dict[str, Any] = {}
+        for row in rows:
+            key = str(row.get("param_name") or "").strip()
+            if key not in target_keys:
+                continue
+            if not bool(row.get("is_set")):
+                continue
+            result[key] = row.get("value")
+        return result
+
+    def analyzer_get_ui_pref(self, *, project_id: str, pref_key: str) -> Dict[str, Any]:
+        project_token = str(project_id or "").strip()
+        pref_token = str(pref_key or "").strip()
+        if not project_token or not pref_token:
+            return {}
+        project_paths = self.repo.project_paths(project_token, ensure=True)
+        dataset = TidyDatasetWriter(project_paths.project_dir, library_root=self.settings.library_root)
+        loaded = dataset.load_analyzer_ui_pref(project_id=project_token, pref_key=pref_token)
+        if not loaded:
+            return {}
+        payload = dict(loaded.get("payload") or {})
+        return payload if isinstance(payload, dict) else {}
+
+    def analyzer_set_ui_pref(
+        self,
+        *,
+        project_id: str,
+        pref_key: str,
+        payload: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        project_token = str(project_id or "").strip()
+        pref_token = str(pref_key or "").strip()
+        if not project_token or not pref_token:
+            raise ValueError("project_id and pref_key are required")
+        project_paths = self.repo.project_paths(project_token, ensure=True)
+        dataset = TidyDatasetWriter(project_paths.project_dir, library_root=self.settings.library_root)
+        return dataset.save_analyzer_ui_pref(
+            project_id=project_token,
+            pref_key=pref_token,
+            payload=dict(payload or {}),
+        )
+
+    def analyzer_set_version_note(
+        self,
+        *,
+        project_id: str,
+        batch_id: str,
+        version_id: str,
+        note_text: str,
+    ) -> Dict[str, Any]:
+        project_token = str(project_id or "").strip()
+        batch_token = str(batch_id or "").strip()
+        version_token = str(version_id or "").strip()
+        if not project_token or not batch_token or not version_token:
+            raise ValueError("project_id, batch_id and version_id are required")
+        project_paths = self.repo.project_paths(project_token, ensure=True)
+        dataset = TidyDatasetWriter(project_paths.project_dir, library_root=self.settings.library_root)
+        return dataset.upsert_analyzer_version_note(
+            project_id=project_token,
+            batch_id=batch_token,
+            version_id=version_token,
+            note_text=str(note_text or ""),
+        )
+
+    def _analyzer_db_path(self, *, project_id: str, source: str) -> Path:
+        source_key = str(source or "project").strip().lower()
+        if source_key == "global":
+            return self._library_index_db_path()
+        return self.repo.project_paths(str(project_id), ensure=False).dataset_dir / "project.sqlite"
+
+    def analyzer_load_plot_payload(
+        self,
+        *,
+        source: str,
+        project_id: str,
+        batch_id: str,
+        run_id: Optional[str],
+        version_id: str,
+        plane: str,
+        band_low_hz: float,
+        band_high_hz: float,
+        cache: AnalyzerPlotCache,
+        cancel_check: Optional[Callable[[], bool]] = None,
+    ) -> Dict[str, Any]:
+        project_token = str(project_id or "").strip()
+        batch_token = str(batch_id or "").strip()
+        version_token = str(version_id or "").strip()
+        if not project_token or not batch_token or not version_token:
+            return {
+                "cache_hit": False,
+                "freqs_hz": [],
+                "angles_deg": [],
+                "matrix_db": [],
+                "display_freqs_hz": [],
+                "display_matrix_db": [],
+                "beamwidth_curve": [],
+                "ref_angle_deg": None,
+                "insufficient_bw": True,
+                "message": "Select project, batch, run/version and plane.",
+            }
+        db_path = self._analyzer_db_path(project_id=project_token, source=source)
+        if not db_path.exists():
+            return {
+                "cache_hit": False,
+                "freqs_hz": [],
+                "angles_deg": [],
+                "matrix_db": [],
+                "display_freqs_hz": [],
+                "display_matrix_db": [],
+                "beamwidth_curve": [],
+                "ref_angle_deg": None,
+                "insufficient_bw": True,
+                "message": f"Analyzer database not found: {db_path}",
+            }
+        loader = AnalyzerPlotService(cache)
+        return loader.load_plane_plot_payload(
+            db_path=db_path,
+            project_id=project_token,
+            batch_id=batch_token,
+            run_id=str(run_id or "").strip() or None,
+            version_id=version_token,
+            plane=str(plane or "H").strip().upper(),
+            band_low_hz=float(band_low_hz),
+            band_high_hz=float(band_high_hz),
+            cancel_check=cancel_check,
+        )
+
+    def analyzer_load_stage_plot_payload(
+        self,
+        *,
+        source: str,
+        project_id: str,
+        batch_id: str,
+        run_id: Optional[str],
+        version_id: str,
+        plane: str,
+        stage_mode: str,
+        target_h_deg: float,
+        target_v_deg: float,
+        tol_deg: float,
+        band_low_hz: float,
+        band_high_hz: float,
+        cache: AnalyzerPlotCache,
+        use_full_angles_for_smoothness: bool = False,
+        cancel_check: Optional[Callable[[], bool]] = None,
+    ) -> Dict[str, Any]:
+        project_token = str(project_id or "").strip()
+        batch_token = str(batch_id or "").strip()
+        version_token = str(version_id or "").strip()
+        run_token = str(run_id or "").strip() or None
+        plane_token = str(plane or "H").strip().upper() or "H"
+        base_plot = self.analyzer_load_plot_payload(
+            source=source,
+            project_id=project_token,
+            batch_id=batch_token,
+            run_id=run_token,
+            version_id=version_token,
+            plane=plane_token,
+            band_low_hz=float(band_low_hz),
+            band_high_hz=float(band_high_hz),
+            cache=cache,
+            cancel_check=cancel_check,
+        )
+        freqs_hz = [float(item) for item in list(base_plot.get("freqs_hz", []) or [])]
+        angles_deg = [float(item) for item in list(base_plot.get("angles_deg", []) or [])]
+        matrix_db = [list(row) for row in list(base_plot.get("matrix_db", []) or [])]
+
+        def _target_for_plane(plane_value: str) -> float:
+            if plane_value == "H":
+                return float(target_h_deg)
+            if plane_value == "V":
+                return float(target_v_deg)
+            return float((float(target_h_deg) + float(target_v_deg)) * 0.5)
+
+        bw_by_plane: Dict[str, List[Dict[str, Any]]] = {}
+        di_by_plane: Dict[str, List[Dict[str, Any]]] = {}
+        if freqs_hz and angles_deg and matrix_db:
+            bw_by_plane[plane_token] = [dict(item) for item in list(base_plot.get("beamwidth_curve", []) or []) if isinstance(item, dict)]
+            di_by_plane[plane_token] = compute_di_proxy_curve(
+                freqs_hz=freqs_hz,
+                angles_deg=angles_deg,
+                matrix_db=matrix_db,
+                target_deg=_target_for_plane(plane_token),
+                norm_angle_deg=(float(base_plot["ref_angle_deg"]) if base_plot.get("ref_angle_deg") is not None else None),
+            )
+
+        # Stage-2 plane consistency needs at least H/V context.
+        for other_plane in ("H", "V", "D"):
+            if other_plane == plane_token:
+                continue
+            if callable(cancel_check) and bool(cancel_check()):
+                raise RuntimeError("canceled")
+            try:
+                other_plot = self.analyzer_load_plot_payload(
+                    source=source,
+                    project_id=project_token,
+                    batch_id=batch_token,
+                    run_id=run_token,
+                    version_id=version_token,
+                    plane=other_plane,
+                    band_low_hz=float(band_low_hz),
+                    band_high_hz=float(band_high_hz),
+                    cache=cache,
+                    cancel_check=cancel_check,
+                )
+            except Exception:
+                continue
+            other_freqs = [float(item) for item in list(other_plot.get("freqs_hz", []) or [])]
+            other_angles = [float(item) for item in list(other_plot.get("angles_deg", []) or [])]
+            other_matrix = [list(row) for row in list(other_plot.get("matrix_db", []) or [])]
+            if not other_freqs or not other_angles or not other_matrix:
+                continue
+            bw_by_plane[other_plane] = [
+                dict(item) for item in list(other_plot.get("beamwidth_curve", []) or []) if isinstance(item, dict)
+            ]
+            di_by_plane[other_plane] = compute_di_proxy_curve(
+                freqs_hz=other_freqs,
+                angles_deg=other_angles,
+                matrix_db=other_matrix,
+                target_deg=_target_for_plane(other_plane),
+                norm_angle_deg=(float(other_plot["ref_angle_deg"]) if other_plot.get("ref_angle_deg") is not None else None),
+            )
+
+        artifact_status: Dict[str, Dict[str, Any]] = {}
+        db_path = self._analyzer_db_path(project_id=project_token, source=source)
+        if db_path.exists():
+            try:
+                with closing(sqlite3.connect(str(db_path))) as conn:
+                    conn.row_factory = sqlite3.Row
+                    artifact_status = available_artifact_statuses(
+                        conn=conn,
+                        project_id=project_token,
+                        batch_id=batch_token,
+                        run_id=run_token,
+                        version_id=version_token,
+                        artifact_types=("POLAR", "SPL_FR"),
+                    )
+            except sqlite3.Error:
+                artifact_status = {}
+
+        stage_payload = compute_stage_plot_payload(
+            stage_mode=normalize_stage_id(stage_mode, fallback=DEFAULT_STAGE_ID),
+            target_deg=_target_for_plane(plane_token),
+            tol_deg=float(tol_deg),
+            freqs_hz=freqs_hz,
+            angles_deg=angles_deg,
+            matrix_db=matrix_db,
+            beamwidth_curve=[dict(item) for item in list(base_plot.get("beamwidth_curve", []) or []) if isinstance(item, dict)],
+            norm_angle_deg=(float(base_plot["ref_angle_deg"]) if base_plot.get("ref_angle_deg") is not None else None),
+            use_full_angles_for_smoothness=bool(use_full_angles_for_smoothness),
+            bw_curves_by_plane=bw_by_plane,
+            di_curves_by_plane=di_by_plane,
+            artifact_status=artifact_status,
+        )
+        result = dict(base_plot)
+        result["stage_plot"] = stage_payload
+        return result
+
+    def analyzer_save_analysis(
+        self,
+        *,
+        project_id: str,
+        name: str,
+        config: Dict[str, Any],
+        candidates: Sequence[Dict[str, Any]],
+        analysis_id: Optional[str] = None,
+        notes: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        project_token = str(project_id or "").strip()
+        project_paths = self.repo.project_paths(project_token, ensure=False)
+        dataset = TidyDatasetWriter(project_paths.project_dir, library_root=self.settings.library_root)
+        return dataset.save_analyzer_analysis(
+            project_id=project_token,
+            name=name,
+            config=dict(config or {}),
+            candidates=list(candidates or [])[:5],
+            analysis_id=(str(analysis_id or "").strip() or None),
+            notes=notes,
+            artifact_type="POLAR",
+        )
+
+    def analyzer_list_analyses(self, *, project_id: str) -> List[Dict[str, Any]]:
+        project_token = str(project_id or "").strip()
+        if not project_token:
+            return []
+        project_paths = self.repo.project_paths(project_token, ensure=False)
+        dataset = TidyDatasetWriter(project_paths.project_dir, library_root=self.settings.library_root)
+        return dataset.list_analyzer_analyses(project_id=project_token)
+
+    def analyzer_load_analysis(
+        self,
+        *,
+        project_id: str,
+        analysis_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        project_token = str(project_id or "").strip()
+        analysis_token = str(analysis_id or "").strip()
+        if not project_token or not analysis_token:
+            return None
+        project_paths = self.repo.project_paths(project_token, ensure=False)
+        dataset = TidyDatasetWriter(project_paths.project_dir, library_root=self.settings.library_root)
+        return dataset.load_analyzer_analysis(project_id=project_token, analysis_id=analysis_token)
+
+    def analyzer_list_cached_kpis(
+        self,
+        *,
+        project_id: str,
+        batch_id: str,
+        source: str = "project",
+        band_low_hz: float,
+        band_high_hz: float,
+        target_h_deg: float,
+        target_v_deg: float,
+        tol_deg: float,
+        algo_version: str = ALGO_VERSION,
+    ) -> List[Dict[str, Any]]:
+        db_path = self._analyzer_db_path(project_id=project_id, source=source)
+        if not db_path.exists():
+            return []
+        query = """
+            SELECT
+                kpi_id,
+                project_id,
+                batch_id,
+                run_id,
+                version_id,
+                stage_mode,
+                band_low_hz,
+                band_high_hz,
+                target_h_deg,
+                target_v_deg,
+                tol_deg,
+                kpi_json,
+                flags_json,
+                score,
+                algo_version,
+                source_hash,
+                computed_at
+            FROM analyzer_run_kpis
+            WHERE project_id = ?
+              AND batch_id = ?
+              AND band_low_hz = ?
+              AND band_high_hz = ?
+              AND target_h_deg = ?
+              AND target_v_deg = ?
+              AND tol_deg = ?
+              AND algo_version = ?
+            ORDER BY computed_at DESC
+        """
+        try:
+            with closing(sqlite3.connect(str(db_path))) as conn:
+                conn.row_factory = sqlite3.Row
+                rows = conn.execute(
+                    query,
+                    (
+                        str(project_id),
+                        str(batch_id),
+                        float(band_low_hz),
+                        float(band_high_hz),
+                        float(target_h_deg),
+                        float(target_v_deg),
+                        float(tol_deg),
+                        str(algo_version),
+                    ),
+                ).fetchall()
+        except sqlite3.Error:
+            return []
+
+        # Keep the latest computed row per run/version/source_hash.
+        seen: set[Tuple[str, str, str]] = set()
+        result: List[Dict[str, Any]] = []
+        for row in rows:
+            run_token = str(row["run_id"] or "").strip()
+            version_id = str(row["version_id"] or "")
+            source_hash = str(row["source_hash"] or "")
+            identity = (run_token, version_id, source_hash)
+            if identity in seen:
+                continue
+            seen.add(identity)
+            result.append(
+                {
+                    "kpi_id": str(row["kpi_id"]),
+                    "project_id": str(row["project_id"]),
+                    "batch_id": str(row["batch_id"]),
+                    "run_id": run_token or None,
+                    "version_id": version_id,
+                    "stage_mode": str(row["stage_mode"] or "").strip() or None,
+                    "band_low_hz": float(row["band_low_hz"]),
+                    "band_high_hz": float(row["band_high_hz"]),
+                    "target_h_deg": float(row["target_h_deg"]),
+                    "target_v_deg": float(row["target_v_deg"]),
+                    "tol_deg": float(row["tol_deg"]),
+                    "kpi": _safe_json_load(row["kpi_json"]),
+                    "flags": _safe_json_load(row["flags_json"]),
+                    "score": float(row["score"]) if row["score"] is not None else None,
+                    "algo_version": str(row["algo_version"]),
+                    "source_hash": source_hash,
+                    "computed_at": row["computed_at"],
+                }
+            )
+        return result
+
+    def analyzer_list_batch_review_runs(
+        self,
+        *,
+        project_id: str,
+        batch_id: str,
+        source: str = "project",
+        stage_mode: str = DEFAULT_STAGE_ID,
+        band_low_hz: float,
+        band_high_hz: float,
+        target_h_deg: float,
+        target_v_deg: float,
+        tol_deg: float,
+        algo_version: str = ALGO_VERSION,
+    ) -> List[Dict[str, Any]]:
+        runs = self.analyzer_list_polar_runs(
+            project_id=project_id,
+            batch_id=batch_id,
+            source=source,
+        )
+        cache_rows = self.analyzer_list_cached_kpis(
+            project_id=project_id,
+            batch_id=batch_id,
+            source=source,
+            band_low_hz=band_low_hz,
+            band_high_hz=band_high_hz,
+            target_h_deg=target_h_deg,
+            target_v_deg=target_v_deg,
+            tol_deg=tol_deg,
+            algo_version=algo_version,
+        )
+        cache_by_identity: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
+        for row in cache_rows:
+            run_token = str(row.get("run_id") or "").strip()
+            version_id = str(row.get("version_id") or "")
+            source_hash = str(row.get("source_hash") or "")
+            cache_by_identity[(run_token, version_id, source_hash)] = row
+
+        stage_key = normalize_stage_id(stage_mode, fallback=DEFAULT_STAGE_ID)
+        result: List[Dict[str, Any]] = []
+        for row in runs:
+            payload = dict(row)
+            run_token = str(payload.get("run_id") or "").strip()
+            version_id = str(payload.get("version_id") or "")
+            source_hash = _analyzer_source_hash(list(payload.get("file_hashes", []) or []))
+            cached = cache_by_identity.get((run_token, version_id, source_hash))
+            if cached:
+                kpi_payload = dict(cached.get("kpi", {}) or {})
+                flags_payload = dict(cached.get("flags", {}) or {})
+                score = compute_stage_score(kpi_payload, stage_id=stage_key)
+                aggregate = dict(kpi_payload.get("aggregate", {}) or {})
+                reason_codes = [str(code) for code in list(flags_payload.get("reason_codes", []) or []) if str(code)]
+                if not reason_codes and bool(aggregate.get("insufficient_coverage")):
+                    reason_codes.append("INSUFFICIENT_ANGLE_COVERAGE")
+                if not any(code == "MISSING_PLANE" for code in reason_codes):
+                    planes_present = {str(token or "").strip().upper() for token in list(payload.get("planes", []) or [])}
+                    if any(plane not in planes_present for plane in ("H", "V", "D")):
+                        reason_codes.append("MISSING_PLANE")
+                reason_codes = list(dict.fromkeys(reason_codes))
+                reason_items = reason_items_for_codes(reason_codes)
+                warn_count = sum(1 for item in reason_items if str(item.get("severity") or "").lower() == "warn")
+                error_count = sum(1 for item in reason_items if str(item.get("severity") or "").lower() == "error")
+                info_count = sum(1 for item in reason_items if str(item.get("severity") or "").lower() == "info")
+                payload["kpi"] = kpi_payload
+                payload["kpi_flags"] = flags_payload
+                payload["kpi_reason_codes"] = reason_codes
+                payload["kpi_reason_items"] = reason_items
+                payload["kpi_reason_warn_count"] = int(warn_count)
+                payload["kpi_reason_error_count"] = int(error_count)
+                payload["kpi_reason_info_count"] = int(info_count)
+                payload["kpi_source_hash"] = source_hash
+                payload["kpi_cached_at"] = cached.get("computed_at")
+                payload["kpi_score"] = float(score) if score is not None else None
+                payload["kpi_b_pc_oct"] = aggregate.get("b_pc_oct")
+                payload["kpi_e_bw"] = aggregate.get("e_bw")
+                payload["kpi_e_cov"] = aggregate.get("e_cov")
+                payload["kpi_r_spill"] = aggregate.get("r_spill")
+                payload["kpi_flags_count"] = int(aggregate.get("flags_count") or 0)
+                payload["kpi_flagged"] = bool(aggregate.get("flagged"))
+                payload["kpi_insufficient_coverage"] = bool(aggregate.get("insufficient_coverage"))
+                payload["kpi_unscorable"] = bool(aggregate.get("unscorable"))
+            else:
+                payload["kpi_reason_codes"] = ["MISSING_KPI_ROWS"]
+                payload["kpi_reason_items"] = reason_items_for_codes(["MISSING_KPI_ROWS"])
+                payload["kpi_reason_warn_count"] = 0
+                payload["kpi_reason_error_count"] = 1
+                payload["kpi_reason_info_count"] = 0
+            result.append(payload)
+        return result
+
+    def analyzer_autopick_candidates(
+        self,
+        *,
+        project_id: str,
+        batch_ids: Sequence[str],
+        strategy: str,
+        kpi_key: str,
+        filters: Optional[Dict[str, Any]] = None,
+        top_n: int = 5,
+        stage_mode: str = DEFAULT_STAGE_ID,
+        band_low_hz: float,
+        band_high_hz: float,
+        target_h_deg: float,
+        target_v_deg: float,
+        tol_deg: float,
+        algo_version: str = ALGO_VERSION,
+        progress_cb: Optional[Callable[[int, int, str], None]] = None,
+        cancel_check: Optional[Callable[[], bool]] = None,
+    ) -> Dict[str, Any]:
+        project_token = str(project_id or "").strip()
+        if not project_token:
+            return {"candidates": [], "scanned": 0, "after_filters": 0, "canceled": False, "message": "Project is required."}
+        requested_batches = [str(item or "").strip() for item in list(batch_ids or []) if str(item or "").strip()]
+        if not requested_batches:
+            requested_batches = [
+                str(item.get("batch_id") or "").strip()
+                for item in self.analyzer_list_polar_batches(project_id=project_token, source="project")
+                if str(item.get("batch_id") or "").strip()
+            ]
+        requested_batches = sorted(set(requested_batches))
+        total_batches = len(requested_batches)
+        if callable(progress_cb):
+            progress_cb(0, total_batches, "Scanning batches for candidates...")
+
+        all_rows: List[Dict[str, Any]] = []
+        for index, batch_id in enumerate(requested_batches, start=1):
+            if callable(cancel_check) and bool(cancel_check()):
+                return {"candidates": [], "scanned": len(all_rows), "canceled": True}
+            rows = self.analyzer_list_batch_review_runs(
+                project_id=project_token,
+                batch_id=batch_id,
+                source="project",
+                stage_mode=stage_mode,
+                band_low_hz=band_low_hz,
+                band_high_hz=band_high_hz,
+                target_h_deg=target_h_deg,
+                target_v_deg=target_v_deg,
+                tol_deg=tol_deg,
+                algo_version=algo_version,
+            )
+            all_rows.extend(rows)
+            if callable(progress_cb):
+                progress_cb(index, total_batches, f"Scanned {batch_id}.")
+
+        filters_payload = dict(filters or {})
+        exclude_flags = bool(filters_payload.get("exclude_flags", False))
+        exclude_missing = bool(filters_payload.get("exclude_missing_kpi", False))
+        filtered: List[Dict[str, Any]] = []
+        for row in all_rows:
+            if exclude_flags and bool(row.get("kpi_flagged")):
+                continue
+            if exclude_missing and row.get("kpi_score") is None:
+                continue
+            filtered.append(dict(row))
+
+        scored_rows = [row for row in all_rows if row.get("kpi_score") is not None]
+        if not all_rows:
+            return {
+                "candidates": [],
+                "scanned": 0,
+                "after_filters": 0,
+                "strategy": str(strategy or "A").strip().upper() or "A",
+                "kpi_key": str(kpi_key or "score").strip().lower() or "score",
+                "canceled": False,
+                "message": "No polar runs found in selected batch scope.",
+            }
+        if not scored_rows:
+            return {
+                "candidates": [],
+                "scanned": len(all_rows),
+                "after_filters": 0,
+                "strategy": str(strategy or "A").strip().upper() or "A",
+                "kpi_key": str(kpi_key or "score").strip().lower() or "score",
+                "canceled": False,
+                "requires_kpi": True,
+                "message": "Compute KPIs first for the selected batch scope.",
+            }
+        if not filtered:
+            return {
+                "candidates": [],
+                "scanned": len(all_rows),
+                "after_filters": 0,
+                "strategy": str(strategy or "A").strip().upper() or "A",
+                "kpi_key": str(kpi_key or "score").strip().lower() or "score",
+                "canceled": False,
+                "message": "No candidates left after filters.",
+            }
+
+        strategy_token = str(strategy or "A").strip().upper()
+        if strategy_token not in {"A", "B", "C"}:
+            strategy_token = "A"
+        kpi_token = str(kpi_key or "score").strip().lower()
+        kpi_sort_map: Dict[str, Tuple[str, bool]] = {
+            "score": ("kpi_score", True),
+            "b_pc": ("kpi_b_pc_oct", True),
+            "b_pc_oct": ("kpi_b_pc_oct", True),
+            "e_bw": ("kpi_e_bw", False),
+            "e_cov": ("kpi_e_cov", False),
+            "r_spill": ("kpi_r_spill", False),
+            "flags": ("kpi_flags_count", False),
+            "flags_count": ("kpi_flags_count", False),
+        }
+
+        def _score_value(row: Dict[str, Any]) -> float:
+            raw = row.get("kpi_score")
+            return float(raw) if raw is not None else float("-inf")
+
+        def _metric_value(row: Dict[str, Any], key: str, desc: bool) -> float:
+            raw = row.get(key)
+            if raw is None:
+                return float("-inf") if desc else float("inf")
+            return float(raw)
+
+        # Deterministic tie-break base.
+        filtered.sort(key=lambda row: str(row.get("run_id") or ""))
+        filtered.sort(key=lambda row: str(row.get("version_id") or ""), reverse=True)
+        filtered.sort(key=lambda row: str(row.get("imported_at") or ""), reverse=True)
+        filtered.sort(key=lambda row: str(row.get("batch_id") or ""))
+
+        if strategy_token == "B":
+            metric_key, desc = kpi_sort_map.get(kpi_token, ("kpi_score", True))
+            filtered.sort(key=lambda row: _score_value(row), reverse=True)
+            filtered.sort(
+                key=lambda row: _metric_value(row, metric_key, desc),
+                reverse=desc,
+            )
+        else:
+            filtered.sort(key=lambda row: _score_value(row), reverse=True)
+
+        limited = filtered[: max(1, min(int(top_n), 5))]
+        candidates: List[Dict[str, Any]] = []
+        for row in limited:
+            score_value = row.get("kpi_score")
+            candidates.append(
+                {
+                    "project_id": str(row.get("project_id") or project_token),
+                    "batch_id": str(row.get("batch_id") or ""),
+                    "run_id": (str(row.get("run_id") or "").strip() or None),
+                    "version_id": str(row.get("version_id") or ""),
+                    "score": score_value,
+                    "kpi_score": score_value,
+                    "kpi_b_pc_oct": row.get("kpi_b_pc_oct"),
+                    "kpi_e_bw": row.get("kpi_e_bw"),
+                    "kpi_e_cov": row.get("kpi_e_cov"),
+                    "kpi_r_spill": row.get("kpi_r_spill"),
+                    "kpi_flags_count": int(row.get("kpi_flags_count") or 0),
+                    "kpi_flagged": bool(row.get("kpi_flagged")),
+                    "kpi_reason_codes": [str(code) for code in list(row.get("kpi_reason_codes", []) or []) if str(code).strip()],
+                    "planes": [str(token) for token in list(row.get("planes", []) or []) if str(token).strip()],
+                    "imported_at": row.get("imported_at"),
+                }
+            )
+        message = f"Auto-picked {len(candidates)} candidate(s)."
+        return {
+            "candidates": candidates,
+            "scanned": len(all_rows),
+            "after_filters": len(filtered),
+            "strategy": strategy_token,
+            "kpi_key": kpi_token,
+            "canceled": False,
+            "message": message,
+        }
+
+    def analyzer_compute_batch_kpis(
+        self,
+        *,
+        project_id: str,
+        batch_id: str,
+        target_h_deg: float,
+        target_v_deg: float,
+        tol_deg: float,
+        band_low_hz: float,
+        band_high_hz: float,
+        stage_mode: str = DEFAULT_STAGE_ID,
+        algo_version: str = ALGO_VERSION,
+        progress_cb: Optional[Callable[[int, int, str], None]] = None,
+        cancel_check: Optional[Callable[[], bool]] = None,
+    ) -> Dict[str, Any]:
+        project_token = str(project_id or "").strip()
+        batch_token = str(batch_id or "").strip()
+        if not project_token or not batch_token:
+            return {"computed": 0, "skipped_cached": 0, "failed": 0, "total": 0, "canceled": False}
+
+        project_paths = self.repo.project_paths(project_token, ensure=False)
+        db_path = project_paths.dataset_dir / "project.sqlite"
+        if not db_path.exists():
+            raise FileNotFoundError(f"Project dataset DB not found: {db_path}")
+        dataset = TidyDatasetWriter(project_paths.project_dir, library_root=self.settings.library_root)
+
+        runs = self.analyzer_list_polar_runs(project_id=project_token, batch_id=batch_token, source="project")
+        cache_rows = dataset.list_analyzer_run_kpis(
+            project_id=project_token,
+            batch_id=batch_token,
+            band_low_hz=float(band_low_hz),
+            band_high_hz=float(band_high_hz),
+            target_h_deg=float(target_h_deg),
+            target_v_deg=float(target_v_deg),
+            tol_deg=float(tol_deg),
+            algo_version=str(algo_version),
+        )
+        cached_identity: set[Tuple[str, str, str]] = set()
+        for row in cache_rows:
+            run_token = str(row.get("run_id") or "").strip()
+            version_id = str(row.get("version_id") or "")
+            source_hash = str(row.get("source_hash") or "")
+            cached_identity.add((run_token, version_id, source_hash))
+
+        total = len(runs)
+        computed = 0
+        skipped_cached = 0
+        failed = 0
+        rows_to_write: List[Dict[str, Any]] = []
+        stage_key = normalize_stage_id(stage_mode, fallback=DEFAULT_STAGE_ID)
+
+        if callable(progress_cb):
+            progress_cb(0, total, "Preparing KPI compute...")
+
+        for idx, run in enumerate(runs, start=1):
+            if callable(cancel_check) and bool(cancel_check()):
+                if callable(progress_cb):
+                    progress_cb(idx - 1, total, "KPI compute canceled.")
+                return {
+                    "computed": computed,
+                    "skipped_cached": skipped_cached,
+                    "failed": failed,
+                    "total": total,
+                    "canceled": True,
+                }
+
+            run_token = str(run.get("run_id") or "").strip()
+            version_id = str(run.get("version_id") or "")
+            source_hash = _analyzer_source_hash(list(run.get("file_hashes", []) or []))
+            identity = (run_token, version_id, source_hash)
+            if identity in cached_identity:
+                skipped_cached += 1
+                if callable(progress_cb):
+                    progress_cb(idx, total, f"Skipping cached KPIs for {version_id}.")
+                continue
+
+            try:
+                with closing(sqlite3.connect(str(db_path))) as conn:
+                    conn.row_factory = sqlite3.Row
+                    query_rows = conn.execute(
+                        """
+                        SELECT
+                            pm.orientation AS orientation,
+                            pp.freq_hz AS freq_hz,
+                            pp.angle_deg AS angle_deg,
+                            pp.re AS re,
+                            pp.im AS im
+                        FROM polar_measurements pm
+                        JOIN polar_points pp ON pp.polar_id = pm.polar_id
+                        WHERE pm.project_id = ?
+                          AND pm.batch_id = ?
+                          AND pm.version_id = ?
+                          AND COALESCE(pm.run_id, '') = ?
+                        ORDER BY pm.orientation, pp.freq_hz, pp.angle_deg
+                        """,
+                        (
+                            project_token,
+                            batch_token,
+                            version_id,
+                            run_token,
+                        ),
+                    ).fetchall()
+            except sqlite3.Error:
+                failed += 1
+                if callable(progress_cb):
+                    progress_cb(idx, total, f"KPI query failed for {version_id}.")
+                continue
+
+            planes_points: Dict[str, List[Dict[str, Any]]] = {}
+            for row in query_rows:
+                orientation = canonical_orientation_token(row["orientation"])
+                if orientation not in {"H", "V", "D"}:
+                    continue
+                planes_points.setdefault(orientation, []).append(
+                    {
+                        "freq_hz": float(row["freq_hz"]),
+                        "angle_deg": float(row["angle_deg"]),
+                        "re": float(row["re"]),
+                        "im": float(row["im"]),
+                    }
+                )
+
+            if not planes_points:
+                failed += 1
+                if callable(progress_cb):
+                    progress_cb(idx, total, f"No polar points found for {version_id}.")
+                continue
+
+            kpi_payload = compute_run_kpis(
+                planes_points=planes_points,
+                target_h_deg=float(target_h_deg),
+                target_v_deg=float(target_v_deg),
+                tol_deg=float(tol_deg),
+                band_low_hz=float(band_low_hz),
+                band_high_hz=float(band_high_hz),
+            )
+            score = compute_stage_score(kpi_payload, stage_id=stage_key)
+            rows_to_write.append(
+                {
+                    "project_id": project_token,
+                    "batch_id": batch_token,
+                    "run_id": run_token or None,
+                    "version_id": version_id,
+                    "stage_mode": stage_key,
+                    "band_low_hz": float(band_low_hz),
+                    "band_high_hz": float(band_high_hz),
+                    "target_h_deg": float(target_h_deg),
+                    "target_v_deg": float(target_v_deg),
+                    "tol_deg": float(tol_deg),
+                    "kpi_json": json.dumps(kpi_payload, ensure_ascii=False, sort_keys=True),
+                    "flags_json": json.dumps(kpi_payload.get("flags", {}), ensure_ascii=False, sort_keys=True),
+                    "score": float(score) if score is not None else None,
+                    "algo_version": str(algo_version),
+                    "source_hash": source_hash,
+                    "computed_at": _now_iso(),
+                }
+            )
+            computed += 1
+            if callable(progress_cb):
+                progress_cb(idx, total, f"Computed KPIs for {version_id}.")
+
+        if rows_to_write:
+            dataset.write_analyzer_run_kpis(rows_to_write)
+
+        return {
+            "computed": computed,
+            "skipped_cached": skipped_cached,
+            "failed": failed,
+            "total": total,
+            "canceled": False,
+        }
+
     def pin_run(self, *, project_id: str, run_id: str, tag: Optional[str] = None) -> Dict[str, Any]:
         project_paths = self.repo.project_paths(project_id, ensure=True)
         dataset = TidyDatasetWriter(project_paths.project_dir, library_root=self.settings.library_root)
@@ -1798,8 +3573,25 @@ class OrchestratorService:
         }
 
     def create_project(self, project_name: str, constraints: Dict[str, Any]) -> Project:
-        existing = self.repo.list_projects()
-        project_id = _next_prefixed_id([project.project_id for project in existing], "P")
+        self._bootstrap_library_root_with_fallback()
+        display_number = ""
+        project_uid = ""
+        if use_project_library_storage():
+            identity = None
+            for _ in range(5):
+                candidate = self.storage.allocate_project_identity()
+                candidate_project_dir = self.repo.project_paths(candidate.folder_name, ensure=False).project_dir
+                if not candidate_project_dir.exists():
+                    identity = candidate
+                    break
+            if identity is None:
+                raise RuntimeError("Could not allocate a unique project folder in Project Library.")
+            display_number = identity.display_number
+            project_uid = identity.project_uid
+            project_id = identity.folder_name
+        else:
+            existing = self.repo.list_projects()
+            project_id = _next_prefixed_id([project.project_id for project in existing], "P")
         project_root = self.repo.project_paths(project_id, ensure=False).project_dir
         project = Project(
             project_id=project_id,
@@ -1817,6 +3609,10 @@ class OrchestratorService:
                     "notes": constraints.get("notes"),
                 }
             ),
+            created_by=_current_username(),
+            display_number=display_number,
+            project_uid=project_uid,
+            library_uid=str(self.library_state.get("library_uid", "") or ""),
         )
         self.repo.init_project(project)
         TidyDatasetWriter(project_root, library_root=self.settings.library_root).register_project(project)
@@ -1863,7 +3659,12 @@ class OrchestratorService:
         if sim_settings:
             batch.sim_export_settings = batch.sim_export_settings.from_dict(sim_settings)
 
-        return materialize_batch_plan(project, batch, projects_root=self.settings.library_root)
+        return materialize_batch_plan(
+            project,
+            batch,
+            projects_root=self.repo.projects_root,
+            library_root=self.settings.library_root,
+        )
 
     def resolve_versions(self, project_id: str, batch_id: str) -> Dict[str, Any]:
         project = self.repo.load_project(project_id)
@@ -1889,20 +3690,34 @@ class OrchestratorService:
         if dry_run is None:
             tools = [self.settings.ath_exe, self.settings.akabak_exe, self.settings.vacs_exe]
             dry_run = not all(_is_executable_path(path) for path in tools)
+        simulation_timeout_minutes = int(
+            getattr(self.settings, "simulation_timeout_minutes", SIMULATION_TIMEOUT_MINUTES_DEFAULT)
+            or SIMULATION_TIMEOUT_MINUTES_DEFAULT
+        )
+        if simulation_timeout_minutes < 1:
+            simulation_timeout_minutes = 1
+        akabak_solve_timeout_s = int(simulation_timeout_minutes * 60)
+        if use_project_library_storage():
+            project_paths = self.repo.project_paths(project_id, ensure=True)
+            ath_export_root: Path | str = project_paths.project_dir / "runs" / "ath_export"
+        else:
+            ath_export_root = ATH_PREVIEW_EXPORT_ROOT
         return run_batch_pipeline(
             project=project,
             batch=batch,
-            projects_root=self.settings.library_root,
+            projects_root=self.repo.projects_root,
+            library_root=self.settings.library_root,
             template_cfg_path=self.settings.template_cfg,
             ath_executable=self.settings.ath_exe if not dry_run else None,
             akabak_executable=self.settings.akabak_exe if not dry_run else None,
             vacs_executable=self.settings.vacs_exe if not dry_run else None,
+            akabak_solve_timeout_s=akabak_solve_timeout_s,
             continue_on_error=continue_on_error,
             dry_run=bool(dry_run),
             git_commit=_detect_git_commit(),
             app_version="0.1-rebuild",
             settings_hash=_settings_hash(self.settings),
-            ath_export_root=ATH_PREVIEW_EXPORT_ROOT,
+            ath_export_root=ath_export_root,
         )
 
     def export_version(

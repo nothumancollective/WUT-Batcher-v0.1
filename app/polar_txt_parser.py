@@ -411,7 +411,7 @@ def normalize_orientation_marker(value: Optional[float]) -> str:
         return "H"
     if abs(numeric - 90.0) <= 1e-6:
         return "V"
-    if abs(numeric - 42.0) <= 1e-6:
+    if abs(numeric - 42.0) <= 1e-6 or abs(numeric - 45.0) <= 1e-6:
         return "D"
     if abs(numeric - round(numeric)) <= 1e-6:
         return f"X3_{int(round(numeric))}"
