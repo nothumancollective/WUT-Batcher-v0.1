@@ -182,11 +182,24 @@ try:
         QtMsgType,
         QThread,
         QTimer,
+        QUrl,
         Signal,
         QSize,
         qInstallMessageHandler,
     )
-    from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPixmap, QIcon, QPalette, QImage, QPen
+    from PySide6.QtGui import (
+        QColor,
+        QDesktopServices,
+        QFont,
+        QFontMetrics,
+        QPainter,
+        QPainterPath,
+        QPixmap,
+        QIcon,
+        QPalette,
+        QImage,
+        QPen,
+    )
     from PySide6.QtWidgets import (
         QAbstractItemView,
         QApplication,
@@ -196,6 +209,7 @@ try:
         QColorDialog,
         QDialog,
         QDoubleSpinBox,
+        QFileDialog,
         QFormLayout,
         QFrame,
         QGraphicsOpacityEffect,
@@ -4274,6 +4288,21 @@ class SettingsDialog(QDialog):
         self.resize(620, 390)
 
         self.library_root = QLineEdit()
+        self.library_root.setObjectName("ProjectLibraryRootEdit")
+        self.library_root_choose_btn = QPushButton("Choose...")
+        self.library_root_choose_btn.setObjectName("ProjectLibraryRootChooseButton")
+        self.library_root_open_btn = QPushButton("Open")
+        self.library_root_open_btn.setObjectName("ProjectLibraryRootOpenButton")
+        self.library_root_choose_btn.clicked.connect(self._choose_library_root)
+        self.library_root_open_btn.clicked.connect(self._open_library_root)
+        self.library_root.textChanged.connect(lambda _text: self._sync_library_root_controls())
+        library_root_row = QWidget()
+        library_root_row_layout = QHBoxLayout(library_root_row)
+        library_root_row_layout.setContentsMargins(0, 0, 0, 0)
+        library_root_row_layout.setSpacing(6)
+        library_root_row_layout.addWidget(self.library_root, 1)
+        library_root_row_layout.addWidget(self.library_root_choose_btn, 0)
+        library_root_row_layout.addWidget(self.library_root_open_btn, 0)
         self.ath_exe = QLineEdit()
         self.akabak_exe = QLineEdit()
         self.vacs_exe = QLineEdit()
@@ -4314,7 +4343,7 @@ class SettingsDialog(QDialog):
 
         general_tab = QWidget()
         general_form = QFormLayout(general_tab)
-        general_form.addRow("Library Folder", self.library_root)
+        general_form.addRow("Project Library Location", library_root_row)
         general_form.addRow("ATH", self.ath_exe)
         general_form.addRow("AKABAK", self.akabak_exe)
         general_form.addRow("VACS", self.vacs_exe)
@@ -4357,6 +4386,7 @@ class SettingsDialog(QDialog):
     def _load(self) -> None:
         settings = self.service.settings
         self.library_root.setText(settings.library_root)
+        self.library_root.setToolTip(settings.library_root)
         self.ath_exe.setText(settings.ath_exe or "")
         self.akabak_exe.setText(settings.akabak_exe or "")
         self.vacs_exe.setText(settings.vacs_exe or "")
@@ -4374,6 +4404,7 @@ class SettingsDialog(QDialog):
         self._set_combo_current_by_data(self.analyzer_cache_mode, mode_token)
         self.analyzer_cache_limit_mb.setValue(int(getattr(settings, "analyzer_cache_limit_mb", 240) or 240))
         self.analyzer_cache_keep_last.setValue(int(getattr(settings, "analyzer_cache_keep_last_n", 5) or 5))
+        self._sync_library_root_controls()
         self._sync_cache_controls()
 
     def _save(self) -> None:
@@ -4383,8 +4414,11 @@ class SettingsDialog(QDialog):
             custom_keep_last_n=int(self.analyzer_cache_keep_last.value()),
         )
         current_settings = self.service.settings
+        library_root_value = self.library_root.text().strip()
+        if not library_root_value:
+            library_root_value = UserSettings().library_root
         settings = UserSettings(
-            library_root=self.library_root.text().strip(),
+            library_root=library_root_value,
             ath_exe=self.ath_exe.text().strip() or None,
             akabak_exe=self.akabak_exe.text().strip() or None,
             vacs_exe=self.vacs_exe.text().strip() or None,
@@ -4425,11 +4459,35 @@ class SettingsDialog(QDialog):
         )
         result = self.service.save_settings(settings)
         issues = result.get("validation", {})
+        self.library_root.setText(str(self.service.settings.library_root))
         self.settings_saved.emit(result)
         if issues:
             detail = "\n".join(f"- {key}: {value}" for key, value in issues.items())
             QMessageBox.warning(self, "Settings saved with warnings", detail)
         self.accept()
+
+    def _choose_library_root(self) -> None:
+        current = self.library_root.text().strip()
+        start_dir = current or str(Path.home())
+        selected = QFileDialog.getExistingDirectory(self, "Choose Project Library Location", start_dir)
+        if not selected:
+            return
+        self.library_root.setText(str(Path(selected).expanduser()))
+        self.library_root.setToolTip(self.library_root.text().strip())
+        self._sync_library_root_controls()
+
+    def _open_library_root(self) -> None:
+        target = self.library_root.text().strip()
+        if not target:
+            return
+        path = Path(target).expanduser()
+        path.mkdir(parents=True, exist_ok=True)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.resolve())))
+
+    def _sync_library_root_controls(self) -> None:
+        token = self.library_root.text().strip()
+        self.library_root.setToolTip(token)
+        self.library_root_open_btn.setEnabled(bool(token))
 
     @staticmethod
     def _set_combo_current_by_data(combo: QComboBox, value: str) -> None:

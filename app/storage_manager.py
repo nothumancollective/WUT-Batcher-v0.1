@@ -5,6 +5,7 @@ This module is intentionally added as a standalone building block before runtime
 
 from __future__ import annotations
 
+from contextlib import closing
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
@@ -83,7 +84,7 @@ class StorageManager:
         return state
 
     def load_library_state(self) -> LibraryState:
-        with sqlite3.connect(str(self._paths.index_db)) as conn:
+        with closing(sqlite3.connect(str(self._paths.index_db))) as conn:
             conn.row_factory = sqlite3.Row
             library_uid = self._meta_get(conn, "library_uid")
             schema_version_raw = self._meta_get(conn, "schema_version")
@@ -101,7 +102,7 @@ class StorageManager:
 
     def allocate_project_identity(self) -> ProjectIdentity:
         self.ensure_library_root()
-        with sqlite3.connect(str(self._paths.index_db)) as conn:
+        with closing(sqlite3.connect(str(self._paths.index_db))) as conn:
             conn.row_factory = sqlite3.Row
             current = self._counter_get(conn, "project_counter_next")
             current_value = max(1, int(current or 1))
@@ -121,7 +122,7 @@ class StorageManager:
 
     def _init_index_db(self) -> None:
         self._paths.index_db.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(str(self._paths.index_db)) as conn:
+        with closing(sqlite3.connect(str(self._paths.index_db))) as conn:
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS library_meta (

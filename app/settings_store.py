@@ -10,7 +10,10 @@ from typing import Dict, Optional
 
 
 def _default_library_root() -> str:
-    return str((Path.home() / "Documents" / "WUT-Batches" / "Projects").resolve())
+    desktop = (Path.home() / "Desktop").expanduser()
+    if desktop.exists() and desktop.is_dir():
+        return str((desktop / "WUT Project Library").resolve())
+    return str((Path.home() / "WUT Project Library").resolve())
 
 
 def _default_settings_path() -> Path:

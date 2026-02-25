@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import datetime, timezone
 import json
 import hashlib
@@ -55,6 +55,7 @@ from app.models import Batch, ParamSelection, Project, ProjectConstraints, Sweep
 from app.project_storage import ProjectRepository
 from app.runtime_orchestrator import RuntimeSummary, run_batch_pipeline
 from app.runners import AthRunner
+from app.storage_manager import StorageManager
 from app.settings_store import (
     SIMULATION_TIMEOUT_MINUTES_DEFAULT,
     SettingsStore,
@@ -1475,22 +1476,40 @@ class OrchestratorService:
     def __init__(self, settings_store: SettingsStore | None = None) -> None:
         self.settings_store = settings_store or SettingsStore()
         self.settings = self.settings_store.load()
-        self.repo = ProjectRepository(self.settings.library_root)
+        self.storage = StorageManager(self.settings.library_root)
+        self._bootstrap_library_root()
         self.compatibility = CompatibilityService()
 
     def reload_settings(self) -> UserSettings:
         self.settings = self.settings_store.load()
-        self.repo = ProjectRepository(self.settings.library_root)
+        self.storage = StorageManager(self.settings.library_root)
+        self._bootstrap_library_root()
         return self.settings
 
     def save_settings(self, settings: UserSettings) -> Dict[str, Any]:
         self.settings_store.save(settings)
         self.settings = settings
-        self.repo = ProjectRepository(self.settings.library_root)
+        self.storage = StorageManager(self.settings.library_root)
+        self._bootstrap_library_root()
         return {
             "saved": True,
             "path": str(self.settings_store.path),
-            "validation": self.settings_store.validate(settings),
+            "validation": self.settings_store.validate(self.settings),
+        }
+
+    def _bootstrap_library_root(self) -> None:
+        state = self.storage.ensure_library_root()
+        canonical_root = str(self.storage.paths.root)
+        if str(self.settings.library_root) != canonical_root:
+            self.settings = replace(self.settings, library_root=canonical_root)
+            self.settings_store.save(self.settings)
+        self.repo = ProjectRepository(self.settings.library_root)
+        self.library_state = {
+            "library_uid": state.library_uid,
+            "schema_version": state.schema_version,
+            "created_at": state.created_at,
+            "project_counter_next": state.project_counter_next,
+            "library_root": self.settings.library_root,
         }
 
     def validate_settings(self, settings: Optional[UserSettings] = None) -> Dict[str, str]:
