@@ -304,3 +304,41 @@ Date: 2026-02-25
 ### Root-switch UX blocker and crash surface
 - Root switching was UI-locked by `library_root_locked` in `SettingsDialog`.
 - New-project crash surface exists at `MainWindow._create_project` because service/storage exceptions were not handled in UI layer.
+
+## 10) Implementation outcomes for this request
+
+Date: 2026-02-25
+
+### Open-project root switching behavior (updated)
+- `SettingsDialog` no longer disables `Choose...` when a project is open.
+- If library root changes while a project is open:
+  - Confirmation modal shown:
+    - Title: `Switch Project Library?`
+    - Message: `Current project will be closed. Continue?`
+    - Buttons: `Close Project & Switch`, `Cancel`
+  - On confirm, app closes current project via existing new-project transition flow.
+  - Atomic library-root switch runs only after close succeeds.
+  - On any failure: user-facing error, root stays unchanged, app remains stable.
+
+### Preferences accessibility
+- Added `Settings...` button in `ProjectManagerWindow` (landing/no-project window), opening the same `SettingsDialog`.
+- Global top-bar gear remains available in `MainWindow`.
+
+### New-project crash hardening
+- `OrchestratorService.create_project()` now bootstraps/rebinds library root before allocation/writes.
+- `MainWindow._create_project()` now guards and reports failures (modal + status) instead of propagating uncaught exceptions.
+- Repro crash call path from section 8 is now mitigated.
+
+### Storage default policy
+- `USE_PROJECT_LIBRARY_STORAGE` now defaults to ON.
+- Explicit emergency fallback remains available:
+  - set `USE_PROJECT_LIBRARY_STORAGE=0` to force legacy layout behavior.
+
+### E2E smoke (Qt offscreen) for this change
+1. Unset settings -> default root resolved to Desktop `WUT Project Library`: PASS
+2. Created project -> `P0001__<uid>`: PASS
+3. Opened settings while project open, switched root, confirmed close/switch:
+   - project context closed
+   - root switched successfully
+4. Created project in new root -> first project `P0001__<uid>`: PASS
+5. Landing window has active `Settings...` entry point: PASS
