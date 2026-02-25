@@ -1008,35 +1008,117 @@ class CleanupTestDataDialog(QDialog):
 
 
 class ConstraintSummaryGrid(QFrame):
+    request_open_editor = Signal(str)
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("ProjectSummaryPanel")
-        self._entries: List[tuple[str, str]] = []
-        self._last_render_cols: Optional[int] = None
-        self._last_render_signature: Optional[tuple[tuple[str, str], ...]] = None
+        self._payload: Dict[str, Any] = {}
+        self._column_specs: List[Dict[str, Any]] = [
+            {
+                "name": "basics",
+                "chips": [{"id": "length", "label": "Length", "focus_key": "Length", "implemented": True}],
+            },
+            {
+                "name": "throat",
+                "chips": [
+                    {"id": "none", "label": "no Profile", "focus_key": "Throat.Profile", "implemented": True},
+                    {"id": "osse", "label": "OSSE", "focus_key": "Throat.Profile", "implemented": True},
+                    {"id": "rosse", "label": "R-OSSE", "focus_key": "Throat.Profile", "implemented": True},
+                    {"id": "circular", "label": "Circular Arc", "focus_key": "Throat.Profile", "implemented": True},
+                ],
+            },
+            {
+                "name": "morph",
+                "chips": [
+                    {"id": "none", "label": "no Morph", "focus_key": "Morph.TargetShape", "implemented": True},
+                    {"id": "rectangle", "label": "Rectangle", "focus_key": "Morph.TargetShape", "implemented": True},
+                    {"id": "circle", "label": "Circle", "focus_key": "Morph.TargetShape", "implemented": True},
+                ],
+            },
+            {
+                "name": "gcurve",
+                "chips": [
+                    {"id": "none", "label": "no GCurve", "focus_key": "GCurve.Type", "implemented": True},
+                    {"id": "superellipse", "label": "Superellipse", "focus_key": "GCurve.Type", "implemented": True},
+                    {"id": "superformula", "label": "Superformula", "focus_key": "GCurve.Type", "implemented": True},
+                ],
+            },
+            {
+                "name": "enclosure",
+                "chips": [
+                    {"id": "none", "label": "No Enclosure", "focus_key": "Mesh.Enclosure", "implemented": True},
+                    {"id": "enabled", "label": "Enclosure", "focus_key": "Mesh.Enclosure", "implemented": True},
+                ],
+            },
+        ]
+        self._chip_buttons: Dict[str, List[tuple[str, QPushButton]]] = {}
+        self._value_grids: Dict[str, QGridLayout] = {}
         root = QVBoxLayout(self)
         root.setContentsMargins(10, 10, 10, 10)
         root.setSpacing(8)
         title = QLabel("Project Constraints")
         title.setObjectName("SummaryTitle")
         root.addWidget(title)
-        self._grid_wrap = QWidget()
-        self._grid = QGridLayout(self._grid_wrap)
-        self._grid.setContentsMargins(0, 0, 0, 0)
-        self._grid.setHorizontalSpacing(8)
-        self._grid.setVerticalSpacing(8)
-        root.addWidget(self._grid_wrap)
+
+        self._columns_wrap = QWidget()
+        columns = QHBoxLayout(self._columns_wrap)
+        columns.setContentsMargins(0, 0, 0, 0)
+        columns.setSpacing(8)
+        for index, spec in enumerate(self._column_specs):
+            if index > 0:
+                divider = QFrame()
+                divider.setObjectName("ConstraintColumnDivider")
+                divider.setFrameShape(QFrame.VLine)
+                divider.setFrameShadow(QFrame.Plain)
+                columns.addWidget(divider, 0)
+            col = QWidget()
+            col.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.MinimumExpanding)
+            col_layout = QVBoxLayout(col)
+            col_layout.setContentsMargins(0, 0, 0, 0)
+            col_layout.setSpacing(6)
+
+            chips_row = QHBoxLayout()
+            chips_row.setContentsMargins(0, 0, 0, 0)
+            chips_row.setSpacing(4)
+            bucket: List[tuple[str, QPushButton]] = []
+            for chip_spec in list(spec.get("chips", [])):
+                chip_id = str(chip_spec.get("id", "")).strip()
+                button = QPushButton(str(chip_spec.get("label", "")).strip())
+                button.setObjectName("SummaryChip")
+                button.setCheckable(True)
+                button.setCursor(Qt.PointingHandCursor)
+                button.setProperty("active", "false")
+                focus_key = str(chip_spec.get("focus_key", "")).strip()
+                implemented = bool(chip_spec.get("implemented", False))
+                if implemented:
+                    button.setToolTip("Open constraint editor")
+                    button.clicked.connect(lambda _checked=False, key=focus_key: self._open_editor(key))
+                else:
+                    button.setEnabled(False)
+                    button.setToolTip("Not implemented yet")
+                chips_row.addWidget(button)
+                bucket.append((chip_id, button))
+            chips_row.addStretch(1)
+            col_layout.addLayout(chips_row)
+
+            values_wrap = QWidget()
+            values_grid = QGridLayout(values_wrap)
+            values_grid.setContentsMargins(0, 0, 0, 0)
+            values_grid.setHorizontalSpacing(8)
+            values_grid.setVerticalSpacing(4)
+            col_layout.addWidget(values_wrap, 1)
+
+            key = str(spec.get("name", "")).strip()
+            self._chip_buttons[key] = bucket
+            self._value_grids[key] = values_grid
+            columns.addWidget(col, 1)
+        root.addWidget(self._columns_wrap)
+
         self._empty = QLabel("No project loaded.")
         self._empty.setObjectName("SummaryText")
         root.addWidget(self._empty)
-        self._clear_grid()
-
-    def _clear_grid(self) -> None:
-        while self._grid.count():
-            item = self._grid.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
+        self._refresh()
 
     @staticmethod
     def _format_value(value: Any) -> str:
@@ -1046,68 +1128,185 @@ class ConstraintSummaryGrid(QFrame):
             return ", ".join(str(item) for item in value)
         return str(value)
 
-    def set_constraints_payload(self, payload: Optional[Dict[str, Any]]) -> None:
-        raw = dict(payload or {})
+    @staticmethod
+    def _display_label(key: str) -> str:
+        text = str(key or "").strip()
+        if text.startswith("Mesh.Enclosure."):
+            return text.replace("Mesh.Enclosure.", "", 1)
+        if text.startswith("Mesh.Enclosure"):
+            return text.replace("Mesh.", "", 1)
+        for prefix in ("Throat.", "Morph.", "GCurve.", "Term.", "CircArc.", "Coverage.", "OS.", "R-OSSE."):
+            if text.startswith(prefix):
+                return text.replace(prefix, "", 1)
+        return text
+
+    @staticmethod
+    def _category_for_key(key: str) -> str:
+        token = str(key or "").strip()
+        if token.startswith("Mesh.Enclosure") or token == "Mesh.InterfaceOffset":
+            return "enclosure"
+        if token.startswith("GCurve.") or token.startswith("Coverage."):
+            return "gcurve"
+        if token.startswith("Morph."):
+            return "morph"
+        if (
+            token.startswith("Throat.")
+            or token.startswith("Term.")
+            or token.startswith("CircArc.")
+            or token.startswith("OS.")
+            or token.startswith("R-OSSE")
+        ):
+            return "throat"
+        return "basics"
+
+    def _open_editor(self, key: str) -> None:
+        token = str(key or "").strip()
+        if token:
+            self.request_open_editor.emit(token)
+
+    def _state_by_key(self, payload: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+        state: Dict[str, Dict[str, Any]] = {}
+        for key, value in dict(payload.get("fixed_params", {}) or {}).items():
+            token = str(key).strip()
+            if token:
+                state[token] = {"is_set": True, "value": value}
+        for key, value in dict(payload.get("limits", {}) or {}).items():
+            token = str(key).strip()
+            if token:
+                state.setdefault(token, {"is_set": True, "value": value})
+        for row in list(payload.get("param_states", []) or []):
+            if not isinstance(row, dict):
+                continue
+            key = str(row.get("param_name", "")).strip()
+            if not key:
+                continue
+            state[key] = {"is_set": bool(row.get("is_set")), "value": row.get("value")}
+        return state
+
+    @staticmethod
+    def _try_int(value: Any) -> Optional[int]:
+        try:
+            return int(float(value))
+        except Exception:
+            return None
+
+    def _active_chip_by_column(self, state_by_key: Dict[str, Dict[str, Any]]) -> Dict[str, str]:
+        throat = state_by_key.get("Throat.Profile", {})
+        throat_value = self._try_int(throat.get("value")) if bool(throat.get("is_set")) else None
+        throat_chip = {1: "osse", 2: "rosse", 3: "circular"}.get(throat_value, "none")
+
+        morph = state_by_key.get("Morph.TargetShape", {})
+        morph_value = self._try_int(morph.get("value")) if bool(morph.get("is_set")) else 0
+        morph_chip = {1: "rectangle", 2: "circle"}.get(morph_value, "none")
+
+        gcurve = state_by_key.get("GCurve.Type", {})
+        gcurve_value = self._try_int(gcurve.get("value")) if bool(gcurve.get("is_set")) else None
+        gcurve_chip = {1: "superellipse", 2: "superformula"}.get(gcurve_value, "none")
+
+        enclosure = state_by_key.get("Mesh.Enclosure", {})
+        enclosure_chip = "enabled" if bool(enclosure.get("is_set")) else "none"
+
+        return {
+            "basics": "length",
+            "throat": throat_chip,
+            "morph": morph_chip,
+            "gcurve": gcurve_chip,
+            "enclosure": enclosure_chip,
+        }
+
+    def _entries_by_category(self, payload: Dict[str, Any]) -> Dict[str, List[tuple[str, str]]]:
         entries: List[tuple[str, str]] = []
-        for key, value in sorted(dict(raw.get("fixed_params", {}) or {}).items()):
+        for key, value in sorted(dict(payload.get("fixed_params", {}) or {}).items()):
             entries.append((str(key), self._format_value(value)))
-        for key, value in sorted(dict(raw.get("limits", {}) or {}).items()):
+        for key, value in sorted(dict(payload.get("limits", {}) or {}).items()):
             entries.append((f"{key} (limit)", self._format_value(value)))
-        for row in list(raw.get("param_states", []) or []):
+        present = {item[0] for item in entries}
+        for row in list(payload.get("param_states", []) or []):
             if not isinstance(row, dict):
                 continue
             if not bool(row.get("is_set")):
                 continue
             key = str(row.get("param_name", "")).strip()
-            if not key:
-                continue
-            if any(item[0] == key for item in entries):
+            if not key or key in present:
                 continue
             entries.append((key, self._format_value(row.get("value"))))
-        self._entries = entries
-        self._rebuild_grid()
+            present.add(key)
 
-    def _target_cols(self) -> int:
-        width = max(int(self.width()), 1)
-        return 1 if width < 620 else (2 if width < 980 else 3)
+        grouped: Dict[str, List[tuple[str, str]]] = {
+            "basics": [],
+            "throat": [],
+            "morph": [],
+            "gcurve": [],
+            "enclosure": [],
+        }
+        for key, value in entries:
+            category = self._category_for_key(key)
+            grouped.setdefault(category, []).append((self._display_label(key), value))
+        for category in list(grouped.keys()):
+            grouped[category] = sorted(grouped[category], key=lambda item: str(item[0]).lower())
+        return grouped
 
-    def _rebuild_grid(self) -> None:
-        signature = tuple((str(key), str(value)) for key, value in list(self._entries))
-        cols = self._target_cols()
-        if self._last_render_cols == cols and self._last_render_signature == signature:
+    @staticmethod
+    def _clear_grid(layout: QGridLayout) -> None:
+        while layout.count():
+            item = layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
+    @staticmethod
+    def _repolish(widget: QWidget) -> None:
+        style = widget.style()
+        if style is None:
             return
-        self._last_render_cols = cols
-        self._last_render_signature = signature
-        self.setUpdatesEnabled(False)
-        self._clear_grid()
-        if not self._entries:
-            self._empty.setVisible(True)
-            self.setUpdatesEnabled(True)
-            return
-        self._empty.setVisible(False)
-        for index, (key, value) in enumerate(list(self._entries)):
-            row = index // cols
-            col = index % cols
-            card = QFrame()
-            card.setObjectName("ConstraintCard")
-            card_layout = QVBoxLayout(card)
-            card_layout.setContentsMargins(8, 8, 8, 8)
-            card_layout.setSpacing(2)
-            k = QLabel(str(key))
-            k.setObjectName("SummaryMeta")
-            v = QLabel(str(value))
-            v.setObjectName("SummaryText")
-            v.setWordWrap(True)
-            card_layout.addWidget(k)
-            card_layout.addWidget(v)
-            self._grid.addWidget(card, row, col)
-        for col in range(cols):
-            self._grid.setColumnStretch(col, 1)
-        self.setUpdatesEnabled(True)
+        style.unpolish(widget)
+        style.polish(widget)
+        widget.update()
 
-    def resizeEvent(self, event) -> None:  # type: ignore[override]
-        super().resizeEvent(event)
-        self._rebuild_grid()
+    def _render_rows(self, category: str, rows: List[tuple[str, str]]) -> None:
+        grid = self._value_grids.get(category)
+        if grid is None:
+            return
+        self._clear_grid(grid)
+        if not rows:
+            empty = QLabel("—")
+            empty.setObjectName("SummaryText")
+            empty.setToolTip("Not available")
+            grid.addWidget(empty, 0, 0, 1, 2)
+            return
+        for row_index, (label_text, value_text) in enumerate(rows):
+            label = QLabel(str(label_text))
+            label.setObjectName("BatchSummaryMeta")
+            label.setWordWrap(False)
+            value = QLabel(str(value_text))
+            value.setObjectName("SummaryMeta")
+            value.setWordWrap(True)
+            grid.addWidget(label, row_index, 0, Qt.AlignLeft | Qt.AlignTop)
+            grid.addWidget(value, row_index, 1, Qt.AlignLeft | Qt.AlignTop)
+        grid.setColumnStretch(1, 1)
+
+    def _refresh(self) -> None:
+        payload = dict(self._payload or {})
+        state = self._state_by_key(payload)
+        active = self._active_chip_by_column(state)
+        grouped = self._entries_by_category(payload)
+
+        for category, buttons in self._chip_buttons.items():
+            active_id = str(active.get(category, "")).strip()
+            for chip_id, button in buttons:
+                checked = chip_id == active_id
+                button.blockSignals(True)
+                button.setChecked(checked)
+                button.blockSignals(False)
+                button.setProperty("active", "true" if checked else "false")
+                self._repolish(button)
+            self._render_rows(category, list(grouped.get(category, [])))
+
+        self._empty.setVisible(not bool(payload))
+
+    def set_constraints_payload(self, payload: Optional[Dict[str, Any]]) -> None:
+        self._payload = dict(payload or {})
+        self._refresh()
 
 
 class DashboardPage(QWidget):
@@ -1118,6 +1317,7 @@ class DashboardPage(QWidget):
     request_manage_runs = Signal()
     request_cleanup_testdata = Signal()
     request_settings = Signal()
+    request_open_constraint_editor = Signal(str)
 
     def __init__(self) -> None:
         super().__init__()
@@ -1131,6 +1331,7 @@ class DashboardPage(QWidget):
         top_row_layout.setSpacing(10)
 
         self.constraints_summary = ConstraintSummaryGrid()
+        self.constraints_summary.request_open_editor.connect(self.request_open_constraint_editor.emit)
         top_row_layout.addWidget(self.constraints_summary, 2)
 
         actions_card = QFrame()
@@ -2704,6 +2905,7 @@ class MainWindow(QMainWindow):
         self.dashboard_page.request_manage_runs.connect(self._open_run_manager)
         self.dashboard_page.request_cleanup_testdata.connect(self._open_cleanup_dialog)
         self.dashboard_page.request_settings.connect(self._open_settings)
+        self.dashboard_page.request_open_constraint_editor.connect(self._open_project_constraint_editor)
 
         self.project_page.submit_project.connect(self._create_project)
         self.project_page.draft_changed.connect(self._queue_project_draft_changed)
@@ -3141,6 +3343,16 @@ class MainWindow(QMainWindow):
             item = QListWidgetItem(label)
             item.setData(Qt.UserRole, batch.batch_id)
             self.dashboard_page.batch_list.addItem(item)
+
+    def _open_project_constraint_editor(self, key: str) -> None:
+        if self.current_project is None:
+            self.set_status("No project loaded.")
+            return
+        target_key = str(key or "").strip()
+        self.show_project()
+        if not target_key:
+            return
+        QTimer.singleShot(0, lambda field_key=target_key: self.project_page.constraints_form.focus_issue_key(field_key))
 
     def show_dashboard(self) -> None:
         self._stop_preview_worker()

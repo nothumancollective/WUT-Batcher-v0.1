@@ -582,6 +582,12 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         border: 1px solid {c['border']};
         border-radius: {r['sm']}px;
     }}
+    QFrame#ConstraintColumnDivider {{
+        min-width: 1px;
+        max-width: 1px;
+        background-color: {c['border']};
+        border: none;
+    }}
     QFrame#RunScreenShell {{
         background-color: #1a1a1a;
         border: 1px solid {c['border']};
@@ -653,6 +659,28 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         border-radius: {r['sm']}px;
         padding: 3px 8px;
         font-size: 11px;
+    }}
+    QPushButton#SummaryChip {{
+        background-color: #262626;
+        color: {c['muted']};
+        border: 1px solid {c['border']};
+        border-radius: {r['sm']}px;
+        padding: 3px 8px;
+        font-size: 11px;
+        min-height: 24px;
+    }}
+    QPushButton#SummaryChip:hover {{
+        border-color: {c['accent']};
+    }}
+    QPushButton#SummaryChip:checked, QPushButton#SummaryChip[active="true"] {{
+        color: {c['text']};
+        border-color: {c['accent']};
+        background-color: #2b2b2b;
+    }}
+    QPushButton#SummaryChip:disabled {{
+        color: {c['muted']};
+        border-color: #2a2a2a;
+        background-color: #1b1b1b;
     }}
     QFrame#ProjectActionBar {{
         background-color: #1a1a1a;

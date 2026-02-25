@@ -117,3 +117,40 @@ The Batch page is now implemented as a companion to the PROJECT form design.
   - `Export -> request_open_export_dialog`
 - Legacy bottom action/export bars were removed, and the batches list now expands into freed vertical space.
 - Cleanup action is kept as a hidden compatibility control (`request_cleanup_testdata`) and is no longer shown in the default Project dashboard UI.
+
+## Dashboard Constraints Grid Refresh (Phase 2)
+- `ConstraintSummaryGrid` now renders a single 5-column internal grid:
+  - column model (internal only, no visible category headings):
+    - Basics
+    - Throat Profile
+    - Morph
+    - GCurve
+    - Enclosure
+- Visual structure:
+  - thin vertical separators between columns (`ConstraintColumnDivider`)
+  - top chip row per column (`SummaryChip` button style, selectable)
+  - below chips: key/value rows with dim labels (`BatchSummaryMeta`) and brighter values (`SummaryMeta`)
+  - empty category state renders `—` with tooltip `Not available`
+- Chip interaction mapping (no new constraint logic):
+  - Basics chip -> focus `Length`
+  - Throat chips -> focus `Throat.Profile`
+  - Morph chips -> focus `Morph.TargetShape`
+  - GCurve chips -> focus `GCurve.Type`
+  - Enclosure chips -> focus `Mesh.Enclosure`
+- Dashboard chip click flow:
+  - emits `request_open_constraint_editor(key)` from `DashboardPage`
+  - `MainWindow` switches to existing `ProjectPage` and focuses the existing form section via `constraints_form.focus_issue_key`
+  - no service/business logic change; this is navigation/focus wiring only
+- Implementation status for requested chip options:
+  - all listed options are wired to existing editor sections (no disabled placeholders currently required)
+
+## Validation Notes (2026-02-25)
+- Unit tests:
+  - `python -m pytest tests/test_project_manager_ui.py tests/test_dashboard_constraints_ui.py -q`
+  - result: `4 passed`
+- Additional stress check:
+  - `python -m pytest tests/test_ui_e2e_stress_runs.py::UiE2EStressRunsTests::test_three_full_ui_runs_are_stable -q`
+  - result: `failed` with `json.decoder.JSONDecodeError` while loading `project.json` (`app/project_storage.py::_read_json`), observed during batch-draft validation. This issue is outside the Project dashboard layout scope and was not changed in this task.
+- Offscreen GUI smoke:
+  - main window startup, project dashboard render, resize passes (`980x720` and `1280x860`)
+  - dashboard chip interaction path tested (`OSSE` chip click) without crash
