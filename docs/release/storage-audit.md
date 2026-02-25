@@ -390,3 +390,60 @@ Date: 2026-02-25
 
 ### Suspicion
 - Given user-reported hard termination and absence of Python tracebacks, the likely failure class is native shell dialog interaction (Qt native Windows dialog path) rather than a Python exception path.
+
+## 13) Safe picker implementation and callsites fixed
+
+Date: 2026-02-25
+
+### What changed
+- Replaced native static picker call path (`QFileDialog.getExistingDirectory`) with non-native safe picker flow in `SettingsDialog`:
+  - `QFileDialog(...)` instance
+  - `setFileMode(QFileDialog.Directory)`
+  - `setOption(QFileDialog.DontUseNativeDialog, True)`
+  - `setOption(QFileDialog.ShowDirsOnly, True)`
+- UI label updated to `Browse (Safe)`.
+- `Project Library Location` remains editable for manual paste/input.
+- Picker failure handling:
+  - exceptions are caught
+  - error modal shown
+  - previous path remains unchanged (no crash).
+
+### UI-thread safety
+- Added guard to ensure picker open runs on UI thread.
+- If invoked off UI thread, dialog open is queued back via `QMetaObject.invokeMethod(..., Qt.QueuedConnection)`.
+
+### Affected callsites
+- `SettingsDialog._choose_library_root()` (single picker implementation used by both entry paths)
+- Entry points opening same dialog:
+  - `MainWindow._open_settings()` (global top bar gear)
+  - `GuiController._open_settings_from_project_manager()` (ProjectManager settings button)
+
+### Why safe picker is default
+- Native Windows shell dialog path is the most likely native crash surface.
+- Non-native Qt dialog avoids shell/COM-native integration path and is therefore safer under uncertain apartment/runtime conditions.
+
+## 14) Safe picker E2E results (Phase 5)
+
+Date: 2026-02-25
+
+Validation mode: Qt offscreen scripted GUI flow using real dialog/controller wiring with deterministic folder selections.
+
+### Results
+1. MainWindow settings path:
+   - Open settings while project open.
+   - Trigger safe browse and select Desktop target.
+   - Confirm close-and-switch flow.
+   - Root switched successfully and project context closed.
+2. After switch:
+   - Created new project.
+   - Verified project path under new library root:
+     - `<Desktop>/WUT Project Library 2 UX <timestamp>/projects/P0001__<uid>/project.json`
+3. ProjectManager settings entry:
+   - Verified `Settings...` entry is present and enabled.
+   - Opens the same `SettingsDialog` flow.
+
+### Regression coverage added
+- Manual path switch + atomic persistence semantics already covered.
+- Added safe-browse tests:
+  - successful directory selection path updates field
+  - picker failure path shows error and keeps current path

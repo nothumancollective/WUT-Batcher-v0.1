@@ -16,11 +16,13 @@ from app.storage_manager import StorageManager
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 try:
-    from PySide6.QtWidgets import QApplication, QMessageBox
+    from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QMessageBox
 
     from app.gui import MainWindow, SettingsDialog
 except ImportError:  # pragma: no cover
     QApplication = None  # type: ignore[assignment]
+    QDialog = None  # type: ignore[assignment]
+    QFileDialog = None  # type: ignore[assignment]
     QMessageBox = None  # type: ignore[assignment]
     MainWindow = None  # type: ignore[assignment]
     SettingsDialog = None  # type: ignore[assignment]
@@ -151,7 +153,12 @@ def test_create_project_recovers_from_stale_repo_binding() -> None:
 
 
 @unittest.skipIf(
-    QApplication is None or SettingsDialog is None or QMessageBox is None or MainWindow is None,
+    QApplication is None
+    or SettingsDialog is None
+    or QMessageBox is None
+    or MainWindow is None
+    or QDialog is None
+    or QFileDialog is None,
     "PySide6 is required",
 )
 class SettingsDialogSwitchFlowTests(unittest.TestCase):
@@ -224,6 +231,69 @@ class SettingsDialogSwitchFlowTests(unittest.TestCase):
             self.assertEqual(int(state["closed_calls"]), 0)
             self.assertEqual(
                 StorageManager.normalize_library_root(service.settings.library_root),
+                StorageManager.normalize_library_root(initial_library),
+            )
+
+    def test_safe_browse_sets_selected_directory(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_library_safe_browse_ok_") as tmp:
+            root = Path(tmp)
+            service, _, _ = _build_service(root)
+            target = root / "picked_library"
+            target.mkdir(parents=True, exist_ok=True)
+            dialog = SettingsDialog(service)
+
+            class _FakeDialog:
+                Directory = QFileDialog.Directory
+                DontUseNativeDialog = QFileDialog.DontUseNativeDialog
+                ShowDirsOnly = QFileDialog.ShowDirsOnly
+
+                def __init__(self, *_args, **_kwargs) -> None:
+                    self.options: list[tuple[object, bool]] = []
+
+                def setFileMode(self, _mode) -> None:
+                    return None
+
+                def setOption(self, option, on: bool = True) -> None:
+                    self.options.append((option, bool(on)))
+
+                def setDirectory(self, _directory: str) -> None:
+                    return None
+
+                def exec(self) -> int:
+                    return int(QDialog.Accepted)
+
+                def selectedFiles(self) -> list[str]:
+                    return [str(target)]
+
+            with patch("app.gui.QFileDialog", _FakeDialog):
+                dialog._choose_library_root()
+
+            self.assertEqual(
+                StorageManager.normalize_library_root(dialog.library_root.text()),
+                StorageManager.normalize_library_root(target),
+            )
+
+    def test_safe_browse_failure_is_handled_without_raise(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_library_safe_browse_fail_") as tmp:
+            root = Path(tmp)
+            service, _, initial_library = _build_service(root)
+            dialog = SettingsDialog(service)
+            dialog.library_root.setText(str(initial_library))
+
+            class _ExplodingDialog:
+                Directory = QFileDialog.Directory
+                DontUseNativeDialog = QFileDialog.DontUseNativeDialog
+                ShowDirsOnly = QFileDialog.ShowDirsOnly
+
+                def __init__(self, *_args, **_kwargs) -> None:
+                    raise RuntimeError("dialog boom")
+
+            with patch("app.gui.QFileDialog", _ExplodingDialog):
+                with patch.object(QMessageBox, "critical", return_value=QMessageBox.Ok) as critical_mock:
+                    dialog._choose_library_root()
+                    self.assertEqual(critical_mock.call_count, 1)
+            self.assertEqual(
+                StorageManager.normalize_library_root(dialog.library_root.text()),
                 StorageManager.normalize_library_root(initial_library),
             )
 
