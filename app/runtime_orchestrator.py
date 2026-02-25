@@ -66,6 +66,24 @@ def _append_stage_debug_log(version_logs_dir: Path, *, event: str, payload: Dict
         return
 
 
+def _append_run_debug_log(project_root: Path, run_id: str, *, event: str, payload: Dict[str, Any]) -> None:
+    if not _debug_stage_logging_enabled():
+        return
+    path = Path(project_root) / "runs" / str(run_id) / "pipeline.stage_debug.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    row = {
+        "time": _now_iso(),
+        "event": str(event),
+        **dict(payload),
+    }
+    try:
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
+    except Exception:
+        # Debug logging must never break runtime execution.
+        return
+
+
 def _describe_stage_exception(exc: BaseException) -> str:
     if isinstance(exc, SystemExit):
         code = getattr(exc, "code", None)
@@ -1723,6 +1741,7 @@ def run_batch_pipeline(
         projects_root=projects_root,
         library_root=effective_library_root,
     )
+    planned_version_ids = [str(version_id) for version_id in list(planning_summary.version_ids or [])]
     project_root = Path(planning_summary.project_root).expanduser().resolve()
     template_text, template_cfg_effective = _load_effective_template(
         template_cfg_path,
@@ -1755,7 +1774,7 @@ def run_batch_pipeline(
                 "batch_id": batch.batch_id,
                 "status": "planned",
             }
-            for version_id in planning_summary.version_ids
+            for version_id in planned_version_ids
         ]
     )
     if not _is_global_synced(write_run_versions_result):
@@ -1785,11 +1804,44 @@ def run_batch_pipeline(
     stage_results: List[StageExecution] = []
     ath_dimension_rows = 0
     cleanup_results: List[Dict[str, Any]] = []
-    run_status = "failed" if bootstrap_sync_errors else "succeeded"
-    run_error_summary: Optional[str] = None if not bootstrap_sync_errors else ", ".join(bootstrap_sync_errors)
+    if bootstrap_sync_errors:
+        run_status = "failed"
+        run_error_summary: Optional[str] = ", ".join(bootstrap_sync_errors)
+    elif planned_version_ids:
+        run_status = "succeeded"
+        run_error_summary = None
+    else:
+        run_status = "noop"
+        run_error_summary = "nothing_to_run:no_planned_versions"
+    _append_run_debug_log(
+        project_root,
+        effective_run_id,
+        event="run_start",
+        payload={
+            "run_id": effective_run_id,
+            "project_id": project.project_id,
+            "batch_id": batch.batch_id,
+            "dry_run": bool(dry_run),
+            "library_root": str(effective_library_root) if effective_library_root is not None else None,
+            "project_root": str(project_root),
+            "project_db_path": str(writer.project_db_path),
+            "planned_versions": list(planned_version_ids),
+            "planned_count": len(planned_version_ids),
+        },
+    )
 
     try:
-        for version_id in planning_summary.version_ids:
+        if not planned_version_ids and not bootstrap_sync_errors:
+            _append_run_debug_log(
+                project_root,
+                effective_run_id,
+                event="run_noop",
+                payload={
+                    "run_id": effective_run_id,
+                    "reason": "no_planned_versions",
+                },
+            )
+        for version_id in planned_version_ids:
             version_started = time.perf_counter()
             version_payload = _read_json(_version_json_path(project_root, version_id))
             version_params = dict(version_payload.get("parameters", {}) or {})
@@ -2553,7 +2605,7 @@ def run_batch_pipeline(
                     ):
                         persist_sync_errors.append("write_measurements")
                 except BaseException as exc:
-                    if isinstance(exc, KeyboardInterrupt):
+                    if isinstance(exc, (KeyboardInterrupt, GeneratorExit)):
                         raise
                     vacs_stage_ok = False
                     error_text = _describe_stage_exception(exc)
@@ -2802,6 +2854,18 @@ def run_batch_pipeline(
         run_error_summary = str(exc)
         raise
     finally:
+        _append_run_debug_log(
+            project_root,
+            effective_run_id,
+            event="run_end",
+            payload={
+                "run_id": effective_run_id,
+                "status": str(run_status),
+                "error_summary": run_error_summary,
+                "stage_count": len(stage_results),
+                "cleanup_count": len(cleanup_results),
+            },
+        )
         writer.update_run(
             effective_run_id,
             status=run_status,
@@ -2815,7 +2879,7 @@ def run_batch_pipeline(
         project_id=project.project_id,
         batch_id=batch.batch_id,
         project_root=str(project_root),
-        versions=list(planning_summary.version_ids),
+        versions=list(planned_version_ids),
         stage_results=stage_results,
         ath_dimension_rows=ath_dimension_rows,
         cleanup_results=cleanup_results,

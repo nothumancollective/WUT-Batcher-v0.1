@@ -2820,6 +2820,8 @@ class _BatchRunWorker(QObject):
             )
             payload = asdict(summary)
             self.finished.emit(self._batch_id, payload)
+        except (KeyboardInterrupt, GeneratorExit):
+            raise
         except BaseException:
             self.failed.emit(self._batch_id, traceback.format_exc())
 
@@ -6451,6 +6453,17 @@ class RunPage(QWidget):
         self.format_progress_label()
         self.version_label.setText(f"Version {count}/{count}")
         self.mode_label.setText("Mode: dry-run" if dry_run else "Mode: real")
+        self.eta_label.setText("ETA: done")
+        self.back_btn.setEnabled(True)
+
+    def set_noop_state(self, *, reason: str = "Nothing to run") -> None:
+        message = str(reason or "Nothing to run").strip() or "Nothing to run"
+        self.progress.setRange(0, 100)
+        self.progress.setValue(100)
+        self.progress.setTextVisible(True)
+        self.progress.setFormat(message)
+        self.version_label.setText("Version 0/0")
+        self.mode_label.setText("Mode: no-op")
         self.eta_label.setText("ETA: done")
         self.back_btn.setEnabled(True)
 
@@ -13432,11 +13445,26 @@ class MainWindow(QMainWindow):
     def _on_batch_run_finished(self, batch_id: str, summary_payload: Dict[str, Any]) -> None:
         version_count = len(list(summary_payload.get("versions", []) or []))
         dry_run = bool(summary_payload.get("dry_run", False))
-        self.run_page.set_finished_state(version_count=version_count, dry_run=dry_run)
-        self.set_status(
-            f"Run finished for {batch_id}",
-            detail=json.dumps(summary_payload, indent=2, ensure_ascii=False),
-        )
+        run_status = str(summary_payload.get("run_status", "") or "").strip().lower()
+        detail_json = json.dumps(summary_payload, indent=2, ensure_ascii=False)
+        if run_status in {"succeeded", "success"}:
+            self.run_page.set_finished_state(version_count=version_count, dry_run=dry_run)
+            self.set_status(
+                f"Run finished for {batch_id}",
+                detail=detail_json,
+            )
+        elif run_status in {"noop", "no_op", "skipped", "precondition_failed", "nothing_to_run"}:
+            self.run_page.set_noop_state(reason="Nothing to run")
+            self.set_status(
+                f"Nothing to run for {batch_id}",
+                detail=detail_json,
+            )
+        else:
+            self.run_page.set_failed_state()
+            self.set_status(
+                f"Run failed for {batch_id}",
+                detail=detail_json,
+            )
         self.refresh_dashboard()
         self._exit_run_presentation()
 

@@ -1218,6 +1218,51 @@ class RuntimeOrchestratorTests(unittest.TestCase):
             self.assertTrue(any(stage.stage == "akabak" and stage.status == "failed" for stage in summary.stage_results))
             self.assertFalse(any(stage.stage == "vacs" for stage in summary.stage_results))
 
+    def test_pipeline_marks_noop_when_no_versions_are_planned(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            projects_root = Path(tmp_dir) / "projects"
+            project_root = projects_root / "P001"
+            project_root.mkdir(parents=True, exist_ok=True)
+            project = Project(
+                project_id="P001",
+                name="Runtime Noop Plan Test",
+                root_path=str(project_root),
+                constraints=ProjectConstraints(
+                    project_id="P001",
+                    fixed_params={"Length": 120},
+                    limits={},
+                    runner_mode="AthGuidePreview",
+                ),
+            )
+            batch = Batch(
+                batch_id="B001",
+                project_id="P001",
+                selected_params={"Throat.Diameter": ParamSelection(value=30.0)},
+                sweep_mode="single",
+                runner_mode="AthGuidePreview",
+            )
+            planning_summary = SimpleNamespace(project_root=str(project_root), version_ids=[])
+            with patch("app.runtime_orchestrator.materialize_batch_plan", return_value=planning_summary):
+                summary = run_batch_pipeline(
+                    project=project,
+                    batch=batch,
+                    projects_root=projects_root,
+                    continue_on_error=True,
+                    dry_run=True,
+                )
+
+            self.assertEqual(summary.run_status, "noop")
+            self.assertEqual(list(summary.versions), [])
+            self.assertEqual(list(summary.stage_results), [])
+            with closing(sqlite3.connect(str(_project_db_path(project_root)))) as conn:
+                row = conn.execute(
+                    "SELECT status, error_summary FROM runs ORDER BY started_at DESC LIMIT 1"
+                ).fetchone()
+            self.assertIsNotNone(row)
+            assert row is not None
+            self.assertEqual(str(row[0]), "noop")
+            self.assertIn("no_planned_versions", str(row[1] or ""))
+
 
 if __name__ == "__main__":
     unittest.main()
