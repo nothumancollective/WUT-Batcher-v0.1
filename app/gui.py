@@ -4319,7 +4319,8 @@ class SettingsDialog(QDialog):
 
         self.library_root = QLineEdit()
         self.library_root.setObjectName("ProjectLibraryRootEdit")
-        self.library_root_choose_btn = QPushButton("Choose...")
+        self.library_root.setReadOnly(False)
+        self.library_root_choose_btn = QPushButton("Browse (Safe)")
         self.library_root_choose_btn.setObjectName("ProjectLibraryRootChooseButton")
         self.library_root_open_btn = QPushButton("Open")
         self.library_root_open_btn.setObjectName("ProjectLibraryRootOpenButton")
@@ -4586,23 +4587,43 @@ class SettingsDialog(QDialog):
         start_dir = current or str(Path.home())
         if LOGGER.isEnabledFor(logging.DEBUG):
             LOGGER.debug(
-                "SettingsDialog about to open native folder dialog: start_dir=%s thread=%s",
+                "SettingsDialog about to open safe folder dialog: start_dir=%s thread=%s",
                 str(start_dir),
                 str(QThread.currentThread()),
             )
-        selected = QFileDialog.getExistingDirectory(self, "Choose Project Library Location", start_dir)
-        if LOGGER.isEnabledFor(logging.DEBUG):
-            LOGGER.debug(
-                "SettingsDialog folder dialog returned: selected=%s",
-                str(selected),
+        selected = ""
+        try:
+            dialog = QFileDialog(self, "Choose Project Library Location", start_dir)
+            dialog.setFileMode(QFileDialog.Directory)
+            dialog.setOption(QFileDialog.DontUseNativeDialog, True)
+            dialog.setOption(QFileDialog.ShowDirsOnly, True)
+            dialog.setDirectory(start_dir)
+            if dialog.exec() == QDialog.Accepted:
+                picked = list(dialog.selectedFiles() or [])
+                selected = str(picked[0]) if picked else ""
+        except Exception as exc:
+            if LOGGER.isEnabledFor(logging.DEBUG):
+                LOGGER.debug("SettingsDialog safe folder dialog failed.", exc_info=True)
+            QMessageBox.critical(
+                self,
+                "Folder Picker Failed",
+                f"Could not open folder picker.\n{StorageManager.user_error_message(exc)}",
             )
+            return
+        if LOGGER.isEnabledFor(logging.DEBUG):
+            LOGGER.debug("SettingsDialog safe folder dialog returned: selected=%s", str(selected))
         if not selected:
             if LOGGER.isEnabledFor(logging.DEBUG):
                 LOGGER.debug("SettingsDialog choose library root cancelled.")
             return
         if LOGGER.isEnabledFor(logging.DEBUG):
             LOGGER.debug("SettingsDialog choose library root selected: %s", str(selected))
-        self.library_root.setText(str(Path(selected).expanduser()))
+        try:
+            normalized = str(StorageManager.normalize_library_root(selected))
+        except Exception as exc:
+            QMessageBox.warning(self, "Invalid Project Library Location", str(StorageManager.user_error_message(exc)))
+            return
+        self.library_root.setText(normalized)
         self.library_root.setToolTip(self.library_root.text().strip())
         self._sync_library_root_controls()
 
