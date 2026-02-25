@@ -1,5 +1,11 @@
 ﻿# Analyzer Docs â€” Changelog
 
+## 2026-02-25 (Display Advanced: High Contrast semantics corrected)
+- Re-defined High Contrast Plots to control only 2x2 matrix tile container fill (Explorer + Compare), excluding the Compare drawer.
+- High Contrast = ON now makes tile card fill transparent while preserving tile borders and plot-internal grids.
+- High Contrast = OFF restores the normal tile card fill; plot canvas background behavior is unchanged by this toggle.
+- Updated tests to assert tile-container property switching and drawer isolation.
+
 ## 2026-02-25 (Version Information: Final Dimensions verification)
 - Verified Analyzer wiring is already present on read-side (app/services.py + app/gui.py) for ath_length_mm/ath_width_mm/ath_height_mm.
 - Audited local project.sqlite samples (44 DB files): no rows contain final-dim triples in versions or ath_results.
@@ -1136,6 +1142,7 @@
   - metric-band smooth rendering config (`show`, `smooth`, `opacity`)
   - robust non-auto `e_sym_shape` y-range clamp under outlier input
   - resize probes (`1920x1080`, `1366x768`, `1100x700`) without exceptions.
+
 
 
 

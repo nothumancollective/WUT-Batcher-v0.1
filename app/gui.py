@@ -876,11 +876,6 @@ class HeatmapCanvas(QLabel):
         self._contour_width = 2.0
         self._applied_plot_margins: Tuple[int, int, int, int] = apply_analyzer_plot_margins(has_legend=False)
         self._lut = get_vacs_like_lut(256)
-        self._high_contrast_fill = True
-
-    def set_high_contrast_fill(self, enabled: bool) -> None:
-        self._high_contrast_fill = bool(enabled)
-        self._rerender()
 
     def set_heatmap_data(
         self,
@@ -1007,7 +1002,7 @@ class HeatmapCanvas(QLabel):
         span = max(max_db - min_db, 1.0)
 
         source_image = QImage(max(cols, 1), max(rows, 1), QImage.Format_ARGB32_Premultiplied)
-        source_image.fill(QColor(0, 0, 0, 16 if self._high_contrast_fill else 0))
+        source_image.fill(QColor(0, 0, 0, 16))
         for y_idx, row in enumerate(self._matrix):
             for x_idx, value in enumerate(row):
                 if value is None:
@@ -1224,11 +1219,6 @@ class MetricCurveCanvas(QLabel):
         self._y_range_override: Optional[Tuple[float, float]] = None
         self._applied_plot_margins: Tuple[int, int, int, int] = apply_analyzer_plot_margins(has_legend=False)
         self._metric_band_items: List[Dict[str, Any]] = []
-        self._high_contrast_fill = True
-
-    def set_high_contrast_fill(self, enabled: bool) -> None:
-        self._high_contrast_fill = bool(enabled)
-        self._rerender()
 
     def set_series(
         self,
@@ -1448,13 +1438,7 @@ class MetricCurveCanvas(QLabel):
         self._applied_plot_margins = (margin_left, margin_right, margin_top, margin_bottom)
         plot_w = int(layout["plot_w"])
         plot_h = int(layout["plot_h"])
-        painter.fillRect(
-            margin_left,
-            margin_top,
-            plot_w,
-            plot_h,
-            QColor(255, 255, 255, 6 if self._high_contrast_fill else 0),
-        )
+        painter.fillRect(margin_left, margin_top, plot_w, plot_h, QColor(255, 255, 255, 6))
 
         all_freqs = [point[0] for row in points_by_series for point in list(row.get("points", []) or [])]
         all_values = [point[1] for row in points_by_series for point in list(row.get("points", []) or [])]
@@ -1933,11 +1917,6 @@ class ParetoScatterCanvas(QLabel):
         self._status = "Select candidates to render Pareto scatter."
         self._x_range_override: Optional[Tuple[float, float]] = None
         self._y_range_override: Optional[Tuple[float, float]] = None
-        self._high_contrast_fill = True
-
-    def set_high_contrast_fill(self, enabled: bool) -> None:
-        self._high_contrast_fill = bool(enabled)
-        self._rerender()
 
     def set_points(
         self,
@@ -2023,13 +2002,7 @@ class ParetoScatterCanvas(QLabel):
         margin_bottom = int(layout["margin_bottom"])
         plot_w = int(layout["plot_w"])
         plot_h = int(layout["plot_h"])
-        painter.fillRect(
-            margin_left,
-            margin_top,
-            plot_w,
-            plot_h,
-            QColor(255, 255, 255, 6 if self._high_contrast_fill else 0),
-        )
+        painter.fillRect(margin_left, margin_top, plot_w, plot_h, QColor(255, 255, 255, 6))
         x_values = [item[1] for item in valid]
         y_values = [item[2] for item in valid]
         x_min = min(x_values)
@@ -2150,11 +2123,6 @@ class TargetDeviationSummaryCanvas(QLabel):
         self._rows: List[Dict[str, Any]] = []
         self._target_axis_color = QColor("#8EC4FF")
         self._status = "Target deviation summary unavailable."
-        self._high_contrast_fill = True
-
-    def set_high_contrast_fill(self, enabled: bool) -> None:
-        self._high_contrast_fill = bool(enabled)
-        self._rerender()
 
     def set_summary_rows(
         self,
@@ -2206,13 +2174,7 @@ class TargetDeviationSummaryCanvas(QLabel):
         plot_w = int(layout["plot_w"])
         plot_h = int(layout["plot_h"])
 
-        painter.fillRect(
-            margin_left,
-            margin_top,
-            plot_w,
-            plot_h,
-            QColor(255, 255, 255, 6 if self._high_contrast_fill else 0),
-        )
+        painter.fillRect(margin_left, margin_top, plot_w, plot_h, QColor(255, 255, 255, 6))
         painter.setPen(QPen(QColor("#3A4252"), 1))
         painter.drawRect(margin_left, margin_top, plot_w, plot_h)
 
@@ -7401,6 +7363,7 @@ class AnalysePage(QWidget):
         frame = QFrame()
         frame.setObjectName("ProjectIssuesPanel")
         frame.setProperty("analyzerPlotTile", True)
+        frame.setProperty("analyzerPlotTileHighContrast", bool(self._high_contrast_plots))
         frame.setAttribute(Qt.WA_StyledBackground, True)
         frame.setMinimumHeight(180)
         frame_layout = QVBoxLayout(frame)
@@ -7489,13 +7452,15 @@ class AnalysePage(QWidget):
         for panel in panels:
             if not isinstance(panel, dict):
                 continue
-            for key in ("curve_canvas", "pareto_canvas", "summary_canvas", "heatmap_canvas"):
-                canvas = panel.get(key)
-                if canvas is None:
-                    continue
-                setter = getattr(canvas, "set_high_contrast_fill", None)
-                if callable(setter):
-                    setter(enabled)
+            frame = panel.get("frame")
+            if not isinstance(frame, QFrame):
+                continue
+            frame.setProperty("analyzerPlotTileHighContrast", bool(enabled))
+            style = frame.style()
+            if style is not None:
+                style.unpolish(frame)
+                style.polish(frame)
+            frame.update()
 
     def _log_plot_surface_diagnostics(self) -> None:
         if not LOGGER.isEnabledFor(logging.DEBUG):
@@ -8840,7 +8805,7 @@ class AnalysePage(QWidget):
             "High Contrast Plots",
             checked=bool(self._high_contrast_plots),
             object_name="AnalyzerHighContrastPlotsToggle",
-            tooltip="ON keeps the subtle matrix tile fill. OFF makes matrix plot fills transparent while preserving borders/grid.",
+            tooltip="ON makes matrix tile card fills transparent. OFF restores the normal tile fill. Plot grids and drawer styling are unchanged.",
         )
         contrast_form.addWidget(high_contrast_toggle, 0, 0, Qt.AlignLeft | Qt.AlignVCenter)
         contrast_form.setColumnStretch(1, 1)

@@ -296,12 +296,13 @@ class AnalyzerPlotUxRegressionTests(unittest.TestCase):
                 self.assertLessEqual(int(image.pixelColor(1, 1).alpha()), 10)
                 self.assertLessEqual(int(image.pixelColor(max(image.width() - 2, 1), 1).alpha()), 10)
 
-    def test_theme_uses_workspace_surface_with_transparent_plot_tiles(self) -> None:
+    def test_theme_uses_workspace_surface_with_toggleable_plot_tile_fill(self) -> None:
         stylesheet = build_stylesheet()
         self.assertIn("QWidget#AnalyzerCompareWorkspace", stylesheet)
         self.assertIn("QWidget#AnalyzerExplorerGrid", stylesheet)
         self.assertIn("QFrame#ProjectIssuesPanel[analyzerPlotTile=\"true\"]", stylesheet)
-        self.assertIn("background-color: transparent;", stylesheet)
+        self.assertIn("background-color: #1f1f1f;", stylesheet)
+        self.assertIn("[analyzerPlotTileHighContrast=\"true\"]", stylesheet)
 
     def test_target_overlay_visibility_floor_is_stage_invariant(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_plot_ux_target_visibility_") as tmp:
@@ -505,23 +506,26 @@ class AnalyzerPlotUxRegressionTests(unittest.TestCase):
             assert contrast_toggle is not None
             self.assertTrue(bool(contrast_toggle.isChecked()))
 
-    def test_high_contrast_plot_fill_toggle_updates_matrix_canvases(self) -> None:
+    def test_high_contrast_plot_fill_toggle_updates_matrix_tile_containers_only(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_plot_ux_high_contrast_fill_toggle_") as tmp:
             service = _build_service(Path(tmp))
             page = AnalysePage(service=service)
-            explorer_curve = page._explorer_stage_panels["B"]["curve_canvas"]
-            compare_curve = page._compare_stage_panels["A"]["curve_canvas"]
-            self.assertTrue(bool(explorer_curve._high_contrast_fill))
-            self.assertTrue(bool(compare_curve._high_contrast_fill))
+            explorer_frame = page._explorer_stage_panels["B"]["frame"]
+            compare_frame = page._compare_stage_panels["A"]["frame"]
+            drawer = page.compare_drawer
+            self.assertTrue(bool(explorer_frame.property("analyzerPlotTileHighContrast")))
+            self.assertTrue(bool(compare_frame.property("analyzerPlotTileHighContrast")))
+            self.assertIsNone(drawer.property("analyzerPlotTileHighContrast"))
 
             page._high_contrast_plots = False
             page._apply_high_contrast_plot_fill_setting()
-            self.assertFalse(bool(explorer_curve._high_contrast_fill))
-            self.assertFalse(bool(compare_curve._high_contrast_fill))
+            self.assertFalse(bool(explorer_frame.property("analyzerPlotTileHighContrast")))
+            self.assertFalse(bool(compare_frame.property("analyzerPlotTileHighContrast")))
+            self.assertIsNone(drawer.property("analyzerPlotTileHighContrast"))
 
             page._high_contrast_plots = True
             page._apply_high_contrast_plot_fill_setting()
-            self.assertTrue(bool(explorer_curve._high_contrast_fill))
+            self.assertTrue(bool(explorer_frame.property("analyzerPlotTileHighContrast")))
 
     def test_auto_scale_button_exists_and_changes_scaling_mode(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_plot_ux_auto_scale_") as tmp:

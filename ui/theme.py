@@ -1035,9 +1035,12 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         border: none;
     }}
     QFrame#ProjectIssuesPanel[analyzerPlotTile="true"] {{
-        background-color: transparent;
+        background-color: #1f1f1f;
         border: 1px solid {c['border']};
         border-radius: {r['sm']}px;
+    }}
+    QFrame#ProjectIssuesPanel[analyzerPlotTile="true"][analyzerPlotTileHighContrast="true"] {{
+        background-color: transparent;
     }}
     QFrame#ProjectIssuesPanel[analyzerPlotTile="true"] > QStackedWidget {{
         background-color: transparent;
