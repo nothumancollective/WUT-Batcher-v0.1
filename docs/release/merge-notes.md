@@ -46,3 +46,22 @@
   - Score-Metrik-Label in Version-Information auf rechtsbÃ¼ndige Ausrichtung vereinheitlicht (`AlignRight | AlignVCenter`) entsprechend bestehender Test- und UI-Erwartung.
 - Hinweis:
   - Ein Voll-Lauf `python -m pytest tests -q` wurde gestartet, aber in dieser Session per Timeout beendet; die oben genannten relevanten Integrations-Suiten sind grÃ¼n.
+
+## Pytest collection failure (cleanup artifacts)
+- Verifiziert am aktuellen `wut-batcher/rebuild` nach `git fetch origin`:
+  - `git status -sb`: `## wut-batcher/rebuild...origin/wut-batcher/rebuild [ahead 272]`
+  - `python -m pytest -q` reproduziert Collection-Fehler vor Testausführung.
+- Fehlerursache:
+  - Doctest/pytest sammelt `cleanup/p1_runtime/failures/*.txt` ein.
+  - Diese Dateien sind nicht UTF-8 (Byte `0xff` bei Position 0), daher `UnicodeDecodeError` in `pathlib.read_text` während Collection.
+- Beispielpfad aus dem Trace:
+  - `cleanup/p1_runtime/failures/test_advanced_toggle_hides_advanced_rows_by_default.txt`
+- Konsequenz:
+  - Testlauf wird in der Collection abgebrochen (`Interrupted: 8 errors during collection`), bevor eigentliche Tests starten.
+
+## Pytest hygiene fix (cleanup excluded)
+- Added repository pytest configuration in `pytest.ini`.
+- `cleanup` is now part of `norecursedirs`, so pytest will not recurse into legacy runtime-artifact folders.
+- This keeps current doctest/test behavior elsewhere unchanged and only removes non-product artifact folders from discovery.
+- Rationale: `cleanup/p1_runtime/failures/*.txt` are legacy failure snapshots with non-UTF8 encoding and are not runtime code/tests.
+- Expected effect: `python -m pytest -q` no longer aborts during collection because of cleanup text artifacts.
