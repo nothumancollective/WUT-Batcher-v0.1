@@ -196,6 +196,7 @@ try:
         QPoint,
         QPropertyAnimation,
         QEvent,
+        QMetaObject,
         QObject,
         Qt,
         QtMsgType,
@@ -4583,6 +4584,8 @@ class SettingsDialog(QDialog):
         return False
 
     def _choose_library_root(self) -> None:
+        if not self._ensure_ui_thread_for_folder_picker():
+            return
         current = self.library_root.text().strip()
         start_dir = current or str(Path.home())
         if LOGGER.isEnabledFor(logging.DEBUG):
@@ -4626,6 +4629,30 @@ class SettingsDialog(QDialog):
         self.library_root.setText(normalized)
         self.library_root.setToolTip(self.library_root.text().strip())
         self._sync_library_root_controls()
+
+    def _ensure_ui_thread_for_folder_picker(self) -> bool:
+        app = QApplication.instance()
+        if app is None:
+            return True
+        current_thread = QThread.currentThread()
+        ui_thread = app.thread()
+        if current_thread == ui_thread:
+            return True
+        if LOGGER.isEnabledFor(logging.DEBUG):
+            LOGGER.debug(
+                "SettingsDialog folder picker invoked off UI thread; scheduling queued invocation. current=%s ui=%s",
+                str(current_thread),
+                str(ui_thread),
+            )
+        queued = bool(QMetaObject.invokeMethod(self, "_choose_library_root", Qt.QueuedConnection))
+        if queued:
+            return False
+        QMessageBox.critical(
+            self,
+            "Folder Picker Failed",
+            "Folder picker must run on the UI thread. Please retry from the main window.",
+        )
+        return False
 
     def _open_library_root(self) -> None:
         target = self.library_root.text().strip()
