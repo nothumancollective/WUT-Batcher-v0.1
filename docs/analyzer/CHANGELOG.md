@@ -1,5 +1,11 @@
 ﻿# Analyzer Docs â€” Changelog
 
+## 2026-02-25 (Compare: reserved gutter + right-plot label suppression)
+- Reserved a fixed left compare-workspace gutter equal to collapsed drawer width so the collapsed drawer no longer overlaps the 2x2 plot matrix.
+- Kept expanded drawer overlay behavior with scrim dimming only over the plot matrix region (gutter excluded).
+- Suppressed version legend/series labels on right-column Compare panels (slots B and D) to reduce crowding and keep the no-overlap layout readable.
+
+
 ## 2026-02-25 (Compare: default-collapsed drawer + focus toggle parity)
 - Set Compare drawer default state to collapsed on Analyzer startup and Compare entry (no implicit reopen).
 - Updated compare tile double-click maximize behavior to match Explorer: same tile toggles restore, different tile switches focused tile, while expanded-drawer guard remains active.

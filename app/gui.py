@@ -6081,6 +6081,7 @@ class AnalysePage(QWidget):
         self._compare_drawer_collapsed_width = 88
         self._compare_drawer_expanded_width = 360
         self._compare_drawer_current_width = int(self._compare_drawer_collapsed_width)
+        self._compare_drawer_gutter_width = int(self._compare_drawer_collapsed_width)
         self._maximized_plot_slots: Dict[str, Optional[str]] = {"explorer": None, "compare": None}
         self._ath_visible_param_limit = 5
         self._active_plane = "H"
@@ -6542,7 +6543,7 @@ class AnalysePage(QWidget):
         self.compare_workspace = QWidget()
         self.compare_workspace.setObjectName("AnalyzerCompareWorkspace")
         compare_workspace_layout = QHBoxLayout(self.compare_workspace)
-        compare_workspace_layout.setContentsMargins(0, 0, 0, 0)
+        compare_workspace_layout.setContentsMargins(int(self._compare_drawer_gutter_width), 0, 0, 0)
         compare_workspace_layout.setSpacing(0)
 
         # Keep legacy controls instantiated for existing state/signal wiring, but do not surface them.
@@ -9846,6 +9847,7 @@ class AnalysePage(QWidget):
             return
         width_total = max(int(workspace.width()), 0)
         height_total = max(int(workspace.height()), 0)
+        gutter_width = max(int(self._compare_drawer_gutter_width), 0)
         anim = getattr(self, "_compare_drawer_width_anim", None)
         anim_running = bool(isinstance(anim, QPropertyAnimation) and anim.state() == QPropertyAnimation.Running)
         if bool(self._compare_drawer_expanded):
@@ -9861,9 +9863,9 @@ class AnalysePage(QWidget):
         drawer_width = min(drawer_width, width_total)
         drawer.setGeometry(0, 0, int(drawer_width), int(height_total))
         self._apply_compare_slots_table_layout(drawer_width=drawer_width)
-        scrim_enabled = bool(self._compare_drawer_expanded) and width_total > 0 and height_total > 0
+        scrim_enabled = bool(self._compare_drawer_expanded) and width_total > int(gutter_width) and height_total > 0
         if isinstance(scrim, QWidget):
-            scrim.setGeometry(0, 0, int(width_total), int(height_total))
+            scrim.setGeometry(int(gutter_width), 0, max(int(width_total - gutter_width), 0), int(height_total))
             scrim.setVisible(bool(scrim_enabled))
             scrim.setAttribute(Qt.WA_TransparentForMouseEvents, not bool(scrim_enabled))
             if scrim_enabled:
@@ -10248,6 +10250,14 @@ class AnalysePage(QWidget):
         panel = self._compare_stage_panels.get(token)
         return panel if isinstance(panel, dict) else None
 
+    def _compare_panel_slot(self, panel: Mapping[str, Any]) -> str:
+        panel_id = str(panel.get("panel_id") or "").strip()
+        return str(self._plot_panel_slot_token(panel_id) or "").strip().upper()
+
+    def _compare_panel_hides_series_labels(self, panel: Mapping[str, Any]) -> bool:
+        # Right-column compare panels stay label-free to preserve plot readability with drawer gutter.
+        return self._compare_panel_slot(panel) in {"B", "D"}
+
     def _render_compare_visuals(self) -> None:
         self._render_compare_overlay()
         self._render_compare_heatmap_selection()
@@ -10325,6 +10335,7 @@ class AnalysePage(QWidget):
             metric_key=curve_key,
             context="compare",
         )
+        hide_labels = bool(self._compare_panel_hides_series_labels(panel))
         band_owner_index = int(selected_index) if selected_index is not None else 0
         series: List[Dict[str, Any]] = []
         saturated_bins = 0
@@ -10346,12 +10357,14 @@ class AnalysePage(QWidget):
             line_width = 2.0 if is_active else 1.0
             alpha = 1.0 if selected_index is None or is_active else 0.62
             series_row: Dict[str, Any] = {
-                "label": format_series_label(candidate.get("version_id")),
+                "label": ("" if hide_labels else format_series_label(candidate.get("version_id"))),
                 "points": points,
                 "color": compare_overlay_color(index),
                 "line_width": line_width,
                 "alpha": alpha,
             }
+            if hide_labels:
+                series_row["show_legend"] = False
             for style_key in (
                 "style",
                 "fill_alpha",
@@ -10536,6 +10549,7 @@ class AnalysePage(QWidget):
         pareto_canvas = panel.get("pareto_canvas")
         if not isinstance(pareto_canvas, ParetoScatterCanvas):
             return
+        hide_labels = bool(self._compare_panel_hides_series_labels(panel))
         x_key = str(self.compare_pareto_x_combo.currentData() or "e_bw").strip().lower()
         y_key = str(self.compare_pareto_y_combo.currentData() or "r_spill").strip().lower()
         x_label = str(self.compare_pareto_x_combo.currentText() or "X")
@@ -10557,7 +10571,7 @@ class AnalysePage(QWidget):
                 continue
             points.append(
                 {
-                    "label": format_series_label(candidate.get("version_id")),
+                    "label": ("" if hide_labels else format_series_label(candidate.get("version_id"))),
                     "x_value": float(x_value),
                     "y_value": float(y_value),
                     "color": compare_overlay_color(index),
