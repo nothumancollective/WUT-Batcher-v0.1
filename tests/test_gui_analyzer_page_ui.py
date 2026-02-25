@@ -187,6 +187,14 @@ class AnalyzerPageUiTests(unittest.TestCase):
                 self.assertTrue(bool(v_button.isChecked()))
                 self.assertGreaterEqual(int(raise_mock.call_count), 1)
 
+    def test_plane_middle_checked_style_draws_all_edges(self) -> None:
+        css = build_stylesheet()
+        self.assertIn('QToolButton[analyzerPlaneToggle="true"][analyzerPlaneSegment="middle"]:checked', css)
+        self.assertIn("border-left: 1px solid #C3CBD8;", css)
+        self.assertIn("border-right: 1px solid #C3CBD8;", css)
+        self.assertIn("border-top: 1px solid #C3CBD8;", css)
+        self.assertIn("border-bottom: 1px solid #C3CBD8;", css)
+
     def test_version_info_metric_values_are_right_aligned_for_compact_scanability(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_ui2x_metric_alignment_") as tmp:
             service = _build_service(Path(tmp))

@@ -1,5 +1,10 @@
 ﻿# Analyzer Docs â€” Changelog
 
+## 2026-02-25 (Plane selector: V segment selected border completion)
+- Tightened plane-segment checked styling so the selected middle (V) segment draws explicit top/bottom/left/right bright borders.
+- Kept selected-segment z-order raise behavior to avoid overlap loss with adjacent segments.
+- Added stylesheet regression coverage for full middle-segment selected border edges.
+
 ## 2026-02-25 (Display Advanced: High Contrast semantics corrected)
 - Re-defined High Contrast Plots to control only 2x2 matrix tile container fill (Explorer + Compare), excluding the Compare drawer.
 - High Contrast = ON now makes tile card fill transparent while preserving tile borders and plot-internal grids.
@@ -1142,6 +1147,7 @@
   - metric-band smooth rendering config (`show`, `smooth`, `opacity`)
   - robust non-auto `e_sym_shape` y-range clamp under outlier input
   - resize probes (`1920x1080`, `1366x768`, `1100x700`) without exceptions.
+
 
 
 
