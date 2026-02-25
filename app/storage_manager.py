@@ -9,6 +9,7 @@ from contextlib import closing
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
+import logging
 from pathlib import Path
 import sqlite3
 import uuid
@@ -16,6 +17,7 @@ import uuid
 
 LIBRARY_SCHEMA_VERSION = 1
 PROJECT_DISPLAY_PREFIX = "P"
+LOGGER = logging.getLogger(__name__)
 
 
 def _utc_now_iso() -> str:
@@ -59,11 +61,18 @@ class StorageManager:
     """
 
     def __init__(self, library_root: str | Path) -> None:
+        requested_root = str(library_root)
         root = Path(library_root).expanduser()
         if not root.is_absolute():
             root = (Path.cwd() / root).resolve()
         else:
             root = root.resolve()
+        if LOGGER.isEnabledFor(logging.DEBUG):
+            LOGGER.debug(
+                "StorageManager init: requested_root=%s normalized_root=%s",
+                requested_root,
+                str(root),
+            )
         self._paths = LibraryPaths(
             root=root,
             projects_dir=root / "projects",
@@ -76,11 +85,21 @@ class StorageManager:
         return self._paths
 
     def ensure_library_root(self) -> LibraryState:
+        if LOGGER.isEnabledFor(logging.DEBUG):
+            LOGGER.debug("ensure_library_root start: root=%s", str(self._paths.root))
         self._paths.root.mkdir(parents=True, exist_ok=True)
+        if LOGGER.isEnabledFor(logging.DEBUG):
+            LOGGER.debug("ensure_library_root mkdir root ok: %s", str(self._paths.root))
         self._paths.projects_dir.mkdir(parents=True, exist_ok=True)
+        if LOGGER.isEnabledFor(logging.DEBUG):
+            LOGGER.debug("ensure_library_root mkdir projects ok: %s", str(self._paths.projects_dir))
         self._init_index_db()
+        if LOGGER.isEnabledFor(logging.DEBUG):
+            LOGGER.debug("ensure_library_root sqlite initialized: %s", str(self._paths.index_db))
         state = self.load_library_state()
         self._write_metadata_json(state)
+        if LOGGER.isEnabledFor(logging.DEBUG):
+            LOGGER.debug("ensure_library_root metadata json written: %s", str(self._paths.metadata_json))
         return state
 
     def load_library_state(self) -> LibraryState:
@@ -122,6 +141,8 @@ class StorageManager:
 
     def _init_index_db(self) -> None:
         self._paths.index_db.parent.mkdir(parents=True, exist_ok=True)
+        if LOGGER.isEnabledFor(logging.DEBUG):
+            LOGGER.debug("init_index_db open sqlite: %s", str(self._paths.index_db))
         with closing(sqlite3.connect(str(self._paths.index_db))) as conn:
             conn.execute(
                 """

@@ -1496,7 +1496,11 @@ class OrchestratorService:
         return self.settings
 
     def save_settings(self, settings: UserSettings) -> Dict[str, Any]:
+        if LOGGER.isEnabledFor(logging.DEBUG):
+            LOGGER.debug("save_settings start: requested_library_root=%s", str(settings.library_root))
         self.settings_store.save(settings)
+        if LOGGER.isEnabledFor(logging.DEBUG):
+            LOGGER.debug("save_settings settings_store.write ok: path=%s", str(self.settings_store.path))
         self.settings = settings
         self.storage = StorageManager(self.settings.library_root)
         self._bootstrap_library_root()

@@ -4415,8 +4415,13 @@ class SettingsDialog(QDialog):
         )
         current_settings = self.service.settings
         library_root_value = self.library_root.text().strip()
+        if LOGGER.isEnabledFor(logging.DEBUG):
+            LOGGER.debug("SettingsDialog save requested: chosen_path=%s", str(library_root_value))
         if not library_root_value:
             library_root_value = UserSettings().library_root
+        normalized_preview = str(Path(library_root_value).expanduser())
+        if LOGGER.isEnabledFor(logging.DEBUG):
+            LOGGER.debug("SettingsDialog save normalized preview: %s", normalized_preview)
         settings = UserSettings(
             library_root=library_root_value,
             ath_exe=self.ath_exe.text().strip() or None,
@@ -4471,7 +4476,11 @@ class SettingsDialog(QDialog):
         start_dir = current or str(Path.home())
         selected = QFileDialog.getExistingDirectory(self, "Choose Project Library Location", start_dir)
         if not selected:
+            if LOGGER.isEnabledFor(logging.DEBUG):
+                LOGGER.debug("SettingsDialog choose library root cancelled.")
             return
+        if LOGGER.isEnabledFor(logging.DEBUG):
+            LOGGER.debug("SettingsDialog choose library root selected: %s", str(selected))
         self.library_root.setText(str(Path(selected).expanduser()))
         self.library_root.setToolTip(self.library_root.text().strip())
         self._sync_library_root_controls()
