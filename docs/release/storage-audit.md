@@ -149,6 +149,7 @@ Date: 2026-02-25 (feature branch `feature/project-library-storage`, flag `USE_PR
 - Library root #1 (`Desktop/WUT Project Library E2E Codex 1`):
   - Project create: `P0001__<uuid>` with `display_number=P0001` and non-empty `project_uid`.
   - Library metadata/index: `library.json` + `library.sqlite` present.
+  - No separate `global.sqlite` created in project-library mode (single library index DB invariant).
   - Project DB path: `<project>/db/project.sqlite` present.
   - Dry-run pipeline writes/cleanup targets remained inside project root (ATH export target under `<project>/runs/ath_export/...`).
 - Library root switch to #2 (`Desktop/WUT Project Library E2E Codex 2`):
