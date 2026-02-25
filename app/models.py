@@ -160,16 +160,30 @@ class Project:
     root_path: str
     schema_version: str = "1.1"
     constraints: ProjectConstraints = field(default_factory=ProjectConstraints)
+    display_number: str = ""
+    project_uid: str = ""
+    library_uid: str = ""
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Project":
         constraints_raw = data.get("constraints", {}) or {}
+        project_id = str(data.get("project_id", ""))
+        project_uid = str(data.get("project_uid", data.get("uid", "")) or "").strip()
+        display_number = str(data.get("display_number", data.get("display_id", "")) or "").strip()
+        if not project_uid and "__" in project_id:
+            parts = project_id.split("__", 1)
+            if len(parts) == 2:
+                display_number = display_number or str(parts[0]).strip()
+                project_uid = str(parts[1]).strip()
         return cls(
             schema_version=str(data.get("schema_version", "1.1")),
-            project_id=str(data.get("project_id", "")),
+            project_id=project_id,
             name=str(data.get("name", "")),
             root_path=str(data.get("root_path", "")),
             constraints=ProjectConstraints.from_dict(dict(constraints_raw)),
+            display_number=display_number,
+            project_uid=project_uid,
+            library_uid=str(data.get("library_uid", "")),
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -179,6 +193,9 @@ class Project:
             "name": self.name,
             "root_path": self.root_path,
             "constraints": self.constraints.to_dict(),
+            "display_number": self.display_number,
+            "project_uid": self.project_uid,
+            "library_uid": self.library_uid,
         }
 
 

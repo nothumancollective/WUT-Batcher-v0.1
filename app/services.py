@@ -51,6 +51,7 @@ from app.constants import (
     PREVIEW_CACHE_MAX_AGE_DAYS,
 )
 from app.cfg_renderer import render_cfg_text
+from app.feature_flags import use_project_library_storage
 from app.models import Batch, ParamSelection, Project, ProjectConstraints, SweepSpec
 from app.project_storage import ProjectRepository
 from app.runtime_orchestrator import RuntimeSummary, run_batch_pipeline
@@ -1503,13 +1504,16 @@ class OrchestratorService:
         if str(self.settings.library_root) != canonical_root:
             self.settings = replace(self.settings, library_root=canonical_root)
             self.settings_store.save(self.settings)
-        self.repo = ProjectRepository(self.settings.library_root)
+        repo_root = self.storage.paths.projects_dir if use_project_library_storage() else self.storage.paths.root
+        self.repo = ProjectRepository(repo_root)
         self.library_state = {
             "library_uid": state.library_uid,
             "schema_version": state.schema_version,
             "created_at": state.created_at,
             "project_counter_next": state.project_counter_next,
             "library_root": self.settings.library_root,
+            "projects_root": str(repo_root),
+            "use_project_library_storage": bool(use_project_library_storage()),
         }
 
     def validate_settings(self, settings: Optional[UserSettings] = None) -> Dict[str, str]:
@@ -3472,8 +3476,16 @@ class OrchestratorService:
         }
 
     def create_project(self, project_name: str, constraints: Dict[str, Any]) -> Project:
-        existing = self.repo.list_projects()
-        project_id = _next_prefixed_id([project.project_id for project in existing], "P")
+        display_number = ""
+        project_uid = ""
+        if use_project_library_storage():
+            identity = self.storage.allocate_project_identity()
+            display_number = identity.display_number
+            project_uid = identity.project_uid
+            project_id = identity.folder_name
+        else:
+            existing = self.repo.list_projects()
+            project_id = _next_prefixed_id([project.project_id for project in existing], "P")
         project_root = self.repo.project_paths(project_id, ensure=False).project_dir
         project = Project(
             project_id=project_id,
@@ -3491,6 +3503,9 @@ class OrchestratorService:
                     "notes": constraints.get("notes"),
                 }
             ),
+            display_number=display_number,
+            project_uid=project_uid,
+            library_uid=str(self.library_state.get("library_uid", "") or ""),
         )
         self.repo.init_project(project)
         TidyDatasetWriter(project_root, library_root=self.settings.library_root).register_project(project)
