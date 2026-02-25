@@ -12,6 +12,7 @@ import sqlite3
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 import uuid
 
+from app.feature_flags import use_project_library_storage
 from app.models import Batch, Project, VersionSpec
 
 
@@ -144,7 +145,15 @@ class SqlDatasetStore:
     ) -> None:
         self.project_root = Path(project_root)
         self.library_root = Path(library_root) if library_root is not None else self.project_root.parent
-        self.dataset_dir = self.project_root / "dataset"
+        if use_project_library_storage():
+            preferred_dataset = self.project_root / "db"
+            legacy_dataset = self.project_root / "dataset"
+            if preferred_dataset.exists() or not legacy_dataset.exists():
+                self.dataset_dir = preferred_dataset
+            else:
+                self.dataset_dir = legacy_dataset
+        else:
+            self.dataset_dir = self.project_root / "dataset"
         self.tables_dir = self.project_root / "tables"
         self.project_db_path = self.dataset_dir / "project.sqlite"
         self.global_db_path = self.library_root / "global.sqlite"
@@ -3167,7 +3176,12 @@ class SqlDatasetStore:
             "deleted_files": deleted_files,
             "skipped_files": skipped_files,
         }
-        audit_dir = self.project_root / "logs"
+        if use_project_library_storage():
+            preferred = self.project_root / "logs"
+            legacy = self.project_root / "_logs"
+            audit_dir = preferred if preferred.exists() or not legacy.exists() else legacy
+        else:
+            audit_dir = self.project_root / "_logs"
         audit_dir.mkdir(parents=True, exist_ok=True)
         audit_path = audit_dir / f"cleanup_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}.json"
         audit_path.write_text(json.dumps(audit_payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")

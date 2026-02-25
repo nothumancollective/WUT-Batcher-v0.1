@@ -3552,7 +3552,12 @@ class OrchestratorService:
         if sim_settings:
             batch.sim_export_settings = batch.sim_export_settings.from_dict(sim_settings)
 
-        return materialize_batch_plan(project, batch, projects_root=self.settings.library_root)
+        return materialize_batch_plan(
+            project,
+            batch,
+            projects_root=self.repo.projects_root,
+            library_root=self.settings.library_root,
+        )
 
     def resolve_versions(self, project_id: str, batch_id: str) -> Dict[str, Any]:
         project = self.repo.load_project(project_id)
@@ -3585,10 +3590,16 @@ class OrchestratorService:
         if simulation_timeout_minutes < 1:
             simulation_timeout_minutes = 1
         akabak_solve_timeout_s = int(simulation_timeout_minutes * 60)
+        if use_project_library_storage():
+            project_paths = self.repo.project_paths(project_id, ensure=True)
+            ath_export_root: Path | str = project_paths.project_dir / "runs" / "ath_export"
+        else:
+            ath_export_root = ATH_PREVIEW_EXPORT_ROOT
         return run_batch_pipeline(
             project=project,
             batch=batch,
-            projects_root=self.settings.library_root,
+            projects_root=self.repo.projects_root,
+            library_root=self.settings.library_root,
             template_cfg_path=self.settings.template_cfg,
             ath_executable=self.settings.ath_exe if not dry_run else None,
             akabak_executable=self.settings.akabak_exe if not dry_run else None,
@@ -3599,7 +3610,7 @@ class OrchestratorService:
             git_commit=_detect_git_commit(),
             app_version="0.1-rebuild",
             settings_hash=_settings_hash(self.settings),
-            ath_export_root=ATH_PREVIEW_EXPORT_ROOT,
+            ath_export_root=ath_export_root,
         )
 
     def export_version(

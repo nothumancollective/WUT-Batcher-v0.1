@@ -22,7 +22,9 @@ from app.ath_driver_assets import repair_post_ath_le_binding
 from app.cfg_renderer import render_cfg_text
 from app.constants import ATH_PREVIEW_EXPORT_ROOT
 from app.export_specs import ExportSpec, parse_export_specs
+from app.feature_flags import use_project_library_storage
 from app.models import Batch, Project
+from app.project_storage import resolve_project_paths, resolve_version_paths
 from app.safe_cleanup import guarded_delete_file_in_workspace, guarded_delete_tree
 from app.runners import AkabakRunner, AthRunner, RunnerResult, VacsRunner, parse_ath_dimensions
 from app.tidy_dataset import TidyDatasetWriter
@@ -76,12 +78,17 @@ class RuntimeSummary:
     dry_run: bool = False
 
 
+def _project_paths_from_root(project_root: Path):
+    project_root_path = Path(project_root)
+    return resolve_project_paths(project_root_path.parent, project_root_path.name, ensure=False)
+
+
 def _version_json_path(project_root: Path, version_id: str) -> Path:
-    return project_root / "versions" / version_id / "version.json"
+    return resolve_version_paths(_project_paths_from_root(project_root), version_id, ensure=False).version_json
 
 
 def _version_cfg_path(project_root: Path, version_id: str) -> Path:
-    return project_root / "versions" / version_id / "cfg" / "input.cfg"
+    return resolve_version_paths(_project_paths_from_root(project_root), version_id, ensure=False).cfg_file
 
 
 def _runtime_cfg_basename(*, project_id: str, batch_id: str, version_id: str, run_id: str) -> str:
@@ -91,7 +98,8 @@ def _runtime_cfg_basename(*, project_id: str, batch_id: str, version_id: str, ru
 
 
 def _version_runtime_cfg_path(project_root: Path, version_id: str, cfg_basename: str) -> Path:
-    return project_root / "versions" / version_id / "cfg" / f"{cfg_basename}.cfg"
+    version_paths = resolve_version_paths(_project_paths_from_root(project_root), version_id, ensure=False)
+    return version_paths.cfg_dir / f"{cfg_basename}.cfg"
 
 
 def _planned_ath_export_dir(ath_export_root: Path | None, run_cfg_path: Path) -> Optional[Path]:
@@ -101,19 +109,20 @@ def _planned_ath_export_dir(ath_export_root: Path | None, run_cfg_path: Path) ->
 
 
 def _version_abec_path(project_root: Path, version_id: str) -> Path:
-    return project_root / "versions" / version_id / "abec" / "Project.abec"
+    return resolve_version_paths(_project_paths_from_root(project_root), version_id, ensure=False).abec_file
 
 
 def _version_ath_work_path(project_root: Path, version_id: str) -> Path:
-    return project_root / "versions" / version_id / "ath_work"
+    return resolve_version_paths(_project_paths_from_root(project_root), version_id, ensure=False).ath_work_dir
 
 
 def _version_logs_dir(project_root: Path, version_id: str) -> Path:
-    return project_root / "versions" / version_id / "logs"
+    return resolve_version_paths(_project_paths_from_root(project_root), version_id, ensure=False).logs_dir
 
 
 def _version_exports_dir(project_root: Path, version_id: str, run_id: str) -> Path:
-    return project_root / "versions" / version_id / "exports" / run_id
+    version_paths = resolve_version_paths(_project_paths_from_root(project_root), version_id, ensure=False)
+    return version_paths.exports_dir / run_id
 
 
 def _load_template_text(template_cfg_path: Optional[str | Path]) -> str:
@@ -1644,6 +1653,7 @@ def run_batch_pipeline(
     batch: Batch,
     *,
     projects_root: str | Path = "projects",
+    library_root: str | Path | None = None,
     template_cfg_path: str | Path | None = None,
     ath_executable: str | Path | None = None,
     akabak_executable: str | Path | None = None,
@@ -1660,13 +1670,27 @@ def run_batch_pipeline(
     settings_hash: Optional[str] = None,
     ath_export_root: str | Path | None = ATH_PREVIEW_EXPORT_ROOT,
 ) -> RuntimeSummary:
-    planning_summary = materialize_batch_plan(project=project, batch=batch, projects_root=projects_root)
+    effective_library_root: Path | None = None
+    if library_root is not None:
+        effective_library_root = Path(str(library_root)).expanduser().resolve()
+    else:
+        projects_root_path = Path(str(projects_root)).expanduser().resolve()
+        if use_project_library_storage() and projects_root_path.name.lower() == "projects":
+            effective_library_root = projects_root_path.parent
+        else:
+            effective_library_root = projects_root_path
+    planning_summary = materialize_batch_plan(
+        project=project,
+        batch=batch,
+        projects_root=projects_root,
+        library_root=effective_library_root,
+    )
     project_root = Path(planning_summary.project_root).expanduser().resolve()
     template_text, template_cfg_effective = _load_effective_template(
         template_cfg_path,
         ath_executable=ath_executable,
     )
-    writer = TidyDatasetWriter(project_root)
+    writer = TidyDatasetWriter(project_root, library_root=effective_library_root)
     effective_run_id = run_id or str(uuid.uuid4())
     ath_export_root_path: Optional[Path] = None
     if ath_export_root is not None:
