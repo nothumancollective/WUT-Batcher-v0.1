@@ -8441,6 +8441,10 @@ class AnalysePage(QWidget):
         self._plot_debounce_timer.stop()
         self._compare_plot_debounce_timer.stop()
 
+    def closeEvent(self, event) -> None:  # type: ignore[override]
+        self.shutdown()
+        super().closeEvent(event)
+
     def set_project_context(self, project_id: Optional[str]) -> None:
         token = str(project_id or "").strip() or None
         self._project_context_id = token
@@ -12413,7 +12417,7 @@ class AnalysePage(QWidget):
             if is_score_metric:
                 quality = self._score_chip_quality(data.get("kpi_score") if data else None)
                 value_label.setProperty("scoreQuality", quality)
-                value_label.setAlignment(Qt.AlignCenter)
+                value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             else:
                 value_label.setProperty("scoreQuality", "")
                 value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)

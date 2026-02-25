@@ -35,3 +35,14 @@
   - Analyzer öffnet mit Tabs `Explorer`, `Compare`, `Iterate`
   - Version-Information enthält `Dim (LxWxH)` und Score-Chip-Widget ist vorhanden
 - Weiterführende Testläufe und eventuelle Stabilitätsfixes werden in den nächsten Abschnitten ergänzt.
+
+## Phase 2: Tests und Stabilität
+- `python -m pytest -q` (Repo-Root) bricht in Collection mit Legacy-Artefakten unter `cleanup/p1_runtime/failures/*.txt` (UTF-16/Decode-Fehler) ab.
+- Zielgerichtete Integrationsläufe:
+  - `python -m pytest tests/test_dashboard_constraints_ui.py tests/test_project_manager_ui.py tests/test_gui_analyzer_page_ui.py tests/test_gui_analyzer_compare_ui.py tests/test_gui_modebar_ui.py -q`
+  - Ergebnis: `83 passed`
+- Zusätzliche Fixes für Integrationsstabilität:
+  - `AnalysePage.closeEvent` ergänzt, ruft `shutdown()` auf (beendet Worker sauber beim Widget-Close, verhindert SQLite-Lock bei Temp-Cleanup unter Windows).
+  - Score-Metrik-Label in Version-Information auf rechtsbündige Ausrichtung vereinheitlicht (`AlignRight | AlignVCenter`) entsprechend bestehender Test- und UI-Erwartung.
+- Hinweis:
+  - Ein Voll-Lauf `python -m pytest tests -q` wurde gestartet, aber in dieser Session per Timeout beendet; die oben genannten relevanten Integrations-Suiten sind grün.
