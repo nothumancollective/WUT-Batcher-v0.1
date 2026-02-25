@@ -19,7 +19,7 @@ try:
     from PySide6.QtCore import QBuffer, QIODevice, Qt
     from PySide6.QtGui import QIcon
     from PySide6.QtTest import QTest
-    from PySide6.QtWidgets import QApplication, QGroupBox
+    from PySide6.QtWidgets import QApplication, QGroupBox, QToolButton
 except ImportError:  # pragma: no cover
     QBuffer = None  # type: ignore[assignment]
     QIODevice = None  # type: ignore[assignment]
@@ -28,6 +28,7 @@ except ImportError:  # pragma: no cover
     QTest = None  # type: ignore[assignment]
     QApplication = None  # type: ignore[assignment]
     QGroupBox = None  # type: ignore[assignment]
+    QToolButton = None  # type: ignore[assignment]
 
 
 def _build_service(tmp_root: Path) -> OrchestratorService:
@@ -496,8 +497,31 @@ class AnalyzerPlotUxRegressionTests(unittest.TestCase):
             self.assertIsNotNone(dialog)
             assert dialog is not None
             self.assertIsNotNone(dialog.findChild(QGroupBox, "AnalyzerDisplayAdvancedDisplayGroup"))
+            self.assertIsNotNone(dialog.findChild(QGroupBox, "AnalyzerDisplayAdvancedContrastGroup"))
             self.assertIsNotNone(dialog.findChild(QGroupBox, "AnalyzerDisplayAdvancedMetricBandsGroup"))
             self.assertIsNotNone(dialog.findChild(QGroupBox, "AnalyzerDisplayAdvancedMetricColorsGroup"))
+            contrast_toggle = dialog.findChild(QToolButton, "AnalyzerHighContrastPlotsToggle")
+            self.assertIsNotNone(contrast_toggle)
+            assert contrast_toggle is not None
+            self.assertTrue(bool(contrast_toggle.isChecked()))
+
+    def test_high_contrast_plot_fill_toggle_updates_matrix_canvases(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_plot_ux_high_contrast_fill_toggle_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            explorer_curve = page._explorer_stage_panels["B"]["curve_canvas"]
+            compare_curve = page._compare_stage_panels["A"]["curve_canvas"]
+            self.assertTrue(bool(explorer_curve._high_contrast_fill))
+            self.assertTrue(bool(compare_curve._high_contrast_fill))
+
+            page._high_contrast_plots = False
+            page._apply_high_contrast_plot_fill_setting()
+            self.assertFalse(bool(explorer_curve._high_contrast_fill))
+            self.assertFalse(bool(compare_curve._high_contrast_fill))
+
+            page._high_contrast_plots = True
+            page._apply_high_contrast_plot_fill_setting()
+            self.assertTrue(bool(explorer_curve._high_contrast_fill))
 
     def test_auto_scale_button_exists_and_changes_scaling_mode(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_plot_ux_auto_scale_") as tmp:

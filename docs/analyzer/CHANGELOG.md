@@ -1,5 +1,11 @@
 ﻿# Analyzer Docs â€” Changelog
 
+## 2026-02-25 (Display Advanced: High Contrast Plots toggle)
+- Added a dedicated Plot Tiles block in Display -> Advanced with High Contrast Plots (default ON).
+- Wired matrix canvas fill rendering (Explorer + Compare) so OFF makes tile fills transparent while preserving borders and gridlines.
+- Persisted the toggle as a global analyzer display setting (analyzer_display_high_contrast_plots) and applied it live without restart.
+- Added defaults/persistence and UI introspection coverage for the new block/toggle.
+
 ## 2026-02-25 (Version Information: pin button purple consistency)
 - Unified Version Information pin checked-state border color with the shared pinned accent purple used by pinned indicators.
 - Updated pinned Version Information tile border accent to the same purple token for visual consistency.
@@ -1120,6 +1126,7 @@
   - metric-band smooth rendering config (`show`, `smooth`, `opacity`)
   - robust non-auto `e_sym_shape` y-range clamp under outlier input
   - resize probes (`1920x1080`, `1366x768`, `1100x700`) without exceptions.
+
 
 
 

@@ -53,6 +53,7 @@ from app.settings_store import (
     ANALYZER_DISPLAY_SHOW_BAD_BAND_DEFAULT,
     ANALYZER_DISPLAY_SHOW_BAD_LINE_DEFAULT,
     ANALYZER_DISPLAY_SHOW_GOOD_BAND_DEFAULT,
+    ANALYZER_DISPLAY_HIGH_CONTRAST_PLOTS_DEFAULT,
     ANALYZER_DISPLAY_SHOW_WARN_BAND_DEFAULT,
     ANALYZER_DISPLAY_SHOW_WARN_LINE_DEFAULT,
     SIMULATION_TIMEOUT_MINUTES_DEFAULT,
@@ -875,6 +876,11 @@ class HeatmapCanvas(QLabel):
         self._contour_width = 2.0
         self._applied_plot_margins: Tuple[int, int, int, int] = apply_analyzer_plot_margins(has_legend=False)
         self._lut = get_vacs_like_lut(256)
+        self._high_contrast_fill = True
+
+    def set_high_contrast_fill(self, enabled: bool) -> None:
+        self._high_contrast_fill = bool(enabled)
+        self._rerender()
 
     def set_heatmap_data(
         self,
@@ -1001,7 +1007,7 @@ class HeatmapCanvas(QLabel):
         span = max(max_db - min_db, 1.0)
 
         source_image = QImage(max(cols, 1), max(rows, 1), QImage.Format_ARGB32_Premultiplied)
-        source_image.fill(QColor(0, 0, 0, 16))
+        source_image.fill(QColor(0, 0, 0, 16 if self._high_contrast_fill else 0))
         for y_idx, row in enumerate(self._matrix):
             for x_idx, value in enumerate(row):
                 if value is None:
@@ -1218,6 +1224,11 @@ class MetricCurveCanvas(QLabel):
         self._y_range_override: Optional[Tuple[float, float]] = None
         self._applied_plot_margins: Tuple[int, int, int, int] = apply_analyzer_plot_margins(has_legend=False)
         self._metric_band_items: List[Dict[str, Any]] = []
+        self._high_contrast_fill = True
+
+    def set_high_contrast_fill(self, enabled: bool) -> None:
+        self._high_contrast_fill = bool(enabled)
+        self._rerender()
 
     def set_series(
         self,
@@ -1437,7 +1448,13 @@ class MetricCurveCanvas(QLabel):
         self._applied_plot_margins = (margin_left, margin_right, margin_top, margin_bottom)
         plot_w = int(layout["plot_w"])
         plot_h = int(layout["plot_h"])
-        painter.fillRect(margin_left, margin_top, plot_w, plot_h, QColor(255, 255, 255, 6))
+        painter.fillRect(
+            margin_left,
+            margin_top,
+            plot_w,
+            plot_h,
+            QColor(255, 255, 255, 6 if self._high_contrast_fill else 0),
+        )
 
         all_freqs = [point[0] for row in points_by_series for point in list(row.get("points", []) or [])]
         all_values = [point[1] for row in points_by_series for point in list(row.get("points", []) or [])]
@@ -1916,6 +1933,11 @@ class ParetoScatterCanvas(QLabel):
         self._status = "Select candidates to render Pareto scatter."
         self._x_range_override: Optional[Tuple[float, float]] = None
         self._y_range_override: Optional[Tuple[float, float]] = None
+        self._high_contrast_fill = True
+
+    def set_high_contrast_fill(self, enabled: bool) -> None:
+        self._high_contrast_fill = bool(enabled)
+        self._rerender()
 
     def set_points(
         self,
@@ -2001,7 +2023,13 @@ class ParetoScatterCanvas(QLabel):
         margin_bottom = int(layout["margin_bottom"])
         plot_w = int(layout["plot_w"])
         plot_h = int(layout["plot_h"])
-        painter.fillRect(margin_left, margin_top, plot_w, plot_h, QColor(255, 255, 255, 6))
+        painter.fillRect(
+            margin_left,
+            margin_top,
+            plot_w,
+            plot_h,
+            QColor(255, 255, 255, 6 if self._high_contrast_fill else 0),
+        )
         x_values = [item[1] for item in valid]
         y_values = [item[2] for item in valid]
         x_min = min(x_values)
@@ -2122,6 +2150,11 @@ class TargetDeviationSummaryCanvas(QLabel):
         self._rows: List[Dict[str, Any]] = []
         self._target_axis_color = QColor("#8EC4FF")
         self._status = "Target deviation summary unavailable."
+        self._high_contrast_fill = True
+
+    def set_high_contrast_fill(self, enabled: bool) -> None:
+        self._high_contrast_fill = bool(enabled)
+        self._rerender()
 
     def set_summary_rows(
         self,
@@ -2173,7 +2206,13 @@ class TargetDeviationSummaryCanvas(QLabel):
         plot_w = int(layout["plot_w"])
         plot_h = int(layout["plot_h"])
 
-        painter.fillRect(margin_left, margin_top, plot_w, plot_h, QColor(255, 255, 255, 6))
+        painter.fillRect(
+            margin_left,
+            margin_top,
+            plot_w,
+            plot_h,
+            QColor(255, 255, 255, 6 if self._high_contrast_fill else 0),
+        )
         painter.setPen(QPen(QColor("#3A4252"), 1))
         painter.drawRect(margin_left, margin_top, plot_w, plot_h)
 
@@ -6070,6 +6109,7 @@ class AnalysePage(QWidget):
             ANALYZER_DISPLAY_COLOR_BAD_DEFAULT,
             fallback=ANALYZER_DISPLAY_COLOR_BAD_DEFAULT,
         )
+        self._high_contrast_plots = bool(ANALYZER_DISPLAY_HIGH_CONTRAST_PLOTS_DEFAULT)
         self._target_axis_color_hex = _coerce_hex_rgb("#8EC4FF")
         self._auto_scale_enabled = False
         self._stable_axis_ranges: Dict[str, Tuple[float, float]] = {}
@@ -7326,6 +7366,7 @@ class AnalysePage(QWidget):
         self._sync_band_custom_visibility()
         self._apply_stage_defaults()
         self._apply_stage_plot_layout()
+        self._apply_high_contrast_plot_fill_setting()
         QTimer.singleShot(0, self._sync_side_tile_heights)
         self.compute_btn.setEnabled(self._source_key() == "project")
         self._set_details(None)
@@ -7439,6 +7480,22 @@ class AnalysePage(QWidget):
         self._attach_plot_tile_interactions(panel, panel_id=panel_id)
         self._set_stage_panel_kind(panel, kind)
         return panel
+
+    def _apply_high_contrast_plot_fill_setting(self) -> None:
+        enabled = bool(self._high_contrast_plots)
+        panels = list(getattr(self, "_explorer_stage_panels", {}).values()) + list(
+            getattr(self, "_compare_stage_panels", {}).values()
+        )
+        for panel in panels:
+            if not isinstance(panel, dict):
+                continue
+            for key in ("curve_canvas", "pareto_canvas", "summary_canvas", "heatmap_canvas"):
+                canvas = panel.get(key)
+                if canvas is None:
+                    continue
+                setter = getattr(canvas, "set_high_contrast_fill", None)
+                if callable(setter):
+                    setter(enabled)
 
     def _log_plot_surface_diagnostics(self) -> None:
         if not LOGGER.isEnabledFor(logging.DEBUG):
@@ -7988,6 +8045,7 @@ class AnalysePage(QWidget):
             "show_bad_band": bool(ANALYZER_DISPLAY_SHOW_BAD_BAND_DEFAULT),
             "show_warn_line": bool(ANALYZER_DISPLAY_SHOW_WARN_LINE_DEFAULT),
             "show_bad_line": bool(ANALYZER_DISPLAY_SHOW_BAD_LINE_DEFAULT),
+            "high_contrast_plots": bool(ANALYZER_DISPLAY_HIGH_CONTRAST_PLOTS_DEFAULT),
             "color_good": _coerce_hex_rgb(
                 ANALYZER_DISPLAY_COLOR_GOOD_DEFAULT,
                 fallback=ANALYZER_DISPLAY_COLOR_GOOD_DEFAULT,
@@ -8009,6 +8067,7 @@ class AnalysePage(QWidget):
             "show_bad_band": bool(self._metric_band_show_bad_band),
             "show_warn_line": bool(self._metric_band_show_warn_line),
             "show_bad_line": bool(self._metric_band_show_bad_line),
+            "high_contrast_plots": bool(self._high_contrast_plots),
             "color_good": _coerce_hex_rgb(
                 self._metric_band_color_good_hex,
                 fallback=ANALYZER_DISPLAY_COLOR_GOOD_DEFAULT,
@@ -8041,6 +8100,9 @@ class AnalysePage(QWidget):
         self._metric_band_show_bad_line = bool(
             getattr(settings, "analyzer_display_show_bad_line", defaults["show_bad_line"])
         )
+        self._high_contrast_plots = bool(
+            getattr(settings, "analyzer_display_high_contrast_plots", defaults["high_contrast_plots"])
+        )
         self._metric_band_color_good_hex = _coerce_hex_rgb(
             getattr(settings, "analyzer_display_color_good", defaults["color_good"]),
             fallback=defaults["color_good"],
@@ -8066,6 +8128,7 @@ class AnalysePage(QWidget):
                     "analyzer_display_show_bad_band": bool(settings_payload["show_bad_band"]),
                     "analyzer_display_show_warn_line": bool(settings_payload["show_warn_line"]),
                     "analyzer_display_show_bad_line": bool(settings_payload["show_bad_line"]),
+                    "analyzer_display_high_contrast_plots": bool(settings_payload["high_contrast_plots"]),
                     "analyzer_display_color_good": str(settings_payload["color_good"]),
                     "analyzer_display_color_warn": str(settings_payload["color_warn"]),
                     "analyzer_display_color_bad": str(settings_payload["color_bad"]),
@@ -8078,6 +8141,7 @@ class AnalysePage(QWidget):
     def reload_user_settings(self) -> None:
         self.reload_cache_settings()
         self._load_metric_band_display_settings_from_user_settings()
+        self._apply_high_contrast_plot_fill_setting()
         self.compute_btn.setEnabled(self._source_key() == "project")
         self._update_toolbar_context_chips()
         self._on_source_changed()
@@ -8657,6 +8721,18 @@ class AnalysePage(QWidget):
         intro.setWordWrap(True)
         body.addWidget(intro, 0)
 
+        def _make_advanced_toggle(label: str, *, checked: bool, object_name: str, tooltip: str = "") -> QToolButton:
+            toggle = QToolButton()
+            toggle.setObjectName(object_name)
+            toggle.setText(label)
+            toggle.setCheckable(True)
+            toggle.setToolButtonStyle(Qt.ToolButtonTextOnly)
+            toggle.setProperty("analyzerToggle", True)
+            toggle.setChecked(bool(checked))
+            if tooltip:
+                toggle.setToolTip(tooltip)
+            return toggle
+
         display_group = QGroupBox("Display Options")
         display_group.setObjectName("AnalyzerDisplayAdvancedDisplayGroup")
         form = QGridLayout(display_group)
@@ -8751,6 +8827,22 @@ class AnalysePage(QWidget):
         form.setColumnStretch(3, 1)
         body.addWidget(display_group)
 
+        contrast_group = QGroupBox("Plot Tiles")
+        contrast_group.setObjectName("AnalyzerDisplayAdvancedContrastGroup")
+        contrast_form = QGridLayout(contrast_group)
+        contrast_form.setContentsMargins(0, 0, 0, 0)
+        contrast_form.setHorizontalSpacing(8)
+        contrast_form.setVerticalSpacing(6)
+        high_contrast_toggle = _make_advanced_toggle(
+            "High Contrast Plots",
+            checked=bool(self._high_contrast_plots),
+            object_name="AnalyzerHighContrastPlotsToggle",
+            tooltip="ON keeps the subtle matrix tile fill. OFF makes matrix plot fills transparent while preserving borders/grid.",
+        )
+        contrast_form.addWidget(high_contrast_toggle, 0, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        contrast_form.setColumnStretch(1, 1)
+        body.addWidget(contrast_group)
+
         metric_group = QGroupBox("Metric Bands")
         metric_group.setObjectName("AnalyzerDisplayAdvancedMetricBandsGroup")
         metric_form = QGridLayout(metric_group)
@@ -8758,51 +8850,39 @@ class AnalysePage(QWidget):
         metric_form.setHorizontalSpacing(8)
         metric_form.setVerticalSpacing(6)
 
-        def _make_metric_toggle(label: str, *, checked: bool, object_name: str, tooltip: str = "") -> QToolButton:
-            toggle = QToolButton()
-            toggle.setObjectName(object_name)
-            toggle.setText(label)
-            toggle.setCheckable(True)
-            toggle.setToolButtonStyle(Qt.ToolButtonTextOnly)
-            toggle.setProperty("analyzerToggle", True)
-            toggle.setChecked(bool(checked))
-            if tooltip:
-                toggle.setToolTip(tooltip)
-            return toggle
-
-        metric_bands_check = _make_metric_toggle(
+        metric_bands_check = _make_advanced_toggle(
             "Show metric bands",
             checked=bool(self._show_metric_bands),
             object_name="AnalyzerMetricBandsCheck",
             tooltip="Show metric spec overlays in stage metric plots.",
         )
-        metric_band_smooth_check = _make_metric_toggle(
+        metric_band_smooth_check = _make_advanced_toggle(
             "Smooth edges",
             checked=bool(self._metric_band_smooth),
             object_name="AnalyzerMetricBandSmoothCheck",
             tooltip="Smooth uses continuous edges; blocks uses stepped edges when available.",
         )
-        metric_good_band_toggle = _make_metric_toggle(
+        metric_good_band_toggle = _make_advanced_toggle(
             "Good band",
             checked=bool(self._metric_band_show_good_band),
             object_name="AnalyzerMetricBandShowGoodToggle",
         )
-        metric_warn_line_toggle = _make_metric_toggle(
+        metric_warn_line_toggle = _make_advanced_toggle(
             "Warn line",
             checked=bool(self._metric_band_show_warn_line),
             object_name="AnalyzerMetricBandShowWarnLineToggle",
         )
-        metric_bad_line_toggle = _make_metric_toggle(
+        metric_bad_line_toggle = _make_advanced_toggle(
             "Bad line",
             checked=bool(self._metric_band_show_bad_line),
             object_name="AnalyzerMetricBandShowBadLineToggle",
         )
-        metric_warn_band_toggle = _make_metric_toggle(
+        metric_warn_band_toggle = _make_advanced_toggle(
             "Warn band",
             checked=bool(self._metric_band_show_warn_band),
             object_name="AnalyzerMetricBandShowWarnBandToggle",
         )
-        metric_bad_band_toggle = _make_metric_toggle(
+        metric_bad_band_toggle = _make_advanced_toggle(
             "Bad band",
             checked=bool(self._metric_band_show_bad_band),
             object_name="AnalyzerMetricBandShowBadBandToggle",
@@ -8920,6 +9000,7 @@ class AnalysePage(QWidget):
 
         def _reset_metric_band_defaults() -> None:
             defaults = self._metric_band_display_defaults()
+            high_contrast_toggle.setChecked(bool(defaults["high_contrast_plots"]))
             metric_bands_check.setChecked(True)
             metric_band_smooth_check.setChecked(True)
             metric_band_opacity_slider.setValue(60)
@@ -8964,6 +9045,9 @@ class AnalysePage(QWidget):
             metric_band_opacity_changed = abs(float(self._metric_band_opacity) - float(metric_band_opacity_next)) > 1.0e-6
             if metric_band_opacity_changed:
                 plot_changed = True
+            high_contrast_changed = bool(self._high_contrast_plots) != bool(high_contrast_toggle.isChecked())
+            if high_contrast_changed:
+                plot_changed = True
             metric_display_changed = (
                 bool(self._metric_band_show_good_band) != bool(metric_good_band_toggle.isChecked())
                 or bool(self._metric_band_show_warn_band) != bool(metric_warn_band_toggle.isChecked())
@@ -8997,6 +9081,7 @@ class AnalysePage(QWidget):
             self._show_metric_bands = bool(metric_bands_check.isChecked())
             self._metric_band_smooth = bool(metric_band_smooth_check.isChecked())
             self._metric_band_opacity = float(metric_band_opacity_next)
+            self._high_contrast_plots = bool(high_contrast_toggle.isChecked())
             self._metric_band_show_good_band = bool(metric_good_band_toggle.isChecked())
             self._metric_band_show_warn_band = bool(metric_warn_band_toggle.isChecked())
             self._metric_band_show_bad_band = bool(metric_bad_band_toggle.isChecked())
@@ -9018,8 +9103,10 @@ class AnalysePage(QWidget):
             self._target_axis_color_hex = target_axis_color_next
             self._control_sync_guard = False
 
-            if metric_display_changed:
+            if metric_display_changed or high_contrast_changed:
                 self._persist_metric_band_display_settings_to_user_settings()
+            if high_contrast_changed:
+                self._apply_high_contrast_plot_fill_setting()
             if plot_changed:
                 self._on_plot_config_changed()
             if tol_changed:

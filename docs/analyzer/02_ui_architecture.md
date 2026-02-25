@@ -74,6 +74,9 @@ Scope guard:
   - left: `Band` + `Low/High`
   - right: `Plane` + `Advanced...`
 - `Tol (+/-deg)` is configured in `Display Advanced...` (not inline in Display) but remains bound to the same analyzer tolerance state.
+- `Display Advanced...` includes a dedicated `Plot Tiles` block with `High Contrast Plots` (global user setting):
+  - ON: keep subtle matrix tile fill
+  - OFF: matrix plot fills become transparent while borders/grid remain unchanged.
 - Version Information ATH parameter rendering is a stacked key/value column (single-line rows with value elide + tooltip).
 - ATH visibility selection in `Version Details -> ATH Params` is capped at 5 keys; additional checks are prevented with inline hint feedback.
 

@@ -28,6 +28,7 @@ ANALYZER_DISPLAY_SHOW_BAD_LINE_DEFAULT = False
 ANALYZER_DISPLAY_COLOR_GOOD_DEFAULT = "#6E8FA7"
 ANALYZER_DISPLAY_COLOR_WARN_DEFAULT = "#7B90A3"
 ANALYZER_DISPLAY_COLOR_BAD_DEFAULT = "#8D98A7"
+ANALYZER_DISPLAY_HIGH_CONTRAST_PLOTS_DEFAULT = True
 
 
 _HEX_RGB_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
@@ -81,6 +82,7 @@ class UserSettings:
     analyzer_display_color_good: str = ANALYZER_DISPLAY_COLOR_GOOD_DEFAULT
     analyzer_display_color_warn: str = ANALYZER_DISPLAY_COLOR_WARN_DEFAULT
     analyzer_display_color_bad: str = ANALYZER_DISPLAY_COLOR_BAD_DEFAULT
+    analyzer_display_high_contrast_plots: bool = ANALYZER_DISPLAY_HIGH_CONTRAST_PLOTS_DEFAULT
 
     def to_dict(self) -> Dict[str, object]:
         return {
@@ -112,6 +114,7 @@ class UserSettings:
                 self.analyzer_display_color_bad,
                 default=ANALYZER_DISPLAY_COLOR_BAD_DEFAULT,
             ),
+            "analyzer_display_high_contrast_plots": bool(self.analyzer_display_high_contrast_plots),
         }
 
     @classmethod
@@ -156,6 +159,10 @@ class UserSettings:
             payload.get("analyzer_display_color_bad"),
             default=ANALYZER_DISPLAY_COLOR_BAD_DEFAULT,
         )
+        analyzer_display_high_contrast_plots = _as_bool(
+            payload.get("analyzer_display_high_contrast_plots"),
+            default=ANALYZER_DISPLAY_HIGH_CONTRAST_PLOTS_DEFAULT,
+        )
         simulation_timeout_minutes = max(
             min(
                 _as_int(payload.get("simulation_timeout_minutes"), default=SIMULATION_TIMEOUT_MINUTES_DEFAULT),
@@ -183,6 +190,7 @@ class UserSettings:
             analyzer_display_color_good=analyzer_display_color_good,
             analyzer_display_color_warn=analyzer_display_color_warn,
             analyzer_display_color_bad=analyzer_display_color_bad,
+            analyzer_display_high_contrast_plots=analyzer_display_high_contrast_plots,
         )
 
 
