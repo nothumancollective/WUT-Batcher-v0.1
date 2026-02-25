@@ -39,15 +39,15 @@ class ProjectStorageAndTidyTests(unittest.TestCase):
             self.assertEqual(summary.version_count, 1)
 
             project_root = projects_root / "P001"
+            writer = TidyDatasetWriter(project_root, library_root=projects_root)
             self.assertTrue((project_root / "project.json").exists())
             self.assertTrue((project_root / "batches" / "B001" / "batch.json").exists())
             self.assertTrue((project_root / "versions" / "V001" / "version.json").exists())
             self.assertTrue((project_root / "versions" / "V001" / "cfg" / "input.cfg").exists())
-            self.assertTrue((project_root / "dataset" / "project.sqlite").exists())
-            self.assertTrue((projects_root / "global.sqlite").exists())
+            self.assertTrue(writer.project_db_path.exists())
+            self.assertTrue(writer.global_db_path.exists())
             self.assertTrue((project_root / "tables" / "project_versions.csv").exists())
 
-            writer = TidyDatasetWriter(project_root)
             measurement_result = writer.write_measurements(
                 [
                     {
@@ -82,9 +82,9 @@ class ProjectStorageAndTidyTests(unittest.TestCase):
 
             self.assertEqual(measurement_result["rows_written"], 1)
             self.assertEqual(ath_result["rows_written"], 1)
-            self.assertTrue((project_root / "dataset" / "schema.json").exists())
+            self.assertTrue(writer.schema_path.exists())
 
-            project_db = project_root / "dataset" / "project.sqlite"
+            project_db = writer.project_db_path
             with closing(sqlite3.connect(str(project_db))) as conn:
                 counts = {
                     "projects": conn.execute("SELECT COUNT(*) FROM projects").fetchone()[0],

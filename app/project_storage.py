@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Sequence
 
+from app.feature_flags import use_project_library_storage
 from app.models import Batch, Project, VersionSpec
 from app.version_resolver import allocate_version_ids
 
@@ -71,15 +72,31 @@ class VersionPaths:
 
 def resolve_project_paths(projects_root: Path, project_id: str, *, ensure: bool = False) -> ProjectPaths:
     project_dir = projects_root / project_id
+    if use_project_library_storage():
+        preferred_dataset = project_dir / "db"
+        legacy_dataset = project_dir / "dataset"
+        if ensure or preferred_dataset.exists() or not legacy_dataset.exists():
+            dataset_dir = preferred_dataset
+        else:
+            dataset_dir = legacy_dataset
+        preferred_logs = project_dir / "logs"
+        legacy_logs = project_dir / "_logs"
+        if ensure or preferred_logs.exists() or not legacy_logs.exists():
+            logs_dir = preferred_logs
+        else:
+            logs_dir = legacy_logs
+    else:
+        dataset_dir = project_dir / "dataset"
+        logs_dir = project_dir / "_logs"
     paths = ProjectPaths(
         projects_root=projects_root,
         project_dir=project_dir,
         project_json=project_dir / "project.json",
         batches_dir=project_dir / "batches",
         versions_dir=project_dir / "versions",
-        dataset_dir=project_dir / "dataset",
+        dataset_dir=dataset_dir,
         tables_dir=project_dir / "tables",
-        logs_dir=project_dir / "_logs",
+        logs_dir=logs_dir,
     )
     if ensure:
         for path in (

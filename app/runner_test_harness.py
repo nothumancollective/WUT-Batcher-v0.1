@@ -273,7 +273,7 @@ def _default_polar_export_specs_for_harness() -> List[ExportSpec]:
             graph_kind="polar",
             variant="main",
             format="txt",
-            options={**base_options, "polar_name": "SPL_H", "offset": 145},
+            options={**base_options, "polar_name": "SPL_H", "offset": 145, "inclination": 0},
             output_name_template="{version_id}_{graph_kind}_{export_id}.{format}",
         ),
         ExportSpec(
@@ -291,7 +291,7 @@ def _default_polar_export_specs_for_harness() -> List[ExportSpec]:
             graph_kind="polar",
             variant="main",
             format="txt",
-            options={**base_options, "polar_name": "SPL_D", "offset_from_length_mm": 40, "inclination": 42},
+            options={**base_options, "polar_name": "SPL_D", "offset_from_length_mm": 40, "inclination": 45},
             output_name_template="{version_id}_{graph_kind}_{export_id}.{format}",
         ),
     ]

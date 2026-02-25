@@ -383,6 +383,58 @@ class VacsExportPipelineTests(unittest.TestCase):
                     )
             self.assertIn("no usable graph files", str(ctx.exception))
 
+    def test_external_any_graph_fallback_includes_orientation_token_in_filename(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            source = root / "raw_graph_h.txt"
+            source.write_text(
+                "\n".join(
+                    [
+                        "SourceDesc=VACS_Data_Text",
+                        "Data_LevelType=SoundPressure",
+                        "Data_Legend='Mic Polar - BE_Spectrum #2'",
+                        "Param_Coord_x3=0",
+                        "StartString_Data=Data",
+                        "EndString_Data=Data_End",
+                        "Data",
+                        "100 1.0 0.0",
+                        "Data_End",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            spec = ExportSpec(id="only_one_requested", tool="vacs", graph_kind="spl", format="txt")
+            with patch(
+                "app.vacs_export_pipeline._run_external_vacs_export_save_all",
+                return_value={
+                    "ok": True,
+                    "run_id": "run_x",
+                    "exported_files": [
+                        {"graph": {"title": "Mic Polar - BE_Spectrum #2"}, "path": str(source)},
+                    ],
+                    "summary_file": str(root / "summary.json"),
+                },
+            ):
+                result = run_vacs_export_specs(
+                    executable="C:\\Tools\\VACS\\vacsviewer_32.exe",
+                    vacs_version="default",
+                    project_id="P001",
+                    batch_id="B001",
+                    version_id="V001",
+                    abec_path=root / "Project.abec",
+                    export_specs=[spec],
+                    export_dir=root / "exports",
+                    log_dir=root / "logs",
+                    akabak_executable="C:\\Tools\\AKABAK\\AKABAK.exe",
+                    allow_graph_kind_fallback=True,
+                )
+            self.assertTrue(result["executed"])
+            output_path = Path(str(result["exports"][0]["output_path"]))
+            self.assertIn("_H.txt", output_path.name)
+            details = dict(result["exports"][0].get("details", {}) or {})
+            self.assertEqual(str(details.get("source_orientation_token", "")), "H")
+
 
 if __name__ == "__main__":
     unittest.main()

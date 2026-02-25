@@ -43,7 +43,7 @@ class SqlDatasetStoreTests(unittest.TestCase):
             self.assertIn("Throat.Diameter", params)
             self.assertIn("Coverage.Angle", unset)
 
-            with closing(sqlite3.connect(str(project_root / "dataset" / "project.sqlite"))) as conn:
+            with closing(sqlite3.connect(str(writer.project_db_path))) as conn:
                 row = conn.execute(
                     "SELECT is_set FROM version_params WHERE version_id = ? AND param_name = ?",
                     ("V001", "Coverage.Angle"),
@@ -77,7 +77,7 @@ class SqlDatasetStoreTests(unittest.TestCase):
             self.assertFalse(result["global_synced"])
             self.assertIsNotNone(result["queued_retry"])
 
-            with closing(sqlite3.connect(str(project_root / "dataset" / "project.sqlite"))) as conn:
+            with closing(sqlite3.connect(str(writer.project_db_path))) as conn:
                 pending = conn.execute("SELECT COUNT(*) FROM replication_queue WHERE status = 'pending'").fetchone()[0]
             self.assertEqual(pending, 1)
 
@@ -106,7 +106,7 @@ class SqlDatasetStoreTests(unittest.TestCase):
 
             result = writer.write_plan_bundle(project=project, batch=batch, versions=[version])
             self.assertEqual(result["version_count"], 1)
-            with closing(sqlite3.connect(str(project_root / "dataset" / "project.sqlite"))) as conn:
+            with closing(sqlite3.connect(str(writer.project_db_path))) as conn:
                 project_count = conn.execute("SELECT COUNT(*) FROM projects").fetchone()[0]
                 batch_count = conn.execute("SELECT COUNT(*) FROM batches").fetchone()[0]
                 version_count = conn.execute("SELECT COUNT(*) FROM versions").fetchone()[0]
@@ -133,7 +133,7 @@ class SqlDatasetStoreTests(unittest.TestCase):
                 ]
             )
             self.assertEqual(result["rows_written"], 1)
-            with closing(sqlite3.connect(str(project_root / "dataset" / "project.sqlite"))) as conn:
+            with closing(sqlite3.connect(str(writer.project_db_path))) as conn:
                 count = conn.execute("SELECT COUNT(*) FROM compat_verification_results").fetchone()[0]
             self.assertEqual(int(count), 1)
 
@@ -243,7 +243,7 @@ class SqlDatasetStoreTests(unittest.TestCase):
             writer.create_run(run_id="R001", project_id="P001", batch_id="B001", status="running")
             writer.cleanup_unpinned_runs(delete_exports=False, dry_run=False)
 
-            with closing(sqlite3.connect(str(project_root / "dataset" / "project.sqlite"))) as conn:
+            with closing(sqlite3.connect(str(writer.project_db_path))) as conn:
                 row = conn.execute(
                     """
                     SELECT entity_type, entity_id, reason
@@ -295,7 +295,7 @@ class SqlDatasetStoreTests(unittest.TestCase):
             writer.write_polar_measurement(measurement=measurement, points=points)
             writer.write_polar_measurement(measurement=measurement, points=points)
 
-            with closing(sqlite3.connect(str(project_root / "dataset" / "project.sqlite"))) as conn:
+            with closing(sqlite3.connect(str(writer.project_db_path))) as conn:
                 meas_count = conn.execute("SELECT COUNT(*) FROM polar_measurements").fetchone()[0]
                 point_count = conn.execute("SELECT COUNT(*) FROM polar_points").fetchone()[0]
             self.assertEqual(int(meas_count), 1)

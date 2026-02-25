@@ -1,4 +1,4 @@
-"""Qt form builder for metadata-driven ATH parameter editing."""
+﻿"""Qt form builder for metadata-driven ATH parameter editing."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Seque
 
 from ui.form_metrics import FORM_METRICS, configure_single_column_grid, configure_two_column_grid
 from ui.form_schema import FieldSpec, FormSchema, ModeStackSpec, build_project_form_schema, field_display_priority
+from ui.text_utils import safe_text
 
 try:
     from PySide6.QtCore import (
@@ -326,6 +327,7 @@ class AccordionHeaderRow(QFrame):
         super().__init__(parent)
         self.setObjectName("AccordionHeaderRow")
         self.setFocusPolicy(Qt.StrongFocus)
+        self.setCursor(Qt.PointingHandCursor)
         self.setProperty("severity", "neutral")
         self.setMinimumHeight(48)
 
@@ -373,35 +375,41 @@ class AccordionHeaderRow(QFrame):
         self._status_badge.setVisible(True)
         content_layout.addWidget(self._status_badge, 0, Qt.AlignVCenter)
 
-        self._chevron = QLabel("▾")
-        self._chevron.setObjectName("AccordionChevron")
-        content_layout.addWidget(self._chevron, 0, Qt.AlignVCenter)
-
         root.addWidget(content, 1)
         self._chips: List[str] = []
         self._expanded = True
         self._status_level = "unset"
+        self._can_reset = False
 
     def set_title(self, text: str) -> None:
-        self._title.setText(str(text or ""))
+        self._title.setText(safe_text(text))
 
     def set_summary_chips(self, chips: Sequence[str]) -> None:
-        self._chips = [str(item).strip() for item in chips if str(item).strip()]
+        cleaned: List[str] = []
+        for item in list(chips or []):
+            token = safe_text(item).strip()
+            if token:
+                cleaned.append(token)
+        self._chips = cleaned
         self._render_chips()
 
     def set_reset_available(self, available: bool) -> None:
-        enabled = bool(available)
-        self._reset_btn.setVisible(True)
-        self._reset_btn.setEnabled(enabled)
-        self._reset_btn.setProperty("canReset", "true" if enabled else "false")
+        self._can_reset = bool(available)
+        self._reset_btn.setEnabled(self._can_reset)
+        self._reset_btn.setProperty("canReset", "true" if self._can_reset else "false")
+        self._sync_reset_button_visibility()
         self._reset_btn.style().unpolish(self._reset_btn)
         self._reset_btn.style().polish(self._reset_btn)
         self._reset_btn.update()
 
+    def _sync_reset_button_visibility(self) -> None:
+        # Header reset is actionable only when collapsed and overrides exist.
+        self._reset_btn.setVisible(bool(self._can_reset and (not self._expanded)))
+
     def set_expanded(self, expanded: bool) -> None:
         self._expanded = bool(expanded)
-        self._chevron.setText("▾" if self._expanded else "▸")
         self._chips_wrap.setVisible(not self._expanded and bool(self._chips))
+        self._sync_reset_button_visibility()
         self.setProperty("expanded", "true" if self._expanded else "false")
         self.style().unpolish(self)
         self.style().polish(self)
@@ -431,17 +439,17 @@ class AccordionHeaderRow(QFrame):
             self._status_badge.setToolTip(f"warn: {int(warn_count)}")
             level = "warn"
         elif int(incomplete_count) > 0:
-            self._status_badge.setText(f"• {int(incomplete_count)}")
+            self._status_badge.setText(f"~ {int(incomplete_count)}")
             self._status_badge.setProperty("severity", "incomplete")
             self._status_badge.setToolTip(f"incomplete: {int(incomplete_count)}")
             level = "incomplete"
         elif int(active_count) > 0:
-            self._status_badge.setText("✓")
+            self._status_badge.setText("ok")
             self._status_badge.setProperty("severity", "ok")
             self._status_badge.setToolTip(f"configured: {int(active_count)}")
             level = "ok"
         else:
-            self._status_badge.setText("•")
+            self._status_badge.setText(".")
             self._status_badge.setProperty("severity", "unset")
             self._status_badge.setToolTip(f"unset: {int(total_fields)}")
             level = "unset"
@@ -470,7 +478,7 @@ class AccordionHeaderRow(QFrame):
         visible = self._chips[:max_visible]
         remaining = max(0, len(self._chips) - max_visible)
         for value in visible:
-            chip = QLabel(value)
+            chip = QLabel(safe_text(value))
             chip.setObjectName("AccordionChip")
             chip.setProperty("state", self._status_level)
             self._chips_layout.addWidget(chip, 0, Qt.AlignVCenter)

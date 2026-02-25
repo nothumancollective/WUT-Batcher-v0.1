@@ -1,0 +1,850 @@
+from __future__ import annotations
+
+import os
+from pathlib import Path
+import tempfile
+import unittest
+from unittest.mock import patch
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from app.gui import AnalysePage, MetricCurveCanvas, _traffic_status_color, apply_plot_theme, compute_plot_layout_geometry
+from app.analyzer.metric_band_specs import metric_band_spec_for_key, metric_band_thresholds_from_spec
+from app.services import OrchestratorService
+from app.settings_store import SettingsStore, UserSettings
+from ui.styled_dialog import StyledDialogBase
+from ui.theme import build_stylesheet
+
+try:
+    from PySide6.QtCore import QBuffer, QIODevice, Qt
+    from PySide6.QtGui import QIcon
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QApplication, QGroupBox, QToolButton
+except ImportError:  # pragma: no cover
+    QBuffer = None  # type: ignore[assignment]
+    QIODevice = None  # type: ignore[assignment]
+    Qt = None  # type: ignore[assignment]
+    QIcon = None  # type: ignore[assignment]
+    QTest = None  # type: ignore[assignment]
+    QApplication = None  # type: ignore[assignment]
+    QGroupBox = None  # type: ignore[assignment]
+    QToolButton = None  # type: ignore[assignment]
+
+
+def _build_service(tmp_root: Path) -> OrchestratorService:
+    settings_path = tmp_root / "settings.json"
+    library_root = tmp_root / "library"
+    store = SettingsStore(settings_path)
+    store.save(UserSettings(library_root=str(library_root)))
+    return OrchestratorService(settings_store=store)
+
+
+def _set_stage(page: AnalysePage, stage_id: str) -> None:
+    page._set_combo_current_by_data(page.stage_selector, stage_id)
+
+
+def _sample_compare_plot_items() -> list[dict]:
+    rows: list[dict] = []
+    for idx in range(2):
+        rows.append(
+            {
+                "candidate": {
+                    "project_id": "P001",
+                    "batch_id": f"B00{idx + 1}",
+                    "run_id": f"R00{idx + 1}",
+                    "version_id": f"V00{idx + 1}",
+                    "planes": ["H", "V"],
+                },
+                "plot": {
+                    "display_freqs_hz": [200.0, 500.0, 1000.0],
+                    "display_matrix_db": [[0.0, -2.0, -4.0], [-1.0, -3.0, -5.0]],
+                    "angles_deg": [-10.0, 10.0],
+                    "ref_angle_deg": 0.0,
+                    "stage_plot": {
+                        "curves": {
+                            "beamwidth": [
+                                {"freq_hz": 200.0, "beamwidth_deg": 62.0},
+                                {"freq_hz": 1000.0, "beamwidth_deg": 58.0},
+                            ],
+                            "e_cov": [
+                                {"freq_hz": 200.0, "value": 0.42},
+                                {"freq_hz": 1000.0, "value": 0.37},
+                            ],
+                            "di_proxy": [
+                                {"freq_hz": 200.0, "value": 2.8},
+                                {"freq_hz": 1000.0, "value": 3.2},
+                            ],
+                            "s_theta": [
+                                {"freq_hz": 200.0, "value": 0.22},
+                                {"freq_hz": 1000.0, "value": 0.28},
+                            ],
+                            "e_sym_shape": [
+                                {"freq_hz": 200.0, "value": 0.18},
+                                {"freq_hz": 1000.0, "value": 0.24},
+                            ],
+                            "r_off": [
+                                {"freq_hz": 200.0, "value": 1.9},
+                                {"freq_hz": 1000.0, "value": 4.4},
+                            ],
+                        },
+                        "summary": {
+                            "e_bw_mean": 1.2 + idx * 0.1,
+                            "r_spill_mean": 0.12 + idx * 0.01,
+                            "e_cov_mean": 0.4 + idx * 0.02,
+                        },
+                        "heatmap_overlays": {
+                            "minus6_contour": [
+                                {"freq_hz": 200.0, "left_angle_deg": -30.0, "right_angle_deg": 30.0}
+                            ],
+                            "target_half_window_deg": 30.0,
+                        },
+                    },
+                },
+            }
+        )
+    return rows
+
+
+def _icon_png_bytes(icon: QIcon, size: int = 14) -> bytes:
+    if QBuffer is None or QIODevice is None:
+        return b""
+    pixmap = icon.pixmap(size, size)
+    buffer = QBuffer()
+    buffer.open(QIODevice.WriteOnly)
+    pixmap.save(buffer, "PNG")
+    return bytes(buffer.data())
+
+
+def _pixmap_png_bytes(canvas, size: int = 16) -> bytes:
+    if QBuffer is None or QIODevice is None:
+        return b""
+    pixmap = canvas.pixmap()
+    if pixmap is None:
+        return b""
+    buffer = QBuffer()
+    buffer.open(QIODevice.WriteOnly)
+    pixmap.save(buffer, "PNG")
+    return bytes(buffer.data())
+
+
+@unittest.skipIf(QApplication is None, "PySide6 is required")
+class AnalyzerPlotUxRegressionTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = QApplication.instance() or QApplication([])
+
+    def test_stage_tab_always_exposes_four_plot_tiles_in_explorer_and_compare(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_plot_ux_tiles_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            self.assertEqual(page.explorer_grid_layout.count(), 4)
+            self.assertEqual(page.compare_grid_layout.count(), 4)
+            for stage_id in ("concept", "stabilization", "final"):
+                _set_stage(page, stage_id)
+                self.app.processEvents()
+                self.assertEqual(len(page._explorer_stage_panels), 4)
+                self.assertEqual(len(page._compare_stage_panels), 4)
+                self.assertFalse(
+                    any(str(panel.get("kind") or "") == "placeholder" for panel in page._explorer_stage_panels.values())
+                )
+                self.assertFalse(
+                    any(str(panel.get("kind") or "") == "placeholder" for panel in page._compare_stage_panels.values())
+                )
+
+    def test_compare_bottom_right_metric_is_stage_specific(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_plot_ux_bottom_right_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+
+            _set_stage(page, "stabilization")
+            self.app.processEvents()
+            self.assertEqual(str(page._compare_stage_panels["D"].get("metric_key") or ""), "e_sym_shape")
+
+            _set_stage(page, "final")
+            self.app.processEvents()
+            self.assertEqual(str(page._compare_stage_panels["D"].get("metric_key") or ""), "s_theta")
+
+    def test_compare_overlay_right_panel_hides_series_labels(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_plot_ux_labels_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            page._compare_plot_items = _sample_compare_plot_items()
+            page._selected_compare_slot_index = 0
+            _set_stage(page, "concept")
+            self.app.processEvents()
+            page._render_compare_overlay()
+            slot_b = page._compare_stage_panels["B"]
+            labels = [str(row.get("label") or "") for row in list(slot_b["curve_canvas"]._series)]
+            self.assertTrue(labels)
+            self.assertTrue(all(not str(label).strip() for label in labels))
+
+    def test_canvas_does_not_use_internal_duplicate_titles(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_plot_ux_titles_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            for panel in list(page._explorer_stage_panels.values()) + list(page._compare_stage_panels.values()):
+                for key in ("heatmap_canvas", "curve_canvas", "pareto_canvas"):
+                    canvas = panel.get(key)
+                    if canvas is None:
+                        continue
+                    self.assertEqual(str(canvas.text() or ""), "")
+
+    def test_compare_renders_with_single_candidate_without_select_candidates_status(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_plot_ux_one_candidate_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            candidate = {
+                "project_id": "P001",
+                "batch_id": "B001",
+                "run_id": "R001",
+                "version_id": "V001",
+                "planes": ["H", "V"],
+                "kpi_score": 88.0,
+            }
+            page._set_compare_candidates([candidate])
+            _set_stage(page, "stabilization")
+            self.app.processEvents()
+            page._compare_plot_items = [_sample_compare_plot_items()[0]]
+            page._render_compare_visuals()
+            status_b = str(page._compare_stage_panels["B"]["curve_canvas"]._status or "")
+            status_d = str(page._compare_stage_panels["D"]["curve_canvas"]._status or "")
+            self.assertNotIn("Select candidates", status_b)
+            self.assertNotIn("Select candidates", status_d)
+
+    def test_plane_selection_propagates_compare_redraw_calls(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_plot_ux_plane_redraw_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            page.analysis_tabs.setCurrentWidget(page.compare_tab)
+            page._set_compare_candidates(
+                [
+                    {
+                        "project_id": "P001",
+                        "batch_id": "B001",
+                        "run_id": "R001",
+                        "version_id": "V001",
+                        "planes": ["H", "V"],
+                        "kpi_score": 88.0,
+                    },
+                    {
+                        "project_id": "P001",
+                        "batch_id": "B002",
+                        "run_id": "R002",
+                        "version_id": "V002",
+                        "planes": ["H", "V"],
+                        "kpi_score": 82.0,
+                    },
+                ]
+            )
+            page._compare_plot_items = _sample_compare_plot_items()
+            _set_stage(page, "concept")
+            self.app.processEvents()
+            with (
+                patch.object(page, "_render_compare_overlay", wraps=page._render_compare_overlay) as render_overlay,
+                patch.object(page, "_render_compare_heatmap_selection", wraps=page._render_compare_heatmap_selection) as render_heatmap,
+                patch.object(page, "_render_compare_focus_curve", wraps=page._render_compare_focus_curve) as render_focus,
+                patch.object(page, "_render_compare_pareto", wraps=page._render_compare_pareto) as render_pareto,
+            ):
+                page._plane_buttons["V"].setChecked(True)
+                self.app.processEvents()
+                self.assertEqual(page._compare_plane(), "V")
+                self.assertGreaterEqual(render_overlay.call_count, 1)
+                self.assertGreaterEqual(render_heatmap.call_count, 1)
+                self.assertGreaterEqual(render_focus.call_count, 1)
+                self.assertGreaterEqual(render_pareto.call_count, 1)
+
+    def test_layout_geometry_keeps_x_axis_title_below_tick_labels(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_plot_ux_layout_geom_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            canvases = [
+                page._explorer_stage_panels["A"]["heatmap_canvas"],
+                page._explorer_stage_panels["B"]["curve_canvas"],
+                page._compare_stage_panels["C"]["pareto_canvas"],
+            ]
+            for width, height in ((960, 480), (680, 360), (520, 280)):
+                for canvas in canvases:
+                    canvas.resize(width, height)
+                    self.app.processEvents()
+                    theme = apply_plot_theme(canvas, has_legend=False, context="test")
+                    layout = compute_plot_layout_geometry(width=canvas.width(), height=canvas.height(), theme=theme)
+                    gap = int(theme.get("x_axis_label_gap_px", 0))
+                    self.assertGreaterEqual(int(layout["x_axis_label_top"]), int(layout["x_tick_label_bottom"]) + gap)
+                    self.assertLessEqual(
+                        int(layout["x_axis_label_top"]) + int(layout["x_axis_label_height"]),
+                        int(canvas.height()),
+                    )
+
+    def test_canvas_outer_background_is_transparent(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_plot_ux_transparent_bg_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            heatmap = page._explorer_stage_panels["A"]["heatmap_canvas"]
+            curve = page._explorer_stage_panels["B"]["curve_canvas"]
+            pareto = page._compare_stage_panels["C"]["pareto_canvas"]
+            for canvas in (heatmap, curve, pareto):
+                canvas.resize(520, 300)
+            heatmap.clear_heatmap("No heatmap data.")
+            curve.clear_series("Curve not available.")
+            pareto.clear_points("Pareto unavailable.")
+            self.app.processEvents()
+            for canvas in (heatmap, curve, pareto):
+                pixmap = canvas.pixmap()
+                self.assertIsNotNone(pixmap)
+                image = pixmap.toImage()
+                # Corners must stay transparent: no opaque full-canvas black slab.
+                self.assertLessEqual(int(image.pixelColor(1, 1).alpha()), 10)
+                self.assertLessEqual(int(image.pixelColor(max(image.width() - 2, 1), 1).alpha()), 10)
+
+    def test_theme_uses_workspace_surface_with_toggleable_plot_tile_fill(self) -> None:
+        stylesheet = build_stylesheet()
+        self.assertIn("QWidget#AnalyzerCompareWorkspace", stylesheet)
+        self.assertIn("QWidget#AnalyzerExplorerGrid", stylesheet)
+        self.assertIn("QFrame#ProjectIssuesPanel[analyzerPlotTile=\"true\"]", stylesheet)
+        self.assertIn("background-color: #1f1f1f;", stylesheet)
+        self.assertIn("[analyzerPlotTileHighContrast=\"true\"]", stylesheet)
+
+    def test_target_overlay_visibility_floor_is_stage_invariant(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_plot_ux_target_visibility_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            page._set_compare_candidates(
+                [
+                    {
+                        "project_id": "P001",
+                        "batch_id": "B001",
+                        "run_id": "R001",
+                        "version_id": "V001",
+                        "planes": ["H", "V"],
+                        "kpi_score": 88.0,
+                    }
+                ]
+            )
+            page._compare_plot_items = [_sample_compare_plot_items()[0]]
+            for stage_id in ("concept", "stabilization", "final"):
+                _set_stage(page, stage_id)
+                self.app.processEvents()
+                page._render_compare_visuals()
+                self.app.processEvents()
+                heatmap = page._compare_stage_panels["A"]["heatmap_canvas"]
+                self.assertGreaterEqual(int(getattr(heatmap, "_target_shade_alpha", 0)), 44)
+                self.assertGreaterEqual(int(getattr(heatmap, "_target_boundary_alpha", 0)), 180)
+
+    def test_analyzer_help_buttons_use_info_icon(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_plot_ux_info_icon_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            expected_info = QIcon(":/icons/info.svg")
+            expected_settings = QIcon(":/icons/settings.svg")
+            info_bytes = _icon_png_bytes(expected_info)
+            settings_bytes = _icon_png_bytes(expected_settings)
+            self.assertTrue(info_bytes)
+            self.assertNotEqual(info_bytes, settings_bytes)
+            self.assertEqual(_icon_png_bytes(page.flags_help_btn.icon()), info_bytes)
+            for panel in list(page._explorer_stage_panels.values()) + list(page._compare_stage_panels.values()):
+                help_btn = panel.get("help_btn")
+                self.assertEqual(_icon_png_bytes(help_btn.icon()), info_bytes)
+
+    def test_metric_band_toggle_state_flows_into_curve_style_profile(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_plot_ux_metric_band_toggle_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            self.assertTrue(bool(page._show_metric_bands))
+            self.assertTrue(bool(page._metric_band_smooth))
+            stabilization_profile = page._curve_style_profile(
+                stage_id="stabilization",
+                metric_key="di_proxy",
+                context="explorer",
+            )
+            self.assertIn("show_band", stabilization_profile)
+            self.assertTrue(bool(stabilization_profile.get("show_band")))
+            self.assertTrue(bool(stabilization_profile.get("band_smooth")))
+            page._apply_analysis_config({"show_metric_bands": False})
+            self.assertFalse(bool(page._show_metric_bands))
+            stabilization_profile_disabled = page._curve_style_profile(
+                stage_id="stabilization",
+                metric_key="di_proxy",
+                context="explorer",
+            )
+            self.assertFalse(bool(stabilization_profile_disabled.get("show_band")))
+            page._apply_analysis_config({"show_metric_bands": True, "metric_band_smooth": False})
+            stabilization_profile_blocks = page._curve_style_profile(
+                stage_id="stabilization",
+                metric_key="di_proxy",
+                context="explorer",
+            )
+            self.assertTrue(bool(stabilization_profile_blocks.get("show_band")))
+            self.assertFalse(bool(stabilization_profile_blocks.get("band_smooth")))
+
+    def test_metric_band_opacity_config_is_clamped_and_applied(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_plot_ux_metric_band_opacity_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            page._apply_analysis_config({"metric_band_opacity": 2.4})
+            self.assertAlmostEqual(float(page._metric_band_opacity), 1.0, places=6)
+            page._apply_analysis_config({"metric_band_opacity": 0.01})
+            self.assertAlmostEqual(float(page._metric_band_opacity), 0.05, places=6)
+            cfg = page._current_analysis_config()
+            self.assertAlmostEqual(float(cfg.get("metric_band_opacity") or 0.0), 0.05, places=6)
+            page._render_plot_payload(dict(_sample_compare_plot_items()[0]["plot"]))
+            self.app.processEvents()
+            canvas = page._explorer_stage_panels["B"]["curve_canvas"]
+            self.assertAlmostEqual(float(canvas._band_opacity), 0.05, places=6)
+
+    def test_compare_curve_band_only_uses_active_slot_color_owner(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_plot_ux_metric_band_owner_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            page._compare_plot_items = _sample_compare_plot_items()
+            _set_stage(page, "stabilization")
+            self.app.processEvents()
+            page._selected_compare_slot_index = 1
+            page._render_compare_overlay()
+            slot_b = page._compare_stage_panels["B"]
+            series = list(slot_b["curve_canvas"]._series)
+            with_band = [bool(row.get("show_band")) for row in series[:2]]
+            self.assertEqual(with_band, [False, True])
+
+    def test_explorer_metric_band_toggle_on_renders_linear_region_items(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_plot_ux_metric_band_regions_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            page._apply_analysis_config({"show_metric_bands": True})
+            _set_stage(page, "stabilization")
+            self.app.processEvents()
+            plot_payload = dict(_sample_compare_plot_items()[0]["plot"])
+            page._render_plot_payload(plot_payload)
+            self.app.processEvents()
+            canvas = page._explorer_stage_panels["C"]["curve_canvas"]
+            items = list(canvas._metric_band_items)
+            self.assertTrue(any(str(item.get("item_type") or "") == "LinearRegionItem" for item in items))
+            self.assertTrue(all(str(item.get("anchor") or "") in {"spec", ""} for item in items))
+
+    def test_metric_band_component_toggles_drive_region_and_line_items(self) -> None:
+        canvas = MetricCurveCanvas()
+        canvas.resize(540, 320)
+        spec = metric_band_spec_for_key("s_theta")
+        assert spec is not None
+        series = [
+            {
+                "label": "V001",
+                "show_legend": False,
+                "style": "consistency_strip",
+                "show_band": True,
+                "band_smooth": True,
+                "band_spec": spec,
+                "points": [
+                    {"freq_hz": 200.0, "value": 0.15},
+                    {"freq_hz": 1000.0, "value": 0.31},
+                    {"freq_hz": 2000.0, "value": 0.41},
+                ],
+                "metric_band_components": {
+                    "show_good_band": True,
+                    "show_warn_band": False,
+                    "show_bad_band": False,
+                    "show_warn_line": True,
+                    "show_bad_line": True,
+                },
+                "metric_band_colors": {
+                    "good": "#5A7488",
+                    "warn": "#6A8296",
+                    "bad": "#7A8B9D",
+                },
+            }
+        ]
+        canvas.set_series(series=series, x_scale_mode="log", x_label="Frequency (Hz, log)", y_label="Smoothness")
+        self.app.processEvents()
+        items = [dict(item) for item in list(canvas._metric_band_items)]
+        good_regions = [
+            item
+            for item in items
+            if str(item.get("item_type") or "") == "LinearRegionItem" and str(item.get("role") or "") == "good"
+        ]
+        warn_regions = [
+            item
+            for item in items
+            if str(item.get("item_type") or "") == "LinearRegionItem" and str(item.get("role") or "") == "warn"
+        ]
+        warn_lines = [
+            item
+            for item in items
+            if str(item.get("item_type") or "") == "InfiniteLine" and str(item.get("role") or "") == "warn_line"
+        ]
+        bad_lines = [
+            item
+            for item in items
+            if str(item.get("item_type") or "") == "InfiniteLine" and str(item.get("role") or "") == "bad_line"
+        ]
+        self.assertEqual(len(good_regions), 1)
+        self.assertEqual(len(warn_regions), 0)
+        self.assertEqual(len(warn_lines), 1)
+        self.assertEqual(len(bad_lines), 1)
+        warn_rgb = tuple(int(value) for value in tuple(warn_lines[0].get("color_rgba") or (0, 0, 0, 0))[:3])
+        self.assertEqual(warn_rgb, (106, 130, 150))
+
+    def test_display_advanced_dialog_exposes_grouped_metric_blocks(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_plot_ux_display_advanced_blocks_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            captured: dict[str, object] = {}
+
+            def _capture_exec(dialog_obj):
+                captured["dialog"] = dialog_obj
+                return 0
+
+            with patch.object(StyledDialogBase, "exec", _capture_exec):
+                page._open_display_advanced_dialog()
+            dialog = captured.get("dialog")
+            self.assertIsNotNone(dialog)
+            assert dialog is not None
+            self.assertIsNotNone(dialog.findChild(QGroupBox, "AnalyzerDisplayAdvancedDisplayGroup"))
+            self.assertIsNotNone(dialog.findChild(QGroupBox, "AnalyzerDisplayAdvancedContrastGroup"))
+            self.assertIsNotNone(dialog.findChild(QGroupBox, "AnalyzerDisplayAdvancedMetricBandsGroup"))
+            self.assertIsNotNone(dialog.findChild(QGroupBox, "AnalyzerDisplayAdvancedMetricColorsGroup"))
+            contrast_toggle = dialog.findChild(QToolButton, "AnalyzerHighContrastPlotsToggle")
+            self.assertIsNotNone(contrast_toggle)
+            assert contrast_toggle is not None
+            self.assertTrue(bool(contrast_toggle.isChecked()))
+
+    def test_high_contrast_plot_fill_toggle_updates_matrix_tile_containers_only(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_plot_ux_high_contrast_fill_toggle_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            explorer_frame = page._explorer_stage_panels["B"]["frame"]
+            compare_frame = page._compare_stage_panels["A"]["frame"]
+            drawer = page.compare_drawer
+            self.assertTrue(bool(explorer_frame.property("analyzerPlotTileHighContrast")))
+            self.assertTrue(bool(compare_frame.property("analyzerPlotTileHighContrast")))
+            self.assertIsNone(drawer.property("analyzerPlotTileHighContrast"))
+
+            page._high_contrast_plots = False
+            page._apply_high_contrast_plot_fill_setting()
+            self.assertFalse(bool(explorer_frame.property("analyzerPlotTileHighContrast")))
+            self.assertFalse(bool(compare_frame.property("analyzerPlotTileHighContrast")))
+            self.assertIsNone(drawer.property("analyzerPlotTileHighContrast"))
+
+            page._high_contrast_plots = True
+            page._apply_high_contrast_plot_fill_setting()
+            self.assertTrue(bool(explorer_frame.property("analyzerPlotTileHighContrast")))
+
+    def test_auto_scale_button_exists_and_changes_scaling_mode(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_plot_ux_auto_scale_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            self.assertIsNotNone(page.auto_scale_btn)
+            self.assertTrue(bool(page.auto_scale_btn.isCheckable()))
+            self.assertTrue(bool(page.auto_scale_btn.property("analyzerToggle")))
+            self.assertTrue(bool(page.exclude_flagged_check.property("analyzerToggle")))
+            self.assertFalse(bool(page._auto_scale_enabled))
+            stable_range = page._resolve_axis_range(axis_key="test:axis", values=[0.0, 1.0, 2.0])
+            self.assertIsNotNone(stable_range)
+            page.auto_scale_btn.setChecked(True)
+            self.app.processEvents()
+            self.assertTrue(bool(page._auto_scale_enabled))
+            auto_range = page._resolve_axis_range(axis_key="test:axis", values=[10.0, 12.0])
+            self.assertIsNotNone(auto_range)
+            assert stable_range is not None
+            assert auto_range is not None
+            self.assertGreater(float(auto_range[0]), float(stable_range[0]))
+
+    def test_plane_consistency_fixed_range_uses_robust_outlier_clamp(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_plot_ux_plane_consistency_fixed_range_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            helper_range = AnalysePage._robust_plane_consistency_fixed_range([0.22, 0.28, 0.34, 48.0])
+            self.assertIsNotNone(helper_range)
+            assert helper_range is not None
+            self.assertAlmostEqual(float(helper_range[0]), 0.0, places=6)
+            self.assertLessEqual(float(helper_range[1]), 4.0)
+            self.assertGreater(float(helper_range[1]), 0.30)
+
+            fixed_range = page._resolve_axis_range(
+                axis_key="compare:stabilization:e_sym_shape:y",
+                values=[0.22, 0.28, 0.34, 48.0],
+            )
+            self.assertIsNotNone(fixed_range)
+            assert fixed_range is not None
+            self.assertLessEqual(float(fixed_range[1]), 4.0)
+
+    def test_stage_switch_applies_full_angle_smoothness_defaults(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_plot_ux_stage_full_angles_defaults_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            _set_stage(page, "concept")
+            self.app.processEvents()
+            self.assertFalse(bool(page._use_full_angles_for_smoothness))
+            _set_stage(page, "stabilization")
+            self.app.processEvents()
+            self.assertTrue(bool(page._use_full_angles_for_smoothness))
+            _set_stage(page, "final")
+            self.app.processEvents()
+            self.assertTrue(bool(page._use_full_angles_for_smoothness))
+
+    def test_explorer_concept_uses_target_deviation_summary_not_pareto(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_plot_ux_explorer_concept_summary_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            _set_stage(page, "concept")
+            self.app.processEvents()
+            panel_d = page._explorer_stage_panels["D"]
+            self.assertEqual(str(panel_d.get("metric_key") or ""), "target_deviation_summary")
+            self.assertEqual(str(panel_d.get("kind") or ""), "summary")
+            self.assertIn("Target Deviation Summary", str(panel_d.get("title_label").text()))
+            help_tip = str(panel_d.get("help_btn").toolTip() or "")
+            self.assertIn("Pattern Ctrl", help_tip)
+            self.assertIn("Overall Score", help_tip)
+
+    def test_target_axis_color_setting_propagates_to_relevant_canvases(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_plot_ux_target_axis_color_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            page._apply_analysis_config({"target_axis_color": "#FF7A4D"})
+            cfg = page._current_analysis_config()
+            self.assertEqual(str(cfg.get("target_axis_color") or ""), "#FF7A4D")
+            plot_payload = dict(_sample_compare_plot_items()[0]["plot"])
+            page._render_plot_payload(plot_payload)
+            self.app.processEvents()
+            explorer_heatmap = page._explorer_stage_panels["A"]["heatmap_canvas"]
+            explorer_curve = page._explorer_stage_panels["B"]["curve_canvas"]
+            explorer_summary = page._explorer_stage_panels["D"]["summary_canvas"]
+            self.assertEqual(str(explorer_heatmap._target_axis_color.name()).upper(), "#FF7A4D")
+            self.assertEqual(str(explorer_curve._target_axis_color.name()).upper(), "#FF7A4D")
+            self.assertEqual(str(explorer_summary._target_axis_color.name()).upper(), "#FF7A4D")
+
+    @unittest.skipIf(QTest is None or Qt is None, "Qt test utilities are required")
+    def test_plot_tile_double_click_toggles_maximize_restore(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_plot_ux_double_click_maximize_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            page.resize(1200, 780)
+            page.show()
+            self.app.processEvents()
+            tile_canvas = page._explorer_stage_panels["A"]["heatmap_canvas"]
+            QTest.mouseDClick(tile_canvas, Qt.LeftButton)
+            self.app.processEvents()
+            self.assertEqual(str(page._maximized_plot_slots.get("explorer") or ""), "A")
+            self.assertTrue(bool(page._explorer_stage_panels["A"]["frame"].isVisible()))
+            self.assertFalse(bool(page._explorer_stage_panels["B"]["frame"].isVisible()))
+            QTest.mouseDClick(tile_canvas, Qt.LeftButton)
+            self.app.processEvents()
+            self.assertIsNone(page._maximized_plot_slots.get("explorer"))
+            self.assertTrue(all(bool(panel["frame"].isVisible()) for panel in page._explorer_stage_panels.values()))
+            page.hide()
+
+    @unittest.skipIf(QTest is None or Qt is None, "Qt test utilities are required")
+    def test_compare_double_click_toggle_switch_restore_and_drawer_guard(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_plot_ux_compare_double_click_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            page.resize(1200, 780)
+            page.analysis_tabs.setCurrentWidget(page.compare_tab)
+            page.show()
+            self.app.processEvents()
+
+            page._set_compare_drawer_expanded(False, animated=False)
+            self.app.processEvents()
+            tile_primary = page._compare_stage_panels["B"]["frame"]
+            primary_slot = str(tile_primary.property("analyzerPlotTileSlot") or "").strip().upper()
+            self.assertIn(primary_slot, {"A", "B", "C", "D"})
+            QTest.mouseDClick(tile_primary, Qt.LeftButton)
+            self.app.processEvents()
+            self.assertEqual(str(page._maximized_plot_slots.get("compare") or ""), primary_slot)
+
+            # Switching focus to a different tile should replace the maximized slot.
+            tile_other = None
+            for slot_key in ("A", "B", "C", "D"):
+                candidate = page._compare_stage_panels[slot_key]["frame"]
+                candidate_slot = str(candidate.property("analyzerPlotTileSlot") or "").strip().upper()
+                if candidate_slot != primary_slot:
+                    tile_other = candidate
+                    break
+            self.assertIsNotNone(tile_other)
+            assert tile_other is not None
+            QTest.mouseDClick(tile_other, Qt.LeftButton)
+            self.app.processEvents()
+            switched_slot = str(tile_other.property("analyzerPlotTileSlot") or "").strip().upper()
+            self.assertEqual(str(page._maximized_plot_slots.get("compare") or ""), switched_slot)
+
+            # Restore by double-clicking the same maximized tile.
+            QTest.mouseDClick(tile_other, Qt.LeftButton)
+            self.app.processEvents()
+            self.assertIsNone(page._maximized_plot_slots.get("compare"))
+
+            page._set_compare_drawer_expanded(True, animated=False)
+            self.app.processEvents()
+            QTest.mouseDClick(tile_primary, Qt.LeftButton)
+            self.app.processEvents()
+            self.assertIsNone(page._maximized_plot_slots.get("compare"))
+            page.hide()
+
+    def test_compare_pareto_excludes_non_finite_values_without_crash(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_plot_ux_pareto_non_finite_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            page._compare_candidates = [
+                {"batch_id": "B001", "version_id": "V001"},
+                {"batch_id": "B002", "version_id": "V002"},
+            ]
+            page._compare_plot_items = [
+                {
+                    "candidate": {"batch_id": "B001", "version_id": "V001", "kpi_e_bw": float("nan"), "kpi_r_spill": 0.2},
+                    "plot": {"stage_plot": {"summary": {"e_bw_mean": float("nan"), "r_spill_mean": 0.2}}},
+                },
+                {
+                    "candidate": {"batch_id": "B002", "version_id": "V002", "kpi_e_bw": 1.1, "kpi_r_spill": float("inf")},
+                    "plot": {"stage_plot": {"summary": {"e_bw_mean": 1.1, "r_spill_mean": float("inf")}}},
+                },
+            ]
+            _set_stage(page, "concept")
+            self.app.processEvents()
+            page._render_compare_pareto()
+            pareto_panel = next(
+                (
+                    panel
+                    for panel in page._compare_stage_panels.values()
+                    if str(panel.get("kind") or "").strip().lower() == "pareto"
+                ),
+                None,
+            )
+            assert pareto_panel is not None
+            status = str(pareto_panel["pareto_canvas"]._status or "")
+            self.assertIn("Compute KPIs", status)
+
+    def test_metric_curve_marker_rendering_is_deterministic(self) -> None:
+        canvas = MetricCurveCanvas()
+        canvas.resize(540, 320)
+        series = [
+            {
+                "label": "V001",
+                "show_legend": True,
+                "style": "trend_band",
+                "show_band": True,
+                "regime_markers": True,
+                "thresholds": [2.0, 4.0],
+                "points": [
+                    {"freq_hz": 200.0, "value": 2.2},
+                    {"freq_hz": 500.0, "value": 3.6},
+                    {"freq_hz": 1000.0, "value": 2.9},
+                    {"freq_hz": 2000.0, "value": 4.1},
+                ],
+                "color": (154, 172, 197),
+            }
+        ]
+        canvas.set_series(series=series, x_scale_mode="log", x_label="Frequency (Hz, log)", y_label="DI Proxy (dB)")
+        self.app.processEvents()
+        first = _pixmap_png_bytes(canvas)
+        canvas.set_series(series=series, x_scale_mode="log", x_label="Frequency (Hz, log)", y_label="DI Proxy (dB)")
+        self.app.processEvents()
+        second = _pixmap_png_bytes(canvas)
+        self.assertTrue(first)
+        self.assertEqual(first, second)
+
+    def test_metric_band_uses_threshold_region_items_not_curve_envelope(self) -> None:
+        canvas = MetricCurveCanvas()
+        canvas.resize(540, 320)
+        spec = metric_band_spec_for_key("s_theta")
+        assert spec is not None
+        base_row = {
+            "label": "V001",
+            "show_legend": False,
+            "style": "consistency_strip",
+            "show_band": True,
+            "band_smooth": True,
+            "thresholds": metric_band_thresholds_from_spec(spec),
+            "band_spec": spec,
+            "points": [
+                {"freq_hz": 200.0, "value": 0.22},
+                {"freq_hz": 500.0, "value": 0.36},
+                {"freq_hz": 1000.0, "value": 0.29},
+                {"freq_hz": 2000.0, "value": 0.41},
+            ],
+            "color": (137, 194, 128),
+        }
+        canvas.set_series(series=[base_row], x_scale_mode="log", x_label="Frequency (Hz, log)", y_label="DI Proxy (dB)")
+        self.app.processEvents()
+        first_items = [dict(item) for item in list(canvas._metric_band_items)]
+        first_regions = [item for item in first_items if str(item.get("item_type") or "") == "LinearRegionItem"]
+        self.assertEqual(len(first_regions), 2)
+        first_regions_by_role = {str(item.get("role") or ""): item for item in first_regions}
+        self.assertIn("good", first_regions_by_role)
+        self.assertIn("warn", first_regions_by_role)
+        self.assertEqual(str(first_regions_by_role["good"].get("anchor") or ""), "spec")
+        self.assertAlmostEqual(float(first_regions_by_role["good"].get("y_low") or 0.0), 0.0, places=6)
+        self.assertAlmostEqual(float(first_regions_by_role["good"].get("y_high") or 0.0), 0.20, places=6)
+        self.assertAlmostEqual(float(first_regions_by_role["warn"].get("y_low") or 0.0), 0.20, places=6)
+        self.assertAlmostEqual(float(first_regions_by_role["warn"].get("y_high") or 0.0), 0.40, places=6)
+
+        shifted_row = dict(base_row)
+        shifted_row["points"] = [
+            {"freq_hz": 200.0, "value": 0.62},
+            {"freq_hz": 500.0, "value": 0.71},
+            {"freq_hz": 1000.0, "value": 0.84},
+            {"freq_hz": 2000.0, "value": 0.77},
+        ]
+        canvas.set_series(series=[shifted_row], x_scale_mode="log", x_label="Frequency (Hz, log)", y_label="DI Proxy (dB)")
+        self.app.processEvents()
+        second_regions = [item for item in list(canvas._metric_band_items) if str(item.get("item_type") or "") == "LinearRegionItem"]
+        second_regions_by_role = {str(item.get("role") or ""): item for item in second_regions}
+        self.assertEqual(
+            (
+                float(second_regions_by_role["good"].get("y_low") or 0.0),
+                float(second_regions_by_role["good"].get("y_high") or 0.0),
+            ),
+            (0.0, 0.20),
+        )
+        self.assertEqual(
+            (
+                float(second_regions_by_role["warn"].get("y_low") or 0.0),
+                float(second_regions_by_role["warn"].get("y_high") or 0.0),
+            ),
+            (0.20, 0.40),
+        )
+        self.assertFalse(any(str(item.get("anchor") or "").strip().lower() == "curve" for item in list(canvas._metric_band_items)))
+
+    def test_target_deviation_traffic_color_mapping_uses_three_buckets(self) -> None:
+        good = _traffic_status_color(0.12)
+        mid = _traffic_status_color(0.52)
+        bad = _traffic_status_color(0.88)
+        self.assertGreater(good.green(), good.red())
+        self.assertGreater(mid.red(), good.red())
+        self.assertGreater(bad.red(), bad.green())
+
+    def test_metric_curve_draw_content_stays_within_plot_rect_clip(self) -> None:
+        canvas = MetricCurveCanvas()
+        canvas.resize(560, 320)
+        styles = ("consistency_strip", "trend_band", "defect_band")
+        for style in styles:
+            series = [
+                {
+                    "label": "",
+                    "show_legend": False,
+                    "style": style,
+                    "show_band": True,
+                    "band_smooth": True,
+                    "thresholds": [0.2, 0.5, 0.8],
+                    "points": [
+                        {"freq_hz": 200.0, "value": 0.30},
+                        {"freq_hz": 500.0, "value": 0.55},
+                        {"freq_hz": 1000.0, "value": 0.42},
+                        {"freq_hz": 2000.0, "value": 0.66},
+                    ],
+                    "color": (154, 172, 197),
+                }
+            ]
+            canvas.set_series(series=series, x_scale_mode="log", x_label="Frequency (Hz, log)", y_label="Metric")
+            self.app.processEvents()
+            pixmap = canvas.pixmap()
+            self.assertIsNotNone(pixmap)
+            assert pixmap is not None
+            image = pixmap.toImage()
+            margin_left, margin_right, margin_top, margin_bottom = tuple(canvas._applied_plot_margins)
+            plot_w = max(image.width() - margin_left - margin_right, 1)
+            plot_h = max(image.height() - margin_top - margin_bottom, 1)
+            sample_x = min(image.width() - 2, margin_left + plot_w + 6)
+            sample_y = min(image.height() - 2, margin_top + (plot_h // 2))
+            outside_color = image.pixelColor(sample_x, sample_y)
+            self.assertLessEqual(int(outside_color.alpha()), 26, msg=f"style={style} leaked outside plot rect")
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -107,6 +107,10 @@ class CompatibilityService:
             for key in visible_set
             if key in self._fallback_sweepable_keys and key not in locked_set and (not str(key).startswith("Mesh."))
         }
+        # R-OSSE is represented as an object key in compatibility output, while
+        # Batch UI exposes sweepable scalar properties (R-OSSE.*).
+        if "R-OSSE" in visible_set and "R-OSSE" not in locked_set:
+            fallback.add("R-OSSE")
         sweepable_set.update(fallback)
         sweepable_set = {key for key in sweepable_set if not str(key).startswith("Mesh.")}
         sweepable_set.difference_update(self._controller_sweep_keys)

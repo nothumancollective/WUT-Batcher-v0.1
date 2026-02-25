@@ -70,13 +70,24 @@ Raw orientation marker comes from `Param_Coord_x3` when present.
 Normalization:
 - `0 -> "H"`
 - `90 -> "V"`
-- `42 -> "D"`
+- `42 -> "D"` (legacy diagonal exports)
+- `45 -> "D"` (current diagonal default inclination)
 - Any other numeric value -> `"X3_<value>"`
 - Missing marker -> `"X3_UNKNOWN"`
 
 Both values are stored:
 - normalized string in `orientation`
 - raw numeric in `orientation_raw`
+
+## Export Recommendations For Analyzer
+
+For reliable H/V/D plane availability in Analyzer, configure three polar exports with explicit inclinations:
+
+- H: `Inclination = 0`
+- V: `Inclination = 90`
+- D: `Inclination = 45`
+
+Recommended angle coverage is symmetric (for example `MapAngleRange = -90,90,19`) to avoid one-sided interpretation artifacts.
 
 ## Norm-Angle Policy
 

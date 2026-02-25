@@ -22,7 +22,9 @@ from app.ath_driver_assets import repair_post_ath_le_binding
 from app.cfg_renderer import render_cfg_text
 from app.constants import ATH_PREVIEW_EXPORT_ROOT
 from app.export_specs import ExportSpec, parse_export_specs
+from app.feature_flags import use_project_library_storage
 from app.models import Batch, Project
+from app.project_storage import resolve_project_paths, resolve_version_paths
 from app.safe_cleanup import guarded_delete_file_in_workspace, guarded_delete_tree
 from app.runners import AkabakRunner, AthRunner, RunnerResult, VacsRunner, parse_ath_dimensions
 from app.tidy_dataset import TidyDatasetWriter
@@ -76,12 +78,17 @@ class RuntimeSummary:
     dry_run: bool = False
 
 
+def _project_paths_from_root(project_root: Path):
+    project_root_path = Path(project_root)
+    return resolve_project_paths(project_root_path.parent, project_root_path.name, ensure=False)
+
+
 def _version_json_path(project_root: Path, version_id: str) -> Path:
-    return project_root / "versions" / version_id / "version.json"
+    return resolve_version_paths(_project_paths_from_root(project_root), version_id, ensure=False).version_json
 
 
 def _version_cfg_path(project_root: Path, version_id: str) -> Path:
-    return project_root / "versions" / version_id / "cfg" / "input.cfg"
+    return resolve_version_paths(_project_paths_from_root(project_root), version_id, ensure=False).cfg_file
 
 
 def _runtime_cfg_basename(*, project_id: str, batch_id: str, version_id: str, run_id: str) -> str:
@@ -91,7 +98,8 @@ def _runtime_cfg_basename(*, project_id: str, batch_id: str, version_id: str, ru
 
 
 def _version_runtime_cfg_path(project_root: Path, version_id: str, cfg_basename: str) -> Path:
-    return project_root / "versions" / version_id / "cfg" / f"{cfg_basename}.cfg"
+    version_paths = resolve_version_paths(_project_paths_from_root(project_root), version_id, ensure=False)
+    return version_paths.cfg_dir / f"{cfg_basename}.cfg"
 
 
 def _planned_ath_export_dir(ath_export_root: Path | None, run_cfg_path: Path) -> Optional[Path]:
@@ -101,19 +109,20 @@ def _planned_ath_export_dir(ath_export_root: Path | None, run_cfg_path: Path) ->
 
 
 def _version_abec_path(project_root: Path, version_id: str) -> Path:
-    return project_root / "versions" / version_id / "abec" / "Project.abec"
+    return resolve_version_paths(_project_paths_from_root(project_root), version_id, ensure=False).abec_file
 
 
 def _version_ath_work_path(project_root: Path, version_id: str) -> Path:
-    return project_root / "versions" / version_id / "ath_work"
+    return resolve_version_paths(_project_paths_from_root(project_root), version_id, ensure=False).ath_work_dir
 
 
 def _version_logs_dir(project_root: Path, version_id: str) -> Path:
-    return project_root / "versions" / version_id / "logs"
+    return resolve_version_paths(_project_paths_from_root(project_root), version_id, ensure=False).logs_dir
 
 
 def _version_exports_dir(project_root: Path, version_id: str, run_id: str) -> Path:
-    return project_root / "versions" / version_id / "exports" / run_id
+    version_paths = resolve_version_paths(_project_paths_from_root(project_root), version_id, ensure=False)
+    return version_paths.exports_dir / run_id
 
 
 def _load_template_text(template_cfg_path: Optional[str | Path]) -> str:
@@ -320,6 +329,7 @@ def _default_polar_export_specs() -> List[ExportSpec]:
                 **base_options,
                 "polar_name": "SPL_H",
                 "offset": 145,
+                "inclination": 0,
             },
             output_name_template="{version_id}_{graph_kind}_{export_id}.{format}",
         ),
@@ -347,17 +357,99 @@ def _default_polar_export_specs() -> List[ExportSpec]:
                 **base_options,
                 "polar_name": "SPL_D",
                 "offset_from_length_mm": 40,
-                "inclination": 42,
+                "inclination": 45,
             },
             output_name_template="{version_id}_{graph_kind}_{export_id}.{format}",
         ),
     ]
 
 
+def _plane_hint_from_polar_name(name: str) -> str:
+    tokens = [token for token in re.split(r"[^a-z0-9]+", str(name or "").strip().lower()) if token]
+    if any(token in {"h", "hor", "horizontal"} for token in tokens):
+        return "H"
+    if any(token in {"v", "ver", "vert", "vertical"} for token in tokens):
+        return "V"
+    if any(token in {"d", "diag", "diagonal"} for token in tokens):
+        return "D"
+    return ""
+
+
+def _option_float(options: Dict[str, Any], key: str) -> Optional[float]:
+    try:
+        value = options.get(key)
+        if value is None:
+            return None
+        return float(value)
+    except Exception:
+        return None
+
+
+def _legacy_safe_normalize_advanced_polar_specs(specs: Sequence[ExportSpec]) -> List[ExportSpec]:
+    normalized: List[ExportSpec] = [spec for spec in list(specs or [])]
+    by_id: Dict[str, int] = {}
+    for idx, spec in enumerate(normalized):
+        by_id[str(spec.id or "").strip().lower()] = idx
+
+    h_idx = by_id.get("adv_polar_1")
+    v_idx = by_id.get("adv_polar_2")
+    d_idx = by_id.get("adv_polar_3")
+    if h_idx is not None and v_idx is not None:
+        h_spec = normalized[h_idx]
+        v_spec = normalized[v_idx]
+        if (
+            str(h_spec.graph_kind or "").strip().lower() == "polar"
+            and str(v_spec.graph_kind or "").strip().lower() == "polar"
+        ):
+            h_options = dict(h_spec.options or {})
+            v_options = dict(v_spec.options or {})
+            h_hint = _plane_hint_from_polar_name(str(h_options.get("polar_name", "") or ""))
+            v_hint = _plane_hint_from_polar_name(str(v_options.get("polar_name", "") or ""))
+            h_incl = _option_float(h_options, "inclination")
+            v_incl = _option_float(v_options, "inclination")
+            if (
+                h_hint == "H"
+                and v_hint == "V"
+                and h_incl is not None
+                and v_incl is not None
+                and abs(h_incl - 90.0) <= 1e-6
+                and abs(v_incl - 90.0) <= 1e-6
+            ):
+                h_options["inclination"] = 0
+                normalized[h_idx] = ExportSpec(
+                    id=h_spec.id,
+                    tool=h_spec.tool,
+                    graph_kind=h_spec.graph_kind,
+                    variant=h_spec.variant,
+                    format=h_spec.format,
+                    options=h_options,
+                    output_name_template=h_spec.output_name_template,
+                )
+
+    if d_idx is not None:
+        d_spec = normalized[d_idx]
+        if str(d_spec.graph_kind or "").strip().lower() == "polar":
+            d_options = dict(d_spec.options or {})
+            d_hint = _plane_hint_from_polar_name(str(d_options.get("polar_name", "") or ""))
+            d_incl = _option_float(d_options, "inclination")
+            if d_hint == "D" and d_incl is not None and abs(d_incl - 42.0) <= 1e-6:
+                d_options["inclination"] = 45
+                normalized[d_idx] = ExportSpec(
+                    id=d_spec.id,
+                    tool=d_spec.tool,
+                    graph_kind=d_spec.graph_kind,
+                    variant=d_spec.variant,
+                    format=d_spec.format,
+                    options=d_options,
+                    output_name_template=d_spec.output_name_template,
+                )
+    return normalized
+
+
 def _resolve_export_specs(sim_export_payload: Dict[str, Any]) -> List[ExportSpec]:
     specs = parse_export_specs(sim_export_payload)
     if specs:
-        return specs
+        return _legacy_safe_normalize_advanced_polar_specs(specs)
     if bool(sim_export_payload.get("auto_default_polar_exports", False)):
         return _default_polar_export_specs()
     return []
@@ -900,6 +992,7 @@ def _run_akabak_ui_driver_stage(
     abec_project_path: Path,
     version_logs_dir: Path,
     require_vacs_graph_import: bool,
+    akabak_solve_timeout_s: int = 600,
     preserve_vacs_for_export: bool = False,
 ) -> Tuple[StageExecution, Dict[str, Any], bool]:
     if AkabakDriver is None:
@@ -941,13 +1034,14 @@ def _run_akabak_ui_driver_stage(
         solve = driver.run_solve()
         payload["steps"]["run_solve"] = {"ok": bool(solve.ok), "status": str(solve.status)}
 
+        timeout_s = max(1, int(akabak_solve_timeout_s))
         try:
             completed = driver.wait_for_completion(
-                timeout_s=600,
+                timeout_s=timeout_s,
                 require_vacs_graph_import=bool(require_vacs_graph_import),
             )
         except TypeError:
-            completed = driver.wait_for_completion(timeout_s=600)
+            completed = driver.wait_for_completion(timeout_s=timeout_s)
         payload["steps"]["wait_for_completion"] = {"ok": bool(completed.ok), "status": str(completed.status)}
         stage_ok = True
     except TimeoutError as exc:
@@ -1559,6 +1653,7 @@ def run_batch_pipeline(
     batch: Batch,
     *,
     projects_root: str | Path = "projects",
+    library_root: str | Path | None = None,
     template_cfg_path: str | Path | None = None,
     ath_executable: str | Path | None = None,
     akabak_executable: str | Path | None = None,
@@ -1566,6 +1661,7 @@ def run_batch_pipeline(
     ath_base_args: Sequence[str] | None = None,
     akabak_base_args: Sequence[str] | None = None,
     vacs_base_args: Sequence[str] | None = None,
+    akabak_solve_timeout_s: int = 600,
     continue_on_error: bool = True,
     dry_run: bool = False,
     run_id: Optional[str] = None,
@@ -1574,13 +1670,27 @@ def run_batch_pipeline(
     settings_hash: Optional[str] = None,
     ath_export_root: str | Path | None = ATH_PREVIEW_EXPORT_ROOT,
 ) -> RuntimeSummary:
-    planning_summary = materialize_batch_plan(project=project, batch=batch, projects_root=projects_root)
+    effective_library_root: Path | None = None
+    if library_root is not None:
+        effective_library_root = Path(str(library_root)).expanduser().resolve()
+    else:
+        projects_root_path = Path(str(projects_root)).expanduser().resolve()
+        if use_project_library_storage() and projects_root_path.name.lower() == "projects":
+            effective_library_root = projects_root_path.parent
+        else:
+            effective_library_root = projects_root_path
+    planning_summary = materialize_batch_plan(
+        project=project,
+        batch=batch,
+        projects_root=projects_root,
+        library_root=effective_library_root,
+    )
     project_root = Path(planning_summary.project_root).expanduser().resolve()
     template_text, template_cfg_effective = _load_effective_template(
         template_cfg_path,
         ath_executable=ath_executable,
     )
-    writer = TidyDatasetWriter(project_root)
+    writer = TidyDatasetWriter(project_root, library_root=effective_library_root)
     effective_run_id = run_id or str(uuid.uuid4())
     ath_export_root_path: Optional[Path] = None
     if ath_export_root is not None:
@@ -1779,7 +1889,16 @@ def run_batch_pipeline(
 
                 ath_stdout = Path(ath_result.stdout_log).read_text(encoding="utf-8")
                 dims = parse_ath_dimensions(ath_stdout)
-                if dims.raw_line:
+                # Persist final dimensions before downstream export/ingest stages.
+                if None not in (dims.horn_length_mm, dims.horn_width_mm, dims.horn_height_mm):
+                    raw_line = (
+                        dims.raw_line
+                        or (
+                            f"Length={float(dims.horn_length_mm):.3f} "
+                            f"Width={float(dims.horn_width_mm):.3f} "
+                            f"Height={float(dims.horn_height_mm):.3f}"
+                        )
+                    )
                     dims_result = writer.write_ath_dimensions(
                         [
                             {
@@ -1790,7 +1909,7 @@ def run_batch_pipeline(
                                 "horn_length_mm": dims.horn_length_mm,
                                 "horn_width_mm": dims.horn_width_mm,
                                 "horn_height_mm": dims.horn_height_mm,
-                                "raw_line": dims.raw_line,
+                                "raw_line": raw_line,
                                 "source_file": ath_result.stdout_log,
                             }
                         ]
@@ -1993,6 +2112,7 @@ def run_batch_pipeline(
                     abec_project_path=_version_abec_path(project_root, version_id),
                     version_logs_dir=_version_logs_dir(project_root, version_id),
                     require_vacs_graph_import=require_vacs_graph_import,
+                    akabak_solve_timeout_s=akabak_solve_timeout_s,
                     preserve_vacs_for_export=preserve_vacs_for_export,
                 )
                 stage_results.append(akabak_stage)
@@ -2036,6 +2156,7 @@ def run_batch_pipeline(
                 akabak_result = akabak_runner.run_project(
                     _version_abec_path(project_root, version_id),
                     version_logs_dir=_version_logs_dir(project_root, version_id),
+                    timeout_s=max(1, int(akabak_solve_timeout_s)),
                 )
                 stage_results.append(_stage_from_result(version_id, "akabak", akabak_result))
                 _update_version_state(
