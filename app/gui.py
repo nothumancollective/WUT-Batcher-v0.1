@@ -61,6 +61,7 @@ from app.settings_store import (
     SIMULATION_TIMEOUT_MINUTES_MIN,
     UserSettings,
 )
+from app.storage_manager import StorageManager
 from app.ui_validation import UiValidationEngine
 from app.widgets.command_header import CommandHeaderWidget
 from ui.batch_export_panel import BatchExportPanel
@@ -4280,9 +4281,16 @@ class BatchRunDefaultsDialog(QDialog):
 class SettingsDialog(QDialog):
     settings_saved = Signal(dict)
 
-    def __init__(self, service: OrchestratorService, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        service: OrchestratorService,
+        parent: QWidget | None = None,
+        *,
+        library_root_locked: bool = False,
+    ) -> None:
         super().__init__(parent)
         self.service = service
+        self._block_library_root_switch = bool(library_root_locked)
         self.setWindowTitle("Settings")
         self.setModal(True)
         self.resize(620, 390)
@@ -4382,6 +4390,11 @@ class SettingsDialog(QDialog):
 
         self.analyzer_cache_mode.currentIndexChanged.connect(self._sync_cache_controls)
         self._load()
+        self._initial_library_root = str(self.service.settings.library_root)
+        if self._block_library_root_switch:
+            self.library_root.setReadOnly(True)
+            self.library_root_choose_btn.setEnabled(False)
+            self.library_root.setToolTip("Close current project before switching Project Library Location.")
 
     def _load(self) -> None:
         settings = self.service.settings
@@ -4418,10 +4431,31 @@ class SettingsDialog(QDialog):
         if LOGGER.isEnabledFor(logging.DEBUG):
             LOGGER.debug("SettingsDialog save requested: chosen_path=%s", str(library_root_value))
         if not library_root_value:
-            library_root_value = UserSettings().library_root
-        normalized_preview = str(Path(library_root_value).expanduser())
+            QMessageBox.warning(self, "Invalid Project Library Location", "Project Library Location cannot be empty.")
+            self.library_root.setText(str(current_settings.library_root))
+            self._sync_library_root_controls()
+            return
+        normalized_preview = ""
+        initial_preview = ""
+        try:
+            normalized_preview = str(StorageManager.normalize_library_root(library_root_value))
+        except Exception:
+            normalized_preview = str(Path(library_root_value).expanduser())
+        try:
+            initial_preview = str(StorageManager.normalize_library_root(self._initial_library_root))
+        except Exception:
+            initial_preview = str(Path(self._initial_library_root).expanduser())
         if LOGGER.isEnabledFor(logging.DEBUG):
             LOGGER.debug("SettingsDialog save normalized preview: %s", normalized_preview)
+        if self._block_library_root_switch and normalized_preview != initial_preview:
+            QMessageBox.information(
+                self,
+                "Close Project First",
+                "Close the currently open project before switching Project Library Location.",
+            )
+            self.library_root.setText(str(current_settings.library_root))
+            self._sync_library_root_controls()
+            return
         settings = UserSettings(
             library_root=library_root_value,
             ath_exe=self.ath_exe.text().strip() or None,
@@ -4463,6 +4497,12 @@ class SettingsDialog(QDialog):
             ),
         )
         result = self.service.save_settings(settings)
+        if not bool(result.get("saved", False)):
+            message = str(result.get("error") or "Could not save settings.")
+            QMessageBox.critical(self, "Could Not Save Settings", message)
+            self.library_root.setText(str(self.service.settings.library_root))
+            self._sync_library_root_controls()
+            return
         issues = result.get("validation", {})
         self.library_root.setText(str(self.service.settings.library_root))
         self.settings_saved.emit(result)
@@ -4489,9 +4529,13 @@ class SettingsDialog(QDialog):
         target = self.library_root.text().strip()
         if not target:
             return
-        path = Path(target).expanduser()
-        path.mkdir(parents=True, exist_ok=True)
-        QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.resolve())))
+        try:
+            path = StorageManager.normalize_library_root(target)
+            path.mkdir(parents=True, exist_ok=True)
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.resolve())))
+        except Exception as exc:
+            message = str(StorageManager.user_error_message(exc))
+            QMessageBox.warning(self, "Cannot Open Folder", message)
 
     def _sync_library_root_controls(self) -> None:
         token = self.library_root.text().strip()
@@ -13103,7 +13147,11 @@ class MainWindow(QMainWindow):
         return counts
 
     def _open_settings(self) -> None:
-        dialog = SettingsDialog(self.service, self)
+        dialog = SettingsDialog(
+            self.service,
+            self,
+            library_root_locked=bool(self.current_project is not None),
+        )
         dialog.settings_saved.connect(lambda _: self._on_settings_saved())
         dialog.exec()
 
