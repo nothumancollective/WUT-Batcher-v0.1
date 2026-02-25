@@ -1486,12 +1486,12 @@ class OrchestratorService:
         self.settings_store = settings_store or SettingsStore()
         self.settings = self.settings_store.load()
         self.storage = StorageManager(UserSettings().library_root)
-        self._bootstrap_library_root()
+        self._bootstrap_library_root_with_fallback()
         self.compatibility = CompatibilityService()
 
     def reload_settings(self) -> UserSettings:
         self.settings = self.settings_store.load()
-        self._bootstrap_library_root()
+        self._bootstrap_library_root_with_fallback()
         return self.settings
 
     def save_settings(self, settings: UserSettings) -> Dict[str, Any]:
@@ -1546,6 +1546,34 @@ class OrchestratorService:
             settings=bootstrapped_settings,
             manager=root_result.manager,
             state=root_result.state,
+        )
+
+    def _bootstrap_library_root_with_fallback(self) -> None:
+        try:
+            self._bootstrap_library_root()
+            return
+        except Exception:
+            if LOGGER.isEnabledFor(logging.DEBUG):
+                LOGGER.debug("Primary library-root bootstrap failed; attempting default fallback.", exc_info=True)
+        default_root = UserSettings().library_root
+        fallback_result = StorageManager.try_set_library_root(default_root)
+        if not fallback_result.ok or fallback_result.manager is None or fallback_result.state is None:
+            raise RuntimeError(
+                str(
+                    fallback_result.error_message
+                    or "Could not bootstrap configured or default Project Library Location."
+                )
+            )
+        fallback_settings = replace(self.settings, library_root=str(fallback_result.manager.paths.root))
+        self.settings_store.save(fallback_settings)
+        self._apply_library_state(
+            settings=fallback_settings,
+            manager=fallback_result.manager,
+            state=fallback_result.state,
+        )
+        LOGGER.warning(
+            "Configured Project Library Location could not be opened; switched to default: %s",
+            str(fallback_settings.library_root),
         )
 
     def _apply_library_state(
