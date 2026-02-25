@@ -5120,11 +5120,15 @@ class DashboardPage(QWidget):
         self.export_btn.setObjectName("BatchPrimaryButton")
         self.manage_runs_btn = QPushButton("Runs verwalten...")
         self.manage_runs_btn.setObjectName("BatchSecondaryButton")
-        self.cleanup_testdata_btn = QPushButton("Testdaten aufraeumen...")
-        self.cleanup_testdata_btn.setObjectName("BatchSecondaryButton")
+        self.cleanup_testdata_btn: QPushButton | None = None
+        show_cleanup_button = str(os.environ.get("WUT_SHOW_CLEANUP_BUTTON", "")).strip() == "1"
+        if show_cleanup_button:
+            self.cleanup_testdata_btn = QPushButton("Testdaten aufraeumen...")
+            self.cleanup_testdata_btn.setObjectName("BatchSecondaryButton")
         export_grid.addWidget(self.export_btn, 0, 0)
         export_grid.addWidget(self.manage_runs_btn, 0, 1)
-        export_grid.addWidget(self.cleanup_testdata_btn, 0, 2)
+        if self.cleanup_testdata_btn is not None:
+            export_grid.addWidget(self.cleanup_testdata_btn, 0, 2)
         export_root.addLayout(export_grid)
         root.addWidget(export_box)
 
@@ -5140,7 +5144,8 @@ class DashboardPage(QWidget):
         self.clone_batch_btn.clicked.connect(self._emit_clone)
         self.export_btn.clicked.connect(self.request_open_export_dialog.emit)
         self.manage_runs_btn.clicked.connect(self.request_manage_runs.emit)
-        self.cleanup_testdata_btn.clicked.connect(self.request_cleanup_testdata.emit)
+        if self.cleanup_testdata_btn is not None:
+            self.cleanup_testdata_btn.clicked.connect(self.request_cleanup_testdata.emit)
         self.settings_btn.clicked.connect(self.request_settings.emit)
 
     def set_constraints_payload(self, payload: Optional[Dict[str, Any]]) -> None:
