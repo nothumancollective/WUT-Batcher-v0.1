@@ -65,3 +65,12 @@
 - This keeps current doctest/test behavior elsewhere unchanged and only removes non-product artifact folders from discovery.
 - Rationale: `cleanup/p1_runtime/failures/*.txt` are legacy failure snapshots with non-UTF8 encoding and are not runtime code/tests.
 - Expected effect: `python -m pytest -q` no longer aborts during collection because of cleanup text artifacts.
+
+## Git hygiene check (cleanup tracking)
+- `git ls-files cleanup` shows only markdown/docs and `cleanup/.gitignore` are tracked.
+- `git ls-files cleanup/p1_runtime/failures/*.txt` returns no entries; failing UTF files are not tracked product assets.
+- Added root-level ignore guard for legacy runtime artifact trees:
+  - `cleanup/runtime/`
+  - `cleanup/p1_runtime/`
+  - `cleanup/preview_runtime/`
+- Purpose: prevent accidental staging of local cleanup runtime dumps in future commits.

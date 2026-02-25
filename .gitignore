@@ -41,3 +41,8 @@ runner_test_workspace/**
 !runner_test_workspace/exports/.gitkeep
 !runner_test_workspace/logs/.gitkeep
 !runner_test_workspace/db/.gitkeep
+
+# Legacy cleanup runtime artifacts (do not collect/track as tests)
+cleanup/runtime/
+cleanup/p1_runtime/
+cleanup/preview_runtime/
