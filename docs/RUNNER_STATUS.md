@@ -1,5 +1,11 @@
 # Runner Status (2026-02-15)
 
+## Doc Selection (2026-02-25)
+- Runner execution/status source: `docs/RUNNER_STATUS.md` + `docs/RUNNER_AUDIT.md`.
+- Analyzer/worker interaction source: `docs/analyzer/*` and the latest merge notes under `docs/release/*`.
+- Storage root/source-of-truth source: `docs/release/project-library.md` + `docs/release/storage-audit.md`.
+- Selection rationale: these files are the currently maintained docs referenced by the active runner, analyzer, and storage integration commits on `wut-batcher/rebuild`.
+
 ## Scope Reviewed
 - `docs/RUNNER_AUDIT.md`
 - `docs/RUNNER_TEST_HARNESS.md`
@@ -170,3 +176,73 @@ Validation executed:
 - CLI real-smoke:
   - `python -m app run-sample --real --library-root cleanup/runtime/vacs_systemexit_guard_real`
   - run failed earlier at `ath_abec_sync` in this environment, but app stayed stable and returned structured failure summary (no crash/SystemExit termination).
+
+## Run Batch Immediate-Success Bug (2026-02-25)
+
+Observed symptom:
+- GUI marked batch run as complete/success immediately ("Run finished") even when pipeline failed before completion.
+
+Root cause:
+- `app/gui.py` `_on_batch_run_finished(...)` always set success UI state and "Run finished..." status text.
+- It ignored `summary_payload["run_status"]` (`failed`, `noop`, etc.), so UI success semantics diverged from runtime truth.
+
+Fixes applied:
+- `app/gui.py`
+  - `_on_batch_run_finished(...)` now maps `run_status` explicitly:
+    - `succeeded/success` -> success UI + "Run finished..."
+    - `noop/skipped/precondition_failed` -> no-op UI + "Nothing to run..."
+    - everything else -> failed UI + "Run failed..."
+  - `RunPage.set_noop_state(...)` added for explicit no-op terminal state.
+  - `_BatchRunWorker.run()` now re-raises `KeyboardInterrupt`/`GeneratorExit` and only converts other `BaseException` to worker-failed signal.
+- `app/runtime_orchestrator.py`
+  - Run status now returns `noop` when no versions are planned (`nothing_to_run:no_planned_versions`) instead of reporting success.
+  - Added run-level debug log (`<project_root>/runs/<run_id>/pipeline.stage_debug.jsonl`) with `run_start/run_end` records including resolved roots, DB path, and planned versions.
+  - VACS stage `BaseException` boundary now also re-raises `GeneratorExit` (in addition to `KeyboardInterrupt`).
+
+Library-root safety update:
+- `app/cli.py`
+  - `--library-root` for `run-sample`, `dataset-sync-global`, and `compat-verify` now uses an isolated temporary `SettingsStore`.
+  - Command-scoped overrides no longer persist into user GUI settings (`~/.wut_batcher/config.json`).
+
+## E2E GUI Run #1 (2026-02-25)
+
+Environment:
+- Existing user library root: `cleanup/runtime/vacs_systemexit_guard_real` (previously persisted by CLI override behavior).
+- Stage debug enabled: `WUT_DEBUG_PIPELINE_STAGES=1`.
+
+Result:
+- Manual GUI worker path executed real stages and ended with failure at `ath_abec_sync`.
+- UI correctly showed failure (not success):
+  - status: `Run failed for B001`
+  - mode: `Mode: failed`
+  - progress label: `Run failed`
+- Runtime summary showed true stage progression:
+  - `ath: ok`
+  - `ath_abec_sync: failed`
+- Run-level debug log persisted at:
+  - `<project_root>/runs/<run_id>/pipeline.stage_debug.jsonl`
+
+Conclusion:
+- The immediate-success false positive is fixed.
+- Pipeline outcomes now map truthfully to GUI terminal state.
+
+## E2E GUI Run #2 (isolated test library, 2026-02-25)
+
+Setup:
+- Temporary isolated settings file + isolated library root under `%TEMP%/wut_ui_e2e_debug_*`.
+- Fake ATH/AKABAK/VACS toolchain from existing UI stress harness helpers.
+- No writes to user settings store.
+
+Observed stage transitions:
+- Planned versions: `V005`, `V006`, `V007`, `V008`
+- For each version: `ath: ok` then `ath_abec_sync: failed`
+- Overall `run_status: failed`
+
+Observed GUI terminal state:
+- Status text: `Run failed for B001`
+- Run page mode: `Mode: failed`
+- Progress label: `Run failed`
+
+Interpretation:
+- In this environment/toolchain profile, pipeline preconditions fail at ABEC sync.
+- Runner/UI now report truthful failure state (not false success), which is the required behavior for blocked preconditions.
