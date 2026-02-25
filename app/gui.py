@@ -6036,6 +6036,7 @@ class AnalysePage(QWidget):
         self._compare_exclude_missing = True
         self._loaded_analysis_id: Optional[str] = None
         self._selected_compare_slot_index: Optional[int] = None
+        self._compare_slot_selection_sync_guard = False
         self._selected_detail_payload: Dict[str, Any] = {}
         self._ath_visible_param_keys: List[str] = []
         self._ath_visible_pref_key = "ath_visible_params"
@@ -6631,7 +6632,7 @@ class AnalysePage(QWidget):
             slot_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             slot_btn.setMinimumHeight(26)
             slot_btn.setText("V---")
-            slot_btn.clicked.connect(lambda _checked=False, idx=slot_index: self.compare_slots_table.selectRow(idx))
+            slot_btn.clicked.connect(lambda _checked=False, idx=slot_index: self._on_compare_drawer_compact_slot_clicked(idx))
             compact_layout.addWidget(slot_btn, 0)
             self.compare_drawer_compact_buttons.append(slot_btn)
         compact_layout.addStretch(1)
@@ -7310,6 +7311,7 @@ class AnalysePage(QWidget):
         self.compare_pareto_x_combo.currentIndexChanged.connect(self._render_compare_pareto)
         self.compare_pareto_y_combo.currentIndexChanged.connect(self._render_compare_pareto)
         self.compare_slots_table.itemSelectionChanged.connect(self._on_compare_slot_selection_changed)
+        self.compare_slots_table.cellClicked.connect(self._on_compare_slot_cell_clicked)
         self.compare_cancel_btn.clicked.connect(self._cancel_compare_operations)
         for plane_key, button in self._plane_buttons.items():
             button.toggled.connect(lambda checked, key=plane_key: self._on_plane_toggled(key, checked))
@@ -10053,6 +10055,42 @@ class AnalysePage(QWidget):
         if self._selected_compare_slot_index is not None and int(self._selected_compare_slot_index) == int(row_index):
             self._selected_compare_slot_index = None
         self._set_compare_candidates(remaining, message="Candidate removed.")
+
+    def _sync_global_selection_to_compare_slot(self, row_index: int) -> None:
+        if self._compare_slot_selection_sync_guard:
+            return
+        if row_index < 0 or row_index >= len(self._compare_candidates):
+            return
+        candidate = dict(self._compare_candidates[row_index] or {})
+        target_identity = (
+            str(candidate.get("batch_id") or "").strip(),
+            str(candidate.get("run_id") or "").strip(),
+            str(candidate.get("version_id") or "").strip(),
+        )
+        if not target_identity[0] or not target_identity[2]:
+            return
+        if self._run_identity(dict(self._selected_detail_payload or {})) == target_identity:
+            return
+        if self._select_run_table_row_by_identity(target_identity):
+            self._on_run_selection_changed()
+            return
+        for combo_index in range(self.run_selector.count()):
+            row_payload = dict(self.run_selector.itemData(combo_index) or {})
+            if self._run_identity(row_payload) != target_identity:
+                continue
+            self._run_selector_sync_guard = True
+            self.run_selector.setCurrentIndex(combo_index)
+            self._run_selector_sync_guard = False
+            self._on_run_selector_changed()
+            self._on_run_selection_changed()
+            return
+
+    def _on_compare_slot_cell_clicked(self, row: int, _column: int) -> None:
+        self._sync_global_selection_to_compare_slot(int(row))
+
+    def _on_compare_drawer_compact_slot_clicked(self, row_index: int) -> None:
+        self.compare_slots_table.selectRow(int(row_index))
+        self._sync_global_selection_to_compare_slot(int(row_index))
 
     def _on_compare_slot_selection_changed(self) -> None:
         model = self.compare_slots_table.selectionModel()

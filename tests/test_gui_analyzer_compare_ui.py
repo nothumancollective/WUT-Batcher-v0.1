@@ -180,6 +180,39 @@ class AnalyzerCompareUiTests(unittest.TestCase):
             page._remove_compare_candidate(0)
             self.assertEqual(page.compare_slots_table.item(0, slot_col).text(), "V---")
 
+    @unittest.skipIf(QTest is None or Qt is None, "Qt test utilities are required")
+    def test_compare_slot_click_updates_global_selection_and_version_info(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_ui2c_compare_slot_global_selection_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            payload = self._sample_runs_payload("P001")
+            page._apply_runs_payload(payload)
+            page._set_compare_candidates(payload["runs"])
+            page.analysis_tabs.setCurrentWidget(page.compare_tab)
+            page.show()
+            self.app.processEvents()
+            page._set_compare_drawer_expanded(True, animated=False)
+            self.app.processEvents()
+
+            self.assertEqual(str(page._selected_detail_payload.get("version_id") or ""), "V001")
+            slot_col = _col_index(page.compare_slots_table, "Slot")
+            second_item = page.compare_slots_table.item(1, slot_col)
+            self.assertIsNotNone(second_item)
+            assert second_item is not None
+            click_rect = page.compare_slots_table.visualItemRect(second_item)
+            QTest.mouseClick(page.compare_slots_table.viewport(), Qt.LeftButton, pos=click_rect.center())
+            self.app.processEvents()
+
+            self.assertEqual(str(page._selected_detail_payload.get("version_id") or ""), "V010")
+            selector_payload = dict(page.run_selector.currentData() or {})
+            self.assertEqual(str(selector_payload.get("version_id") or ""), "V010")
+
+            page._set_compare_drawer_expanded(False, animated=False)
+            self.app.processEvents()
+            QTest.mouseClick(page.compare_drawer_compact_buttons[0], Qt.LeftButton)
+            self.app.processEvents()
+            self.assertEqual(str(page._selected_detail_payload.get("version_id") or ""), "V001")
+
     def test_compare_heatmap_selector_updates_canvas(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_stage_compare_heatmap_") as tmp:
             service = _build_service(Path(tmp))

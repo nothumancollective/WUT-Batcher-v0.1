@@ -1,5 +1,10 @@
 ﻿# Analyzer Docs â€” Changelog
 
+## 2026-02-25 (Compare drawer: row click drives global selection)
+- Wired Compare shortlist row clicks to the same run-selection source-of-truth used by the Selection Bar (run table / run selector).
+- Clicking a Compare row now updates global Batch/Version selection and refreshes Version Information for that version.
+- Added coverage for both expanded table-row click and collapsed drawer slot-button click selection syncing.
+
 ## 2026-02-25 (Compare drawer: expanded table visibility contract)
 - Removed the hidden expanded-width cap on the Compare drawer table container so expanded mode can use the full computed drawer width.
 - Tightened expanded drawer width estimation to include table column size hints and control-row size hints, then clamp to a safe workspace ratio.
@@ -1110,6 +1115,7 @@
   - metric-band smooth rendering config (`show`, `smooth`, `opacity`)
   - robust non-auto `e_sym_shape` y-range clamp under outlier input
   - resize probes (`1920x1080`, `1366x768`, `1100x700`) without exceptions.
+
 
 
 
