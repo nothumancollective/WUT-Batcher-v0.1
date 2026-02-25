@@ -12351,6 +12351,7 @@ class AnalysePage(QWidget):
 class ProjectManagerWindow(QMainWindow):
     open_project = Signal(str)
     create_project = Signal()
+    request_settings = Signal()
 
     def __init__(self, service: OrchestratorService) -> None:
         super().__init__()
@@ -12415,16 +12416,20 @@ class ProjectManagerWindow(QMainWindow):
         self.open_btn.setObjectName("ProjectManagerButton")
         self.new_btn = QPushButton("New Project")
         self.new_btn.setObjectName("ProjectManagerButton")
+        self.settings_btn = QPushButton("Settings...")
+        self.settings_btn.setObjectName("ProjectManagerButton")
         self.refresh_btn = QPushButton("Refresh")
         self.refresh_btn.setObjectName("ProjectManagerButton")
         buttons.addWidget(self.open_btn)
         buttons.addWidget(self.new_btn)
+        buttons.addWidget(self.settings_btn)
         buttons.addWidget(self.refresh_btn)
         buttons.addStretch(1)
         root.addLayout(buttons)
 
         self.open_btn.clicked.connect(self._emit_open)
         self.new_btn.clicked.connect(self.create_project.emit)
+        self.settings_btn.clicked.connect(self.request_settings.emit)
         self.refresh_btn.clicked.connect(self.refresh)
         self.project_list.currentItemChanged.connect(lambda _current, _previous: self._sync_open_enabled())
         self.project_list.itemSelectionChanged.connect(self._sync_open_enabled)
@@ -13726,6 +13731,7 @@ class GuiController:
         self.main_window = MainWindow(service)
         self.project_manager.open_project.connect(self._open_project)
         self.project_manager.create_project.connect(self._new_project)
+        self.project_manager.request_settings.connect(self._open_settings_from_project_manager)
         self.main_window.set_project_manager_handler(self._open_project_manager_from_main)
 
     def show_project_manager(self) -> None:
@@ -13774,6 +13780,15 @@ class GuiController:
         self._show_main_window_maximized()
         self.main_window.show_project()
         self.project_manager.hide()
+
+    def _open_settings_from_project_manager(self) -> None:
+        dialog = SettingsDialog(
+            self.service,
+            self.project_manager,
+            library_root_locked=bool(self.main_window.current_project is not None),
+        )
+        dialog.exec()
+        self.project_manager.refresh()
 
     def _open_project_manager_from_main(self) -> None:
         self.project_manager.refresh()
