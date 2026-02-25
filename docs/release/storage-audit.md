@@ -207,3 +207,37 @@ Date: 2026-02-25
 - `app/path_resolver.py` and `app/storage_migrations.py` are quarantine shims only.
 - No runtime callsites use them in current Preferences or runtime path.
 - Fix should stay in active stack above; no new storage subsystem needed.
+
+## 7) E2E Results - library root switch fix
+
+Date: 2026-02-25
+
+Validation executed via real `SettingsDialog` and `OrchestratorService` wiring (Qt offscreen), feature flag `USE_PROJECT_LIBRARY_STORAGE=1`.
+
+### Steps and outcomes
+1. Default root when settings are unset:
+   - Loaded default: `C:\\Users\\maximilianheinze\\Desktop\\WUT Project Library`
+   - Expected Desktop default: `C:\\Users\\maximilianheinze\\Desktop\\WUT Project Library`
+   - Result: PASS
+2. Switch root in Preferences to new empty Desktop folder:
+   - Target: `Desktop\\WUT Project Library 2 QA <timestamp>`
+   - Save succeeded and service root updated.
+3. Create project in new root:
+   - First project ID: `P0001__<uid>`
+   - Verified `projects/P0001__<uid>/project.json` exists.
+   - Verified root-level `library.sqlite` exists.
+4. Switch root to another new empty Desktop folder:
+   - Target: `Desktop\\WUT Project Library 3 QA <timestamp>`
+   - First project ID in new root: `P0001__<uid>`
+   - `project_uid` compared to previous root: unique (no collision).
+5. Switch back to previous root:
+   - Save succeeded.
+   - Previously created project in root #2 remained listed/accessible.
+
+### Safety regression checks
+- Invalid root save path (existing file path) no longer corrupts settings:
+  - Save returns `saved=false` with user-facing error.
+  - Previous `library_root` in memory and on disk remains unchanged.
+- Library metadata repair paths:
+  - Missing `library.json` + existing `library.sqlite`: JSON regenerated.
+  - Missing `library.sqlite` + existing `library.json`: sqlite initialized with metadata hints.
