@@ -171,3 +171,39 @@ Date: 2026-02-25 (feature branch `feature/project-library-storage`, flag `USE_PR
 - Corrected plan/runtime writer wiring so library DB writes use the library root (not `<library>/projects`).
 - Added feature-flagged project DB directory switch to `db/project.sqlite` with legacy fallback support.
 - Redirected ATH export root to project-local path when project-library storage flag is enabled.
+
+## 6) Bug: Library root change - root cause & affected modules
+
+Date: 2026-02-25
+
+### Reproduction and forensics
+- Event handler: `SettingsDialog._save()` in `app/gui.py`.
+- Baseline happy path:
+  - Selecting a new empty directory and saving succeeded in local repro.
+- Failure path (deterministic repro):
+  - Set library root input to an invalid target (existing file path), then save.
+  - Exception observed:
+    - `FileExistsError [WinError 183]` from `StorageManager.ensure_library_root()` (`Path.mkdir()` on file target).
+  - Stack trace path:
+    - `SettingsDialog._save() -> OrchestratorService.save_settings() -> _bootstrap_library_root() -> StorageManager.ensure_library_root()`.
+
+### Root cause
+- Non-atomic settings write in `OrchestratorService.save_settings()`:
+  - `settings_store.save(settings)` executes before library-root bootstrap/validation.
+  - On bootstrap failure, persisted settings already point to broken root.
+- Missing failure guard in `SettingsDialog._save()`:
+  - Exceptions from `service.save_settings()` are not handled in dialog flow.
+  - Result: crash path with no actionable user feedback.
+- Path normalization/validation is deferred too late:
+  - Dialog sends raw text directly to settings object without preflight bootstrap transaction.
+
+### Affected modules
+- `app/gui.py` (`SettingsDialog._save`, root chooser/open actions)
+- `app/services.py` (`OrchestratorService.save_settings`, `_bootstrap_library_root`)
+- `app/storage_manager.py` (`ensure_library_root` bootstrap path)
+- `app/settings_store.py` (persisted root source of truth)
+
+### Duplicate/parallel path systems check
+- `app/path_resolver.py` and `app/storage_migrations.py` are quarantine shims only.
+- No runtime callsites use them in current Preferences or runtime path.
+- Fix should stay in active stack above; no new storage subsystem needed.
