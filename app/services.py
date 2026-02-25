@@ -3573,10 +3573,19 @@ class OrchestratorService:
         }
 
     def create_project(self, project_name: str, constraints: Dict[str, Any]) -> Project:
+        self._bootstrap_library_root_with_fallback()
         display_number = ""
         project_uid = ""
         if use_project_library_storage():
-            identity = self.storage.allocate_project_identity()
+            identity = None
+            for _ in range(5):
+                candidate = self.storage.allocate_project_identity()
+                candidate_project_dir = self.repo.project_paths(candidate.folder_name, ensure=False).project_dir
+                if not candidate_project_dir.exists():
+                    identity = candidate
+                    break
+            if identity is None:
+                raise RuntimeError("Could not allocate a unique project folder in Project Library.")
             display_number = identity.display_number
             project_uid = identity.project_uid
             project_id = identity.folder_name

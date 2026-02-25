@@ -13344,7 +13344,12 @@ class MainWindow(QMainWindow):
         except Exception:
             if LOGGER.isEnabledFor(logging.DEBUG):
                 LOGGER.debug("MainWindow create project failed.", exc_info=True)
-            raise
+            QMessageBox.critical(
+                self,
+                "Create Project Failed",
+                "Project could not be created. Check Project Library settings and try again.",
+            )
+            self.set_status("Project creation failed.")
         finally:
             self._project_create_in_progress = False
             self.project_page.set_creating(False)

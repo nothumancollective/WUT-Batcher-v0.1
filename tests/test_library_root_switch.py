@@ -8,6 +8,7 @@ import unittest
 import uuid
 from unittest.mock import patch
 
+from app.project_storage import ProjectRepository
 from app.services import OrchestratorService
 from app.settings_store import SettingsStore, UserSettings
 from app.storage_manager import StorageManager
@@ -17,10 +18,11 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 try:
     from PySide6.QtWidgets import QApplication, QMessageBox
 
-    from app.gui import SettingsDialog
+    from app.gui import MainWindow, SettingsDialog
 except ImportError:  # pragma: no cover
     QApplication = None  # type: ignore[assignment]
     QMessageBox = None  # type: ignore[assignment]
+    MainWindow = None  # type: ignore[assignment]
     SettingsDialog = None  # type: ignore[assignment]
 
 
@@ -136,7 +138,22 @@ def test_counter_resets_per_library_root_and_project_uid_stays_unique() -> None:
             assert project_a2.project_id in listed_ids
 
 
-@unittest.skipIf(QApplication is None or SettingsDialog is None or QMessageBox is None, "PySide6 is required")
+def test_create_project_recovers_from_stale_repo_binding() -> None:
+    with patch.dict(os.environ, {"USE_PROJECT_LIBRARY_STORAGE": "1"}, clear=False):
+        with tempfile.TemporaryDirectory(prefix="wut_library_rebind_") as tmp:
+            root = Path(tmp)
+            service, _, _ = _build_service(root, library_name="library_a")
+            bad_root = root / "not_a_directory.txt"
+            bad_root.write_text("x", encoding="utf-8")
+            service.repo = ProjectRepository(bad_root)
+            project = service.create_project("Recovered", {})
+            assert project.project_id.startswith("P0001__")
+
+
+@unittest.skipIf(
+    QApplication is None or SettingsDialog is None or QMessageBox is None or MainWindow is None,
+    "PySide6 is required",
+)
 class SettingsDialogSwitchFlowTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -209,6 +226,18 @@ class SettingsDialogSwitchFlowTests(unittest.TestCase):
                 StorageManager.normalize_library_root(service.settings.library_root),
                 StorageManager.normalize_library_root(initial_library),
             )
+
+    def test_create_project_exception_does_not_crash_mainwindow(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_library_create_project_ui_guard_") as tmp:
+            root = Path(tmp)
+            service, _, _ = _build_service(root)
+            main = MainWindow(service)
+            with patch.object(service, "create_project", side_effect=RuntimeError("boom")):
+                with patch.object(QMessageBox, "critical", return_value=QMessageBox.Ok) as critical_mock:
+                    main._create_project("Will Fail", {})
+            self.assertEqual(critical_mock.call_count, 1)
+            self.assertIsNone(main.current_project)
+            main.close()
 
 
 if __name__ == "__main__":
