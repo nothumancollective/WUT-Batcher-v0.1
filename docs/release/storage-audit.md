@@ -136,4 +136,37 @@ Existing code already has a viable storage abstraction that should be extended i
 - Introduce a single authoritative storage manager on top of these for all path generation.
 - Keep legacy cleanup workflow callable behind compatibility flag until new project-library path redirection passes E2E.
 
-No functional changes in this commit; this document records baseline and archaeology only.
+This section captured the initial Phase 0/1 baseline; later implementation phases appended validation results below.
+
+## 5) E2E Results (Phase 7 validation pass)
+
+Date: 2026-02-25 (feature branch `feature/project-library-storage`, flag `USE_PROJECT_LIBRARY_STORAGE=1`)
+
+### Scenario results
+- Default first-run settings root:
+  - Fresh settings store resolved to `C:\\Users\\maximilianheinze\\Desktop\\WUT Project Library`.
+  - Desktop default rule: PASS.
+- Library root #1 (`Desktop/WUT Project Library E2E Codex 1`):
+  - Project create: `P0001__<uuid>` with `display_number=P0001` and non-empty `project_uid`.
+  - Library metadata/index: `library.json` + `library.sqlite` present.
+  - Project DB path: `<project>/db/project.sqlite` present.
+  - Dry-run pipeline writes/cleanup targets remained inside project root (ATH export target under `<project>/runs/ath_export/...`).
+- Library root switch to #2 (`Desktop/WUT Project Library E2E Codex 2`):
+  - First project in new root created as `P0001__<uuid>` (counter reset): PASS.
+  - `project_uid` uniqueness across roots: PASS.
+- Reopen old root #1:
+  - Previously created project remained discoverable via `list_projects()`: PASS.
+
+### Real-run note
+- `run-sample --real` on new project root hit `ath_abec_sync` stage failure in this environment.
+- Despite failure, artifact paths still stayed within project library tree (no `C:\\Horns` target in this run path).
+
+### Analyzer smoke
+- Analyzer project listing call against E2E roots executed without path-resolution errors.
+- No polar datasets were ingested in these sample runs, so analyzer result rows were empty (`0`).
+
+### Fixes applied during E2E hardening
+- Fixed `library.sqlite` handle leak in `StorageManager` by explicitly closing sqlite connections.
+- Corrected plan/runtime writer wiring so library DB writes use the library root (not `<library>/projects`).
+- Added feature-flagged project DB directory switch to `db/project.sqlite` with legacy fallback support.
+- Redirected ATH export root to project-local path when project-library storage flag is enabled.
