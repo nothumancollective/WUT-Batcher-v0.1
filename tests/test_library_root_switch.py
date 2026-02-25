@@ -137,26 +137,74 @@ def test_counter_resets_per_library_root_and_project_uid_stays_unique() -> None:
 
 
 @unittest.skipIf(QApplication is None or SettingsDialog is None or QMessageBox is None, "PySide6 is required")
-class SettingsDialogSwitchGuardTests(unittest.TestCase):
+class SettingsDialogSwitchFlowTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.app = QApplication.instance() or QApplication([])
 
-    def test_library_root_change_is_blocked_when_dialog_is_locked(self) -> None:
-        with tempfile.TemporaryDirectory(prefix="wut_library_dialog_lock_") as tmp:
+    def test_library_root_change_closes_project_after_confirmation(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_library_dialog_switch_confirm_") as tmp:
             root = Path(tmp)
             service, _, initial_library = _build_service(root)
             other_library = root / "other_library"
             other_library.mkdir(parents=True, exist_ok=True)
-            dialog = SettingsDialog(service, library_root_locked=True)
+            state = {"open": True, "closed_calls": 0}
+
+            def is_project_open() -> bool:
+                return bool(state["open"])
+
+            def close_project() -> bool:
+                state["closed_calls"] += 1
+                state["open"] = False
+                return True
+
+            dialog = SettingsDialog(
+                service,
+                is_project_open=is_project_open,
+                close_project_for_switch=close_project,
+            )
             dialog.library_root.setText(str(other_library))
 
-            with patch.object(QMessageBox, "information", return_value=QMessageBox.Ok) as info_mock:
+            with patch.object(dialog, "_confirm_switch_with_close_project", return_value=True):
+                with patch.object(dialog, "accept", autospec=True) as accept_mock:
+                    dialog._save()
+                    self.assertEqual(accept_mock.call_count, 1)
+
+            self.assertEqual(int(state["closed_calls"]), 1)
+            self.assertEqual(
+                StorageManager.normalize_library_root(service.settings.library_root),
+                StorageManager.normalize_library_root(other_library),
+            )
+
+    def test_library_root_change_cancel_keeps_project_and_root(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_library_dialog_switch_cancel_") as tmp:
+            root = Path(tmp)
+            service, _, initial_library = _build_service(root)
+            other_library = root / "other_library"
+            other_library.mkdir(parents=True, exist_ok=True)
+            state = {"open": True, "closed_calls": 0}
+
+            def is_project_open() -> bool:
+                return bool(state["open"])
+
+            def close_project() -> bool:
+                state["closed_calls"] += 1
+                state["open"] = False
+                return True
+
+            dialog = SettingsDialog(
+                service,
+                is_project_open=is_project_open,
+                close_project_for_switch=close_project,
+            )
+            dialog.library_root.setText(str(other_library))
+
+            with patch.object(dialog, "_confirm_switch_with_close_project", return_value=False):
                 with patch.object(dialog, "accept", autospec=True) as accept_mock:
                     dialog._save()
                     self.assertEqual(accept_mock.call_count, 0)
 
-            self.assertEqual(info_mock.call_count, 1)
+            self.assertEqual(int(state["closed_calls"]), 0)
             self.assertEqual(
                 StorageManager.normalize_library_root(service.settings.library_root),
                 StorageManager.normalize_library_root(initial_library),

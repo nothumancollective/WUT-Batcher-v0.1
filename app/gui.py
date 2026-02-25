@@ -4286,11 +4286,15 @@ class SettingsDialog(QDialog):
         service: OrchestratorService,
         parent: QWidget | None = None,
         *,
-        library_root_locked: bool = False,
+        is_project_open: Callable[[], bool] | None = None,
+        close_project_for_switch: Callable[[], bool] | None = None,
+        on_library_root_switched: Callable[[], None] | None = None,
     ) -> None:
         super().__init__(parent)
         self.service = service
-        self._block_library_root_switch = bool(library_root_locked)
+        self._is_project_open = is_project_open
+        self._close_project_for_switch = close_project_for_switch
+        self._on_library_root_switched = on_library_root_switched
         self.setWindowTitle("Settings")
         self.setModal(True)
         self.resize(620, 390)
@@ -4390,11 +4394,6 @@ class SettingsDialog(QDialog):
 
         self.analyzer_cache_mode.currentIndexChanged.connect(self._sync_cache_controls)
         self._load()
-        self._initial_library_root = str(self.service.settings.library_root)
-        if self._block_library_root_switch:
-            self.library_root.setReadOnly(True)
-            self.library_root_choose_btn.setEnabled(False)
-            self.library_root.setToolTip("Close current project before switching Project Library Location.")
 
     def _load(self) -> None:
         settings = self.service.settings
@@ -4436,26 +4435,27 @@ class SettingsDialog(QDialog):
             self._sync_library_root_controls()
             return
         normalized_preview = ""
-        initial_preview = ""
+        current_preview = ""
         try:
             normalized_preview = str(StorageManager.normalize_library_root(library_root_value))
         except Exception:
             normalized_preview = str(Path(library_root_value).expanduser())
         try:
-            initial_preview = str(StorageManager.normalize_library_root(self._initial_library_root))
+            current_preview = str(StorageManager.normalize_library_root(current_settings.library_root))
         except Exception:
-            initial_preview = str(Path(self._initial_library_root).expanduser())
+            current_preview = str(Path(current_settings.library_root).expanduser())
         if LOGGER.isEnabledFor(logging.DEBUG):
             LOGGER.debug("SettingsDialog save normalized preview: %s", normalized_preview)
-        if self._block_library_root_switch and normalized_preview != initial_preview:
-            QMessageBox.information(
-                self,
-                "Close Project First",
-                "Close the currently open project before switching Project Library Location.",
-            )
-            self.library_root.setText(str(current_settings.library_root))
-            self._sync_library_root_controls()
-            return
+        root_changed = normalized_preview != current_preview
+        if root_changed and self._project_open():
+            if not self._confirm_switch_with_close_project():
+                self.library_root.setText(str(current_settings.library_root))
+                self._sync_library_root_controls()
+                return
+            if not self._close_project_before_switch():
+                self.library_root.setText(str(current_settings.library_root))
+                self._sync_library_root_controls()
+                return
         settings = UserSettings(
             library_root=library_root_value,
             ath_exe=self.ath_exe.text().strip() or None,
@@ -4505,11 +4505,63 @@ class SettingsDialog(QDialog):
             return
         issues = result.get("validation", {})
         self.library_root.setText(str(self.service.settings.library_root))
+        if root_changed and callable(self._on_library_root_switched):
+            try:
+                self._on_library_root_switched()
+            except Exception:
+                if LOGGER.isEnabledFor(logging.DEBUG):
+                    LOGGER.debug("SettingsDialog root-switched callback failed.", exc_info=True)
         self.settings_saved.emit(result)
         if issues:
             detail = "\n".join(f"- {key}: {value}" for key, value in issues.items())
             QMessageBox.warning(self, "Settings saved with warnings", detail)
         self.accept()
+
+    def _project_open(self) -> bool:
+        checker = self._is_project_open
+        if not callable(checker):
+            return False
+        try:
+            return bool(checker())
+        except Exception:
+            if LOGGER.isEnabledFor(logging.DEBUG):
+                LOGGER.debug("SettingsDialog project-open check failed.", exc_info=True)
+            return True
+
+    def _confirm_switch_with_close_project(self) -> bool:
+        message = QMessageBox(self)
+        message.setIcon(QMessageBox.Warning)
+        message.setWindowTitle("Switch Project Library?")
+        message.setText("Current project will be closed. Continue?")
+        switch_btn = message.addButton("Close Project & Switch", QMessageBox.AcceptRole)
+        cancel_btn = message.addButton("Cancel", QMessageBox.RejectRole)
+        message.setDefaultButton(cancel_btn)
+        message.exec()
+        return message.clickedButton() is switch_btn
+
+    def _close_project_before_switch(self) -> bool:
+        closer = self._close_project_for_switch
+        if not callable(closer):
+            QMessageBox.critical(
+                self,
+                "Could Not Close Project",
+                "Close current project before switching Project Library Location.",
+            )
+            return False
+        try:
+            ok = bool(closer())
+        except Exception:
+            if LOGGER.isEnabledFor(logging.DEBUG):
+                LOGGER.debug("SettingsDialog close-project callback failed.", exc_info=True)
+            ok = False
+        if ok:
+            return True
+        QMessageBox.critical(
+            self,
+            "Could Not Close Project",
+            "Current project could not be closed. Project Library Location was not changed.",
+        )
+        return False
 
     def _choose_library_root(self) -> None:
         current = self.library_root.text().strip()
@@ -13160,10 +13212,37 @@ class MainWindow(QMainWindow):
         dialog = SettingsDialog(
             self.service,
             self,
-            library_root_locked=bool(self.current_project is not None),
+            is_project_open=self._is_project_open_for_settings,
+            close_project_for_switch=self._close_project_for_library_switch,
+            on_library_root_switched=self._on_library_root_switched,
         )
         dialog.settings_saved.connect(lambda _: self._on_settings_saved())
         dialog.exec()
+
+    def _is_project_open_for_settings(self) -> bool:
+        return bool(self.current_project is not None)
+
+    def _close_project_for_library_switch(self) -> bool:
+        try:
+            self.enter_new_project_flow()
+            return True
+        except Exception:
+            if LOGGER.isEnabledFor(logging.DEBUG):
+                LOGGER.debug("MainWindow close-project for library switch failed.", exc_info=True)
+            return False
+
+    def _on_library_root_switched(self) -> None:
+        self.refresh_dashboard()
+        self._sync_navigation_state()
+
+    def enter_new_project_flow(self) -> None:
+        self.current_project = None
+        self.project_page.set_constraints_locked(False)
+        self.batch_page.set_project_fixed_keys([])
+        self.analyse_page.set_project_context(None)
+        self.refresh_dashboard()
+        self.show_project()
+        self._sync_navigation_state()
 
     def _on_settings_saved(self) -> None:
         self.set_status("Settings saved.")
@@ -13775,17 +13854,32 @@ class GuiController:
                 "GuiController new-project flow: closing current_project=%s",
                 str(self.main_window.current_project.project_id if self.main_window.current_project else ""),
             )
-        self.main_window.current_project = None
-        self.main_window.project_page.set_constraints_locked(False)
+        self.main_window.enter_new_project_flow()
         self._show_main_window_maximized()
-        self.main_window.show_project()
         self.project_manager.hide()
+
+    def _is_project_open_for_settings(self) -> bool:
+        return bool(self.main_window.current_project is not None)
+
+    def _close_project_for_library_switch(self) -> bool:
+        try:
+            self.main_window.enter_new_project_flow()
+            return True
+        except Exception:
+            if LOGGER.isEnabledFor(logging.DEBUG):
+                LOGGER.debug("GuiController close-project for library switch failed.", exc_info=True)
+            return False
+
+    def _on_library_root_switched(self) -> None:
+        self.project_manager.refresh()
 
     def _open_settings_from_project_manager(self) -> None:
         dialog = SettingsDialog(
             self.service,
             self.project_manager,
-            library_root_locked=bool(self.main_window.current_project is not None),
+            is_project_open=self._is_project_open_for_settings,
+            close_project_for_switch=self._close_project_for_library_switch,
+            on_library_root_switched=self._on_library_root_switched,
         )
         dialog.exec()
         self.project_manager.refresh()
