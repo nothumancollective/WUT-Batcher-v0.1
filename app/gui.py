@@ -863,6 +863,19 @@ COMPARE_STAGE_KPI_COLUMNS: Dict[str, Tuple[Tuple[str, str], ...]] = {
     ),
 }
 
+ITERATE_ALL_KPI_COLUMNS: Tuple[Tuple[str, str], ...] = (
+    ("score", "Score"),
+    ("b_pc_oct", "Pattern Ctrl (oct)"),
+    ("e_bw", "BW Err (deg)"),
+    ("e_cov", "Cov Err (dB)"),
+    ("r_spill", "Spill Ratio"),
+    ("di_proxy", "DI Trend (dB)"),
+    ("s_theta", "Smoothness"),
+    ("e_sym_shape", "Plane Consistency"),
+    ("r_off", "Off-axis Ripple (dB)"),
+    ("flags", "Flags"),
+)
+
 VERSION_INFO_STAGE_METRICS: Dict[str, Tuple[str, ...]] = {
     "concept": ("score", "b_pc_oct", "e_bw", "e_cov", "r_spill", "flags"),
     "stabilization": ("score", "di_proxy", "s_theta", "e_sym_shape", "flags"),
@@ -6985,6 +6998,30 @@ class AnalysePage(QWidget):
         compare_layout.addWidget(self.compare_splitter, 1)
         self.analysis_tabs.addTab(self.compare_tab, "Compare")
 
+        self.iterate_tab = QWidget()
+        iterate_layout = QVBoxLayout(self.iterate_tab)
+        iterate_layout.setContentsMargins(6, 6, 6, 6)
+        iterate_layout.setSpacing(8)
+        self.iterate_notice = ElidedTitleLabel("Pin versions in Explorer, then iterate from this table.")
+        self.iterate_notice.setObjectName("SummaryMeta")
+        self.iterate_notice.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        iterate_layout.addWidget(self.iterate_notice, 0)
+        self.iterate_table = QTableWidget(0, 1)
+        self.iterate_table.setObjectName("AnalyzerIterateTable")
+        self.iterate_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.iterate_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.iterate_table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.iterate_table.setWordWrap(False)
+        self.iterate_table.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.iterate_table.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
+        self.iterate_table.setTextElideMode(Qt.ElideRight)
+        self.iterate_table.verticalHeader().setVisible(False)
+        self.iterate_table.verticalHeader().setSectionResizeMode(QHeaderView.Fixed)
+        self.iterate_table.verticalHeader().setDefaultSectionSize(34)
+        iterate_layout.addWidget(self.iterate_table, 1)
+        self._configure_iterate_table()
+        self.analysis_tabs.addTab(self.iterate_tab, "Iterate")
+
         right_layout.addWidget(self.analysis_tabs, 1)
 
         left.setMinimumWidth(360)
@@ -7496,6 +7533,10 @@ class AnalysePage(QWidget):
         mode_row_layout.setSpacing(6)
         self.analysis_mode_group = QButtonGroup(self)
         self.analysis_mode_group.setExclusive(True)
+        self.analysis_mode_buttons_wrap = QWidget(self.analysis_mode_row)
+        mode_buttons_layout = QHBoxLayout(self.analysis_mode_buttons_wrap)
+        mode_buttons_layout.setContentsMargins(0, 0, 0, 0)
+        mode_buttons_layout.setSpacing(6)
         self.analysis_explorer_btn = QToolButton()
         self.analysis_explorer_btn.setObjectName("ModeBarButton")
         self.analysis_explorer_btn.setText("Explorer")
@@ -7504,10 +7545,18 @@ class AnalysePage(QWidget):
         self.analysis_compare_btn.setObjectName("ModeBarButton")
         self.analysis_compare_btn.setText("Compare")
         self.analysis_compare_btn.setCheckable(True)
+        self.analysis_iterate_btn = QToolButton()
+        self.analysis_iterate_btn.setObjectName("ModeBarButton")
+        self.analysis_iterate_btn.setText("Iterate")
+        self.analysis_iterate_btn.setCheckable(True)
         self.analysis_mode_group.addButton(self.analysis_explorer_btn)
         self.analysis_mode_group.addButton(self.analysis_compare_btn)
-        mode_row_layout.addWidget(self.analysis_explorer_btn, 0)
-        mode_row_layout.addWidget(self.analysis_compare_btn, 0)
+        self.analysis_mode_group.addButton(self.analysis_iterate_btn)
+        mode_buttons_layout.addWidget(self.analysis_explorer_btn, 0)
+        mode_buttons_layout.addWidget(self.analysis_compare_btn, 0)
+        mode_buttons_layout.addWidget(self.analysis_iterate_btn, 0)
+        mode_row_layout.addStretch(1)
+        mode_row_layout.addWidget(self.analysis_mode_buttons_wrap, 0, Qt.AlignCenter)
         mode_row_layout.addStretch(1)
 
         root.insertWidget(0, self.analyzer_toolbar)
@@ -7560,6 +7609,7 @@ class AnalysePage(QWidget):
         self.analysis_tabs.currentChanged.connect(self._on_analysis_tab_changed)
         self.analysis_explorer_btn.clicked.connect(lambda: self.analysis_tabs.setCurrentWidget(self.explorer_tab))
         self.analysis_compare_btn.clicked.connect(lambda: self.analysis_tabs.setCurrentWidget(self.compare_tab))
+        self.analysis_iterate_btn.clicked.connect(lambda: self.analysis_tabs.setCurrentWidget(self.iterate_tab))
         self.compare_add_selected_btn.clicked.connect(self._on_compare_add_selected)
         self.compare_remove_selected_btn.clicked.connect(self._on_compare_remove_selected)
         self.compare_auto_pick_btn.clicked.connect(self._open_compare_autopick_dialog)
@@ -7604,6 +7654,7 @@ class AnalysePage(QWidget):
         self._clear_plot_views("Select version + plane to render plots.")
         self._refresh_saved_analyses()
         self._update_compare_slots()
+        self._update_iterate_table()
         self._set_compare_drawer_expanded(bool(self._compare_drawer_expanded))
         self.analysis_explorer_btn.setChecked(True)
         self._update_toolbar_context_chips()
@@ -9381,14 +9432,19 @@ class AnalysePage(QWidget):
         return super().eventFilter(watched, event)
 
     def _on_analysis_tab_changed(self, _index: int = 0) -> None:
-        is_compare = self.analysis_tabs.currentWidget() is self.compare_tab
+        current_tab = self.analysis_tabs.currentWidget()
+        is_compare = current_tab is self.compare_tab
+        is_iterate = current_tab is self.iterate_tab
         self.analysis_explorer_btn.blockSignals(True)
         self.analysis_compare_btn.blockSignals(True)
-        self.analysis_explorer_btn.setChecked(not is_compare)
+        self.analysis_iterate_btn.blockSignals(True)
+        self.analysis_explorer_btn.setChecked(not is_compare and not is_iterate)
         self.analysis_compare_btn.setChecked(is_compare)
+        self.analysis_iterate_btn.setChecked(is_iterate)
         self.analysis_explorer_btn.blockSignals(False)
         self.analysis_compare_btn.blockSignals(False)
-        if self.analysis_tabs.currentWidget() is self.compare_tab:
+        self.analysis_iterate_btn.blockSignals(False)
+        if current_tab is self.compare_tab:
             self._stop_plot_worker()
             self._set_plot_busy(False, "Compare tab active.")
             self._refresh_saved_analyses()
@@ -9396,6 +9452,13 @@ class AnalysePage(QWidget):
             self._update_compare_slots()
             self._schedule_compare_plot_refresh()
             self._layout_compare_drawer_overlay()
+            return
+        if current_tab is self.iterate_tab:
+            self._stop_plot_worker()
+            self._stop_autopick_worker()
+            self._stop_compare_plot_worker()
+            self._set_plot_busy(False, "Iterate tab active.")
+            self._update_iterate_table()
             return
         self._stop_autopick_worker()
         self._stop_compare_plot_worker()
@@ -9950,6 +10013,98 @@ class AnalysePage(QWidget):
         if configured:
             return [tuple(item) for item in configured]
         return [tuple(item) for item in COMPARE_DEFAULT_KPI_COLUMNS]
+
+    @staticmethod
+    def _iterate_table_columns() -> List[Tuple[str, str]]:
+        return [("selection", "Selection"), *list(ITERATE_ALL_KPI_COLUMNS), ("iterate", "Iterate")]
+
+    def _configure_iterate_table(self) -> None:
+        table = getattr(self, "iterate_table", None)
+        if not isinstance(table, QTableWidget):
+            return
+        columns = self._iterate_table_columns()
+        table.setColumnCount(len(columns))
+        table.setHorizontalHeaderLabels([str(label) for _key, label in columns])
+        header = table.horizontalHeader()
+        header.setStretchLastSection(False)
+        header.setMinimumSectionSize(36)
+        header.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        font_metrics = QFontMetrics(table.font())
+        for index, (key, label) in enumerate(columns):
+            header.setSectionResizeMode(index, QHeaderView.Fixed)
+            if key == "selection":
+                table.setColumnWidth(index, 160)
+            elif key == "iterate":
+                table.setColumnWidth(index, 92)
+            elif key in {"score", "flags"}:
+                table.setColumnWidth(index, 64)
+            else:
+                table.setColumnWidth(index, max(88, min(font_metrics.horizontalAdvance(str(label or "")) + 24, 168)))
+
+    def _on_iterate_table_action(self, payload: Mapping[str, Any]) -> None:
+        batch_id = str(payload.get("batch_id") or "--").strip() or "--"
+        version_id = str(payload.get("version_id") or "--").strip() or "--"
+        if LOGGER.isEnabledFor(logging.DEBUG):
+            LOGGER.debug("Iterate action requested (stub): batch_id=%s version_id=%s", batch_id, version_id)
+        self.iterate_notice.set_full_text(
+            f"Iterate action for {batch_id}/{version_id} is not wired yet (Commit 3)."
+        )
+
+    def _update_iterate_table(self) -> None:
+        table = getattr(self, "iterate_table", None)
+        if not isinstance(table, QTableWidget):
+            return
+        self._configure_iterate_table()
+        columns = self._iterate_table_columns()
+        col_index = {key: idx for idx, (key, _label) in enumerate(columns)}
+        pinned_rows = [
+            dict(row)
+            for row in list(self._all_run_rows or [])
+            if isinstance(row, dict) and bool(row.get("version_pinned"))
+        ]
+        if not pinned_rows:
+            table.setRowCount(1)
+            table.setItem(0, int(col_index["selection"]), QTableWidgetItem("No pinned versions."))
+            for key, idx in col_index.items():
+                if key in {"selection", "iterate"}:
+                    continue
+                item = QTableWidgetItem("--")
+                item.setTextAlignment(int(Qt.AlignRight | Qt.AlignVCenter))
+                table.setItem(0, int(idx), item)
+            iterate_btn = QPushButton("Iterate")
+            iterate_btn.setObjectName("BatchSecondaryButton")
+            iterate_btn.setEnabled(False)
+            iterate_btn.setToolTip("Pin versions in Explorer first.")
+            table.setCellWidget(0, int(col_index["iterate"]), iterate_btn)
+            self.iterate_notice.set_full_text("Pin versions in Explorer, then iterate from this table.")
+            return
+        table.setRowCount(len(pinned_rows))
+        for row_index, row in enumerate(pinned_rows):
+            batch_id = str(row.get("batch_id") or "--").strip() or "--"
+            version_id = str(row.get("version_id") or "--").strip() or "--"
+            selection_item = QTableWidgetItem(f"{batch_id}/{version_id}")
+            selection_item.setData(Qt.UserRole, dict(row))
+            table.setItem(int(row_index), int(col_index["selection"]), selection_item)
+            for key, idx in col_index.items():
+                if key in {"selection", "iterate"}:
+                    continue
+                if key == "score":
+                    text_value = self._format_float(row.get("kpi_score"), 2)
+                elif key == "flags":
+                    text_value = self._flags_text(row)
+                else:
+                    text_value = self._compare_candidate_metric_text(row, key)
+                item = QTableWidgetItem(text_value)
+                item.setTextAlignment(int(Qt.AlignRight | Qt.AlignVCenter))
+                item.setToolTip(f"{key}: {text_value}" if text_value != "--" else f"{key}: --")
+                table.setItem(int(row_index), int(idx), item)
+            iterate_btn = QPushButton("Iterate")
+            iterate_btn.setObjectName("BatchSecondaryButton")
+            iterate_btn.setMinimumWidth(82)
+            iterate_btn.setMaximumWidth(90)
+            iterate_btn.clicked.connect(lambda _checked=False, payload=dict(row): self._on_iterate_table_action(payload))
+            table.setCellWidget(int(row_index), int(col_index["iterate"]), iterate_btn)
+        self.iterate_notice.set_full_text(f"Pinned versions: {len(pinned_rows)}")
 
     def _refresh_compare_table_column_mapping(self) -> None:
         self._compare_kpi_columns = list(self._compare_stage_kpi_columns())
@@ -11758,6 +11913,7 @@ class AnalysePage(QWidget):
         )
         self._refresh_run_table()
         self._update_compare_slots()
+        self._update_iterate_table()
 
     def _persist_ath_visible_pref(self) -> None:
         project_id = str(self._selected_project_id() or "").strip()
@@ -12356,6 +12512,7 @@ class AnalysePage(QWidget):
             self._compare_candidates = merged[:5]
         self._refresh_run_table()
         self._update_compare_slots()
+        self._update_iterate_table()
 
     def _on_source_changed(self, _index: int = 0) -> None:
         if self._selector_sync_guard:

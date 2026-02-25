@@ -205,6 +205,77 @@ class AnalyzerPageUiTests(unittest.TestCase):
                 self.assertEqual(int(value_label.alignment() & Qt.AlignRight), int(Qt.AlignRight))
                 self.assertTrue(bool(value_label.property("analyzerMetricValue")))
 
+    def test_analysis_mode_row_centers_explorer_compare_iterate_group(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_ui2x_iterate_modebar_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            self.assertEqual(str(page.analysis_explorer_btn.text()), "Explorer")
+            self.assertEqual(str(page.analysis_compare_btn.text()), "Compare")
+            self.assertEqual(str(page.analysis_iterate_btn.text()), "Iterate")
+            mode_layout = page.analysis_mode_row.layout()
+            self.assertIsNotNone(mode_layout)
+            assert mode_layout is not None
+            self.assertGreaterEqual(mode_layout.count(), 3)
+            self.assertIsNotNone(mode_layout.itemAt(0).spacerItem())
+            self.assertIs(mode_layout.itemAt(1).widget(), page.analysis_mode_buttons_wrap)
+            self.assertIsNotNone(mode_layout.itemAt(mode_layout.count() - 1).spacerItem())
+
+    def test_iterate_table_lists_only_pinned_versions_with_all_kpi_columns(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_ui2x_iterate_pinned_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            rows = [
+                {
+                    "project_id": "P001",
+                    "batch_id": "B001",
+                    "run_id": "R001",
+                    "version_id": "V001",
+                    "planes": ["H", "V"],
+                    "kpi_score": 84.2,
+                    "kpi_b_pc_oct": 1.2,
+                    "kpi_e_bw": 2.3,
+                    "kpi_e_cov": 0.7,
+                    "kpi_r_spill": 0.11,
+                    "kpi_di_proxy": 4.2,
+                    "kpi_s_theta": 0.31,
+                    "kpi_e_sym_shape": 0.17,
+                    "kpi_r_off": 1.6,
+                    "kpi_flags_count": 0,
+                },
+                {
+                    "project_id": "P001",
+                    "batch_id": "B001",
+                    "run_id": "R002",
+                    "version_id": "V002",
+                    "planes": ["H", "V"],
+                    "kpi_score": 70.0,
+                    "kpi_b_pc_oct": 0.8,
+                    "kpi_e_bw": 3.0,
+                    "kpi_e_cov": 1.0,
+                    "kpi_r_spill": 0.2,
+                    "kpi_di_proxy": 3.0,
+                    "kpi_s_theta": 0.5,
+                    "kpi_e_sym_shape": 0.2,
+                    "kpi_r_off": 2.0,
+                    "kpi_flags_count": 2,
+                },
+            ]
+            page._pinned_version_tokens = {page._version_pin_token(page._version_pin_identity(rows[0]))}
+            page._apply_runs_payload({"runs": rows})
+            page.analysis_tabs.setCurrentWidget(page.iterate_tab)
+            self.app.processEvents()
+
+            self.assertEqual(page.iterate_table.rowCount(), 1)
+            self.assertGreaterEqual(page.iterate_table.columnCount(), 12)
+            selection_item = page.iterate_table.item(0, 0)
+            self.assertIsNotNone(selection_item)
+            assert selection_item is not None
+            self.assertEqual(str(selection_item.text()), "B001/V001")
+            iterate_btn = page.iterate_table.cellWidget(0, page.iterate_table.columnCount() - 1)
+            self.assertIsNotNone(iterate_btn)
+            assert isinstance(iterate_btn, QPushButton)
+            self.assertTrue(iterate_btn.isEnabled())
+
     def test_display_section_hides_tol_control_and_uses_balanced_internal_widths(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_ui2x_display_tol_advanced_") as tmp:
             service = _build_service(Path(tmp))

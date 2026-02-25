@@ -1,5 +1,12 @@
 ﻿# Analyzer Docs Ã¢â‚¬â€ Changelog
 
+## 2026-02-25 (Iterate tab scaffold + centered analysis tab group)
+- Analyzer mode bar now centers the `Explorer | Compare | Iterate` button group horizontally in its row.
+- Added a third Analyzer tab `Iterate` (no plots) with a pinned-only version table.
+- Iterate table shows version selection plus the full KPI column set:
+  - `score`, `b_pc_oct`, `e_bw`, `e_cov`, `r_spill`, `di_proxy`, `s_theta`, `e_sym_shape`, `r_off`, `flags`.
+- Each pinned row includes an `Iterate` action button with a temporary stub handler (real batch-creation wiring follows in next step).
+
 ## 2026-02-25 (Version Information: dimensions row + score quality chip)
 - Version Information now renders final dimensions in a dedicated row above ATH params:
   - key: `Dim (LxWxH)`
