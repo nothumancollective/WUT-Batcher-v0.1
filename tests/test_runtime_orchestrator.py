@@ -1091,6 +1091,133 @@ class RuntimeOrchestratorTests(unittest.TestCase):
             ingest = version_payload.get("vacs_export_ingest", {})
             self.assertTrue(bool(ingest.get("mapping_errors")))
 
+    def test_pipeline_captures_vacs_system_exit_as_stage_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            projects_root = Path(tmp_dir) / "projects"
+            project = Project(
+                project_id="P001",
+                name="Runtime VACS SystemExit Guard Test",
+                root_path=str(projects_root / "P001"),
+                constraints=ProjectConstraints(
+                    project_id="P001",
+                    fixed_params={"Length": 120},
+                    limits={},
+                    runner_mode="AthGuidePreview",
+                ),
+            )
+            batch = Batch(
+                batch_id="B001",
+                project_id="P001",
+                selected_params={"Throat.Diameter": ParamSelection(value=30.0)},
+                sweep_mode="single",
+                runner_mode="AthGuidePreview",
+                sim_export_settings=SimExportSettings(
+                    export_specs=[
+                        {
+                            "id": "spl_main",
+                            "tool": "vacs",
+                            "graph_kind": "spl",
+                            "variant": "main",
+                            "format": "txt",
+                        }
+                    ]
+                ),
+            )
+
+            def _boom(**_kwargs):
+                raise SystemExit(1)
+
+            with patch("app.runtime_orchestrator.run_vacs_export_specs", side_effect=_boom):
+                summary = run_batch_pipeline(
+                    project=project,
+                    batch=batch,
+                    projects_root=projects_root,
+                    vacs_executable=sys.executable,
+                    continue_on_error=True,
+                )
+
+            self.assertEqual(summary.run_status, "failed")
+            vacs_stages = [stage for stage in list(summary.stage_results) if str(stage.stage) == "vacs"]
+            self.assertEqual(len(vacs_stages), 1)
+            self.assertEqual(str(vacs_stages[0].status), "failed")
+            self.assertEqual(int(vacs_stages[0].exit_code), 1)
+
+            version_payload = json.loads(
+                (Path(summary.project_root) / "versions" / summary.versions[0] / "version.json").read_text(
+                    encoding="utf-8-sig"
+                )
+            )
+            vacs_result = dict(version_payload.get("vacs_result", {}) or {})
+            self.assertIn("SystemExit(1)", str(vacs_result.get("error", "")))
+
+    def test_pipeline_skips_vacs_stage_when_akabak_stage_failed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            projects_root = Path(tmp_dir) / "projects"
+            project = Project(
+                project_id="P001",
+                name="Runtime Skip VACS On AKABAK Failure Test",
+                root_path=str(projects_root / "P001"),
+                constraints=ProjectConstraints(
+                    project_id="P001",
+                    fixed_params={"Length": 120},
+                    limits={},
+                    runner_mode="AthGuidePreview",
+                ),
+            )
+            batch = Batch(
+                batch_id="B001",
+                project_id="P001",
+                selected_params={"Throat.Diameter": ParamSelection(value=30.0)},
+                sweep_mode="single",
+                runner_mode="AthGuidePreview",
+                sim_export_settings=SimExportSettings(
+                    export_specs=[
+                        {
+                            "id": "spl_main",
+                            "tool": "vacs",
+                            "graph_kind": "spl",
+                            "variant": "main",
+                            "format": "txt",
+                        }
+                    ]
+                ),
+            )
+
+            failed_stage = StageExecution(
+                version_id="V001",
+                stage="akabak",
+                status="failed",
+                exit_code=1,
+                timed_out=False,
+                summary_log="akabak.failed.summary.json",
+            )
+
+            with patch("app.runtime_orchestrator.AkabakDriver", object()):
+                with patch(
+                    "app.runtime_orchestrator._run_akabak_ui_driver_stage",
+                    return_value=(
+                        failed_stage,
+                        {"mode": "uia_driver", "summary_log": "akabak.failed.summary.json", "exit_code": 1},
+                        False,
+                    ),
+                ):
+                    with patch(
+                        "app.runtime_orchestrator.run_vacs_export_specs",
+                        side_effect=AssertionError("must_not_run_when_akabak_failed"),
+                    ):
+                        summary = run_batch_pipeline(
+                            project=project,
+                            batch=batch,
+                            projects_root=projects_root,
+                            akabak_executable="C:\\Tools\\AKABAK\\AKABAK.exe",
+                            vacs_executable=sys.executable,
+                            continue_on_error=True,
+                        )
+
+            self.assertEqual(summary.run_status, "failed")
+            self.assertTrue(any(stage.stage == "akabak" and stage.status == "failed" for stage in summary.stage_results))
+            self.assertFalse(any(stage.stage == "vacs" for stage in summary.stage_results))
+
 
 if __name__ == "__main__":
     unittest.main()

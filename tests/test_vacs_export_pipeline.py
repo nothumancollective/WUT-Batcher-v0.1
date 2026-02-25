@@ -76,6 +76,38 @@ class VacsExportPipelineTests(unittest.TestCase):
             self.assertIn("auto", cmd)
             self.assertIn("--assume-vacs-ready", cmd)
 
+    def test_external_runner_surfaces_structured_error_on_nonzero_exit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+
+            class _Proc:
+                returncode = 1
+                stdout = json.dumps(
+                    {
+                        "ok": False,
+                        "error": "vacs_not_ready_after_f4",
+                        "summary_file": "C:/tmp/summary.json",
+                        "trace_file": "C:/tmp/trace.jsonl",
+                    }
+                )
+                stderr = ""
+
+            def _fake_run(cmd, capture_output, text, check):  # type: ignore[no-untyped-def]
+                return _Proc()
+
+            with patch("app.vacs_export_pipeline.subprocess.run", side_effect=_fake_run):
+                with self.assertRaises(VacsExportPipelineError) as ctx:
+                    _run_external_vacs_export_save_all(
+                        executable="C:\\Tools\\VACS\\vacsviewer_32.exe",
+                        akabak_executable="C:\\Tools\\AKABAK\\AKABAK.exe",
+                        export_dir=root / "exports",
+                        log_dir=root / "logs",
+                    )
+            message = str(ctx.exception)
+            self.assertIn("rc=1", message)
+            self.assertIn("vacs_not_ready_after_f4", message)
+            self.assertIn("summary_file=", message)
+
     def _write_catalog(self, root: Path, *, entries: list[dict]) -> None:
         path = root / "default" / "graph_catalog.json"
         path.parent.mkdir(parents=True, exist_ok=True)

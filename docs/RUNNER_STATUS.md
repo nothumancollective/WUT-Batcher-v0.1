@@ -135,3 +135,38 @@ Root-cause hypothesis before fix:
 - The runner currently catches `Exception` for VACS export stage errors, but not `SystemExit` (`BaseException` path).
 - A `SystemExit` raised inside a VACS stage call boundary can bypass normal stage-fail conversion and escape the pipeline thread.
 - Existing runtime logs also show non-crash VACS hard failures (`rc=1`) with root reason `vacs_not_ready_after_f4`; these should remain stage failures with clear diagnostics, never process termination.
+
+## VACS Robustness Fixes Applied (2026-02-25)
+
+Confirmed root causes:
+- `SystemExit` was not caught in VACS stage boundary:
+  - `app/runtime_orchestrator.py` used `except (VacsExportPipelineError, Exception)` and therefore did not intercept `SystemExit`.
+- GUI batch worker catch was also `Exception`-only:
+  - `app/gui.py` `_BatchRunWorker.run()` could let `SystemExit` escape the worker thread.
+- VACS stage execution was not gated by AKABAK stage success:
+  - when AKABAK timed out/failed, VACS export could still start and predictably fail with `vacs_not_ready_after_f4`.
+
+Implemented fixes:
+- Stage boundary hardening:
+  - `app/runtime_orchestrator.py`
+  - VACS export stage now catches `BaseException` (re-raises only `KeyboardInterrupt`), normalizes `SystemExit(...)` into deterministic stage failure text, persists failure to version state + run status, and keeps process alive.
+- GUI worker hardening:
+  - `app/gui.py`
+  - `_BatchRunWorker.run()` now catches `BaseException` and emits a controlled failure payload instead of thread/process termination.
+- VACS gating on AKABAK success:
+  - `app/runtime_orchestrator.py`
+  - VACS stage now only executes when `akabak_stage_ok` is true; otherwise it is explicitly skipped (debug log reason: `akabak_stage_failed`).
+- External VACS error surfacing:
+  - `app/vacs_export_pipeline.py`
+  - non-zero external script exits now parse structured stdout JSON when available and surface concise reasons (`error`, `summary_file`, `trace_file`) instead of opaque blobs.
+
+Validation executed:
+- `python -m pytest -q tests/test_runtime_orchestrator.py tests/test_vacs_export_pipeline.py`
+  - result: `30 passed`
+- Added regression coverage:
+  - runtime captures `SystemExit(1)` from VACS boundary as stage failure (no crash).
+  - runtime skips VACS stage when AKABAK stage failed (no futile export attempt).
+  - external runner non-zero exit returns structured error details.
+- CLI real-smoke:
+  - `python -m app run-sample --real --library-root cleanup/runtime/vacs_systemexit_guard_real`
+  - run failed earlier at `ath_abec_sync` in this environment, but app stayed stable and returned structured failure summary (no crash/SystemExit termination).

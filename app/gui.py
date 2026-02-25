@@ -2820,7 +2820,7 @@ class _BatchRunWorker(QObject):
             )
             payload = asdict(summary)
             self.finished.emit(self._batch_id, payload)
-        except Exception:
+        except BaseException:
             self.failed.emit(self._batch_id, traceback.format_exc())
 
 

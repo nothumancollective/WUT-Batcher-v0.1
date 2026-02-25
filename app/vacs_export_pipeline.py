@@ -156,14 +156,39 @@ def _run_external_vacs_export_save_all(
     proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
     stdout = str(proc.stdout or "").strip()
     stderr = str(proc.stderr or "").strip()
+    payload: Dict[str, Any] | None = None
+    parse_error: str = ""
+    if stdout:
+        try:
+            loaded = json.loads(stdout)
+            if isinstance(loaded, dict):
+                payload = loaded
+            else:
+                parse_error = "external vacs export returned non-object json payload"
+        except json.JSONDecodeError as exc:
+            parse_error = str(exc)
     if proc.returncode != 0:
+        failure_parts: List[str] = []
+        if isinstance(payload, dict):
+            payload_error = str(payload.get("error", "") or "").strip()
+            if payload_error:
+                failure_parts.append(payload_error)
+            summary_file = str(payload.get("summary_file", "") or "").strip()
+            trace_file = str(payload.get("trace_file", "") or "").strip()
+            if summary_file:
+                failure_parts.append(f"summary_file={summary_file}")
+            if trace_file:
+                failure_parts.append(f"trace_file={trace_file}")
+        elif parse_error:
+            failure_parts.append(f"invalid_json={parse_error}")
+        reason = " | ".join(failure_parts) or stderr or stdout or "no output"
         raise VacsExportPipelineError(
-            f"external vacs export failed (rc={proc.returncode}): {stderr or stdout or 'no output'}"
+            f"external vacs export failed (rc={proc.returncode}): {reason}"
         )
-    try:
-        payload = json.loads(stdout)
-    except json.JSONDecodeError as exc:
-        raise VacsExportPipelineError(f"external vacs export returned invalid json: {exc}") from exc
+    if payload is None:
+        raise VacsExportPipelineError(
+            f"external vacs export returned invalid json: {parse_error or 'missing output payload'}"
+        )
     if not bool(payload.get("ok")):
         raise VacsExportPipelineError(f"external vacs export reported failure: {payload}")
     return payload

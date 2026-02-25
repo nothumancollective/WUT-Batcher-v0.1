@@ -30,7 +30,7 @@ from app.safe_cleanup import guarded_delete_file_in_workspace, guarded_delete_tr
 from app.runners import AkabakRunner, AthRunner, RunnerResult, VacsRunner, parse_ath_dimensions
 from app.tidy_dataset import TidyDatasetWriter
 from app.polar_txt_parser import PolarTxtParseError, normalize_orientation_marker, parse_polar_legacy_complex_txt
-from app.vacs_export_pipeline import VacsExportPipelineError, run_vacs_export_specs
+from app.vacs_export_pipeline import run_vacs_export_specs
 from app.vacs_txt_parser import parse_vacs_txt_file
 
 try:
@@ -64,6 +64,20 @@ def _append_stage_debug_log(version_logs_dir: Path, *, event: str, payload: Dict
     except Exception:
         # Debug logging must never break runtime execution.
         return
+
+
+def _describe_stage_exception(exc: BaseException) -> str:
+    if isinstance(exc, SystemExit):
+        code = getattr(exc, "code", None)
+        if isinstance(code, BaseException):
+            return f"SystemExit({type(code).__name__}: {code})"
+        if code is None:
+            return "SystemExit(None)"
+        return f"SystemExit({code})"
+    message = str(exc).strip()
+    if message:
+        return message
+    return type(exc).__name__
 
 
 def _write_json(path: Path, payload: Dict[str, Any]) -> None:
@@ -2346,7 +2360,18 @@ def run_batch_pipeline(
                     run_status = "failed"
                     continue
 
-            if ath_stage_ok and vacs_required and not vacs_executable:
+            if ath_stage_ok and not akabak_stage_ok and vacs_required:
+                _append_stage_debug_log(
+                    version_logs_dir,
+                    event="stage_skipped",
+                    payload={
+                        "stage": "vacs",
+                        "version_id": version_id,
+                        "reason": "akabak_stage_failed",
+                    },
+                )
+
+            elif ath_stage_ok and akabak_stage_ok and vacs_required and not vacs_executable:
                 vacs_stage_ok = False
                 summary_path = version_logs_dir / "vacs.export_pipeline.json"
                 _append_stage_debug_log(
@@ -2425,7 +2450,7 @@ def run_batch_pipeline(
                     run_status = "failed"
                     continue
 
-            elif ath_stage_ok and vacs_executable and export_specs:
+            elif ath_stage_ok and akabak_stage_ok and vacs_executable and export_specs:
                 exports_dir = _version_exports_dir(project_root, version_id, effective_run_id)
                 exports_dir.mkdir(parents=True, exist_ok=True)
                 vacs_summary_path = version_logs_dir / "vacs.export_pipeline.json"
@@ -2527,8 +2552,11 @@ def run_batch_pipeline(
                         write_result if isinstance(write_result, dict) else None
                     ):
                         persist_sync_errors.append("write_measurements")
-                except (VacsExportPipelineError, Exception) as exc:
+                except BaseException as exc:
+                    if isinstance(exc, KeyboardInterrupt):
+                        raise
                     vacs_stage_ok = False
+                    error_text = _describe_stage_exception(exc)
                     _append_stage_debug_log(
                         version_logs_dir,
                         event="stage_end",
@@ -2538,11 +2566,11 @@ def run_batch_pipeline(
                             "mode": "export_specs",
                             "ok": False,
                             "error_type": type(exc).__name__,
-                            "error": str(exc),
+                            "error": error_text,
                             "summary_log": str(vacs_summary_path),
                         },
                     )
-                    _write_json(vacs_summary_path, {"error": str(exc), "vacs_version": vacs_version})
+                    _write_json(vacs_summary_path, {"error": error_text, "vacs_version": vacs_version})
                     stage_results.append(
                         StageExecution(
                             version_id=version_id,
@@ -2563,7 +2591,7 @@ def run_batch_pipeline(
                                 "exit_code": 1,
                                 "timed_out": False,
                                 "summary_log": str(vacs_summary_path),
-                                "error": str(exc),
+                                "error": error_text,
                             },
                         },
                     )
@@ -2571,7 +2599,7 @@ def run_batch_pipeline(
                         version_id,
                         status="vacs_failed",
                         run_id=effective_run_id,
-                        error_summary=str(exc),
+                        error_summary=error_text,
                     )
                     _track_sync("update_version_status.vacs_failed", vacs_failed_result)
                     if not continue_on_error:
@@ -2595,7 +2623,7 @@ def run_batch_pipeline(
                         run_status = "failed"
                         continue
 
-            elif ath_stage_ok and vacs_runner is not None and bool(vacs_base_args_list):
+            elif ath_stage_ok and akabak_stage_ok and vacs_runner is not None and bool(vacs_base_args_list):
                 exports_dir = _version_exports_dir(project_root, version_id, effective_run_id)
                 exports_dir.mkdir(parents=True, exist_ok=True)
                 _append_stage_debug_log(
