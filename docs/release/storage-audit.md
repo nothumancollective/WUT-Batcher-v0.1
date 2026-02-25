@@ -342,3 +342,27 @@ Date: 2026-02-25
    - root switched successfully
 4. Created project in new root -> first project `P0001__<uid>`: PASS
 5. Landing window has active `Settings...` entry point: PASS
+
+## 11) Folder dialog crash repro + signals (Phase 0)
+
+Date: 2026-02-25
+
+### Repro targets
+- `SettingsDialog._choose_library_root()` (opened from MainWindow settings gear)
+- Same dialog path when opened from ProjectManager `Settings...` entry
+
+### Classification signals gathered
+- Reported behavior in user environment: hard process crash when clicking `Choose...`.
+- Local offscreen probe of native `QFileDialog.getExistingDirectory(...)`:
+  - No Python traceback produced.
+  - Call did not return in headless probe (timed out), consistent with native dialog handoff behavior but not sufficient to confirm crash locally.
+- Windows Application log query during session found no fresh `Application Error` / `Windows Error Reporting` entry tied to this probe run.
+
+### Diagnostics added (DEBUG-guarded)
+- `faulthandler.enable(all_threads=True)` via `_enable_fault_diagnostics()` when DEBUG logger is enabled (or `WUT_ENABLE_FAULTHANDLER=1`).
+- Added pre/post log markers around native folder dialog open:
+  - `about to open native folder dialog`
+  - `folder dialog returned`
+- Added settings-open entry logs for both call paths:
+  - MainWindow settings gear
+  - ProjectManager settings entry

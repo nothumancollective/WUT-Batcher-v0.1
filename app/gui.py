@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
+import faulthandler
 import html
 import math
 import json
@@ -79,6 +80,7 @@ _RUNTIME_LOG_LOCK = threading.Lock()
 _RUNTIME_LOG_INSTALLED = False
 _PREVIOUS_QT_MESSAGE_HANDLER = None
 _RUNTIME_CONTEXT_PROVIDER: Callable[[], Dict[str, Any]] | None = None
+_FAULT_DIAGNOSTICS_ENABLED = False
 
 
 def _runtime_log_path() -> Path:
@@ -171,6 +173,22 @@ def _install_runtime_exception_logging(*, context_provider: Callable[[], Dict[st
         _PREVIOUS_QT_MESSAGE_HANDLER = qInstallMessageHandler(_qt_message_handler)
     except Exception:
         _PREVIOUS_QT_MESSAGE_HANDLER = None
+
+
+def _enable_fault_diagnostics() -> None:
+    global _FAULT_DIAGNOSTICS_ENABLED
+    if _FAULT_DIAGNOSTICS_ENABLED:
+        return
+    if not (LOGGER.isEnabledFor(logging.DEBUG) or str(os.environ.get("WUT_ENABLE_FAULTHANDLER", "")).strip() == "1"):
+        return
+    try:
+        faulthandler.enable(all_threads=True)
+        _FAULT_DIAGNOSTICS_ENABLED = True
+        if LOGGER.isEnabledFor(logging.DEBUG):
+            LOGGER.debug("Fault diagnostics enabled via faulthandler.")
+    except Exception:
+        if LOGGER.isEnabledFor(logging.DEBUG):
+            LOGGER.debug("Failed to enable faulthandler diagnostics.", exc_info=True)
 
 try:
     from PySide6.QtCore import (
@@ -4566,7 +4584,18 @@ class SettingsDialog(QDialog):
     def _choose_library_root(self) -> None:
         current = self.library_root.text().strip()
         start_dir = current or str(Path.home())
+        if LOGGER.isEnabledFor(logging.DEBUG):
+            LOGGER.debug(
+                "SettingsDialog about to open native folder dialog: start_dir=%s thread=%s",
+                str(start_dir),
+                str(QThread.currentThread()),
+            )
         selected = QFileDialog.getExistingDirectory(self, "Choose Project Library Location", start_dir)
+        if LOGGER.isEnabledFor(logging.DEBUG):
+            LOGGER.debug(
+                "SettingsDialog folder dialog returned: selected=%s",
+                str(selected),
+            )
         if not selected:
             if LOGGER.isEnabledFor(logging.DEBUG):
                 LOGGER.debug("SettingsDialog choose library root cancelled.")
@@ -13879,6 +13908,11 @@ class GuiController:
         self.project_manager.refresh()
 
     def _open_settings_from_project_manager(self) -> None:
+        if LOGGER.isEnabledFor(logging.DEBUG):
+            LOGGER.debug(
+                "GuiController opening settings from project manager: current_project=%s",
+                str(self.main_window.current_project.project_id if self.main_window.current_project else ""),
+            )
         dialog = SettingsDialog(
             self.service,
             self.project_manager,
@@ -13963,6 +13997,7 @@ def _run_doctor_for_splash(service: OrchestratorService) -> Dict[str, object]:
 
 def launch_gui() -> int:
     configure_windows_qt_darkmode_env()
+    _enable_fault_diagnostics()
     app = QApplication.instance() or QApplication([])
     apply_theme(app)
 
