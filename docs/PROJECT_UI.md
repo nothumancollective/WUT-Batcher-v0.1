@@ -78,3 +78,24 @@ The Batch page is now implemented as a companion to the PROJECT form design.
   - save allowed on `incomplete`
   - run blocked on `incomplete` and `fatal`
   - hidden-value reconcile + payload sanitize pass prevents transient `batch_param_not_visible` conflicts
+
+## Dashboard Redesign Preflight (2026-02-25)
+- Merge prerequisite for the redesign task was checked first:
+  - current branch: `wut-batcher/rebuild`
+  - merge command: `git merge --no-ff origin/wut-batcher/rebuild`
+  - result: already up to date (no content merge delta)
+- Audit findings for "Project page" target:
+  - target view is `DashboardPage` in `app/gui.py` (project-open dashboard), not `ProjectPage`.
+  - current top-left `DASHBOARD` title and bottom action/export bars live in `DashboardPage`.
+  - existing action wiring that must remain unchanged:
+    - `new_batch_btn -> request_new_batch`
+    - `edit_batch_btn -> request_edit_batch`
+    - `clone_batch_btn -> request_clone_batch`
+    - `export_btn -> request_open_export_dialog`
+    - `manage_runs_btn -> request_manage_runs`
+    - `cleanup_testdata_btn -> request_cleanup_testdata`
+    - `settings_btn -> request_settings`
+- Style-system reuse baseline:
+  - `ProjectSummaryPanel`, `SummaryTitle`, `SummaryMeta`, `SummaryText`, `SummaryChip`, `BatchPrimaryButton`, `BatchSecondaryButton`, `BatchGhostButton` already exist in `ui/theme.py` and will be reused.
+- Baseline smoke before redesign edits:
+  - app startup (offscreen) and main window creation succeeds on this branch baseline.
