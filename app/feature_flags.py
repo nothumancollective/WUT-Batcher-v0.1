@@ -18,7 +18,7 @@ def _env_flag(name: str, *, default: bool = False) -> bool:
 def use_project_library_storage() -> bool:
     """Enable new Project Library layout and identifiers.
 
-    Default is off for safe rollout.
+    Default is on; set USE_PROJECT_LIBRARY_STORAGE=0 for emergency legacy fallback.
     """
 
-    return _env_flag("USE_PROJECT_LIBRARY_STORAGE", default=False)
+    return _env_flag("USE_PROJECT_LIBRARY_STORAGE", default=True)

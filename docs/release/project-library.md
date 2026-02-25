@@ -1,7 +1,7 @@
 ﻿# Project Library Design
 
 Date: 2026-02-25
-Status: design baseline (pre-wiring)
+Status: implemented baseline (feature-flag default ON)
 
 ## 1) Goal
 
@@ -74,7 +74,7 @@ Choice rationale:
 ## 7) Coexistence and migration plan
 
 1. Introduce StorageManager/LibraryManager as central path + metadata authority.
-2. Add feature flag `USE_PROJECT_LIBRARY_STORAGE` (default OFF initially).
+2. Feature flag `USE_PROJECT_LIBRARY_STORAGE` controls storage mode.
 3. When flag ON:
    - resolve paths only through StorageManager,
    - write library DB as `library.sqlite`,
@@ -83,6 +83,9 @@ Choice rationale:
 5. Provide non-destructive coexistence:
    - no automatic destructive migration,
    - legacy roots remain openable.
+6. Runtime default:
+   - Project Library storage is ON by default.
+   - Emergency legacy fallback is explicit: set `USE_PROJECT_LIBRARY_STORAGE=0`.
 
 ## 8) Invariants
 
