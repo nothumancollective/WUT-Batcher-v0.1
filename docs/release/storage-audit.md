@@ -271,3 +271,36 @@ Date: 2026-02-25
   - settings open entry (`MainWindow._open_settings`)
   - project create start/failure (`MainWindow._create_project`)
   - project close transition for new-project flow (`GuiController._new_project`)
+
+## 9) Audit update for UX/root-switch change (Phase 1)
+
+Date: 2026-02-25
+
+### Audit scope
+- Queried `app/`, `tests/`, `docs/` for:
+  - `library_root`, `cleanup`, `workspace`, `project_dir`, `output_dir`
+  - `path_resolver`, `storage_migrations`, `StorageManager`
+  - `library_root_locked`, `SettingsDialog`, `OrchestratorService`, `create_project`, `new_project`
+
+### Findings relevant to this change
+- Authoritative storage root/metadata module:
+  - `app/storage_manager.py` (normalization, bootstrap, metadata, sqlite init, atomic root switch API).
+- Authoritative app settings persistence:
+  - `app/settings_store.py` (`UserSettings.library_root` single key; no duplicate library-root key found).
+- Active settings-to-runtime wiring:
+  - `app/services.py` (`OrchestratorService.save_settings`, `_bootstrap_library_root*`, repo rebind).
+- Active Preferences UI wiring:
+  - `app/gui.py` (`SettingsDialog`, `MainWindow._open_settings`).
+
+### Parallel/legacy path systems
+- `app/path_resolver.py` and `app/storage_migrations.py` remain quarantine shims to `tools/legacy/*`.
+- No active runtime imports/calls found for these shims in app/test execution paths.
+- Consolidation decision: keep these deprecated shims quarantined; do not introduce new path system.
+
+### Cleanup-only flows still present
+- `sql_dataset_store.cleanup_unpinned_runs` and runtime guarded cleanup remain active for explicit cleanup behavior.
+- These flows are not authoritative for project-library root switching and should stay separate.
+
+### Root-switch UX blocker and crash surface
+- Root switching was UI-locked by `library_root_locked` in `SettingsDialog`.
+- New-project crash surface exists at `MainWindow._create_project` because service/storage exceptions were not handled in UI layer.
