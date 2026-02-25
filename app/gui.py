@@ -13147,6 +13147,11 @@ class MainWindow(QMainWindow):
         return counts
 
     def _open_settings(self) -> None:
+        if LOGGER.isEnabledFor(logging.DEBUG):
+            LOGGER.debug(
+                "MainWindow opening settings: current_project=%s",
+                str(self.current_project.project_id if self.current_project else ""),
+            )
         dialog = SettingsDialog(
             self.service,
             self,
@@ -13233,6 +13238,12 @@ class MainWindow(QMainWindow):
             return
         self._project_create_in_progress = True
         self.project_page.set_creating(True)
+        if LOGGER.isEnabledFor(logging.DEBUG):
+            LOGGER.debug(
+                "MainWindow create project start: name=%s current_library_root=%s",
+                str(project_name or "").strip(),
+                str(getattr(self.service.settings, "library_root", "")),
+            )
         try:
             validation = self.service.evaluate_project_constraints(dict(constraints))
             issues = [item for item in list(validation.get("issues", []) or []) if isinstance(item, dict)]
@@ -13246,6 +13257,10 @@ class MainWindow(QMainWindow):
                 )
             else:
                 self.set_status(f"Project created: {project.project_id}")
+        except Exception:
+            if LOGGER.isEnabledFor(logging.DEBUG):
+                LOGGER.debug("MainWindow create project failed.", exc_info=True)
+            raise
         finally:
             self._project_create_in_progress = False
             self.project_page.set_creating(False)
@@ -13749,6 +13764,11 @@ class GuiController:
         self.project_manager.hide()
 
     def _new_project(self) -> None:
+        if LOGGER.isEnabledFor(logging.DEBUG):
+            LOGGER.debug(
+                "GuiController new-project flow: closing current_project=%s",
+                str(self.main_window.current_project.project_id if self.main_window.current_project else ""),
+            )
         self.main_window.current_project = None
         self.main_window.project_page.set_constraints_locked(False)
         self._show_main_window_maximized()

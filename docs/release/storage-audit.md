@@ -244,3 +244,30 @@ Validation executed via real `SettingsDialog` and `OrchestratorService` wiring (
 - Library metadata repair paths:
   - Missing `library.json` + existing `library.sqlite`: JSON regenerated.
   - Missing `library.sqlite` + existing `library.json`: sqlite initialized with metadata hints.
+
+## 8) Root switch while project open & new project crash (Phase 0 repro)
+
+Date: 2026-02-25
+
+### Repro: root switch while project open
+- Opened project in `MainWindow` and then opened `SettingsDialog`.
+- Observed behavior:
+  - `library_root_locked=True` was passed from `MainWindow._open_settings()`.
+  - `ProjectLibraryRootChooseButton` was disabled when `current_project` was set.
+- Event path:
+  - `MainWindow._open_settings()` -> `SettingsDialog(..., library_root_locked=True)`.
+
+### Repro: new project crash path
+- Forced a storage/repo-root failure condition (`ProjectRepository` pointed at a file path).
+- Triggered project creation through UI path (`MainWindow._create_project`).
+- Observed unhandled exception (UI crash path):
+  - `NotADirectoryError [WinError 267]` from `project_storage.ProjectRepository.list_projects()`.
+- Stack path:
+  - `MainWindow._create_project()` -> `OrchestratorService.create_project()` ->
+    `ProjectRepository.list_projects()` -> `Path.iterdir()` -> `os.listdir()`.
+
+### Phase 0 instrumentation added (DEBUG-only)
+- Added debug logs around:
+  - settings open entry (`MainWindow._open_settings`)
+  - project create start/failure (`MainWindow._create_project`)
+  - project close transition for new-project flow (`GuiController._new_project`)
