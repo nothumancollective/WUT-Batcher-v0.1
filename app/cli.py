@@ -957,7 +957,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_update.add_argument("--manifest-path", help="Override dataset_manifest.json path")
     p_update.set_defaults(func=lambda a: cmd_dataset_build_or_update(a, rebuild=False))
 
-    p_sync = sub_dataset.add_parser("sync-global", help="Replay pending project DB writes into global.sqlite.")
+    p_sync = sub_dataset.add_parser(
+        "sync-global",
+        help="Replay pending project DB writes into the library index DB (library.sqlite/global.sqlite).",
+    )
     p_sync.add_argument("--library-root", help="Override library root containing project folders")
     p_sync.add_argument("--max-items-per-project", type=int, default=100, help="Retry limit per project")
     p_sync.set_defaults(func=cmd_dataset_sync_global)

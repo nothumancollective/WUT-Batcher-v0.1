@@ -21,6 +21,14 @@ from app.runtime_orchestrator import (
 )
 
 
+def _project_db_path(project_root: Path) -> Path:
+    preferred = project_root / "db" / "project.sqlite"
+    legacy = project_root / "dataset" / "project.sqlite"
+    if preferred.exists() or not legacy.exists():
+        return preferred
+    return legacy
+
+
 class RuntimeOrchestratorTests(unittest.TestCase):
     def test_default_polar_export_specs_use_h_v_d_inclinations(self) -> None:
         specs = _resolve_export_specs({"auto_default_polar_exports": True})
@@ -669,7 +677,7 @@ class RuntimeOrchestratorTests(unittest.TestCase):
             self.assertIn(str(export_cleanup[0]["reason"]), {"target_missing", "deleted", "ath_export_root_unset"})
 
             project_root = Path(summary.project_root)
-            project_db = project_root / "dataset" / "project.sqlite"
+            project_db = _project_db_path(project_root)
             self.assertTrue(project_db.exists())
             with closing(sqlite3.connect(str(project_db))) as conn:
                 dims_count = conn.execute("SELECT COUNT(*) FROM ath_dimensions").fetchone()[0]
@@ -723,7 +731,7 @@ class RuntimeOrchestratorTests(unittest.TestCase):
             self.assertEqual(summary.stage_results[0].status, "ok")
 
             project_root = Path(summary.project_root)
-            project_db = project_root / "dataset" / "project.sqlite"
+            project_db = _project_db_path(project_root)
             self.assertTrue(project_db.exists())
             with closing(sqlite3.connect(str(project_db))) as conn:
                 graph_count = conn.execute("SELECT COUNT(*) FROM graphs").fetchone()[0]
@@ -775,7 +783,7 @@ class RuntimeOrchestratorTests(unittest.TestCase):
             project_root = Path(summary.project_root)
             ath_work_dir = project_root / "versions" / summary.versions[0] / "ath_work"
             self.assertTrue(ath_work_dir.exists())
-            with closing(sqlite3.connect(str(project_root / "dataset" / "project.sqlite"))) as conn:
+            with closing(sqlite3.connect(str(_project_db_path(project_root)))) as conn:
                 row = conn.execute(
                     "SELECT status FROM versions WHERE version_id = ?",
                     (summary.versions[0],),
@@ -836,7 +844,7 @@ class RuntimeOrchestratorTests(unittest.TestCase):
             self.assertEqual(summary.stage_results[0].status, "ok")
 
             project_root = Path(summary.project_root)
-            project_db = project_root / "dataset" / "project.sqlite"
+            project_db = _project_db_path(project_root)
             with closing(sqlite3.connect(str(project_db))) as conn:
                 graph_count = conn.execute("SELECT COUNT(*) FROM graphs").fetchone()[0]
                 series_count = conn.execute("SELECT COUNT(*) FROM graph_series").fetchone()[0]
@@ -937,7 +945,7 @@ class RuntimeOrchestratorTests(unittest.TestCase):
                 )
 
             self.assertEqual(summary.run_status, "succeeded")
-            project_db = Path(summary.project_root) / "dataset" / "project.sqlite"
+            project_db = _project_db_path(Path(summary.project_root))
             with closing(sqlite3.connect(str(project_db))) as conn:
                 row = conn.execute(
                     "SELECT graph_kind, variant, graph_type FROM graphs ORDER BY created_at DESC LIMIT 1"
@@ -1031,7 +1039,7 @@ class RuntimeOrchestratorTests(unittest.TestCase):
                 )
 
             self.assertEqual(summary.run_status, "failed")
-            project_db = Path(summary.project_root) / "dataset" / "project.sqlite"
+            project_db = _project_db_path(Path(summary.project_root))
             with closing(sqlite3.connect(str(project_db))) as conn:
                 version_status = conn.execute(
                     "SELECT status FROM versions WHERE version_id = ?",

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
+import faulthandler
 import html
 import math
 import json
@@ -61,6 +62,7 @@ from app.settings_store import (
     SIMULATION_TIMEOUT_MINUTES_MIN,
     UserSettings,
 )
+from app.storage_manager import StorageManager
 from app.ui_validation import UiValidationEngine
 from app.widgets.command_header import CommandHeaderWidget
 from ui.batch_export_panel import BatchExportPanel
@@ -78,6 +80,7 @@ _RUNTIME_LOG_LOCK = threading.Lock()
 _RUNTIME_LOG_INSTALLED = False
 _PREVIOUS_QT_MESSAGE_HANDLER = None
 _RUNTIME_CONTEXT_PROVIDER: Callable[[], Dict[str, Any]] | None = None
+_FAULT_DIAGNOSTICS_ENABLED = False
 
 
 def _runtime_log_path() -> Path:
@@ -171,22 +174,52 @@ def _install_runtime_exception_logging(*, context_provider: Callable[[], Dict[st
     except Exception:
         _PREVIOUS_QT_MESSAGE_HANDLER = None
 
+
+def _enable_fault_diagnostics() -> None:
+    global _FAULT_DIAGNOSTICS_ENABLED
+    if _FAULT_DIAGNOSTICS_ENABLED:
+        return
+    if not (LOGGER.isEnabledFor(logging.DEBUG) or str(os.environ.get("WUT_ENABLE_FAULTHANDLER", "")).strip() == "1"):
+        return
+    try:
+        faulthandler.enable(all_threads=True)
+        _FAULT_DIAGNOSTICS_ENABLED = True
+        if LOGGER.isEnabledFor(logging.DEBUG):
+            LOGGER.debug("Fault diagnostics enabled via faulthandler.")
+    except Exception:
+        if LOGGER.isEnabledFor(logging.DEBUG):
+            LOGGER.debug("Failed to enable faulthandler diagnostics.", exc_info=True)
+
 try:
     from PySide6.QtCore import (
         QEasingCurve,
         QPoint,
         QPropertyAnimation,
         QEvent,
+        QMetaObject,
         QObject,
         Qt,
         QtMsgType,
         QThread,
         QTimer,
+        QUrl,
         Signal,
         QSize,
         qInstallMessageHandler,
     )
-    from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPixmap, QIcon, QPalette, QImage, QPen
+    from PySide6.QtGui import (
+        QColor,
+        QDesktopServices,
+        QFont,
+        QFontMetrics,
+        QPainter,
+        QPainterPath,
+        QPixmap,
+        QIcon,
+        QPalette,
+        QImage,
+        QPen,
+    )
     from PySide6.QtWidgets import (
         QAbstractItemView,
         QApplication,
@@ -196,6 +229,7 @@ try:
         QColorDialog,
         QDialog,
         QDoubleSpinBox,
+        QFileDialog,
         QFormLayout,
         QFrame,
         QGraphicsOpacityEffect,
@@ -4266,14 +4300,41 @@ class BatchRunDefaultsDialog(QDialog):
 class SettingsDialog(QDialog):
     settings_saved = Signal(dict)
 
-    def __init__(self, service: OrchestratorService, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        service: OrchestratorService,
+        parent: QWidget | None = None,
+        *,
+        is_project_open: Callable[[], bool] | None = None,
+        close_project_for_switch: Callable[[], bool] | None = None,
+        on_library_root_switched: Callable[[], None] | None = None,
+    ) -> None:
         super().__init__(parent)
         self.service = service
+        self._is_project_open = is_project_open
+        self._close_project_for_switch = close_project_for_switch
+        self._on_library_root_switched = on_library_root_switched
         self.setWindowTitle("Settings")
         self.setModal(True)
         self.resize(620, 390)
 
         self.library_root = QLineEdit()
+        self.library_root.setObjectName("ProjectLibraryRootEdit")
+        self.library_root.setReadOnly(False)
+        self.library_root_choose_btn = QPushButton("Browse (Safe)")
+        self.library_root_choose_btn.setObjectName("ProjectLibraryRootChooseButton")
+        self.library_root_open_btn = QPushButton("Open")
+        self.library_root_open_btn.setObjectName("ProjectLibraryRootOpenButton")
+        self.library_root_choose_btn.clicked.connect(self._choose_library_root)
+        self.library_root_open_btn.clicked.connect(self._open_library_root)
+        self.library_root.textChanged.connect(lambda _text: self._sync_library_root_controls())
+        library_root_row = QWidget()
+        library_root_row_layout = QHBoxLayout(library_root_row)
+        library_root_row_layout.setContentsMargins(0, 0, 0, 0)
+        library_root_row_layout.setSpacing(6)
+        library_root_row_layout.addWidget(self.library_root, 1)
+        library_root_row_layout.addWidget(self.library_root_choose_btn, 0)
+        library_root_row_layout.addWidget(self.library_root_open_btn, 0)
         self.ath_exe = QLineEdit()
         self.akabak_exe = QLineEdit()
         self.vacs_exe = QLineEdit()
@@ -4314,7 +4375,7 @@ class SettingsDialog(QDialog):
 
         general_tab = QWidget()
         general_form = QFormLayout(general_tab)
-        general_form.addRow("Library Folder", self.library_root)
+        general_form.addRow("Project Library Location", library_root_row)
         general_form.addRow("ATH", self.ath_exe)
         general_form.addRow("AKABAK", self.akabak_exe)
         general_form.addRow("VACS", self.vacs_exe)
@@ -4357,6 +4418,7 @@ class SettingsDialog(QDialog):
     def _load(self) -> None:
         settings = self.service.settings
         self.library_root.setText(settings.library_root)
+        self.library_root.setToolTip(settings.library_root)
         self.ath_exe.setText(settings.ath_exe or "")
         self.akabak_exe.setText(settings.akabak_exe or "")
         self.vacs_exe.setText(settings.vacs_exe or "")
@@ -4374,6 +4436,7 @@ class SettingsDialog(QDialog):
         self._set_combo_current_by_data(self.analyzer_cache_mode, mode_token)
         self.analyzer_cache_limit_mb.setValue(int(getattr(settings, "analyzer_cache_limit_mb", 240) or 240))
         self.analyzer_cache_keep_last.setValue(int(getattr(settings, "analyzer_cache_keep_last_n", 5) or 5))
+        self._sync_library_root_controls()
         self._sync_cache_controls()
 
     def _save(self) -> None:
@@ -4383,8 +4446,38 @@ class SettingsDialog(QDialog):
             custom_keep_last_n=int(self.analyzer_cache_keep_last.value()),
         )
         current_settings = self.service.settings
+        library_root_value = self.library_root.text().strip()
+        if LOGGER.isEnabledFor(logging.DEBUG):
+            LOGGER.debug("SettingsDialog save requested: chosen_path=%s", str(library_root_value))
+        if not library_root_value:
+            QMessageBox.warning(self, "Invalid Project Library Location", "Project Library Location cannot be empty.")
+            self.library_root.setText(str(current_settings.library_root))
+            self._sync_library_root_controls()
+            return
+        normalized_preview = ""
+        current_preview = ""
+        try:
+            normalized_preview = str(StorageManager.normalize_library_root(library_root_value))
+        except Exception:
+            normalized_preview = str(Path(library_root_value).expanduser())
+        try:
+            current_preview = str(StorageManager.normalize_library_root(current_settings.library_root))
+        except Exception:
+            current_preview = str(Path(current_settings.library_root).expanduser())
+        if LOGGER.isEnabledFor(logging.DEBUG):
+            LOGGER.debug("SettingsDialog save normalized preview: %s", normalized_preview)
+        root_changed = normalized_preview != current_preview
+        if root_changed and self._project_open():
+            if not self._confirm_switch_with_close_project():
+                self.library_root.setText(str(current_settings.library_root))
+                self._sync_library_root_controls()
+                return
+            if not self._close_project_before_switch():
+                self.library_root.setText(str(current_settings.library_root))
+                self._sync_library_root_controls()
+                return
         settings = UserSettings(
-            library_root=self.library_root.text().strip(),
+            library_root=library_root_value,
             ath_exe=self.ath_exe.text().strip() or None,
             akabak_exe=self.akabak_exe.text().strip() or None,
             vacs_exe=self.vacs_exe.text().strip() or None,
@@ -4424,12 +4517,159 @@ class SettingsDialog(QDialog):
             ),
         )
         result = self.service.save_settings(settings)
+        if not bool(result.get("saved", False)):
+            message = str(result.get("error") or "Could not save settings.")
+            QMessageBox.critical(self, "Could Not Save Settings", message)
+            self.library_root.setText(str(self.service.settings.library_root))
+            self._sync_library_root_controls()
+            return
         issues = result.get("validation", {})
+        self.library_root.setText(str(self.service.settings.library_root))
+        if root_changed and callable(self._on_library_root_switched):
+            try:
+                self._on_library_root_switched()
+            except Exception:
+                if LOGGER.isEnabledFor(logging.DEBUG):
+                    LOGGER.debug("SettingsDialog root-switched callback failed.", exc_info=True)
         self.settings_saved.emit(result)
         if issues:
             detail = "\n".join(f"- {key}: {value}" for key, value in issues.items())
             QMessageBox.warning(self, "Settings saved with warnings", detail)
         self.accept()
+
+    def _project_open(self) -> bool:
+        checker = self._is_project_open
+        if not callable(checker):
+            return False
+        try:
+            return bool(checker())
+        except Exception:
+            if LOGGER.isEnabledFor(logging.DEBUG):
+                LOGGER.debug("SettingsDialog project-open check failed.", exc_info=True)
+            return True
+
+    def _confirm_switch_with_close_project(self) -> bool:
+        message = QMessageBox(self)
+        message.setIcon(QMessageBox.Warning)
+        message.setWindowTitle("Switch Project Library?")
+        message.setText("Current project will be closed. Continue?")
+        switch_btn = message.addButton("Close Project & Switch", QMessageBox.AcceptRole)
+        cancel_btn = message.addButton("Cancel", QMessageBox.RejectRole)
+        message.setDefaultButton(cancel_btn)
+        message.exec()
+        return message.clickedButton() is switch_btn
+
+    def _close_project_before_switch(self) -> bool:
+        closer = self._close_project_for_switch
+        if not callable(closer):
+            QMessageBox.critical(
+                self,
+                "Could Not Close Project",
+                "Close current project before switching Project Library Location.",
+            )
+            return False
+        try:
+            ok = bool(closer())
+        except Exception:
+            if LOGGER.isEnabledFor(logging.DEBUG):
+                LOGGER.debug("SettingsDialog close-project callback failed.", exc_info=True)
+            ok = False
+        if ok:
+            return True
+        QMessageBox.critical(
+            self,
+            "Could Not Close Project",
+            "Current project could not be closed. Project Library Location was not changed.",
+        )
+        return False
+
+    def _choose_library_root(self) -> None:
+        if not self._ensure_ui_thread_for_folder_picker():
+            return
+        current = self.library_root.text().strip()
+        start_dir = current or str(Path.home())
+        if LOGGER.isEnabledFor(logging.DEBUG):
+            LOGGER.debug(
+                "SettingsDialog about to open safe folder dialog: start_dir=%s thread=%s",
+                str(start_dir),
+                str(QThread.currentThread()),
+            )
+        selected = ""
+        try:
+            dialog = QFileDialog(self, "Choose Project Library Location", start_dir)
+            dialog.setFileMode(QFileDialog.Directory)
+            dialog.setOption(QFileDialog.DontUseNativeDialog, True)
+            dialog.setOption(QFileDialog.ShowDirsOnly, True)
+            dialog.setDirectory(start_dir)
+            if dialog.exec() == QDialog.Accepted:
+                picked = list(dialog.selectedFiles() or [])
+                selected = str(picked[0]) if picked else ""
+        except Exception as exc:
+            if LOGGER.isEnabledFor(logging.DEBUG):
+                LOGGER.debug("SettingsDialog safe folder dialog failed.", exc_info=True)
+            QMessageBox.critical(
+                self,
+                "Folder Picker Failed",
+                f"Could not open folder picker.\n{StorageManager.user_error_message(exc)}",
+            )
+            return
+        if LOGGER.isEnabledFor(logging.DEBUG):
+            LOGGER.debug("SettingsDialog safe folder dialog returned: selected=%s", str(selected))
+        if not selected:
+            if LOGGER.isEnabledFor(logging.DEBUG):
+                LOGGER.debug("SettingsDialog choose library root cancelled.")
+            return
+        if LOGGER.isEnabledFor(logging.DEBUG):
+            LOGGER.debug("SettingsDialog choose library root selected: %s", str(selected))
+        try:
+            normalized = str(StorageManager.normalize_library_root(selected))
+        except Exception as exc:
+            QMessageBox.warning(self, "Invalid Project Library Location", str(StorageManager.user_error_message(exc)))
+            return
+        self.library_root.setText(normalized)
+        self.library_root.setToolTip(self.library_root.text().strip())
+        self._sync_library_root_controls()
+
+    def _ensure_ui_thread_for_folder_picker(self) -> bool:
+        app = QApplication.instance()
+        if app is None:
+            return True
+        current_thread = QThread.currentThread()
+        ui_thread = app.thread()
+        if current_thread == ui_thread:
+            return True
+        if LOGGER.isEnabledFor(logging.DEBUG):
+            LOGGER.debug(
+                "SettingsDialog folder picker invoked off UI thread; scheduling queued invocation. current=%s ui=%s",
+                str(current_thread),
+                str(ui_thread),
+            )
+        queued = bool(QMetaObject.invokeMethod(self, "_choose_library_root", Qt.QueuedConnection))
+        if queued:
+            return False
+        QMessageBox.critical(
+            self,
+            "Folder Picker Failed",
+            "Folder picker must run on the UI thread. Please retry from the main window.",
+        )
+        return False
+
+    def _open_library_root(self) -> None:
+        target = self.library_root.text().strip()
+        if not target:
+            return
+        try:
+            path = StorageManager.normalize_library_root(target)
+            path.mkdir(parents=True, exist_ok=True)
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.resolve())))
+        except Exception as exc:
+            message = str(StorageManager.user_error_message(exc))
+            QMessageBox.warning(self, "Cannot Open Folder", message)
+
+    def _sync_library_root_controls(self) -> None:
+        token = self.library_root.text().strip()
+        self.library_root.setToolTip(token)
+        self.library_root_open_btn.setEnabled(bool(token))
 
     @staticmethod
     def _set_combo_current_by_data(combo: QComboBox, value: str) -> None:
@@ -12240,6 +12480,7 @@ class AnalysePage(QWidget):
 class ProjectManagerWindow(QMainWindow):
     open_project = Signal(str)
     create_project = Signal()
+    request_settings = Signal()
 
     def __init__(self, service: OrchestratorService) -> None:
         super().__init__()
@@ -12304,16 +12545,20 @@ class ProjectManagerWindow(QMainWindow):
         self.open_btn.setObjectName("ProjectManagerButton")
         self.new_btn = QPushButton("New Project")
         self.new_btn.setObjectName("ProjectManagerButton")
+        self.settings_btn = QPushButton("Settings...")
+        self.settings_btn.setObjectName("ProjectManagerButton")
         self.refresh_btn = QPushButton("Refresh")
         self.refresh_btn.setObjectName("ProjectManagerButton")
         buttons.addWidget(self.open_btn)
         buttons.addWidget(self.new_btn)
+        buttons.addWidget(self.settings_btn)
         buttons.addWidget(self.refresh_btn)
         buttons.addStretch(1)
         root.addLayout(buttons)
 
         self.open_btn.clicked.connect(self._emit_open)
         self.new_btn.clicked.connect(self.create_project.emit)
+        self.settings_btn.clicked.connect(self.request_settings.emit)
         self.refresh_btn.clicked.connect(self.refresh)
         self.project_list.currentItemChanged.connect(lambda _current, _previous: self._sync_open_enabled())
         self.project_list.itemSelectionChanged.connect(self._sync_open_enabled)
@@ -13036,9 +13281,45 @@ class MainWindow(QMainWindow):
         return counts
 
     def _open_settings(self) -> None:
-        dialog = SettingsDialog(self.service, self)
+        if LOGGER.isEnabledFor(logging.DEBUG):
+            LOGGER.debug(
+                "MainWindow opening settings: current_project=%s",
+                str(self.current_project.project_id if self.current_project else ""),
+            )
+        dialog = SettingsDialog(
+            self.service,
+            self,
+            is_project_open=self._is_project_open_for_settings,
+            close_project_for_switch=self._close_project_for_library_switch,
+            on_library_root_switched=self._on_library_root_switched,
+        )
         dialog.settings_saved.connect(lambda _: self._on_settings_saved())
         dialog.exec()
+
+    def _is_project_open_for_settings(self) -> bool:
+        return bool(self.current_project is not None)
+
+    def _close_project_for_library_switch(self) -> bool:
+        try:
+            self.enter_new_project_flow()
+            return True
+        except Exception:
+            if LOGGER.isEnabledFor(logging.DEBUG):
+                LOGGER.debug("MainWindow close-project for library switch failed.", exc_info=True)
+            return False
+
+    def _on_library_root_switched(self) -> None:
+        self.refresh_dashboard()
+        self._sync_navigation_state()
+
+    def enter_new_project_flow(self) -> None:
+        self.current_project = None
+        self.project_page.set_constraints_locked(False)
+        self.batch_page.set_project_fixed_keys([])
+        self.analyse_page.set_project_context(None)
+        self.refresh_dashboard()
+        self.show_project()
+        self._sync_navigation_state()
 
     def _on_settings_saved(self) -> None:
         self.set_status("Settings saved.")
@@ -13118,6 +13399,12 @@ class MainWindow(QMainWindow):
             return
         self._project_create_in_progress = True
         self.project_page.set_creating(True)
+        if LOGGER.isEnabledFor(logging.DEBUG):
+            LOGGER.debug(
+                "MainWindow create project start: name=%s current_library_root=%s",
+                str(project_name or "").strip(),
+                str(getattr(self.service.settings, "library_root", "")),
+            )
         try:
             validation = self.service.evaluate_project_constraints(dict(constraints))
             issues = [item for item in list(validation.get("issues", []) or []) if isinstance(item, dict)]
@@ -13131,6 +13418,15 @@ class MainWindow(QMainWindow):
                 )
             else:
                 self.set_status(f"Project created: {project.project_id}")
+        except Exception:
+            if LOGGER.isEnabledFor(logging.DEBUG):
+                LOGGER.debug("MainWindow create project failed.", exc_info=True)
+            QMessageBox.critical(
+                self,
+                "Create Project Failed",
+                "Project could not be created. Check Project Library settings and try again.",
+            )
+            self.set_status("Project creation failed.")
         finally:
             self._project_create_in_progress = False
             self.project_page.set_creating(False)
@@ -13596,6 +13892,7 @@ class GuiController:
         self.main_window = MainWindow(service)
         self.project_manager.open_project.connect(self._open_project)
         self.project_manager.create_project.connect(self._new_project)
+        self.project_manager.request_settings.connect(self._open_settings_from_project_manager)
         self.main_window.set_project_manager_handler(self._open_project_manager_from_main)
 
     def show_project_manager(self) -> None:
@@ -13634,11 +13931,45 @@ class GuiController:
         self.project_manager.hide()
 
     def _new_project(self) -> None:
-        self.main_window.current_project = None
-        self.main_window.project_page.set_constraints_locked(False)
+        if LOGGER.isEnabledFor(logging.DEBUG):
+            LOGGER.debug(
+                "GuiController new-project flow: closing current_project=%s",
+                str(self.main_window.current_project.project_id if self.main_window.current_project else ""),
+            )
+        self.main_window.enter_new_project_flow()
         self._show_main_window_maximized()
-        self.main_window.show_project()
         self.project_manager.hide()
+
+    def _is_project_open_for_settings(self) -> bool:
+        return bool(self.main_window.current_project is not None)
+
+    def _close_project_for_library_switch(self) -> bool:
+        try:
+            self.main_window.enter_new_project_flow()
+            return True
+        except Exception:
+            if LOGGER.isEnabledFor(logging.DEBUG):
+                LOGGER.debug("GuiController close-project for library switch failed.", exc_info=True)
+            return False
+
+    def _on_library_root_switched(self) -> None:
+        self.project_manager.refresh()
+
+    def _open_settings_from_project_manager(self) -> None:
+        if LOGGER.isEnabledFor(logging.DEBUG):
+            LOGGER.debug(
+                "GuiController opening settings from project manager: current_project=%s",
+                str(self.main_window.current_project.project_id if self.main_window.current_project else ""),
+            )
+        dialog = SettingsDialog(
+            self.service,
+            self.project_manager,
+            is_project_open=self._is_project_open_for_settings,
+            close_project_for_switch=self._close_project_for_library_switch,
+            on_library_root_switched=self._on_library_root_switched,
+        )
+        dialog.exec()
+        self.project_manager.refresh()
 
     def _open_project_manager_from_main(self) -> None:
         self.project_manager.refresh()
@@ -13714,6 +14045,7 @@ def _run_doctor_for_splash(service: OrchestratorService) -> Dict[str, object]:
 
 def launch_gui() -> int:
     configure_windows_qt_darkmode_env()
+    _enable_fault_diagnostics()
     app = QApplication.instance() or QApplication([])
     apply_theme(app)
 

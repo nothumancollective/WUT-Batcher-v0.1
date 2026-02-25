@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import datetime, timezone
 import json
 import hashlib
@@ -51,10 +51,12 @@ from app.constants import (
     PREVIEW_CACHE_MAX_AGE_DAYS,
 )
 from app.cfg_renderer import render_cfg_text
+from app.feature_flags import use_project_library_storage
 from app.models import Batch, ParamSelection, Project, ProjectConstraints, SweepSpec
 from app.project_storage import ProjectRepository
 from app.runtime_orchestrator import RuntimeSummary, run_batch_pipeline
 from app.runners import AthRunner
+from app.storage_manager import LibraryState, StorageManager
 from app.settings_store import (
     SIMULATION_TIMEOUT_MINUTES_DEFAULT,
     SettingsStore,
@@ -144,6 +146,14 @@ def _detect_git_commit() -> Optional[str]:
         return None
     value = (result.stdout or "").strip()
     return value or None
+
+
+def _current_username() -> str:
+    for key in ("USERNAME", "USER", "LOGNAME"):
+        value = str(os.environ.get(key, "")).strip()
+        if value:
+            return value
+    return ""
 
 
 def _percentile(sorted_values: List[float], p: float) -> Optional[float]:
@@ -1475,23 +1485,125 @@ class OrchestratorService:
     def __init__(self, settings_store: SettingsStore | None = None) -> None:
         self.settings_store = settings_store or SettingsStore()
         self.settings = self.settings_store.load()
-        self.repo = ProjectRepository(self.settings.library_root)
+        self.storage = StorageManager(UserSettings().library_root)
+        self._bootstrap_library_root_with_fallback()
         self.compatibility = CompatibilityService()
 
     def reload_settings(self) -> UserSettings:
         self.settings = self.settings_store.load()
-        self.repo = ProjectRepository(self.settings.library_root)
+        self._bootstrap_library_root_with_fallback()
         return self.settings
 
     def save_settings(self, settings: UserSettings) -> Dict[str, Any]:
-        self.settings_store.save(settings)
-        self.settings = settings
-        self.repo = ProjectRepository(self.settings.library_root)
+        if LOGGER.isEnabledFor(logging.DEBUG):
+            LOGGER.debug("save_settings start: requested_library_root=%s", str(settings.library_root))
+        root_result = StorageManager.try_set_library_root(settings.library_root)
+        if not root_result.ok or root_result.manager is None or root_result.state is None:
+            return {
+                "saved": False,
+                "path": str(self.settings_store.path),
+                "validation": self.settings_store.validate(self.settings),
+                "error": str(root_result.error_message or "Could not switch Project Library Location."),
+            }
+
+        canonical_root = str(root_result.manager.paths.root)
+        persisted_settings = replace(settings, library_root=canonical_root)
+        try:
+            self.settings_store.save(persisted_settings)
+        except Exception as exc:
+            if LOGGER.isEnabledFor(logging.DEBUG):
+                LOGGER.debug("save_settings failed writing settings file.", exc_info=True)
+            return {
+                "saved": False,
+                "path": str(self.settings_store.path),
+                "validation": self.settings_store.validate(self.settings),
+                "error": self._settings_write_error_message(exc),
+            }
+
+        if LOGGER.isEnabledFor(logging.DEBUG):
+            LOGGER.debug("save_settings settings_store.write ok: path=%s", str(self.settings_store.path))
+        self._apply_library_state(
+            settings=persisted_settings,
+            manager=root_result.manager,
+            state=root_result.state,
+        )
         return {
             "saved": True,
             "path": str(self.settings_store.path),
-            "validation": self.settings_store.validate(settings),
+            "validation": self.settings_store.validate(self.settings),
         }
+
+    def _bootstrap_library_root(self) -> None:
+        root_result = StorageManager.try_set_library_root(self.settings.library_root)
+        if not root_result.ok or root_result.manager is None or root_result.state is None:
+            raise RuntimeError(str(root_result.error_message or "Could not bootstrap Project Library Location."))
+        canonical_root = str(root_result.manager.paths.root)
+        bootstrapped_settings = self.settings
+        if str(bootstrapped_settings.library_root) != canonical_root:
+            bootstrapped_settings = replace(bootstrapped_settings, library_root=canonical_root)
+            self.settings_store.save(bootstrapped_settings)
+        self._apply_library_state(
+            settings=bootstrapped_settings,
+            manager=root_result.manager,
+            state=root_result.state,
+        )
+
+    def _bootstrap_library_root_with_fallback(self) -> None:
+        try:
+            self._bootstrap_library_root()
+            return
+        except Exception:
+            if LOGGER.isEnabledFor(logging.DEBUG):
+                LOGGER.debug("Primary library-root bootstrap failed; attempting default fallback.", exc_info=True)
+        default_root = UserSettings().library_root
+        fallback_result = StorageManager.try_set_library_root(default_root)
+        if not fallback_result.ok or fallback_result.manager is None or fallback_result.state is None:
+            raise RuntimeError(
+                str(
+                    fallback_result.error_message
+                    or "Could not bootstrap configured or default Project Library Location."
+                )
+            )
+        fallback_settings = replace(self.settings, library_root=str(fallback_result.manager.paths.root))
+        self.settings_store.save(fallback_settings)
+        self._apply_library_state(
+            settings=fallback_settings,
+            manager=fallback_result.manager,
+            state=fallback_result.state,
+        )
+        LOGGER.warning(
+            "Configured Project Library Location could not be opened; switched to default: %s",
+            str(fallback_settings.library_root),
+        )
+
+    def _apply_library_state(
+        self,
+        *,
+        settings: UserSettings,
+        manager: StorageManager,
+        state: LibraryState,
+    ) -> None:
+        self.settings = settings
+        self.storage = manager
+        repo_root = self.storage.paths.projects_dir if use_project_library_storage() else self.storage.paths.root
+        self.repo = ProjectRepository(repo_root)
+        self.library_state = {
+            "library_uid": state.library_uid,
+            "schema_version": state.schema_version,
+            "created_at": state.created_at,
+            "project_counter_next": state.project_counter_next,
+            "library_root": self.settings.library_root,
+            "projects_root": str(repo_root),
+            "use_project_library_storage": bool(use_project_library_storage()),
+        }
+
+    @staticmethod
+    def _settings_write_error_message(exc: Exception) -> str:
+        if isinstance(exc, PermissionError):
+            return "Could not save settings file because access was denied."
+        if isinstance(exc, OSError):
+            return "Could not save settings file. Check disk space and folder permissions."
+        return "Could not save settings file."
 
     def validate_settings(self, settings: Optional[UserSettings] = None) -> Dict[str, str]:
         return self.settings_store.validate(settings or self.settings)
@@ -1955,6 +2067,14 @@ class OrchestratorService:
         dataset = TidyDatasetWriter(project_paths.project_dir, library_root=self.settings.library_root)
         return dataset.list_runs(batch_id=batch_id, status=status)
 
+    def _library_index_db_path(self) -> Path:
+        root = Path(self.settings.library_root).expanduser()
+        preferred = root / "library.sqlite"
+        legacy = root / "global.sqlite"
+        if use_project_library_storage():
+            return preferred if preferred.exists() or not legacy.exists() else legacy
+        return legacy
+
     def analyzer_list_polar_projects(
         self,
         *,
@@ -1964,7 +2084,7 @@ class OrchestratorService:
         source_key = str(source or "project").strip().lower()
         rows: List[Dict[str, Any]] = []
         if source_key == "global":
-            global_db = Path(self.settings.library_root) / "global.sqlite"
+            global_db = self._library_index_db_path()
             if not global_db.exists():
                 return []
             try:
@@ -2042,7 +2162,7 @@ class OrchestratorService:
             return []
         source_key = str(source or "project").strip().lower()
         if source_key == "global":
-            db_path = Path(self.settings.library_root) / "global.sqlite"
+            db_path = self._library_index_db_path()
         else:
             db_path = self.repo.project_paths(project_token, ensure=False).dataset_dir / "project.sqlite"
         if not db_path.exists():
@@ -2119,7 +2239,7 @@ class OrchestratorService:
             return []
         source_key = str(source or "project").strip().lower()
         if source_key == "global":
-            db_path = Path(self.settings.library_root) / "global.sqlite"
+            db_path = self._library_index_db_path()
         else:
             db_path = self.repo.project_paths(project_token, ensure=False).dataset_dir / "project.sqlite"
         if not db_path.exists():
@@ -2640,7 +2760,7 @@ class OrchestratorService:
     def _analyzer_db_path(self, *, project_id: str, source: str) -> Path:
         source_key = str(source or "project").strip().lower()
         if source_key == "global":
-            return Path(self.settings.library_root) / "global.sqlite"
+            return self._library_index_db_path()
         return self.repo.project_paths(str(project_id), ensure=False).dataset_dir / "project.sqlite"
 
     def analyzer_load_plot_payload(
@@ -3453,8 +3573,25 @@ class OrchestratorService:
         }
 
     def create_project(self, project_name: str, constraints: Dict[str, Any]) -> Project:
-        existing = self.repo.list_projects()
-        project_id = _next_prefixed_id([project.project_id for project in existing], "P")
+        self._bootstrap_library_root_with_fallback()
+        display_number = ""
+        project_uid = ""
+        if use_project_library_storage():
+            identity = None
+            for _ in range(5):
+                candidate = self.storage.allocate_project_identity()
+                candidate_project_dir = self.repo.project_paths(candidate.folder_name, ensure=False).project_dir
+                if not candidate_project_dir.exists():
+                    identity = candidate
+                    break
+            if identity is None:
+                raise RuntimeError("Could not allocate a unique project folder in Project Library.")
+            display_number = identity.display_number
+            project_uid = identity.project_uid
+            project_id = identity.folder_name
+        else:
+            existing = self.repo.list_projects()
+            project_id = _next_prefixed_id([project.project_id for project in existing], "P")
         project_root = self.repo.project_paths(project_id, ensure=False).project_dir
         project = Project(
             project_id=project_id,
@@ -3472,6 +3609,10 @@ class OrchestratorService:
                     "notes": constraints.get("notes"),
                 }
             ),
+            created_by=_current_username(),
+            display_number=display_number,
+            project_uid=project_uid,
+            library_uid=str(self.library_state.get("library_uid", "") or ""),
         )
         self.repo.init_project(project)
         TidyDatasetWriter(project_root, library_root=self.settings.library_root).register_project(project)
@@ -3518,7 +3659,12 @@ class OrchestratorService:
         if sim_settings:
             batch.sim_export_settings = batch.sim_export_settings.from_dict(sim_settings)
 
-        return materialize_batch_plan(project, batch, projects_root=self.settings.library_root)
+        return materialize_batch_plan(
+            project,
+            batch,
+            projects_root=self.repo.projects_root,
+            library_root=self.settings.library_root,
+        )
 
     def resolve_versions(self, project_id: str, batch_id: str) -> Dict[str, Any]:
         project = self.repo.load_project(project_id)
@@ -3551,10 +3697,16 @@ class OrchestratorService:
         if simulation_timeout_minutes < 1:
             simulation_timeout_minutes = 1
         akabak_solve_timeout_s = int(simulation_timeout_minutes * 60)
+        if use_project_library_storage():
+            project_paths = self.repo.project_paths(project_id, ensure=True)
+            ath_export_root: Path | str = project_paths.project_dir / "runs" / "ath_export"
+        else:
+            ath_export_root = ATH_PREVIEW_EXPORT_ROOT
         return run_batch_pipeline(
             project=project,
             batch=batch,
-            projects_root=self.settings.library_root,
+            projects_root=self.repo.projects_root,
+            library_root=self.settings.library_root,
             template_cfg_path=self.settings.template_cfg,
             ath_executable=self.settings.ath_exe if not dry_run else None,
             akabak_executable=self.settings.akabak_exe if not dry_run else None,
@@ -3565,7 +3717,7 @@ class OrchestratorService:
             git_commit=_detect_git_commit(),
             app_version="0.1-rebuild",
             settings_hash=_settings_hash(self.settings),
-            ath_export_root=ATH_PREVIEW_EXPORT_ROOT,
+            ath_export_root=ath_export_root,
         )
 
     def export_version(
