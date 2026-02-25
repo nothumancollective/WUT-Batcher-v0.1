@@ -99,3 +99,21 @@ The Batch page is now implemented as a companion to the PROJECT form design.
   - `ProjectSummaryPanel`, `SummaryTitle`, `SummaryMeta`, `SummaryText`, `SummaryChip`, `BatchPrimaryButton`, `BatchSecondaryButton`, `BatchGhostButton` already exist in `ui/theme.py` and will be reused.
 - Baseline smoke before redesign edits:
   - app startup (offscreen) and main window creation succeeds on this branch baseline.
+
+## Dashboard Layout Refresh (Phase 1)
+- `DashboardPage` was updated to the new top-row shell without changing service behavior:
+  - removed the large `DASHBOARD` headline.
+  - added a single top row under global chrome:
+    - left: `Project Constraints` panel (`2/3` layout weight)
+    - right: `Actions` panel (`1/3` layout weight)
+- Actions are now grouped in two internal columns:
+  - `Batch`: `New`, `Edit`, `Clone`, `Manage`
+  - `Export`: `Export`
+- Action wiring stayed unchanged:
+  - `New -> request_new_batch`
+  - `Edit -> request_edit_batch`
+  - `Clone -> request_clone_batch`
+  - `Manage -> request_manage_runs`
+  - `Export -> request_open_export_dialog`
+- Legacy bottom action/export bars were removed, and the batches list now expands into freed vertical space.
+- Cleanup action is kept as a hidden compatibility control (`request_cleanup_testdata`) and is no longer shown in the default Project dashboard UI.
