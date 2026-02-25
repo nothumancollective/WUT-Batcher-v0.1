@@ -6461,7 +6461,7 @@ class AnalysePage(QWidget):
 
         compare_left_content = QWidget()
         compare_left_content.setObjectName("AnalyzerCompareLeftContent")
-        compare_left_content.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
+        compare_left_content.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         compare_left_layout = QVBoxLayout(compare_left_content)
         compare_left_layout.setContentsMargins(0, 0, 0, 0)
         compare_left_layout.setSpacing(8)
@@ -6520,6 +6520,7 @@ class AnalysePage(QWidget):
         self.compare_slots_table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.compare_slots_table.setWordWrap(False)
         self.compare_slots_table.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.compare_slots_table.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
         self.compare_slots_table.setTextElideMode(Qt.ElideRight)
         self.compare_slots_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.compare_slots_table.verticalHeader().setVisible(False)
@@ -6534,9 +6535,9 @@ class AnalysePage(QWidget):
         compare_left_scroll.setWidgetResizable(True)
         compare_left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         compare_left_scroll.setWidget(compare_left_content)
-        compare_left_scroll.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
-        compare_left_scroll.setMinimumWidth(260)
-        compare_left_scroll.setMaximumWidth(440)
+        compare_left_scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        compare_left_scroll.setMinimumWidth(240)
+        compare_left_scroll.setMaximumWidth(16_777_215)
         compare_left_scroll.setObjectName("AnalyzerCompareDrawerScroll")
 
         self.compare_right = QWidget()
@@ -9767,17 +9768,36 @@ class AnalysePage(QWidget):
         if available <= 0:
             return int(self._compare_drawer_expanded_width)
         columns = self._compare_table_columns()
-        fixed_sum = 0
-        metric_sum = 0
+        table_required = 0
+        table = getattr(self, "compare_slots_table", None)
         font_metrics = QFontMetrics(self.compare_slots_table.font())
-        for key, label in columns:
+        for index, (key, label) in enumerate(columns):
             if key in {"slot", "score", "flags", "remove"}:
-                fixed_sum += int(self._compare_fixed_column_width(key))
-            else:
-                metric_sum += max(86, min(font_metrics.horizontalAdvance(str(label or "")) + 26, 176))
-        required = int(fixed_sum + metric_sum + 36)
-        min_ratio = max(int(round(float(available) * 0.55)), int(self._compare_drawer_collapsed_width + 220))
-        max_ratio = max(int(round(float(available) * 0.70)), min_ratio)
+                table_required += int(self._compare_fixed_column_width(key))
+                continue
+            preferred = max(86, min(font_metrics.horizontalAdvance(str(label or "")) + 26, 176))
+            size_hint = 0
+            if isinstance(table, QTableWidget):
+                try:
+                    size_hint = int(max(table.sizeHintForColumn(index), table.columnWidth(index)))
+                except Exception:
+                    size_hint = 0
+            table_required += int(max(preferred, size_hint, 86))
+
+        frame_and_scroll = 44
+        if isinstance(table, QTableWidget):
+            frame_and_scroll = int(
+                (table.frameWidth() * 2)
+                + table.verticalScrollBar().sizeHint().width()
+                + 24
+            )
+        controls_required = 0
+        controls_widget = getattr(self, "compare_controls", None)
+        if isinstance(controls_widget, QWidget):
+            controls_required = int(controls_widget.sizeHint().width()) + 20
+        required = max(int(table_required + frame_and_scroll), int(controls_required), int(self._compare_drawer_collapsed_width + 180))
+        min_ratio = max(int(round(float(available) * 0.56)), int(self._compare_drawer_collapsed_width + 220))
+        max_ratio = max(int(round(float(available) * 0.76)), min_ratio)
         target = max(int(required), int(min_ratio))
         target = min(int(target), int(max_ratio))
         return int(max(target, int(self._compare_drawer_collapsed_width + 140)))

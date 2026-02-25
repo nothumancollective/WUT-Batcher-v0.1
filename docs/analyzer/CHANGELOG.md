@@ -1,5 +1,10 @@
 ﻿# Analyzer Docs â€” Changelog
 
+## 2026-02-25 (Compare drawer: expanded table visibility contract)
+- Removed the hidden expanded-width cap on the Compare drawer table container so expanded mode can use the full computed drawer width.
+- Tightened expanded drawer width estimation to include table column size hints and control-row size hints, then clamp to a safe workspace ratio.
+- Added regression assertions that expanded table content is either fully visible or accessible via the table's own horizontal scrollbar (no clipped, unreachable columns).
+
 ## 2026-02-25 (Tests: compare drawer/focus regressions + label routing lock)
 - Added regression coverage for Compare drawer default-collapsed state, gutter no-overlap geometry, `Remove selected` behavior, pinned-slot icon rendering, and expanded-state interaction guard.
 - Added/updated compare focus toggle tests to assert same-tile restore and different-tile focus switching parity with Explorer.
@@ -1105,6 +1110,7 @@
   - metric-band smooth rendering config (`show`, `smooth`, `opacity`)
   - robust non-auto `e_sym_shape` y-range clamp under outlier input
   - resize probes (`1920x1080`, `1366x768`, `1100x700`) without exceptions.
+
 
 
 

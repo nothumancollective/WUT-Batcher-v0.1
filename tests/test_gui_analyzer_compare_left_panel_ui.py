@@ -158,8 +158,17 @@ class AnalyzerCompareLeftPanelUiTests(unittest.TestCase):
                 workspace_width = max(int(page.compare_workspace.width()), 1)
                 expanded_width = int(page.compare_drawer.width())
                 self.assertGreaterEqual(expanded_width, int(workspace_width * 0.50))
-                self.assertLessEqual(expanded_width, int(workspace_width * 0.72))
+                self.assertLessEqual(expanded_width, int(workspace_width * 0.78))
                 self.assertEqual(page.compare_slots_table.horizontalScrollBarPolicy(), Qt.ScrollBarAsNeeded)
+                viewport_width = int(page.compare_slots_table.viewport().width())
+                self.assertGreaterEqual(viewport_width, 260)
+                visible_width = 0
+                for col in range(page.compare_slots_table.columnCount()):
+                    if page.compare_slots_table.isColumnHidden(col):
+                        continue
+                    visible_width += int(page.compare_slots_table.columnWidth(col))
+                can_scroll = int(page.compare_slots_table.horizontalScrollBar().maximum()) > 0
+                self.assertTrue(bool(visible_width <= (viewport_width + 2) or can_scroll))
             page._set_compare_drawer_expanded(False)
             self.app.processEvents()
             self.assertGreaterEqual(int(page.compare_drawer.width()), 72)
