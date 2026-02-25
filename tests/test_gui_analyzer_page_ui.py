@@ -30,6 +30,7 @@ try:
         QDialog,
         QFrame,
         QLabel,
+        QMessageBox,
         QPushButton,
         QTableWidget,
         QTabWidget,
@@ -42,6 +43,7 @@ except ImportError:  # pragma: no cover
     QComboBox = None  # type: ignore[assignment]
     QDialog = None  # type: ignore[assignment]
     QLabel = None  # type: ignore[assignment]
+    QMessageBox = None  # type: ignore[assignment]
     QPushButton = None  # type: ignore[assignment]
     QTableWidget = None  # type: ignore[assignment]
     QTabWidget = None  # type: ignore[assignment]
@@ -275,6 +277,69 @@ class AnalyzerPageUiTests(unittest.TestCase):
             self.assertIsNotNone(iterate_btn)
             assert isinstance(iterate_btn, QPushButton)
             self.assertTrue(iterate_btn.isEnabled())
+
+    def test_iterate_action_creates_child_batch_from_version_params_and_opens_batch_page(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_ui2x_iterate_action_ok_") as tmp:
+            service = _build_service(Path(tmp))
+            project = service.create_project("Iterate Action", {})
+            parent = service.create_batch(
+                project_id=project.project_id,
+                batch_name="Parent Batch",
+                selected_params={"Throat.Diameter": 30.0, "Length": 120.0},
+                sweeps={},
+                sweep_mode="single",
+                sim_export_params={},
+            )
+            version_id = str(parent.version_ids[0])
+            expected_rows = service.analyzer_list_version_param_rows(
+                project_id=project.project_id,
+                batch_id=parent.batch_id,
+                version_id=version_id,
+            )
+            expected_params = {
+                str(row.get("param_name")): row.get("value")
+                for row in expected_rows
+                if isinstance(row, dict) and bool(row.get("is_set")) and str(row.get("param_name") or "").strip()
+            }
+            window = MainWindow(service)
+            window.load_project(project)
+            before_ids = {batch.batch_id for batch in service.repo.list_batches(project.project_id)}
+            window._iterate_from_analyzer_version(
+                {
+                    "project_id": project.project_id,
+                    "batch_id": parent.batch_id,
+                    "version_id": version_id,
+                    "run_id": "R001",
+                }
+            )
+            after_ids = {batch.batch_id for batch in service.repo.list_batches(project.project_id)}
+            new_ids = sorted(after_ids - before_ids)
+            self.assertEqual(len(new_ids), 1)
+            child_batch = service.repo.load_batch(project.project_id, new_ids[0])
+            self.assertEqual(str(child_batch.extra.get("batch_name") or ""), "Parent Batch Child")
+            actual_params = {
+                str(key): (value.value if hasattr(value, "value") else value)
+                for key, value in dict(child_batch.selected_params or {}).items()
+            }
+            self.assertEqual(dict(actual_params), dict(expected_params))
+            self.assertIs(window.stack.currentWidget(), window.batch_page)
+            loaded_payload = window.batch_page._payload(include_name=True)
+            self.assertEqual(str(loaded_payload.get("batch_name") or ""), "Parent Batch Child")
+            window.close()
+
+    def test_iterate_action_blocks_when_batch_context_is_missing(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_ui2x_iterate_action_missing_ctx_") as tmp:
+            service = _build_service(Path(tmp))
+            project = service.create_project("Iterate Missing Context", {})
+            window = MainWindow(service)
+            window.load_project(project)
+            before_count = len(service.repo.list_batches(project.project_id))
+            with patch.object(QMessageBox, "warning", autospec=True) as warning_mock:
+                window._iterate_from_analyzer_version({"project_id": project.project_id, "version_id": "V001"})
+                self.assertGreaterEqual(int(warning_mock.call_count), 1)
+            after_count = len(service.repo.list_batches(project.project_id))
+            self.assertEqual(before_count, after_count)
+            window.close()
 
     def test_display_section_hides_tol_control_and_uses_balanced_internal_widths(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_ui2x_display_tol_advanced_") as tmp:

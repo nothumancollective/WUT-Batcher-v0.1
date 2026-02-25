@@ -7,6 +7,22 @@
   - `score`, `b_pc_oct`, `e_bw`, `e_cov`, `r_spill`, `di_proxy`, `s_theta`, `e_sym_shape`, `r_off`, `flags`.
 - Each pinned row includes an `Iterate` action button with a temporary stub handler (real batch-creation wiring follows in next step).
 
+## 2026-02-25 (Iterate action wired to child-batch creation)
+- Iterate row action now creates a new batch from the selected pinned version using exact persisted ATH parameter values from `version_params`.
+- Child batch payload uses the existing batch save flow (`MainWindow._save_batch`) so validation/compatibility behavior remains unchanged.
+- Naming rule for generated batch: `<parent batch name> Child`.
+- No run is started automatically.
+- After creation, UI navigates to Batch mode and opens the new child batch draft immediately.
+- Error handling now blocks with user-facing messages for:
+  - missing batch context,
+  - missing version identity,
+  - missing ATH parameter snapshot,
+  - parent-batch load failures.
+- GUI smoke validation (offscreen):
+  - Iterate action creates exactly one new batch,
+  - child batch carries the same persisted ATH params as the source version,
+  - Batch page is selected and loaded with the new child batch.
+
 ## 2026-02-25 (Version Information: dimensions row + score quality chip)
 - Version Information now renders final dimensions in a dedicated row above ATH params:
   - key: `Dim (LxWxH)`

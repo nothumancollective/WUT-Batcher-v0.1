@@ -6249,6 +6249,7 @@ class RunPage(QWidget):
 
 
 class AnalysePage(QWidget):
+    iterate_requested = Signal(dict)
     COL_RUN_ID = 0
     COL_VERSION = 1
     COL_PLANES = 2
@@ -10042,13 +10043,14 @@ class AnalysePage(QWidget):
                 table.setColumnWidth(index, max(88, min(font_metrics.horizontalAdvance(str(label or "")) + 24, 168)))
 
     def _on_iterate_table_action(self, payload: Mapping[str, Any]) -> None:
-        batch_id = str(payload.get("batch_id") or "--").strip() or "--"
-        version_id = str(payload.get("version_id") or "--").strip() or "--"
-        if LOGGER.isEnabledFor(logging.DEBUG):
-            LOGGER.debug("Iterate action requested (stub): batch_id=%s version_id=%s", batch_id, version_id)
-        self.iterate_notice.set_full_text(
-            f"Iterate action for {batch_id}/{version_id} is not wired yet (Commit 3)."
-        )
+        candidate = dict(payload or {})
+        batch_id = str(candidate.get("batch_id") or "").strip()
+        version_id = str(candidate.get("version_id") or "").strip()
+        if not batch_id or not version_id:
+            self.iterate_notice.set_full_text("No active batch context to create child batch.")
+            return
+        self.iterate_notice.set_full_text(f"Creating child batch from {batch_id}/{version_id}...")
+        self.iterate_requested.emit(candidate)
 
     def _update_iterate_table(self) -> None:
         table = getattr(self, "iterate_table", None)
@@ -13095,6 +13097,7 @@ class MainWindow(QMainWindow):
         self.batch_page.compat_panel.request_show_details.connect(
             lambda: self._show_validation_details(self.batch_page.compat_panel.issues(), "Batch Validation Details")
         )
+        self.analyse_page.iterate_requested.connect(self._iterate_from_analyzer_version)
         self.run_page.back_to_dashboard.connect(self.show_dashboard)
 
     def _enter_run_presentation(self) -> None:
@@ -13857,6 +13860,79 @@ class MainWindow(QMainWindow):
         self._on_batch_draft_changed(self.batch_page._payload(include_name=False))
         self.stack.setCurrentWidget(self.batch_page)
         self.set_status(f"Batch loaded: {batch_id}")
+
+    def _iterate_from_analyzer_version(self, payload: Dict[str, Any]) -> None:
+        if self.current_project is None:
+            message = "Open a project before creating a child batch."
+            self.set_status(message)
+            QMessageBox.warning(self, "Iterate failed", message)
+            return
+        project_id = str(payload.get("project_id") or self.current_project.project_id).strip()
+        batch_id = str(payload.get("batch_id") or "").strip()
+        version_id = str(payload.get("version_id") or "").strip()
+        if project_id and project_id != self.current_project.project_id:
+            message = "Selected version belongs to a different project context."
+            self.set_status(message)
+            QMessageBox.warning(self, "Iterate failed", message)
+            return
+        if not batch_id:
+            message = "No active batch context to create child batch."
+            self.set_status(message)
+            QMessageBox.warning(self, "Iterate failed", message)
+            return
+        if not version_id:
+            message = "Selected version is missing identity metadata."
+            self.set_status(message)
+            QMessageBox.warning(self, "Iterate failed", message)
+            return
+        try:
+            parent_batch = self.service.repo.load_batch(self.current_project.project_id, batch_id)
+        except Exception as exc:
+            self.set_status(f"Iterate failed for {batch_id}/{version_id}", detail=str(exc))
+            QMessageBox.warning(
+                self,
+                "Iterate failed",
+                f"Could not load parent batch '{batch_id}'.",
+            )
+            return
+        param_rows = self.service.analyzer_list_version_param_rows(
+            project_id=self.current_project.project_id,
+            batch_id=batch_id,
+            version_id=version_id,
+        )
+        selected_params: Dict[str, Any] = {}
+        for row in list(param_rows or []):
+            if not isinstance(row, dict):
+                continue
+            key = str(row.get("param_name") or "").strip()
+            if not key or not bool(row.get("is_set")):
+                continue
+            selected_params[key] = row.get("value")
+        if not selected_params:
+            message = "Selected version has no ATH parameters. Cannot create child batch."
+            self.set_status(message)
+            QMessageBox.warning(self, "Iterate failed", message)
+            return
+        parent_name = str(parent_batch.extra.get("batch_name") or parent_batch.batch_id).strip() or parent_batch.batch_id
+        parent_export_payload = {}
+        try:
+            parent_export_payload = dict(parent_batch.sim_export_settings.to_dict())
+        except Exception:
+            parent_export_payload = {}
+        child_payload: Dict[str, Any] = {
+            "batch_name": f"{parent_name} Child",
+            "selected_params": dict(selected_params),
+            "sweeps": {},
+            "sweep_mode": "single",
+            "sim_export_params": dict(parent_export_payload),
+        }
+        child_batch_id = self._save_batch(child_payload, for_run=False)
+        if not child_batch_id:
+            self.set_status("Iterate failed: child batch was not created.")
+            return
+        self.show_batch()
+        self._edit_batch(child_batch_id)
+        self.set_status(f"Iterate ready: {child_batch_id} from {batch_id}/{version_id}")
 
     def _clone_batch(self, batch_id: str) -> None:
         if self.current_project is None:
