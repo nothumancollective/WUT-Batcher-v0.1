@@ -238,6 +238,9 @@ Validation executed via real `SettingsDialog` and `OrchestratorService` wiring (
 - Invalid root save path (existing file path) no longer corrupts settings:
   - Save returns `saved=false` with user-facing error.
   - Previous `library_root` in memory and on disk remains unchanged.
+- Startup resilience with previously broken settings:
+  - If configured `library_root` fails bootstrap, service attempts default Desktop library root fallback.
+  - On successful fallback, settings are rewritten to the recovered default root and app remains usable.
 - Library metadata repair paths:
   - Missing `library.json` + existing `library.sqlite`: JSON regenerated.
   - Missing `library.sqlite` + existing `library.json`: sqlite initialized with metadata hints.
