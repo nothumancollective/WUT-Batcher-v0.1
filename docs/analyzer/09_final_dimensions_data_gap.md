@@ -14,7 +14,7 @@ Scope: Analyzer read-side verification only (no Runner/export ingest changes).
   - `app/gui.py` -> `_update_version_information_panel(...)`
   - Display format: `L×M×H  <L> × <M> × <H> mm` (one decimal each) when all three values exist.
   - UI accepts `ath_*` keys plus fallback keys (`final_*`, `length/width/height`) and parses numeric strings like `123,4 mm`.
-  - If any dimension is missing, the dimensions line is hidden (no placeholder text).
+  - If any dimension is missing, UI renders `—` (placeholder) and tooltip `Not available`.
 
 ## DB verification performed
 
@@ -38,10 +38,12 @@ Scope: Analyzer read-side verification only (no Runner/export ingest changes).
 - ATH dimension persistence in runtime was gated by `dims.raw_line`.
 - The parser accepted only a single-line pattern containing `Length + Width + Height` together.
 - If ATH printed dimensions across multiple lines, persistence could be skipped even when numeric values existed.
+- In mixed ATH stdout logs, non-final parameter echoes (for example `Length = ...`, `GCurve.Width = ...`) could be parsed before final dimensions and produce incorrect values.
 
 ### Fixed behavior
 
 - `parse_ath_dimensions` now accepts split-line dimension output and reconstructs a raw trace text.
+- The parser now prefers dimension-summary context lines (`Final ...` / `... dimension ...`) over generic parameter echoes and ignores dotted parameter-path keys (for example `GCurve.Width`).
 - Runtime writes dimensions when all three numeric values are present.
 - This write is executed as the first export-data persistence step after ATH stage completion, before downstream export ingestion.
 
@@ -60,5 +62,6 @@ Scope: Analyzer read-side verification only (no Runner/export ingest changes).
 ### Version Information UI mapping (current)
 
 - Row label: `Dim (LxWxH)`
+- Row placement: left info column, directly above `Throat / GCurve / Morph / Driver / Enclosure`.
 - Row value format: `{L:.1f} × {W:.1f} × {H:.1f} mm`
 - Missing dimensions: `—` with tooltip `Not available`.

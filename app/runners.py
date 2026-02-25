@@ -15,6 +15,7 @@ from typing import Iterable, List, Optional, Sequence
 _ATH_DIM_RE = re.compile(
     r"(?i)\b(length|width|height)\b[^0-9\-+]*([-+]?\d+(?:[.,]\d+)?)"
 )
+_ATH_DIM_CONTEXT_RE = re.compile(r"(?i)\b(final|dimension|dimensions|overall|result)\b")
 
 
 def _now_iso() -> str:
@@ -48,18 +49,23 @@ class AthDimensions:
 
 
 def parse_ath_dimensions(stdout_text: str) -> AthDimensions:
-    length: Optional[float] = None
-    width: Optional[float] = None
-    height: Optional[float] = None
-    raw = ""
-    captured_lines: List[str] = []
+    context_values: dict[str, Optional[float]] = {"length": None, "width": None, "height": None}
+    fallback_values: dict[str, Optional[float]] = {"length": None, "width": None, "height": None}
+    context_lines: List[str] = []
+    fallback_lines: List[str] = []
     for line in stdout_text.splitlines():
         line_matches = list(_ATH_DIM_RE.finditer(line))
         if not line_matches:
             continue
         stripped = line.strip()
-        updated_any = False
+        has_context_hint = bool(_ATH_DIM_CONTEXT_RE.search(line))
+        updated_context = False
+        updated_fallback = False
         for match in line_matches:
+            label_start = int(match.start(1))
+            if label_start > 0 and line[label_start - 1] == ".":
+                # Ignore parameter-path echoes like "GCurve.Width".
+                continue
             label = match.group(1).lower()
             try:
                 value = float(match.group(2).replace(",", "."))
@@ -67,22 +73,28 @@ def parse_ath_dimensions(stdout_text: str) -> AthDimensions:
                 continue
             if not math.isfinite(value):
                 continue
-            updated_any = True
-            if label == "length":
-                length = value
-            elif label == "width":
-                width = value
-            elif label == "height":
-                height = value
-        if updated_any and stripped:
-            captured_lines.append(stripped)
-        lowered = line.lower()
-        if updated_any and ("length" in lowered and "width" in lowered and "height" in lowered):
-            raw = stripped
-        if None not in (length, width, height):
-            if not raw:
-                raw = " | ".join(captured_lines[-3:])
-            break
+            if label not in context_values:
+                continue
+            if has_context_hint:
+                context_values[label] = value
+                updated_context = True
+            else:
+                fallback_values[label] = value
+                updated_fallback = True
+        if stripped and updated_context:
+            context_lines.append(stripped)
+        elif stripped and updated_fallback:
+            fallback_lines.append(stripped)
+
+    merged_values = {
+        key: (context_values.get(key) if context_values.get(key) is not None else fallback_values.get(key))
+        for key in ("length", "width", "height")
+    }
+    length = merged_values.get("length")
+    width = merged_values.get("width")
+    height = merged_values.get("height")
+    source_lines = context_lines if context_lines else fallback_lines
+    raw = " | ".join(source_lines[-3:]) if source_lines else ""
     return AthDimensions(
         horn_length_mm=length,
         horn_width_mm=width,
