@@ -757,6 +757,27 @@ class AnalyzerPageUiTests(unittest.TestCase):
             page.close()
             page_reload.close()
 
+    def test_version_information_renders_final_dimensions_as_lxmxh_mm(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_ui2x_dims_lxmxh_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            payload = {
+                "project_id": "P001",
+                "batch_id": "B001",
+                "version_id": "V001",
+                "ath_length_mm": 123.44,
+                "ath_width_mm": 56.66,
+                "ath_height_mm": 89.01,
+            }
+            page._update_version_information_panel(payload)
+            self.assertFalse(bool(page.version_dims_label.isHidden()))
+            self.assertEqual(str(page.version_dims_label.text() or ""), "L×M×H  123.4 × 56.7 × 89.0 mm")
+
+            payload["ath_width_mm"] = None
+            page._update_version_information_panel(payload)
+            self.assertTrue(bool(page.version_dims_label.isHidden()))
+            self.assertEqual(str(page.version_dims_label.text() or ""), "")
+
     def test_ath_param_visibility_pref_persists_per_project(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_ui2x_ath_pref_") as tmp:
             service = _build_service(Path(tmp))

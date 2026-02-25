@@ -2219,6 +2219,7 @@ class OrchestratorService:
                         entry[param_name] = _decode_db_value(control_row["value"])
 
                 ath_dims_by_identity: Dict[Tuple[str, str], Dict[str, Optional[float]]] = {}
+                ath_dims_by_version: Dict[str, Dict[str, Optional[float]]] = {}
                 if has_ath_dimensions_table:
                     ath_rows = conn.execute(
                         """
@@ -2238,11 +2239,14 @@ class OrchestratorService:
                         run_token = str(ath_row["run_id"] or "").strip()
                         if not version_token:
                             continue
-                        ath_dims_by_identity[(run_token, version_token)] = {
+                        dims_payload = {
                             "ath_length_mm": _safe_float_or_none(ath_row["length_mm"]),
                             "ath_width_mm": _safe_float_or_none(ath_row["width_mm"]),
                             "ath_height_mm": _safe_float_or_none(ath_row["height_mm"]),
                         }
+                        ath_dims_by_identity[(run_token, version_token)] = dict(dims_payload)
+                        if version_token not in ath_dims_by_version:
+                            ath_dims_by_version[version_token] = dict(dims_payload)
 
                 notes_by_version: Dict[str, Dict[str, Any]] = {}
                 if has_notes_table:
@@ -2315,6 +2319,10 @@ class OrchestratorService:
             )
             version_meta = dict(version_meta_by_version.get(version_id, {}) or {})
             identity_dims = dict(ath_dims_by_identity.get((run_id, version_id), {}) or {})
+            if not identity_dims:
+                identity_dims = dict(ath_dims_by_identity.get(("", version_id), {}) or {})
+            if not identity_dims:
+                identity_dims = dict(ath_dims_by_version.get(version_id, {}) or {})
             control_values = dict(control_values_by_version.get(version_id, {}) or {})
             note_payload = dict(notes_by_version.get(version_id, {}) or {})
 

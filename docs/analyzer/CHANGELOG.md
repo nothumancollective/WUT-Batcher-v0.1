@@ -1,5 +1,11 @@
 ﻿# Analyzer Docs â€” Changelog
 
+## 2026-02-25 (Version Information: Final dimensions display + fallback)
+- Version Information now renders final dimensions as LxMxH  <L> x <M> x <H> mm with one decimal when all values are present.
+- Hid the dimensions line when any value is missing (no placeholder text).
+- Improved Analyzer read-side dimension fallback by using ath_dimensions values by version_id when run-level keying does not match.
+- Updated final-dimensions notes doc to reflect current read-path behavior and local DB verification context.
+
 ## 2026-02-25 (Plane selector: V segment selected border completion)
 - Tightened plane-segment checked styling so the selected middle (V) segment draws explicit top/bottom/left/right bright borders.
 - Kept selected-segment z-order raise behavior to avoid overlap loss with adjacent segments.
@@ -1147,6 +1153,7 @@
   - metric-band smooth rendering config (`show`, `smooth`, `opacity`)
   - robust non-auto `e_sym_shape` y-range clamp under outlier input
   - resize probes (`1920x1080`, `1366x768`, `1100x700`) without exceptions.
+
 
 
 

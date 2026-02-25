@@ -6993,10 +6993,11 @@ class AnalysePage(QWidget):
         col1_layout = QVBoxLayout(self.version_info_col1)
         col1_layout.setContentsMargins(0, 0, 0, 0)
         col1_layout.setSpacing(3)
-        self.version_dims_label = ElidedTitleLabel("--")
+        self.version_dims_label = ElidedTitleLabel("")
         self.version_dims_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.version_dims_label.setObjectName("SummaryMeta")
-        self.version_dims_label.setToolTip("Final dimensions (L x W x H) in mm.")
+        self.version_dims_label.setToolTip("Final dimensions (L×M×H) in mm.")
+        self.version_dims_label.setVisible(False)
         col1_layout.addWidget(self.version_dims_label, 0, Qt.AlignLeft | Qt.AlignVCenter)
         self._version_chip_labels: Dict[str, QLabel] = {}
         for key in ("throat", "gcurve", "morph", "driver", "enclosure"):
@@ -11735,7 +11736,8 @@ class AnalysePage(QWidget):
         data = dict(payload or {})
         self._sync_version_metric_rows(data)
         if not data:
-            self.version_dims_label.set_full_text("--")
+            self.version_dims_label.set_full_text("")
+            self.version_dims_label.setVisible(False)
             for label in self._version_chip_labels.values():
                 label.setText("--")
                 label.setToolTip("missing")
@@ -11753,13 +11755,14 @@ class AnalysePage(QWidget):
         width_mm = data.get("ath_width_mm")
         height_mm = data.get("ath_height_mm")
         if None in (length_mm, width_mm, height_mm):
-            self.version_dims_label.set_full_text("--")
-            self.version_dims_label.setToolTip("missing")
+            self.version_dims_label.set_full_text("")
+            self.version_dims_label.setVisible(False)
         else:
             self.version_dims_label.set_full_text(
-                f"{float(length_mm):.1f} x {float(width_mm):.1f} x {float(height_mm):.1f} mm"
+                f"L×M×H  {float(length_mm):.1f} × {float(width_mm):.1f} × {float(height_mm):.1f} mm"
             )
-            self.version_dims_label.setToolTip("Final dimensions (L x W x H).")
+            self.version_dims_label.setToolTip("Final dimensions (L×M×H) in mm.")
+            self.version_dims_label.setVisible(True)
 
         def _mode_text(mapping: Dict[int, str], raw_value: Any, default: str) -> str:
             try:
