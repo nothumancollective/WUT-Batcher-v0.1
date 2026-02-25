@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import re
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -30,6 +31,11 @@ def _build_service(tmp_root: Path) -> OrchestratorService:
     store = SettingsStore(settings_path)
     store.save(UserSettings(library_root=str(library_root)))
     return OrchestratorService(settings_store=store)
+
+
+def _col_index(table: QTableWidget, header_name: str) -> int:
+    headers = [str(table.horizontalHeaderItem(i).text() or "") for i in range(table.columnCount())]
+    return int(headers.index(str(header_name)))
 
 
 @unittest.skipIf(QApplication is None, "PySide6 is required")
@@ -96,13 +102,11 @@ class AnalyzerCompareUiTests(unittest.TestCase):
             page._load_selected_analysis()
 
             self.assertGreaterEqual(page.compare_slots_table.rowCount(), 1)
-            first_run = page.compare_slots_table.item(0, 1)
+            slot_col = _col_index(page.compare_slots_table, "Slot")
+            first_run = page.compare_slots_table.item(0, slot_col)
             self.assertIsNotNone(first_run)
             assert first_run is not None
-            self.assertTrue(
-                any(first_run.text().startswith(prefix) for prefix in ("B001/V001", "B002/V010")),
-                msg=f"unexpected compare slot text: {first_run.text()}",
-            )
+            self.assertIn(first_run.text(), {"V001", "V010"})
 
     def test_autopick_result_is_capped_to_five_candidates(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_ui2c_compare_autopick_") as tmp:
@@ -143,7 +147,8 @@ class AnalyzerCompareUiTests(unittest.TestCase):
             }
             page._autopick_request_id = 2
             page._on_autopick_finished(2, payload)
-            self.assertEqual(page.compare_slots_table.item(0, 2).text(), "87.50")
+            score_col = _col_index(page.compare_slots_table, "Score")
+            self.assertEqual(page.compare_slots_table.item(0, score_col).text(), "87.50")
 
     def test_compare_tab_contains_slots_table_and_saved_selector(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_ui2c_compare_layout_") as tmp:
@@ -157,6 +162,11 @@ class AnalyzerCompareUiTests(unittest.TestCase):
             self.assertTrue(hasattr(page, "compare_focus_canvas"))
             self.assertFalse(page.compare_table.isVisible())
             self.assertIn("heatmap", page.compare_heatmap_selector.toolTip().lower())
+            headers = [
+                str(page.compare_slots_table.horizontalHeaderItem(i).text() or "")
+                for i in range(page.compare_slots_table.columnCount())
+            ]
+            self.assertNotIn("Selection", headers)
 
     def test_compare_add_and_remove_candidate_updates_shortlist(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_ui2c_compare_slots_") as tmp:
@@ -165,9 +175,10 @@ class AnalyzerCompareUiTests(unittest.TestCase):
             payload = self._sample_runs_payload("P001")
             page._apply_runs_payload(payload)
             page._set_compare_candidates([payload["runs"][0]])
-            self.assertEqual(page.compare_slots_table.item(0, 1).text(), "B001/V001")
+            slot_col = _col_index(page.compare_slots_table, "Slot")
+            self.assertEqual(page.compare_slots_table.item(0, slot_col).text(), "V001")
             page._remove_compare_candidate(0)
-            self.assertEqual(page.compare_slots_table.item(0, 1).text(), "--")
+            self.assertEqual(page.compare_slots_table.item(0, slot_col).text(), "V---")
 
     def test_compare_heatmap_selector_updates_canvas(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_stage_compare_heatmap_") as tmp:
@@ -265,10 +276,11 @@ class AnalyzerCompareUiTests(unittest.TestCase):
                 }
             ]
             page._set_compare_candidates(candidates)
-            selection_item = page.compare_slots_table.item(0, 1)
+            slot_col = _col_index(page.compare_slots_table, "Slot")
+            selection_item = page.compare_slots_table.item(0, slot_col)
             self.assertIsNotNone(selection_item)
             assert selection_item is not None
-            self.assertIn("[missing H]", selection_item.text())
+            self.assertIn("[missing H]", str(selection_item.toolTip() or ""))
 
     def test_compare_overlay_status_reports_missing_plane_candidates(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_stage_compare_missing_plane_overlay_") as tmp:
@@ -396,9 +408,10 @@ class AnalyzerCompareUiTests(unittest.TestCase):
             payload = self._sample_runs_payload("P001")
             page._apply_runs_payload(payload)
             page._set_compare_candidates(payload["runs"])
-            self.assertEqual(page.compare_slots_table.item(0, 2).text(), "88.00")
+            score_col = _col_index(page.compare_slots_table, "Score")
+            self.assertEqual(page.compare_slots_table.item(0, score_col).text(), "88.00")
             page._apply_runs_payload(payload)
-            self.assertEqual(page.compare_slots_table.item(0, 2).text(), "88.00")
+            self.assertEqual(page.compare_slots_table.item(0, score_col).text(), "88.00")
 
     def test_compare_slots_table_renders_stage_kpi_values(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_stage_compare_slots_kpi_") as tmp:
@@ -534,7 +547,7 @@ class AnalyzerCompareUiTests(unittest.TestCase):
             )
             page.show()
             self.app.processEvents()
-            self.assertGreaterEqual(int(page.compare_drawer.width()), 320)
+            self.assertGreaterEqual(int(page.compare_drawer.width()), int(page.compare_workspace.width() * 0.50))
             page.compare_drawer_toggle_btn.click()
             QTest.qWait(230)
             self.app.processEvents()
@@ -543,7 +556,7 @@ class AnalyzerCompareUiTests(unittest.TestCase):
             page.compare_drawer_toggle_btn.click()
             QTest.qWait(230)
             self.app.processEvents()
-            self.assertGreaterEqual(int(page.compare_drawer.width()), 320)
+            self.assertGreaterEqual(int(page.compare_drawer.width()), int(page.compare_workspace.width() * 0.50))
             self.assertEqual(int(page.compare_drawer_stack.currentIndex()), 0)
 
     def test_compare_drawer_overlays_workspace_without_shrinking_grid(self) -> None:
@@ -585,6 +598,45 @@ class AnalyzerCompareUiTests(unittest.TestCase):
             self.assertLessEqual(int(page.compare_drawer.width()), 96)
 
     @unittest.skipIf(QTest is None or Qt is None, "Qt test utilities are required")
+    def test_compare_expanded_drawer_blocks_plot_double_click_and_uses_v_slot_labels(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_compare_drawer_interaction_guard_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            payload = self._sample_runs_payload("P001")
+            page._apply_runs_payload(payload)
+            page._set_compare_candidates([payload["runs"][0]])
+            page.analysis_tabs.setCurrentWidget(page.compare_tab)
+            page.resize(1500, 860)
+            page.show()
+            self.app.processEvents()
+
+            slot_col = _col_index(page.compare_slots_table, "Slot")
+            slot_item = page.compare_slots_table.item(0, slot_col)
+            self.assertIsNotNone(slot_item)
+            assert slot_item is not None
+            self.assertRegex(slot_item.text(), re.compile(r"^V\d{3}$"))
+
+            page._set_compare_drawer_expanded(True)
+            self.app.processEvents()
+            self.assertTrue(page.compare_drawer_scrim.isVisible())
+
+            slot_frame = page._compare_stage_panels["B"]["frame"]
+            QTest.mouseDClick(slot_frame, Qt.LeftButton, pos=slot_frame.rect().center())
+            self.app.processEvents()
+            self.assertIsNone(page._maximized_plot_slots.get("compare"))
+
+            center = page.compare_drawer_scrim.rect().center()
+            QTest.mouseClick(page.compare_drawer_scrim, Qt.LeftButton, pos=center)
+            QTest.qWait(230)
+            self.app.processEvents()
+            self.assertFalse(page.compare_drawer_scrim.isVisible())
+            self.assertLessEqual(int(page.compare_drawer.width()), 96)
+
+            QTest.mouseDClick(slot_frame, Qt.LeftButton, pos=slot_frame.rect().center())
+            self.app.processEvents()
+            self.assertIn(page._maximized_plot_slots.get("compare"), {"A", "B", "C", "D"})
+
+    @unittest.skipIf(QTest is None or Qt is None, "Qt test utilities are required")
     def test_compare_drawer_refactor_keeps_add_remove_controls_interactive(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_compare_drawer_interactive_") as tmp:
             service = _build_service(Path(tmp))
@@ -600,11 +652,12 @@ class AnalyzerCompareUiTests(unittest.TestCase):
             selected_rows = list(page._selected_row_payloads() or [])
             self.assertTrue(selected_rows)
             selected = dict(selected_rows[0])
-            expected_label = f"{selected.get('batch_id')}/{selected.get('version_id')}"
+            expected_label = f"V{int(str(selected.get('version_id')).lstrip('Vv') or 0):03d}"
 
             QTest.mouseClick(page.compare_add_selected_btn, Qt.LeftButton)
             self.app.processEvents()
-            selection_item = page.compare_slots_table.item(0, 1)
+            slot_col = _col_index(page.compare_slots_table, "Slot")
+            selection_item = page.compare_slots_table.item(0, slot_col)
             self.assertIsNotNone(selection_item)
             assert selection_item is not None
             self.assertEqual(selection_item.text(), expected_label)
@@ -619,10 +672,10 @@ class AnalyzerCompareUiTests(unittest.TestCase):
             QTest.mouseClick(remove_btn, Qt.LeftButton)
             self.app.processEvents()
 
-            cleared_item = page.compare_slots_table.item(0, 1)
+            cleared_item = page.compare_slots_table.item(0, slot_col)
             self.assertIsNotNone(cleared_item)
             assert cleared_item is not None
-            self.assertEqual(cleared_item.text(), "--")
+            self.assertEqual(cleared_item.text(), "V---")
 
 
 if __name__ == "__main__":

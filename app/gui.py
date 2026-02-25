@@ -798,7 +798,6 @@ STAGE_PARETO_DEFAULTS: Dict[str, Tuple[str, str]] = {
 
 COMPARE_BASE_COLUMNS: Tuple[Tuple[str, str], ...] = (
     ("slot", "Slot"),
-    ("selection", "Selection"),
     ("score", "Score"),
     ("flags", "Flags"),
 )
@@ -6577,11 +6576,13 @@ class AnalysePage(QWidget):
 
         self.compare_drawer_scrim = _DrawerScrim(self.compare_workspace)
         self.compare_drawer_scrim.setObjectName("AnalyzerCompareDrawerScrim")
+        self.compare_drawer_scrim.setAttribute(Qt.WA_StyledBackground, True)
         self.compare_drawer_scrim.setVisible(False)
         self.compare_drawer_scrim.setAttribute(Qt.WA_TransparentForMouseEvents, True)
 
         self.compare_drawer = QFrame(self.compare_workspace)
         self.compare_drawer.setObjectName("AnalyzerCompareDrawer")
+        self.compare_drawer.setAttribute(Qt.WA_StyledBackground, True)
         self.compare_drawer.setMinimumWidth(int(self._compare_drawer_expanded_width))
         self.compare_drawer.setMaximumWidth(int(self._compare_drawer_expanded_width))
         self.compare_drawer.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
@@ -6622,7 +6623,7 @@ class AnalysePage(QWidget):
             slot_btn.setToolButtonStyle(Qt.ToolButtonTextOnly)
             slot_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             slot_btn.setMinimumHeight(26)
-            slot_btn.setText(f"C{slot_index + 1} V---")
+            slot_btn.setText("V---")
             slot_btn.clicked.connect(lambda _checked=False, idx=slot_index: self.compare_slots_table.selectRow(idx))
             compact_layout.addWidget(slot_btn, 0)
             self.compare_drawer_compact_buttons.append(slot_btn)
@@ -7349,6 +7350,7 @@ class AnalysePage(QWidget):
         frame = QFrame()
         frame.setObjectName("ProjectIssuesPanel")
         frame.setProperty("analyzerPlotTile", True)
+        frame.setAttribute(Qt.WA_StyledBackground, True)
         frame.setMinimumHeight(180)
         frame_layout = QVBoxLayout(frame)
         frame_layout.setContentsMargins(
@@ -7360,6 +7362,7 @@ class AnalysePage(QWidget):
         frame_layout.setSpacing(ANALYZER_PLOT_STYLE.tile_header_spacing_px)
 
         header = QWidget()
+        header.setAttribute(Qt.WA_StyledBackground, True)
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(0, 0, 0, 0)
         header_layout.setSpacing(ANALYZER_PLOT_STYLE.tile_header_spacing_px)
@@ -9037,13 +9040,18 @@ class AnalysePage(QWidget):
             if (
                 isinstance(watched, QWidget)
                 and event is not None
-                and event.type() == QEvent.MouseButtonDblClick
-                and hasattr(event, "button")
-                and event.button() == Qt.LeftButton
+                and event.type() in {QEvent.MouseButtonPress, QEvent.MouseButtonRelease, QEvent.MouseButtonDblClick}
             ):
                 tab_token = str(watched.property("analyzerPlotTileTab") or "").strip().lower()
                 slot_token = str(watched.property("analyzerPlotTileSlot") or "").strip().upper()
                 if tab_token in {"explorer", "compare"} and slot_token in {"A", "B", "C", "D"}:
+                    if tab_token == "compare" and bool(getattr(self, "_compare_drawer_expanded", False)):
+                        event.accept()
+                        return True
+                    if event.type() != QEvent.MouseButtonDblClick:
+                        return False
+                    if not hasattr(event, "button") or event.button() != Qt.LeftButton:
+                        return False
                     self._toggle_plot_tile_maximize(tab_token, slot_token)
                     event.accept()
                     return True
@@ -9634,12 +9642,10 @@ class AnalysePage(QWidget):
         header.setStretchLastSection(False)
         header.setMinimumSectionSize(36)
         header.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        for index, (key, _label) in enumerate(columns):
+        for index, (key, label) in enumerate(columns):
             if key == "slot":
                 header.setSectionResizeMode(index, QHeaderView.Fixed)
-                self.compare_slots_table.setColumnWidth(index, 46)
-            elif key == "selection":
-                header.setSectionResizeMode(index, QHeaderView.Stretch)
+                self.compare_slots_table.setColumnWidth(index, 96)
             elif key in {"score", "flags"}:
                 header.setSectionResizeMode(index, QHeaderView.Fixed)
                 self.compare_slots_table.setColumnWidth(index, 62 if key == "score" else 56)
@@ -9647,7 +9653,114 @@ class AnalysePage(QWidget):
                 header.setSectionResizeMode(index, QHeaderView.Fixed)
                 self.compare_slots_table.setColumnWidth(index, 92)
             else:
-                header.setSectionResizeMode(index, QHeaderView.Stretch)
+                header.setSectionResizeMode(index, QHeaderView.Fixed)
+                label_width = QFontMetrics(self.compare_slots_table.font()).horizontalAdvance(str(label or "")) + 24
+                self.compare_slots_table.setColumnWidth(index, max(88, min(int(label_width), 168)))
+        self._apply_compare_slots_table_layout()
+
+    def _compare_fixed_column_width(self, key: str) -> int:
+        token = str(key or "").strip().lower()
+        if token == "slot":
+            return 96
+        if token == "score":
+            return 62
+        if token == "flags":
+            return 56
+        if token == "remove":
+            return 92
+        return 96
+
+    def _compare_drawer_table_column_budget(self, drawer_width: Optional[int] = None) -> int:
+        width = int(drawer_width) if drawer_width is not None else int(getattr(self, "_compare_drawer_current_width", 0))
+        if width <= 0:
+            try:
+                width = int(self.compare_drawer.width())
+            except Exception:
+                width = 0
+        # drawer margins (8 + 8), table frame padding + scrollbar safety
+        return max(int(width - 36), 220)
+
+    def _apply_compare_slots_table_layout(self, *, drawer_width: Optional[int] = None) -> None:
+        if not isinstance(getattr(self, "compare_slots_table", None), QTableWidget):
+            return
+        columns = self._compare_table_columns()
+        col_index = {key: idx for idx, (key, _label) in enumerate(columns)}
+        table = self.compare_slots_table
+        header = table.horizontalHeader()
+        fixed_keys = {"slot", "score", "flags", "remove"}
+        metric_columns = [
+            (key, idx)
+            for key, idx in col_index.items()
+            if key not in fixed_keys
+        ]
+        required_fixed = 0
+        for key in fixed_keys:
+            idx = col_index.get(key)
+            if idx is None:
+                continue
+            width = int(self._compare_fixed_column_width(key))
+            header.setSectionResizeMode(int(idx), QHeaderView.Fixed)
+            table.setColumnHidden(int(idx), False)
+            table.setColumnWidth(int(idx), int(width))
+            required_fixed += int(width)
+
+        metric_preferred: Dict[int, int] = {}
+        font_metrics = QFontMetrics(table.font())
+        for key, idx in metric_columns:
+            label = ""
+            for col_key, col_label in columns:
+                if col_key == key:
+                    label = str(col_label or "")
+                    break
+            preferred = max(86, min(font_metrics.horizontalAdvance(label) + 26, 176))
+            metric_preferred[int(idx)] = int(preferred)
+            table.setColumnHidden(int(idx), False)
+            header.setSectionResizeMode(int(idx), QHeaderView.Fixed)
+
+        budget = self._compare_drawer_table_column_budget(drawer_width=drawer_width)
+        visible_metric_cols = [int(idx) for _key, idx in metric_columns]
+        required_total = int(required_fixed + sum(metric_preferred.get(idx, 0) for idx in visible_metric_cols))
+        while required_total > budget and len(visible_metric_cols) > 1:
+            hide_idx = int(visible_metric_cols[-1])
+            table.setColumnHidden(hide_idx, True)
+            required_total -= int(metric_preferred.get(hide_idx, 0))
+            visible_metric_cols.pop()
+
+        if required_total > budget and visible_metric_cols:
+            # Last resort for expanded state: allow horizontal scroll for the remaining KPI view.
+            table.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded if bool(self._compare_drawer_expanded) else Qt.ScrollBarAlwaysOff)
+        else:
+            table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
+        if visible_metric_cols:
+            remaining = max(budget - required_fixed, 0)
+            base = sum(metric_preferred.get(idx, 0) for idx in visible_metric_cols)
+            per_col_extra = max((remaining - base) // max(len(visible_metric_cols), 1), 0)
+            for idx in visible_metric_cols:
+                width = int(metric_preferred.get(idx, 96) + per_col_extra)
+                table.setColumnWidth(int(idx), int(min(width, 220)))
+
+    def _estimated_compare_drawer_expanded_width(self, *, workspace_width: Optional[int] = None) -> int:
+        available = int(workspace_width or 0)
+        if available <= 0 and isinstance(getattr(self, "compare_workspace", None), QWidget):
+            available = int(self.compare_workspace.width())
+        if available <= 0:
+            return int(self._compare_drawer_expanded_width)
+        columns = self._compare_table_columns()
+        fixed_sum = 0
+        metric_sum = 0
+        font_metrics = QFontMetrics(self.compare_slots_table.font())
+        for key, label in columns:
+            if key in {"slot", "score", "flags", "remove"}:
+                fixed_sum += int(self._compare_fixed_column_width(key))
+            else:
+                metric_sum += max(86, min(font_metrics.horizontalAdvance(str(label or "")) + 26, 176))
+        required = int(fixed_sum + metric_sum + 36)
+        min_ratio = max(int(round(float(available) * 0.55)), int(self._compare_drawer_collapsed_width + 220))
+        max_ratio = max(int(round(float(available) * 0.70)), min_ratio)
+        target = max(int(required), int(min_ratio))
+        target = min(int(target), int(max_ratio))
+        return int(max(target, int(self._compare_drawer_collapsed_width + 140)))
 
     def _compare_candidate_metric_text(self, candidate: Mapping[str, Any], metric_key: str) -> str:
         token = str(metric_key or "").strip().lower()
@@ -9735,17 +9848,24 @@ class AnalysePage(QWidget):
             return
         width_total = max(int(workspace.width()), 0)
         height_total = max(int(workspace.height()), 0)
+        anim = getattr(self, "_compare_drawer_width_anim", None)
+        anim_running = bool(isinstance(anim, QPropertyAnimation) and anim.state() == QPropertyAnimation.Running)
+        if bool(self._compare_drawer_expanded):
+            self._compare_drawer_expanded_width = int(
+                self._estimated_compare_drawer_expanded_width(workspace_width=width_total)
+            )
+            if not anim_running:
+                self._compare_drawer_current_width = int(self._compare_drawer_expanded_width)
         drawer_width = max(
             int(self._compare_drawer_collapsed_width),
             min(int(self._compare_drawer_current_width), int(self._compare_drawer_expanded_width)),
         )
         drawer_width = min(drawer_width, width_total)
         drawer.setGeometry(0, 0, int(drawer_width), int(height_total))
-        scrim_x = int(drawer_width)
-        scrim_w = max(int(width_total - scrim_x), 0)
-        scrim_enabled = bool(self._compare_drawer_expanded) and scrim_w > 0
+        self._apply_compare_slots_table_layout(drawer_width=drawer_width)
+        scrim_enabled = bool(self._compare_drawer_expanded) and width_total > 0 and height_total > 0
         if isinstance(scrim, QWidget):
-            scrim.setGeometry(scrim_x, 0, scrim_w, int(height_total))
+            scrim.setGeometry(0, 0, int(width_total), int(height_total))
             scrim.setVisible(bool(scrim_enabled))
             scrim.setAttribute(Qt.WA_TransparentForMouseEvents, not bool(scrim_enabled))
             if scrim_enabled:
@@ -9756,6 +9876,12 @@ class AnalysePage(QWidget):
         self._compare_drawer_expanded = bool(expanded)
         if not isinstance(getattr(self, "compare_drawer", None), QFrame):
             return
+        if self._compare_drawer_expanded:
+            self._compare_drawer_expanded_width = int(
+                self._estimated_compare_drawer_expanded_width(
+                    workspace_width=(int(self.compare_workspace.width()) if isinstance(getattr(self, "compare_workspace", None), QWidget) else None)
+                )
+            )
         width_target = int(self._compare_drawer_expanded_width if self._compare_drawer_expanded else self._compare_drawer_collapsed_width)
         width_start = int(self._compare_drawer_current_width)
         if isinstance(getattr(self, "compare_drawer_stack", None), QStackedWidget):
@@ -9790,12 +9916,11 @@ class AnalysePage(QWidget):
         for index, button in enumerate(buttons):
             if not isinstance(button, QToolButton):
                 continue
-            slot_label = f"C{index + 1}"
             if index < len(self._compare_candidates):
                 candidate = dict(self._compare_candidates[index] or {})
                 version_label = format_series_label(candidate.get("version_id"))
                 full_selection = f"{str(candidate.get('batch_id') or '--')}/{str(candidate.get('version_id') or '--')}"
-                button.setText(f"{slot_label} {version_label}")
+                button.setText(version_label)
                 button.setToolTip(full_selection)
                 color = QColor(*compare_overlay_color(index))
                 button.setStyleSheet(
@@ -9809,7 +9934,7 @@ class AnalysePage(QWidget):
                     "}"
                 )
             else:
-                button.setText(f"{slot_label} V---")
+                button.setText("V---")
                 button.setToolTip("")
                 button.setStyleSheet(
                     "QToolButton {"
@@ -9882,30 +10007,29 @@ class AnalysePage(QWidget):
         remove_col = int(col_index.get("remove", max(len(columns) - 1, 0)))
         for row_index in range(5):
             slot_label = f"C{row_index + 1}"
-            color_item = QTableWidgetItem(slot_label)
             color_rgb = compare_overlay_color(row_index)
+            candidate = dict(slots[row_index]) if row_index < len(slots) else {}
+            version_label = format_series_label(candidate.get("version_id")) if candidate else "V---"
+            color_item = QTableWidgetItem(version_label)
             color_item.setBackground(QColor(*color_rgb))
             color_item.setForeground(QColor("#0D1117"))
+            color_item.setTextAlignment(int(Qt.AlignLeft | Qt.AlignVCenter))
             if "slot" in col_index:
                 self.compare_slots_table.setItem(row_index, int(col_index["slot"]), color_item)
-            candidate = dict(slots[row_index]) if row_index < len(slots) else {}
             if candidate:
                 selection_label = f"{str(candidate.get('batch_id') or '--')}/{str(candidate.get('version_id') or '--')}"
                 marker = "[PIN] " if bool(candidate.get("version_pinned")) else ""
                 planes_present = {str(token).strip().upper() for token in list(candidate.get("planes", []) or []) if str(token).strip()}
                 missing_note = f" [missing {selected_plane}]" if selected_plane not in planes_present else ""
                 selection_text = f"{marker}{selection_label}{missing_note}"
+                color_item.setToolTip(selection_text)
                 score_text = self._format_float(candidate.get("score"), 2)
                 flags_count = candidate.get("kpi_flags_count")
                 flags_text = "--" if flags_count is None else str(int(flags_count))
                 for key, idx in col_index.items():
                     if key in {"slot", "remove"}:
                         continue
-                    if key == "selection":
-                        item = QTableWidgetItem(selection_text)
-                        item.setTextAlignment(int(Qt.AlignLeft | Qt.AlignVCenter))
-                        item.setToolTip(selection_text)
-                    elif key == "score":
+                    if key == "score":
                         item = QTableWidgetItem(score_text)
                         item.setTextAlignment(int(Qt.AlignRight | Qt.AlignVCenter))
                     elif key == "flags":
@@ -9923,14 +10047,13 @@ class AnalysePage(QWidget):
                         else:
                             item.setToolTip(f"{key}: {metric_text}")
                     self.compare_slots_table.setItem(row_index, int(idx), item)
-                self.compare_heatmap_selector.addItem(f"{slot_label} | {selection_text}", row_index)
+                self.compare_heatmap_selector.addItem(f"{slot_label} | {version_label}", row_index)
             else:
                 for key, idx in col_index.items():
                     if key in {"slot", "remove"}:
                         continue
                     item = QTableWidgetItem("--")
-                    if key != "selection":
-                        item.setTextAlignment(int(Qt.AlignRight | Qt.AlignVCenter))
+                    item.setTextAlignment(int(Qt.AlignRight | Qt.AlignVCenter))
                     self.compare_slots_table.setItem(row_index, int(idx), item)
 
             remove_btn = QPushButton("Remove")
@@ -9958,8 +10081,19 @@ class AnalysePage(QWidget):
             self._selected_compare_slot_index = 0
         if self._selected_compare_slot_index is not None and (self._selected_compare_slot_index >= len(slots)):
             self._selected_compare_slot_index = None
+        if bool(self._compare_drawer_expanded):
+            self._compare_drawer_expanded_width = int(
+                self._estimated_compare_drawer_expanded_width(
+                    workspace_width=(int(self.compare_workspace.width()) if isinstance(getattr(self, "compare_workspace", None), QWidget) else None)
+                )
+            )
+            self._compare_drawer_current_width = min(
+                max(int(self._compare_drawer_current_width), int(self._compare_drawer_collapsed_width)),
+                int(self._compare_drawer_expanded_width),
+            )
         if self._selected_compare_slot_index is not None:
             self.compare_slots_table.selectRow(int(self._selected_compare_slot_index))
+        self._apply_compare_slots_table_layout(drawer_width=(self._compare_drawer_current_width if self._compare_drawer_expanded else self._compare_drawer_expanded_width))
         self._update_compare_kpi_panel()
         self._refresh_compare_drawer_compact_rows()
         self._render_compare_visuals()

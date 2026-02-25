@@ -723,8 +723,10 @@ class AnalyzerPageUiTests(unittest.TestCase):
             page_reload._apply_runs_payload(payload)
             self.assertTrue(page_reload.version_pin_btn.isChecked())
             page_reload._set_compare_candidates([dict(payload["runs"][0])])
-            selection_text = str(page_reload.compare_slots_table.item(0, 1).text() or "")
-            self.assertIn("[PIN]", selection_text)
+            selection_item = page_reload.compare_slots_table.item(0, 0)
+            self.assertIsNotNone(selection_item)
+            assert selection_item is not None
+            self.assertIn("[PIN]", str(selection_item.toolTip() or ""))
             page.close()
             page_reload.close()
 

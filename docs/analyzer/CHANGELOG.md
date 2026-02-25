@@ -1,5 +1,13 @@
 ﻿# Analyzer Docs â€” Changelog
 
+## 2026-02-25 (Compare drawer: final table readability + scrim interaction lock)
+- Removed the Compare shortlist `Selection` column and switched slot cells to swatch + version-only labels (`V###`), with missing-plane/pin metadata kept in tooltips.
+- Finalized overlay drawer behavior: full-workspace scrim in expanded mode (drawer above scrim above plots), stronger dim treatment, and click-to-collapse capture.
+- Added hard interaction guards so compare plot tiles ignore mouse press/release/double-click while the drawer is expanded; interactions restore on collapse.
+- Updated drawer table sizing to fixed utility columns plus adaptive KPI columns (hide-right strategy before horizontal scroll), with expanded width estimated from column demand and workspace ratio.
+- Added/updated GUI regression coverage for removed `Selection` column, `V###` slot text, scrim collapse, expanded interaction lock, and restored double-click maximize after collapse.
+
+
 ## 2026-02-24 (Tests: Display Advanced metric-band controls and rendering)
 - Added settings-store coverage for Analyzer metric-band display defaults and persistence keys.
 - Added Advanced-dialog UI introspection coverage for grouped blocks (Display Options, Metric Bands, Metric Colors).

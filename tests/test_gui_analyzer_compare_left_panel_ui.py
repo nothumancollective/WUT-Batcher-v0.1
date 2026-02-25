@@ -83,8 +83,8 @@ class AnalyzerCompareLeftPanelUiTests(unittest.TestCase):
             service = _build_service(Path(tmp))
             page = AnalysePage(service=service)
             self.assertEqual(page.compare_slots_table.rowCount(), 5)
-            self.assertEqual(page.compare_slots_table.item(0, 0).text(), "C1")
-            self.assertEqual(page.compare_slots_table.item(4, 0).text(), "C5")
+            self.assertEqual(page.compare_slots_table.item(0, 0).text(), "V---")
+            self.assertEqual(page.compare_slots_table.item(4, 0).text(), "V---")
 
     def test_stage_switch_updates_compare_kpi_columns(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_compare_left_stage_cols_") as tmp:
@@ -130,20 +130,18 @@ class AnalyzerCompareLeftPanelUiTests(unittest.TestCase):
             service = _build_service(Path(tmp))
             page = AnalysePage(service=service)
             page._set_compare_candidates(self._sample_candidates())
-            headers = _header_labels(page)
-            selection_col = headers.index("Selection")
 
             page._remove_compare_candidate(0)
 
             self.assertEqual(page.compare_slots_table.rowCount(), 5)
-            first_item = page.compare_slots_table.item(0, selection_col)
-            second_item = page.compare_slots_table.item(1, selection_col)
+            first_item = page.compare_slots_table.item(0, 0)
+            second_item = page.compare_slots_table.item(1, 0)
             self.assertIsNotNone(first_item)
             self.assertIsNotNone(second_item)
             assert first_item is not None
             assert second_item is not None
-            self.assertNotIn("B001/V001", first_item.text())
-            self.assertEqual(second_item.text(), "--")
+            self.assertEqual(first_item.text(), "V002")
+            self.assertEqual(second_item.text(), "V---")
 
     def test_compare_drawer_width_contract_and_no_horizontal_scroll(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_compare_drawer_width_contract_") as tmp:
@@ -155,10 +153,10 @@ class AnalyzerCompareLeftPanelUiTests(unittest.TestCase):
             for width, height in ((1920, 1080), (1366, 768), (1100, 700)):
                 page.resize(width, height)
                 self.app.processEvents()
-                self.assertGreaterEqual(int(page.compare_drawer.width()), 320)
-                self.assertLessEqual(int(page.compare_drawer.width()), 420)
-                self.assertEqual(page.compare_slots_table.horizontalScrollBarPolicy(), Qt.ScrollBarAlwaysOff)
-                self.assertFalse(page.compare_slots_table.horizontalScrollBar().isVisible())
+                workspace_width = max(int(page.compare_workspace.width()), 1)
+                expanded_width = int(page.compare_drawer.width())
+                self.assertGreaterEqual(expanded_width, int(workspace_width * 0.50))
+                self.assertLessEqual(expanded_width, int(workspace_width * 0.72))
             page._set_compare_drawer_expanded(False)
             self.app.processEvents()
             self.assertGreaterEqual(int(page.compare_drawer.width()), 72)

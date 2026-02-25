@@ -804,13 +804,13 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         border: none;
     }}
     QWidget#AnalyzerCompareDrawerScrim {{
-        background-color: rgba(0, 0, 0, 0.42);
+        background-color: rgba(0, 0, 0, 0.48);
     }}
     QScrollArea#AnalyzerCompareDrawerScroll > QWidget > QWidget {{
         background-color: transparent;
     }}
     QFrame#AnalyzerCompareDrawer {{
-        background-color: rgba(255, 255, 255, 0.04);
+        background-color: rgba(20, 20, 20, 0.96);
         border: 1px solid {c['border']};
         border-radius: {r['sm']}px;
     }}
