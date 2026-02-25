@@ -1,5 +1,10 @@
 ﻿# Analyzer Docs â€” Changelog
 
+## 2026-02-25 (Version Information: pin button purple consistency)
+- Unified Version Information pin checked-state border color with the shared pinned accent purple used by pinned indicators.
+- Updated pinned Version Information tile border accent to the same purple token for visual consistency.
+- Added stylesheet regression coverage for the pin checked-state purple contract.
+
 ## 2026-02-25 (Compare drawer: row click drives global selection)
 - Wired Compare shortlist row clicks to the same run-selection source-of-truth used by the Selection Bar (run table / run selector).
 - Clicking a Compare row now updates global Batch/Version selection and refreshes Version Information for that version.
@@ -1115,6 +1120,7 @@
   - metric-band smooth rendering config (`show`, `smooth`, `opacity`)
   - robust non-auto `e_sym_shape` y-range clamp under outlier input
   - resize probes (`1920x1080`, `1366x768`, `1100x700`) without exceptions.
+
 
 
 

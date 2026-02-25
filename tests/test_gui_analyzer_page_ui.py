@@ -19,6 +19,7 @@ from app.gui import (
 )
 from app.services import OrchestratorService
 from app.settings_store import SettingsStore, UserSettings
+from ui.theme import build_stylesheet
 
 try:
     from PySide6.QtCore import Qt
@@ -74,6 +75,12 @@ class AnalyzerPageUiTests(unittest.TestCase):
                 self.assertTrue(window.analyse_mode_button.isChecked())
                 self.assertEqual(refresh_mock.call_count, 1)
             window.close()
+
+    def test_version_pin_checked_style_uses_shared_pinned_purple(self) -> None:
+        css = build_stylesheet()
+        self.assertIn("QToolButton#AnalyzerVersionPinButton:checked", css)
+        self.assertIn("border-color: #9A86CC;", css)
+        self.assertIn('QFrame#ProjectSummaryPanel[analyzerPinned="true"]', css)
 
     def test_left_pane_contains_batch_selector_and_run_table(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_ui1c_layout_") as tmp:
