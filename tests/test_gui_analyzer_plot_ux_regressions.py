@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-import re
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -164,7 +163,7 @@ class AnalyzerPlotUxRegressionTests(unittest.TestCase):
             self.app.processEvents()
             self.assertEqual(str(page._compare_stage_panels["D"].get("metric_key") or ""), "s_theta")
 
-    def test_compare_overlay_legend_labels_are_only_v_numbers(self) -> None:
+    def test_compare_overlay_right_panel_hides_series_labels(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_plot_ux_labels_") as tmp:
             service = _build_service(Path(tmp))
             page = AnalysePage(service=service)
@@ -175,9 +174,8 @@ class AnalyzerPlotUxRegressionTests(unittest.TestCase):
             page._render_compare_overlay()
             slot_b = page._compare_stage_panels["B"]
             labels = [str(row.get("label") or "") for row in list(slot_b["curve_canvas"]._series)]
-            version_labels = [label for label in labels if label.strip()]
-            self.assertTrue(version_labels)
-            self.assertTrue(all(re.match(r"^V\d{3}$", label) for label in version_labels))
+            self.assertTrue(labels)
+            self.assertTrue(all(not str(label).strip() for label in labels))
 
     def test_canvas_does_not_use_internal_duplicate_titles(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_plot_ux_titles_") as tmp:
@@ -402,7 +400,7 @@ class AnalyzerPlotUxRegressionTests(unittest.TestCase):
             page._render_compare_overlay()
             slot_b = page._compare_stage_panels["B"]
             series = list(slot_b["curve_canvas"]._series)
-            with_band = [bool(row.get("show_band")) for row in series if str(row.get("label") or "").startswith("V")]
+            with_band = [bool(row.get("show_band")) for row in series[:2]]
             self.assertEqual(with_band, [False, True])
 
     def test_explorer_metric_band_toggle_on_renders_linear_region_items(self) -> None:
@@ -606,7 +604,7 @@ class AnalyzerPlotUxRegressionTests(unittest.TestCase):
             page.hide()
 
     @unittest.skipIf(QTest is None or Qt is None, "Qt test utilities are required")
-    def test_compare_double_click_restore_is_stable_and_disabled_when_drawer_expanded(self) -> None:
+    def test_compare_double_click_toggle_switch_restore_and_drawer_guard(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_plot_ux_compare_double_click_") as tmp:
             service = _build_service(Path(tmp))
             page = AnalysePage(service=service)
@@ -617,17 +615,17 @@ class AnalyzerPlotUxRegressionTests(unittest.TestCase):
 
             page._set_compare_drawer_expanded(False, animated=False)
             self.app.processEvents()
-            tile_primary = page._compare_stage_panels["B"]["heatmap_canvas"]
+            tile_primary = page._compare_stage_panels["B"]["frame"]
             primary_slot = str(tile_primary.property("analyzerPlotTileSlot") or "").strip().upper()
             self.assertIn(primary_slot, {"A", "B", "C", "D"})
             QTest.mouseDClick(tile_primary, Qt.LeftButton)
             self.app.processEvents()
             self.assertEqual(str(page._maximized_plot_slots.get("compare") or ""), primary_slot)
 
-            # A double-click on another slot while maximized must not switch focus.
+            # Switching focus to a different tile should replace the maximized slot.
             tile_other = None
             for slot_key in ("A", "B", "C", "D"):
-                candidate = page._compare_stage_panels[slot_key]["curve_canvas"]
+                candidate = page._compare_stage_panels[slot_key]["frame"]
                 candidate_slot = str(candidate.property("analyzerPlotTileSlot") or "").strip().upper()
                 if candidate_slot != primary_slot:
                     tile_other = candidate
@@ -636,10 +634,11 @@ class AnalyzerPlotUxRegressionTests(unittest.TestCase):
             assert tile_other is not None
             QTest.mouseDClick(tile_other, Qt.LeftButton)
             self.app.processEvents()
-            self.assertEqual(str(page._maximized_plot_slots.get("compare") or ""), primary_slot)
+            switched_slot = str(tile_other.property("analyzerPlotTileSlot") or "").strip().upper()
+            self.assertEqual(str(page._maximized_plot_slots.get("compare") or ""), switched_slot)
 
-            # Restore by double-clicking the maximized tile.
-            QTest.mouseDClick(tile_primary, Qt.LeftButton)
+            # Restore by double-clicking the same maximized tile.
+            QTest.mouseDClick(tile_other, Qt.LeftButton)
             self.app.processEvents()
             self.assertIsNone(page._maximized_plot_slots.get("compare"))
 

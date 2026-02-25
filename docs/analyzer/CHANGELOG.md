@@ -1,5 +1,11 @@
 ﻿# Analyzer Docs â€” Changelog
 
+## 2026-02-25 (Tests: compare drawer/focus regressions + label routing lock)
+- Added regression coverage for Compare drawer default-collapsed state, gutter no-overlap geometry, `Remove selected` behavior, pinned-slot icon rendering, and expanded-state interaction guard.
+- Added/updated compare focus toggle tests to assert same-tile restore and different-tile focus switching parity with Explorer.
+- Locked right-column compare-panel label suppression behavior and updated overlay/band-owner tests accordingly.
+
+
 ## 2026-02-25 (Compare: drawer table polish + remove-selected + pin icon)
 - Added `Remove selected` action for the compare shortlist, enabled only for a valid selected row and disabled with `Unpin to remove.` when the row is pinned.
 - Slot cells now render `V###` with a purple pin decoration icon when the candidate is pinned, while preserving row swatch coloring.

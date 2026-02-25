@@ -312,7 +312,7 @@ class AnalyzerCompareUiTests(unittest.TestCase):
             self.assertIn("Missing H", status)
             self.assertIn("V001", status)
             labels = [str(series.get("label") or "") for series in list(page.compare_overlay_canvas._series)]
-            self.assertTrue(any("V002" in label for label in labels))
+            self.assertTrue(all(not str(label).strip() for label in labels))
 
     def test_plane_controls_keep_h_visible_with_missing_plane_reason(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_stage_plane_missing_h_") as tmp:
@@ -499,7 +499,48 @@ class AnalyzerCompareUiTests(unittest.TestCase):
             ]
             page._render_compare_overlay()
             labels = [str(series.get("label") or "") for series in list(page.compare_overlay_canvas._series)]
-            self.assertTrue(any(label == "V001" for label in labels))
+            self.assertTrue(all(not str(label).strip() for label in labels))
+
+    def test_compare_right_column_curve_panels_hide_series_labels(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_stage_compare_right_label_suppression_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            candidates = [
+                {"project_id": "P001", "batch_id": "B001", "run_id": "R001", "version_id": "V001", "planes": ["H", "V"], "kpi_score": 88.0},
+                {"project_id": "P001", "batch_id": "B002", "run_id": "R002", "version_id": "V002", "planes": ["H", "V"], "kpi_score": 81.0},
+            ]
+            page._set_compare_candidates(candidates)
+            page._compare_plot_items = [
+                {
+                    "candidate": dict(candidates[0]),
+                    "plot": {
+                        "stage_plot": {
+                            "curves": {
+                                "beamwidth": [{"freq_hz": 1000.0, "beamwidth_deg": 62.0}, {"freq_hz": 2000.0, "beamwidth_deg": 58.0}],
+                                "e_cov": [{"freq_hz": 1000.0, "value": 1.2}, {"freq_hz": 2000.0, "value": 1.0}],
+                            }
+                        }
+                    },
+                },
+                {
+                    "candidate": dict(candidates[1]),
+                    "plot": {
+                        "stage_plot": {
+                            "curves": {
+                                "beamwidth": [{"freq_hz": 1000.0, "beamwidth_deg": 64.0}, {"freq_hz": 2000.0, "beamwidth_deg": 60.0}],
+                                "e_cov": [{"freq_hz": 1000.0, "value": 1.6}, {"freq_hz": 2000.0, "value": 1.3}],
+                            }
+                        }
+                    },
+                },
+            ]
+            page._render_compare_visuals()
+            panel_b_series = list(page._compare_stage_panels["B"]["curve_canvas"]._series or [])
+            panel_d_series = list(page._compare_stage_panels["D"]["curve_canvas"]._series or [])
+            self.assertTrue(any(isinstance(row, dict) for row in panel_b_series))
+            self.assertTrue(any(isinstance(row, dict) for row in panel_d_series))
+            self.assertTrue(all(not str(row.get("label") or "").strip() for row in panel_b_series))
+            self.assertTrue(all(not str(row.get("label") or "").strip() for row in panel_d_series))
 
     def test_pareto_scatter_does_not_fill_plot_area_with_last_candidate_color(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_stage_pareto_fill_guard_") as tmp:
@@ -547,10 +588,6 @@ class AnalyzerCompareUiTests(unittest.TestCase):
             )
             page.show()
             self.app.processEvents()
-            self.assertGreaterEqual(int(page.compare_drawer.width()), int(page.compare_workspace.width() * 0.50))
-            page.compare_drawer_toggle_btn.click()
-            QTest.qWait(230)
-            self.app.processEvents()
             self.assertLessEqual(int(page.compare_drawer.width()), 96)
             self.assertEqual(int(page.compare_drawer_stack.currentIndex()), 1)
             page.compare_drawer_toggle_btn.click()
@@ -558,6 +595,11 @@ class AnalyzerCompareUiTests(unittest.TestCase):
             self.app.processEvents()
             self.assertGreaterEqual(int(page.compare_drawer.width()), int(page.compare_workspace.width() * 0.50))
             self.assertEqual(int(page.compare_drawer_stack.currentIndex()), 0)
+            page.compare_drawer_toggle_btn.click()
+            QTest.qWait(230)
+            self.app.processEvents()
+            self.assertLessEqual(int(page.compare_drawer.width()), 96)
+            self.assertEqual(int(page.compare_drawer_stack.currentIndex()), 1)
 
     def test_compare_drawer_overlays_workspace_without_shrinking_grid(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_compare_drawer_overlay_geometry_") as tmp:
@@ -575,8 +617,20 @@ class AnalyzerCompareUiTests(unittest.TestCase):
             self.app.processEvents()
             grid_width_collapsed = int(page.compare_grid_widget.width())
             self.assertAlmostEqual(grid_width_collapsed, grid_width_expanded, delta=2)
-            self.assertTrue(page.compare_drawer.geometry().intersects(page.compare_grid_widget.geometry()))
+            self.assertFalse(page.compare_drawer.geometry().intersects(page.compare_grid_widget.geometry()))
             self.assertLessEqual(int(page.compare_drawer.x()), 2)
+            self.assertGreaterEqual(int(page.compare_grid_widget.x()), int(page.compare_drawer.width()))
+
+    def test_compare_drawer_is_closed_by_default_on_compare_tab(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_compare_drawer_default_closed_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            page.analysis_tabs.setCurrentWidget(page.compare_tab)
+            page.show()
+            self.app.processEvents()
+            self.assertFalse(bool(page._compare_drawer_expanded))
+            self.assertLessEqual(int(page.compare_drawer.width()), 96)
+            self.assertEqual(int(page.compare_drawer_stack.currentIndex()), 1)
 
     @unittest.skipIf(QTest is None or Qt is None, "Qt test utilities are required")
     def test_compare_scrim_click_collapses_expanded_drawer(self) -> None:
@@ -635,6 +689,96 @@ class AnalyzerCompareUiTests(unittest.TestCase):
             QTest.mouseDClick(slot_frame, Qt.LeftButton, pos=slot_frame.rect().center())
             self.app.processEvents()
             self.assertIn(page._maximized_plot_slots.get("compare"), {"A", "B", "C", "D"})
+
+    @unittest.skipIf(QTest is None or Qt is None, "Qt test utilities are required")
+    def test_compare_focus_toggle_restores_on_same_tile_and_switches_on_other_tile(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_compare_focus_toggle_switch_restore_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            page.analysis_tabs.setCurrentWidget(page.compare_tab)
+            page.show()
+            self.app.processEvents()
+            page._set_compare_drawer_expanded(False, animated=False)
+            self.app.processEvents()
+
+            tile_primary = page._compare_stage_panels["A"]["heatmap_canvas"]
+            primary_slot = str(tile_primary.property("analyzerPlotTileSlot") or "").strip().upper()
+            self.assertIn(primary_slot, {"A", "B", "C", "D"})
+            QTest.mouseDClick(tile_primary, Qt.LeftButton, pos=tile_primary.rect().center())
+            self.app.processEvents()
+            self.assertEqual(str(page._maximized_plot_slots.get("compare") or ""), primary_slot)
+
+            other_slot = "B" if primary_slot != "B" else "C"
+            page._toggle_plot_tile_maximize("compare", other_slot)
+            self.app.processEvents()
+            self.assertEqual(str(page._maximized_plot_slots.get("compare") or ""), other_slot)
+
+            panel_other = page._compare_stage_panels[other_slot]
+            tile_other = panel_other["frame"]
+            QTest.mouseDClick(tile_other, Qt.LeftButton, pos=tile_other.rect().center())
+            self.app.processEvents()
+            self.assertIsNone(page._maximized_plot_slots.get("compare"))
+
+            page._set_compare_drawer_expanded(True, animated=False)
+            self.app.processEvents()
+            QTest.mouseDClick(tile_primary, Qt.LeftButton, pos=tile_primary.rect().center())
+            self.app.processEvents()
+            self.assertIsNone(page._maximized_plot_slots.get("compare"))
+
+    @unittest.skipIf(QTest is None or Qt is None, "Qt test utilities are required")
+    def test_compare_slot_cell_shows_pin_icon_when_candidate_is_pinned(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_compare_pin_icon_slot_cell_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            payload = self._sample_runs_payload("P001")
+            page._apply_runs_payload(payload)
+            page._set_compare_candidates([payload["runs"][0]])
+            pinned_row = dict(payload["runs"][0])
+            token = page._version_pin_token(page._version_pin_identity(pinned_row))
+            self.assertTrue(token)
+            page._pinned_version_tokens.add(token)
+            page._apply_pin_state_to_rows()
+            page._update_compare_slots()
+            self.app.processEvents()
+            slot_col = _col_index(page.compare_slots_table, "Slot")
+            slot_item = page.compare_slots_table.item(0, slot_col)
+            self.assertIsNotNone(slot_item)
+            assert slot_item is not None
+            self.assertFalse(slot_item.icon().isNull())
+
+    @unittest.skipIf(QTest is None or Qt is None, "Qt test utilities are required")
+    def test_compare_remove_selected_respects_pin_guard_and_removes_unpinned_row(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_compare_remove_selected_pin_guard_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            payload = self._sample_runs_payload("P001")
+            page._apply_runs_payload(payload)
+            page._set_compare_candidates(payload["runs"])
+            pinned_row = dict(payload["runs"][0])
+            token = page._version_pin_token(page._version_pin_identity(pinned_row))
+            self.assertTrue(token)
+            page._pinned_version_tokens.add(token)
+            page._apply_pin_state_to_rows()
+            page._update_compare_slots()
+            page.analysis_tabs.setCurrentWidget(page.compare_tab)
+            page.show()
+            self.app.processEvents()
+
+            page.compare_slots_table.selectRow(0)
+            self.app.processEvents()
+            self.assertFalse(page.compare_remove_selected_btn.isEnabled())
+            self.assertIn("Unpin to remove", str(page.compare_remove_selected_btn.toolTip() or ""))
+
+            page.compare_slots_table.selectRow(1)
+            self.app.processEvents()
+            self.assertTrue(page.compare_remove_selected_btn.isEnabled())
+            QTest.mouseClick(page.compare_remove_selected_btn, Qt.LeftButton)
+            self.app.processEvents()
+            slot_col = _col_index(page.compare_slots_table, "Slot")
+            removed_row_item = page.compare_slots_table.item(1, slot_col)
+            self.assertIsNotNone(removed_row_item)
+            assert removed_row_item is not None
+            self.assertEqual(str(removed_row_item.text() or ""), "V---")
 
     @unittest.skipIf(QTest is None or Qt is None, "Qt test utilities are required")
     def test_compare_drawer_refactor_keeps_add_remove_controls_interactive(self) -> None:

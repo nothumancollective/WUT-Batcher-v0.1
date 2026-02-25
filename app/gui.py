@@ -10334,6 +10334,9 @@ class AnalysePage(QWidget):
         return panel if isinstance(panel, dict) else None
 
     def _compare_panel_slot(self, panel: Mapping[str, Any]) -> str:
+        for slot_key, candidate in self._compare_stage_panels.items():
+            if isinstance(candidate, dict) and candidate is panel:
+                return str(slot_key or "").strip().upper()
         panel_id = str(panel.get("panel_id") or "").strip()
         return str(self._plot_panel_slot_token(panel_id) or "").strip().upper()
 

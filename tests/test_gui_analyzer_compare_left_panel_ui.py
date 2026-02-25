@@ -150,6 +150,8 @@ class AnalyzerCompareLeftPanelUiTests(unittest.TestCase):
             page._set_compare_candidates(self._sample_candidates())
             page.show()
             self.app.processEvents()
+            page._set_compare_drawer_expanded(True)
+            self.app.processEvents()
             for width, height in ((1920, 1080), (1366, 768), (1100, 700)):
                 page.resize(width, height)
                 self.app.processEvents()
@@ -157,6 +159,7 @@ class AnalyzerCompareLeftPanelUiTests(unittest.TestCase):
                 expanded_width = int(page.compare_drawer.width())
                 self.assertGreaterEqual(expanded_width, int(workspace_width * 0.50))
                 self.assertLessEqual(expanded_width, int(workspace_width * 0.72))
+                self.assertEqual(page.compare_slots_table.horizontalScrollBarPolicy(), Qt.ScrollBarAsNeeded)
             page._set_compare_drawer_expanded(False)
             self.app.processEvents()
             self.assertGreaterEqual(int(page.compare_drawer.width()), 72)
