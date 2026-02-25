@@ -65,6 +65,29 @@ class CliRunSampleTests(unittest.TestCase):
             self.assertFalse(payload["ok"])
             self.assertEqual(payload["error"], "real_run_requested_but_tools_unavailable")
 
+    def test_run_sample_library_override_does_not_persist_user_settings(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            library_root = Path(tmp_dir) / "library"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "app",
+                    "run-sample",
+                    "--dry-run",
+                    "--library-root",
+                    str(library_root),
+                ],
+                env=self._isolated_env(tmp_dir),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, msg=result.stdout + "\n" + result.stderr)
+            settings_path = Path(tmp_dir) / ".wut_batcher" / "config.json"
+            self.assertFalse(settings_path.exists(), msg=f"unexpected settings persistence at {settings_path}")
+
 
 if __name__ == "__main__":
     unittest.main()

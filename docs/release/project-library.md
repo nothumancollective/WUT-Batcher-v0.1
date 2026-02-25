@@ -93,3 +93,14 @@ Choice rationale:
 - Every project DB path must be inside project folder (`db/project.sqlite`).
 - Every runtime/export/log path for project runs must resolve inside that project folder (except explicit external tool execution paths).
 - Path generation must be centralized in one authoritative storage module.
+
+## 9) Library Root Selection Rules (GUI vs tests/CLI)
+
+- GUI/default app settings:
+  - Library root is read from user settings store (`~/.wut_batcher/config.json`).
+  - Default when unset is Desktop `WUT Project Library` (fallback: `~/WUT Project Library`).
+- Command/test overrides:
+  - CLI options that accept `--library-root` (`run-sample`, `dataset-sync-global`, `compat-verify`) now use isolated temporary settings stores.
+  - These command-scoped overrides must not persist to user GUI settings.
+- Safety rule:
+  - The app must not silently rewrite a user’s configured library root just because a test/sample command used an alternate root.

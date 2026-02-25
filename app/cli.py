@@ -7,7 +7,8 @@ import json
 import os
 from pathlib import Path
 import sqlite3
-from typing import Any, Dict, Optional
+import tempfile
+from typing import Any, Dict, Mapping, Optional
 
 from app.models import AppConfig, Batch, Project
 from app.services import OrchestratorService
@@ -34,6 +35,19 @@ def _is_executable_path(path: Optional[str]) -> bool:
         return False
     candidate = Path(path).expanduser()
     return candidate.exists() and candidate.is_file() and os.access(candidate, os.X_OK)
+
+
+def _settings_store_for_library_root_override(
+    *,
+    base_settings: UserSettings,
+    library_root: str | Path,
+) -> SettingsStore:
+    override_root = str(Path(str(library_root)).expanduser())
+    override_settings = dataclasses.replace(base_settings, library_root=override_root)
+    temp_dir = Path(tempfile.mkdtemp(prefix="wut_cli_library_root_"))
+    override_store = SettingsStore(temp_dir / "settings.json")
+    override_store.save(override_settings)
+    return override_store
 
 
 def _ath_experiment_has_failures(summary: Mapping[str, Any]) -> bool:
@@ -162,19 +176,10 @@ def cmd_dataset_sync_global(args: argparse.Namespace) -> int:
     settings_store = SettingsStore()
     settings = settings_store.load()
     if args.library_root:
-        settings = UserSettings(
+        settings_store = _settings_store_for_library_root_override(
+            base_settings=settings,
             library_root=args.library_root,
-            ath_exe=settings.ath_exe,
-            akabak_exe=settings.akabak_exe,
-            vacs_exe=settings.vacs_exe,
-            template_cfg=settings.template_cfg,
-            background_automation_mode=bool(getattr(settings, "background_automation_mode", True)),
-            simulation_timeout_minutes=int(
-                getattr(settings, "simulation_timeout_minutes", SIMULATION_TIMEOUT_MINUTES_DEFAULT)
-                or SIMULATION_TIMEOUT_MINUTES_DEFAULT
-            ),
         )
-        settings_store.save(settings)
     service = OrchestratorService(settings_store=settings_store)
     summary = service.sync_global_db(max_items_per_project=args.max_items_per_project)
     print(json.dumps(summary, indent=2, ensure_ascii=False, default=_json_default))
@@ -224,19 +229,10 @@ def cmd_run_sample(args: argparse.Namespace) -> int:
     settings_store = SettingsStore()
     settings = settings_store.load()
     if args.library_root:
-        settings = UserSettings(
+        settings_store = _settings_store_for_library_root_override(
+            base_settings=settings,
             library_root=args.library_root,
-            ath_exe=settings.ath_exe,
-            akabak_exe=settings.akabak_exe,
-            vacs_exe=settings.vacs_exe,
-            template_cfg=settings.template_cfg,
-            background_automation_mode=bool(getattr(settings, "background_automation_mode", True)),
-            simulation_timeout_minutes=int(
-                getattr(settings, "simulation_timeout_minutes", SIMULATION_TIMEOUT_MINUTES_DEFAULT)
-                or SIMULATION_TIMEOUT_MINUTES_DEFAULT
-            ),
         )
-        settings_store.save(settings)
     service = OrchestratorService(settings_store=settings_store)
 
     tool_paths = {
@@ -380,19 +376,10 @@ def cmd_compat_verify(args: argparse.Namespace) -> int:
     settings_store = SettingsStore()
     settings = settings_store.load()
     if args.library_root:
-        settings = UserSettings(
+        settings_store = _settings_store_for_library_root_override(
+            base_settings=settings,
             library_root=args.library_root,
-            ath_exe=settings.ath_exe,
-            akabak_exe=settings.akabak_exe,
-            vacs_exe=settings.vacs_exe,
-            template_cfg=settings.template_cfg,
-            background_automation_mode=bool(getattr(settings, "background_automation_mode", True)),
-            simulation_timeout_minutes=int(
-                getattr(settings, "simulation_timeout_minutes", SIMULATION_TIMEOUT_MINUTES_DEFAULT)
-                or SIMULATION_TIMEOUT_MINUTES_DEFAULT
-            ),
         )
-        settings_store.save(settings)
     service = OrchestratorService(settings_store=settings_store)
 
     project_id = args.project_id or "P_COMPAT"
