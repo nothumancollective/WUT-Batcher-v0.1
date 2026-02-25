@@ -34,6 +34,23 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(parsed.horn_height_mm, 140.0)
             self.assertIn("Length=320.5", parsed.raw_line)
 
+    def test_ath_dimension_parser_accepts_split_lines(self) -> None:
+        stdout_text = "\n".join(
+            [
+                "ATH run started",
+                "Final Length = 111.0 mm",
+                "Final Width = 222.0 mm",
+                "Final Height = 333.0 mm",
+            ]
+        )
+        parsed = parse_ath_dimensions(stdout_text)
+        self.assertEqual(parsed.horn_length_mm, 111.0)
+        self.assertEqual(parsed.horn_width_mm, 222.0)
+        self.assertEqual(parsed.horn_height_mm, 333.0)
+        self.assertIn("Final Length", parsed.raw_line)
+        self.assertIn("Final Width", parsed.raw_line)
+        self.assertIn("Final Height", parsed.raw_line)
+
     @unittest.skipUnless(sys.platform.startswith("win"), "Windows-only process-tree timeout test")
     def test_timeout_kills_process_tree(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

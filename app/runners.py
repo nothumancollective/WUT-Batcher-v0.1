@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+import math
 import re
 import os
 import subprocess
@@ -47,31 +48,41 @@ class AthDimensions:
 
 
 def parse_ath_dimensions(stdout_text: str) -> AthDimensions:
-    length = None
-    width = None
-    height = None
+    length: Optional[float] = None
+    width: Optional[float] = None
+    height: Optional[float] = None
     raw = ""
+    captured_lines: List[str] = []
     for line in stdout_text.splitlines():
         line_matches = list(_ATH_DIM_RE.finditer(line))
         if not line_matches:
             continue
-        lowered = line.lower()
-        if not ("length" in lowered and "width" in lowered and "height" in lowered):
-            continue
-        raw = line.strip()
+        stripped = line.strip()
+        updated_any = False
         for match in line_matches:
             label = match.group(1).lower()
             try:
                 value = float(match.group(2).replace(",", "."))
             except ValueError:
                 continue
+            if not math.isfinite(value):
+                continue
+            updated_any = True
             if label == "length":
                 length = value
             elif label == "width":
                 width = value
             elif label == "height":
                 height = value
-        break
+        if updated_any and stripped:
+            captured_lines.append(stripped)
+        lowered = line.lower()
+        if updated_any and ("length" in lowered and "width" in lowered and "height" in lowered):
+            raw = stripped
+        if None not in (length, width, height):
+            if not raw:
+                raw = " | ".join(captured_lines[-3:])
+            break
     return AthDimensions(
         horn_length_mm=length,
         horn_width_mm=width,

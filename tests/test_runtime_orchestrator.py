@@ -29,6 +29,17 @@ def _project_db_path(project_root: Path) -> Path:
     return legacy
 
 
+def _library_db_path(library_root: Path) -> Path:
+    root = Path(library_root)
+    if str(root.name).lower() == "projects":
+        root = root.parent
+    preferred = root / "library.sqlite"
+    legacy = root / "global.sqlite"
+    if preferred.exists() or not legacy.exists():
+        return preferred
+    return legacy
+
+
 class RuntimeOrchestratorTests(unittest.TestCase):
     def test_default_polar_export_specs_use_h_v_d_inclinations(self) -> None:
         specs = _resolve_export_specs({"auto_default_polar_exports": True})
@@ -683,9 +694,32 @@ class RuntimeOrchestratorTests(unittest.TestCase):
                 dims_count = conn.execute("SELECT COUNT(*) FROM ath_dimensions").fetchone()[0]
                 run_count = conn.execute("SELECT COUNT(*) FROM runs").fetchone()[0]
                 run_status = conn.execute("SELECT status FROM runs ORDER BY started_at DESC LIMIT 1").fetchone()[0]
+                version_dims = conn.execute(
+                    "SELECT ath_length_mm, ath_width_mm, ath_height_mm FROM versions WHERE version_id = ?",
+                    (summary.versions[0],),
+                ).fetchone()
+            library_db = _library_db_path(projects_root)
+            self.assertTrue(library_db.exists())
+            with closing(sqlite3.connect(str(library_db))) as conn:
+                library_dims_count = conn.execute("SELECT COUNT(*) FROM ath_dimensions").fetchone()[0]
+                library_version_dims = conn.execute(
+                    "SELECT ath_length_mm, ath_width_mm, ath_height_mm FROM versions WHERE version_id = ?",
+                    (summary.versions[0],),
+                ).fetchone()
             self.assertEqual(dims_count, 1)
             self.assertEqual(int(run_count), 1)
             self.assertEqual(str(run_status), "succeeded")
+            self.assertIsNotNone(version_dims)
+            assert version_dims is not None
+            self.assertAlmostEqual(float(version_dims[0]), 111.0, places=3)
+            self.assertAlmostEqual(float(version_dims[1]), 222.0, places=3)
+            self.assertAlmostEqual(float(version_dims[2]), 333.0, places=3)
+            self.assertEqual(int(library_dims_count), 1)
+            self.assertIsNotNone(library_version_dims)
+            assert library_version_dims is not None
+            self.assertAlmostEqual(float(library_version_dims[0]), 111.0, places=3)
+            self.assertAlmostEqual(float(library_version_dims[1]), 222.0, places=3)
+            self.assertAlmostEqual(float(library_version_dims[2]), 333.0, places=3)
 
     def test_pipeline_ingests_vacs_txt_into_sql(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

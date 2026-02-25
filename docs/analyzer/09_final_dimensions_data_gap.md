@@ -28,5 +28,37 @@ Scope: Analyzer read-side verification only (no Runner/export ingest changes).
 ## Conclusion
 
 - Analyzer now displays final dimensions immediately when those DB fields are present in payload.
-- In the local verification datasets, dimensions are absent, so the dimensions line correctly remains hidden.
+- In the local verification datasets used in that audit, dimensions were absent, so no populated dimensions value was shown.
 - No fake dimensions are generated in UI.
+
+## 2026-02-25 write-side correction (runner + DB)
+
+### Root cause on write path
+
+- ATH dimension persistence in runtime was gated by `dims.raw_line`.
+- The parser accepted only a single-line pattern containing `Length + Width + Height` together.
+- If ATH printed dimensions across multiple lines, persistence could be skipped even when numeric values existed.
+
+### Fixed behavior
+
+- `parse_ath_dimensions` now accepts split-line dimension output and reconstructs a raw trace text.
+- Runtime writes dimensions when all three numeric values are present.
+- This write is executed as the first export-data persistence step after ATH stage completion, before downstream export ingestion.
+
+### DB fields written (project + library DB)
+
+- Table `ath_dimensions`:
+  - `length_mm`
+  - `width_mm`
+  - `height_mm`
+- Table `versions`:
+  - `ath_length_mm`
+  - `ath_width_mm`
+  - `ath_height_mm`
+- Scope guard for version update was tightened to include project and batch keys.
+
+### Version Information UI mapping (current)
+
+- Row label: `Dim (LxWxH)`
+- Row value format: `{L:.1f} × {W:.1f} × {H:.1f} mm`
+- Missing dimensions: `—` with tooltip `Not available`.

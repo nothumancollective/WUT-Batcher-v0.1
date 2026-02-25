@@ -1304,12 +1304,16 @@ class SqlDatasetStore:
                 UPDATE versions
                 SET ath_length_mm = ?, ath_width_mm = ?, ath_height_mm = ?
                 WHERE version_id = ?
+                  AND project_id = ?
+                  AND batch_id = ?
                 """,
                 (
                     float(length_mm) if length_mm is not None else None,
                     float(width_mm) if width_mm is not None else None,
                     float(height_mm) if height_mm is not None else None,
                     version_id,
+                    project_id,
+                    batch_id,
                 ),
             )
 

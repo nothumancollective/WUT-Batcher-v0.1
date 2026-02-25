@@ -1889,7 +1889,16 @@ def run_batch_pipeline(
 
                 ath_stdout = Path(ath_result.stdout_log).read_text(encoding="utf-8")
                 dims = parse_ath_dimensions(ath_stdout)
-                if dims.raw_line:
+                # Persist final dimensions before downstream export/ingest stages.
+                if None not in (dims.horn_length_mm, dims.horn_width_mm, dims.horn_height_mm):
+                    raw_line = (
+                        dims.raw_line
+                        or (
+                            f"Length={float(dims.horn_length_mm):.3f} "
+                            f"Width={float(dims.horn_width_mm):.3f} "
+                            f"Height={float(dims.horn_height_mm):.3f}"
+                        )
+                    )
                     dims_result = writer.write_ath_dimensions(
                         [
                             {
@@ -1900,7 +1909,7 @@ def run_batch_pipeline(
                                 "horn_length_mm": dims.horn_length_mm,
                                 "horn_width_mm": dims.horn_width_mm,
                                 "horn_height_mm": dims.horn_height_mm,
-                                "raw_line": dims.raw_line,
+                                "raw_line": raw_line,
                                 "source_file": ath_result.stdout_log,
                             }
                         ]
