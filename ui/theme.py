@@ -218,6 +218,8 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         border-bottom: 1px solid #C3CBD8;
         border-left: 1px solid #C3CBD8;
         border-right: 1px solid #C3CBD8;
+        margin-left: 0px;
+        margin-right: 0px;
     }}
     QToolButton[analyzerPlaneToggle="true"][analyzerPlaneSegment="middle"],
     QToolButton[analyzerPlaneToggle="true"][analyzerPlaneSegment="last"] {{

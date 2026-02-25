@@ -194,6 +194,8 @@ class AnalyzerPageUiTests(unittest.TestCase):
         self.assertIn("border-right: 1px solid #C3CBD8;", css)
         self.assertIn("border-top: 1px solid #C3CBD8;", css)
         self.assertIn("border-bottom: 1px solid #C3CBD8;", css)
+        self.assertIn("margin-left: 0px;", css)
+        self.assertIn("margin-right: 0px;", css)
 
     def test_version_info_metric_values_are_right_aligned_for_compact_scanability(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_ui2x_metric_alignment_") as tmp:
@@ -773,7 +775,21 @@ class AnalyzerPageUiTests(unittest.TestCase):
             self.assertFalse(bool(page.version_dims_label.isHidden()))
             self.assertEqual(str(page.version_dims_label.text() or ""), "L×M×H  123.4 × 56.7 × 89.0 mm")
 
-            payload["ath_width_mm"] = None
+            payload = {
+                "project_id": "P001",
+                "batch_id": "B001",
+                "version_id": "V001",
+                "final_length_mm": "123,44 mm",
+                "final_width_mm": "56,66mm",
+                "final_height_mm": "89,01",
+            }
+            page._update_version_information_panel(payload)
+            self.assertFalse(bool(page.version_dims_label.isHidden()))
+            self.assertIn("123.4", str(page.version_dims_label.text() or ""))
+            self.assertIn("56.7", str(page.version_dims_label.text() or ""))
+            self.assertIn("89.0", str(page.version_dims_label.text() or ""))
+
+            payload["final_width_mm"] = None
             page._update_version_information_panel(payload)
             self.assertTrue(bool(page.version_dims_label.isHidden()))
             self.assertEqual(str(page.version_dims_label.text() or ""), "")

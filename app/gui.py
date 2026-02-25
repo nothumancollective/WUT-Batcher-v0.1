@@ -11704,6 +11704,28 @@ class AnalysePage(QWidget):
         digits = int(dict(VERSION_INFO_METRIC_META.get(token, {}) or {}).get("digits", 2) or 2)
         return self._format_float(value, digits)
 
+    @staticmethod
+    def _coerce_dimension_mm(*values: Any) -> Optional[float]:
+        for raw in values:
+            if raw is None:
+                continue
+            try:
+                numeric = float(raw)
+            except Exception:
+                text = str(raw or "").strip()
+                if not text:
+                    continue
+                match = re.search(r"[-+]?\d+(?:[.,]\d+)?", text)
+                if not match:
+                    continue
+                try:
+                    numeric = float(str(match.group(0)).replace(",", "."))
+                except Exception:
+                    continue
+            if math.isfinite(float(numeric)):
+                return float(numeric)
+        return None
+
     def _sync_version_metric_rows(self, data: Dict[str, Any]) -> None:
         metric_keys = self._stage_version_metric_keys()
         hint = "Compute KPIs to populate this metric."
@@ -11751,9 +11773,21 @@ class AnalysePage(QWidget):
             self._update_version_note_counter(remaining=self._version_note_max_chars)
             return
 
-        length_mm = data.get("ath_length_mm")
-        width_mm = data.get("ath_width_mm")
-        height_mm = data.get("ath_height_mm")
+        length_mm = self._coerce_dimension_mm(
+            data.get("ath_length_mm"),
+            data.get("final_length_mm"),
+            data.get("length_mm"),
+        )
+        width_mm = self._coerce_dimension_mm(
+            data.get("ath_width_mm"),
+            data.get("final_width_mm"),
+            data.get("width_mm"),
+        )
+        height_mm = self._coerce_dimension_mm(
+            data.get("ath_height_mm"),
+            data.get("final_height_mm"),
+            data.get("height_mm"),
+        )
         if None in (length_mm, width_mm, height_mm):
             self.version_dims_label.set_full_text("")
             self.version_dims_label.setVisible(False)

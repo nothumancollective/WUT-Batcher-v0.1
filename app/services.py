@@ -213,6 +213,24 @@ def _safe_float_or_none(raw: Any) -> Optional[float]:
         return None
 
 
+def _safe_mm_value_or_none(raw: Any) -> Optional[float]:
+    numeric = _safe_float_or_none(raw)
+    if numeric is not None and math.isfinite(float(numeric)):
+        return float(numeric)
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    match = re.search(r"[-+]?\d+(?:[.,]\d+)?", text)
+    if not match:
+        return None
+    token = str(match.group(0)).replace(",", ".")
+    try:
+        numeric = float(token)
+    except Exception:
+        return None
+    return float(numeric) if math.isfinite(float(numeric)) else None
+
+
 def _safe_json_load_any(raw: Any) -> Any:
     try:
         return json.loads(str(raw or "null"))
@@ -2134,6 +2152,11 @@ class OrchestratorService:
                         "SELECT 1 FROM sqlite_master WHERE type='table' AND name='analyzer_version_notes' LIMIT 1"
                     ).fetchone()
                 )
+                has_experiment_metrics_table = bool(
+                    conn.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='experiment_metrics' LIMIT 1"
+                    ).fetchone()
+                )
                 batch_row = conn.execute(
                     (
                         """
@@ -2189,9 +2212,9 @@ class OrchestratorService:
                         if not version_token:
                             continue
                         version_meta_by_version[version_token] = {
-                            "ath_length_mm": _safe_float_or_none(version_row["ath_length_mm"]),
-                            "ath_width_mm": _safe_float_or_none(version_row["ath_width_mm"]),
-                            "ath_height_mm": _safe_float_or_none(version_row["ath_height_mm"]),
+                            "ath_length_mm": _safe_mm_value_or_none(version_row["ath_length_mm"]),
+                            "ath_width_mm": _safe_mm_value_or_none(version_row["ath_width_mm"]),
+                            "ath_height_mm": _safe_mm_value_or_none(version_row["ath_height_mm"]),
                             "sweep_parameters": _snapshot_sweep_parameters(version_row["resolved_parameters_snapshot"]),
                         }
 
@@ -2240,13 +2263,109 @@ class OrchestratorService:
                         if not version_token:
                             continue
                         dims_payload = {
-                            "ath_length_mm": _safe_float_or_none(ath_row["length_mm"]),
-                            "ath_width_mm": _safe_float_or_none(ath_row["width_mm"]),
-                            "ath_height_mm": _safe_float_or_none(ath_row["height_mm"]),
+                            "ath_length_mm": _safe_mm_value_or_none(ath_row["length_mm"]),
+                            "ath_width_mm": _safe_mm_value_or_none(ath_row["width_mm"]),
+                            "ath_height_mm": _safe_mm_value_or_none(ath_row["height_mm"]),
                         }
                         ath_dims_by_identity[(run_token, version_token)] = dict(dims_payload)
                         if version_token not in ath_dims_by_version:
                             ath_dims_by_version[version_token] = dict(dims_payload)
+                    # Legacy datasets can carry ath_dimensions rows keyed by run/version
+                    # with stale or mismatched project/batch fields.
+                    relaxed_identity_keys = [
+                        key
+                        for key in measurement_by_identity.keys()
+                        if key not in ath_dims_by_identity and str(key[1] or "").strip()
+                    ]
+                    if relaxed_identity_keys:
+                        relaxed_run_tokens = sorted({str(key[0] or "").strip() for key in relaxed_identity_keys if str(key[0] or "").strip()})
+                        relaxed_version_tokens = sorted(
+                            {str(key[1] or "").strip() for key in relaxed_identity_keys if str(key[1] or "").strip()}
+                        )
+                        relaxed_where: List[str] = []
+                        relaxed_params: List[Any] = []
+                        if relaxed_version_tokens:
+                            placeholders = ", ".join("?" for _ in relaxed_version_tokens)
+                            relaxed_where.append(f"version_id IN ({placeholders})")
+                            relaxed_params.extend(relaxed_version_tokens)
+                        if relaxed_run_tokens:
+                            run_placeholders = ", ".join("?" for _ in relaxed_run_tokens)
+                            relaxed_where.append(f"COALESCE(run_id, '') IN ({run_placeholders})")
+                            relaxed_params.extend(relaxed_run_tokens)
+                        if relaxed_where:
+                            relaxed_rows = conn.execute(
+                                f"""
+                                SELECT
+                                    COALESCE(run_id, '') AS run_id,
+                                    version_id,
+                                    length_mm,
+                                    width_mm,
+                                    height_mm
+                                FROM ath_dimensions
+                                WHERE {" AND ".join(relaxed_where)}
+                                """,
+                                tuple(relaxed_params),
+                            ).fetchall()
+                            for ath_row in relaxed_rows:
+                                version_token = str(ath_row["version_id"] or "").strip()
+                                run_token = str(ath_row["run_id"] or "").strip()
+                                if not version_token:
+                                    continue
+                                key = (run_token, version_token)
+                                if key in ath_dims_by_identity:
+                                    continue
+                                dims_payload = {
+                                    "ath_length_mm": _safe_mm_value_or_none(ath_row["length_mm"]),
+                                    "ath_width_mm": _safe_mm_value_or_none(ath_row["width_mm"]),
+                                    "ath_height_mm": _safe_mm_value_or_none(ath_row["height_mm"]),
+                                }
+                                ath_dims_by_identity[key] = dict(dims_payload)
+                                if version_token not in ath_dims_by_version:
+                                    ath_dims_by_version[version_token] = dict(dims_payload)
+
+                experiment_dims_by_run: Dict[str, Dict[str, Optional[float]]] = {}
+                if has_experiment_metrics_table:
+                    experiment_cols = {
+                        str(col["name"] or "").strip()
+                        for col in conn.execute("PRAGMA table_info(experiment_metrics)").fetchall()
+                    }
+                    required_cols = {"run_id", "final_length_mm", "final_width_mm", "final_height_mm"}
+                    if required_cols.issubset(experiment_cols):
+                        where_parts: List[str] = []
+                        where_params: List[Any] = []
+                        if "project_id" in experiment_cols:
+                            where_parts.append("project_id = ?")
+                            where_params.append(project_token)
+                        if "batch_id" in experiment_cols:
+                            where_parts.append("batch_id = ?")
+                            where_params.append(batch_token)
+                        where_sql = f"WHERE {' AND '.join(where_parts)}" if where_parts else ""
+                        experiment_rows = conn.execute(
+                            f"""
+                            SELECT
+                                COALESCE(run_id, '') AS run_id,
+                                final_length_mm,
+                                final_width_mm,
+                                final_height_mm
+                            FROM experiment_metrics
+                            {where_sql}
+                            """,
+                            tuple(where_params),
+                        ).fetchall()
+                        for metric_row in experiment_rows:
+                            run_token = str(metric_row["run_id"] or "").strip()
+                            if not run_token:
+                                continue
+                            dims_payload = {
+                                "ath_length_mm": _safe_mm_value_or_none(metric_row["final_length_mm"]),
+                                "ath_width_mm": _safe_mm_value_or_none(metric_row["final_width_mm"]),
+                                "ath_height_mm": _safe_mm_value_or_none(metric_row["final_height_mm"]),
+                            }
+                            dim_count = sum(1 for value in dims_payload.values() if value is not None)
+                            existing = dict(experiment_dims_by_run.get(run_token, {}) or {})
+                            existing_count = sum(1 for value in existing.values() if value is not None)
+                            if dim_count > existing_count:
+                                experiment_dims_by_run[run_token] = dict(dims_payload)
 
                 notes_by_version: Dict[str, Dict[str, Any]] = {}
                 if has_notes_table:
@@ -2333,13 +2452,21 @@ class OrchestratorService:
 
             ath_length_mm = identity_dims.get("ath_length_mm")
             if ath_length_mm is None:
-                ath_length_mm = _safe_float_or_none(version_meta.get("ath_length_mm"))
+                ath_length_mm = _safe_mm_value_or_none(version_meta.get("ath_length_mm"))
             ath_width_mm = identity_dims.get("ath_width_mm")
             if ath_width_mm is None:
-                ath_width_mm = _safe_float_or_none(version_meta.get("ath_width_mm"))
+                ath_width_mm = _safe_mm_value_or_none(version_meta.get("ath_width_mm"))
             ath_height_mm = identity_dims.get("ath_height_mm")
             if ath_height_mm is None:
-                ath_height_mm = _safe_float_or_none(version_meta.get("ath_height_mm"))
+                ath_height_mm = _safe_mm_value_or_none(version_meta.get("ath_height_mm"))
+            if None in (ath_length_mm, ath_width_mm, ath_height_mm):
+                experiment_dims = dict(experiment_dims_by_run.get(run_id, {}) or {})
+                if ath_length_mm is None:
+                    ath_length_mm = _safe_mm_value_or_none(experiment_dims.get("ath_length_mm"))
+                if ath_width_mm is None:
+                    ath_width_mm = _safe_mm_value_or_none(experiment_dims.get("ath_width_mm"))
+                if ath_height_mm is None:
+                    ath_height_mm = _safe_mm_value_or_none(experiment_dims.get("ath_height_mm"))
 
             result.append(
                 {

@@ -8,10 +8,12 @@ Scope: Analyzer read-side verification only (no Runner/export ingest changes).
 
 - Analyzer run listing already reads final dimensions from DB:
   - `app/services.py` selects `versions.ath_length_mm`, `versions.ath_width_mm`, `versions.ath_height_mm`.
-  - It also reads `ath_dimensions.length_mm/width_mm/height_mm` and now falls back by `version_id` when a run-level key does not match.
+  - It reads `ath_dimensions.length_mm/width_mm/height_mm` (strict project+batch scope) and now also falls back by `(run_id, version_id)` when legacy rows carry stale scope keys.
+  - If present, Analyzer also accepts `experiment_metrics.final_length_mm/final_width_mm/final_height_mm` by `run_id` as a final read-side fallback.
 - Version Information UI renders dimensions from the selected payload:
   - `app/gui.py` -> `_update_version_information_panel(...)`
-  - Display format: `LxMxH  <L> x <M> x <H> mm` (one decimal each) when all three values exist.
+  - Display format: `L×M×H  <L> × <M> × <H> mm` (one decimal each) when all three values exist.
+  - UI accepts `ath_*` keys plus fallback keys (`final_*`, `length/width/height`) and parses numeric strings like `123,4 mm`.
   - If any dimension is missing, the dimensions line is hidden (no placeholder text).
 
 ## DB verification performed

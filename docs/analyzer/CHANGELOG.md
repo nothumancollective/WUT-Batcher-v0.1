@@ -1,4 +1,13 @@
-﻿# Analyzer Docs â€” Changelog
+# Analyzer Docs â€” Changelog
+
+## 2026-02-25 (A/B/C rerun: runtime-validated polish)
+- Plane selector: fixed middle (`V`) checked-state overlap by resetting checked middle-segment margins, so all four selected edges render with the bright stroke in live UI rendering.
+- Final dimensions: hardened read-side fallback to recover `ath_dimensions` by `run_id/version_id` when legacy rows have mismatched scope keys, and added optional `experiment_metrics` (`final_*_mm`) fallback by run where present.
+- Final dimensions UI now accepts canonical and fallback payload keys (`ath_*`, `final_*`, raw `length/width/height`) and parses numeric strings with comma/`mm` suffixes before formatting `L×M×H ... mm`.
+- Headful Analyzer E2E probe (non-offscreen) verified:
+  - dimensions line visible from real DB read-side payload,
+  - High Contrast ON/OFF toggles tile-container fill (`transparent` vs normal fill) without touching Compare drawer styling,
+  - `V` segment shows bright left/right/top/bottom borders when selected.
 
 ## 2026-02-25 (Version Information: Final dimensions display + fallback)
 - Version Information now renders final dimensions as LxMxH  <L> x <M> x <H> mm with one decimal when all values are present.
@@ -146,7 +155,11 @@
 - Replaced the compare `StackAll` overlay layering with a safe side-by-side workspace layout so no full-area overlay widget can intercept plot/control events.
 - Kept drawer behavior (`~88 px` collapsed / `~360 px` expanded) with the same controls/content, but constrained event handling to the drawer rect only.
 - Added regression coverage that simulates real button clicks (`Add selected` + row `Remove`) and verifies shortlist mutation works end-to-end after the drawer refactor.
-- Updated compare drawer geometry checks to enforce non-overlapping drawer/grid behavior and expected grid-width response on collapse/expand.`r`n`r`n## 2026-02-24 (Plot UX controls: target-axis color + tile maximize + summary help text)
+- Updated compare drawer geometry checks to enforce non-overlapping drawer/grid behavior and expected grid-width response on collapse/expand.
+
+
+
+## 2026-02-24 (Plot UX controls: target-axis color + tile maximize + summary help text)
 - Added a global `Target axis color` control in `Display Advanced` with color picker wiring and persisted analysis-config key (`target_axis_color`).
 - Wired the selected target color through all relevant Analyzer renderers: heatmap target window shading/boundaries, curve threshold lines, and target-summary marker lines.
 - Added plot-tile double-click behavior (`Explorer`/`Compare`) to toggle maximize/restore inside the existing 2x2 workspace (no new windows).
@@ -1153,17 +1166,3 @@
   - metric-band smooth rendering config (`show`, `smooth`, `opacity`)
   - robust non-auto `e_sym_shape` y-range clamp under outlier input
   - resize probes (`1920x1080`, `1366x768`, `1100x700`) without exceptions.
-
-
-
-
-
-
-
-
-
-
-
-
-
-

@@ -4,6 +4,8 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 from pathlib import Path
+import shutil
+import sqlite3
 import tempfile
 import time
 import unittest
@@ -162,6 +164,75 @@ class AnalyzerServicesAnalysesTests(unittest.TestCase):
             )
             self.assertEqual(len(rows), 1)
             self.assertEqual(str(rows[0].get("version_note") or ""), "candidate looks stable")
+
+    def test_analyzer_runs_fall_back_to_run_version_ath_dimensions_when_scope_keys_mismatch(self) -> None:
+        tmp = Path(tempfile.mkdtemp(prefix="wut_analyzer_dims_fallback_"))
+        try:
+            service = _build_service(tmp)
+            project = service.create_project("Analyzer Dim Fallback", {})
+            paths = service.repo.project_paths(project.project_id, ensure=True)
+            dataset = TidyDatasetWriter(paths.project_dir, library_root=service.settings.library_root)
+            _write_run_with_cached_kpi(
+                dataset=dataset,
+                project_id=project.project_id,
+                batch_id="B001",
+                run_id="R001",
+                version_id="V001",
+                file_hash="hash_dims",
+                created_at=_iso_at(11),
+                aggregate={
+                    "b_pc_oct": 1.2,
+                    "e_bw": 0.7,
+                    "e_cov": 0.6,
+                    "r_spill": 0.08,
+                    "flags_count": 0,
+                    "flagged": False,
+                    "insufficient_coverage": False,
+                    "score_hint": 82.0,
+                },
+            )
+            project_db = paths.dataset_dir / "project.sqlite"
+            with sqlite3.connect(str(project_db)) as conn:
+                conn.execute(
+                    """
+                    INSERT INTO ath_dimensions (
+                        run_id, version_id, project_id, batch_id, length_mm, width_mm, height_mm, raw_line, source_file, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        "R001",
+                        "V001",
+                        "LEGACY_PROJECT",
+                        "LEGACY_BATCH",
+                        320.5,
+                        280.1,
+                        140.0,
+                        "",
+                        "legacy_ath.txt",
+                        _iso_at(12),
+                    ),
+                )
+                conn.commit()
+
+            rows = service.analyzer_list_polar_runs(
+                project_id=project.project_id,
+                batch_id="B001",
+                source="project",
+            )
+            self.assertEqual(len(rows), 1)
+            self.assertAlmostEqual(float(rows[0].get("ath_length_mm") or 0.0), 320.5, places=3)
+            self.assertAlmostEqual(float(rows[0].get("ath_width_mm") or 0.0), 280.1, places=3)
+            self.assertAlmostEqual(float(rows[0].get("ath_height_mm") or 0.0), 140.0, places=3)
+            del dataset
+        finally:
+            for _ in range(6):
+                try:
+                    shutil.rmtree(tmp)
+                    break
+                except PermissionError:
+                    time.sleep(0.2)
+            else:
+                shutil.rmtree(tmp, ignore_errors=True)
 
     def test_save_load_analysis_roundtrip_and_ordering(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_analyzer_analysis_") as tmp:
