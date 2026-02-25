@@ -8501,6 +8501,9 @@ class AnalysePage(QWidget):
         if not checked:
             return
         self._active_plane = str(plane_key or "H").strip().upper() or "H"
+        selected_btn = self._plane_buttons.get(self._active_plane)
+        if isinstance(selected_btn, QToolButton):
+            selected_btn.raise_()
         if str(self.compare_plane_combo.currentData() or "").strip().upper() != self._active_plane:
             self._set_combo_current_by_data(self.compare_plane_combo, self._active_plane)
         if self.analysis_tabs.currentWidget() is self.compare_tab:

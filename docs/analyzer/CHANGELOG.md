@@ -1,5 +1,10 @@
 ﻿# Analyzer Docs â€” Changelog
 
+## 2026-02-25 (Plane selector: middle-segment selected border consistency)
+- Added a selected-plane z-order guard so the active H/V/D segment is raised when toggled, preventing the middle (V) left edge from being visually swallowed.
+- Reinforced the checked middle-segment border rule in analyzer QSS for consistent H/V/D selected-state strokes.
+- Added a UI regression test that verifies the selected middle segment is raised when V is selected.
+
 ## 2026-02-25 (Display Advanced: High Contrast Plots toggle)
 - Added a dedicated Plot Tiles block in Display -> Advanced with High Contrast Plots (default ON).
 - Wired matrix canvas fill rendering (Explorer + Compare) so OFF makes tile fills transparent while preserving borders and gridlines.
@@ -1126,6 +1131,7 @@
   - metric-band smooth rendering config (`show`, `smooth`, `opacity`)
   - robust non-auto `e_sym_shape` y-range clamp under outlier input
   - resize probes (`1920x1080`, `1366x768`, `1100x700`) without exceptions.
+
 
 
 

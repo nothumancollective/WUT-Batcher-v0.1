@@ -213,6 +213,10 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         background-color: #2b2b2b;
         color: {c['text']};
     }}
+    QToolButton[analyzerPlaneToggle="true"][analyzerPlaneSegment="middle"]:checked {{
+        border-left-color: #9a9a9a;
+        border-right-color: #9a9a9a;
+    }}
     QToolButton[analyzerPlaneToggle="true"][analyzerPlaneSegment="middle"],
     QToolButton[analyzerPlaneToggle="true"][analyzerPlaneSegment="last"] {{
         margin-left: -1px;

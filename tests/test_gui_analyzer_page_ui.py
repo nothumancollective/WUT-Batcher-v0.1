@@ -175,6 +175,18 @@ class AnalyzerPageUiTests(unittest.TestCase):
             self.assertTrue(bool(page.custom_band_low_label.property("analyzerBandEdgeLabel")))
             self.assertTrue(bool(page.custom_band_high_label.property("analyzerBandEdgeLabel")))
 
+    def test_plane_middle_segment_is_raised_when_selected(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_ui2x_plane_middle_raise_") as tmp:
+            service = _build_service(Path(tmp))
+            page = AnalysePage(service=service)
+            v_button = page._plane_buttons["V"]
+            with patch.object(v_button, "raise_", wraps=v_button.raise_) as raise_mock:
+                v_button.setChecked(True)
+                self.app.processEvents()
+                self.assertEqual(str(page._active_plane), "V")
+                self.assertTrue(bool(v_button.isChecked()))
+                self.assertGreaterEqual(int(raise_mock.call_count), 1)
+
     def test_version_info_metric_values_are_right_aligned_for_compact_scanability(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_ui2x_metric_alignment_") as tmp:
             service = _build_service(Path(tmp))
