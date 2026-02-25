@@ -366,3 +366,27 @@ Date: 2026-02-25
 - Added settings-open entry logs for both call paths:
   - MainWindow settings gear
   - ProjectManager settings entry
+
+## 12) COM/threading audit for folder dialog crash (Phase 1)
+
+Date: 2026-02-25
+
+### Search results
+- Repo-wide searches for COM init calls returned no hits:
+  - `pythoncom`, `CoInitialize`, `CoInitializeEx`, `win32com`, `comtypes`.
+- No explicit COM apartment mode initialization was found in app startup or GUI modules.
+
+### Folder dialog callsites
+- Folder picker callsite:
+  - `SettingsDialog._choose_library_root()` -> `QFileDialog.getExistingDirectory(...)`.
+- `SettingsDialog` is opened from:
+  - `MainWindow._open_settings()` (top-bar gear path).
+  - `GuiController._open_settings_from_project_manager()` (ProjectManager settings path).
+
+### Threading notes
+- `SettingsDialog._choose_library_root()` is connected directly to a Qt button click in the dialog UI.
+- No background worker path was found invoking folder picker directly.
+- Existing diagnostics now log current Qt thread identity at folder-dialog entry.
+
+### Suspicion
+- Given user-reported hard termination and absence of Python tracebacks, the likely failure class is native shell dialog interaction (Qt native Windows dialog path) rather than a Python exception path.
