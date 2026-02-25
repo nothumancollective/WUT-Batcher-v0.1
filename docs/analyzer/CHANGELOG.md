@@ -1,5 +1,10 @@
 ﻿# Analyzer Docs â€” Changelog
 
+## 2026-02-25 (Version Information: Final Dimensions verification)
+- Verified Analyzer wiring is already present on read-side (app/services.py + app/gui.py) for ath_length_mm/ath_width_mm/ath_height_mm.
+- Audited local project.sqlite samples (44 DB files): no rows contain final-dim triples in versions or ath_results.
+- Documented the data-ingest gap in docs/analyzer/09_final_dimensions_data_gap.md; no fake UI values were introduced.
+
 ## 2026-02-25 (Plane selector: middle-segment selected border consistency)
 - Added a selected-plane z-order guard so the active H/V/D segment is raised when toggled, preventing the middle (V) left edge from being visually swallowed.
 - Reinforced the checked middle-segment border rule in analyzer QSS for consistent H/V/D selected-state strokes.
@@ -1131,6 +1136,7 @@
   - metric-band smooth rendering config (`show`, `smooth`, `opacity`)
   - robust non-auto `e_sym_shape` y-range clamp under outlier input
   - resize probes (`1920x1080`, `1366x768`, `1100x700`) without exceptions.
+
 
 
 
