@@ -6077,10 +6077,10 @@ class AnalysePage(QWidget):
         self._compare_stage_panels: Dict[str, Dict[str, Any]] = {}
         self._compare_overlay_curve_key = "beamwidth"
         self._compare_kpi_columns: List[Tuple[str, str]] = list(COMPARE_DEFAULT_KPI_COLUMNS)
-        self._compare_drawer_expanded = True
+        self._compare_drawer_expanded = False
         self._compare_drawer_collapsed_width = 88
         self._compare_drawer_expanded_width = 360
-        self._compare_drawer_current_width = int(self._compare_drawer_expanded_width)
+        self._compare_drawer_current_width = int(self._compare_drawer_collapsed_width)
         self._maximized_plot_slots: Dict[str, Optional[str]] = {"explorer": None, "compare": None}
         self._ath_visible_param_limit = 5
         self._active_plane = "H"
@@ -7585,8 +7585,6 @@ class AnalysePage(QWidget):
         if token == "compare" and bool(getattr(self, "_compare_drawer_expanded", False)):
             return
         current = str(self._maximized_plot_slots.get(token) or "").strip().upper()
-        if current and current != slot:
-            return
         self._maximized_plot_slots[token] = None if current == slot else slot
         self._reflow_plot_grid(token)
 

@@ -1,5 +1,10 @@
 ﻿# Analyzer Docs â€” Changelog
 
+## 2026-02-25 (Compare: default-collapsed drawer + focus toggle parity)
+- Set Compare drawer default state to collapsed on Analyzer startup and Compare entry (no implicit reopen).
+- Updated compare tile double-click maximize behavior to match Explorer: same tile toggles restore, different tile switches focused tile, while expanded-drawer guard remains active.
+
+
 ## 2026-02-25 (Compare drawer: final table readability + scrim interaction lock)
 - Removed the Compare shortlist `Selection` column and switched slot cells to swatch + version-only labels (`V###`), with missing-plane/pin metadata kept in tooltips.
 - Finalized overlay drawer behavior: full-workspace scrim in expanded mode (drawer above scrim above plots), stronger dim treatment, and click-to-collapse capture.
