@@ -56,7 +56,7 @@ from app.models import Batch, ParamSelection, Project, ProjectConstraints, Sweep
 from app.project_storage import ProjectRepository
 from app.runtime_orchestrator import RuntimeSummary, run_batch_pipeline
 from app.runners import AthRunner
-from app.storage_manager import StorageManager
+from app.storage_manager import LibraryState, StorageManager
 from app.settings_store import (
     SIMULATION_TIMEOUT_MINUTES_DEFAULT,
     SettingsStore,
@@ -1485,25 +1485,48 @@ class OrchestratorService:
     def __init__(self, settings_store: SettingsStore | None = None) -> None:
         self.settings_store = settings_store or SettingsStore()
         self.settings = self.settings_store.load()
-        self.storage = StorageManager(self.settings.library_root)
+        self.storage = StorageManager(UserSettings().library_root)
         self._bootstrap_library_root()
         self.compatibility = CompatibilityService()
 
     def reload_settings(self) -> UserSettings:
         self.settings = self.settings_store.load()
-        self.storage = StorageManager(self.settings.library_root)
         self._bootstrap_library_root()
         return self.settings
 
     def save_settings(self, settings: UserSettings) -> Dict[str, Any]:
         if LOGGER.isEnabledFor(logging.DEBUG):
             LOGGER.debug("save_settings start: requested_library_root=%s", str(settings.library_root))
-        self.settings_store.save(settings)
+        root_result = StorageManager.try_set_library_root(settings.library_root)
+        if not root_result.ok or root_result.manager is None or root_result.state is None:
+            return {
+                "saved": False,
+                "path": str(self.settings_store.path),
+                "validation": self.settings_store.validate(self.settings),
+                "error": str(root_result.error_message or "Could not switch Project Library Location."),
+            }
+
+        canonical_root = str(root_result.manager.paths.root)
+        persisted_settings = replace(settings, library_root=canonical_root)
+        try:
+            self.settings_store.save(persisted_settings)
+        except Exception as exc:
+            if LOGGER.isEnabledFor(logging.DEBUG):
+                LOGGER.debug("save_settings failed writing settings file.", exc_info=True)
+            return {
+                "saved": False,
+                "path": str(self.settings_store.path),
+                "validation": self.settings_store.validate(self.settings),
+                "error": self._settings_write_error_message(exc),
+            }
+
         if LOGGER.isEnabledFor(logging.DEBUG):
             LOGGER.debug("save_settings settings_store.write ok: path=%s", str(self.settings_store.path))
-        self.settings = settings
-        self.storage = StorageManager(self.settings.library_root)
-        self._bootstrap_library_root()
+        self._apply_library_state(
+            settings=persisted_settings,
+            manager=root_result.manager,
+            state=root_result.state,
+        )
         return {
             "saved": True,
             "path": str(self.settings_store.path),
@@ -1511,11 +1534,29 @@ class OrchestratorService:
         }
 
     def _bootstrap_library_root(self) -> None:
-        state = self.storage.ensure_library_root()
-        canonical_root = str(self.storage.paths.root)
-        if str(self.settings.library_root) != canonical_root:
-            self.settings = replace(self.settings, library_root=canonical_root)
-            self.settings_store.save(self.settings)
+        root_result = StorageManager.try_set_library_root(self.settings.library_root)
+        if not root_result.ok or root_result.manager is None or root_result.state is None:
+            raise RuntimeError(str(root_result.error_message or "Could not bootstrap Project Library Location."))
+        canonical_root = str(root_result.manager.paths.root)
+        bootstrapped_settings = self.settings
+        if str(bootstrapped_settings.library_root) != canonical_root:
+            bootstrapped_settings = replace(bootstrapped_settings, library_root=canonical_root)
+            self.settings_store.save(bootstrapped_settings)
+        self._apply_library_state(
+            settings=bootstrapped_settings,
+            manager=root_result.manager,
+            state=root_result.state,
+        )
+
+    def _apply_library_state(
+        self,
+        *,
+        settings: UserSettings,
+        manager: StorageManager,
+        state: LibraryState,
+    ) -> None:
+        self.settings = settings
+        self.storage = manager
         repo_root = self.storage.paths.projects_dir if use_project_library_storage() else self.storage.paths.root
         self.repo = ProjectRepository(repo_root)
         self.library_state = {
@@ -1527,6 +1568,14 @@ class OrchestratorService:
             "projects_root": str(repo_root),
             "use_project_library_storage": bool(use_project_library_storage()),
         }
+
+    @staticmethod
+    def _settings_write_error_message(exc: Exception) -> str:
+        if isinstance(exc, PermissionError):
+            return "Could not save settings file because access was denied."
+        if isinstance(exc, OSError):
+            return "Could not save settings file. Check disk space and folder permissions."
+        return "Could not save settings file."
 
     def validate_settings(self, settings: Optional[UserSettings] = None) -> Dict[str, str]:
         return self.settings_store.validate(settings or self.settings)
