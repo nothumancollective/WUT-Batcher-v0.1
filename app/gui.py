@@ -13209,6 +13209,9 @@ class MainWindow(QMainWindow):
         self._run_fullscreen_active = False
         self._window_state_before_run = Qt.WindowNoState
         self._window_topmost_before_run = False
+        self._draft_created_via = "manual"
+        self._draft_parent_batch_id: Optional[str] = None
+        self._draft_created_from_version_id: Optional[str] = None
 
         self.setWindowTitle("WUT Batcher")
         self.setMinimumSize(1280, 800)
@@ -13901,9 +13904,48 @@ class MainWindow(QMainWindow):
             self._sync_navigation_state()
             return
         self._exit_run_presentation()
+        self._set_draft_lineage_context(created_via="manual")
         self.batch_page.reset_draft()
         self._on_batch_draft_changed(self.batch_page._payload(include_name=False))
         self.stack.setCurrentWidget(self.batch_page)
+
+    def _set_draft_lineage_context(
+        self,
+        *,
+        created_via: str = "manual",
+        parent_batch_id: Optional[str] = None,
+        created_from_version_id: Optional[str] = None,
+    ) -> None:
+        created_via_token = str(created_via or "").strip().lower()
+        if created_via_token not in {"manual", "iterate", "clone"}:
+            created_via_token = "manual"
+        parent_batch_token = str(parent_batch_id or "").strip() or None
+        created_from_version_token = str(created_from_version_id or "").strip() or None
+        if created_via_token == "manual":
+            parent_batch_token = None
+            created_from_version_token = None
+        elif created_via_token == "clone":
+            created_from_version_token = None
+        self._draft_created_via = created_via_token
+        self._draft_parent_batch_id = parent_batch_token
+        self._draft_created_from_version_id = created_from_version_token
+
+    def _current_draft_lineage_payload(self) -> Dict[str, Any]:
+        created_via_token = str(getattr(self, "_draft_created_via", "manual") or "").strip().lower()
+        if created_via_token not in {"manual", "iterate", "clone"}:
+            created_via_token = "manual"
+        parent_batch_token = str(getattr(self, "_draft_parent_batch_id", "") or "").strip() or None
+        created_from_version_token = str(getattr(self, "_draft_created_from_version_id", "") or "").strip() or None
+        if created_via_token == "manual":
+            parent_batch_token = None
+            created_from_version_token = None
+        elif created_via_token == "clone":
+            created_from_version_token = None
+        return {
+            "created_via": created_via_token,
+            "parent_batch_id": parent_batch_token,
+            "created_from_version_id": created_from_version_token,
+        }
 
     def show_analyse(self) -> None:
         self._stop_preview_worker()
@@ -13960,7 +14002,15 @@ class MainWindow(QMainWindow):
             self._project_create_in_progress = False
             self.project_page.set_creating(False)
 
-    def _save_batch(self, payload: Dict[str, object], *, for_run: bool = False) -> Optional[str]:
+    def _save_batch(
+        self,
+        payload: Dict[str, object],
+        *,
+        for_run: bool = False,
+        created_via: Optional[str] = None,
+        parent_batch_id: Optional[str] = None,
+        created_from_version_id: Optional[str] = None,
+    ) -> Optional[str]:
         if self.current_project is None:
             self.set_status("No project loaded.")
             return None
@@ -14004,6 +14054,23 @@ class MainWindow(QMainWindow):
             ):
                 self.set_status("Batch save blocked by validation.")
                 return None
+        lineage = self._current_draft_lineage_payload()
+        if created_via is not None:
+            lineage["created_via"] = str(created_via or "").strip().lower()
+        if parent_batch_id is not None:
+            lineage["parent_batch_id"] = str(parent_batch_id or "").strip() or None
+        if created_from_version_id is not None:
+            lineage["created_from_version_id"] = str(created_from_version_id or "").strip() or None
+        created_via_token = str(lineage.get("created_via") or "manual").strip().lower()
+        if created_via_token not in {"manual", "iterate", "clone"}:
+            created_via_token = "manual"
+        parent_batch_token = str(lineage.get("parent_batch_id") or "").strip() or None
+        created_from_version_token = str(lineage.get("created_from_version_id") or "").strip() or None
+        if created_via_token == "manual":
+            parent_batch_token = None
+            created_from_version_token = None
+        elif created_via_token == "clone":
+            created_from_version_token = None
         summary = self.service.create_batch(
             project_id=self.current_project.project_id,
             batch_name=str(payload.get("batch_name", "")),
@@ -14011,6 +14078,9 @@ class MainWindow(QMainWindow):
             sweeps=dict(payload.get("sweeps", {}) or {}),
             sweep_mode=str(payload.get("sweep_mode", "single")),
             sim_export_params=dict(payload.get("sim_export_params", {}) or {}),
+            created_via=created_via_token,
+            parent_batch_id=parent_batch_token,
+            created_from_version_id=created_from_version_token,
         )
         self.set_status(
             f"Batch saved: {summary.batch_id}, versions={summary.version_count}",
@@ -14171,6 +14241,7 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             self.set_status(f"Edit Batch failed for {batch_id}", detail=str(exc))
             return
+        self._set_draft_lineage_context(created_via="manual")
         self.batch_page.load_from_batch(batch)
         self._on_batch_draft_changed(self.batch_page._payload(include_name=False))
         self.stack.setCurrentWidget(self.batch_page)
@@ -14241,7 +14312,13 @@ class MainWindow(QMainWindow):
             "sweep_mode": "single",
             "sim_export_params": dict(parent_export_payload),
         }
-        child_batch_id = self._save_batch(child_payload, for_run=False)
+        child_batch_id = self._save_batch(
+            child_payload,
+            for_run=False,
+            created_via="iterate",
+            parent_batch_id=batch_id,
+            created_from_version_id=version_id,
+        )
         if not child_batch_id:
             self.set_status("Iterate failed: child batch was not created.")
             return
@@ -14260,6 +14337,7 @@ class MainWindow(QMainWindow):
             return
         source_name = str(batch.extra.get("batch_name", batch.batch_id)).strip() or batch.batch_id
         clone_name = f"{source_name} Clone"
+        self._set_draft_lineage_context(created_via="clone", parent_batch_id=batch.batch_id)
         self.batch_page.load_from_batch(batch, batch_name=clone_name)
         self._on_batch_draft_changed(self.batch_page._payload(include_name=False))
         self.stack.setCurrentWidget(self.batch_page)

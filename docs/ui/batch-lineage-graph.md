@@ -119,6 +119,29 @@ Rationale:
 - Fits existing additive migration pattern (`ALTER TABLE` in `_migrate_schema` helpers).
 - Avoids introducing a second lineage storage path.
 
+## Phase 2 provenance write wiring
+
+Creation-point lineage writes are now mapped as follows:
+
+- Manual new/save batch:
+  - `created_via='manual'`
+  - `parent_batch_id=NULL`
+  - `created_from_version_id=NULL`
+- Iterate from pinned version:
+  - `created_via='iterate'`
+  - `parent_batch_id=<source batch id>`
+  - `created_from_version_id=<selected version id>`
+- Clone:
+  - `created_via='clone'`
+  - `parent_batch_id=<source batch id>`
+  - `created_from_version_id=NULL`
+
+Implementation notes:
+- `app/services.py::create_batch(...)` now accepts provenance inputs and stores them in `Batch.extra` for downstream DB writes.
+- `app/gui.py::MainWindow` now tracks draft lineage context and forwards provenance through `_save_batch(...)` for manual/clone/run-save paths.
+- Analyzer iterate path forwards explicit iterate provenance at child creation call site.
+- Behavior is unchanged for run orchestration: no auto-run added by iterate, and run/version semantics are unchanged.
+
 ## Implementation plan alignment
 - Phase 1: DB provenance columns + migration helper + docs.
 - Phase 2: provenance writes at manual/iterate/clone creation points + tests.

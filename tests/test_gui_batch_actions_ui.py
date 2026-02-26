@@ -111,6 +111,33 @@ class BatchActionsUiTests(unittest.TestCase):
         self.assertTrue(bool(issue_chip.text().strip()))
         self.assertIn("warning", issue_chip.toolTip().lower())
 
+    def test_clone_save_persists_clone_lineage_metadata(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_ui_lineage_clone_") as tmp:
+            service = _build_service(Path(tmp))
+            project = service.create_project("Clone lineage", {"fixed_params": {"Length": 120}, "limits": {}})
+            parent = service.create_batch(
+                project_id=project.project_id,
+                batch_name="Parent Batch",
+                selected_params={"Throat.Diameter": 30.0},
+                sweeps={},
+                sweep_mode="single",
+                sim_export_params={},
+            )
+            window = MainWindow(service)
+            window.load_project(project)
+            window._clone_batch(parent.batch_id)
+            payload = window.batch_page._payload(include_name=True)
+            created_batch_id = window._save_batch(dict(payload), for_run=False)
+            self.assertIsNotNone(created_batch_id)
+            assert created_batch_id is not None
+            lineage_rows = service.list_batch_lineage(project_id=project.project_id)
+            lineage_by_batch = {str(row.get("batch_id") or ""): row for row in lineage_rows}
+            self.assertIn(created_batch_id, lineage_by_batch)
+            self.assertEqual(str(lineage_by_batch[created_batch_id]["created_via"]), "clone")
+            self.assertEqual(str(lineage_by_batch[created_batch_id]["parent_batch_id"]), str(parent.batch_id))
+            self.assertIsNone(lineage_by_batch[created_batch_id]["created_from_version_id"])
+            window.close()
+
 
 if __name__ == "__main__":
     unittest.main()
