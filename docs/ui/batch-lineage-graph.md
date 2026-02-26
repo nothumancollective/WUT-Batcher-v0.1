@@ -99,6 +99,26 @@ Decision: reuse existing stack and extend minimally.
 - No web engine.
 - No alternative storage path outside `project_storage`/`SqlDatasetStore`.
 
+## Phase 1 schema update
+
+Implemented schema direction: Option A (columns on `batches`).
+
+- File: `app/sql_dataset_store.py`
+  - `SCHEMA_VERSION` advanced from `2.7` to `2.8`.
+  - Base `batches` table DDL now includes:
+    - `parent_batch_id`
+    - `created_via`
+    - `created_from_version_id`
+  - Additive migration helper `_ensure_batches_columns(...)` is called in `_migrate_schema(...)` to backfill legacy DBs safely.
+  - `upsert_batch` now writes/updates lineage columns.
+  - `register_batch` and `write_plan_bundle` now forward lineage payload from `Batch.extra`.
+  - New read helper `list_batches_with_lineage(...)` returns deterministic lineage rows from DB.
+
+Rationale:
+- Keeps lineage deterministic and local to canonical project/global DB writes.
+- Fits existing additive migration pattern (`ALTER TABLE` in `_migrate_schema` helpers).
+- Avoids introducing a second lineage storage path.
+
 ## Implementation plan alignment
 - Phase 1: DB provenance columns + migration helper + docs.
 - Phase 2: provenance writes at manual/iterate/clone creation points + tests.

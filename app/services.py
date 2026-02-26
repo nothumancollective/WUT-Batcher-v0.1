@@ -2056,6 +2056,14 @@ class OrchestratorService:
             for row in rows
         ]
 
+    def list_batch_lineage(self, *, project_id: str) -> List[Dict[str, Any]]:
+        project_token = str(project_id or "").strip()
+        if not project_token:
+            return []
+        project_paths = self.repo.project_paths(project_token, ensure=True)
+        dataset = TidyDatasetWriter(project_paths.project_dir, library_root=self.settings.library_root)
+        return dataset.list_batches_with_lineage(project_id=project_token)
+
     def list_runs(
         self,
         *,

@@ -160,6 +160,29 @@ class ServiceExportTests(unittest.TestCase):
             self.assertEqual(rows[0]["batch_id"], batch.batch_id)
             self.assertEqual(rows[0]["version_id"], batch.version_ids[0])
 
+    def test_list_batch_lineage_reads_sql_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            library_root = Path(tmp_dir) / "projects"
+            settings_path = Path(tmp_dir) / "settings.json"
+            store = SettingsStore(settings_path)
+            store.save(UserSettings(library_root=str(library_root)))
+            service = OrchestratorService(settings_store=store)
+            project = service.create_project("List Lineage", {"fixed_params": {"Length": 100}, "limits": {}})
+            batch = service.create_batch(
+                project_id=project.project_id,
+                batch_name="B1",
+                selected_params={"Throat.Diameter": 30.0},
+                sweeps={},
+                sweep_mode="single",
+                sim_export_params={},
+            )
+            rows = service.list_batch_lineage(project_id=project.project_id)
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(str(rows[0]["batch_id"]), str(batch.batch_id))
+            self.assertEqual(str(rows[0]["created_via"]), "manual")
+            self.assertIsNone(rows[0]["parent_batch_id"])
+            self.assertIsNone(rows[0]["created_from_version_id"])
+
     def test_run_batch_auto_uses_dry_run_when_tools_missing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             library_root = Path(tmp_dir) / "projects"

@@ -16,7 +16,7 @@ from app.feature_flags import use_project_library_storage
 from app.models import Batch, Project, VersionSpec
 
 
-SCHEMA_VERSION = "2.7"
+SCHEMA_VERSION = "2.8"
 
 
 def _now_iso() -> str:
@@ -213,6 +213,9 @@ class SqlDatasetStore:
                     sweep_definitions TEXT,
                     sweep_mode TEXT,
                     sim_export_params TEXT,
+                    parent_batch_id TEXT,
+                    created_via TEXT NOT NULL DEFAULT 'manual',
+                    created_from_version_id TEXT,
                     created_at TEXT NOT NULL,
                     PRIMARY KEY (project_id, batch_id),
                     FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE
@@ -569,6 +572,15 @@ class SqlDatasetStore:
         if "version_config_hash" not in columns:
             conn.execute("ALTER TABLE versions ADD COLUMN version_config_hash TEXT")
 
+    def _ensure_batches_columns(self, conn: sqlite3.Connection) -> None:
+        columns = set(self._table_columns(conn, "batches"))
+        if "parent_batch_id" not in columns:
+            conn.execute("ALTER TABLE batches ADD COLUMN parent_batch_id TEXT")
+        if "created_via" not in columns:
+            conn.execute("ALTER TABLE batches ADD COLUMN created_via TEXT NOT NULL DEFAULT 'manual'")
+        if "created_from_version_id" not in columns:
+            conn.execute("ALTER TABLE batches ADD COLUMN created_from_version_id TEXT")
+
     def _migrate_ath_dimensions_schema(self, conn: sqlite3.Connection) -> None:
         columns = self._table_columns(conn, "ath_dimensions")
         if not columns:
@@ -850,6 +862,7 @@ class SqlDatasetStore:
 
     def _migrate_schema(self, conn: sqlite3.Connection) -> None:
         self._ensure_runs_tables(conn)
+        self._ensure_batches_columns(conn)
         self._ensure_versions_columns(conn)
         self._migrate_ath_dimensions_schema(conn)
         self._ensure_graphs_columns(conn)
@@ -975,6 +988,9 @@ class SqlDatasetStore:
         self._ensure_federation_tables(conn)
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_runs_project_batch ON runs(project_id, batch_id, started_at)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_batches_project_parent ON batches(project_id, parent_batch_id)"
         )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_run_versions_batch_status ON run_versions(project_id, batch_id, status)"
@@ -1173,17 +1189,38 @@ class SqlDatasetStore:
             ),
         )
 
+    @staticmethod
+    def _normalize_created_via_token(value: Any) -> str:
+        token = str(value or "").strip().lower()
+        if token not in {"manual", "iterate", "clone"}:
+            return "manual"
+        return token
+
     def _op_upsert_batch(self, conn: sqlite3.Connection, payload: Dict[str, Any]) -> None:
+        created_via = self._normalize_created_via_token(payload.get("created_via"))
+        parent_batch_id_raw = str(payload.get("parent_batch_id") or "").strip()
+        created_from_version_id_raw = str(payload.get("created_from_version_id") or "").strip()
+        parent_batch_id = parent_batch_id_raw or None
+        created_from_version_id = created_from_version_id_raw or None
+        if created_via == "manual":
+            parent_batch_id = None
+            created_from_version_id = None
+        elif created_via == "clone":
+            created_from_version_id = None
         conn.execute(
             """
             INSERT INTO batches (
-                project_id, batch_id, batch_name, sweep_definitions, sweep_mode, sim_export_params, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                project_id, batch_id, batch_name, sweep_definitions, sweep_mode, sim_export_params,
+                parent_batch_id, created_via, created_from_version_id, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(project_id, batch_id) DO UPDATE SET
                 batch_name=excluded.batch_name,
                 sweep_definitions=excluded.sweep_definitions,
                 sweep_mode=excluded.sweep_mode,
-                sim_export_params=excluded.sim_export_params
+                sim_export_params=excluded.sim_export_params,
+                parent_batch_id=excluded.parent_batch_id,
+                created_via=excluded.created_via,
+                created_from_version_id=excluded.created_from_version_id
             """,
             (
                 str(payload["project_id"]),
@@ -1192,6 +1229,9 @@ class SqlDatasetStore:
                 payload.get("sweep_definitions"),
                 str(payload.get("sweep_mode", "single")),
                 payload.get("sim_export_params"),
+                parent_batch_id,
+                created_via,
+                created_from_version_id,
                 str(payload.get("created_at") or _now_iso()),
             ),
         )
@@ -2055,7 +2095,24 @@ class SqlDatasetStore:
         self.persist_schema_descriptor()
         return result
 
+    def _batch_lineage_payload(self, batch: Batch) -> Dict[str, Any]:
+        extra = dict(getattr(batch, "extra", {}) or {})
+        created_via = self._normalize_created_via_token(extra.get("created_via"))
+        parent_batch_id = str(extra.get("parent_batch_id") or "").strip() or None
+        created_from_version_id = str(extra.get("created_from_version_id") or "").strip() or None
+        if created_via == "manual":
+            parent_batch_id = None
+            created_from_version_id = None
+        elif created_via == "clone":
+            created_from_version_id = None
+        return {
+            "parent_batch_id": parent_batch_id,
+            "created_via": created_via,
+            "created_from_version_id": created_from_version_id,
+        }
+
     def register_batch(self, project: Project, batch: Batch, *, batch_name: Optional[str] = None) -> Dict[str, Any]:
+        lineage = self._batch_lineage_payload(batch)
         payload = {
             "project_id": project.project_id,
             "batch_id": batch.batch_id,
@@ -2063,6 +2120,9 @@ class SqlDatasetStore:
             "sweep_definitions": _to_json({key: spec.to_dict() for key, spec in batch.sweeps.items()}),
             "sweep_mode": batch.sweep_mode,
             "sim_export_params": _to_json(batch.sim_export_settings.to_dict()),
+            "parent_batch_id": lineage.get("parent_batch_id"),
+            "created_via": lineage.get("created_via"),
+            "created_from_version_id": lineage.get("created_from_version_id"),
             "created_at": _now_iso(),
         }
         return self._dual_write("upsert_batch", payload)
@@ -2119,6 +2179,7 @@ class SqlDatasetStore:
         batch_name: Optional[str] = None,
     ) -> Dict[str, Any]:
         now = _now_iso()
+        lineage = self._batch_lineage_payload(batch)
         project_payload = {
             "project_id": project.project_id,
             "project_name": project.name,
@@ -2132,6 +2193,9 @@ class SqlDatasetStore:
             "sweep_definitions": _to_json({key: spec.to_dict() for key, spec in batch.sweeps.items()}),
             "sweep_mode": batch.sweep_mode,
             "sim_export_params": _to_json(batch.sim_export_settings.to_dict()),
+            "parent_batch_id": lineage.get("parent_batch_id"),
+            "created_via": lineage.get("created_via"),
+            "created_from_version_id": lineage.get("created_from_version_id"),
             "created_at": now,
         }
 
@@ -2969,6 +3033,51 @@ class SqlDatasetStore:
                 "tag": tag,
             },
         )
+
+    def list_batches_with_lineage(self, *, project_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        project_token = str(project_id or self.project_root.name).strip()
+        if not project_token:
+            return []
+        with self._open_conn(self.project_db_path) as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    batch_id,
+                    batch_name,
+                    created_at,
+                    parent_batch_id,
+                    created_via,
+                    created_from_version_id
+                FROM batches
+                WHERE project_id = ?
+                ORDER BY created_at ASC, batch_id ASC
+                """,
+                (project_token,),
+            ).fetchall()
+        result: List[Dict[str, Any]] = []
+        for row in rows:
+            batch_id = str(row["batch_id"] or "").strip()
+            if not batch_id:
+                continue
+            created_via = self._normalize_created_via_token(row["created_via"])
+            parent_batch_id = str(row["parent_batch_id"] or "").strip() or None
+            created_from_version_id = str(row["created_from_version_id"] or "").strip() or None
+            if created_via == "manual":
+                parent_batch_id = None
+                created_from_version_id = None
+            elif created_via == "clone":
+                created_from_version_id = None
+            result.append(
+                {
+                    "batch_id": batch_id,
+                    "batch_name": str(row["batch_name"] or batch_id),
+                    "created_at": str(row["created_at"] or ""),
+                    "parent_batch_id": parent_batch_id,
+                    "created_via": created_via,
+                    "created_from_version_id": created_from_version_id,
+                }
+            )
+        return result
 
     def list_runs(
         self,
