@@ -338,7 +338,8 @@ Doc selection (authoritative for this change set):
 - `docs/RUNNER_STATUS.md` (this file): latest runner execution map + current failure timeline.
 - `docs/release/project-library.md`: active storage root policy and library/project DB boundaries.
 - `docs/LE_DRIVING_AUDIT.md`: current LE/AKABAK contract expectations and known pre-AKABAK checks.
-- Selection rationale: these three docs are currently aligned with active `wut-batcher/rebuild` runtime behavior and referenced by current runner fixes.
+- `docs/runner/path-convention.md`: single path/artifact convention and per-stage mapping table.
+- Selection rationale: these docs are currently aligned with active `wut-batcher/rebuild` runtime behavior and referenced by current runner fixes.
 
 Code-path archaeology summary (hotspots):
 - Runner path assembly and stage handoff:
