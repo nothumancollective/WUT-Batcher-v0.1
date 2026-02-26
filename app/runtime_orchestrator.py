@@ -1824,6 +1824,7 @@ def run_batch_pipeline(
             "dry_run": bool(dry_run),
             "library_root": str(effective_library_root) if effective_library_root is not None else None,
             "project_root": str(project_root),
+            "run_root": str(project_root / "runs" / str(effective_run_id)),
             "project_db_path": str(writer.project_db_path),
             "planned_versions": list(planned_version_ids),
             "planned_count": len(planned_version_ids),
@@ -2062,6 +2063,9 @@ def run_batch_pipeline(
                         ),
                         logs_dir=_version_logs_dir(project_root, version_id),
                     )
+                    abec_sync["ath_stdout_log"] = str(ath_result.stdout_log)
+                    abec_sync["ath_stderr_log"] = str(ath_result.stderr_log)
+                    abec_sync["ath_summary_log"] = str(ath_result.summary_log)
                     _update_version_state(project_root, version_id, {"ath_abec_sync": abec_sync})
                     if not bool(abec_sync.get("ok")):
                         ath_stage_ok = False
@@ -2076,6 +2080,14 @@ def run_batch_pipeline(
                                 "version_id": version_id,
                                 "ok": False,
                                 "error": "ath_abec_missing",
+                                "sync_error": str(abec_sync.get("error") or ""),
+                                "target_abec": str(abec_sync.get("target_abec") or ""),
+                                "source_abec": str(abec_sync.get("source_abec") or ""),
+                                "search_roots": list(abec_sync.get("search_roots") or []),
+                                "sidecar_missing": list(abec_sync.get("sidecar_missing") or []),
+                                "sidecar_copy_errors": list(abec_sync.get("sidecar_copy_errors") or []),
+                                "ath_stdout_log": str(ath_result.stdout_log),
+                                "ath_stderr_log": str(ath_result.stderr_log),
                                 "summary_log": str(abec_sync_log),
                             },
                         )

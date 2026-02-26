@@ -247,3 +247,32 @@ Observed GUI terminal state:
 Interpretation:
 - In this environment/toolchain profile, pipeline preconditions fail at ABEC sync.
 - Runner/UI now report truthful failure state (not false success), which is the required behavior for blocked preconditions.
+
+## E2E GUI Run #3 (ath_abec_sync diagnostics capture, 2026-02-26)
+
+Context:
+- `WUT_DEBUG_PIPELINE_STAGES=1`
+- Isolated GUI test root: `%TEMP%/wut_gui_ath_abec_sync_*`
+- Result status: `Run failed for B001` with `run_status=failed`
+
+Verbatim stage debug entry (`versions/V005/logs/pipeline.stage_debug.jsonl`):
+```json
+{"time":"2026-02-26T00:25:09+00:00","event":"stage_end","stage":"ath_abec_sync","version_id":"V005","ok":false,"error":"ath_abec_missing","summary_log":"...\\versions\\V005\\logs\\ath.abec_sync.json"}
+```
+
+Verbatim sync payload (`versions/V005/logs/ath.abec_sync.json`):
+```json
+{
+  "ok": false,
+  "target_abec": "...\\versions\\V005\\abec\\Project.abec",
+  "search_roots": [
+    "...\\runs\\ath_export\\..._V005_...",
+    "...\\versions\\V005\\ath_work"
+  ],
+  "source_abec": "",
+  "error": "generated_abec_missing"
+}
+```
+
+Immediate implication:
+- ATH completed successfully (`ath: ok`), but sync did not find any generated `.abec` in the current search roots for this version.
