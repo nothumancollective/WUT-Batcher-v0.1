@@ -1235,10 +1235,11 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     QPushButton#WindowCloseButton {{
         background-color: transparent;
         color: {c['text']};
-        border: none;
+        border: 1px solid transparent;
         border-radius: {r['sm']}px;
         font-weight: 700;
         padding: 0px;
+        margin: 1px 0px 0px 0px;
     }}
     QPushButton#WindowCloseButton:hover {{
         background-color: {c['danger']};

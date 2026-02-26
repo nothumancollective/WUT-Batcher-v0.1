@@ -4117,7 +4117,7 @@ class StatusDetailDialog(QDialog):
         self._drag_offset: Optional[QPoint] = None
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(10, 10, 10, 10)
+        outer.setContentsMargins(12, 12, 12, 12)
         outer.setSpacing(0)
         shell = QFrame()
         shell.setObjectName("FramelessShell")
@@ -4128,7 +4128,7 @@ class StatusDetailDialog(QDialog):
 
         title_bar = QWidget()
         title_row = QHBoxLayout(title_bar)
-        title_row.setContentsMargins(0, 0, 0, 0)
+        title_row.setContentsMargins(0, 1, 2, 1)
         title_row.setSpacing(8)
         icon = QLabel("●")
         icon.setObjectName("StatusSymbol")
@@ -4214,18 +4214,18 @@ class BatchRunDefaultsDialog(QDialog):
         self._default_values = dict(default_values or {})
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(10, 10, 10, 10)
+        outer.setContentsMargins(12, 12, 12, 12)
         outer.setSpacing(0)
         shell = QFrame()
         shell.setObjectName("FramelessShell")
         outer.addWidget(shell)
         root = QVBoxLayout(shell)
-        root.setContentsMargins(12, 10, 12, 12)
+        root.setContentsMargins(14, 12, 14, 14)
         root.setSpacing(10)
 
         title_bar = QWidget()
         title_row = QHBoxLayout(title_bar)
-        title_row.setContentsMargins(0, 0, 0, 0)
+        title_row.setContentsMargins(0, 1, 2, 1)
         title_row.setSpacing(8)
         title = QLabel("Undefined Parameters For Run")
         title.setObjectName("SectionTitle")
@@ -5909,13 +5909,6 @@ class DashboardPage(QWidget):
         self.workspace_splitter.setSizes([560, 560])
         root.addWidget(self.workspace_splitter, 1)
 
-        footer = QHBoxLayout()
-        footer.addStretch(1)
-        self.settings_btn = QPushButton("Settings")
-        self.settings_btn.setObjectName("BatchGhostButton")
-        footer.addWidget(self.settings_btn)
-        root.addLayout(footer)
-
         self.constraints_drawer_scrim = _DrawerScrim(self)
         self.constraints_drawer_scrim.setObjectName("DashboardConstraintsDrawerScrim")
         self.constraints_drawer_scrim.setAttribute(Qt.WA_StyledBackground, True)
@@ -5948,7 +5941,6 @@ class DashboardPage(QWidget):
         self.manage_runs_btn.clicked.connect(self.request_manage_runs.emit)
         if self.cleanup_testdata_btn is not None:
             self.cleanup_testdata_btn.clicked.connect(self.request_cleanup_testdata.emit)
-        self.settings_btn.clicked.connect(self.request_settings.emit)
         self.batch_list.currentItemChanged.connect(self._on_batch_list_selection_changed)
         self.lineage_pane.batch_activated.connect(self._on_lineage_batch_activated)
         QTimer.singleShot(0, self._layout_constraints_drawer_overlay)
@@ -13669,7 +13661,7 @@ class ProjectManagerWindow(QMainWindow):
         central = QWidget()
         self.setCentralWidget(central)
         outer = QVBoxLayout(central)
-        outer.setContentsMargins(10, 10, 10, 10)
+        outer.setContentsMargins(12, 12, 12, 12)
         outer.setSpacing(0)
         shell = QFrame()
         shell.setObjectName("FramelessShell")
@@ -13680,7 +13672,7 @@ class ProjectManagerWindow(QMainWindow):
 
         title_bar = QWidget()
         title_row = QHBoxLayout(title_bar)
-        title_row.setContentsMargins(0, 0, 0, 0)
+        title_row.setContentsMargins(0, 1, 2, 1)
         title_row.setSpacing(8)
         title = QLabel("Project Manager")
         title.setObjectName("SectionTitle")
