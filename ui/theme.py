@@ -846,6 +846,11 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         background-color: transparent;
         width: 2px;
     }}
+    QGraphicsView#BatchLineageGraphicsView {{
+        background-color: #1d1d1d;
+        border: 1px solid {c['border']};
+        border-radius: {r['sm']}px;
+    }}
     QSplitter#AnalyzerCompareSplitter::handle {{
         background-color: transparent;
         width: 2px;

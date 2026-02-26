@@ -1,7 +1,7 @@
 # Batch Lineage Graph
 
 Date: 2026-02-26  
-Status: Phase 0 archaeology completed, implementation approach selected
+Status: Phases 0-4 implemented (archaeology, schema, provenance writes, dashboard integration, graph rendering)
 
 ## Phase 0 Repository Archaeology
 
@@ -144,7 +144,7 @@ Implementation notes:
 
 ## Phase 3 dashboard layout shell
 
-Implemented UI shell updates (graph rendering step follows in Phase 4):
+Implemented UI shell updates:
 
 - Constraints bar:
   - `DashboardPage` now uses a fixed-height constraints top bar (`ConstraintSummaryGrid(mode='bar')`).
@@ -153,11 +153,82 @@ Implemented UI shell updates (graph rendering step follows in Phase 4):
 - Workspace split:
   - Dashboard body is now a 50/50 horizontal splitter (`DashboardWorkspaceSplitter`).
   - Left pane keeps existing batches list behavior.
-  - Right pane is `BatchLineagePane` placeholder with `Fit / Reset View` control stub.
+  - Right pane is `BatchLineagePane` with graph view and `Fit / Reset View` control.
+
+## Phase 4 graph rendering and interactions
+
+## Concept and semantics
+- Root node (`Constraints`) is always present.
+- Every batch row in DB becomes one graph node (`B###` label).
+- Edge semantics:
+  - `created_via=manual` => `Constraints -> batch`
+  - `created_via=iterate` => `parent_batch_id -> batch`
+  - `created_via=clone` => `parent_batch_id -> batch`
+  - Missing/invalid/cyclic parent metadata falls back to root edge with warning logs.
+- Graph scope is batch lineage only (no run nodes, no version nodes).
+
+## Rendering stack
+- Native Qt only:
+  - `QGraphicsScene` for scene graph
+  - custom node item (`BatchLineageNodeItem`, `QGraphicsObject`)
+  - custom edge item (`BatchLineageEdgeItem`, `QGraphicsPathItem`)
+  - custom view (`BatchLineageView`, `QGraphicsView`) with pan/zoom and fit/reset.
+- Node labels are minimal (`B###`).
+- Hover popover (Qt tooltip) shows:
+  - batch name
+  - batch id
+  - created_at
+  - created_via
+  - parent batch (or `Constraints`)
+  - created_from_version_id (or `--`)
+
+## Deterministic layout algorithm
+- Input source: DB lineage rows from `list_batches_with_lineage(...)` / `service.list_batch_lineage(...)`.
+- Ordering:
+  - stable sort by `(created_at, batch_id)`.
+- Tree build:
+  - single parent per child via `parent_batch_id` contract.
+  - lineage anomalies (missing parent, self-parent, cycle) are normalized to root edges.
+- Positioning:
+  - depth levels from root (BFS depth).
+  - recursive subtree layout:
+    - leaf nodes consume next x-slot
+    - parent x is mean of child x positions
+  - fixed spacing constants for x/y.
+- Stability:
+  - row fingerprint is cached; when unchanged, graph is not rebuilt (prevents jumpy redraws).
+
+## Interactions
+- Click node:
+  - highlights node in graph
+  - selects matching row in left batch list
+  - emits existing `request_edit_batch` flow (opens batch draft in current navigation idiom)
+- Batch-list selection changes also update node highlight.
+- Fit/reset control runs one-shot `fitInView` (no continuous auto-fit while user pans/zooms).
 
 ## Implementation plan alignment
 - Phase 1: DB provenance columns + migration helper + docs.
 - Phase 2: provenance writes at manual/iterate/clone creation points + tests.
-- Phase 3: dashboard constraints bar fixed-height + top drawer behavior; 50/50 workspace split with graph pane placeholder.
+- Phase 3: dashboard constraints bar fixed-height + top drawer behavior; 50/50 workspace split with graph pane integration.
 - Phase 4: lineage graph model/layout/render/interactions.
 - Phase 5: validation (DB tests + GUI smoke).
+
+## Validation steps
+
+Manual GUI smoke:
+1. Open project dashboard and confirm 50/50 split with batches list + lineage graph.
+2. Create manual batch and confirm edge from `Constraints` to new batch node.
+3. Clone a batch and confirm parent->child edge with `created_via=clone` in tooltip.
+4. Iterate from pinned analyzer version and confirm parent->child edge with `created_from_version_id` in tooltip.
+5. Create multiple children from same parent and confirm multi-branch fan-out.
+6. Click graph node and confirm batch opens via existing edit navigation.
+7. Use `Fit / Reset View`, wheel zoom, and drag pan.
+
+Automated coverage:
+- DB lineage schema/migration/read tests:
+  - `tests/test_sql_dataset_store.py`
+  - `tests/test_service_export.py`
+- GUI lineage integration tests:
+  - `tests/test_dashboard_constraints_ui.py`
+  - `tests/test_gui_batch_actions_ui.py`
+  - `tests/test_gui_analyzer_page_ui.py`

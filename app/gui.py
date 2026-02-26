@@ -194,6 +194,8 @@ try:
     from PySide6.QtCore import (
         QEasingCurve,
         QPoint,
+        QPointF,
+        QRectF,
         QPropertyAnimation,
         QEvent,
         QMetaObject,
@@ -208,6 +210,7 @@ try:
         qInstallMessageHandler,
     )
     from PySide6.QtGui import (
+        QBrush,
         QColor,
         QDesktopServices,
         QFont,
@@ -232,7 +235,12 @@ try:
         QFileDialog,
         QFormLayout,
         QFrame,
+        QGraphicsItem,
+        QGraphicsObject,
         QGraphicsOpacityEffect,
+        QGraphicsPathItem,
+        QGraphicsScene,
+        QGraphicsView,
         QGridLayout,
         QGroupBox,
         QHeaderView,
@@ -260,6 +268,7 @@ try:
         QTableWidgetItem,
         QTabWidget,
         QTextEdit,
+        QToolTip,
         QToolButton,
         QVBoxLayout,
         QWidget,
@@ -5310,10 +5319,157 @@ class ConstraintSummaryGrid(QFrame):
         button.setToolTip("Collapse constraints drawer" if bool(expanded) else "Expand constraints drawer")
 
 
+class BatchLineageView(QGraphicsView):
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("BatchLineageGraphicsView")
+        self.setRenderHints(QPainter.Antialiasing | QPainter.TextAntialiasing)
+        self.setDragMode(QGraphicsView.ScrollHandDrag)
+        self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
+        self.setResizeAnchor(QGraphicsView.AnchorUnderMouse)
+        self.setViewportUpdateMode(QGraphicsView.BoundingRectViewportUpdate)
+        self._min_zoom = 0.35
+        self._max_zoom = 3.2
+        self._zoom = 1.0
+
+    def wheelEvent(self, event) -> None:  # type: ignore[override]
+        delta = int(event.angleDelta().y())
+        if delta == 0:
+            super().wheelEvent(event)
+            return
+        factor = 1.15 if delta > 0 else (1.0 / 1.15)
+        next_zoom = float(self._zoom * factor)
+        if next_zoom < float(self._min_zoom) or next_zoom > float(self._max_zoom):
+            event.accept()
+            return
+        self.scale(factor, factor)
+        self._zoom = next_zoom
+        event.accept()
+
+    def fit_graph(self) -> None:
+        scene = self.scene()
+        if not isinstance(scene, QGraphicsScene):
+            return
+        rect = scene.itemsBoundingRect()
+        if rect.isNull() or rect.width() <= 0 or rect.height() <= 0:
+            return
+        self.fitInView(rect.adjusted(-36.0, -24.0, 36.0, 24.0), Qt.KeepAspectRatio)
+        transform = self.transform()
+        zoom_value = float(transform.m11()) if transform is not None else 1.0
+        if not math.isfinite(zoom_value) or zoom_value <= 0.0:
+            zoom_value = 1.0
+        self._zoom = zoom_value
+
+
+class BatchLineageNodeItem(QGraphicsObject):
+    activated = Signal(str)
+
+    def __init__(
+        self,
+        *,
+        batch_id: Optional[str],
+        label: str,
+        tooltip_text: str,
+        is_root: bool = False,
+        width: float = 98.0,
+        height: float = 40.0,
+        parent: QGraphicsItem | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._batch_id = str(batch_id or "").strip()
+        self._label = str(label or "").strip() or "--"
+        self._tooltip_text = str(tooltip_text or "").strip()
+        self._is_root = bool(is_root)
+        self._width = float(max(width, 64.0))
+        self._height = float(max(height, 28.0))
+        self._selected = False
+        self._hovered = False
+        self.setAcceptHoverEvents(True)
+        self.setAcceptedMouseButtons(Qt.LeftButton if self._batch_id else Qt.NoButton)
+        self.setCacheMode(QGraphicsItem.DeviceCoordinateCache)
+        self.setZValue(3.0)
+
+    def boundingRect(self):  # type: ignore[override]
+        return QRectF(0.0, 0.0, float(self._width), float(self._height))
+
+    def set_selected(self, selected: bool) -> None:
+        selected_flag = bool(selected)
+        if selected_flag == self._selected:
+            return
+        self._selected = selected_flag
+        self.update()
+
+    def center_top(self) -> QPointF:
+        rect = self.boundingRect()
+        return QPointF(float(self.x() + (rect.width() * 0.5)), float(self.y()))
+
+    def center_bottom(self) -> QPointF:
+        rect = self.boundingRect()
+        return QPointF(float(self.x() + (rect.width() * 0.5)), float(self.y() + rect.height()))
+
+    def hoverEnterEvent(self, event) -> None:  # type: ignore[override]
+        self._hovered = True
+        if self._tooltip_text:
+            QToolTip.showText(event.screenPos().toPoint(), self._tooltip_text)
+        self.update()
+        super().hoverEnterEvent(event)
+
+    def hoverLeaveEvent(self, event) -> None:  # type: ignore[override]
+        self._hovered = False
+        QToolTip.hideText()
+        self.update()
+        super().hoverLeaveEvent(event)
+
+    def mousePressEvent(self, event) -> None:  # type: ignore[override]
+        if event.button() == Qt.LeftButton and self._batch_id:
+            self.activated.emit(self._batch_id)
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def paint(self, painter: QPainter, option, widget=None) -> None:  # type: ignore[override]
+        _ = option
+        _ = widget
+        rect = self.boundingRect()
+        if self._is_root:
+            fill = QColor("#2A2D31")
+            border = QColor("#6E8199")
+        else:
+            fill = QColor("#25282D")
+            border = QColor("#4A5463")
+        if self._hovered and not self._selected:
+            border = QColor("#8EA0BA")
+        if self._selected:
+            fill = QColor("#2A2534")
+            border = QColor("#9A86CC")
+        painter.setPen(QPen(border, 2.0 if self._selected else 1.2))
+        painter.setBrush(QBrush(fill))
+        painter.drawRoundedRect(rect, 8.0, 8.0)
+        painter.setPen(QPen(QColor("#E6E8EC"), 1.0))
+        painter.drawText(rect, int(Qt.AlignCenter), self._label)
+
+
+class BatchLineageEdgeItem(QGraphicsPathItem):
+    def __init__(self, path: QPainterPath, parent: QGraphicsItem | None = None) -> None:
+        super().__init__(path, parent)
+        pen = QPen(QColor("#4B5565"), 1.2)
+        pen.setCapStyle(Qt.RoundCap)
+        pen.setJoinStyle(Qt.RoundJoin)
+        self.setPen(pen)
+        self.setBrush(Qt.NoBrush)
+        self.setZValue(1.0)
+
+
 class BatchLineagePane(QFrame):
+    batch_activated = Signal(str)
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("ProjectSummaryPanel")
+        self._last_fingerprint: Optional[Tuple[Tuple[str, str, str, str, str, str], ...]] = None
+        self._node_items: Dict[str, BatchLineageNodeItem] = {}
+        self._selected_batch_id: Optional[str] = None
+
         root = QVBoxLayout(self)
         root.setContentsMargins(10, 8, 10, 10)
         root.setSpacing(8)
@@ -5326,22 +5482,250 @@ class BatchLineagePane(QFrame):
         header.addStretch(1)
         self.fit_btn = QPushButton("Fit / Reset View")
         self.fit_btn.setObjectName("BatchSecondaryButton")
-        self.fit_btn.setEnabled(False)
-        self.fit_btn.setToolTip("Lineage graph view is added in the next implementation step.")
         header.addWidget(self.fit_btn, 0, Qt.AlignRight | Qt.AlignVCenter)
         root.addLayout(header)
-        self.placeholder = QLabel("Lineage graph pane placeholder.")
-        self.placeholder.setObjectName("SummaryMeta")
-        self.placeholder.setAlignment(Qt.AlignCenter)
-        self.placeholder.setWordWrap(True)
-        root.addWidget(self.placeholder, 1)
+
+        self.scene = QGraphicsScene(self)
+        self.view = BatchLineageView(self)
+        self.view.setScene(self.scene)
+        root.addWidget(self.view, 1)
+        self.fit_btn.clicked.connect(self.view.fit_graph)
+
+    @staticmethod
+    def _normalize_created_via(value: Any) -> str:
+        token = str(value or "").strip().lower()
+        if token not in {"manual", "iterate", "clone"}:
+            return "manual"
+        return token
+
+    @staticmethod
+    def _row_sort_key(row: Mapping[str, Any]) -> Tuple[str, str]:
+        return (
+            str(row.get("created_at") or ""),
+            str(row.get("batch_id") or ""),
+        )
+
+    def _normalize_rows(self, rows: Optional[Sequence[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+        normalized: Dict[str, Dict[str, Any]] = {}
+        for raw_row in sorted((dict(item) for item in list(rows or []) if isinstance(item, dict)), key=self._row_sort_key):
+            batch_id = str(raw_row.get("batch_id") or "").strip()
+            if not batch_id:
+                continue
+            normalized[batch_id] = {
+                "batch_id": batch_id,
+                "batch_name": str(raw_row.get("batch_name") or batch_id),
+                "created_at": str(raw_row.get("created_at") or ""),
+                "created_via": self._normalize_created_via(raw_row.get("created_via")),
+                "parent_batch_id": str(raw_row.get("parent_batch_id") or "").strip() or None,
+                "created_from_version_id": str(raw_row.get("created_from_version_id") or "").strip() or None,
+            }
+        return [dict(item) for item in sorted(normalized.values(), key=self._row_sort_key)]
+
+    def _fingerprint(self, rows: Sequence[Dict[str, Any]]) -> Tuple[Tuple[str, str, str, str, str, str], ...]:
+        return tuple(
+            (
+                str(row.get("batch_id") or ""),
+                str(row.get("batch_name") or ""),
+                str(row.get("created_at") or ""),
+                str(row.get("created_via") or ""),
+                str(row.get("parent_batch_id") or ""),
+                str(row.get("created_from_version_id") or ""),
+            )
+            for row in rows
+        )
+
+    def _compute_layout(
+        self,
+        rows: Sequence[Dict[str, Any]],
+    ) -> Tuple[Dict[str, Tuple[float, float]], List[Tuple[str, str]]]:
+        root_id = "__constraints_root__"
+        if not rows:
+            return {root_id: (0.0, 0.0)}, []
+        by_id = {str(row["batch_id"]): dict(row) for row in rows}
+        parent_by_child: Dict[str, str] = {}
+        for batch_id, row in by_id.items():
+            created_via = self._normalize_created_via(row.get("created_via"))
+            parent = str(row.get("parent_batch_id") or "").strip()
+            if created_via == "manual":
+                parent_by_child[batch_id] = root_id
+                continue
+            if not parent or parent == batch_id or parent not in by_id:
+                if parent and parent not in by_id:
+                    LOGGER.warning("Batch lineage: missing parent %s for %s. Falling back to root.", parent, batch_id)
+                if parent == batch_id:
+                    LOGGER.warning("Batch lineage: self-parent detected for %s. Falling back to root.", batch_id)
+                parent_by_child[batch_id] = root_id
+                continue
+            parent_by_child[batch_id] = parent
+
+        for batch_id in sorted(by_id.keys()):
+            trail: set[str] = set()
+            cursor = batch_id
+            while True:
+                parent = str(parent_by_child.get(cursor) or "")
+                if not parent or parent == root_id:
+                    break
+                if parent == batch_id or parent in trail:
+                    LOGGER.warning("Batch lineage: cycle detected at %s. Falling back to root edge.", batch_id)
+                    parent_by_child[batch_id] = root_id
+                    break
+                trail.add(parent)
+                cursor = parent
+
+        children_by_parent: Dict[str, List[str]] = {root_id: []}
+        for child, parent in parent_by_child.items():
+            children_by_parent.setdefault(parent, []).append(child)
+        for parent, children in list(children_by_parent.items()):
+            children_by_parent[parent] = sorted(children, key=lambda token: self._row_sort_key(by_id[token]))
+
+        depth: Dict[str, int] = {root_id: 0}
+        queue: List[str] = [root_id]
+        while queue:
+            node = queue.pop(0)
+            for child in list(children_by_parent.get(node, [])):
+                if child in depth:
+                    continue
+                depth[child] = int(depth.get(node, 0) + 1)
+                queue.append(child)
+        missing_nodes = [token for token in sorted(by_id.keys()) if token not in depth]
+        if missing_nodes:
+            for token in missing_nodes:
+                children_by_parent.setdefault(root_id, []).append(token)
+                parent_by_child[token] = root_id
+            children_by_parent[root_id] = sorted(
+                list(dict.fromkeys(children_by_parent.get(root_id, []))),
+                key=lambda token: self._row_sort_key(by_id[token]),
+            )
+            depth = {root_id: 0}
+            queue = [root_id]
+            while queue:
+                node = queue.pop(0)
+                for child in list(children_by_parent.get(node, [])):
+                    if child in depth:
+                        continue
+                    depth[child] = int(depth.get(node, 0) + 1)
+                    queue.append(child)
+
+        spacing_x = 170.0
+        spacing_y = 116.0
+        x_cursor = 0.0
+        positions: Dict[str, Tuple[float, float]] = {}
+
+        def assign(node_id: str) -> float:
+            nonlocal x_cursor
+            children = list(children_by_parent.get(node_id, []))
+            if not children:
+                x_value = float(x_cursor * spacing_x)
+                x_cursor += 1.0
+            else:
+                child_positions = [assign(child) for child in children]
+                x_value = float(sum(child_positions) / max(len(child_positions), 1))
+            y_value = float(int(depth.get(node_id, 0)) * spacing_y)
+            positions[node_id] = (x_value, y_value)
+            return x_value
+
+        assign(root_id)
+        edges = [(parent, child) for child, parent in parent_by_child.items()]
+        return positions, edges
+
+    def _tooltip_text(self, row: Dict[str, Any]) -> str:
+        batch_name = str(row.get("batch_name") or row.get("batch_id") or "--")
+        batch_id = str(row.get("batch_id") or "--")
+        created_at = str(row.get("created_at") or "--")
+        created_via = self._normalize_created_via(row.get("created_via"))
+        parent_batch_id = str(row.get("parent_batch_id") or "").strip() or "Constraints"
+        created_from_version_id = str(row.get("created_from_version_id") or "").strip() or "--"
+        return (
+            f"Batch: {batch_name}\n"
+            f"ID: {batch_id}\n"
+            f"Created: {created_at}\n"
+            f"Via: {created_via}\n"
+            f"Parent: {parent_batch_id}\n"
+            f"From Version: {created_from_version_id}"
+        )
+
+    def _render(self, rows: Sequence[Dict[str, Any]]) -> None:
+        self.scene.clear()
+        self._node_items = {}
+        positions, edges = self._compute_layout(rows)
+        root_id = "__constraints_root__"
+        node_data = {str(row["batch_id"]): dict(row) for row in rows}
+        if root_id not in positions:
+            positions[root_id] = (0.0, 0.0)
+
+        root_node = BatchLineageNodeItem(
+            batch_id=None,
+            label="Constraints",
+            tooltip_text="Project constraints root.",
+            is_root=True,
+            width=132.0,
+            height=42.0,
+        )
+        root_x, root_y = positions[root_id]
+        root_node.setPos(root_x, root_y)
+        self.scene.addItem(root_node)
+        self._node_items[root_id] = root_node
+
+        for batch_id, row in sorted(node_data.items(), key=lambda item: self._row_sort_key(item[1])):
+            pos = positions.get(batch_id)
+            if pos is None:
+                continue
+            label = str(batch_id or "--")
+            node = BatchLineageNodeItem(
+                batch_id=batch_id,
+                label=label,
+                tooltip_text=self._tooltip_text(row),
+                is_root=False,
+                width=94.0,
+                height=38.0,
+            )
+            node.activated.connect(self._on_node_activated)
+            node.setPos(float(pos[0]), float(pos[1]))
+            self.scene.addItem(node)
+            self._node_items[batch_id] = node
+
+        for parent_id, child_id in edges:
+            parent = self._node_items.get(parent_id)
+            child = self._node_items.get(child_id)
+            if not isinstance(parent, BatchLineageNodeItem) or not isinstance(child, BatchLineageNodeItem):
+                continue
+            start = parent.center_bottom()
+            end = child.center_top()
+            control_y = float((start.y() + end.y()) * 0.5)
+            path = QPainterPath(start)
+            path.cubicTo(
+                QPointF(float(start.x()), control_y),
+                QPointF(float(end.x()), control_y),
+                QPointF(float(end.x()), float(end.y())),
+            )
+            self.scene.addItem(BatchLineageEdgeItem(path))
+
+        self.select_batch(self._selected_batch_id)
+
+    def _on_node_activated(self, batch_id: str) -> None:
+        token = str(batch_id or "").strip()
+        if not token:
+            return
+        self.select_batch(token)
+        self.batch_activated.emit(token)
+
+    def select_batch(self, batch_id: Optional[str]) -> None:
+        token = str(batch_id or "").strip() or None
+        self._selected_batch_id = token
+        for node_id, node in list(self._node_items.items()):
+            if not isinstance(node, BatchLineageNodeItem):
+                continue
+            node.set_selected(bool(token and node_id == token))
 
     def set_lineage_rows(self, rows: Optional[Sequence[Dict[str, Any]]]) -> None:
-        count = len(list(rows or []))
-        if count <= 0:
-            self.placeholder.setText("No batches yet. Lineage graph will appear here.")
+        normalized_rows = self._normalize_rows(rows)
+        fingerprint = self._fingerprint(normalized_rows)
+        if fingerprint == self._last_fingerprint:
+            self.select_batch(self._selected_batch_id)
             return
-        self.placeholder.setText(f"Lineage graph placeholder: {count} batch node(s).")
+        self._last_fingerprint = fingerprint
+        self._render(normalized_rows)
+        QTimer.singleShot(0, self.view.fit_graph)
 
 
 class DashboardPage(QWidget):
@@ -5503,6 +5887,8 @@ class DashboardPage(QWidget):
         if self.cleanup_testdata_btn is not None:
             self.cleanup_testdata_btn.clicked.connect(self.request_cleanup_testdata.emit)
         self.settings_btn.clicked.connect(self.request_settings.emit)
+        self.batch_list.currentItemChanged.connect(self._on_batch_list_selection_changed)
+        self.lineage_pane.batch_activated.connect(self._on_lineage_batch_activated)
         QTimer.singleShot(0, self._layout_constraints_drawer_overlay)
 
     def set_constraints_payload(self, payload: Optional[Dict[str, Any]]) -> None:
@@ -5516,6 +5902,7 @@ class DashboardPage(QWidget):
 
     def set_batch_lineage_rows(self, rows: Optional[Sequence[Dict[str, Any]]]) -> None:
         self.lineage_pane.set_lineage_rows(rows)
+        self.lineage_pane.select_batch(self._selected_batch_id())
 
     def _selected_batch_id(self) -> Optional[str]:
         item = self.batch_list.currentItem()
@@ -5533,6 +5920,29 @@ class DashboardPage(QWidget):
         batch_id = self._selected_batch_id()
         if batch_id:
             self.request_clone_batch.emit(batch_id)
+
+    def _on_batch_list_selection_changed(self, current: QListWidgetItem | None, previous: QListWidgetItem | None) -> None:
+        _ = previous
+        batch_id = None
+        if isinstance(current, QListWidgetItem):
+            data = current.data(Qt.UserRole)
+            batch_id = str(data or "").strip() or None
+        self.lineage_pane.select_batch(batch_id)
+
+    def _on_lineage_batch_activated(self, batch_id: str) -> None:
+        token = str(batch_id or "").strip()
+        if not token:
+            return
+        for index in range(self.batch_list.count()):
+            item = self.batch_list.item(index)
+            if not isinstance(item, QListWidgetItem):
+                continue
+            item_batch_id = str(item.data(Qt.UserRole) or "").strip()
+            if item_batch_id != token:
+                continue
+            self.batch_list.setCurrentItem(item)
+            self.request_edit_batch.emit(token)
+            return
 
     def _toggle_constraints_drawer(self) -> None:
         self._set_constraints_drawer_expanded(not bool(self._constraints_drawer_expanded), animated=True)

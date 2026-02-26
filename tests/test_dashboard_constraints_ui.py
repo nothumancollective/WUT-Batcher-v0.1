@@ -8,10 +8,13 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from app.gui import ConstraintSummaryGrid, DashboardPage
 
 try:
-    from PySide6.QtWidgets import QApplication, QFrame, QPushButton, QSplitter, QToolButton
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QApplication, QFrame, QListWidgetItem, QPushButton, QSplitter, QToolButton
 except ImportError:  # pragma: no cover
+    Qt = None  # type: ignore[assignment]
     QApplication = None  # type: ignore[assignment]
     QFrame = None  # type: ignore[assignment]
+    QListWidgetItem = None  # type: ignore[assignment]
     QPushButton = None  # type: ignore[assignment]
     QSplitter = None  # type: ignore[assignment]
     QToolButton = None  # type: ignore[assignment]
@@ -95,6 +98,59 @@ class DashboardConstraintUiTests(unittest.TestCase):
         toggle.click()
         self.app.processEvents()
         self.assertTrue(bool(page._constraints_drawer_expanded))
+
+    def test_lineage_pane_renders_graph_nodes_for_batches(self) -> None:
+        page = DashboardPage()
+        rows = [
+            {
+                "batch_id": "B001",
+                "batch_name": "Parent",
+                "created_at": "2026-02-26T10:00:00+00:00",
+                "created_via": "manual",
+                "parent_batch_id": None,
+                "created_from_version_id": None,
+            },
+            {
+                "batch_id": "B002",
+                "batch_name": "Child",
+                "created_at": "2026-02-26T10:10:00+00:00",
+                "created_via": "iterate",
+                "parent_batch_id": "B001",
+                "created_from_version_id": "V001",
+            },
+        ]
+        page.set_batch_lineage_rows(rows)
+        self.app.processEvents()
+        self.assertGreaterEqual(len(page.lineage_pane.scene.items()), 3)
+        self.assertIn("B001", page.lineage_pane._node_items)
+        self.assertIn("B002", page.lineage_pane._node_items)
+
+    def test_lineage_node_activation_selects_batch_and_emits_edit_request(self) -> None:
+        page = DashboardPage()
+        item = QListWidgetItem("B001 | Parent")
+        item.setData(Qt.UserRole, "B001")
+        page.batch_list.addItem(item)
+        page.set_batch_lineage_rows(
+            [
+                {
+                    "batch_id": "B001",
+                    "batch_name": "Parent",
+                    "created_at": "2026-02-26T10:00:00+00:00",
+                    "created_via": "manual",
+                    "parent_batch_id": None,
+                    "created_from_version_id": None,
+                }
+            ]
+        )
+        seen: list[str] = []
+        page.request_edit_batch.connect(seen.append)
+        page.lineage_pane.batch_activated.emit("B001")
+        self.app.processEvents()
+        self.assertEqual(seen, ["B001"])
+        current = page.batch_list.currentItem()
+        self.assertIsNotNone(current)
+        assert current is not None
+        self.assertEqual(str(current.data(Qt.UserRole)), "B001")
 
 
 if __name__ == "__main__":
