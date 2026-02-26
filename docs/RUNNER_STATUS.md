@@ -582,3 +582,43 @@ Source run metadata (user report + on-disk verification):
 - Concrete first failing stage and reason:
   - stage: `ath_abec_sync`
   - reason: `abec_sidecar_missing` (missing sidecar `*.msh` referenced by generated ABEC).
+
+## Diagnostics hardening + ath_abec_sync unblock (2026-02-26)
+
+### Why failed runs had `error_summary=null`
+- `run_batch_pipeline(...)` only wrote stage records to version-local logs and in-memory `stage_results`.
+- `run_end` used `run_error_summary` that was not populated from stage failures, so failed runs could end with `error_summary=null`.
+- Result: users had to inspect per-version logs manually and could not identify the failing stage from the run record alone.
+
+### Runtime fixes applied
+- `app/runtime_orchestrator.py`
+  - Added run-level stage logging for every executed stage:
+    - `event=stage_start` on stage entry
+    - `event=stage_end` on stage completion/failure
+    - always written to `<run_root>/pipeline.stage_debug.jsonl` (not env-gated).
+  - Consolidated stage result recording through `_record_stage_result(...)` so run-level debug rows and `stage_results` stay in sync.
+  - Failed run summary is now always non-null:
+    - derives from first failing stage: `<stage>:<reason>` (for example `vacs:vacs_executable_missing`).
+    - `run_end` now includes `failing_stage`, `failing_version_id`, and `failing_summary_log`.
+  - Added synthetic failure capture when an exception escapes after stage start:
+    - writes a synthetic failed `stage_end` row and summary log under `<run_root>/logs/`.
+- `app/runtime_orchestrator.py` (`_sync_generated_abec`)
+  - Added narrow mesh-reference recovery:
+    - if generated ABEC references a missing `*.msh` but `bem_mesh.msh` exists in the same export, mesh references in `[MeshFiles]` are repaired to `bem_mesh.msh`.
+    - prevents false-negative `ath_abec_sync` failures in the known ATH output pattern.
+
+### Validation evidence
+- Automated:
+  - `python -m pytest -q tests/test_runtime_orchestrator.py` -> `25 passed`
+  - `python -m pytest -q tests/test_gui_run_status_semantics.py tests/test_vacs_export_pipeline.py tests/test_cli_run_sample.py` -> `16 passed`
+- Real toolchain run (using configured executables from settings):
+  - run_id: `c583877d-206a-42b9-ac75-0a087ad101df`
+  - status: `succeeded`
+  - stage progression (both versions): `ath -> ath_abec_sync -> post_ath_le_repair -> pre_akabak_le_driving_guard -> pre_akabak_mesh_guard -> akabak -> vacs`
+  - run log: `<project_root>/runs/c583877d-.../pipeline.stage_debug.jsonl` contains stage_start/stage_end entries and terminal `run_end`.
+- Forced precondition failure check (missing VACS executable):
+  - run_id: `3c645e27-cc79-4562-8118-bd49e351f049`
+  - status: `failed`
+  - `run_end.error_summary`: `vacs:vacs_executable_missing`
+  - `run_end.failing_stage`: `vacs`
+  - DB row (`runs`): `status='failed'`, `error_summary='vacs:vacs_executable_missing'`, `run_root` + `run_debug_log_path` populated.
