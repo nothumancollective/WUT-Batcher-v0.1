@@ -1733,6 +1733,28 @@ def run_batch_pipeline(
         vacs_executable=str(vacs_executable) if vacs_executable is not None else None,
     )
     run_debug_log_path = run_paths.run_debug_log_path()
+    _append_run_debug_log(
+        run_debug_log_path,
+        event="run_start",
+        payload={
+            "run_id": effective_run_id,
+            "project_id": project.project_id,
+            "batch_id": batch.batch_id,
+            "dry_run": bool(dry_run),
+            "app_root": str(run_paths.app_root),
+            "ath_executable": str(run_paths.tools.ath_executable or ""),
+            "akabak_executable": str(run_paths.tools.akabak_executable or ""),
+            "vacs_executable": str(run_paths.tools.vacs_executable or ""),
+            "library_root": str(effective_library_root) if effective_library_root is not None else None,
+            "project_root": str(project_root),
+            "run_root": str(run_paths.run_root),
+            "run_debug_log_path": str(run_debug_log_path),
+            "version_debug_log_pattern": str(project_root / "versions" / "*" / "logs" / "pipeline.stage_debug.jsonl"),
+            "project_db_path": str(writer.project_db_path),
+            "planned_versions": list(planned_version_ids),
+            "planned_count": len(planned_version_ids),
+        },
+    )
 
     bootstrap_sync_errors: List[str] = []
     create_run_result = writer.create_run(
@@ -1796,28 +1818,6 @@ def run_batch_pipeline(
     else:
         run_status = "noop"
         run_error_summary = "nothing_to_run:no_planned_versions"
-    _append_run_debug_log(
-        run_debug_log_path,
-        event="run_start",
-        payload={
-            "run_id": effective_run_id,
-            "project_id": project.project_id,
-            "batch_id": batch.batch_id,
-            "dry_run": bool(dry_run),
-            "app_root": str(run_paths.app_root),
-            "ath_executable": str(run_paths.tools.ath_executable or ""),
-            "akabak_executable": str(run_paths.tools.akabak_executable or ""),
-            "vacs_executable": str(run_paths.tools.vacs_executable or ""),
-            "library_root": str(effective_library_root) if effective_library_root is not None else None,
-            "project_root": str(project_root),
-            "run_root": str(run_paths.run_root),
-            "run_debug_log_path": str(run_debug_log_path),
-            "version_debug_log_pattern": str(project_root / "versions" / "*" / "logs" / "pipeline.stage_debug.jsonl"),
-            "project_db_path": str(writer.project_db_path),
-            "planned_versions": list(planned_version_ids),
-            "planned_count": len(planned_version_ids),
-        },
-    )
 
     try:
         if not planned_version_ids and not bootstrap_sync_errors:
