@@ -462,3 +462,74 @@ Version stage progression excerpt (`versions/V002/logs/pipeline.stage_debug.json
 Conclusion:
 - Stage paths were resolved from one deterministic run/version context.
 - No path-mismatch failure was observed in this run.
+
+## Root cause: `pipeline.stage_debug.jsonl` not findable (2026-02-26)
+
+Observed user symptom:
+- after a run, users could not find `pipeline.stage_debug.jsonl` reliably.
+
+Proven cause:
+- runtime debug logging was gated by `WUT_DEBUG_PIPELINE_STAGES=1`, so no debug JSONL was written in normal runs.
+- run records did not persist `run_root` / `run_debug_log_path`, so users had to infer filesystem paths manually.
+- UI run screen did not expose run identity/path shortcuts.
+
+Repro evidence:
+- `python -m app run-sample --dry-run --library-root cleanup/runtime/tmp_findability_probe`
+- run completed, but both paths were missing:
+  - `<project_root>/runs/<run_id>/pipeline.stage_debug.jsonl`
+  - `<project_root>/versions/<version_id>/logs/pipeline.stage_debug.jsonl`
+
+## Findability fixes applied (2026-02-26)
+
+Code changes:
+- `app/runtime_orchestrator.py`
+  - run/version debug JSONL writing is now unconditional (not env-flag gated).
+  - runtime summary now includes:
+    - `run_root`
+    - `run_debug_log_path`
+  - `create_run(...)` now persists run path metadata.
+- `app/sql_dataset_store.py`
+  - `runs` schema extended with:
+    - `run_root TEXT`
+    - `run_debug_log_path TEXT`
+  - `upsert_run`, `list_runs`, and migration path updated accordingly.
+- `app/gui.py` (`RunPage`)
+  - added run findability fields:
+    - `Run ID`
+    - `Run Folder`
+    - `Stage Debug`
+  - added `Open Run Folder` button.
+
+## How to locate run logs (current behavior)
+
+1. Start a run from GUI.
+2. On RUN screen read:
+   - `Run ID: <run_id>`
+   - `Run Folder: <abs_path>`
+   - `Stage Debug: <abs_path>/pipeline.stage_debug.jsonl`
+3. Click `Open Run Folder` to open `<project_root>/runs/<run_id>/`.
+4. For per-version stage traces, open:
+   - `<project_root>/versions/<version_id>/logs/pipeline.stage_debug.jsonl`
+
+## E2E GUI Run #5 (Findability validation, 2026-02-26)
+
+Setup:
+- Offscreen GUI worker flow with isolated temp settings + isolated temp library root.
+- `WUT_DEBUG_PIPELINE_STAGES` intentionally unset.
+- Fake toolchain + guarded stage stubs (no product logic change) for deterministic completion.
+
+Result:
+- `run_status=succeeded`
+- run record created with persisted path metadata.
+- artifacts confirmed present:
+  - `run_root` exists
+  - run-level `pipeline.stage_debug.jsonl` exists
+  - version-level `pipeline.stage_debug.jsonl` exists
+
+Run record evidence (`runs` table row):
+- `run_root`: `.../library/projects/P0001__.../runs/<run_id>`
+- `run_debug_log_path`: `.../library/projects/P0001__.../runs/<run_id>/pipeline.stage_debug.jsonl`
+
+Run log excerpt:
+- first event: `run_start` with explicit root bindings
+- last event: `run_end` with terminal run status

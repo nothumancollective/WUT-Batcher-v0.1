@@ -62,6 +62,10 @@ Status: active convention for `wut-batcher/rebuild` runtime pipeline
 - No implicit repo-relative runtime roots for artifacts.
 - No silent cleanup/runtime root fallback in GUI runs.
 - Stage failures must report missing/invalid expected paths explicitly.
+- `pipeline.stage_debug.jsonl` must be written deterministically for every run:
+  - run-level: `<project_root>/runs/<run_id>/pipeline.stage_debug.jsonl`
+  - version-level: `<project_root>/versions/<version_id>/logs/pipeline.stage_debug.jsonl`
+  - discoverability fields persisted in `runs` table: `run_root`, `run_debug_log_path`.
 
 ## 4) Stage mapping (inputs/outputs)
 
