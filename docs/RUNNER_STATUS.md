@@ -276,3 +276,58 @@ Verbatim sync payload (`versions/V005/logs/ath.abec_sync.json`):
 
 Immediate implication:
 - ATH completed successfully (`ath: ok`), but sync did not find any generated `.abec` in the current search roots for this version.
+
+## Root cause: ath_abec_sync (2026-02-26)
+
+Classification:
+- Primary class: **A/B (artifact location mismatch in sync search roots)**.
+
+Evidence:
+- Expected target path:
+  - `.../versions/V005/abec/Project.abec`
+- Search roots used at failure time:
+  - `.../runs/ath_export/<project>_B001_V005_<run8>`
+  - `.../versions/V005/ath_work`
+- Sync payload reported:
+  - `"error": "generated_abec_missing"`
+  - `"source_abec": ""`
+- File-system check confirmed:
+  - `versions/V005/abec/Project.abec` existed even while sync reported missing source.
+
+Why this failed:
+- `_sync_generated_abec(...)` only searched ATH export/work directories.
+- In the reproduced run profile, ATH output ABEC directly into the version ABEC folder.
+- Therefore sync could not locate the freshly generated artifact and marked stage failed.
+
+Fix applied:
+- `app/runtime_orchestrator.py`
+  - Include `target_abec.parent` in sync search roots.
+  - Add fresh-artifact guard (`min_mtime_ns`) to reject stale leftovers.
+  - Add 5s mtime slop for Windows timestamp granularity.
+
+Validation:
+- `python -m pytest -q tests/test_runtime_orchestrator.py`
+  - `23 passed`
+- Added regression tests:
+  - fresh target-dir ABEC is accepted
+  - stale target-dir ABEC is rejected (`generated_abec_missing`)
+
+## E2E evidence after fix (GUI, 2026-02-26)
+
+Isolated GUI run (real user flow, stage debug enabled):
+- Root: `%TEMP%/wut_gui_ath_abec_sync_fix2_*`
+- Run status: `failed` (expected in this toolchain due a later guard), but `ath_abec_sync` no longer fails.
+
+Run binding evidence (`runs/<run_id>/pipeline.stage_debug.jsonl`):
+- `library_root`: `.../library`
+- `project_root`: `.../library/projects/P0001__...`
+- `run_root`: `.../library/projects/P0001__.../runs/3c953697-...`
+- `project_db_path`: `.../library/projects/P0001__.../db/project.sqlite`
+
+Stage progression excerpt (first version):
+- `ath: ok`
+- `post_ath_le_repair: ok`
+- next failure moved to `pre_akabak_le_driving_guard` (upstream precondition), proving `ath_abec_sync` passed.
+
+Analyzer interaction safety check:
+- Post-run analyzer project query executed without DB-lock exceptions (`analyzer_list_polar_projects(source='project')` returned cleanly).
