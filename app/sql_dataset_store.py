@@ -276,6 +276,8 @@ class SqlDatasetStore:
                     git_commit TEXT,
                     app_version TEXT,
                     settings_hash TEXT,
+                    run_root TEXT,
+                    run_debug_log_path TEXT,
                     error_summary TEXT,
                     pinned INTEGER NOT NULL DEFAULT 0 CHECK (pinned IN (0, 1)),
                     tag TEXT
@@ -638,12 +640,21 @@ class SqlDatasetStore:
                 git_commit TEXT,
                 app_version TEXT,
                 settings_hash TEXT,
+                run_root TEXT,
+                run_debug_log_path TEXT,
                 error_summary TEXT,
                 pinned INTEGER NOT NULL DEFAULT 0 CHECK (pinned IN (0, 1)),
                 tag TEXT
             )
             """
         )
+        columns = set(self._table_columns(conn, "runs"))
+        for name, sql_type in (
+            ("run_root", "TEXT"),
+            ("run_debug_log_path", "TEXT"),
+        ):
+            if name not in columns:
+                conn.execute(f"ALTER TABLE runs ADD COLUMN {name} {sql_type}")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS run_versions (
@@ -1627,8 +1638,9 @@ class SqlDatasetStore:
             """
             INSERT INTO runs (
                 run_id, project_id, batch_id, started_at, finished_at, status,
-                git_commit, app_version, settings_hash, error_summary, pinned, tag
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                git_commit, app_version, settings_hash, run_root, run_debug_log_path,
+                error_summary, pinned, tag
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(run_id) DO UPDATE SET
                 project_id=excluded.project_id,
                 batch_id=excluded.batch_id,
@@ -1638,6 +1650,8 @@ class SqlDatasetStore:
                 git_commit=excluded.git_commit,
                 app_version=excluded.app_version,
                 settings_hash=excluded.settings_hash,
+                run_root=excluded.run_root,
+                run_debug_log_path=excluded.run_debug_log_path,
                 error_summary=excluded.error_summary,
                 pinned=excluded.pinned,
                 tag=excluded.tag
@@ -1652,6 +1666,8 @@ class SqlDatasetStore:
                 payload.get("git_commit"),
                 payload.get("app_version"),
                 payload.get("settings_hash"),
+                payload.get("run_root"),
+                payload.get("run_debug_log_path"),
                 payload.get("error_summary"),
                 int(payload.get("pinned", 0)),
                 payload.get("tag"),
@@ -1661,7 +1677,16 @@ class SqlDatasetStore:
     def _op_update_run(self, conn: sqlite3.Connection, payload: Dict[str, Any]) -> None:
         fields: List[str] = []
         values: List[Any] = []
-        for key in ("status", "finished_at", "error_summary", "git_commit", "app_version", "settings_hash"):
+        for key in (
+            "status",
+            "finished_at",
+            "error_summary",
+            "git_commit",
+            "app_version",
+            "settings_hash",
+            "run_root",
+            "run_debug_log_path",
+        ):
             if key in payload:
                 fields.append(f"{key} = ?")
                 values.append(payload[key])
@@ -2878,6 +2903,8 @@ class SqlDatasetStore:
         git_commit: Optional[str] = None,
         app_version: Optional[str] = None,
         settings_hash: Optional[str] = None,
+        run_root: Optional[str] = None,
+        run_debug_log_path: Optional[str] = None,
         error_summary: Optional[str] = None,
     ) -> Dict[str, Any]:
         payload = {
@@ -2889,6 +2916,8 @@ class SqlDatasetStore:
             "git_commit": git_commit,
             "app_version": app_version,
             "settings_hash": settings_hash,
+            "run_root": run_root,
+            "run_debug_log_path": run_debug_log_path,
             "error_summary": error_summary,
             "pinned": 0,
             "tag": None,
@@ -2961,7 +2990,8 @@ class SqlDatasetStore:
             values.append(1 if pinned else 0)
         query = (
             "SELECT run_id, project_id, batch_id, started_at, finished_at, status, "
-            "git_commit, app_version, settings_hash, error_summary, pinned, tag "
+            "git_commit, app_version, settings_hash, run_root, run_debug_log_path, "
+            "error_summary, pinned, tag "
             f"FROM runs WHERE {' AND '.join(where)} ORDER BY started_at DESC"
         )
         with self._open_conn(self.project_db_path) as conn:
@@ -2977,6 +3007,8 @@ class SqlDatasetStore:
                 "git_commit": row["git_commit"],
                 "app_version": row["app_version"],
                 "settings_hash": row["settings_hash"],
+                "run_root": row["run_root"],
+                "run_debug_log_path": row["run_debug_log_path"],
                 "error_summary": row["error_summary"],
                 "pinned": bool(row["pinned"]),
                 "tag": row["tag"],

@@ -8,7 +8,6 @@ import csv
 import hashlib
 import io
 import json
-import os
 from pathlib import Path
 import re
 import shutil
@@ -46,14 +45,7 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
-def _debug_stage_logging_enabled() -> bool:
-    value = str(os.environ.get("WUT_DEBUG_PIPELINE_STAGES", "")).strip().lower()
-    return value in {"1", "true", "yes", "on"}
-
-
 def _append_stage_debug_log(version_logs_dir: Path, *, event: str, payload: Dict[str, Any]) -> None:
-    if not _debug_stage_logging_enabled():
-        return
     path = version_logs_dir / "pipeline.stage_debug.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)
     row = {
@@ -70,8 +62,6 @@ def _append_stage_debug_log(version_logs_dir: Path, *, event: str, payload: Dict
 
 
 def _append_run_debug_log(run_debug_log_path: Path, *, event: str, payload: Dict[str, Any]) -> None:
-    if not _debug_stage_logging_enabled():
-        return
     path = Path(run_debug_log_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     row = {
@@ -130,6 +120,8 @@ class RuntimeSummary:
     project_id: str
     batch_id: str
     project_root: str
+    run_root: str
+    run_debug_log_path: str
     versions: List[str]
     stage_results: List[StageExecution]
     ath_dimension_rows: int
@@ -1751,6 +1743,8 @@ def run_batch_pipeline(
         git_commit=git_commit,
         app_version=app_version,
         settings_hash=settings_hash,
+        run_root=str(run_paths.run_root),
+        run_debug_log_path=str(run_debug_log_path),
     )
     if not _is_global_synced(create_run_result):
         bootstrap_sync_errors.append("create_run")
@@ -1817,6 +1811,8 @@ def run_batch_pipeline(
             "library_root": str(effective_library_root) if effective_library_root is not None else None,
             "project_root": str(project_root),
             "run_root": str(run_paths.run_root),
+            "run_debug_log_path": str(run_debug_log_path),
+            "version_debug_log_pattern": str(project_root / "versions" / "*" / "logs" / "pipeline.stage_debug.jsonl"),
             "project_db_path": str(writer.project_db_path),
             "planned_versions": list(planned_version_ids),
             "planned_count": len(planned_version_ids),
@@ -2878,6 +2874,8 @@ def run_batch_pipeline(
         project_id=project.project_id,
         batch_id=batch.batch_id,
         project_root=str(project_root),
+        run_root=str(run_paths.run_root),
+        run_debug_log_path=str(run_debug_log_path),
         versions=list(planned_version_ids),
         stage_results=stage_results,
         ath_dimension_rows=ath_dimension_rows,

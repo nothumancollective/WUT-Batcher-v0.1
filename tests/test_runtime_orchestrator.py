@@ -579,6 +579,57 @@ class RuntimeOrchestratorTests(unittest.TestCase):
                 self.assertTrue(run_cfg_path.exists())
                 self.assertEqual(run_cfg_path.suffix.lower(), ".cfg")
 
+    def test_pipeline_always_writes_run_debug_log_and_persists_run_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            projects_root = Path(tmp_dir) / "projects"
+            project = Project(
+                project_id="P001",
+                name="Runtime Run Log Persist Test",
+                root_path=str(projects_root / "P001"),
+                constraints=ProjectConstraints(
+                    project_id="P001",
+                    fixed_params={"Length": 120},
+                    limits={},
+                    runner_mode="AthGuidePreview",
+                ),
+            )
+            batch = Batch(
+                batch_id="B001",
+                project_id="P001",
+                selected_params={"Throat.Diameter": ParamSelection(value=30.0)},
+                sweep_mode="single",
+                runner_mode="AthGuidePreview",
+            )
+
+            summary = run_batch_pipeline(
+                project=project,
+                batch=batch,
+                projects_root=projects_root,
+                dry_run=True,
+                run_id="RUN_LOG_PERSIST",
+            )
+
+            run_log_path = Path(summary.run_debug_log_path)
+            self.assertTrue(run_log_path.exists())
+            self.assertEqual(run_log_path.parent, Path(summary.run_root))
+            lines = [line.strip() for line in run_log_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+            self.assertTrue(any('"event": "run_start"' in line for line in lines))
+            self.assertTrue(any('"event": "run_end"' in line for line in lines))
+
+            version_log_path = Path(summary.project_root) / "versions" / summary.versions[0] / "logs" / "pipeline.stage_debug.jsonl"
+            self.assertTrue(version_log_path.exists())
+
+            project_db = _project_db_path(Path(summary.project_root))
+            with closing(sqlite3.connect(str(project_db))) as conn:
+                row = conn.execute(
+                    "SELECT run_root, run_debug_log_path FROM runs WHERE run_id = ?",
+                    (summary.run_id,),
+                ).fetchone()
+            self.assertIsNotNone(row)
+            assert row is not None
+            self.assertEqual(str(row[0] or ""), summary.run_root)
+            self.assertEqual(str(row[1] or ""), summary.run_debug_log_path)
+
     def test_pipeline_cleans_runtime_cfg_and_ath_export_subdir_after_success(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             projects_root = Path(tmp_dir) / "projects"

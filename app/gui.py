@@ -6412,16 +6412,39 @@ class RunPage(QWidget):
         self.mode_label.setObjectName("SummaryMeta")
         self.eta_label = QLabel("ETA: --")
         self.eta_label.setObjectName("SummaryMeta")
+        self.run_id_label = QLabel("Run ID: --")
+        self.run_id_label.setObjectName("SummaryMeta")
+        self.run_root_label = QLabel("Run Folder: --")
+        self.run_root_label.setObjectName("SummaryMeta")
+        self.run_root_label.setWordWrap(True)
+        self.run_debug_label = QLabel("Stage Debug: --")
+        self.run_debug_label.setObjectName("SummaryMeta")
+        self.run_debug_label.setWordWrap(True)
         shell_layout.addWidget(self.version_label)
         shell_layout.addWidget(self.mode_label)
         shell_layout.addWidget(self.eta_label)
+        shell_layout.addWidget(self.run_id_label)
+        shell_layout.addWidget(self.run_root_label)
+        shell_layout.addWidget(self.run_debug_label)
         shell_layout.addSpacing(6)
+
+        self._run_root_path: Optional[Path] = None
+        self.open_run_folder_btn = QPushButton("Open Run Folder")
+        self.open_run_folder_btn.setObjectName("BatchSecondaryButton")
+        self.open_run_folder_btn.setEnabled(False)
+        self.open_run_folder_btn.clicked.connect(self._open_run_folder)
 
         self.back_btn = QPushButton("Back to Dashboard")
         self.back_btn.setObjectName("BatchSecondaryButton")
         self.back_btn.setEnabled(False)
         self.back_btn.clicked.connect(self.back_to_dashboard.emit)
-        shell_layout.addWidget(self.back_btn, 0, Qt.AlignRight)
+        actions = QHBoxLayout()
+        actions.setContentsMargins(0, 0, 0, 0)
+        actions.setSpacing(8)
+        actions.addWidget(self.open_run_folder_btn, 0, Qt.AlignLeft)
+        actions.addStretch(1)
+        actions.addWidget(self.back_btn, 0, Qt.AlignRight)
+        shell_layout.addLayout(actions)
 
         root.addWidget(shell, 0, Qt.AlignHCenter | Qt.AlignVCenter)
         root.addStretch(1)
@@ -6433,6 +6456,7 @@ class RunPage(QWidget):
         self.version_label.setText("Version 0/0")
         self.mode_label.setText("Mode: running...")
         self.eta_label.setText("ETA: calculating...")
+        self.set_run_reference(run_id=None, run_root=None, run_debug_log_path=None)
         self.back_btn.setEnabled(False)
 
     def set_background_mode(self, enabled: bool) -> None:
@@ -6478,6 +6502,29 @@ class RunPage(QWidget):
 
     def format_progress_label(self) -> None:
         self.progress.setFormat("Run complete")
+
+    def set_run_reference(
+        self,
+        *,
+        run_id: Optional[str],
+        run_root: Optional[str],
+        run_debug_log_path: Optional[str],
+    ) -> None:
+        run_id_token = str(run_id or "").strip()
+        run_root_token = str(run_root or "").strip()
+        run_debug_token = str(run_debug_log_path or "").strip()
+        self.run_id_label.setText(f"Run ID: {run_id_token or '--'}")
+        self.run_root_label.setText(f"Run Folder: {run_root_token or '--'}")
+        self.run_debug_label.setText(f"Stage Debug: {run_debug_token or '--'}")
+        self._run_root_path = Path(run_root_token) if run_root_token else None
+        self.open_run_folder_btn.setEnabled(bool(self._run_root_path and self._run_root_path.exists()))
+
+    def _open_run_folder(self) -> None:
+        target = self._run_root_path
+        if target is None or not target.exists():
+            QMessageBox.warning(self, "Run folder unavailable", "Run folder does not exist.")
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(target.resolve())))
 
 
 class AnalysePage(QWidget):
@@ -13446,6 +13493,11 @@ class MainWindow(QMainWindow):
         version_count = len(list(summary_payload.get("versions", []) or []))
         dry_run = bool(summary_payload.get("dry_run", False))
         run_status = str(summary_payload.get("run_status", "") or "").strip().lower()
+        self.run_page.set_run_reference(
+            run_id=str(summary_payload.get("run_id") or "").strip() or None,
+            run_root=str(summary_payload.get("run_root") or "").strip() or None,
+            run_debug_log_path=str(summary_payload.get("run_debug_log_path") or "").strip() or None,
+        )
         detail_json = json.dumps(summary_payload, indent=2, ensure_ascii=False)
         if run_status in {"succeeded", "success"}:
             self.run_page.set_finished_state(version_count=version_count, dry_run=dry_run)
@@ -13469,6 +13521,7 @@ class MainWindow(QMainWindow):
         self._exit_run_presentation()
 
     def _on_batch_run_failed(self, batch_id: str, detail: str) -> None:
+        self.run_page.set_run_reference(run_id=None, run_root=None, run_debug_log_path=None)
         self.run_page.set_failed_state()
         self.set_status(
             f"Run failed for {batch_id}",
