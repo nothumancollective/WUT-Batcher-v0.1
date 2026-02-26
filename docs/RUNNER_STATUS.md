@@ -5,6 +5,7 @@
 - Analyzer/worker interaction source: `docs/analyzer/*` and the latest merge notes under `docs/release/*`.
 - Storage root/source-of-truth source: `docs/release/project-library.md` + `docs/release/storage-audit.md`.
 - Selection rationale: these files are the currently maintained docs referenced by the active runner, analyzer, and storage integration commits on `wut-batcher/rebuild`.
+- Current debugging focus in this cycle: stage failure at `ath_abec_sync` (ATH succeeded, ABEC sync failed).
 
 ## Scope Reviewed
 - `docs/RUNNER_AUDIT.md`
