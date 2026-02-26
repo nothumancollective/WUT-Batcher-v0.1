@@ -170,3 +170,13 @@ The Batch page is now implemented as a companion to the PROJECT form design.
   - left: existing batches list panel
   - right: lineage graph pane (`QGraphicsView`) with `Fit / Reset View` control
 - Existing dashboard action wiring (`New/Edit/Clone/Manage/Export/Settings`) remains unchanged.
+
+## Branch Sync Note (2026-02-26)
+- Branch during UI polish work: `feature/batch-lineage-graph`
+- Sync command sequence:
+  - `git fetch origin`
+  - `git merge --no-edit origin/wut-batcher/rebuild`
+- Result: `Already up to date.`
+- Quick startup smoke after sync:
+  - offscreen launch via `python -m app gui`
+  - app started and stayed alive for 8 seconds without immediate startup crash.

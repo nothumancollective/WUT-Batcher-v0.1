@@ -5020,7 +5020,9 @@ class ConstraintSummaryGrid(QFrame):
                 ],
             },
         ]
-        self._chip_buttons: Dict[str, List[tuple[str, QPushButton]]] = {}
+        self._chip_buttons: Dict[str, QPushButton] = {}
+        self._chip_specs_by_column: Dict[str, Dict[str, Dict[str, Any]]] = {}
+        self._active_chip_specs: Dict[str, Dict[str, Any]] = {}
         self._value_grids: Dict[str, Optional[QGridLayout]] = {}
         root = QVBoxLayout(self)
         root.setContentsMargins(10, 8, 10, 8)
@@ -5062,27 +5064,36 @@ class ConstraintSummaryGrid(QFrame):
             col_layout.setContentsMargins(0, 0, 0, 0)
             col_layout.setSpacing(6)
 
+            key = str(spec.get("name", "")).strip()
             chips_row = QHBoxLayout()
             chips_row.setContentsMargins(0, 0, 0, 0)
             chips_row.setSpacing(4)
-            bucket: List[tuple[str, QPushButton]] = []
+            chip_specs: Dict[str, Dict[str, Any]] = {}
             for chip_spec in list(spec.get("chips", [])):
                 chip_id = str(chip_spec.get("id", "")).strip()
-                button = QPushButton(str(chip_spec.get("label", "")).strip())
-                button.setObjectName("SummaryChip")
-                button.setCheckable(True)
+                if not chip_id:
+                    continue
+                chip_specs[chip_id] = {
+                    "id": chip_id,
+                    "label": str(chip_spec.get("label", "")).strip() or chip_id,
+                    "focus_key": str(chip_spec.get("focus_key", "")).strip(),
+                    "implemented": bool(chip_spec.get("implemented", False)),
+                }
+            if not chip_specs:
+                chip_specs["none"] = {"id": "none", "label": "--", "focus_key": "", "implemented": False}
+            self._chip_specs_by_column[key] = chip_specs
+
+            default_chip = next(iter(chip_specs.values()))
+            button = QPushButton(str(default_chip.get("label", "--")))
+            button.setObjectName("SummaryChip")
+            button.setCheckable(False)
+            button.setProperty("active", "true")
+            if self._mode == "full":
                 button.setCursor(Qt.PointingHandCursor)
-                button.setProperty("active", "false")
-                focus_key = str(chip_spec.get("focus_key", "")).strip()
-                implemented = bool(chip_spec.get("implemented", False))
-                if implemented:
-                    button.setToolTip("Open constraint editor")
-                    button.clicked.connect(lambda _checked=False, key=focus_key: self._open_editor(key))
-                else:
-                    button.setEnabled(False)
-                    button.setToolTip("Not implemented yet")
-                chips_row.addWidget(button)
-                bucket.append((chip_id, button))
+                button.clicked.connect(lambda _checked=False, category=key: self._open_editor_for_category(category))
+            else:
+                button.setCursor(Qt.ArrowCursor)
+            chips_row.addWidget(button)
             chips_row.addStretch(1)
             col_layout.addLayout(chips_row)
             values_grid: Optional[QGridLayout] = None
@@ -5096,8 +5107,7 @@ class ConstraintSummaryGrid(QFrame):
             else:
                 col_layout.addStretch(1)
 
-            key = str(spec.get("name", "")).strip()
-            self._chip_buttons[key] = bucket
+            self._chip_buttons[key] = button
             self._value_grids[key] = values_grid
             columns.addWidget(col, 1)
         root.addWidget(self._columns_wrap)
@@ -5153,6 +5163,23 @@ class ConstraintSummaryGrid(QFrame):
         token = str(key or "").strip()
         if token:
             self.request_open_editor.emit(token)
+
+    def _chip_spec_for(self, category: str, chip_id: str) -> Dict[str, Any]:
+        specs = dict(self._chip_specs_by_column.get(str(category), {}) or {})
+        token = str(chip_id or "").strip()
+        if token and token in specs:
+            return dict(specs[token])
+        if "none" in specs:
+            return dict(specs["none"])
+        if specs:
+            return dict(next(iter(specs.values())))
+        return {"id": "", "label": "--", "focus_key": "", "implemented": False}
+
+    def _open_editor_for_category(self, category: str) -> None:
+        spec = dict(self._active_chip_specs.get(str(category), {}) or {})
+        if not bool(spec.get("implemented", False)):
+            return
+        self._open_editor(str(spec.get("focus_key", "")))
 
     def _state_by_key(self, payload: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
         state: Dict[str, Dict[str, Any]] = {}
@@ -5282,15 +5309,24 @@ class ConstraintSummaryGrid(QFrame):
         grouped = self._entries_by_category(payload)
         self._entry_count = int(sum(len(list(rows or [])) for rows in grouped.values()))
 
-        for category, buttons in self._chip_buttons.items():
+        for category, button in self._chip_buttons.items():
             active_id = str(active.get(category, "")).strip()
-            for chip_id, button in buttons:
-                checked = chip_id == active_id
-                button.blockSignals(True)
-                button.setChecked(checked)
-                button.blockSignals(False)
-                button.setProperty("active", "true" if checked else "false")
-                self._repolish(button)
+            spec = self._chip_spec_for(category, active_id)
+            self._active_chip_specs[category] = dict(spec)
+            label_text = str(spec.get("label", "")).strip() or "--"
+            focus_key = str(spec.get("focus_key", "")).strip()
+            implemented = bool(spec.get("implemented", False)) and bool(focus_key)
+            button.setText(label_text)
+            button.setProperty("active", "true")
+            if self._mode == "full":
+                button.setEnabled(implemented)
+                button.setCursor(Qt.PointingHandCursor if implemented else Qt.ArrowCursor)
+                button.setToolTip("Open constraint editor" if implemented else "Not available")
+            else:
+                button.setEnabled(True)
+                button.setCursor(Qt.ArrowCursor)
+                button.setToolTip(f"Selected: {label_text}")
+            self._repolish(button)
             if self._mode == "full":
                 self._render_rows(category, list(grouped.get(category, [])))
 

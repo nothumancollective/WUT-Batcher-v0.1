@@ -26,7 +26,7 @@ class DashboardConstraintUiTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.app = QApplication.instance() or QApplication([])
 
-    def test_constraint_grid_has_five_columns_and_chip_opens_editor_signal(self) -> None:
+    def test_constraint_grid_has_selected_chips_only_and_chip_opens_editor_signal(self) -> None:
         grid = ConstraintSummaryGrid()
         grid.set_constraints_payload(
             {
@@ -37,6 +37,13 @@ class DashboardConstraintUiTests(unittest.TestCase):
         )
         dividers = grid.findChildren(QFrame, "ConstraintColumnDivider")
         self.assertEqual(len(dividers), 4)
+        summary_chip_labels = [
+            str(button.text()).strip()
+            for button in grid.findChildren(QPushButton, "SummaryChip")
+        ]
+        self.assertEqual(len(summary_chip_labels), 5)
+        self.assertIn("OSSE", summary_chip_labels)
+        self.assertNotIn("R-OSSE", summary_chip_labels)
 
         captured: list[str] = []
         grid.request_open_editor.connect(captured.append)
