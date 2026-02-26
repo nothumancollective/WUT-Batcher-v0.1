@@ -331,3 +331,42 @@ Stage progression excerpt (first version):
 
 Analyzer interaction safety check:
 - Post-run analyzer project query executed without DB-lock exceptions (`analyzer_list_polar_projects(source='project')` returned cleanly).
+
+## Phase 0 Audit Findings (Path Convention, 2026-02-26)
+
+Doc selection (authoritative for this change set):
+- `docs/RUNNER_STATUS.md` (this file): latest runner execution map + current failure timeline.
+- `docs/release/project-library.md`: active storage root policy and library/project DB boundaries.
+- `docs/LE_DRIVING_AUDIT.md`: current LE/AKABAK contract expectations and known pre-AKABAK checks.
+- Selection rationale: these three docs are currently aligned with active `wut-batcher/rebuild` runtime behavior and referenced by current runner fixes.
+
+Code-path archaeology summary (hotspots):
+- Runner path assembly and stage handoff:
+  - `app/runtime_orchestrator.py`
+  - hotspots: `_planned_ath_export_dir`, `_version_*` helpers, `_sync_generated_abec`, `_version_exports_dir`, inline stage `workdir` wiring.
+- Project/storage structural source:
+  - `app/project_storage.py`
+  - `resolve_project_paths`, `resolve_version_paths`, `ProjectPaths`, `VersionPaths`.
+- Service-level orchestration root decisions:
+  - `app/services.py::OrchestratorService.run_batch`
+  - picks `ath_export_root` and passes root/tool settings into `run_batch_pipeline`.
+- External VACS exporter boundary:
+  - `app/vacs_export_pipeline.py`
+  - uses script execution rooted at app repo (`scripts/vacs_export_save_all.py`) with stage-provided export/log paths.
+
+Path-mixing and ambiguity hotspots identified:
+- Mixed artifact loci between version-owned dirs and run-owned dirs:
+  - version paths (`versions/<V>/ath_work`, `versions/<V>/abec`, `versions/<V>/exports/<run_id>`) coexist with run-level ATH export root (`runs/ath_export/<cfg_stem>`).
+- Reader/writer mismatch risks:
+  - prior `ath_abec_sync` searched limited roots and missed `versions/<V>/abec`.
+  - several stages still use ad-hoc path composition instead of a single run layout object.
+- Search/discovery patterns still present:
+  - ABEC selection and TXT ingestion rely on directory scans (`rglob`) in stage-specific roots; currently deterministic but not yet centralized by one formal run-layout helper.
+- Legacy naming coexistence:
+  - `db/` vs `dataset/`, `logs/` vs `_logs/` compatibility branches remain in `project_storage`.
+
+Consolidation decision:
+- **Extend existing convention (preferred)**:
+  - keep `StorageManager` + `project_storage` as storage authorities.
+  - add one runner `PathContext/RunLayout` helper for stage-level artifact paths.
+  - migrate stage code to consume that helper (no parallel resolver module, no new storage system).
