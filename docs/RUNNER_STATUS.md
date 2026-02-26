@@ -371,3 +371,67 @@ Consolidation decision:
   - keep `StorageManager` + `project_storage` as storage authorities.
   - add one runner `PathContext/RunLayout` helper for stage-level artifact paths.
   - migrate stage code to consume that helper (no parallel resolver module, no new storage system).
+
+## Phase 2 Implementation (PathContext wiring, 2026-02-26)
+
+Implemented:
+- New helper module: `app/run_path_context.py`
+  - `RunPathContext.build(...)` (run-scoped roots and tool paths)
+  - `RunPathContext.version(...)` (version-scoped canonical artifact paths)
+- Runtime integration: `app/runtime_orchestrator.py`
+  - `run_batch_pipeline(...)` now builds one `RunPathContext` per run and uses it for:
+    - cfg input/runtime cfg paths
+    - ATH workdir path
+    - ABEC canonical path
+    - version logs path
+    - run export path
+    - bounded ABEC sync roots (`ath_export_dir`, `ath_work_dir`, `abec_dir`)
+  - run-level debug logging now writes via `run_paths.run_debug_log_path()`.
+  - removed legacy ad-hoc `_version_*` path helper usage from the run loop.
+
+Expected impact:
+- deterministic writer/reader parity per stage
+- no implicit fallback to repo-relative or cleanup roots during GUI runs
+- clearer diagnostics when expected artifacts are missing.
+
+## E2E GUI Run #4 (Path Convention Validation, 2026-02-26)
+
+Scope:
+- Offscreen GUI worker flow (`MainWindow._start_batch_run_worker`) with isolated temp settings and isolated temp library root.
+- `WUT_DEBUG_PIPELINE_STAGES=1` enabled.
+- No writes to user settings store; settings file was scoped to `%TEMP%/wut_pathctx_gui_e2e2_*/settings.json`.
+
+Execution notes:
+- Fake ATH/AKABAK/VACS executables used to keep runtime short.
+- Toolchain-dependent guard points were patched in test harness only (no product code change):
+  - `repair_post_ath_le_binding` -> success stub
+  - LE-driving guard -> `ok: true`
+  - mesh guard -> no missing mesh
+  - `run_vacs_export_specs` -> deterministic TXT export stub
+
+Observed result:
+- GUI status: `Run finished for B001`
+- runtime payload: `run_status=succeeded`
+- run root used:
+  - `.../library/projects/P0001__98e2e136-d09d-4765-bdc6-7ca130522988/runs/0305ce7d-9d9a-4076-80d4-d0fdc50b49cb`
+
+Run log evidence (`runs/<run_id>/pipeline.stage_debug.jsonl`):
+- `run_start` captured explicit bindings:
+  - `app_root`
+  - `library_root`
+  - `project_root`
+  - `run_root`
+  - `project_db_path`
+- `run_end` captured:
+  - `status=succeeded`
+  - `stage_count=6`
+
+Version stage progression excerpt (`versions/V002/logs/pipeline.stage_debug.jsonl`):
+- `ath: ok`
+- `post_ath_le_repair: ok`
+- `akabak (subprocess): ok`
+- `vacs (export_specs): ok`
+
+Conclusion:
+- Stage paths were resolved from one deterministic run/version context.
+- No path-mismatch failure was observed in this run.
