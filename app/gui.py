@@ -4965,11 +4965,14 @@ class CleanupTestDataDialog(QDialog):
 
 class ConstraintSummaryGrid(QFrame):
     request_open_editor = Signal(str)
+    request_toggle_drawer = Signal()
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, parent: QWidget | None = None, *, mode: str = "full") -> None:
         super().__init__(parent)
         self.setObjectName("ProjectSummaryPanel")
+        self._mode = "bar" if str(mode or "").strip().lower() == "bar" else "full"
         self._payload: Dict[str, Any] = {}
+        self._entry_count = 0
         self._column_specs: List[Dict[str, Any]] = [
             {
                 "name": "basics",
@@ -5009,18 +5012,34 @@ class ConstraintSummaryGrid(QFrame):
             },
         ]
         self._chip_buttons: Dict[str, List[tuple[str, QPushButton]]] = {}
-        self._value_grids: Dict[str, QGridLayout] = {}
+        self._value_grids: Dict[str, Optional[QGridLayout]] = {}
         root = QVBoxLayout(self)
-        root.setContentsMargins(10, 10, 10, 10)
-        root.setSpacing(8)
+        root.setContentsMargins(10, 8, 10, 8)
+        root.setSpacing(6)
+        title_row = QHBoxLayout()
+        title_row.setContentsMargins(0, 0, 0, 0)
+        title_row.setSpacing(6)
         title = QLabel("Project Constraints")
         title.setObjectName("SummaryTitle")
-        root.addWidget(title)
+        title_row.addWidget(title, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        title_row.addStretch(1)
+        self.drawer_toggle_btn: Optional[QToolButton] = None
+        if self._mode == "bar":
+            toggle = QToolButton()
+            toggle.setObjectName("BatchSecondaryToolButton")
+            toggle.setToolButtonStyle(Qt.ToolButtonTextOnly)
+            toggle.setAutoRaise(True)
+            toggle.setText("▼")
+            toggle.setToolTip("Expand constraints drawer")
+            toggle.clicked.connect(self.request_toggle_drawer.emit)
+            title_row.addWidget(toggle, 0, Qt.AlignRight | Qt.AlignVCenter)
+            self.drawer_toggle_btn = toggle
+        root.addLayout(title_row)
 
         self._columns_wrap = QWidget()
         columns = QHBoxLayout(self._columns_wrap)
         columns.setContentsMargins(0, 0, 0, 0)
-        columns.setSpacing(8)
+        columns.setSpacing(6)
         for index, spec in enumerate(self._column_specs):
             if index > 0:
                 divider = QFrame()
@@ -5057,13 +5076,16 @@ class ConstraintSummaryGrid(QFrame):
                 bucket.append((chip_id, button))
             chips_row.addStretch(1)
             col_layout.addLayout(chips_row)
-
-            values_wrap = QWidget()
-            values_grid = QGridLayout(values_wrap)
-            values_grid.setContentsMargins(0, 0, 0, 0)
-            values_grid.setHorizontalSpacing(8)
-            values_grid.setVerticalSpacing(4)
-            col_layout.addWidget(values_wrap, 1)
+            values_grid: Optional[QGridLayout] = None
+            if self._mode == "full":
+                values_wrap = QWidget()
+                values_grid = QGridLayout(values_wrap)
+                values_grid.setContentsMargins(0, 0, 0, 0)
+                values_grid.setHorizontalSpacing(8)
+                values_grid.setVerticalSpacing(4)
+                col_layout.addWidget(values_wrap, 1)
+            else:
+                col_layout.addStretch(1)
 
             key = str(spec.get("name", "")).strip()
             self._chip_buttons[key] = bucket
@@ -5073,7 +5095,10 @@ class ConstraintSummaryGrid(QFrame):
 
         self._empty = QLabel("No project loaded.")
         self._empty.setObjectName("SummaryText")
-        root.addWidget(self._empty)
+        if self._mode == "full":
+            root.addWidget(self._empty)
+        else:
+            self._empty.setVisible(False)
         self._refresh()
 
     @staticmethod
@@ -5221,7 +5246,7 @@ class ConstraintSummaryGrid(QFrame):
 
     def _render_rows(self, category: str, rows: List[tuple[str, str]]) -> None:
         grid = self._value_grids.get(category)
-        if grid is None:
+        if not isinstance(grid, QGridLayout):
             return
         self._clear_grid(grid)
         if not rows:
@@ -5246,6 +5271,7 @@ class ConstraintSummaryGrid(QFrame):
         state = self._state_by_key(payload)
         active = self._active_chip_by_column(state)
         grouped = self._entries_by_category(payload)
+        self._entry_count = int(sum(len(list(rows or [])) for rows in grouped.values()))
 
         for category, buttons in self._chip_buttons.items():
             active_id = str(active.get(category, "")).strip()
@@ -5256,13 +5282,66 @@ class ConstraintSummaryGrid(QFrame):
                 button.blockSignals(False)
                 button.setProperty("active", "true" if checked else "false")
                 self._repolish(button)
-            self._render_rows(category, list(grouped.get(category, [])))
+            if self._mode == "full":
+                self._render_rows(category, list(grouped.get(category, [])))
 
-        self._empty.setVisible(not bool(payload))
+        if self._mode == "full":
+            self._empty.setVisible(not bool(payload))
 
     def set_constraints_payload(self, payload: Optional[Dict[str, Any]]) -> None:
         self._payload = dict(payload or {})
         self._refresh()
+
+    def entry_count(self) -> int:
+        return int(self._entry_count)
+
+    def set_drawer_enabled(self, enabled: bool) -> None:
+        button = self.drawer_toggle_btn
+        if not isinstance(button, QToolButton):
+            return
+        button.setEnabled(bool(enabled))
+        button.setVisible(bool(enabled))
+
+    def set_drawer_expanded(self, expanded: bool) -> None:
+        button = self.drawer_toggle_btn
+        if not isinstance(button, QToolButton):
+            return
+        button.setText("▲" if bool(expanded) else "▼")
+        button.setToolTip("Collapse constraints drawer" if bool(expanded) else "Expand constraints drawer")
+
+
+class BatchLineagePane(QFrame):
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("ProjectSummaryPanel")
+        root = QVBoxLayout(self)
+        root.setContentsMargins(10, 8, 10, 10)
+        root.setSpacing(8)
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.setSpacing(6)
+        title = QLabel("Batch Lineage")
+        title.setObjectName("SummaryTitle")
+        header.addWidget(title, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        header.addStretch(1)
+        self.fit_btn = QPushButton("Fit / Reset View")
+        self.fit_btn.setObjectName("BatchSecondaryButton")
+        self.fit_btn.setEnabled(False)
+        self.fit_btn.setToolTip("Lineage graph view is added in the next implementation step.")
+        header.addWidget(self.fit_btn, 0, Qt.AlignRight | Qt.AlignVCenter)
+        root.addLayout(header)
+        self.placeholder = QLabel("Lineage graph pane placeholder.")
+        self.placeholder.setObjectName("SummaryMeta")
+        self.placeholder.setAlignment(Qt.AlignCenter)
+        self.placeholder.setWordWrap(True)
+        root.addWidget(self.placeholder, 1)
+
+    def set_lineage_rows(self, rows: Optional[Sequence[Dict[str, Any]]]) -> None:
+        count = len(list(rows or []))
+        if count <= 0:
+            self.placeholder.setText("No batches yet. Lineage graph will appear here.")
+            return
+        self.placeholder.setText(f"Lineage graph placeholder: {count} batch node(s).")
 
 
 class DashboardPage(QWidget):
@@ -5277,6 +5356,11 @@ class DashboardPage(QWidget):
 
     def __init__(self) -> None:
         super().__init__()
+        self._constraints_drawer_expanded = False
+        self._constraints_drawer_current_height = 0
+        self._constraints_drawer_target_height = 0
+        self._constraints_drawer_min_entries = 6
+
         root = QVBoxLayout(self)
         root.setContentsMargins(20, 12, 20, 14)
         root.setSpacing(10)
@@ -5286,8 +5370,10 @@ class DashboardPage(QWidget):
         top_row_layout.setContentsMargins(0, 0, 0, 0)
         top_row_layout.setSpacing(10)
 
-        self.constraints_summary = ConstraintSummaryGrid()
+        self.constraints_summary = ConstraintSummaryGrid(mode="bar")
+        self.constraints_summary.setFixedHeight(104)
         self.constraints_summary.request_open_editor.connect(self.request_open_constraint_editor.emit)
+        self.constraints_summary.request_toggle_drawer.connect(self._toggle_constraints_drawer)
         top_row_layout.addWidget(self.constraints_summary, 2)
 
         actions_card = QFrame()
@@ -5351,7 +5437,11 @@ class DashboardPage(QWidget):
 
         actions_layout.addLayout(actions_columns)
         top_row_layout.addWidget(actions_card, 1)
-        root.addWidget(top_row)
+        root.addWidget(top_row, 0)
+
+        self.workspace_splitter = QSplitter(Qt.Horizontal)
+        self.workspace_splitter.setObjectName("DashboardWorkspaceSplitter")
+        self.workspace_splitter.setChildrenCollapsible(False)
 
         batch_card = QFrame()
         batch_card.setObjectName("ProjectSummaryPanel")
@@ -5364,7 +5454,14 @@ class DashboardPage(QWidget):
         self.batch_list = QListWidget()
         self.batch_list.setObjectName("DashboardBatchList")
         batch_layout.addWidget(self.batch_list, 1)
-        root.addWidget(batch_card, 1)
+        self.workspace_splitter.addWidget(batch_card)
+
+        self.lineage_pane = BatchLineagePane()
+        self.workspace_splitter.addWidget(self.lineage_pane)
+        self.workspace_splitter.setStretchFactor(0, 1)
+        self.workspace_splitter.setStretchFactor(1, 1)
+        self.workspace_splitter.setSizes([560, 560])
+        root.addWidget(self.workspace_splitter, 1)
 
         footer = QHBoxLayout()
         footer.addStretch(1)
@@ -5372,6 +5469,31 @@ class DashboardPage(QWidget):
         self.settings_btn.setObjectName("BatchGhostButton")
         footer.addWidget(self.settings_btn)
         root.addLayout(footer)
+
+        self.constraints_drawer_scrim = _DrawerScrim(self)
+        self.constraints_drawer_scrim.setObjectName("DashboardConstraintsDrawerScrim")
+        self.constraints_drawer_scrim.setAttribute(Qt.WA_StyledBackground, True)
+        self.constraints_drawer_scrim.setVisible(False)
+        self.constraints_drawer_scrim.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+
+        self.constraints_drawer = QFrame(self)
+        self.constraints_drawer.setObjectName("DashboardConstraintsDrawer")
+        self.constraints_drawer.setAttribute(Qt.WA_StyledBackground, True)
+        self.constraints_drawer.setVisible(False)
+        self.constraints_drawer.setMaximumHeight(0)
+        drawer_layout = QVBoxLayout(self.constraints_drawer)
+        drawer_layout.setContentsMargins(8, 8, 8, 8)
+        drawer_layout.setSpacing(0)
+        self.constraints_drawer_content = ConstraintSummaryGrid(mode="full")
+        self.constraints_drawer_content.request_open_editor.connect(self.request_open_constraint_editor.emit)
+        drawer_layout.addWidget(self.constraints_drawer_content, 1)
+        self._constraints_drawer_height_anim = QPropertyAnimation(self.constraints_drawer, b"maximumHeight", self)
+        self._constraints_drawer_height_anim.setDuration(180)
+        self._constraints_drawer_height_anim.setEasingCurve(QEasingCurve.InOutCubic)
+        self._constraints_drawer_height_anim.valueChanged.connect(self._on_constraints_drawer_height_anim_value)
+        self._constraints_drawer_height_anim.finished.connect(self._on_constraints_drawer_anim_finished)
+        self.constraints_drawer_scrim.clicked.connect(lambda: self._set_constraints_drawer_expanded(False, animated=True))
+        self.constraints_summary.set_drawer_enabled(False)
 
         self.new_batch_btn.clicked.connect(self.request_new_batch.emit)
         self.edit_batch_btn.clicked.connect(self._emit_edit)
@@ -5381,9 +5503,19 @@ class DashboardPage(QWidget):
         if self.cleanup_testdata_btn is not None:
             self.cleanup_testdata_btn.clicked.connect(self.request_cleanup_testdata.emit)
         self.settings_btn.clicked.connect(self.request_settings.emit)
+        QTimer.singleShot(0, self._layout_constraints_drawer_overlay)
 
     def set_constraints_payload(self, payload: Optional[Dict[str, Any]]) -> None:
         self.constraints_summary.set_constraints_payload(payload)
+        self.constraints_drawer_content.set_constraints_payload(payload)
+        row_count = int(self.constraints_drawer_content.entry_count())
+        can_expand = bool(payload) and row_count > int(self._constraints_drawer_min_entries)
+        self.constraints_summary.set_drawer_enabled(can_expand)
+        if not can_expand and self._constraints_drawer_expanded:
+            self._set_constraints_drawer_expanded(False, animated=False)
+
+    def set_batch_lineage_rows(self, rows: Optional[Sequence[Dict[str, Any]]]) -> None:
+        self.lineage_pane.set_lineage_rows(rows)
 
     def _selected_batch_id(self) -> Optional[str]:
         item = self.batch_list.currentItem()
@@ -5401,6 +5533,79 @@ class DashboardPage(QWidget):
         batch_id = self._selected_batch_id()
         if batch_id:
             self.request_clone_batch.emit(batch_id)
+
+    def _toggle_constraints_drawer(self) -> None:
+        self._set_constraints_drawer_expanded(not bool(self._constraints_drawer_expanded), animated=True)
+
+    def _on_constraints_drawer_height_anim_value(self, value: Any) -> None:
+        try:
+            self._constraints_drawer_current_height = max(int(float(value)), 0)
+        except Exception:
+            self._constraints_drawer_current_height = 0
+        self._layout_constraints_drawer_overlay()
+
+    def _on_constraints_drawer_anim_finished(self) -> None:
+        if not bool(self._constraints_drawer_expanded):
+            self.constraints_drawer.setVisible(False)
+            self.constraints_drawer_scrim.setVisible(False)
+            self.constraints_drawer_scrim.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+
+    def _set_constraints_drawer_expanded(self, expanded: bool, *, animated: bool) -> None:
+        toggle_btn = self.constraints_summary.drawer_toggle_btn
+        if not (isinstance(toggle_btn, QToolButton) and toggle_btn.isEnabled()):
+            expanded = False
+        self._constraints_drawer_expanded = bool(expanded)
+        self.constraints_summary.set_drawer_expanded(self._constraints_drawer_expanded)
+        self._layout_constraints_drawer_overlay()
+        target_height = int(self._constraints_drawer_target_height if self._constraints_drawer_expanded else 0)
+        start_height = int(self._constraints_drawer_current_height)
+        self._constraints_drawer_height_anim.stop()
+        if self._constraints_drawer_expanded:
+            self.constraints_drawer.setVisible(True)
+            self.constraints_drawer_scrim.setVisible(True)
+            self.constraints_drawer_scrim.setAttribute(Qt.WA_TransparentForMouseEvents, False)
+        if animated:
+            self._constraints_drawer_height_anim.setStartValue(start_height)
+            self._constraints_drawer_height_anim.setEndValue(target_height)
+            self._constraints_drawer_height_anim.start()
+        else:
+            self._constraints_drawer_current_height = int(target_height)
+            self.constraints_drawer.setMaximumHeight(int(target_height))
+            self._layout_constraints_drawer_overlay()
+            if not self._constraints_drawer_expanded:
+                self.constraints_drawer.setVisible(False)
+                self.constraints_drawer_scrim.setVisible(False)
+                self.constraints_drawer_scrim.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+
+    def _layout_constraints_drawer_overlay(self) -> None:
+        anchor = self.constraints_summary
+        if not isinstance(anchor, QWidget) or not anchor.isVisible():
+            return
+        anchor_pos = anchor.mapTo(self, QPoint(0, 0))
+        drawer_x = int(anchor_pos.x())
+        drawer_y = int(anchor_pos.y() + anchor.height() + 4)
+        drawer_width = int(anchor.width())
+        available_height = max(int(self.height() - drawer_y - 8), 0)
+        content_hint = int(self.constraints_drawer_content.sizeHint().height() + 16)
+        self._constraints_drawer_target_height = max(160, min(content_hint, max(available_height, 160)))
+        if self._constraints_drawer_expanded:
+            current_height = int(max(min(self._constraints_drawer_current_height, available_height), 0))
+        else:
+            current_height = 0
+        self.constraints_drawer.setGeometry(drawer_x, drawer_y, max(drawer_width, 0), current_height)
+        self.constraints_drawer.setMaximumHeight(current_height)
+        self.constraints_drawer.raise_()
+        scrim_enabled = bool(self._constraints_drawer_expanded) and current_height > 0 and available_height > 0
+        self.constraints_drawer_scrim.setVisible(scrim_enabled)
+        self.constraints_drawer_scrim.setAttribute(Qt.WA_TransparentForMouseEvents, not scrim_enabled)
+        if scrim_enabled:
+            self.constraints_drawer_scrim.setGeometry(0, drawer_y, int(self.width()), max(int(self.height() - drawer_y), 0))
+            self.constraints_drawer_scrim.raise_()
+            self.constraints_drawer.raise_()
+
+    def resizeEvent(self, event) -> None:  # type: ignore[override]
+        super().resizeEvent(event)
+        self._layout_constraints_drawer_overlay()
 
 class ProjectIssuesPanel(QFrame):
     issue_selected = Signal(str)
@@ -13864,6 +14069,7 @@ class MainWindow(QMainWindow):
     def refresh_dashboard(self) -> None:
         if self.current_project is None:
             self.dashboard_page.set_constraints_payload(None)
+            self.dashboard_page.set_batch_lineage_rows([])
             self.dashboard_page.batch_list.clear()
             self.analyse_page.set_project_context(None)
             return
@@ -13875,6 +14081,11 @@ class MainWindow(QMainWindow):
             item = QListWidgetItem(label)
             item.setData(Qt.UserRole, batch.batch_id)
             self.dashboard_page.batch_list.addItem(item)
+        try:
+            lineage_rows = self.service.list_batch_lineage(project_id=self.current_project.project_id)
+        except Exception:
+            lineage_rows = []
+        self.dashboard_page.set_batch_lineage_rows(lineage_rows)
 
     def _open_project_constraint_editor(self, key: str) -> None:
         if self.current_project is None:

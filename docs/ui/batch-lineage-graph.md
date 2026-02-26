@@ -142,6 +142,19 @@ Implementation notes:
 - Analyzer iterate path forwards explicit iterate provenance at child creation call site.
 - Behavior is unchanged for run orchestration: no auto-run added by iterate, and run/version semantics are unchanged.
 
+## Phase 3 dashboard layout shell
+
+Implemented UI shell updates (graph rendering step follows in Phase 4):
+
+- Constraints bar:
+  - `DashboardPage` now uses a fixed-height constraints top bar (`ConstraintSummaryGrid(mode='bar')`).
+  - Dense payloads enable a top-down overlay drawer containing the full constraints grid (`ConstraintSummaryGrid(mode='full')`).
+  - Overlay uses scrim + animated vertical expand/collapse, reusing drawer behavior patterns from Analyzer.
+- Workspace split:
+  - Dashboard body is now a 50/50 horizontal splitter (`DashboardWorkspaceSplitter`).
+  - Left pane keeps existing batches list behavior.
+  - Right pane is `BatchLineagePane` placeholder with `Fit / Reset View` control stub.
+
 ## Implementation plan alignment
 - Phase 1: DB provenance columns + migration helper + docs.
 - Phase 2: provenance writes at manual/iterate/clone creation points + tests.

@@ -8,11 +8,13 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from app.gui import ConstraintSummaryGrid, DashboardPage
 
 try:
-    from PySide6.QtWidgets import QApplication, QFrame, QPushButton
+    from PySide6.QtWidgets import QApplication, QFrame, QPushButton, QSplitter, QToolButton
 except ImportError:  # pragma: no cover
     QApplication = None  # type: ignore[assignment]
     QFrame = None  # type: ignore[assignment]
     QPushButton = None  # type: ignore[assignment]
+    QSplitter = None  # type: ignore[assignment]
+    QToolButton = None  # type: ignore[assignment]
 
 
 @unittest.skipIf(QApplication is None, "PySide6 is required")
@@ -55,6 +57,44 @@ class DashboardConstraintUiTests(unittest.TestCase):
         page.manage_runs_btn.click()
         page.export_btn.click()
         self.assertEqual(hit, ["new", "manage", "export"])
+
+    def test_dashboard_workspace_split_contains_batch_list_and_lineage_pane(self) -> None:
+        page = DashboardPage()
+        splitter = page.findChild(QSplitter, "DashboardWorkspaceSplitter")
+        self.assertIsNotNone(splitter)
+        assert splitter is not None
+        self.assertEqual(splitter.count(), 2)
+        sizes = splitter.sizes()
+        self.assertEqual(len(sizes), 2)
+        self.assertTrue(all(int(value) > 0 for value in sizes))
+        self.assertEqual(page.constraints_summary.height(), 104)
+
+    def test_constraints_bar_drawer_toggle_is_enabled_for_dense_payload(self) -> None:
+        page = DashboardPage()
+        payload = {
+            "fixed_params": {
+                "Length": 220.0,
+                "Throat.Profile": 1,
+                "Morph.TargetShape": 2,
+                "GCurve.Type": 1,
+                "Coverage.Angle": 60.0,
+                "Throat.Diameter": 30.0,
+                "Term.Planar": 1,
+                "CircArc.Radius": 18.0,
+            },
+            "limits": {},
+            "param_states": [{"param_name": "Mesh.Enclosure", "is_set": 1, "value": {"Depth": 180.0}}],
+        }
+        page.resize(1280, 860)
+        page.set_constraints_payload(payload)
+        self.app.processEvents()
+        toggle = page.constraints_summary.drawer_toggle_btn
+        self.assertIsNotNone(toggle)
+        assert isinstance(toggle, QToolButton)
+        self.assertTrue(toggle.isEnabled())
+        toggle.click()
+        self.app.processEvents()
+        self.assertTrue(bool(page._constraints_drawer_expanded))
 
 
 if __name__ == "__main__":

@@ -162,3 +162,11 @@ The Batch page is now implemented as a companion to the PROJECT form design.
   - reuse `DashboardPage` + existing Analyzer drawer overlay pattern
   - extend `batches` DB schema additively for provenance fields
   - keep batch/version/run semantics and storage authorities unchanged
+
+## Dashboard Lineage Layout Refresh (Phase 3)
+- Constraints summary is now a fixed-height top bar on `DashboardPage` with an expandable downward drawer overlay for dense constraints payloads.
+- Drawer interaction follows the existing overlay drawer pattern (scrim + animated expand/collapse), adapted vertically for top-down expansion.
+- Main dashboard workspace now uses a 50/50 horizontal splitter:
+  - left: existing batches list panel
+  - right: lineage pane shell with `Fit / Reset View` control
+- Existing dashboard action wiring (`New/Edit/Clone/Manage/Export/Settings`) remains unchanged.

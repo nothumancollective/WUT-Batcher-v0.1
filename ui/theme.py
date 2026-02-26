@@ -833,6 +833,19 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
     QToolButton#AnalyzerCompareDrawerSlotButton:hover {{
         border-color: {c['accent']};
     }}
+    QWidget#DashboardConstraintsDrawerScrim {{
+        background-color: rgba(0, 0, 0, 0.44);
+        border: none;
+    }}
+    QFrame#DashboardConstraintsDrawer {{
+        background-color: rgba(20, 20, 20, 0.97);
+        border: 1px solid {c['border']};
+        border-radius: {r['sm']}px;
+    }}
+    QSplitter#DashboardWorkspaceSplitter::handle {{
+        background-color: transparent;
+        width: 2px;
+    }}
     QSplitter#AnalyzerCompareSplitter::handle {{
         background-color: transparent;
         width: 2px;
