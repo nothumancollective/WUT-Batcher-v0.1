@@ -93,3 +93,21 @@ Status: active convention for `wut-batcher/rebuild` runtime pipeline
 - Re-running the same batch creates a new `run_id` and isolated run diagnostics.
 - Stage re-entry must not corrupt existing version artifacts; updates are overwrite-safe for canonical files (`Project.abec`, stage logs) and append-safe for run logs.
 - Cleanup is explicit and guarded; never delete outside allowed context roots.
+
+## 7) Implementation binding (current branch)
+
+- Single runtime path context:
+  - `app/run_path_context.py`
+  - `RunPathContext.build(...)` is created once per run in `run_batch_pipeline(...)`.
+- Stage consumers:
+  - `app/runtime_orchestrator.py`
+  - version loop uses `version_run = run_paths.version(...)` for:
+    - `version_json`, `cfg_path`, `run_cfg_path`
+    - `ath_work_dir`, `abec_path`, `logs_dir`, `export_dir`
+    - bounded ABEC discovery roots via `version_run.abec_sync_roots()`
+- Run-level diagnostics anchor:
+  - `run_paths.run_debug_log_path()` -> `<project_root>/runs/<run_id>/pipeline.stage_debug.jsonl`
+- Version-level diagnostics anchor:
+  - `<project_root>/versions/<V>/logs/pipeline.stage_debug.jsonl`
+- Consolidation rule in code:
+  - removed legacy ad-hoc `_version_*` path helper usage in `run_batch_pipeline(...)`; stage wiring now reads paths from `RunPathContext` and `project_storage` only.

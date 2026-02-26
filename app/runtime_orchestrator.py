@@ -28,6 +28,7 @@ from app.models import Batch, Project
 from app.project_storage import resolve_project_paths, resolve_version_paths
 from app.safe_cleanup import guarded_delete_file_in_workspace, guarded_delete_tree
 from app.runners import AkabakRunner, AthRunner, RunnerResult, VacsRunner, parse_ath_dimensions
+from app.run_path_context import RunPathContext
 from app.tidy_dataset import TidyDatasetWriter
 from app.polar_txt_parser import PolarTxtParseError, normalize_orientation_marker, parse_polar_legacy_complex_txt
 from app.vacs_export_pipeline import run_vacs_export_specs
@@ -68,10 +69,10 @@ def _append_stage_debug_log(version_logs_dir: Path, *, event: str, payload: Dict
         return
 
 
-def _append_run_debug_log(project_root: Path, run_id: str, *, event: str, payload: Dict[str, Any]) -> None:
+def _append_run_debug_log(run_debug_log_path: Path, *, event: str, payload: Dict[str, Any]) -> None:
     if not _debug_stage_logging_enabled():
         return
-    path = Path(project_root) / "runs" / str(run_id) / "pipeline.stage_debug.jsonl"
+    path = Path(run_debug_log_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     row = {
         "time": _now_iso(),
@@ -136,51 +137,10 @@ class RuntimeSummary:
     dry_run: bool = False
 
 
-def _project_paths_from_root(project_root: Path):
-    project_root_path = Path(project_root)
-    return resolve_project_paths(project_root_path.parent, project_root_path.name, ensure=False)
-
-
-def _version_json_path(project_root: Path, version_id: str) -> Path:
-    return resolve_version_paths(_project_paths_from_root(project_root), version_id, ensure=False).version_json
-
-
-def _version_cfg_path(project_root: Path, version_id: str) -> Path:
-    return resolve_version_paths(_project_paths_from_root(project_root), version_id, ensure=False).cfg_file
-
-
 def _runtime_cfg_basename(*, project_id: str, batch_id: str, version_id: str, run_id: str) -> str:
     token = "_".join([str(project_id), str(batch_id), str(version_id), str(run_id)[:8]])
     cleaned = re.sub(r"[^A-Za-z0-9_.-]+", "_", token).strip("._")
     return cleaned or f"run_{version_id}"
-
-
-def _version_runtime_cfg_path(project_root: Path, version_id: str, cfg_basename: str) -> Path:
-    version_paths = resolve_version_paths(_project_paths_from_root(project_root), version_id, ensure=False)
-    return version_paths.cfg_dir / f"{cfg_basename}.cfg"
-
-
-def _planned_ath_export_dir(ath_export_root: Path | None, run_cfg_path: Path) -> Optional[Path]:
-    if ath_export_root is None:
-        return None
-    return ath_export_root / run_cfg_path.stem
-
-
-def _version_abec_path(project_root: Path, version_id: str) -> Path:
-    return resolve_version_paths(_project_paths_from_root(project_root), version_id, ensure=False).abec_file
-
-
-def _version_ath_work_path(project_root: Path, version_id: str) -> Path:
-    return resolve_version_paths(_project_paths_from_root(project_root), version_id, ensure=False).ath_work_dir
-
-
-def _version_logs_dir(project_root: Path, version_id: str) -> Path:
-    return resolve_version_paths(_project_paths_from_root(project_root), version_id, ensure=False).logs_dir
-
-
-def _version_exports_dir(project_root: Path, version_id: str, run_id: str) -> Path:
-    version_paths = resolve_version_paths(_project_paths_from_root(project_root), version_id, ensure=False)
-    return version_paths.exports_dir / run_id
 
 
 def _load_template_text(template_cfg_path: Optional[str | Path]) -> str:
@@ -976,7 +936,9 @@ def _parse_abec_mesh_requirements(abec_path: Path) -> Dict[str, Any]:
 
 
 def _update_version_state(project_root: Path, version_id: str, updates: Dict[str, Any]) -> None:
-    path = _version_json_path(project_root, version_id)
+    project_root_path = Path(project_root)
+    project_paths = resolve_project_paths(project_root_path.parent, project_root_path.name, ensure=False)
+    path = resolve_version_paths(project_paths, version_id, ensure=False).version_json
     payload = _read_json(path)
     payload.update(updates)
     _write_json(path, payload)
@@ -1769,6 +1731,16 @@ def run_batch_pipeline(
     ath_export_root_path: Optional[Path] = None
     if ath_export_root is not None:
         ath_export_root_path = Path(str(ath_export_root)).expanduser().resolve()
+    run_paths = RunPathContext.build(
+        project_root=project_root,
+        run_id=effective_run_id,
+        library_root=effective_library_root,
+        ath_export_root=ath_export_root_path,
+        ath_executable=str(ath_executable) if ath_executable is not None else None,
+        akabak_executable=str(akabak_executable) if akabak_executable is not None else None,
+        vacs_executable=str(vacs_executable) if vacs_executable is not None else None,
+    )
+    run_debug_log_path = run_paths.run_debug_log_path()
 
     bootstrap_sync_errors: List[str] = []
     create_run_result = writer.create_run(
@@ -1831,17 +1803,20 @@ def run_batch_pipeline(
         run_status = "noop"
         run_error_summary = "nothing_to_run:no_planned_versions"
     _append_run_debug_log(
-        project_root,
-        effective_run_id,
+        run_debug_log_path,
         event="run_start",
         payload={
             "run_id": effective_run_id,
             "project_id": project.project_id,
             "batch_id": batch.batch_id,
             "dry_run": bool(dry_run),
+            "app_root": str(run_paths.app_root),
+            "ath_executable": str(run_paths.tools.ath_executable or ""),
+            "akabak_executable": str(run_paths.tools.akabak_executable or ""),
+            "vacs_executable": str(run_paths.tools.vacs_executable or ""),
             "library_root": str(effective_library_root) if effective_library_root is not None else None,
             "project_root": str(project_root),
-            "run_root": str(project_root / "runs" / str(effective_run_id)),
+            "run_root": str(run_paths.run_root),
             "project_db_path": str(writer.project_db_path),
             "planned_versions": list(planned_version_ids),
             "planned_count": len(planned_version_ids),
@@ -1851,8 +1826,7 @@ def run_batch_pipeline(
     try:
         if not planned_version_ids and not bootstrap_sync_errors:
             _append_run_debug_log(
-                project_root,
-                effective_run_id,
+                run_debug_log_path,
                 event="run_noop",
                 payload={
                     "run_id": effective_run_id,
@@ -1861,21 +1835,22 @@ def run_batch_pipeline(
             )
         for version_id in planned_version_ids:
             version_started = time.perf_counter()
-            version_payload = _read_json(_version_json_path(project_root, version_id))
-            version_params = dict(version_payload.get("parameters", {}) or {})
-            runner_mode = str(batch.runner_mode or project.constraints.runner_mode)
-            persist_sync_errors: List[str] = []
-            version_logs_dir = _version_logs_dir(project_root, version_id)
-
-            cfg_path = _version_cfg_path(project_root, version_id)
             cfg_basename = _runtime_cfg_basename(
                 project_id=project.project_id,
                 batch_id=batch.batch_id,
                 version_id=version_id,
                 run_id=effective_run_id,
             )
-            run_cfg_path = _version_runtime_cfg_path(project_root, version_id, cfg_basename)
-            ath_export_dir = _planned_ath_export_dir(ath_export_root_path, run_cfg_path)
+            version_run = run_paths.version(version_id, cfg_basename=cfg_basename)
+            version_payload = _read_json(version_run.version_json)
+            version_params = dict(version_payload.get("parameters", {}) or {})
+            runner_mode = str(batch.runner_mode or project.constraints.runner_mode)
+            persist_sync_errors: List[str] = []
+            version_logs_dir = version_run.logs_dir
+
+            cfg_path = version_run.cfg_path
+            run_cfg_path = version_run.run_cfg_path
+            ath_export_dir = version_run.ath_export_dir
             cfg_text = render_cfg_text(
                 template_text=template_text,
                 parameters=version_params,
@@ -1969,9 +1944,10 @@ def run_batch_pipeline(
             ath_stage_ok = ath_runner is None
             akabak_stage_ok = not bool(akabak_executable)
             vacs_stage_ok = not vacs_required
+            target_abec_path = version_run.abec_path
 
             if ath_runner is not None:
-                ath_work_dir = _version_ath_work_path(project_root, version_id)
+                ath_work_dir = version_run.ath_work_dir
                 ath_work_dir.mkdir(parents=True, exist_ok=True)
                 ath_work_cfg_path = ath_work_dir / run_cfg_path.name
                 ath_work_cfg_path.write_text(cfg_text, encoding="utf-8")
@@ -2069,19 +2045,10 @@ def run_batch_pipeline(
 
                 ath_failure_reason = "ath_failed"
                 if ath_result.ok and needs_abec_artifact:
-                    target_abec_path = _version_abec_path(project_root, version_id)
                     abec_sync = _sync_generated_abec(
                         target_abec=target_abec_path,
-                        search_roots=tuple(
-                            root
-                            for root in (
-                                ath_export_dir,
-                                ath_work_dir,
-                                target_abec_path.parent,
-                            )
-                            if root is not None
-                        ),
-                        logs_dir=_version_logs_dir(project_root, version_id),
+                        search_roots=version_run.abec_sync_roots(),
+                        logs_dir=version_logs_dir,
                         min_mtime_ns=max(0, int(ath_start_wall_ns) - int(_ABEC_SYNC_MTIME_SLOP_NS)),
                     )
                     abec_sync["ath_stdout_log"] = str(ath_result.stdout_log)
@@ -2151,11 +2118,11 @@ def run_batch_pipeline(
                         payload={
                             "stage": "post_ath_le_repair",
                             "version_id": version_id,
-                            "abec_path": str(_version_abec_path(project_root, version_id)),
+                            "abec_path": str(target_abec_path),
                         },
                     )
                     driver_sync = repair_post_ath_le_binding(
-                        abec_path=_version_abec_path(project_root, version_id),
+                        abec_path=target_abec_path,
                         ath_executable=ath_executable,
                         diagnostics_dir=version_logs_dir,
                     )
@@ -2213,10 +2180,10 @@ def run_batch_pipeline(
                             getattr(getattr(driver_sync, "driver_patch", None), "driver_drvgroup_value", "") or ""
                         ).strip() or None
                         le_contract = _assess_pre_akabak_le_driving_contract(
-                            abec_path=_version_abec_path(project_root, version_id),
+                            abec_path=target_abec_path,
                             expected_drvgroup=expected_drvgroup,
                         )
-                        le_contract_log = _version_logs_dir(project_root, version_id) / "pre_akabak_le_driving_contract.json"
+                        le_contract_log = version_logs_dir / "pre_akabak_le_driving_contract.json"
                         _write_json(le_contract_log, le_contract)
                         stage_results.append(
                             StageExecution(
@@ -2256,9 +2223,9 @@ def run_batch_pipeline(
                             run_status = "failed"
                             continue
 
-                        mesh_guard = _parse_abec_mesh_requirements(_version_abec_path(project_root, version_id))
+                        mesh_guard = _parse_abec_mesh_requirements(target_abec_path)
                         mesh_guard_ok = not bool(list(mesh_guard.get("missing_mesh_files", []) or []))
-                        mesh_guard_log = _version_logs_dir(project_root, version_id) / "pre_akabak_mesh_artifacts.json"
+                        mesh_guard_log = version_logs_dir / "pre_akabak_mesh_artifacts.json"
                         _write_json(mesh_guard_log, mesh_guard)
                         stage_results.append(
                             StageExecution(
@@ -2308,7 +2275,7 @@ def run_batch_pipeline(
                         "stage": "akabak",
                         "version_id": version_id,
                         "mode": "uia_driver",
-                        "abec_path": str(_version_abec_path(project_root, version_id)),
+                        "abec_path": str(target_abec_path),
                         "preserve_vacs_for_export": bool(preserve_vacs_for_export),
                         "require_vacs_graph_import": bool(require_vacs_graph_import),
                         "timeout_s": int(akabak_solve_timeout_s),
@@ -2317,7 +2284,7 @@ def run_batch_pipeline(
                 akabak_stage, akabak_payload, akabak_stage_ok = _run_akabak_ui_driver_stage(
                     version_id=version_id,
                     executable=akabak_executable,
-                    abec_project_path=_version_abec_path(project_root, version_id),
+                    abec_project_path=target_abec_path,
                     version_logs_dir=version_logs_dir,
                     require_vacs_graph_import=require_vacs_graph_import,
                     akabak_solve_timeout_s=akabak_solve_timeout_s,
@@ -2381,12 +2348,12 @@ def run_batch_pipeline(
                         "stage": "akabak",
                         "version_id": version_id,
                         "mode": "subprocess",
-                        "abec_path": str(_version_abec_path(project_root, version_id)),
+                        "abec_path": str(target_abec_path),
                         "timeout_s": max(1, int(akabak_solve_timeout_s)),
                     },
                 )
                 akabak_result = akabak_runner.run_project(
-                    _version_abec_path(project_root, version_id),
+                    target_abec_path,
                     version_logs_dir=version_logs_dir,
                     timeout_s=max(1, int(akabak_solve_timeout_s)),
                 )
@@ -2536,7 +2503,7 @@ def run_batch_pipeline(
                     continue
 
             elif ath_stage_ok and akabak_stage_ok and vacs_executable and export_specs:
-                exports_dir = _version_exports_dir(project_root, version_id, effective_run_id)
+                exports_dir = version_run.export_dir
                 exports_dir.mkdir(parents=True, exist_ok=True)
                 vacs_summary_path = version_logs_dir / "vacs.export_pipeline.json"
                 _append_stage_debug_log(
@@ -2559,10 +2526,10 @@ def run_batch_pipeline(
                         project_id=project.project_id,
                         batch_id=batch.batch_id,
                         version_id=version_id,
-                        abec_path=_version_abec_path(project_root, version_id),
+                        abec_path=target_abec_path,
                         export_specs=export_specs,
                         export_dir=exports_dir,
-                        log_dir=_version_logs_dir(project_root, version_id),
+                        log_dir=version_logs_dir,
                         akabak_executable=akabak_executable if akabak_ui_driver_enabled else None,
                         allow_graph_kind_fallback=True,
                     )
@@ -2709,7 +2676,7 @@ def run_batch_pipeline(
                         continue
 
             elif ath_stage_ok and akabak_stage_ok and vacs_runner is not None and bool(vacs_base_args_list):
-                exports_dir = _version_exports_dir(project_root, version_id, effective_run_id)
+                exports_dir = version_run.export_dir
                 exports_dir.mkdir(parents=True, exist_ok=True)
                 _append_stage_debug_log(
                     version_logs_dir,
@@ -2723,7 +2690,7 @@ def run_batch_pipeline(
                     },
                 )
                 vacs_result = vacs_runner.run_export(
-                    _version_abec_path(project_root, version_id),
+                    target_abec_path,
                     version_logs_dir=version_logs_dir,
                     workdir=exports_dir,
                 )
@@ -2888,8 +2855,7 @@ def run_batch_pipeline(
         raise
     finally:
         _append_run_debug_log(
-            project_root,
-            effective_run_id,
+            run_debug_log_path,
             event="run_end",
             payload={
                 "run_id": effective_run_id,
