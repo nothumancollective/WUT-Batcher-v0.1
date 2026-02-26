@@ -153,4 +153,12 @@ The Batch page is now implemented as a companion to the PROJECT form design.
   - result: `failed` with `json.decoder.JSONDecodeError` while loading `project.json` (`app/project_storage.py::_read_json`), observed during batch-draft validation. This issue is outside the Project dashboard layout scope and was not changed in this task.
 - Offscreen GUI smoke:
   - main window startup, project dashboard render, resize passes (`980x720` and `1280x860`)
-  - dashboard chip interaction path tested (`OSSE` chip click) without crash
+- dashboard chip interaction path tested (`OSSE` chip click) without crash
+
+## Batch Lineage Graph Archaeology (2026-02-26)
+- Phase 0 archaeology + implementation decision for the dashboard lineage graph is documented in:
+  - [docs/ui/batch-lineage-graph.md](ui/batch-lineage-graph.md)
+- Summary:
+  - reuse `DashboardPage` + existing Analyzer drawer overlay pattern
+  - extend `batches` DB schema additively for provenance fields
+  - keep batch/version/run semantics and storage authorities unchanged
