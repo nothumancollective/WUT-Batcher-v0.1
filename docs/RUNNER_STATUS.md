@@ -533,3 +533,52 @@ Run record evidence (`runs` table row):
 Run log excerpt:
 - first event: `run_start` with explicit root bindings
 - last event: `run_end` with terminal run status
+
+## Run `812d5bff-c5dd-461a-a730-99de10d8d4b6` Forensics (2026-02-26)
+
+Source run metadata (user report + on-disk verification):
+- `run_id`: `812d5bff-c5dd-461a-a730-99de10d8d4b6`
+- `project_id`: `P0003__057c91ad-28e8-4682-9de7-63ccb58c9ad2`
+- `batch_id`: `B003`
+- `planned_versions`: `V011`, `V012`
+- `library_root`: `C:\Users\maximilianheinze\Desktop\WUT Project Library`
+- `project_root`: `C:\Users\maximilianheinze\Desktop\WUT Project Library\projects\P0003__057c91ad-28e8-4682-9de7-63ccb58c9ad2`
+- `run_root`: `...\runs\812d5bff-c5dd-461a-a730-99de10d8d4b6`
+
+### A) run_root contents
+- Present in run root:
+  - `pipeline.stage_debug.jsonl`
+- Missing in run root for this run:
+  - no per-stage entries, only `run_start` + `run_end`
+  - no run-level `logs/` stage summary files
+
+`run_root/pipeline.stage_debug.jsonl` contained only:
+- `run_start` (with bindings and planned versions)
+- `run_end` (`status=failed`, `error_summary=null`, `stage_count=4`)
+
+### B) per-version stage logs
+- Present and populated:
+  - `versions/V011/logs/pipeline.stage_debug.jsonl`
+  - `versions/V012/logs/pipeline.stage_debug.jsonl`
+- Both versions showed:
+  - `ath: ok`
+  - `ath_abec_sync: failed`
+- Stage-specific details existed in:
+  - `versions/V011/logs/ath.abec_sync.json`
+  - `versions/V012/logs/ath.abec_sync.json`
+
+### C) project.sqlite run records
+- `runs` row for this `run_id`:
+  - `status='failed'`
+  - `error_summary=NULL`
+  - `run_root` and `run_debug_log_path` populated
+- `run_versions` rows:
+  - both `V011` and `V012` marked `failed`
+  - `error_summary='version_stage_failed'` (generic, no stage name)
+
+### D) forensic conclusion
+- Failure reason did exist, but only in version-local stage logs / `ath.abec_sync.json`.
+- Run-level debug file was not sufficient for diagnosis (no stage entries, null summary).
+- Concrete first failing stage and reason:
+  - stage: `ath_abec_sync`
+  - reason: `abec_sidecar_missing` (missing sidecar `*.msh` referenced by generated ABEC).
