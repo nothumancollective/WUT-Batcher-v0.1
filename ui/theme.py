@@ -1250,6 +1250,46 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         color: #ffffff;
         border-color: {c['danger']};
     }}
+    QTabWidget#SettingsTabs::pane {{
+        background-color: #1f1f1f;
+        border: 1px solid {c['border']};
+        border-radius: {r['md']}px;
+        top: -1px;
+    }}
+    QTabWidget#SettingsTabs QTabBar::tab {{
+        background-color: #242424;
+        color: {c['muted']};
+        border: 1px solid {c['border']};
+        border-bottom: none;
+        border-top-left-radius: {r['sm']}px;
+        border-top-right-radius: {r['sm']}px;
+        min-height: 28px;
+        padding: 2px {s['md']}px;
+        margin-right: 4px;
+        font-weight: 600;
+    }}
+    QTabWidget#SettingsTabs QTabBar::tab:hover {{
+        border-color: {c['accent']};
+        color: {c['text']};
+    }}
+    QTabWidget#SettingsTabs QTabBar::tab:selected {{
+        background-color: #2b2b2b;
+        color: {c['text']};
+        border-color: {c['accent']};
+    }}
+    QFileDialog#ProjectLibraryPickerDialog {{
+        background-color: {c['surface']};
+    }}
+    QFileDialog#ProjectLibraryPickerDialog QListView,
+    QFileDialog#ProjectLibraryPickerDialog QTreeView {{
+        background-color: #1f1f1f;
+        border: 1px solid {c['border']};
+        border-radius: {r['sm']}px;
+    }}
+    QFileDialog#ProjectLibraryPickerDialog QLineEdit,
+    QFileDialog#ProjectLibraryPickerDialog QComboBox {{
+        min-height: 30px;
+    }}
     QPushButton[segment=\"true\"] {{
         background-color: {c['surface2']};
         color: {c['text']};

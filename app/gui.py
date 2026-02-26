@@ -4321,7 +4321,7 @@ class BatchRunDefaultsDialog(QDialog):
         event.accept()
 
 
-class SettingsDialog(QDialog):
+class SettingsDialog(StyledDialogBase):
     settings_saved = Signal(dict)
 
     def __init__(
@@ -4333,14 +4333,12 @@ class SettingsDialog(QDialog):
         close_project_for_switch: Callable[[], bool] | None = None,
         on_library_root_switched: Callable[[], None] | None = None,
     ) -> None:
-        super().__init__(parent)
+        super().__init__(title="Settings", parent=parent, min_width=760, min_height=520)
         self.service = service
         self._is_project_open = is_project_open
         self._close_project_for_switch = close_project_for_switch
         self._on_library_root_switched = on_library_root_switched
-        self.setWindowTitle("Settings")
-        self.setModal(True)
-        self.resize(620, 390)
+        self.setObjectName("SettingsDialog")
 
         self.library_root = QLineEdit()
         self.library_root.setObjectName("ProjectLibraryRootEdit")
@@ -4418,23 +4416,30 @@ class SettingsDialog(QDialog):
 
         tabs = QTabWidget()
         tabs.setObjectName("SettingsTabs")
+        tabs.setDocumentMode(True)
+        tabs.setUsesScrollButtons(False)
         tabs.addTab(general_tab, "General")
         tabs.addTab(analyzer_tab, "Analyzer")
 
         save_btn = QPushButton("Save")
-        save_btn.setObjectName("PrimaryButton")
+        save_btn.setObjectName("BatchPrimaryButton")
+        save_btn.setMinimumWidth(108)
         save_btn.clicked.connect(self._save)
         cancel_btn = QPushButton("Cancel")
+        cancel_btn.setObjectName("BatchSecondaryButton")
+        cancel_btn.setMinimumWidth(108)
         cancel_btn.clicked.connect(self.reject)
 
         buttons = QHBoxLayout()
+        buttons.setContentsMargins(0, 2, 0, 0)
+        buttons.setSpacing(8)
         buttons.addStretch(1)
         buttons.addWidget(cancel_btn)
         buttons.addWidget(save_btn)
 
-        root = QVBoxLayout(self)
-        root.addWidget(tabs, 1)
-        root.addLayout(buttons)
+        body = self.body_layout()
+        body.addWidget(tabs, 1)
+        body.addLayout(buttons)
 
         self.analyzer_cache_mode.currentIndexChanged.connect(self._sync_cache_controls)
         self._load()
@@ -4621,10 +4626,35 @@ class SettingsDialog(QDialog):
         selected = ""
         try:
             dialog = QFileDialog(self, "Choose Project Library Location", start_dir)
+            if hasattr(dialog, "setObjectName"):
+                dialog.setObjectName("ProjectLibraryPickerDialog")
+            if hasattr(dialog, "setModal"):
+                dialog.setModal(True)
+            if hasattr(dialog, "setWindowFlag"):
+                dialog.setWindowFlag(Qt.WindowContextHelpButtonHint, False)
+            if hasattr(dialog, "setViewMode"):
+                dialog.setViewMode(QFileDialog.Detail)
             dialog.setFileMode(QFileDialog.Directory)
             dialog.setOption(QFileDialog.DontUseNativeDialog, True)
             dialog.setOption(QFileDialog.ShowDirsOnly, True)
             dialog.setDirectory(start_dir)
+            if hasattr(dialog, "setLabelText"):
+                dialog.setLabelText(QFileDialog.Accept, "Select Folder")
+                dialog.setLabelText(QFileDialog.Reject, "Cancel")
+            layout = dialog.layout() if hasattr(dialog, "layout") else None
+            if layout is not None and hasattr(layout, "setContentsMargins"):
+                layout.setContentsMargins(12, 12, 12, 12)
+                if hasattr(layout, "setSpacing"):
+                    layout.setSpacing(8)
+            if hasattr(dialog, "adjustSize"):
+                dialog.adjustSize()
+            hint = dialog.sizeHint() if hasattr(dialog, "sizeHint") else QSize(0, 0)
+            width_now = int(dialog.width()) if hasattr(dialog, "width") else 0
+            height_now = int(dialog.height()) if hasattr(dialog, "height") else 0
+            base_width = max(width_now, int(hint.width()), 720)
+            base_height = max(height_now, int(hint.height()), 520)
+            if hasattr(dialog, "resize"):
+                dialog.resize(int(base_width * 1.33), int(base_height))
             if dialog.exec() == QDialog.Accepted:
                 picked = list(dialog.selectedFiles() or [])
                 selected = str(picked[0]) if picked else ""
@@ -4726,10 +4756,6 @@ class SettingsDialog(QDialog):
         self.analyzer_cache_limit_mb.setEnabled(False)
         self.analyzer_cache_keep_last.setEnabled(False)
         self.analyzer_cache_warning.setVisible(False)
-
-    def showEvent(self, event) -> None:  # type: ignore[override]
-        super().showEvent(event)
-        apply_windows_dark_titlebar(self)
 
 
 class ExportDialog(QDialog):
