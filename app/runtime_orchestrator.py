@@ -38,6 +38,8 @@ try:
 except Exception:
     AkabakDriver = None  # type: ignore[assignment]
 
+_ABEC_SYNC_MTIME_SLOP_NS = 5_000_000_000
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
@@ -616,16 +618,29 @@ def _write_runtime_ath_cfg(
     }
 
 
-def _select_generated_abec(search_roots: Sequence[Path]) -> Optional[Path]:
-    candidates: List[Path] = []
+def _select_generated_abec(
+    search_roots: Sequence[Path],
+    *,
+    min_mtime_ns: Optional[int] = None,
+) -> Optional[Path]:
+    candidates: List[Tuple[int, Path]] = []
     for root in search_roots:
         if not root.exists() or not root.is_dir():
             continue
-        candidates.extend(path for path in root.rglob("*.abec") if path.is_file())
+        for path in root.rglob("*.abec"):
+            if not path.is_file():
+                continue
+            try:
+                mtime_ns = int(path.stat().st_mtime_ns)
+            except OSError:
+                continue
+            if min_mtime_ns is not None and mtime_ns < int(min_mtime_ns):
+                continue
+            candidates.append((mtime_ns, path))
     if not candidates:
         return None
-    candidates.sort(key=lambda path: path.stat().st_mtime_ns, reverse=True)
-    return candidates[0]
+    candidates.sort(key=lambda row: row[0], reverse=True)
+    return candidates[0][1]
 
 
 def _extract_abec_sidecar_relpaths(abec_path: Path) -> List[Path]:
@@ -679,13 +694,15 @@ def _sync_generated_abec(
     target_abec: Path,
     search_roots: Sequence[Path],
     logs_dir: Path,
+    min_mtime_ns: Optional[int] = None,
 ) -> Dict[str, Any]:
-    source = _select_generated_abec(search_roots)
+    source = _select_generated_abec(search_roots, min_mtime_ns=min_mtime_ns)
     payload: Dict[str, Any] = {
         "ok": False,
         "target_abec": str(target_abec),
         "search_roots": [str(root) for root in search_roots],
         "source_abec": str(source) if source is not None else "",
+        "min_mtime_ns": int(min_mtime_ns) if min_mtime_ns is not None else None,
         "sidecar_referenced": [],
         "sidecar_copied": [],
         "sidecar_missing": [],
@@ -1974,6 +1991,7 @@ def run_batch_pipeline(
                         "ath_runtime_cfg": ath_runtime_cfg,
                     },
                 )
+                ath_start_wall_ns = time.time_ns()
                 ath_result = ath_runner.run_cfg(
                     ath_work_cfg_path,
                     version_logs_dir=version_logs_dir,
@@ -2051,17 +2069,20 @@ def run_batch_pipeline(
 
                 ath_failure_reason = "ath_failed"
                 if ath_result.ok and needs_abec_artifact:
+                    target_abec_path = _version_abec_path(project_root, version_id)
                     abec_sync = _sync_generated_abec(
-                        target_abec=_version_abec_path(project_root, version_id),
+                        target_abec=target_abec_path,
                         search_roots=tuple(
                             root
                             for root in (
                                 ath_export_dir,
                                 ath_work_dir,
+                                target_abec_path.parent,
                             )
                             if root is not None
                         ),
                         logs_dir=_version_logs_dir(project_root, version_id),
+                        min_mtime_ns=max(0, int(ath_start_wall_ns) - int(_ABEC_SYNC_MTIME_SLOP_NS)),
                     )
                     abec_sync["ath_stdout_log"] = str(ath_result.stdout_log)
                     abec_sync["ath_stderr_log"] = str(ath_result.stderr_log)

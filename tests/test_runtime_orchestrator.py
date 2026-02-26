@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from contextlib import closing
 import json
+import os
 from pathlib import Path
 import sqlite3
 import sys
 import tempfile
+import time
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -1217,6 +1219,41 @@ class RuntimeOrchestratorTests(unittest.TestCase):
             self.assertEqual(summary.run_status, "failed")
             self.assertTrue(any(stage.stage == "akabak" and stage.status == "failed" for stage in summary.stage_results))
             self.assertFalse(any(stage.stage == "vacs" for stage in summary.stage_results))
+
+    def test_sync_generated_abec_accepts_fresh_target_dir_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            target_abec = root / "versions" / "V001" / "abec" / "Project.abec"
+            target_abec.parent.mkdir(parents=True, exist_ok=True)
+            target_abec.write_text("[ABEC]\n", encoding="utf-8")
+            min_mtime_ns = int(time.time_ns()) - 5_000_000_000
+            result = _sync_generated_abec(
+                target_abec=target_abec,
+                search_roots=(target_abec.parent,),
+                logs_dir=target_abec.parent,
+                min_mtime_ns=min_mtime_ns,
+            )
+            self.assertTrue(bool(result.get("ok")))
+            self.assertEqual(str(result.get("error") or ""), "")
+            self.assertEqual(Path(str(result.get("source_abec"))).resolve(), target_abec.resolve())
+
+    def test_sync_generated_abec_rejects_stale_target_dir_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            target_abec = root / "versions" / "V001" / "abec" / "Project.abec"
+            target_abec.parent.mkdir(parents=True, exist_ok=True)
+            target_abec.write_text("[ABEC]\n", encoding="utf-8")
+            stale_time = int(time.time()) - 3600
+            os.utime(target_abec, (stale_time, stale_time))
+            min_mtime_ns = int(time.time_ns()) - 1_000_000
+            result = _sync_generated_abec(
+                target_abec=target_abec,
+                search_roots=(target_abec.parent,),
+                logs_dir=target_abec.parent,
+                min_mtime_ns=min_mtime_ns,
+            )
+            self.assertFalse(bool(result.get("ok")))
+            self.assertEqual(str(result.get("error") or ""), "generated_abec_missing")
 
     def test_pipeline_marks_noop_when_no_versions_are_planned(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
