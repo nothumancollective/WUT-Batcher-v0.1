@@ -1,5 +1,32 @@
 # Runner Status (2026-02-15)
 
+## Core Semantics (Batch / Version / Run)
+
+### Batch
+- A `Batch` is a planning container under one project.
+- It defines selected parameters, sweeps, and export configuration for a candidate execution set.
+- A batch does not represent execution itself; it only defines what should be executed.
+
+### Version
+- A `Version` is one concrete design/parameter set materialized from batch planning.
+- It has stable identity (`version_id`) and persists design/config state (e.g. cfg snapshots, version metadata).
+- Multiple runs can execute the same version over time.
+
+### Run
+- A `Run` is one concrete execution process (`run_id`) for a batch planning snapshot.
+- A run owns execution status timeline + run-version status rows and execution diagnostics.
+- Runtime artifacts/logs must be attributable to a specific run id.
+
+## Data Model Invariants
+
+- `run_id` is globally unique for runtime execution identity.
+- A run belongs to exactly one `(project_id, batch_id)` pair.
+- `run_versions` bind each `(run_id, version_id)` execution row; a run can include multiple versions.
+- Artifacts/logs emitted during execution must be resolvable via deterministic run context:
+  - run-scoped: `<project_root>/runs/<run_id>/...`
+  - version-scoped execution artifacts: `<project_root>/versions/<version_id>/...` with run-specific subpaths where applicable.
+- Stage diagnostics must be written even for early failures, and must be discoverable from run identity without guessing.
+
 ## Doc Selection (2026-02-25)
 - Runner execution/status source: `docs/RUNNER_STATUS.md` + `docs/RUNNER_AUDIT.md`.
 - Analyzer/worker interaction source: `docs/analyzer/*` and the latest merge notes under `docs/release/*`.
