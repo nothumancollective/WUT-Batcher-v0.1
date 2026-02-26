@@ -694,6 +694,68 @@ def _sync_generated_abec(
         payload["sidecar_copied"] = sidecar_copied
         payload["sidecar_missing"] = sidecar_missing
         payload["sidecar_copy_errors"] = sidecar_copy_errors
+        mesh_fallback_repaired: List[str] = []
+        mesh_fallback_file: Optional[str] = None
+        mesh_missing_tokens = [token for token in sidecar_missing if str(token).lower().endswith(".msh")]
+        if mesh_missing_tokens and not sidecar_copy_errors:
+            available_meshes = sorted(
+                {
+                    candidate.name
+                    for candidate in target_abec.parent.glob("*.msh")
+                    if candidate.exists() and candidate.is_file()
+                }
+            )
+            fallback_mesh = "bem_mesh.msh" if "bem_mesh.msh" in available_meshes else (available_meshes[0] if available_meshes else "")
+            mesh_fallback_file = fallback_mesh or None
+            if fallback_mesh:
+                try:
+                    abec_text = target_abec.read_text(encoding="utf-8", errors="replace")
+                    section = ""
+                    missing_lookup = {str(Path(token).name).strip().lower(): str(token) for token in mesh_missing_tokens}
+                    replaced_names: List[str] = []
+                    rebuilt_lines: List[str] = []
+                    for raw_line in abec_text.splitlines():
+                        line = str(raw_line)
+                        stripped = line.strip()
+                        if stripped.startswith("[") and stripped.endswith("]"):
+                            section = stripped[1:-1].strip().lower()
+                        if section == "meshfiles" and "=" in line:
+                            lhs, rhs = line.split("=", 1)
+                            rhs_raw = str(rhs)
+                            comment_index = -1
+                            for marker in (";", "//"):
+                                idx = rhs_raw.find(marker)
+                                if idx >= 0 and (comment_index < 0 or idx < comment_index):
+                                    comment_index = idx
+                            if comment_index >= 0:
+                                rhs_value = rhs_raw[:comment_index]
+                                rhs_comment = rhs_raw[comment_index:]
+                            else:
+                                rhs_value = rhs_raw
+                                rhs_comment = ""
+                            rhs_clean = rhs_value.strip()
+                            if rhs_clean:
+                                rhs_parts = rhs_clean.split(",", 1)
+                                mesh_ref = rhs_parts[0].strip().strip('"').strip("'")
+                                mesh_key = str(Path(mesh_ref).name).strip().lower()
+                                if mesh_key in missing_lookup:
+                                    suffix = f",{rhs_parts[1]}" if len(rhs_parts) > 1 else ""
+                                    replaced_names.append(missing_lookup[mesh_key])
+                                    rhs_raw = f"{fallback_mesh}{suffix}{rhs_comment}"
+                                    line = f"{lhs}={rhs_raw}"
+                        rebuilt_lines.append(line)
+                    if replaced_names:
+                        newline_suffix = "\n" if abec_text.endswith("\n") else ""
+                        target_abec.write_text("\n".join(rebuilt_lines) + newline_suffix, encoding="utf-8")
+                        replaced_set = {str(item) for item in replaced_names}
+                        sidecar_missing = [token for token in sidecar_missing if str(token) not in replaced_set]
+                        mesh_fallback_repaired = sorted(replaced_set)
+                except Exception:
+                    mesh_fallback_repaired = []
+        if mesh_fallback_repaired:
+            payload["mesh_fallback_repaired"] = mesh_fallback_repaired
+            payload["mesh_fallback_file"] = str(mesh_fallback_file or "")
+            payload["sidecar_missing"] = sidecar_missing
         if sidecar_missing:
             payload["error"] = "abec_sidecar_missing"
             return payload
@@ -1818,6 +1880,99 @@ def run_batch_pipeline(
     else:
         run_status = "noop"
         run_error_summary = "nothing_to_run:no_planned_versions"
+    run_logs_dir = run_paths.run_root / "logs"
+    run_logs_dir.mkdir(parents=True, exist_ok=True)
+    first_failure: Optional[Dict[str, Any]] = None
+    last_stage_started: Optional[Dict[str, str]] = None
+
+    def _run_stage_start(version_id: str, stage: str, payload: Optional[Dict[str, Any]] = None) -> None:
+        nonlocal last_stage_started
+        row: Dict[str, Any] = {
+            "run_id": effective_run_id,
+            "version_id": str(version_id),
+            "stage": str(stage),
+        }
+        last_stage_started = {
+            "version_id": str(version_id),
+            "stage": str(stage),
+        }
+        if isinstance(payload, dict):
+            row.update(dict(payload))
+        _append_run_debug_log(run_debug_log_path, event="stage_start", payload=row)
+
+    def _record_stage_result(
+        stage_execution: StageExecution,
+        *,
+        reason: Optional[str] = None,
+        payload: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        nonlocal first_failure, last_stage_started
+        stage_results.append(stage_execution)
+        status_token = "ok" if str(stage_execution.status).strip().lower() == "ok" else "failed"
+        row: Dict[str, Any] = {
+            "run_id": effective_run_id,
+            "version_id": str(stage_execution.version_id),
+            "stage": str(stage_execution.stage),
+            "status": status_token,
+            "exit_code": int(stage_execution.exit_code),
+            "timed_out": bool(stage_execution.timed_out),
+            "summary_log": str(stage_execution.summary_log),
+        }
+        if reason:
+            row["error"] = str(reason)
+        if isinstance(payload, dict):
+            row.update(dict(payload))
+        _append_run_debug_log(run_debug_log_path, event="stage_end", payload=row)
+        if (
+            isinstance(last_stage_started, dict)
+            and str(last_stage_started.get("version_id") or "") == str(stage_execution.version_id)
+            and str(last_stage_started.get("stage") or "") == str(stage_execution.stage)
+        ):
+            last_stage_started = None
+
+        if status_token != "ok" and first_failure is None:
+            first_failure = {
+                "version_id": str(stage_execution.version_id),
+                "stage": str(stage_execution.stage),
+                "status": status_token,
+                "exit_code": int(stage_execution.exit_code),
+                "reason": str(reason or "").strip(),
+                "summary_log": str(stage_execution.summary_log),
+            }
+            copied_logs: List[str] = []
+            for key in (
+                "stdout_log",
+                "stderr_log",
+                "summary_log",
+                "ath_stdout_log",
+                "ath_stderr_log",
+            ):
+                source_token = str(row.get(key) or "").strip()
+                if not source_token:
+                    continue
+                source_path = Path(source_token)
+                if not source_path.exists() or not source_path.is_file():
+                    continue
+                target_name = (
+                    f"{stage_execution.version_id}__{stage_execution.stage}__{source_path.name}"
+                )
+                target_path = run_logs_dir / target_name
+                try:
+                    shutil.copy2(source_path, target_path)
+                    copied_logs.append(str(target_path))
+                except Exception:
+                    continue
+            if copied_logs:
+                failure_manifest = run_logs_dir / "failure.logs.json"
+                _write_json(
+                    failure_manifest,
+                    {
+                        "run_id": effective_run_id,
+                        "version_id": str(stage_execution.version_id),
+                        "stage": str(stage_execution.stage),
+                        "copied_logs": copied_logs,
+                    },
+                )
 
     try:
         if not planned_version_ids and not bootstrap_sync_errors:
@@ -1899,7 +2054,8 @@ def run_batch_pipeline(
 
             if dry_run:
                 elapsed = time.perf_counter() - version_started
-                stage_results.append(
+                _run_stage_start(version_id, "dry_run")
+                _record_stage_result(
                     StageExecution(
                         version_id=version_id,
                         stage="dry_run",
@@ -1963,6 +2119,14 @@ def run_batch_pipeline(
                         "ath_runtime_cfg": ath_runtime_cfg,
                     },
                 )
+                _run_stage_start(
+                    version_id,
+                    "ath",
+                    payload={
+                        "workdir": str(ath_work_dir),
+                        "cfg_path": str(ath_work_cfg_path),
+                    },
+                )
                 ath_start_wall_ns = time.time_ns()
                 ath_result = ath_runner.run_cfg(
                     ath_work_cfg_path,
@@ -1983,7 +2147,15 @@ def run_batch_pipeline(
                         "summary_log": str(ath_result.summary_log),
                     },
                 )
-                stage_results.append(_stage_from_result(version_id, "ath", ath_result))
+                _record_stage_result(
+                    _stage_from_result(version_id, "ath", ath_result),
+                    reason="" if ath_result.ok else "ath_failed",
+                    payload={
+                        "stdout_log": str(ath_result.stdout_log),
+                        "stderr_log": str(ath_result.stderr_log),
+                        "summary_log": str(ath_result.summary_log),
+                    },
+                )
                 _update_version_state(
                     project_root,
                     version_id,
@@ -2041,6 +2213,13 @@ def run_batch_pipeline(
 
                 ath_failure_reason = "ath_failed"
                 if ath_result.ok and needs_abec_artifact:
+                    _run_stage_start(
+                        version_id,
+                        "ath_abec_sync",
+                        payload={
+                            "target_abec": str(target_abec_path),
+                        },
+                    )
                     abec_sync = _sync_generated_abec(
                         target_abec=target_abec_path,
                         search_roots=version_run.abec_sync_roots(),
@@ -2075,7 +2254,7 @@ def run_batch_pipeline(
                                 "summary_log": str(abec_sync_log),
                             },
                         )
-                        stage_results.append(
+                        _record_stage_result(
                             StageExecution(
                                 version_id=version_id,
                                 stage="ath_abec_sync",
@@ -2083,7 +2262,49 @@ def run_batch_pipeline(
                                 exit_code=1,
                                 timed_out=False,
                                 summary_log=str(abec_sync_log),
-                            )
+                            ),
+                            reason=str(abec_sync.get("error") or "ath_abec_missing"),
+                            payload={
+                                "target_abec": str(abec_sync.get("target_abec") or ""),
+                                "source_abec": str(abec_sync.get("source_abec") or ""),
+                                "sidecar_missing": list(abec_sync.get("sidecar_missing") or []),
+                                "sidecar_copy_errors": list(abec_sync.get("sidecar_copy_errors") or []),
+                                "ath_stdout_log": str(ath_result.stdout_log),
+                                "ath_stderr_log": str(ath_result.stderr_log),
+                                "summary_log": str(abec_sync_log),
+                            },
+                        )
+                    else:
+                        abec_sync_log = version_logs_dir / "ath.abec_sync.json"
+                        _write_json(abec_sync_log, abec_sync)
+                        _append_stage_debug_log(
+                            version_logs_dir,
+                            event="stage_end",
+                            payload={
+                                "stage": "ath_abec_sync",
+                                "version_id": version_id,
+                                "ok": True,
+                                "target_abec": str(abec_sync.get("target_abec") or ""),
+                                "source_abec": str(abec_sync.get("source_abec") or ""),
+                                "sidecar_copied": list(abec_sync.get("sidecar_copied") or []),
+                                "summary_log": str(abec_sync_log),
+                            },
+                        )
+                        _record_stage_result(
+                            StageExecution(
+                                version_id=version_id,
+                                stage="ath_abec_sync",
+                                status="ok",
+                                exit_code=0,
+                                timed_out=False,
+                                summary_log=str(abec_sync_log),
+                            ),
+                            payload={
+                                "target_abec": str(abec_sync.get("target_abec") or ""),
+                                "source_abec": str(abec_sync.get("source_abec") or ""),
+                                "sidecar_copied": list(abec_sync.get("sidecar_copied") or []),
+                                "summary_log": str(abec_sync_log),
+                            },
                         )
 
                 if not ath_stage_ok and not continue_on_error:
@@ -2108,6 +2329,13 @@ def run_batch_pipeline(
                     continue
 
                 if ath_stage_ok and (akabak_runner is not None or akabak_ui_driver_enabled or vacs_required):
+                    _run_stage_start(
+                        version_id,
+                        "post_ath_le_repair",
+                        payload={
+                            "abec_path": str(target_abec_path),
+                        },
+                    )
                     _append_stage_debug_log(
                         version_logs_dir,
                         event="stage_start",
@@ -2133,7 +2361,7 @@ def run_batch_pipeline(
                             "diagnostics_path": str(driver_sync.diagnostics_path or ""),
                         },
                     )
-                    stage_results.append(
+                    _record_stage_result(
                         StageExecution(
                             version_id=version_id,
                             stage="post_ath_le_repair",
@@ -2141,7 +2369,12 @@ def run_batch_pipeline(
                             exit_code=0 if driver_sync.ok else 1,
                             timed_out=False,
                             summary_log=driver_sync.diagnostics_path or driver_sync.abec_path,
-                        )
+                        ),
+                        reason="" if driver_sync.ok else "post_ath_le_repair_failed",
+                        payload={
+                            "diagnostics_path": str(driver_sync.diagnostics_path or ""),
+                            "abec_path": str(driver_sync.abec_path or target_abec_path),
+                        },
                     )
                     _update_version_state(
                         project_root,
@@ -2181,7 +2414,15 @@ def run_batch_pipeline(
                         )
                         le_contract_log = version_logs_dir / "pre_akabak_le_driving_contract.json"
                         _write_json(le_contract_log, le_contract)
-                        stage_results.append(
+                        _run_stage_start(
+                            version_id,
+                            "pre_akabak_le_driving_guard",
+                            payload={
+                                "abec_path": str(target_abec_path),
+                                "expected_drvgroup": expected_drvgroup,
+                            },
+                        )
+                        _record_stage_result(
                             StageExecution(
                                 version_id=version_id,
                                 stage="pre_akabak_le_driving_guard",
@@ -2189,7 +2430,13 @@ def run_batch_pipeline(
                                 exit_code=0 if bool(le_contract.get("ok")) else 1,
                                 timed_out=False,
                                 summary_log=str(le_contract_log),
-                            )
+                            ),
+                            reason="" if bool(le_contract.get("ok")) else "pre_akabak_le_driving_contract_failed",
+                            payload={
+                                "expected_drvgroup": expected_drvgroup,
+                                "violations": list(le_contract.get("violations") or []),
+                                "summary_log": str(le_contract_log),
+                            },
                         )
                         _update_version_state(
                             project_root,
@@ -2223,7 +2470,14 @@ def run_batch_pipeline(
                         mesh_guard_ok = not bool(list(mesh_guard.get("missing_mesh_files", []) or []))
                         mesh_guard_log = version_logs_dir / "pre_akabak_mesh_artifacts.json"
                         _write_json(mesh_guard_log, mesh_guard)
-                        stage_results.append(
+                        _run_stage_start(
+                            version_id,
+                            "pre_akabak_mesh_guard",
+                            payload={
+                                "abec_path": str(target_abec_path),
+                            },
+                        )
+                        _record_stage_result(
                             StageExecution(
                                 version_id=version_id,
                                 stage="pre_akabak_mesh_guard",
@@ -2231,7 +2485,12 @@ def run_batch_pipeline(
                                 exit_code=0 if mesh_guard_ok else 1,
                                 timed_out=False,
                                 summary_log=str(mesh_guard_log),
-                            )
+                            ),
+                            reason="" if mesh_guard_ok else "pre_akabak_mesh_artifact_missing",
+                            payload={
+                                "missing_mesh_files": list(mesh_guard.get("missing_mesh_files") or []),
+                                "summary_log": str(mesh_guard_log),
+                            },
                         )
                         _update_version_state(
                             project_root,
@@ -2264,6 +2523,15 @@ def run_batch_pipeline(
             if ath_stage_ok and akabak_ui_driver_enabled and akabak_executable:
                 preserve_vacs_for_export = bool(vacs_required and vacs_executable and export_specs)
                 require_vacs_graph_import = bool(vacs_required)
+                _run_stage_start(
+                    version_id,
+                    "akabak",
+                    payload={
+                        "mode": "uia_driver",
+                        "abec_path": str(target_abec_path),
+                        "timeout_s": int(akabak_solve_timeout_s),
+                    },
+                )
                 _append_stage_debug_log(
                     version_logs_dir,
                     event="stage_start",
@@ -2299,7 +2567,14 @@ def run_batch_pipeline(
                         "exit_code": int(akabak_stage.exit_code),
                     },
                 )
-                stage_results.append(akabak_stage)
+                _record_stage_result(
+                    akabak_stage,
+                    reason="" if akabak_stage_ok else "akabak_failed",
+                    payload={
+                        "mode": "uia_driver",
+                        "summary_log": str(akabak_stage.summary_log),
+                    },
+                )
                 _update_version_state(
                     project_root,
                     version_id,
@@ -2337,6 +2612,15 @@ def run_batch_pipeline(
                     continue
 
             elif ath_stage_ok and akabak_runner is not None:
+                _run_stage_start(
+                    version_id,
+                    "akabak",
+                    payload={
+                        "mode": "subprocess",
+                        "abec_path": str(target_abec_path),
+                        "timeout_s": max(1, int(akabak_solve_timeout_s)),
+                    },
+                )
                 _append_stage_debug_log(
                     version_logs_dir,
                     event="stage_start",
@@ -2366,7 +2650,16 @@ def run_batch_pipeline(
                         "summary_log": str(akabak_result.summary_log),
                     },
                 )
-                stage_results.append(_stage_from_result(version_id, "akabak", akabak_result))
+                _record_stage_result(
+                    _stage_from_result(version_id, "akabak", akabak_result),
+                    reason="" if akabak_result.ok else "akabak_failed",
+                    payload={
+                        "mode": "subprocess",
+                        "stdout_log": str(akabak_result.stdout_log),
+                        "stderr_log": str(akabak_result.stderr_log),
+                        "summary_log": str(akabak_result.summary_log),
+                    },
+                )
                 _update_version_state(
                     project_root,
                     version_id,
@@ -2422,6 +2715,14 @@ def run_batch_pipeline(
             elif ath_stage_ok and akabak_stage_ok and vacs_required and not vacs_executable:
                 vacs_stage_ok = False
                 summary_path = version_logs_dir / "vacs.export_pipeline.json"
+                _run_stage_start(
+                    version_id,
+                    "vacs",
+                    payload={
+                        "mode": "export_specs",
+                        "error": "vacs_executable_missing",
+                    },
+                )
                 _append_stage_debug_log(
                     version_logs_dir,
                     event="stage_start",
@@ -2440,7 +2741,7 @@ def run_batch_pipeline(
                         "remediation": "Configure vacs_exe in settings or remove export_specs for this batch.",
                     },
                 )
-                stage_results.append(
+                _record_stage_result(
                     StageExecution(
                         version_id=version_id,
                         stage="vacs",
@@ -2448,7 +2749,12 @@ def run_batch_pipeline(
                         exit_code=1,
                         timed_out=False,
                         summary_log=str(summary_path),
-                    )
+                    ),
+                    reason="vacs_executable_missing",
+                    payload={
+                        "mode": "export_specs",
+                        "summary_log": str(summary_path),
+                    },
                 )
                 _append_stage_debug_log(
                     version_logs_dir,
@@ -2502,6 +2808,16 @@ def run_batch_pipeline(
                 exports_dir = version_run.export_dir
                 exports_dir.mkdir(parents=True, exist_ok=True)
                 vacs_summary_path = version_logs_dir / "vacs.export_pipeline.json"
+                _run_stage_start(
+                    version_id,
+                    "vacs",
+                    payload={
+                        "mode": "export_specs",
+                        "exports_dir": str(exports_dir),
+                        "vacs_version": str(vacs_version),
+                        "export_specs_count": len(export_specs),
+                    },
+                )
                 _append_stage_debug_log(
                     version_logs_dir,
                     event="stage_start",
@@ -2530,16 +2846,6 @@ def run_batch_pipeline(
                         allow_graph_kind_fallback=True,
                     )
                     _write_json(vacs_summary_path, vacs_export_summary)
-                    stage_results.append(
-                        StageExecution(
-                            version_id=version_id,
-                            stage="vacs",
-                            status="ok",
-                            exit_code=0,
-                            timed_out=False,
-                            summary_log=str(vacs_summary_path),
-                        )
-                    )
                     vacs_ingest = _ingest_vacs_exports(
                         writer=writer,
                         project=project,
@@ -2567,6 +2873,29 @@ def run_batch_pipeline(
                             "ok": bool(vacs_stage_ok),
                             "executed": bool(vacs_export_summary.get("executed")),
                             "export_count": int(vacs_export_summary.get("export_count", 0) or 0),
+                            "files_found": int(vacs_ingest.get("files_found", 0) or 0),
+                            "rows_prepared": int(vacs_ingest.get("rows_prepared", 0) or 0),
+                            "parse_errors": int(len(list(vacs_ingest.get("parse_errors", []) or []))),
+                            "mapping_errors": int(len(list(vacs_ingest.get("mapping_errors", []) or []))),
+                            "missing_contract_files": int(
+                                len(list(vacs_ingest.get("missing_contract_files", []) or []))
+                            ),
+                            "summary_log": str(vacs_summary_path),
+                        },
+                    )
+                    _record_stage_result(
+                        StageExecution(
+                            version_id=version_id,
+                            stage="vacs",
+                            status="ok" if vacs_stage_ok else "failed",
+                            exit_code=0 if vacs_stage_ok else 1,
+                            timed_out=False,
+                            summary_log=str(vacs_summary_path),
+                        ),
+                        reason="" if vacs_stage_ok else "vacs_export_ingest_failed",
+                        payload={
+                            "mode": "export_specs",
+                            "executed": bool(vacs_export_summary.get("executed")),
                             "files_found": int(vacs_ingest.get("files_found", 0) or 0),
                             "rows_prepared": int(vacs_ingest.get("rows_prepared", 0) or 0),
                             "parse_errors": int(len(list(vacs_ingest.get("parse_errors", []) or []))),
@@ -2619,7 +2948,7 @@ def run_batch_pipeline(
                         },
                     )
                     _write_json(vacs_summary_path, {"error": error_text, "vacs_version": vacs_version})
-                    stage_results.append(
+                    _record_stage_result(
                         StageExecution(
                             version_id=version_id,
                             stage="vacs",
@@ -2627,7 +2956,12 @@ def run_batch_pipeline(
                             exit_code=1,
                             timed_out=False,
                             summary_log=str(vacs_summary_path),
-                        )
+                        ),
+                        reason=error_text,
+                        payload={
+                            "mode": "export_specs",
+                            "summary_log": str(vacs_summary_path),
+                        },
                     )
                     _update_version_state(
                         project_root,
@@ -2674,6 +3008,15 @@ def run_batch_pipeline(
             elif ath_stage_ok and akabak_stage_ok and vacs_runner is not None and bool(vacs_base_args_list):
                 exports_dir = version_run.export_dir
                 exports_dir.mkdir(parents=True, exist_ok=True)
+                _run_stage_start(
+                    version_id,
+                    "vacs",
+                    payload={
+                        "mode": "legacy_runner",
+                        "exports_dir": str(exports_dir),
+                        "base_args": list(vacs_base_args_list),
+                    },
+                )
                 _append_stage_debug_log(
                     version_logs_dir,
                     event="stage_start",
@@ -2690,7 +3033,6 @@ def run_batch_pipeline(
                     version_logs_dir=version_logs_dir,
                     workdir=exports_dir,
                 )
-                stage_results.append(_stage_from_result(version_id, "vacs", vacs_result))
                 vacs_stage_ok = vacs_result.ok
                 vacs_ingest: Dict[str, Any] = {}
                 if vacs_result.ok:
@@ -2722,6 +3064,33 @@ def run_batch_pipeline(
                         "files_found": int(vacs_ingest.get("files_found", 0) or 0),
                         "rows_prepared": int(vacs_ingest.get("rows_prepared", 0) or 0),
                         "summary_log": str(vacs_result.summary_log),
+                    },
+                )
+                vacs_exit_code = int(vacs_result.exit_code)
+                if not vacs_stage_ok and vacs_exit_code == 0:
+                    vacs_exit_code = 1
+                vacs_failure_reason = ""
+                if not vacs_result.ok:
+                    vacs_failure_reason = "vacs_runner_failed"
+                elif not vacs_stage_ok:
+                    vacs_failure_reason = "vacs_ingest_failed"
+                _record_stage_result(
+                    StageExecution(
+                        version_id=version_id,
+                        stage="vacs",
+                        status="ok" if vacs_stage_ok else "failed",
+                        exit_code=vacs_exit_code,
+                        timed_out=bool(vacs_result.timed_out),
+                        summary_log=str(vacs_result.summary_log),
+                    ),
+                    reason=vacs_failure_reason,
+                    payload={
+                        "mode": "legacy_runner",
+                        "stdout_log": str(vacs_result.stdout_log),
+                        "stderr_log": str(vacs_result.stderr_log),
+                        "summary_log": str(vacs_result.summary_log),
+                        "files_found": int(vacs_ingest.get("files_found", 0) or 0),
+                        "rows_prepared": int(vacs_ingest.get("rows_prepared", 0) or 0),
                     },
                 )
                 vacs_status = "vacs_ok" if vacs_stage_ok else "vacs_failed"
@@ -2845,11 +3214,53 @@ def run_batch_pipeline(
                     reason=reason,
                 )
                 run_status = "failed"
+                if reason == "persist_not_synced" and not str(run_error_summary or "").strip():
+                    run_error_summary = "global_sync_pending"
     except Exception as exc:
         run_status = "failed"
         run_error_summary = str(exc)
+        if isinstance(last_stage_started, dict) and first_failure is None:
+            stage_name = str(last_stage_started.get("stage") or "").strip()
+            stage_version = str(last_stage_started.get("version_id") or "").strip()
+            if stage_name and stage_version:
+                synthetic_summary_path = run_logs_dir / f"{stage_version}__{stage_name}__exception.summary.log"
+                try:
+                    synthetic_summary_path.write_text(
+                        f"{type(exc).__name__}: {str(exc).strip()}\n",
+                        encoding="utf-8",
+                    )
+                except Exception:
+                    pass
+                _record_stage_result(
+                    StageExecution(
+                        version_id=stage_version,
+                        stage=stage_name,
+                        status="failed",
+                        exit_code=1,
+                        timed_out=False,
+                        summary_log=str(synthetic_summary_path),
+                    ),
+                    reason=_describe_stage_exception(exc),
+                    payload={
+                        "error_type": type(exc).__name__,
+                        "synthetic_exception": True,
+                    },
+                )
         raise
     finally:
+        failure_stage = None
+        failure_version_id = None
+        failure_summary_log = None
+        if first_failure:
+            failure_stage = str(first_failure.get("stage") or "").strip() or None
+            failure_version_id = str(first_failure.get("version_id") or "").strip() or None
+            failure_summary_log = str(first_failure.get("summary_log") or "").strip() or None
+        if str(run_status).strip().lower() == "failed" and not str(run_error_summary or "").strip():
+            if failure_stage:
+                failure_reason = str((first_failure or {}).get("reason") or "").strip() or "stage_failed"
+                run_error_summary = f"{failure_stage}:{failure_reason}"
+            else:
+                run_error_summary = "run_failed:see_run_debug_log"
         _append_run_debug_log(
             run_debug_log_path,
             event="run_end",
@@ -2857,6 +3268,9 @@ def run_batch_pipeline(
                 "run_id": effective_run_id,
                 "status": str(run_status),
                 "error_summary": run_error_summary,
+                "failing_stage": failure_stage,
+                "failing_version_id": failure_version_id,
+                "failing_summary_log": failure_summary_log,
                 "stage_count": len(stage_results),
                 "cleanup_count": len(cleanup_results),
             },

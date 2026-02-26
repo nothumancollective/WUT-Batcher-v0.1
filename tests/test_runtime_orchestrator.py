@@ -615,6 +615,8 @@ class RuntimeOrchestratorTests(unittest.TestCase):
             lines = [line.strip() for line in run_log_path.read_text(encoding="utf-8").splitlines() if line.strip()]
             self.assertTrue(any('"event": "run_start"' in line for line in lines))
             self.assertTrue(any('"event": "run_end"' in line for line in lines))
+            self.assertTrue(any('"event": "stage_start"' in line for line in lines))
+            self.assertTrue(any('"event": "stage_end"' in line for line in lines))
 
             version_log_path = Path(summary.project_root) / "versions" / summary.versions[0] / "logs" / "pipeline.stage_debug.jsonl"
             self.assertTrue(version_log_path.exists())
@@ -1270,6 +1272,21 @@ class RuntimeOrchestratorTests(unittest.TestCase):
             self.assertEqual(summary.run_status, "failed")
             self.assertTrue(any(stage.stage == "akabak" and stage.status == "failed" for stage in summary.stage_results))
             self.assertFalse(any(stage.stage == "vacs" for stage in summary.stage_results))
+            run_log_path = Path(summary.run_debug_log_path)
+            run_log_lines = [line.strip() for line in run_log_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+            self.assertTrue(any('"event": "stage_start"' in line and '"stage": "akabak"' in line for line in run_log_lines))
+            self.assertTrue(any('"event": "stage_end"' in line and '"stage": "akabak"' in line for line in run_log_lines))
+            self.assertTrue(any('"event": "run_end"' in line and '"error_summary": "akabak:akabak_failed"' in line for line in run_log_lines))
+
+            with closing(sqlite3.connect(str(_project_db_path(Path(summary.project_root))))) as conn:
+                row = conn.execute(
+                    "SELECT status, error_summary FROM runs WHERE run_id = ?",
+                    (summary.run_id,),
+                ).fetchone()
+            self.assertIsNotNone(row)
+            assert row is not None
+            self.assertEqual(str(row[0]), "failed")
+            self.assertEqual(str(row[1]), "akabak:akabak_failed")
 
     def test_sync_generated_abec_accepts_fresh_target_dir_artifact(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -1305,6 +1322,47 @@ class RuntimeOrchestratorTests(unittest.TestCase):
             )
             self.assertFalse(bool(result.get("ok")))
             self.assertEqual(str(result.get("error") or ""), "generated_abec_missing")
+
+    def test_sync_generated_abec_repairs_missing_mesh_reference_with_bem_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            source_dir = root / "ath_out" / "ABEC_FreeStanding"
+            source_dir.mkdir(parents=True, exist_ok=True)
+            source_abec = source_dir / "Project.abec"
+            source_abec.write_text(
+                "\n".join(
+                    [
+                        "[Project]",
+                        "Scriptname_InfoFile=",
+                        "[Solving]",
+                        "Scriptname_Solving=solving.txt",
+                        "[Observation]",
+                        "C0=observation.txt",
+                        "[MeshFiles]",
+                        "C0=missing_mesh.msh,M1",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            (source_dir / "solving.txt").write_text("solve\n", encoding="utf-8")
+            (source_dir / "observation.txt").write_text("observe\n", encoding="utf-8")
+            (source_dir / "bem_mesh.msh").write_text("mesh\n", encoding="utf-8")
+
+            target_abec = root / "project" / "versions" / "V001" / "abec" / "Project.abec"
+            result = _sync_generated_abec(
+                target_abec=target_abec,
+                search_roots=[root / "ath_out"],
+                logs_dir=root / "logs",
+            )
+
+            self.assertTrue(bool(result.get("ok")))
+            self.assertEqual(list(result.get("sidecar_missing") or []), [])
+            self.assertIn("missing_mesh.msh", list(result.get("mesh_fallback_repaired") or []))
+            self.assertEqual(str(result.get("mesh_fallback_file") or ""), "bem_mesh.msh")
+            text = target_abec.read_text(encoding="utf-8-sig")
+            self.assertIn("C0=bem_mesh.msh,M1", text)
+            self.assertTrue((target_abec.parent / "bem_mesh.msh").exists())
 
     def test_pipeline_marks_noop_when_no_versions_are_planned(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
