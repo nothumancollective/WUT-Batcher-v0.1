@@ -98,6 +98,28 @@ Audit findings:
 Most likely breakpoint:
 - Primary failure is extraction/parser behavior for ATH `Device width x height` line format, which prevents downstream persistence.
 
+Applied fix (2026-02-27):
+- `app/runners.py::parse_ath_dimensions`
+  - Added explicit ATH signature parsing for:
+    - `Device width x height = <W> x <H> mm`
+    - `Device length = <L> mm`
+  - Width and height are now both extracted from the paired line.
+- `app/runtime_orchestrator.py::run_batch_pipeline`
+  - Parser input now uses combined ATH terminal text (`stdout` + `stderr`) to tolerate stream variance.
+  - Added debug-stage events:
+    - `ath_dimensions_parsed`
+    - `ath_dimensions_persisted`
+    - `ath_dimensions_skipped` (`reason=incomplete_dimensions`)
+  - Runtime semantics unchanged: missing dimensions do not fail the run.
+
+Validation snapshot after fix:
+- Real run: `run_id=9f33fb6a-7e8d-46eb-8e0f-0197d998fe0b`, batch `B010`, versions `V047` and `V048`.
+- Runtime summary reports `ath_dimension_rows=2`.
+- For `V048`, both DBs contain:
+  - `versions.ath_length_mm=140.0`, `ath_width_mm=270.97`, `ath_height_mm=270.97`
+  - `ath_dimensions.length_mm=140.0`, `width_mm=270.97`, `height_mm=270.97`
+- Analyzer retrieval (`analyzer_list_polar_runs`) returns `V048` with populated `ath_*` dimensions.
+
 ## Pipeline Map (2026-02-25)
 
 ### Authoritative docs by subsystem (latest used source)
@@ -147,7 +169,7 @@ Stage sequence in `run_batch_pipeline`:
    - Outputs: ATH stdout/stderr logs, generated ABEC artifacts
 4. Final dimensions extraction/persist (first export-data persistence step)
    - Modules: `app/runners.py` `parse_ath_dimensions`, `app/tidy_dataset.py` writer
-   - Inputs: ATH stdout
+   - Inputs: ATH stdout + stderr
    - Outputs: `ath_dimensions` + `versions.ath_*` in project DB and library DB mirror
 5. ABEC sync + LE repair + pre-AKABAK guards
    - Module: `app/runtime_orchestrator.py` (`_sync_generated_abec`, `repair_post_ath_le_binding`, contract checks)

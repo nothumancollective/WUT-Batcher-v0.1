@@ -82,3 +82,35 @@ Observed path status:
 4. Analyzer read/UI remain correct
    - Read side (`app/services.py`) and Version Information rendering (`app/gui.py`) already display dimensions when DB fields are populated.
    - Current blank display is caused by missing persisted triples, not UI formatting/binding errors.
+
+## 2026-02-27 fix update
+
+Root cause confirmed:
+- Extraction layer bug in `app/runners.py::parse_ath_dimensions`.
+- ATH geometry output line `Device width x height = <W> x <H> mm` was parsed as width-only by the generic token regex, leaving height unset.
+- Runtime write in `app/runtime_orchestrator.py` requires complete `(length, width, height)`, so persistence was skipped.
+
+Fix implemented:
+- Parser now explicitly supports ATH pair signatures:
+  - `Device width x height = <W> x <H> mm`
+  - `Device length = <L> mm`
+- Runtime parser input now uses combined ATH `stdout + stderr`.
+- Added debug-only stage trace events around extraction/write decisions:
+  - `ath_dimensions_parsed`
+  - `ath_dimensions_persisted`
+  - `ath_dimensions_skipped` (`reason=incomplete_dimensions`)
+
+Persistence/read/UI contract after fix:
+- Write targets unchanged (project DB + library DB mirror):
+  - `ath_dimensions.length_mm/width_mm/height_mm`
+  - `versions.ath_length_mm/ath_width_mm/ath_height_mm`
+- Analyzer retrieval unchanged (`app/services.py`): reads `ath_*` values as primary source.
+- Version Information formatting unchanged (`app/gui.py`):
+  - label: `Dim (LxWxH)`
+  - value: `{L:.1f} × {W:.1f} × {H:.1f} mm`
+  - missing: `—`
+
+Live validation:
+- Real batch run (`B010`, run `9f33fb6a-7e8d-46eb-8e0f-0197d998fe0b`) wrote ATH dimensions for two versions (`ath_dimension_rows=2`).
+- `V048` persisted with full triplet in both DBs and is returned by analyzer read API with non-null `ath_*` dimensions.
+- Offscreen Analyzer page binding shows: `140.0 × 271.0 × 271.0 mm` for the retrieved run payload.
