@@ -16,6 +16,12 @@ _ATH_DIM_RE = re.compile(
     r"(?i)\b(length|width|height)\b[^0-9\-+]*([-+]?\d+(?:[.,]\d+)?)"
 )
 _ATH_DIM_CONTEXT_RE = re.compile(r"(?i)\b(final|dimension|dimensions|overall|result)\b")
+_ATH_DIM_WIDTH_HEIGHT_PAIR_RE = re.compile(
+    r"(?i)\b(?:device|final)\s+width\s*x\s*height\s*=\s*([-+]?\d+(?:[.,]\d+)?)\s*x\s*([-+]?\d+(?:[.,]\d+)?)\s*(mm|m)\b"
+)
+_ATH_DIM_LENGTH_LINE_RE = re.compile(
+    r"(?i)\b(?:device|final)\s+length\s*=\s*([-+]?\d+(?:[.,]\d+)?)\s*(mm|m)\b"
+)
 
 
 def _now_iso() -> str:
@@ -48,30 +54,77 @@ class AthDimensions:
     raw_line: str
 
 
+def _parse_ath_mm_value(raw_value: str, unit: str | None = None) -> Optional[float]:
+    try:
+        value = float(str(raw_value).replace(",", "."))
+    except ValueError:
+        return None
+    if not math.isfinite(value):
+        return None
+    unit_token = str(unit or "").strip().lower()
+    if unit_token == "m":
+        return value * 1000.0
+    return value
+
+
 def parse_ath_dimensions(stdout_text: str) -> AthDimensions:
     context_values: dict[str, Optional[float]] = {"length": None, "width": None, "height": None}
     fallback_values: dict[str, Optional[float]] = {"length": None, "width": None, "height": None}
     context_lines: List[str] = []
     fallback_lines: List[str] = []
     for line in stdout_text.splitlines():
-        line_matches = list(_ATH_DIM_RE.finditer(line))
-        if not line_matches:
-            continue
         stripped = line.strip()
         has_context_hint = bool(_ATH_DIM_CONTEXT_RE.search(line))
         updated_context = False
         updated_fallback = False
+        width_height_match = _ATH_DIM_WIDTH_HEIGHT_PAIR_RE.search(line)
+        if width_height_match is not None:
+            width_mm = _parse_ath_mm_value(width_height_match.group(1), width_height_match.group(3))
+            height_mm = _parse_ath_mm_value(width_height_match.group(2), width_height_match.group(3))
+            if width_mm is not None:
+                if has_context_hint:
+                    context_values["width"] = width_mm
+                    updated_context = True
+                else:
+                    fallback_values["width"] = width_mm
+                    updated_fallback = True
+            if height_mm is not None:
+                if has_context_hint:
+                    context_values["height"] = height_mm
+                    updated_context = True
+                else:
+                    fallback_values["height"] = height_mm
+                    updated_fallback = True
+
+        length_line_match = _ATH_DIM_LENGTH_LINE_RE.search(line)
+        if length_line_match is not None:
+            length_mm = _parse_ath_mm_value(length_line_match.group(1), length_line_match.group(2))
+            if length_mm is not None:
+                if has_context_hint:
+                    context_values["length"] = length_mm
+                    updated_context = True
+                else:
+                    fallback_values["length"] = length_mm
+                    updated_fallback = True
+
+        if width_height_match is not None or length_line_match is not None:
+            if stripped and updated_context:
+                context_lines.append(stripped)
+            elif stripped and updated_fallback:
+                fallback_lines.append(stripped)
+            continue
+
+        line_matches = list(_ATH_DIM_RE.finditer(line))
+        if not line_matches:
+            continue
         for match in line_matches:
             label_start = int(match.start(1))
             if label_start > 0 and line[label_start - 1] == ".":
                 # Ignore parameter-path echoes like "GCurve.Width".
                 continue
             label = match.group(1).lower()
-            try:
-                value = float(match.group(2).replace(",", "."))
-            except ValueError:
-                continue
-            if not math.isfinite(value):
+            value = _parse_ath_mm_value(match.group(2))
+            if value is None:
                 continue
             if label not in context_values:
                 continue

@@ -2182,7 +2182,22 @@ def run_batch_pipeline(
                 ath_stage_ok = ath_result.ok
 
                 ath_stdout = Path(ath_result.stdout_log).read_text(encoding="utf-8")
-                dims = parse_ath_dimensions(ath_stdout)
+                ath_stderr = Path(ath_result.stderr_log).read_text(encoding="utf-8")
+                dims = parse_ath_dimensions("\n".join([ath_stdout, ath_stderr]).strip())
+                _append_stage_debug_log(
+                    version_logs_dir,
+                    event="ath_dimensions_parsed",
+                    payload={
+                        "version_id": version_id,
+                        "run_id": effective_run_id,
+                        "length_mm": dims.horn_length_mm,
+                        "width_mm": dims.horn_width_mm,
+                        "height_mm": dims.horn_height_mm,
+                        "raw_line": dims.raw_line,
+                        "source_stdout_log": str(ath_result.stdout_log),
+                        "source_stderr_log": str(ath_result.stderr_log),
+                    },
+                )
                 # Persist final dimensions before downstream export/ingest stages.
                 if None not in (dims.horn_length_mm, dims.horn_width_mm, dims.horn_height_mm):
                     raw_line = (
@@ -2210,6 +2225,31 @@ def run_batch_pipeline(
                     )
                     _track_sync("write_ath_dimensions", dims_result)
                     ath_dimension_rows += 1
+                    _append_stage_debug_log(
+                        version_logs_dir,
+                        event="ath_dimensions_persisted",
+                        payload={
+                            "version_id": version_id,
+                            "run_id": effective_run_id,
+                            "length_mm": dims.horn_length_mm,
+                            "width_mm": dims.horn_width_mm,
+                            "height_mm": dims.horn_height_mm,
+                            "source_file": str(ath_result.stdout_log),
+                        },
+                    )
+                else:
+                    _append_stage_debug_log(
+                        version_logs_dir,
+                        event="ath_dimensions_skipped",
+                        payload={
+                            "version_id": version_id,
+                            "run_id": effective_run_id,
+                            "reason": "incomplete_dimensions",
+                            "length_mm": dims.horn_length_mm,
+                            "width_mm": dims.horn_width_mm,
+                            "height_mm": dims.horn_height_mm,
+                        },
+                    )
 
                 ath_failure_reason = "ath_failed"
                 if ath_result.ok and needs_abec_artifact:
