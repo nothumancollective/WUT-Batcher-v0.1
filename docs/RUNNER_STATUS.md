@@ -65,6 +65,39 @@
 - Import diagnostics dump on failure (`import_failure_*.json/.txt`) persisted into `artifacts` + `ui_observations`.
 - AKABAK contract updated with explicit `import_start_apply` action and missing-mesh modal classification.
 
+## ATH Final Dimensions Audit Findings (2026-02-27, no code changes)
+
+Scope:
+- Full path audit for ATH final dimensions: extraction -> persistence -> analyzer retrieval -> UI binding.
+- Data source under audit: ATH geometry-stage terminal output (before AKABAK/VACS).
+
+Authoritative docs used in this audit:
+- Runner/pipeline source of truth: `docs/RUNNER_STATUS.md`, `docs/RUNNER_AUDIT.md`.
+- Final-dimensions analyzer mapping: `docs/analyzer/09_final_dimensions_data_gap.md`.
+- Recent storage and dual-write behavior context: `docs/release/storage-audit.md`, `docs/analyzer/merge_preflight_project_library_2026-02-25.md`.
+
+Audit findings:
+1. Source output exists in ATH logs
+   - Real run logs contain dimensions in this form:
+     - `Device width x height = <W> x <H> mm`
+     - `Device length = <L> mm`
+   - Example path: `.../versions/V045/logs/ath.stdout.log`.
+2. Extraction fails for current ATH line shape
+   - `app/runners.py::parse_ath_dimensions` uses one generic token regex.
+   - On `Device width x height = ...`, parser captures width but misses height, yielding partial tuple `(L, W, None)`.
+3. Persistence is gated on complete triple
+   - `app/runtime_orchestrator.py` writes dimensions only when `length/width/height` are all non-null.
+   - With `height=None`, no write occurs.
+4. DB remains empty for dimensions
+   - `ath_dimensions` rows: `0` in audited project DB.
+   - `versions.ath_length_mm/ath_width_mm/ath_height_mm`: all null in audited rows.
+5. Retrieval/UI wiring appears intact
+   - Analyzer service (`app/services.py`) and Version Information UI mapping (`app/gui.py`) already read and format dimensions when DB values exist.
+   - Missing values therefore surface as `—`, consistent with current UI contract.
+
+Most likely breakpoint:
+- Primary failure is extraction/parser behavior for ATH `Device width x height` line format, which prevents downstream persistence.
+
 ## Pipeline Map (2026-02-25)
 
 ### Authoritative docs by subsystem (latest used source)

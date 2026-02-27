@@ -65,3 +65,20 @@ Scope: Analyzer read-side verification only (no Runner/export ingest changes).
 - Row placement: left info column, directly above `Throat / GCurve / Morph / Driver / Enclosure`.
 - Row value format: `{L:.1f} × {W:.1f} × {H:.1f} mm`
 - Missing dimensions: `—` with tooltip `Not available`.
+
+## 2026-02-27 audit update (no code changes)
+
+Scope:
+- Re-audited end-to-end final-dimensions path with live project artifacts.
+
+Observed path status:
+1. ATH source lines are present in runtime logs
+   - `Device width x height = <W> x <H> mm`
+   - `Device length = <L> mm`
+2. Runtime parser misses height on this line shape
+   - `app/runners.py::parse_ath_dimensions` returns `(length, width, None)` for audited logs.
+3. Runtime write is therefore skipped
+   - `app/runtime_orchestrator.py` persists only when all three values are non-null.
+4. Analyzer read/UI remain correct
+   - Read side (`app/services.py`) and Version Information rendering (`app/gui.py`) already display dimensions when DB fields are populated.
+   - Current blank display is caused by missing persisted triples, not UI formatting/binding errors.
