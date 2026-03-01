@@ -65,3 +65,66 @@ Working hypothesis for the fix:
 
 - Restore Doctor accuracy by making GUI startup checks use the authoritative GUI settings source and retiring the stale legacy `Runner/` warning.
 - Stop startup flicker by preventing `MainWindow` construction from creating unparented hidden widgets during splash/startup, or by ensuring those widgets are parented before any visibility changes happen.
+
+## Phase 1 Fixes Applied (2026-03-01)
+
+### Doctor Warning Catalog: After Fix
+
+Current GUI startup Doctor payload on this machine is now `overall_status=ok`.
+
+| Check | Before | After | Fix Status | Code |
+| --- | --- | --- | --- | --- |
+| `config_path` | Warned that no config path was provided. | Reports `Loaded config from C:\\Users\\maximilianheinze\\.wut_batcher\\config.json`. | Fixed false positive. | `app/gui.py:15621-15633`, `app/doctor_service.py:394-417` |
+| `batch_results_root_exists` | Warned about missing legacy `app_config.json` field. | Not included in GUI startup Doctor payload. | Fixed false positive for GUI startup by skipping non-authoritative legacy export-root checks in this context only. | `app/gui.py:15621-15633`, `app/doctor_service.py:439-455` |
+| `ath_export_root_exists` | Warned about missing legacy `app_config.json` field. | Not included in GUI startup Doctor payload. | Fixed false positive for GUI startup by skipping non-authoritative legacy export-root checks in this context only. | `app/gui.py:15621-15633`, `app/doctor_service.py:457-481` |
+| `runner_dir` | Warned when `Runner/` was absent. | Reports OK when integrated runtime exists at `app/runtime_orchestrator.py`. | Fixed stale heuristic. | `app/doctor_service.py:182-208` |
+
+Notes:
+
+- CLI `doctor` still keeps the broader `app_config.json`-driven audit surface.
+- The GUI splash Doctor now uses the persisted GUI settings file as its source of truth and only skips the legacy export-root checks that are not authoritative in this startup path.
+
+### Startup Flicker Forensics: After Fix
+
+Fix applied:
+
+- `GuiController` no longer constructs `MainWindow` during splash/startup.
+- `MainWindow` is created lazily on first actual need (`open project` / `new project` / explicit `controller.main_window` access).
+- Startup Doctor status is stored in the controller and applied to `MainWindow` when the window is created later, so the status/detail behavior is preserved.
+
+Why this is safe:
+
+- `ProjectManagerWindow` remains the startup landing window.
+- No runner/analyzer/project logic changed; only the timing of `MainWindow` construction moved out of splash/startup.
+- Existing UI tests that access `controller.main_window` still work because the public property now materializes the window on demand.
+
+Post-fix trace with the same DEBUG instrumentation:
+
+- env: `WUT_DEBUG_WINDOW_FLICKER=1`
+- env: `WUT_DEBUG_WINDOW_FLICKER_EXIT_MS=3500`
+- log: `%LOCALAPPDATA%\\WUTBatcher\\logs\\window_flicker_debug.jsonl`
+
+Observed startup windows after fix:
+
+- `show` / `hide`: `QSplashScreen`
+- `show` / `hide`: `ProjectManagerWindow`
+- No other top-level or temporarily top-level widgets were recorded during startup (`non_startup_windows = 0`).
+
+## Validation Notes
+
+Targeted automated checks run after the fix:
+
+- `python -m pytest tests/test_doctor_service.py tests/test_gui_project_open_and_batch_nav_ui.py -q`
+  - result: `8 passed`
+- `python -m pytest tests/test_gui_analyzer_page_ui.py::AnalyzerPageUiTests::test_analyse_modebar_opens_analyzer_page tests/test_project_manager_ui.py -q`
+  - result: `4 passed`
+
+Manual / live diagnostics:
+
+- Startup Doctor payload via `_run_doctor_for_splash(service)` on this machine now reports `overall_status=ok`.
+- Instrumented live startup trace now records exactly `QSplashScreen` and `ProjectManagerWindow`, with no tiny transient windows during splash/startup.
+
+Broader smoke note:
+
+- The existing fake-toolchain stress test `tests/test_ui_e2e_stress_runs.py::UiE2EStressRunsTests::test_three_full_ui_runs_are_stable` still fails in the batch-run path with `Run failed for B001`.
+- That failure reproduces both with lazy `MainWindow` startup and with an explicitly eager-created `MainWindow`, so it is not attributable to this Doctor/startup fix scope.

@@ -188,6 +188,17 @@ def _check_runner_dir(repo_root: Path) -> DoctorCheck:
             status=STATUS_OK,
             detail=f"Runner directory present: {runner_dir}",
         )
+    integrated_runtime = repo_root / "app" / "runtime_orchestrator.py"
+    if integrated_runtime.exists():
+        return DoctorCheck(
+            key="runner_dir",
+            label="Runner directory",
+            status=STATUS_OK,
+            detail=(
+                "Legacy Runner directory not present; integrated runtime is available at "
+                f"{integrated_runtime}"
+            ),
+        )
     return DoctorCheck(
         key="runner_dir",
         label="Runner directory",
@@ -377,6 +388,8 @@ def run_doctor_checks(
     kill_zombies: bool = False,
     report_path: Optional[Path] = None,
     tool_paths: Optional[Dict[str, Optional[str]]] = None,
+    include_batch_results_root_check: bool = True,
+    include_ath_export_root_check: bool = True,
 ) -> DoctorReport:
     checks: List[DoctorCheck] = []
 
@@ -426,48 +439,50 @@ def run_doctor_checks(
     checks.append(_ensure_dir(projects_root, "Projects root", fix=fix, required=True))
     checks.append(_write_test(projects_root, "Projects root"))
 
-    batch_results_root_value = config_payload.get("batch_results_root")
-    if batch_results_root_value:
-        batch_results_root = Path(str(batch_results_root_value)).expanduser()
-        checks.append(
-            _ensure_dir(batch_results_root, "Batch results root", fix=fix, required=False)
-        )
-        checks.append(_write_test(batch_results_root, "Batch results root"))
-    else:
-        checks.append(
-            DoctorCheck(
-                key="batch_results_root_exists",
-                label="Batch results root",
-                status=STATUS_WARN,
-                detail="batch_results_root not configured in app_config.json.",
+    if include_batch_results_root_check:
+        batch_results_root_value = config_payload.get("batch_results_root")
+        if batch_results_root_value:
+            batch_results_root = Path(str(batch_results_root_value)).expanduser()
+            checks.append(
+                _ensure_dir(batch_results_root, "Batch results root", fix=fix, required=False)
             )
-        )
+            checks.append(_write_test(batch_results_root, "Batch results root"))
+        else:
+            checks.append(
+                DoctorCheck(
+                    key="batch_results_root_exists",
+                    label="Batch results root",
+                    status=STATUS_WARN,
+                    detail="batch_results_root not configured in app_config.json.",
+                )
+            )
 
-    ath_export_root_value = config_payload.get("ath_export_root")
-    if os.name != "nt":
-        checks.append(
-            DoctorCheck(
-                key="ath_export_root_exists",
-                label="ATH export root",
-                status=STATUS_WARN,
-                detail="Skipped on non-Windows platform.",
+    if include_ath_export_root_check:
+        ath_export_root_value = config_payload.get("ath_export_root")
+        if os.name != "nt":
+            checks.append(
+                DoctorCheck(
+                    key="ath_export_root_exists",
+                    label="ATH export root",
+                    status=STATUS_WARN,
+                    detail="Skipped on non-Windows platform.",
+                )
             )
-        )
-    elif ath_export_root_value:
-        ath_export_root = Path(str(ath_export_root_value)).expanduser()
-        checks.append(
-            _ensure_dir(ath_export_root, "ATH export root", fix=fix, required=False)
-        )
-        checks.append(_write_test(ath_export_root, "ATH export root"))
-    else:
-        checks.append(
-            DoctorCheck(
-                key="ath_export_root_exists",
-                label="ATH export root",
-                status=STATUS_WARN,
-                detail="ATH export root not configured in app_config.json.",
+        elif ath_export_root_value:
+            ath_export_root = Path(str(ath_export_root_value)).expanduser()
+            checks.append(
+                _ensure_dir(ath_export_root, "ATH export root", fix=fix, required=False)
             )
-        )
+            checks.append(_write_test(ath_export_root, "ATH export root"))
+        else:
+            checks.append(
+                DoctorCheck(
+                    key="ath_export_root_exists",
+                    label="ATH export root",
+                    status=STATUS_WARN,
+                    detail="ATH export root not configured in app_config.json.",
+                )
+            )
 
     repo_root = Path(__file__).resolve().parents[1]
     templates_dir_value = config_payload.get("templates_dir")

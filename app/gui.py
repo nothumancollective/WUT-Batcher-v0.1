@@ -15475,18 +15475,59 @@ class GuiController:
     def __init__(self, service: OrchestratorService) -> None:
         self.service = service
         self.project_manager = ProjectManagerWindow(service)
-        self.main_window = MainWindow(service)
+        self._main_window: MainWindow | None = None
+        self._startup_status_message = "Ready."
+        self._startup_status_detail = ""
         self.project_manager.open_project.connect(self._open_project)
         self.project_manager.create_project.connect(self._new_project)
         self.project_manager.request_settings.connect(self._open_settings_from_project_manager)
-        self.main_window.set_project_manager_handler(self._open_project_manager_from_main)
+
+    @property
+    def main_window(self) -> MainWindow:
+        return self._ensure_main_window()
+
+    def _ensure_main_window(self) -> MainWindow:
+        if self._main_window is None:
+            window = MainWindow(self.service)
+            window.set_project_manager_handler(self._open_project_manager_from_main)
+            window.set_status(self._startup_status_message, detail=self._startup_status_detail)
+            self._main_window = window
+        return self._main_window
+
+    def set_startup_status(self, message: str, *, detail: str = "") -> None:
+        self._startup_status_message = str(message or "Ready.")
+        self._startup_status_detail = str(detail or "")
+        if self._main_window is not None:
+            self._main_window.set_status(self._startup_status_message, detail=self._startup_status_detail)
+
+    def runtime_context(self) -> Dict[str, Any]:
+        window = self._main_window
+        if window is None:
+            return {
+                "page": "ProjectManagerWindow",
+                "mode": "project_manager",
+                "project_id": None,
+            }
+        return {
+            "page": type(window.stack.currentWidget()).__name__,
+            "mode": (
+                "project"
+                if window.project_mode_button.isChecked()
+                else "batch"
+                if window.batch_mode_button.isChecked()
+                else "analyse"
+                if window.analyse_mode_button.isChecked()
+                else "unknown"
+            ),
+            "project_id": window.current_project.project_id if window.current_project is not None else None,
+        }
 
     def show_project_manager(self) -> None:
         self.project_manager.refresh()
         self._show_window_normal_foreground(self.project_manager)
 
     def _show_main_window_maximized(self) -> None:
-        self._show_window_maximized_foreground(self.main_window)
+        self._show_window_maximized_foreground(self._ensure_main_window())
 
     @staticmethod
     def _show_window_normal_foreground(window: QMainWindow) -> None:
@@ -15512,26 +15553,29 @@ class GuiController:
             )
             self.project_manager.refresh()
             return
-        self.main_window.load_project(project)
+        self._ensure_main_window().load_project(project)
         self._show_main_window_maximized()
         self.project_manager.hide()
 
     def _new_project(self) -> None:
+        window = self._main_window
         if LOGGER.isEnabledFor(logging.DEBUG):
             LOGGER.debug(
                 "GuiController new-project flow: closing current_project=%s",
-                str(self.main_window.current_project.project_id if self.main_window.current_project else ""),
+                str(window.current_project.project_id if window and window.current_project else ""),
             )
-        self.main_window.enter_new_project_flow()
+        self._ensure_main_window().enter_new_project_flow()
         self._show_main_window_maximized()
         self.project_manager.hide()
 
     def _is_project_open_for_settings(self) -> bool:
-        return bool(self.main_window.current_project is not None)
+        return bool(self._main_window is not None and self._main_window.current_project is not None)
 
     def _close_project_for_library_switch(self) -> bool:
+        if self._main_window is None:
+            return True
         try:
-            self.main_window.enter_new_project_flow()
+            self._main_window.enter_new_project_flow()
             return True
         except Exception:
             if LOGGER.isEnabledFor(logging.DEBUG):
@@ -15542,10 +15586,11 @@ class GuiController:
         self.project_manager.refresh()
 
     def _open_settings_from_project_manager(self) -> None:
+        window = self._main_window
         if LOGGER.isEnabledFor(logging.DEBUG):
             LOGGER.debug(
                 "GuiController opening settings from project manager: current_project=%s",
-                str(self.main_window.current_project.project_id if self.main_window.current_project else ""),
+                str(window.current_project.project_id if window and window.current_project else ""),
             )
         dialog = SettingsDialog(
             self.service,
@@ -15560,7 +15605,8 @@ class GuiController:
     def _open_project_manager_from_main(self) -> None:
         self.project_manager.refresh()
         self._show_window_normal_foreground(self.project_manager)
-        self.main_window.hide()
+        if self._main_window is not None:
+            self._main_window.hide()
 
 
 def _make_splash(app: QApplication) -> QSplashScreen:
@@ -15590,7 +15636,7 @@ def _run_doctor_for_splash(service: OrchestratorService) -> Dict[str, object]:
     config = AppConfig(projects_root=settings.library_root)
     report = run_doctor_checks(
         config,
-        config_path=None,
+        config_path=service.settings_store.path,
         fix=False,
         kill_zombies=False,
         report_path=None,
@@ -15599,6 +15645,8 @@ def _run_doctor_for_splash(service: OrchestratorService) -> Dict[str, object]:
             "akabak_exe": settings.akabak_exe,
             "vacs_exe": settings.vacs_exe,
         },
+        include_batch_results_root_check=False,
+        include_ath_export_root_check=False,
     )
     tool_versions: Dict[str, str] = {}
     for key, exe_path in {
@@ -15642,32 +15690,16 @@ def launch_gui() -> int:
     doctor_payload = _run_doctor_for_splash(service)
     controller = GuiController(service)
     _install_runtime_exception_logging(
-        context_provider=lambda: {
-            "page": type(controller.main_window.stack.currentWidget()).__name__,
-            "mode": (
-                "project"
-                if controller.main_window.project_mode_button.isChecked()
-                else "batch"
-                if controller.main_window.batch_mode_button.isChecked()
-                else "analyse"
-                if controller.main_window.analyse_mode_button.isChecked()
-                else "unknown"
-            ),
-            "project_id": (
-                controller.main_window.current_project.project_id
-                if controller.main_window.current_project is not None
-                else None
-            ),
-        }
+        context_provider=lambda: controller.runtime_context()
     )
     doctor_status = str(doctor_payload["overall_status"]).lower()
     if doctor_status in {"fail", "warn"}:
-        controller.main_window.set_status(
+        controller.set_startup_status(
             f"Doctor {doctor_status}: click for details",
             detail=json.dumps(doctor_payload, indent=2, ensure_ascii=False),
         )
     else:
-        controller.main_window.set_status(
+        controller.set_startup_status(
             "Doctor ok.",
             detail=json.dumps(doctor_payload, indent=2, ensure_ascii=False),
         )

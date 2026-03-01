@@ -31,6 +31,20 @@ class ProjectOpenAndBatchNavUiTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.app = QApplication.instance() or QApplication([])
 
+    def test_controller_defers_main_window_until_needed(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_ui_regression_lazy_main_") as tmp:
+            service = _build_service(Path(tmp))
+            controller = GuiController(service)
+
+            self.assertIsNone(controller._main_window)
+            controller.set_startup_status("Doctor ok.", detail='{"overall_status":"ok"}')
+            self.assertIsNone(controller._main_window)
+
+            window = controller.main_window
+            self.assertEqual(window.status_message.text(), "Doctor ok.")
+            window.close()
+            controller.project_manager.close()
+
     def test_create_project_is_single_shot_when_create_clicked_twice(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_ui_regression_create_once_") as tmp:
             service = _build_service(Path(tmp))
