@@ -13,8 +13,10 @@ import unittest
 from unittest.mock import patch
 
 from app.models import Batch, ParamSelection, Project, ProjectConstraints, SimExportSettings, SweepSpec
+from app.runners import parse_ath_dimensions
 from app.runtime_orchestrator import (
     StageExecution,
+    _read_log_tail_text,
     _apply_sim_export_settings_to_cfg,
     _resolve_export_specs,
     _run_akabak_ui_driver_stage,
@@ -43,6 +45,26 @@ def _library_db_path(library_root: Path) -> Path:
 
 
 class RuntimeOrchestratorTests(unittest.TestCase):
+    def test_read_log_tail_limits_bytes_and_keeps_final_dimension_lines(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            log_path = Path(tmp_dir) / "ath.stdout.log"
+            prefix = "PREFIX_SENTINEL_START\n" + ("filler\n" * 8_000)
+            suffix = "\n".join(
+                [
+                    "Device width x height = 270.97 x 270.97 mm (10.668 x 10.668\")",
+                    "Device length =         140.00 mm (5.512\")",
+                ]
+            )
+            log_path.write_text(prefix + suffix, encoding="utf-8")
+
+            tail = _read_log_tail_text(log_path, max_bytes=512)
+
+            self.assertNotIn("PREFIX_SENTINEL_START", tail)
+            parsed = parse_ath_dimensions(tail)
+            self.assertEqual(parsed.horn_length_mm, 140.0)
+            self.assertEqual(parsed.horn_width_mm, 270.97)
+            self.assertEqual(parsed.horn_height_mm, 270.97)
+
     def test_default_polar_export_specs_use_h_v_d_inclinations(self) -> None:
         specs = _resolve_export_specs({"auto_default_polar_exports": True})
         polar_specs = [spec for spec in list(specs) if str(getattr(spec, "graph_kind", "")).lower() == "polar"]

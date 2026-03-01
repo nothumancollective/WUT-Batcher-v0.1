@@ -105,11 +105,8 @@ Applied fix (2026-02-27):
     - `Device length = <L> mm`
   - Width and height are now both extracted from the paired line.
 - `app/runtime_orchestrator.py::run_batch_pipeline`
-  - Parser input now uses combined ATH terminal text (`stdout` + `stderr`) to tolerate stream variance.
-  - Added debug-stage events:
-    - `ath_dimensions_parsed`
-    - `ath_dimensions_persisted`
-    - `ath_dimensions_skipped` (`reason=incomplete_dimensions`)
+  - Final dimensions are parsed from the ATH stdout log tail after ATH completes.
+  - Extra dimension diagnostics are emitted only when `WUT_DEBUG_PIPELINE_STAGES=1`.
   - Runtime semantics unchanged: missing dimensions do not fail the run.
 
 Validation snapshot after fix:
@@ -157,6 +154,16 @@ Forensic conclusion:
   - parse only the ATH stdout log tail,
   - keep debug detail behind `WUT_DEBUG_PIPELINE_STAGES=1`,
   - preserve DB/UI dimension behavior.
+
+Applied remediation (2026-03-01):
+- `app/runtime_orchestrator.py`
+  - replaced full-log readback with bounded ATH stdout tail read (`64 KiB`) after ATH completes,
+  - removed unconditional per-version dimension debug rows from the hot path,
+  - kept explicit dimension decision logging only behind `WUT_DEBUG_PIPELINE_STAGES=1` in run-root logs.
+- Real verification after remediation:
+  - CLI run `9bfbca7e-7891-449f-ab36-a13a062380e7` on `B012`: succeeded, `ath_dimension_rows=2`
+  - GUI/offscreen worker run `b1ad0971-7084-44fa-822b-0243b6a9cdec` on `B013`: succeeded, `ath_dimension_rows=2`
+  - Analyzer UI still rendered dimensions for the selected run: `140.0 × 271.0 × 271.0 mm`
 
 ## Pipeline Map (2026-02-25)
 
@@ -207,7 +214,7 @@ Stage sequence in `run_batch_pipeline`:
    - Outputs: ATH stdout/stderr logs, generated ABEC artifacts
 4. Final dimensions extraction/persist (first export-data persistence step)
    - Modules: `app/runners.py` `parse_ath_dimensions`, `app/tidy_dataset.py` writer
-   - Inputs: ATH stdout + stderr
+   - Inputs: ATH stdout log tail after ATH completion
    - Outputs: `ath_dimensions` + `versions.ath_*` in project DB and library DB mirror
 5. ABEC sync + LE repair + pre-AKABAK guards
    - Module: `app/runtime_orchestrator.py` (`_sync_generated_abec`, `repair_post_ath_le_binding`, contract checks)

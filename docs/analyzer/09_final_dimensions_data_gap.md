@@ -94,11 +94,8 @@ Fix implemented:
 - Parser now explicitly supports ATH pair signatures:
   - `Device width x height = <W> x <H> mm`
   - `Device length = <L> mm`
-- Runtime parser input now uses combined ATH `stdout + stderr`.
-- Added debug-only stage trace events around extraction/write decisions:
-  - `ath_dimensions_parsed`
-  - `ath_dimensions_persisted`
-  - `ath_dimensions_skipped` (`reason=incomplete_dimensions`)
+- Runtime extracts from the ATH `stdout` log tail after ATH completion.
+- Extra extraction/write diagnostics are emitted only when `WUT_DEBUG_PIPELINE_STAGES=1`.
 
 Persistence/read/UI contract after fix:
 - Write targets unchanged (project DB + library DB mirror):
@@ -114,3 +111,18 @@ Live validation:
 - Real batch run (`B010`, run `9f33fb6a-7e8d-46eb-8e0f-0197d998fe0b`) wrote ATH dimensions for two versions (`ath_dimension_rows=2`).
 - `V048` persisted with full triplet in both DBs and is returned by analyzer read API with non-null `ath_*` dimensions.
 - Offscreen Analyzer page binding shows: `140.0 × 271.0 × 271.0 mm` for the retrieved run payload.
+
+## 2026-03-01 runtime-minimization update
+
+Reason:
+- Follow-up runner forensics showed no reproducible stage-time regression from dimension parsing itself, but the initial fix had added avoidable hot-path work (`stdout`/`stderr` full-file readback plus unconditional extra debug events).
+
+Write-side behavior now:
+- Dimension extraction reads only the ATH `stdout` log tail (`64 KiB` cap) after ATH completes.
+- No run-tree scans are used.
+- If dimensions are incomplete, the run continues normally; an explicit debug record is written only when `WUT_DEBUG_PIPELINE_STAGES=1`.
+
+Validation:
+- Current real CLI run `9bfbca7e-7891-449f-ab36-a13a062380e7` (`B012`) succeeded with `ath_dimension_rows=2`.
+- Current real GUI/offscreen worker run `b1ad0971-7084-44fa-822b-0243b6a9cdec` (`B013`) succeeded with `ath_dimension_rows=2`.
+- Analyzer Version Information still renders the dimension row from persisted DB values.
