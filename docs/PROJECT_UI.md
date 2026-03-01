@@ -204,3 +204,9 @@ The Batch page is now implemented as a companion to the PROJECT form design.
 - Fix plan:
   - Analyzer: remove only the dim key label widget/layout reservation; keep the existing dim value formatting and binding untouched.
   - Export popup: move the popup to the shared dialog shell, add a safe non-native destination picker in the popup flow, keep backend export generation unchanged, and surface export failures with a short message dialog.
+- Implemented fix:
+  - Analyzer dim row now renders only the bound value label; `Dim (LxWxH)` is no longer visible in the fixed-width left column, so the formatted dimension string gets the full row width.
+  - Export popup now uses the shared `StyledDialogBase` shell and the standard `BatchPrimaryButton` / `BatchSecondaryButton` button styling.
+  - Clicking `Export` inside the popup now opens a safe non-native folder picker when no destination is set, and cancel leaves the popup open.
+  - `MainWindow._export_version(...)` still uses `service.export_version(...)` as the backend generator, then copies the generated export bundle to the user-selected destination folder in the UI layer.
+  - Export failures now surface through both status text and a short `QMessageBox.critical(...)` dialog; debug stack traces remain logger-only.

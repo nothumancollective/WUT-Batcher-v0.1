@@ -12,6 +12,7 @@ import logging
 import os
 import re
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import threading
@@ -4758,13 +4759,19 @@ class SettingsDialog(StyledDialogBase):
         self.analyzer_cache_warning.setVisible(False)
 
 
-class ExportDialog(QDialog):
-    def __init__(self, versions_by_batch: Dict[str, List[str]], parent: QWidget | None = None) -> None:
-        super().__init__(parent)
+class ExportDialog(StyledDialogBase):
+    def __init__(
+        self,
+        versions_by_batch: Dict[str, List[str]],
+        parent: QWidget | None = None,
+        *,
+        default_destination_dir: str = "",
+    ) -> None:
+        super().__init__(title="Export Version", parent=parent, min_width=540, min_height=280)
         self.versions_by_batch = versions_by_batch
-        self.setWindowTitle("Export Version")
-        self.setModal(True)
-        self.resize(420, 220)
+        self.destination_dir = QLineEdit(str(default_destination_dir or "").strip())
+        self.destination_dir.setPlaceholderText("Choose export folder")
+        self.destination_dir.setToolTip(self.destination_dir.text().strip())
 
         self.batch_combo = QComboBox()
         self.version_combo = QComboBox()
@@ -4775,34 +4782,132 @@ class ExportDialog(QDialog):
         for batch_id in sorted(self.versions_by_batch.keys()):
             self.batch_combo.addItem(batch_id)
 
+        body = self.body_layout()
+        intro = QLabel("Choose a version and destination folder for the exported artifacts.")
+        intro.setWordWrap(True)
+        intro.setObjectName("SummaryMeta")
+        body.addWidget(intro)
+
         form = QFormLayout()
+        form.setContentsMargins(0, 0, 0, 0)
+        form.setSpacing(8)
         form.addRow("Batch", self.batch_combo)
         form.addRow("Version", self.version_combo)
         form.addRow("Export STL", self.export_stl)
         form.addRow("Export ABEC", self.export_abec)
+        destination_row = QWidget()
+        destination_layout = QHBoxLayout(destination_row)
+        destination_layout.setContentsMargins(0, 0, 0, 0)
+        destination_layout.setSpacing(8)
+        self.destination_browse_btn = QPushButton("Browse")
+        self.destination_browse_btn.setObjectName("BatchSecondaryButton")
+        destination_layout.addWidget(self.destination_dir, 1)
+        destination_layout.addWidget(self.destination_browse_btn, 0)
+        form.addRow("Destination", destination_row)
 
         self.batch_combo.currentTextChanged.connect(self._reload_versions)
         self._reload_versions(self.batch_combo.currentText())
 
-        export_btn = QPushButton("Export")
-        export_btn.setObjectName("PrimaryButton")
-        export_btn.clicked.connect(self.accept)
+        self.export_btn = QPushButton("Export")
+        self.export_btn.setObjectName("BatchPrimaryButton")
         cancel_btn = QPushButton("Cancel")
+        cancel_btn.setObjectName("BatchSecondaryButton")
         cancel_btn.clicked.connect(self.reject)
+        self.destination_browse_btn.clicked.connect(self._choose_destination)
+        self.export_btn.clicked.connect(self._handle_export)
 
         buttons = QHBoxLayout()
+        buttons.setContentsMargins(0, 0, 0, 0)
+        buttons.setSpacing(8)
         buttons.addStretch(1)
         buttons.addWidget(cancel_btn)
-        buttons.addWidget(export_btn)
+        buttons.addWidget(self.export_btn)
 
-        root = QVBoxLayout(self)
-        root.addLayout(form)
-        root.addLayout(buttons)
+        body.addLayout(form)
+        body.addLayout(buttons)
 
     def _reload_versions(self, batch_id: str) -> None:
         self.version_combo.clear()
         for version_id in self.versions_by_batch.get(batch_id, []):
             self.version_combo.addItem(version_id)
+
+    def _choose_destination(self) -> str:
+        app = QApplication.instance()
+        if app is not None and QThread.currentThread() != app.thread():
+            if LOGGER.isEnabledFor(logging.DEBUG):
+                LOGGER.debug(
+                    "ExportDialog destination picker invoked off UI thread. current=%s ui=%s",
+                    str(QThread.currentThread()),
+                    str(app.thread()),
+                )
+            QMessageBox.critical(
+                self,
+                "Folder Picker Failed",
+                "Export folder picker must run on the UI thread. Please retry from the main window.",
+            )
+            return ""
+        current = self.destination_dir.text().strip()
+        start_dir = current or str(Path.home())
+        selected = ""
+        try:
+            dialog = QFileDialog(self, "Choose Export Folder", start_dir)
+            if hasattr(dialog, "setObjectName"):
+                dialog.setObjectName("ExportDestinationDialog")
+            if hasattr(dialog, "setModal"):
+                dialog.setModal(True)
+            if hasattr(dialog, "setWindowFlag"):
+                dialog.setWindowFlag(Qt.WindowContextHelpButtonHint, False)
+            if hasattr(dialog, "setViewMode"):
+                dialog.setViewMode(QFileDialog.Detail)
+            dialog.setFileMode(QFileDialog.Directory)
+            dialog.setOption(QFileDialog.DontUseNativeDialog, True)
+            dialog.setOption(QFileDialog.ShowDirsOnly, True)
+            dialog.setDirectory(start_dir)
+            if hasattr(dialog, "setLabelText"):
+                dialog.setLabelText(QFileDialog.Accept, "Select Folder")
+                dialog.setLabelText(QFileDialog.Reject, "Cancel")
+            layout = dialog.layout() if hasattr(dialog, "layout") else None
+            if layout is not None and hasattr(layout, "setContentsMargins"):
+                layout.setContentsMargins(12, 12, 12, 12)
+                if hasattr(layout, "setSpacing"):
+                    layout.setSpacing(8)
+            if hasattr(dialog, "adjustSize"):
+                dialog.adjustSize()
+            hint = dialog.sizeHint() if hasattr(dialog, "sizeHint") else QSize(0, 0)
+            width_now = int(dialog.width()) if hasattr(dialog, "width") else 0
+            height_now = int(dialog.height()) if hasattr(dialog, "height") else 0
+            base_width = max(width_now, int(hint.width()), 720)
+            base_height = max(height_now, int(hint.height()), 520)
+            if hasattr(dialog, "resize"):
+                dialog.resize(int(base_width * 1.2), int(base_height))
+            if dialog.exec() == QDialog.Accepted:
+                picked = list(dialog.selectedFiles() or [])
+                selected = str(picked[0]) if picked else ""
+        except Exception as exc:
+            if LOGGER.isEnabledFor(logging.DEBUG):
+                LOGGER.debug("ExportDialog safe folder dialog failed.", exc_info=True)
+            QMessageBox.critical(
+                self,
+                "Folder Picker Failed",
+                f"Could not open export folder picker.\n{StorageManager.user_error_message(exc)}",
+            )
+            return ""
+        if not selected:
+            return ""
+        token = str(Path(selected).expanduser())
+        self.destination_dir.setText(token)
+        self.destination_dir.setToolTip(token)
+        return token
+
+    def _handle_export(self) -> None:
+        if not self.version_combo.currentText().strip():
+            return
+        destination = self.destination_dir.text().strip()
+        if not destination:
+            destination = self._choose_destination()
+        if not destination:
+            return
+        self.accept()
 
     def payload(self) -> Dict[str, object]:
         return {
@@ -4810,11 +4915,8 @@ class ExportDialog(QDialog):
             "version_id": self.version_combo.currentText().strip(),
             "export_stl": self.export_stl.isChecked(),
             "export_abec": self.export_abec.isChecked(),
+            "destination_dir": self.destination_dir.text().strip(),
         }
-
-    def showEvent(self, event) -> None:  # type: ignore[override]
-        super().showEvent(event)
-        apply_windows_dark_titlebar(self)
 
 
 class RunManagerDialog(QDialog):
@@ -14889,6 +14991,7 @@ class MainWindow(QMainWindow):
             str(payload["version_id"]),
             bool(payload["export_stl"]),
             bool(payload["export_abec"]),
+            str(payload.get("destination_dir") or ""),
         )
 
     def _open_run_manager(self) -> None:
@@ -15018,7 +15121,35 @@ class MainWindow(QMainWindow):
         self.stack.setCurrentWidget(self.batch_page)
         self.set_status(f"Batch cloned into draft: {clone_name}")
 
-    def _export_version(self, batch_id: str, version_id: str, export_stl: bool, export_abec: bool) -> None:
+    @staticmethod
+    def _copy_export_bundle_to_destination(export_dir: Path, destination_dir: Path) -> Path:
+        source_dir = export_dir.expanduser().resolve()
+        target_dir = destination_dir.expanduser().resolve()
+        if source_dir == target_dir:
+            return target_dir
+        source_token = str(source_dir)
+        target_token = str(target_dir)
+        if target_token.startswith(source_token + os.sep):
+            raise RuntimeError("Export destination cannot be inside the generated export folder.")
+        if not source_dir.exists() or not source_dir.is_dir():
+            raise RuntimeError(f"Export folder is missing: {source_dir}")
+        target_dir.mkdir(parents=True, exist_ok=True)
+        for child in source_dir.iterdir():
+            target_child = target_dir / child.name
+            if child.is_dir():
+                shutil.copytree(child, target_child, dirs_exist_ok=True)
+            else:
+                shutil.copy2(child, target_child)
+        return target_dir
+
+    def _export_version(
+        self,
+        batch_id: str,
+        version_id: str,
+        export_stl: bool,
+        export_abec: bool,
+        destination_dir: str = "",
+    ) -> None:
         if self.current_project is None:
             self.set_status("No project loaded.")
             return
@@ -15030,8 +15161,26 @@ class MainWindow(QMainWindow):
                 export_stl=export_stl,
                 export_abec=export_abec,
             )
+            destination_token = str(destination_dir or "").strip()
+            if destination_token:
+                export_dir_token = str(result.get("export_dir") or "").strip()
+                if not export_dir_token:
+                    raise RuntimeError("Export completed but returned no export folder.")
+                copied_to = self._copy_export_bundle_to_destination(
+                    Path(export_dir_token),
+                    Path(destination_token),
+                )
+                result = dict(result)
+                result["selected_destination_dir"] = str(copied_to)
         except Exception as exc:
+            if LOGGER.isEnabledFor(logging.DEBUG):
+                LOGGER.debug("Export failed for %s/%s.", str(batch_id), str(version_id), exc_info=True)
             self.set_status(f"Export failed for {version_id}", detail=str(exc))
+            QMessageBox.critical(
+                self,
+                "Export failed",
+                f"Could not export {version_id}.\n{exc}\n\nSee status details or logs for more information.",
+            )
             return
         self.set_status(f"Export finished for {version_id}", detail=json.dumps(result, indent=2, ensure_ascii=False))
 
