@@ -75,6 +75,7 @@ from ui.form_metrics import FORM_METRICS
 from ui.form_schema import build_project_form_schema
 from ui.styled_dialog import StyledDialogBase
 from ui.theme import apply_theme, apply_windows_dark_titlebar, configure_windows_qt_darkmode_env
+from ui.widgets.project_card import ProjectCardV2
 
 LOGGER = logging.getLogger(__name__)
 _RUNTIME_LOG_LOCK = threading.Lock()
@@ -13795,12 +13796,14 @@ class ProjectManagerWindow(QMainWindow):
         self.project_list.setViewMode(QListView.IconMode)
         self.project_list.setResizeMode(QListView.Adjust)
         self.project_list.setMovement(QListView.Static)
+        self.project_list.setSelectionMode(QAbstractItemView.SingleSelection)
         self.project_list.setWrapping(True)
-        self.project_list.setSpacing(12)
-        self.project_list.setIconSize(QSize(170, 120))
-        self.project_list.setGridSize(QSize(210, 170))
-        self.project_list.setWordWrap(True)
+        self.project_list.setSpacing(ProjectCardV2.grid_spacing())
+        self.project_list.setGridSize(ProjectCardV2.grid_size_hint())
+        self.project_list.setWordWrap(False)
         self.project_list.setSelectionRectVisible(False)
+        self.project_list.setUniformItemSizes(True)
+        self._project_tile_columns = 1
         list_palette = self.project_list.palette()
         list_palette.setColor(QPalette.Highlight, QColor(0, 0, 0, 0))
         list_palette.setColor(QPalette.HighlightedText, QColor("#F1F1F1"))
@@ -13827,9 +13830,10 @@ class ProjectManagerWindow(QMainWindow):
         self.new_btn.clicked.connect(self.create_project.emit)
         self.settings_btn.clicked.connect(self.request_settings.emit)
         self.refresh_btn.clicked.connect(self.refresh)
-        self.project_list.currentItemChanged.connect(lambda _current, _previous: self._sync_open_enabled())
-        self.project_list.itemSelectionChanged.connect(self._sync_open_enabled)
+        self.project_list.currentItemChanged.connect(lambda _current, _previous: self._sync_project_list_state())
+        self.project_list.itemSelectionChanged.connect(self._sync_project_list_state)
         self.project_list.itemDoubleClicked.connect(self._emit_open)
+        self._update_project_grid_metrics()
         self.refresh()
 
     def refresh(self) -> None:
@@ -13839,70 +13843,62 @@ class ProjectManagerWindow(QMainWindow):
         selected_index = -1
         for project in self.service.list_projects():
             item = QListWidgetItem()
-            item.setIcon(self._project_tile_icon(project.name, project.project_id))
-            item.setText("")
-            item.setToolTip(f"{project.project_id} | {project.name}")
+            item.setSizeHint(ProjectCardV2.size_hint())
+            item.setToolTip(str(project.name or "Project"))
             item.setData(Qt.UserRole, project.project_id)
             self.project_list.addItem(item)
+            card = ProjectCardV2(project_name=project.name, parent=self.project_list)
+            image_path = self.service.project_preview_image_path(project.project_id)
+            preview = QPixmap(str(image_path)) if image_path.exists() else QPixmap()
+            card.set_preview_pixmap(preview)
+            card.clicked.connect(lambda current_item=item: self._select_project_item(current_item))
+            card.doubleClicked.connect(lambda current_item=item: self._open_project_item(current_item))
+            self.project_list.setItemWidget(item, card)
             if previous_id and str(project.project_id) == previous_id:
                 selected_index = self.project_list.count() - 1
         if self.project_list.count() > 0:
             self.project_list.setCurrentRow(selected_index if selected_index >= 0 else 0)
+        self._update_project_grid_metrics()
+        self._sync_project_list_state()
+
+    def _update_project_grid_metrics(self) -> None:
+        card_size = ProjectCardV2.size_hint()
+        spacing = ProjectCardV2.grid_spacing()
+        self.project_list.setSpacing(spacing)
+        self.project_list.setGridSize(card_size)
+        viewport_width = max(1, int(self.project_list.viewport().width()))
+        self._project_tile_columns = max(1, int((viewport_width + spacing) // (card_size.width() + spacing)))
+        self.project_list.setProperty("projectTileColumns", int(self._project_tile_columns))
+
+    def resizeEvent(self, event) -> None:  # type: ignore[override]
+        super().resizeEvent(event)
+        self._update_project_grid_metrics()
+
+    def _sync_project_list_state(self) -> None:
+        self._sync_project_card_states()
         self._sync_open_enabled()
 
-    def _project_tile_icon(self, project_name: str, project_id: str) -> QIcon:
-        pixmap = QPixmap(170, 120)
-        pixmap.fill(Qt.transparent)
-        painter = QPainter(pixmap)
-        painter.setRenderHint(QPainter.Antialiasing, True)
+    def _sync_project_card_states(self) -> None:
+        current = self.project_list.currentItem()
+        for index in range(self.project_list.count()):
+            item = self.project_list.item(index)
+            card = self.project_list.itemWidget(item)
+            if isinstance(card, ProjectCardV2):
+                card.set_selected(bool(item is current or item.isSelected()))
 
-        frame = QPainterPath()
-        frame.addRoundedRect(1, 1, 168, 118, 10, 10)
-        painter.fillPath(frame, QColor("#13161A"))
-        painter.setPen(QColor("#2C323A"))
-        painter.drawPath(frame)
+    def _select_project_item(self, item: QListWidgetItem | None) -> None:
+        if item is None:
+            return
+        self.project_list.setCurrentItem(item)
+        item.setSelected(True)
+        self.project_list.setFocus(Qt.MouseFocusReason)
+        self._sync_project_list_state()
 
-        painter.setPen(QColor("#F1F1F1"))
-        title_font = QFont("Segoe UI", 9)
-        title_font.setBold(True)
-        painter.setFont(title_font)
-        painter.drawText(8, 8, 154, 22, Qt.AlignCenter | Qt.TextWordWrap, str(project_name or "Project"))
-
-        thumbnail_rect = (18, 36, 134, 72)
-        image_path = self.service.project_preview_image_path(project_id)
-        preview = QPixmap(str(image_path)) if image_path.exists() else QPixmap()
-        if not preview.isNull():
-            zoom_factor = 1.8
-            crop_w = max(1, int(preview.width() / zoom_factor))
-            crop_h = max(1, int(preview.height() / zoom_factor))
-            crop_x = max(0, (preview.width() - crop_w) // 2)
-            crop_y = max(0, (preview.height() - crop_h) // 2)
-            cropped = preview.copy(crop_x, crop_y, crop_w, crop_h)
-            clipped = cropped.scaled(
-                thumbnail_rect[2],
-                thumbnail_rect[3],
-                Qt.KeepAspectRatioByExpanding,
-                Qt.SmoothTransformation,
-            )
-            draw_x = thumbnail_rect[0] - max(0, (clipped.width() - thumbnail_rect[2]) // 2)
-            draw_y = thumbnail_rect[1] - max(0, (clipped.height() - thumbnail_rect[3]) // 2)
-            painter.setClipRect(*thumbnail_rect)
-            painter.drawPixmap(draw_x, draw_y, clipped)
-            painter.setClipping(False)
-            painter.setPen(QColor("#323941"))
-            painter.drawRoundedRect(*thumbnail_rect, 8, 8)
-        else:
-            painter.setPen(QColor("#252B33"))
-            painter.setBrush(QColor("#1A1F25"))
-            painter.drawRoundedRect(*thumbnail_rect, 8, 8)
-            painter.setPen(QColor("#3A424D"))
-            painter.drawLine(28, 95, 78, 58)
-            painter.drawLine(78, 58, 112, 86)
-            painter.drawLine(112, 86, 138, 65)
-            painter.setBrush(QColor("#3A424D"))
-            painter.drawEllipse(38, 54, 8, 8)
-        painter.end()
-        return QIcon(pixmap)
+    def _open_project_item(self, item: QListWidgetItem | None) -> None:
+        if item is None:
+            return
+        self._select_project_item(item)
+        self._emit_open(item)
 
     def _sync_open_enabled(self) -> None:
         has_selection = self.project_list.currentItem() is not None or bool(self.project_list.selectedItems())
