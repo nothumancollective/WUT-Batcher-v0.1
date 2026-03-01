@@ -908,7 +908,8 @@ class AnalyzerPageUiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="wut_ui2x_dims_lxmxh_") as tmp:
             service = _build_service(Path(tmp))
             page = AnalysePage(service=service)
-            self.assertEqual(str(page.version_dims_key_label.text() or ""), "Dim (LxWxH)")
+            self.assertEqual(str(page.version_dims_key_label.text() or ""), "")
+            self.assertFalse(page.version_dims_key_label.isVisible())
             payload = {
                 "project_id": "P001",
                 "batch_id": "B001",
