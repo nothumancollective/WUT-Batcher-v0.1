@@ -180,3 +180,27 @@ The Batch page is now implemented as a companion to the PROJECT form design.
 - Quick startup smoke after sync:
   - offscreen launch via `python -m app gui`
   - app started and stayed alive for 8 seconds without immediate startup crash.
+
+## Audit Findings: Analyzer Dim Label + Export Popup (2026-03-01)
+- Scope limited to two UI defects:
+  - Analyzer Version Information dim row clipping.
+  - Dashboard Export popup styling and broken browse/export flow.
+- Analyzer dim row archaeology:
+  - `AnalysePage` builds the dim row in `app/gui.py:8220-8242`.
+  - The row sits inside `version_info_col1`, which is capped at `160..200px` width (`app/gui.py:8217-8219`).
+  - The label `Dim (LxWxH)` is rendered as its own widget at `app/gui.py:8231`, and is inserted before the value at `app/gui.py:8241`.
+  - The actual data binding is independent from that label: `self.version_dims_label = self.version_dims_value_label` at `app/gui.py:8302`, and `_update_version_information_panel(...)` writes only the value field.
+  - Root cause: the fixed-width first column plus a dedicated dim-key label leaves too little width for the value, so the formatted `L × W × H mm` text gets elided.
+  - Safe fix direction: remove the dedicated key label from this row and let the value consume the row width; no analyzer retrieval or formatting logic needs to change.
+- Export popup archaeology:
+  - The popup is implemented as plain `QDialog` in `app/gui.py:4761`, not via the shared frameless shell `StyledDialogBase` in `ui/styled_dialog.py:14`.
+  - The popup `Export` button is wired only to `self.accept` in `app/gui.py:4789`.
+  - `MainWindow._open_export_dialog()` (`app/gui.py:14871-14895`) only collects dialog payload and forwards it to `_export_version(...)`.
+  - `_export_version(...)` (`app/gui.py:15021-15036`) directly calls `self.service.export_version(...)` and never opens a file dialog.
+  - Current export generation writes to the project-local path `project_dir/exports/<batch>/<version>` inside `app/services.py:3764-3863`; there is no UI-selected destination in the current flow.
+  - Repro evidence: offscreen dialog click on the current build returns `QDialog.Accepted` and invokes `QFileDialog` zero times.
+  - Current error surfacing is weak: export exceptions are reduced to `set_status(...)` in `app/gui.py:15034`, with no user-facing modal error.
+  - Safe folder-picker precedent already exists in `SettingsDialog._choose_library_root()` (`app/gui.py:4615-4677`), using `QFileDialog.DontUseNativeDialog`.
+- Fix plan:
+  - Analyzer: remove only the dim key label widget/layout reservation; keep the existing dim value formatting and binding untouched.
+  - Export popup: move the popup to the shared dialog shell, add a safe non-native destination picker in the popup flow, keep backend export generation unchanged, and surface export failures with a short message dialog.
