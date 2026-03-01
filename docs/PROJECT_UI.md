@@ -215,3 +215,15 @@ The Batch page is now implemented as a companion to the PROJECT form design.
   - icon-painted inner preview border shell
   - `QListWidget::item` border shell for Project Manager tiles
   - title-above-preview painted canvas layout
+
+## Forensics: Project Manager Scope Regression (2026-03-01)
+- The accidental regression was introduced by branching the PM work from `wut-batcher/rebuild` (`fd84201`) instead of the last UI-good line `feature/batch-lineage-graph` (`0850f67`).
+- The compact PM commits themselves stayed mostly PM-scoped, but this branch baseline dropped later UI work that already existed in:
+  - `app/gui.py`
+  - `ui/theme.py`
+  - `ui/styled_dialog.py`
+  - `ui/form_builder.py`
+  - related UI tests/docs (`tests/test_gui_export_dialog_ui.py`, `tests/test_dashboard_constraints_ui.py`, `docs/ui/batch-lineage-graph.md`)
+- Restoration plan:
+  - restore non-Project-Manager UI files from `0850f67`
+  - then re-apply only the PM card/grid changes on top, with strict PM-only scope
