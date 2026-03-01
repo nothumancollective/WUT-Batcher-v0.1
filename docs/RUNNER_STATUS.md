@@ -120,6 +120,44 @@ Validation snapshot after fix:
   - `ath_dimensions.length_mm=140.0`, `width_mm=270.97`, `height_mm=270.97`
 - Analyzer retrieval (`analyzer_list_polar_runs`) returns `V048` with populated `ath_*` dimensions.
 
+## Runner Regression Forensics (2026-03-01)
+
+Question under test:
+- Did the ATH final-dimensions write-side fix introduce a real runner slowdown or a deterministic new downstream failure?
+
+Recent runner changes since last known good:
+- Commit `a7d3055` (`runtime: parse and persist ATH device dimensions reliably`) modified only:
+  - `app/runners.py`
+  - `app/runtime_orchestrator.py`
+- The runner-path changes in that commit were:
+  - extra ATH terminal parsing support for `Device width x height` / `Device length`,
+  - reading both `ath.stdout.log` and `ath.stderr.log` back into memory after ATH,
+  - unconditional extra stage-debug events for parsed/persisted/skipped dimensions.
+
+Measured current evidence:
+- Debug timing is now available behind `WUT_DEBUG_PIPELINE_STAGES=1` in run-root `pipeline.stage_debug.jsonl` as `elapsed_ms`.
+- Real current run (`B012`, run `46b322c5-8854-40b2-ac35-20fd5b70ca75`) showed:
+  - slowest stage: `akabak` at about `33-35 s` per version,
+  - ATH stage: about `0.5 s`,
+  - ATH dimension extraction/persistence is not a dominant runtime cost.
+- One GUI/offscreen reproduction hit:
+  - failing stage: `vacs`
+  - failure: `external vacs export failed (rc=1): vacs_not_ready_after_f4`
+- Control runs on the same real batch:
+  - baseline detached worktree at `cb5f9cc`: succeeded (`run_id=27fa55b7-93ae-45eb-a212-697f32cfc2e4`)
+  - current `HEAD`: also succeeded (`run_id=28a295e1-a05b-4e97-abc3-46b1eb573570`)
+
+Forensic conclusion:
+- No reproducible stage-time explosion was found in the dimension path itself.
+- The dim fix did, however, add unnecessary hot-path work:
+  - full-file readback of ATH `stdout` and `stderr`,
+  - unconditional extra debug-log writes.
+- The observed VACS failure is intermittent and downstream of ATH; it was not reproduced deterministically from the dimension parser change alone.
+- Safe remediation is therefore to minimize the dim path back to:
+  - parse only the ATH stdout log tail,
+  - keep debug detail behind `WUT_DEBUG_PIPELINE_STAGES=1`,
+  - preserve DB/UI dimension behavior.
+
 ## Pipeline Map (2026-02-25)
 
 ### Authoritative docs by subsystem (latest used source)

@@ -8,6 +8,7 @@ import csv
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
 import re
 import shutil
@@ -1759,6 +1760,12 @@ def run_batch_pipeline(
     settings_hash: Optional[str] = None,
     ath_export_root: str | Path | None = ATH_PREVIEW_EXPORT_ROOT,
 ) -> RuntimeSummary:
+    debug_stage_timings = str(os.environ.get("WUT_DEBUG_PIPELINE_STAGES", "")).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
     effective_library_root: Path | None = None
     if library_root is not None:
         effective_library_root = Path(str(library_root)).expanduser().resolve()
@@ -1884,6 +1891,7 @@ def run_batch_pipeline(
     run_logs_dir.mkdir(parents=True, exist_ok=True)
     first_failure: Optional[Dict[str, Any]] = None
     last_stage_started: Optional[Dict[str, str]] = None
+    stage_started_ns: Dict[Tuple[str, str], int] = {}
 
     def _run_stage_start(version_id: str, stage: str, payload: Optional[Dict[str, Any]] = None) -> None:
         nonlocal last_stage_started
@@ -1896,6 +1904,8 @@ def run_batch_pipeline(
             "version_id": str(version_id),
             "stage": str(stage),
         }
+        if debug_stage_timings:
+            stage_started_ns[(str(version_id), str(stage))] = time.perf_counter_ns()
         if isinstance(payload, dict):
             row.update(dict(payload))
         _append_run_debug_log(run_debug_log_path, event="stage_start", payload=row)
@@ -1920,6 +1930,10 @@ def run_batch_pipeline(
         }
         if reason:
             row["error"] = str(reason)
+        if debug_stage_timings:
+            started_ns = stage_started_ns.pop((str(stage_execution.version_id), str(stage_execution.stage)), None)
+            if started_ns is not None:
+                row["elapsed_ms"] = round((time.perf_counter_ns() - int(started_ns)) / 1_000_000.0, 3)
         if isinstance(payload, dict):
             row.update(dict(payload))
         _append_run_debug_log(run_debug_log_path, event="stage_end", payload=row)
