@@ -2056,6 +2056,14 @@ class OrchestratorService:
             for row in rows
         ]
 
+    def list_batch_lineage(self, *, project_id: str) -> List[Dict[str, Any]]:
+        project_token = str(project_id or "").strip()
+        if not project_token:
+            return []
+        project_paths = self.repo.project_paths(project_token, ensure=True)
+        dataset = TidyDatasetWriter(project_paths.project_dir, library_root=self.settings.library_root)
+        return dataset.list_batches_with_lineage(project_id=project_token)
+
     def list_runs(
         self,
         *,
@@ -3627,11 +3635,24 @@ class OrchestratorService:
         sweeps: Dict[str, Dict[str, Any]],
         sweep_mode: str,
         sim_export_params: Dict[str, Any],
+        parent_batch_id: Optional[str] = None,
+        created_via: str = "manual",
+        created_from_version_id: Optional[str] = None,
     ) -> PlanningSummary:
         project = self.repo.load_project(project_id)
         batches = self.repo.list_batches(project_id)
         batch_id = _next_prefixed_id([batch.batch_id for batch in batches], "B")
         locked_keys = set(self.compatibility.runner_locked_keys(project.constraints.runner_mode))
+        created_via_token = str(created_via or "").strip().lower()
+        if created_via_token not in {"manual", "iterate", "clone"}:
+            created_via_token = "manual"
+        parent_batch_token = str(parent_batch_id or "").strip() or None
+        created_from_version_token = str(created_from_version_id or "").strip() or None
+        if created_via_token == "manual":
+            parent_batch_token = None
+            created_from_version_token = None
+        elif created_via_token == "clone":
+            created_from_version_token = None
 
         selected: Dict[str, ParamSelection] = {}
         for key, value in selected_params.items():
@@ -3652,7 +3673,12 @@ class OrchestratorService:
             sweeps=normalized_sweeps,
             sweep_mode=sweep_mode if sweep_mode in {"single", "combined"} else "single",
             runner_mode=project.constraints.runner_mode,
-            extra={"batch_name": batch_name.strip() or batch_id},
+            extra={
+                "batch_name": batch_name.strip() or batch_id,
+                "parent_batch_id": parent_batch_token,
+                "created_via": created_via_token,
+                "created_from_version_id": created_from_version_token,
+            },
         )
 
         sim_settings = dict(sim_export_params or {})

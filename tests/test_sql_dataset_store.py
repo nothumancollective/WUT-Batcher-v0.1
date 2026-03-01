@@ -212,6 +212,107 @@ class SqlDatasetStoreTests(unittest.TestCase):
             self.assertEqual(int(series_count), 1)
             self.assertEqual(int(points_count), 2)
 
+    def test_migrates_legacy_batches_table_with_lineage_columns(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            library_root = Path(tmp_dir) / "projects"
+            project_root = library_root / "P001"
+            db_dir = project_root / "db"
+            db_dir.mkdir(parents=True, exist_ok=True)
+            legacy_db = db_dir / "project.sqlite"
+            with closing(sqlite3.connect(str(legacy_db))) as conn:
+                conn.executescript(
+                    """
+                    CREATE TABLE projects (
+                        project_id TEXT PRIMARY KEY,
+                        project_name TEXT NOT NULL,
+                        constraints_snapshot TEXT,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    );
+
+                    CREATE TABLE batches (
+                        project_id TEXT NOT NULL,
+                        batch_id TEXT NOT NULL,
+                        batch_name TEXT NOT NULL,
+                        sweep_definitions TEXT,
+                        sweep_mode TEXT,
+                        sim_export_params TEXT,
+                        created_at TEXT NOT NULL,
+                        PRIMARY KEY (project_id, batch_id)
+                    );
+                    """
+                )
+                conn.execute(
+                    """
+                    INSERT INTO batches (
+                        project_id, batch_id, batch_name, sweep_definitions, sweep_mode, sim_export_params, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    ("P001", "B001", "Legacy Batch", "{}", "single", "{}", "2026-02-20T00:00:00+00:00"),
+                )
+                conn.commit()
+
+            TidyDatasetWriter(project_root, library_root=library_root)
+            with closing(sqlite3.connect(str(legacy_db))) as conn:
+                columns = [str(row[1]) for row in conn.execute("PRAGMA table_info(batches)").fetchall()]
+                row = conn.execute(
+                    """
+                    SELECT parent_batch_id, created_via, created_from_version_id
+                    FROM batches
+                    WHERE project_id = ? AND batch_id = ?
+                    """,
+                    ("P001", "B001"),
+                ).fetchone()
+            self.assertIn("parent_batch_id", columns)
+            self.assertIn("created_via", columns)
+            self.assertIn("created_from_version_id", columns)
+            self.assertIsNotNone(row)
+            assert row is not None
+            self.assertIsNone(row[0])
+            self.assertEqual(str(row[1]), "manual")
+            self.assertIsNone(row[2])
+
+    def test_list_batches_with_lineage_returns_provenance_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_root = Path(tmp_dir) / "projects" / "P001"
+            project_root.mkdir(parents=True, exist_ok=True)
+            writer = TidyDatasetWriter(project_root, library_root=project_root.parent)
+            project = Project(
+                project_id="P001",
+                name="Lineage Test",
+                root_path=str(project_root),
+                constraints=ProjectConstraints(project_id="P001"),
+            )
+            parent_batch = Batch(
+                batch_id="B001",
+                project_id="P001",
+                extra={"batch_name": "Parent"},
+            )
+            child_batch = Batch(
+                batch_id="B002",
+                project_id="P001",
+                extra={
+                    "batch_name": "Child",
+                    "created_via": "iterate",
+                    "parent_batch_id": "B001",
+                    "created_from_version_id": "V010",
+                },
+            )
+            writer.register_project(project)
+            writer.register_batch(project, parent_batch)
+            writer.register_batch(project, child_batch)
+
+            rows = writer.list_batches_with_lineage(project_id="P001")
+            self.assertEqual(len(rows), 2)
+            rows_by_id = {str(row["batch_id"]): row for row in rows}
+            self.assertIn("B001", rows_by_id)
+            self.assertIn("B002", rows_by_id)
+            self.assertEqual(str(rows_by_id["B001"]["created_via"]), "manual")
+            self.assertIsNone(rows_by_id["B001"]["parent_batch_id"])
+            self.assertEqual(str(rows_by_id["B002"]["created_via"]), "iterate")
+            self.assertEqual(str(rows_by_id["B002"]["parent_batch_id"]), "B001")
+            self.assertEqual(str(rows_by_id["B002"]["created_from_version_id"]), "V010")
+
     def test_federation_profile_is_bootstrapped_and_updatable(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             project_root = Path(tmp_dir) / "projects" / "P001"

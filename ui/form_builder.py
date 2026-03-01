@@ -368,11 +368,10 @@ class AccordionHeaderRow(QFrame):
 
         content_layout.addStretch(1)
 
-        self._status_badge = QLabel("")
+        self._status_badge = QLabel("", content)
         self._status_badge.setObjectName("AccordionStatusBadge")
         self._status_badge.setMinimumWidth(42)
         self._status_badge.setAlignment(Qt.AlignCenter)
-        self._status_badge.setVisible(True)
         content_layout.addWidget(self._status_badge, 0, Qt.AlignVCenter)
 
         root.addWidget(content, 1)
@@ -1763,12 +1762,11 @@ class ScalarFieldEditor(QWidget):
         root.addWidget(self._reset_button, 0, Qt.AlignRight)
 
         # Fixed-width badge avoids layout shifts when state changes.
-        self._state_badge = QLabel("")
+        self._state_badge = QLabel("", self)
         self._state_badge.setObjectName("FieldStateBadge")
         self._state_badge.setFixedWidth(STATE_BADGE_WIDTH)
         self._state_badge.setAlignment(Qt.AlignCenter)
         self._state_badge.setProperty("severity", "neutral")
-        self._state_badge.setVisible(True)
         root.addWidget(self._state_badge, 0, Qt.AlignRight)
 
         if self._base_tooltip:

@@ -12,6 +12,7 @@ import logging
 import os
 import re
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import threading
@@ -74,7 +75,6 @@ from ui.form_metrics import FORM_METRICS
 from ui.form_schema import build_project_form_schema
 from ui.styled_dialog import StyledDialogBase
 from ui.theme import apply_theme, apply_windows_dark_titlebar, configure_windows_qt_darkmode_env
-from ui.widgets.project_card import ProjectCardV2
 
 LOGGER = logging.getLogger(__name__)
 _RUNTIME_LOG_LOCK = threading.Lock()
@@ -195,6 +195,8 @@ try:
     from PySide6.QtCore import (
         QEasingCurve,
         QPoint,
+        QPointF,
+        QRectF,
         QPropertyAnimation,
         QEvent,
         QMetaObject,
@@ -209,6 +211,7 @@ try:
         qInstallMessageHandler,
     )
     from PySide6.QtGui import (
+        QBrush,
         QColor,
         QDesktopServices,
         QFont,
@@ -233,7 +236,12 @@ try:
         QFileDialog,
         QFormLayout,
         QFrame,
+        QGraphicsItem,
+        QGraphicsObject,
         QGraphicsOpacityEffect,
+        QGraphicsPathItem,
+        QGraphicsScene,
+        QGraphicsView,
         QGridLayout,
         QGroupBox,
         QHeaderView,
@@ -261,6 +269,7 @@ try:
         QTableWidgetItem,
         QTabWidget,
         QTextEdit,
+        QToolTip,
         QToolButton,
         QVBoxLayout,
         QWidget,
@@ -4109,7 +4118,7 @@ class StatusDetailDialog(QDialog):
         self._drag_offset: Optional[QPoint] = None
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(10, 10, 10, 10)
+        outer.setContentsMargins(12, 12, 12, 12)
         outer.setSpacing(0)
         shell = QFrame()
         shell.setObjectName("FramelessShell")
@@ -4120,7 +4129,7 @@ class StatusDetailDialog(QDialog):
 
         title_bar = QWidget()
         title_row = QHBoxLayout(title_bar)
-        title_row.setContentsMargins(0, 0, 0, 0)
+        title_row.setContentsMargins(0, 1, 2, 1)
         title_row.setSpacing(8)
         icon = QLabel("●")
         icon.setObjectName("StatusSymbol")
@@ -4206,18 +4215,18 @@ class BatchRunDefaultsDialog(QDialog):
         self._default_values = dict(default_values or {})
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(10, 10, 10, 10)
+        outer.setContentsMargins(12, 12, 12, 12)
         outer.setSpacing(0)
         shell = QFrame()
         shell.setObjectName("FramelessShell")
         outer.addWidget(shell)
         root = QVBoxLayout(shell)
-        root.setContentsMargins(12, 10, 12, 12)
+        root.setContentsMargins(14, 12, 14, 14)
         root.setSpacing(10)
 
         title_bar = QWidget()
         title_row = QHBoxLayout(title_bar)
-        title_row.setContentsMargins(0, 0, 0, 0)
+        title_row.setContentsMargins(0, 1, 2, 1)
         title_row.setSpacing(8)
         title = QLabel("Undefined Parameters For Run")
         title.setObjectName("SectionTitle")
@@ -4313,7 +4322,7 @@ class BatchRunDefaultsDialog(QDialog):
         event.accept()
 
 
-class SettingsDialog(QDialog):
+class SettingsDialog(StyledDialogBase):
     settings_saved = Signal(dict)
 
     def __init__(
@@ -4325,14 +4334,12 @@ class SettingsDialog(QDialog):
         close_project_for_switch: Callable[[], bool] | None = None,
         on_library_root_switched: Callable[[], None] | None = None,
     ) -> None:
-        super().__init__(parent)
+        super().__init__(title="Settings", parent=parent, min_width=760, min_height=520)
         self.service = service
         self._is_project_open = is_project_open
         self._close_project_for_switch = close_project_for_switch
         self._on_library_root_switched = on_library_root_switched
-        self.setWindowTitle("Settings")
-        self.setModal(True)
-        self.resize(620, 390)
+        self.setObjectName("SettingsDialog")
 
         self.library_root = QLineEdit()
         self.library_root.setObjectName("ProjectLibraryRootEdit")
@@ -4410,23 +4417,30 @@ class SettingsDialog(QDialog):
 
         tabs = QTabWidget()
         tabs.setObjectName("SettingsTabs")
+        tabs.setDocumentMode(True)
+        tabs.setUsesScrollButtons(False)
         tabs.addTab(general_tab, "General")
         tabs.addTab(analyzer_tab, "Analyzer")
 
         save_btn = QPushButton("Save")
-        save_btn.setObjectName("PrimaryButton")
+        save_btn.setObjectName("BatchPrimaryButton")
+        save_btn.setMinimumWidth(108)
         save_btn.clicked.connect(self._save)
         cancel_btn = QPushButton("Cancel")
+        cancel_btn.setObjectName("BatchSecondaryButton")
+        cancel_btn.setMinimumWidth(108)
         cancel_btn.clicked.connect(self.reject)
 
         buttons = QHBoxLayout()
+        buttons.setContentsMargins(0, 2, 0, 0)
+        buttons.setSpacing(8)
         buttons.addStretch(1)
         buttons.addWidget(cancel_btn)
         buttons.addWidget(save_btn)
 
-        root = QVBoxLayout(self)
-        root.addWidget(tabs, 1)
-        root.addLayout(buttons)
+        body = self.body_layout()
+        body.addWidget(tabs, 1)
+        body.addLayout(buttons)
 
         self.analyzer_cache_mode.currentIndexChanged.connect(self._sync_cache_controls)
         self._load()
@@ -4613,10 +4627,35 @@ class SettingsDialog(QDialog):
         selected = ""
         try:
             dialog = QFileDialog(self, "Choose Project Library Location", start_dir)
+            if hasattr(dialog, "setObjectName"):
+                dialog.setObjectName("ProjectLibraryPickerDialog")
+            if hasattr(dialog, "setModal"):
+                dialog.setModal(True)
+            if hasattr(dialog, "setWindowFlag"):
+                dialog.setWindowFlag(Qt.WindowContextHelpButtonHint, False)
+            if hasattr(dialog, "setViewMode"):
+                dialog.setViewMode(QFileDialog.Detail)
             dialog.setFileMode(QFileDialog.Directory)
             dialog.setOption(QFileDialog.DontUseNativeDialog, True)
             dialog.setOption(QFileDialog.ShowDirsOnly, True)
             dialog.setDirectory(start_dir)
+            if hasattr(dialog, "setLabelText"):
+                dialog.setLabelText(QFileDialog.Accept, "Select Folder")
+                dialog.setLabelText(QFileDialog.Reject, "Cancel")
+            layout = dialog.layout() if hasattr(dialog, "layout") else None
+            if layout is not None and hasattr(layout, "setContentsMargins"):
+                layout.setContentsMargins(12, 12, 12, 12)
+                if hasattr(layout, "setSpacing"):
+                    layout.setSpacing(8)
+            if hasattr(dialog, "adjustSize"):
+                dialog.adjustSize()
+            hint = dialog.sizeHint() if hasattr(dialog, "sizeHint") else QSize(0, 0)
+            width_now = int(dialog.width()) if hasattr(dialog, "width") else 0
+            height_now = int(dialog.height()) if hasattr(dialog, "height") else 0
+            base_width = max(width_now, int(hint.width()), 720)
+            base_height = max(height_now, int(hint.height()), 520)
+            if hasattr(dialog, "resize"):
+                dialog.resize(int(base_width * 1.33), int(base_height))
             if dialog.exec() == QDialog.Accepted:
                 picked = list(dialog.selectedFiles() or [])
                 selected = str(picked[0]) if picked else ""
@@ -4719,18 +4758,20 @@ class SettingsDialog(QDialog):
         self.analyzer_cache_keep_last.setEnabled(False)
         self.analyzer_cache_warning.setVisible(False)
 
-    def showEvent(self, event) -> None:  # type: ignore[override]
-        super().showEvent(event)
-        apply_windows_dark_titlebar(self)
 
-
-class ExportDialog(QDialog):
-    def __init__(self, versions_by_batch: Dict[str, List[str]], parent: QWidget | None = None) -> None:
-        super().__init__(parent)
+class ExportDialog(StyledDialogBase):
+    def __init__(
+        self,
+        versions_by_batch: Dict[str, List[str]],
+        parent: QWidget | None = None,
+        *,
+        default_destination_dir: str = "",
+    ) -> None:
+        super().__init__(title="Export Version", parent=parent, min_width=540, min_height=280)
         self.versions_by_batch = versions_by_batch
-        self.setWindowTitle("Export Version")
-        self.setModal(True)
-        self.resize(420, 220)
+        self.destination_dir = QLineEdit(str(default_destination_dir or "").strip())
+        self.destination_dir.setPlaceholderText("Choose export folder")
+        self.destination_dir.setToolTip(self.destination_dir.text().strip())
 
         self.batch_combo = QComboBox()
         self.version_combo = QComboBox()
@@ -4741,34 +4782,132 @@ class ExportDialog(QDialog):
         for batch_id in sorted(self.versions_by_batch.keys()):
             self.batch_combo.addItem(batch_id)
 
+        body = self.body_layout()
+        intro = QLabel("Choose a version and destination folder for the exported artifacts.")
+        intro.setWordWrap(True)
+        intro.setObjectName("SummaryMeta")
+        body.addWidget(intro)
+
         form = QFormLayout()
+        form.setContentsMargins(0, 0, 0, 0)
+        form.setSpacing(8)
         form.addRow("Batch", self.batch_combo)
         form.addRow("Version", self.version_combo)
         form.addRow("Export STL", self.export_stl)
         form.addRow("Export ABEC", self.export_abec)
+        destination_row = QWidget()
+        destination_layout = QHBoxLayout(destination_row)
+        destination_layout.setContentsMargins(0, 0, 0, 0)
+        destination_layout.setSpacing(8)
+        self.destination_browse_btn = QPushButton("Browse")
+        self.destination_browse_btn.setObjectName("BatchSecondaryButton")
+        destination_layout.addWidget(self.destination_dir, 1)
+        destination_layout.addWidget(self.destination_browse_btn, 0)
+        form.addRow("Destination", destination_row)
 
         self.batch_combo.currentTextChanged.connect(self._reload_versions)
         self._reload_versions(self.batch_combo.currentText())
 
-        export_btn = QPushButton("Export")
-        export_btn.setObjectName("PrimaryButton")
-        export_btn.clicked.connect(self.accept)
+        self.export_btn = QPushButton("Export")
+        self.export_btn.setObjectName("BatchPrimaryButton")
         cancel_btn = QPushButton("Cancel")
+        cancel_btn.setObjectName("BatchSecondaryButton")
         cancel_btn.clicked.connect(self.reject)
+        self.destination_browse_btn.clicked.connect(self._choose_destination)
+        self.export_btn.clicked.connect(self._handle_export)
 
         buttons = QHBoxLayout()
+        buttons.setContentsMargins(0, 0, 0, 0)
+        buttons.setSpacing(8)
         buttons.addStretch(1)
         buttons.addWidget(cancel_btn)
-        buttons.addWidget(export_btn)
+        buttons.addWidget(self.export_btn)
 
-        root = QVBoxLayout(self)
-        root.addLayout(form)
-        root.addLayout(buttons)
+        body.addLayout(form)
+        body.addLayout(buttons)
 
     def _reload_versions(self, batch_id: str) -> None:
         self.version_combo.clear()
         for version_id in self.versions_by_batch.get(batch_id, []):
             self.version_combo.addItem(version_id)
+
+    def _choose_destination(self) -> str:
+        app = QApplication.instance()
+        if app is not None and QThread.currentThread() != app.thread():
+            if LOGGER.isEnabledFor(logging.DEBUG):
+                LOGGER.debug(
+                    "ExportDialog destination picker invoked off UI thread. current=%s ui=%s",
+                    str(QThread.currentThread()),
+                    str(app.thread()),
+                )
+            QMessageBox.critical(
+                self,
+                "Folder Picker Failed",
+                "Export folder picker must run on the UI thread. Please retry from the main window.",
+            )
+            return ""
+        current = self.destination_dir.text().strip()
+        start_dir = current or str(Path.home())
+        selected = ""
+        try:
+            dialog = QFileDialog(self, "Choose Export Folder", start_dir)
+            if hasattr(dialog, "setObjectName"):
+                dialog.setObjectName("ExportDestinationDialog")
+            if hasattr(dialog, "setModal"):
+                dialog.setModal(True)
+            if hasattr(dialog, "setWindowFlag"):
+                dialog.setWindowFlag(Qt.WindowContextHelpButtonHint, False)
+            if hasattr(dialog, "setViewMode"):
+                dialog.setViewMode(QFileDialog.Detail)
+            dialog.setFileMode(QFileDialog.Directory)
+            dialog.setOption(QFileDialog.DontUseNativeDialog, True)
+            dialog.setOption(QFileDialog.ShowDirsOnly, True)
+            dialog.setDirectory(start_dir)
+            if hasattr(dialog, "setLabelText"):
+                dialog.setLabelText(QFileDialog.Accept, "Select Folder")
+                dialog.setLabelText(QFileDialog.Reject, "Cancel")
+            layout = dialog.layout() if hasattr(dialog, "layout") else None
+            if layout is not None and hasattr(layout, "setContentsMargins"):
+                layout.setContentsMargins(12, 12, 12, 12)
+                if hasattr(layout, "setSpacing"):
+                    layout.setSpacing(8)
+            if hasattr(dialog, "adjustSize"):
+                dialog.adjustSize()
+            hint = dialog.sizeHint() if hasattr(dialog, "sizeHint") else QSize(0, 0)
+            width_now = int(dialog.width()) if hasattr(dialog, "width") else 0
+            height_now = int(dialog.height()) if hasattr(dialog, "height") else 0
+            base_width = max(width_now, int(hint.width()), 720)
+            base_height = max(height_now, int(hint.height()), 520)
+            if hasattr(dialog, "resize"):
+                dialog.resize(int(base_width * 1.2), int(base_height))
+            if dialog.exec() == QDialog.Accepted:
+                picked = list(dialog.selectedFiles() or [])
+                selected = str(picked[0]) if picked else ""
+        except Exception as exc:
+            if LOGGER.isEnabledFor(logging.DEBUG):
+                LOGGER.debug("ExportDialog safe folder dialog failed.", exc_info=True)
+            QMessageBox.critical(
+                self,
+                "Folder Picker Failed",
+                f"Could not open export folder picker.\n{StorageManager.user_error_message(exc)}",
+            )
+            return ""
+        if not selected:
+            return ""
+        token = str(Path(selected).expanduser())
+        self.destination_dir.setText(token)
+        self.destination_dir.setToolTip(token)
+        return token
+
+    def _handle_export(self) -> None:
+        if not self.version_combo.currentText().strip():
+            return
+        destination = self.destination_dir.text().strip()
+        if not destination:
+            destination = self._choose_destination()
+        if not destination:
+            return
+        self.accept()
 
     def payload(self) -> Dict[str, object]:
         return {
@@ -4776,11 +4915,8 @@ class ExportDialog(QDialog):
             "version_id": self.version_combo.currentText().strip(),
             "export_stl": self.export_stl.isChecked(),
             "export_abec": self.export_abec.isChecked(),
+            "destination_dir": self.destination_dir.text().strip(),
         }
-
-    def showEvent(self, event) -> None:  # type: ignore[override]
-        super().showEvent(event)
-        apply_windows_dark_titlebar(self)
 
 
 class RunManagerDialog(QDialog):
@@ -4966,11 +5102,14 @@ class CleanupTestDataDialog(QDialog):
 
 class ConstraintSummaryGrid(QFrame):
     request_open_editor = Signal(str)
+    request_toggle_drawer = Signal()
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, parent: QWidget | None = None, *, mode: str = "full") -> None:
         super().__init__(parent)
         self.setObjectName("ProjectSummaryPanel")
+        self._mode = "bar" if str(mode or "").strip().lower() == "bar" else "full"
         self._payload: Dict[str, Any] = {}
+        self._entry_count = 0
         self._column_specs: List[Dict[str, Any]] = [
             {
                 "name": "basics",
@@ -5009,19 +5148,37 @@ class ConstraintSummaryGrid(QFrame):
                 ],
             },
         ]
-        self._chip_buttons: Dict[str, List[tuple[str, QPushButton]]] = {}
-        self._value_grids: Dict[str, QGridLayout] = {}
+        self._chip_buttons: Dict[str, QPushButton] = {}
+        self._chip_specs_by_column: Dict[str, Dict[str, Dict[str, Any]]] = {}
+        self._active_chip_specs: Dict[str, Dict[str, Any]] = {}
+        self._value_grids: Dict[str, Optional[QGridLayout]] = {}
         root = QVBoxLayout(self)
-        root.setContentsMargins(10, 10, 10, 10)
-        root.setSpacing(8)
+        root.setContentsMargins(10, 8, 10, 8)
+        root.setSpacing(6)
+        title_row = QHBoxLayout()
+        title_row.setContentsMargins(0, 0, 0, 0)
+        title_row.setSpacing(6)
         title = QLabel("Project Constraints")
         title.setObjectName("SummaryTitle")
-        root.addWidget(title)
+        title_row.addWidget(title, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        title_row.addStretch(1)
+        self.drawer_toggle_btn: Optional[QToolButton] = None
+        if self._mode == "bar":
+            toggle = QToolButton()
+            toggle.setObjectName("BatchSecondaryToolButton")
+            toggle.setToolButtonStyle(Qt.ToolButtonTextOnly)
+            toggle.setAutoRaise(True)
+            toggle.setText("▼")
+            toggle.setToolTip("Expand constraints drawer")
+            toggle.clicked.connect(self.request_toggle_drawer.emit)
+            title_row.addWidget(toggle, 0, Qt.AlignRight | Qt.AlignVCenter)
+            self.drawer_toggle_btn = toggle
+        root.addLayout(title_row)
 
         self._columns_wrap = QWidget()
         columns = QHBoxLayout(self._columns_wrap)
         columns.setContentsMargins(0, 0, 0, 0)
-        columns.setSpacing(8)
+        columns.setSpacing(6)
         for index, spec in enumerate(self._column_specs):
             if index > 0:
                 divider = QFrame()
@@ -5035,46 +5192,60 @@ class ConstraintSummaryGrid(QFrame):
             col_layout.setContentsMargins(0, 0, 0, 0)
             col_layout.setSpacing(6)
 
+            key = str(spec.get("name", "")).strip()
             chips_row = QHBoxLayout()
             chips_row.setContentsMargins(0, 0, 0, 0)
             chips_row.setSpacing(4)
-            bucket: List[tuple[str, QPushButton]] = []
+            chip_specs: Dict[str, Dict[str, Any]] = {}
             for chip_spec in list(spec.get("chips", [])):
                 chip_id = str(chip_spec.get("id", "")).strip()
-                button = QPushButton(str(chip_spec.get("label", "")).strip())
-                button.setObjectName("SummaryChip")
-                button.setCheckable(True)
+                if not chip_id:
+                    continue
+                chip_specs[chip_id] = {
+                    "id": chip_id,
+                    "label": str(chip_spec.get("label", "")).strip() or chip_id,
+                    "focus_key": str(chip_spec.get("focus_key", "")).strip(),
+                    "implemented": bool(chip_spec.get("implemented", False)),
+                }
+            if not chip_specs:
+                chip_specs["none"] = {"id": "none", "label": "--", "focus_key": "", "implemented": False}
+            self._chip_specs_by_column[key] = chip_specs
+
+            default_chip = next(iter(chip_specs.values()))
+            button = QPushButton(str(default_chip.get("label", "--")))
+            button.setObjectName("SummaryChip")
+            button.setCheckable(False)
+            button.setProperty("active", "true")
+            if self._mode == "full":
                 button.setCursor(Qt.PointingHandCursor)
-                button.setProperty("active", "false")
-                focus_key = str(chip_spec.get("focus_key", "")).strip()
-                implemented = bool(chip_spec.get("implemented", False))
-                if implemented:
-                    button.setToolTip("Open constraint editor")
-                    button.clicked.connect(lambda _checked=False, key=focus_key: self._open_editor(key))
-                else:
-                    button.setEnabled(False)
-                    button.setToolTip("Not implemented yet")
-                chips_row.addWidget(button)
-                bucket.append((chip_id, button))
+                button.clicked.connect(lambda _checked=False, category=key: self._open_editor_for_category(category))
+            else:
+                button.setCursor(Qt.ArrowCursor)
+            chips_row.addWidget(button)
             chips_row.addStretch(1)
             col_layout.addLayout(chips_row)
+            values_grid: Optional[QGridLayout] = None
+            if self._mode == "full":
+                values_wrap = QWidget()
+                values_grid = QGridLayout(values_wrap)
+                values_grid.setContentsMargins(0, 0, 0, 0)
+                values_grid.setHorizontalSpacing(8)
+                values_grid.setVerticalSpacing(4)
+                col_layout.addWidget(values_wrap, 1)
+            else:
+                col_layout.addStretch(1)
 
-            values_wrap = QWidget()
-            values_grid = QGridLayout(values_wrap)
-            values_grid.setContentsMargins(0, 0, 0, 0)
-            values_grid.setHorizontalSpacing(8)
-            values_grid.setVerticalSpacing(4)
-            col_layout.addWidget(values_wrap, 1)
-
-            key = str(spec.get("name", "")).strip()
-            self._chip_buttons[key] = bucket
+            self._chip_buttons[key] = button
             self._value_grids[key] = values_grid
             columns.addWidget(col, 1)
         root.addWidget(self._columns_wrap)
 
         self._empty = QLabel("No project loaded.")
         self._empty.setObjectName("SummaryText")
-        root.addWidget(self._empty)
+        if self._mode == "full":
+            root.addWidget(self._empty)
+        else:
+            self._empty.setVisible(False)
         self._refresh()
 
     @staticmethod
@@ -5120,6 +5291,23 @@ class ConstraintSummaryGrid(QFrame):
         token = str(key or "").strip()
         if token:
             self.request_open_editor.emit(token)
+
+    def _chip_spec_for(self, category: str, chip_id: str) -> Dict[str, Any]:
+        specs = dict(self._chip_specs_by_column.get(str(category), {}) or {})
+        token = str(chip_id or "").strip()
+        if token and token in specs:
+            return dict(specs[token])
+        if "none" in specs:
+            return dict(specs["none"])
+        if specs:
+            return dict(next(iter(specs.values())))
+        return {"id": "", "label": "--", "focus_key": "", "implemented": False}
+
+    def _open_editor_for_category(self, category: str) -> None:
+        spec = dict(self._active_chip_specs.get(str(category), {}) or {})
+        if not bool(spec.get("implemented", False)):
+            return
+        self._open_editor(str(spec.get("focus_key", "")))
 
     def _state_by_key(self, payload: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
         state: Dict[str, Dict[str, Any]] = {}
@@ -5222,7 +5410,7 @@ class ConstraintSummaryGrid(QFrame):
 
     def _render_rows(self, category: str, rows: List[tuple[str, str]]) -> None:
         grid = self._value_grids.get(category)
-        if grid is None:
+        if not isinstance(grid, QGridLayout):
             return
         self._clear_grid(grid)
         if not rows:
@@ -5247,23 +5435,461 @@ class ConstraintSummaryGrid(QFrame):
         state = self._state_by_key(payload)
         active = self._active_chip_by_column(state)
         grouped = self._entries_by_category(payload)
+        self._entry_count = int(sum(len(list(rows or [])) for rows in grouped.values()))
 
-        for category, buttons in self._chip_buttons.items():
+        for category, button in self._chip_buttons.items():
             active_id = str(active.get(category, "")).strip()
-            for chip_id, button in buttons:
-                checked = chip_id == active_id
-                button.blockSignals(True)
-                button.setChecked(checked)
-                button.blockSignals(False)
-                button.setProperty("active", "true" if checked else "false")
-                self._repolish(button)
-            self._render_rows(category, list(grouped.get(category, [])))
+            spec = self._chip_spec_for(category, active_id)
+            self._active_chip_specs[category] = dict(spec)
+            label_text = str(spec.get("label", "")).strip() or "--"
+            focus_key = str(spec.get("focus_key", "")).strip()
+            implemented = bool(spec.get("implemented", False)) and bool(focus_key)
+            button.setText(label_text)
+            button.setProperty("active", "true")
+            if self._mode == "full":
+                button.setEnabled(implemented)
+                button.setCursor(Qt.PointingHandCursor if implemented else Qt.ArrowCursor)
+                button.setToolTip("Open constraint editor" if implemented else "Not available")
+            else:
+                button.setEnabled(True)
+                button.setCursor(Qt.ArrowCursor)
+                button.setToolTip(f"Selected: {label_text}")
+            self._repolish(button)
+            if self._mode == "full":
+                self._render_rows(category, list(grouped.get(category, [])))
 
-        self._empty.setVisible(not bool(payload))
+        if self._mode == "full":
+            self._empty.setVisible(not bool(payload))
 
     def set_constraints_payload(self, payload: Optional[Dict[str, Any]]) -> None:
         self._payload = dict(payload or {})
         self._refresh()
+
+    def entry_count(self) -> int:
+        return int(self._entry_count)
+
+    def set_drawer_enabled(self, enabled: bool) -> None:
+        button = self.drawer_toggle_btn
+        if not isinstance(button, QToolButton):
+            return
+        button.setEnabled(bool(enabled))
+        button.setVisible(bool(enabled))
+
+    def set_drawer_expanded(self, expanded: bool) -> None:
+        button = self.drawer_toggle_btn
+        if not isinstance(button, QToolButton):
+            return
+        button.setText("▲" if bool(expanded) else "▼")
+        button.setToolTip("Collapse constraints drawer" if bool(expanded) else "Expand constraints drawer")
+
+
+class BatchLineageView(QGraphicsView):
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("BatchLineageGraphicsView")
+        self.setRenderHints(QPainter.Antialiasing | QPainter.TextAntialiasing)
+        self.setDragMode(QGraphicsView.ScrollHandDrag)
+        self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
+        self.setResizeAnchor(QGraphicsView.AnchorUnderMouse)
+        self.setViewportUpdateMode(QGraphicsView.BoundingRectViewportUpdate)
+        self._min_zoom = 0.35
+        self._max_zoom = 3.2
+        self._zoom = 1.0
+
+    def wheelEvent(self, event) -> None:  # type: ignore[override]
+        delta = int(event.angleDelta().y())
+        if delta == 0:
+            super().wheelEvent(event)
+            return
+        factor = 1.15 if delta > 0 else (1.0 / 1.15)
+        next_zoom = float(self._zoom * factor)
+        if next_zoom < float(self._min_zoom) or next_zoom > float(self._max_zoom):
+            event.accept()
+            return
+        self.scale(factor, factor)
+        self._zoom = next_zoom
+        event.accept()
+
+    def fit_graph(self) -> None:
+        scene = self.scene()
+        if not isinstance(scene, QGraphicsScene):
+            return
+        rect = scene.itemsBoundingRect()
+        if rect.isNull() or rect.width() <= 0 or rect.height() <= 0:
+            return
+        self.fitInView(rect.adjusted(-36.0, -24.0, 36.0, 24.0), Qt.KeepAspectRatio)
+        transform = self.transform()
+        zoom_value = float(transform.m11()) if transform is not None else 1.0
+        if not math.isfinite(zoom_value) or zoom_value <= 0.0:
+            zoom_value = 1.0
+        self._zoom = zoom_value
+
+
+class BatchLineageNodeItem(QGraphicsObject):
+    activated = Signal(str)
+
+    def __init__(
+        self,
+        *,
+        batch_id: Optional[str],
+        label: str,
+        tooltip_text: str,
+        is_root: bool = False,
+        width: float = 98.0,
+        height: float = 40.0,
+        parent: QGraphicsItem | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._batch_id = str(batch_id or "").strip()
+        self._label = str(label or "").strip() or "--"
+        self._tooltip_text = str(tooltip_text or "").strip()
+        self._is_root = bool(is_root)
+        self._width = float(max(width, 64.0))
+        self._height = float(max(height, 28.0))
+        self._selected = False
+        self._hovered = False
+        self.setAcceptHoverEvents(True)
+        self.setAcceptedMouseButtons(Qt.LeftButton if self._batch_id else Qt.NoButton)
+        self.setCacheMode(QGraphicsItem.DeviceCoordinateCache)
+        self.setZValue(3.0)
+
+    def boundingRect(self):  # type: ignore[override]
+        return QRectF(0.0, 0.0, float(self._width), float(self._height))
+
+    def set_selected(self, selected: bool) -> None:
+        selected_flag = bool(selected)
+        if selected_flag == self._selected:
+            return
+        self._selected = selected_flag
+        self.update()
+
+    def center_top(self) -> QPointF:
+        rect = self.boundingRect()
+        return QPointF(float(self.x() + (rect.width() * 0.5)), float(self.y()))
+
+    def center_bottom(self) -> QPointF:
+        rect = self.boundingRect()
+        return QPointF(float(self.x() + (rect.width() * 0.5)), float(self.y() + rect.height()))
+
+    def hoverEnterEvent(self, event) -> None:  # type: ignore[override]
+        self._hovered = True
+        if self._tooltip_text:
+            QToolTip.showText(event.screenPos().toPoint(), self._tooltip_text)
+        self.update()
+        super().hoverEnterEvent(event)
+
+    def hoverLeaveEvent(self, event) -> None:  # type: ignore[override]
+        self._hovered = False
+        QToolTip.hideText()
+        self.update()
+        super().hoverLeaveEvent(event)
+
+    def mousePressEvent(self, event) -> None:  # type: ignore[override]
+        if event.button() == Qt.LeftButton and self._batch_id:
+            self.activated.emit(self._batch_id)
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def paint(self, painter: QPainter, option, widget=None) -> None:  # type: ignore[override]
+        _ = option
+        _ = widget
+        rect = self.boundingRect()
+        if self._is_root:
+            fill = QColor("#2A2D31")
+            border = QColor("#6E8199")
+        else:
+            fill = QColor("#25282D")
+            border = QColor("#4A5463")
+        if self._hovered and not self._selected:
+            border = QColor("#8EA0BA")
+        if self._selected:
+            fill = QColor("#2A2534")
+            border = QColor("#9A86CC")
+        painter.setPen(QPen(border, 2.0 if self._selected else 1.2))
+        painter.setBrush(QBrush(fill))
+        painter.drawRoundedRect(rect, 8.0, 8.0)
+        painter.setPen(QPen(QColor("#E6E8EC"), 1.0))
+        painter.drawText(rect, int(Qt.AlignCenter), self._label)
+
+
+class BatchLineageEdgeItem(QGraphicsPathItem):
+    def __init__(self, path: QPainterPath, parent: QGraphicsItem | None = None) -> None:
+        super().__init__(path, parent)
+        pen = QPen(QColor("#4B5565"), 1.2)
+        pen.setCapStyle(Qt.RoundCap)
+        pen.setJoinStyle(Qt.RoundJoin)
+        self.setPen(pen)
+        self.setBrush(Qt.NoBrush)
+        self.setZValue(1.0)
+
+
+class BatchLineagePane(QFrame):
+    batch_activated = Signal(str)
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("ProjectSummaryPanel")
+        self._last_fingerprint: Optional[Tuple[Tuple[str, str, str, str, str, str], ...]] = None
+        self._node_items: Dict[str, BatchLineageNodeItem] = {}
+        self._selected_batch_id: Optional[str] = None
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(10, 8, 10, 10)
+        root.setSpacing(8)
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.setSpacing(6)
+        title = QLabel("Batch Lineage")
+        title.setObjectName("SummaryTitle")
+        header.addWidget(title, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        header.addStretch(1)
+        self.fit_btn = QPushButton("Fit / Reset View")
+        self.fit_btn.setObjectName("BatchSecondaryButton")
+        header.addWidget(self.fit_btn, 0, Qt.AlignRight | Qt.AlignVCenter)
+        root.addLayout(header)
+
+        self.scene = QGraphicsScene(self)
+        self.view = BatchLineageView(self)
+        self.view.setScene(self.scene)
+        root.addWidget(self.view, 1)
+        self.fit_btn.clicked.connect(self.view.fit_graph)
+
+    @staticmethod
+    def _normalize_created_via(value: Any) -> str:
+        token = str(value or "").strip().lower()
+        if token not in {"manual", "iterate", "clone"}:
+            return "manual"
+        return token
+
+    @staticmethod
+    def _row_sort_key(row: Mapping[str, Any]) -> Tuple[str, str]:
+        return (
+            str(row.get("created_at") or ""),
+            str(row.get("batch_id") or ""),
+        )
+
+    def _normalize_rows(self, rows: Optional[Sequence[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+        normalized: Dict[str, Dict[str, Any]] = {}
+        for raw_row in sorted((dict(item) for item in list(rows or []) if isinstance(item, dict)), key=self._row_sort_key):
+            batch_id = str(raw_row.get("batch_id") or "").strip()
+            if not batch_id:
+                continue
+            normalized[batch_id] = {
+                "batch_id": batch_id,
+                "batch_name": str(raw_row.get("batch_name") or batch_id),
+                "created_at": str(raw_row.get("created_at") or ""),
+                "created_via": self._normalize_created_via(raw_row.get("created_via")),
+                "parent_batch_id": str(raw_row.get("parent_batch_id") or "").strip() or None,
+                "created_from_version_id": str(raw_row.get("created_from_version_id") or "").strip() or None,
+            }
+        return [dict(item) for item in sorted(normalized.values(), key=self._row_sort_key)]
+
+    def _fingerprint(self, rows: Sequence[Dict[str, Any]]) -> Tuple[Tuple[str, str, str, str, str, str], ...]:
+        return tuple(
+            (
+                str(row.get("batch_id") or ""),
+                str(row.get("batch_name") or ""),
+                str(row.get("created_at") or ""),
+                str(row.get("created_via") or ""),
+                str(row.get("parent_batch_id") or ""),
+                str(row.get("created_from_version_id") or ""),
+            )
+            for row in rows
+        )
+
+    def _compute_layout(
+        self,
+        rows: Sequence[Dict[str, Any]],
+    ) -> Tuple[Dict[str, Tuple[float, float]], List[Tuple[str, str]]]:
+        root_id = "__constraints_root__"
+        if not rows:
+            return {root_id: (0.0, 0.0)}, []
+        by_id = {str(row["batch_id"]): dict(row) for row in rows}
+        parent_by_child: Dict[str, str] = {}
+        for batch_id, row in by_id.items():
+            created_via = self._normalize_created_via(row.get("created_via"))
+            parent = str(row.get("parent_batch_id") or "").strip()
+            if created_via == "manual":
+                parent_by_child[batch_id] = root_id
+                continue
+            if not parent or parent == batch_id or parent not in by_id:
+                if parent and parent not in by_id:
+                    LOGGER.warning("Batch lineage: missing parent %s for %s. Falling back to root.", parent, batch_id)
+                if parent == batch_id:
+                    LOGGER.warning("Batch lineage: self-parent detected for %s. Falling back to root.", batch_id)
+                parent_by_child[batch_id] = root_id
+                continue
+            parent_by_child[batch_id] = parent
+
+        for batch_id in sorted(by_id.keys()):
+            trail: set[str] = set()
+            cursor = batch_id
+            while True:
+                parent = str(parent_by_child.get(cursor) or "")
+                if not parent or parent == root_id:
+                    break
+                if parent == batch_id or parent in trail:
+                    LOGGER.warning("Batch lineage: cycle detected at %s. Falling back to root edge.", batch_id)
+                    parent_by_child[batch_id] = root_id
+                    break
+                trail.add(parent)
+                cursor = parent
+
+        children_by_parent: Dict[str, List[str]] = {root_id: []}
+        for child, parent in parent_by_child.items():
+            children_by_parent.setdefault(parent, []).append(child)
+        for parent, children in list(children_by_parent.items()):
+            children_by_parent[parent] = sorted(children, key=lambda token: self._row_sort_key(by_id[token]))
+
+        depth: Dict[str, int] = {root_id: 0}
+        queue: List[str] = [root_id]
+        while queue:
+            node = queue.pop(0)
+            for child in list(children_by_parent.get(node, [])):
+                if child in depth:
+                    continue
+                depth[child] = int(depth.get(node, 0) + 1)
+                queue.append(child)
+        missing_nodes = [token for token in sorted(by_id.keys()) if token not in depth]
+        if missing_nodes:
+            for token in missing_nodes:
+                children_by_parent.setdefault(root_id, []).append(token)
+                parent_by_child[token] = root_id
+            children_by_parent[root_id] = sorted(
+                list(dict.fromkeys(children_by_parent.get(root_id, []))),
+                key=lambda token: self._row_sort_key(by_id[token]),
+            )
+            depth = {root_id: 0}
+            queue = [root_id]
+            while queue:
+                node = queue.pop(0)
+                for child in list(children_by_parent.get(node, [])):
+                    if child in depth:
+                        continue
+                    depth[child] = int(depth.get(node, 0) + 1)
+                    queue.append(child)
+
+        spacing_x = 170.0
+        spacing_y = 116.0
+        x_cursor = 0.0
+        positions: Dict[str, Tuple[float, float]] = {}
+
+        def assign(node_id: str) -> float:
+            nonlocal x_cursor
+            children = list(children_by_parent.get(node_id, []))
+            if not children:
+                x_value = float(x_cursor * spacing_x)
+                x_cursor += 1.0
+            else:
+                child_positions = [assign(child) for child in children]
+                x_value = float(sum(child_positions) / max(len(child_positions), 1))
+            y_value = float(int(depth.get(node_id, 0)) * spacing_y)
+            positions[node_id] = (x_value, y_value)
+            return x_value
+
+        assign(root_id)
+        edges = [(parent, child) for child, parent in parent_by_child.items()]
+        return positions, edges
+
+    def _tooltip_text(self, row: Dict[str, Any]) -> str:
+        batch_name = str(row.get("batch_name") or row.get("batch_id") or "--")
+        batch_id = str(row.get("batch_id") or "--")
+        created_at = str(row.get("created_at") or "--")
+        created_via = self._normalize_created_via(row.get("created_via"))
+        parent_batch_id = str(row.get("parent_batch_id") or "").strip() or "Constraints"
+        created_from_version_id = str(row.get("created_from_version_id") or "").strip() or "--"
+        return (
+            f"Batch: {batch_name}\n"
+            f"ID: {batch_id}\n"
+            f"Created: {created_at}\n"
+            f"Via: {created_via}\n"
+            f"Parent: {parent_batch_id}\n"
+            f"From Version: {created_from_version_id}"
+        )
+
+    def _render(self, rows: Sequence[Dict[str, Any]]) -> None:
+        self.scene.clear()
+        self._node_items = {}
+        positions, edges = self._compute_layout(rows)
+        root_id = "__constraints_root__"
+        node_data = {str(row["batch_id"]): dict(row) for row in rows}
+        if root_id not in positions:
+            positions[root_id] = (0.0, 0.0)
+
+        root_node = BatchLineageNodeItem(
+            batch_id=None,
+            label="Constraints",
+            tooltip_text="Project constraints root.",
+            is_root=True,
+            width=132.0,
+            height=42.0,
+        )
+        root_x, root_y = positions[root_id]
+        root_node.setPos(root_x, root_y)
+        self.scene.addItem(root_node)
+        self._node_items[root_id] = root_node
+
+        for batch_id, row in sorted(node_data.items(), key=lambda item: self._row_sort_key(item[1])):
+            pos = positions.get(batch_id)
+            if pos is None:
+                continue
+            label = str(batch_id or "--")
+            node = BatchLineageNodeItem(
+                batch_id=batch_id,
+                label=label,
+                tooltip_text=self._tooltip_text(row),
+                is_root=False,
+                width=94.0,
+                height=38.0,
+            )
+            node.activated.connect(self._on_node_activated)
+            node.setPos(float(pos[0]), float(pos[1]))
+            self.scene.addItem(node)
+            self._node_items[batch_id] = node
+
+        for parent_id, child_id in edges:
+            parent = self._node_items.get(parent_id)
+            child = self._node_items.get(child_id)
+            if not isinstance(parent, BatchLineageNodeItem) or not isinstance(child, BatchLineageNodeItem):
+                continue
+            start = parent.center_bottom()
+            end = child.center_top()
+            control_y = float((start.y() + end.y()) * 0.5)
+            path = QPainterPath(start)
+            path.cubicTo(
+                QPointF(float(start.x()), control_y),
+                QPointF(float(end.x()), control_y),
+                QPointF(float(end.x()), float(end.y())),
+            )
+            self.scene.addItem(BatchLineageEdgeItem(path))
+
+        self.select_batch(self._selected_batch_id)
+
+    def _on_node_activated(self, batch_id: str) -> None:
+        token = str(batch_id or "").strip()
+        if not token:
+            return
+        self.select_batch(token)
+        self.batch_activated.emit(token)
+
+    def select_batch(self, batch_id: Optional[str]) -> None:
+        token = str(batch_id or "").strip() or None
+        self._selected_batch_id = token
+        for node_id, node in list(self._node_items.items()):
+            if not isinstance(node, BatchLineageNodeItem):
+                continue
+            node.set_selected(bool(token and node_id == token))
+
+    def set_lineage_rows(self, rows: Optional[Sequence[Dict[str, Any]]]) -> None:
+        normalized_rows = self._normalize_rows(rows)
+        fingerprint = self._fingerprint(normalized_rows)
+        if fingerprint == self._last_fingerprint:
+            self.select_batch(self._selected_batch_id)
+            return
+        self._last_fingerprint = fingerprint
+        self._render(normalized_rows)
+        QTimer.singleShot(0, self.view.fit_graph)
 
 
 class DashboardPage(QWidget):
@@ -5278,6 +5904,11 @@ class DashboardPage(QWidget):
 
     def __init__(self) -> None:
         super().__init__()
+        self._constraints_drawer_expanded = False
+        self._constraints_drawer_current_height = 0
+        self._constraints_drawer_target_height = 0
+        self._constraints_drawer_min_entries = 6
+
         root = QVBoxLayout(self)
         root.setContentsMargins(20, 12, 20, 14)
         root.setSpacing(10)
@@ -5287,8 +5918,10 @@ class DashboardPage(QWidget):
         top_row_layout.setContentsMargins(0, 0, 0, 0)
         top_row_layout.setSpacing(10)
 
-        self.constraints_summary = ConstraintSummaryGrid()
+        self.constraints_summary = ConstraintSummaryGrid(mode="bar")
+        self.constraints_summary.setFixedHeight(104)
         self.constraints_summary.request_open_editor.connect(self.request_open_constraint_editor.emit)
+        self.constraints_summary.request_toggle_drawer.connect(self._toggle_constraints_drawer)
         top_row_layout.addWidget(self.constraints_summary, 2)
 
         actions_card = QFrame()
@@ -5352,7 +5985,11 @@ class DashboardPage(QWidget):
 
         actions_layout.addLayout(actions_columns)
         top_row_layout.addWidget(actions_card, 1)
-        root.addWidget(top_row)
+        root.addWidget(top_row, 0)
+
+        self.workspace_splitter = QSplitter(Qt.Horizontal)
+        self.workspace_splitter.setObjectName("DashboardWorkspaceSplitter")
+        self.workspace_splitter.setChildrenCollapsible(False)
 
         batch_card = QFrame()
         batch_card.setObjectName("ProjectSummaryPanel")
@@ -5365,14 +6002,39 @@ class DashboardPage(QWidget):
         self.batch_list = QListWidget()
         self.batch_list.setObjectName("DashboardBatchList")
         batch_layout.addWidget(self.batch_list, 1)
-        root.addWidget(batch_card, 1)
+        self.workspace_splitter.addWidget(batch_card)
 
-        footer = QHBoxLayout()
-        footer.addStretch(1)
-        self.settings_btn = QPushButton("Settings")
-        self.settings_btn.setObjectName("BatchGhostButton")
-        footer.addWidget(self.settings_btn)
-        root.addLayout(footer)
+        self.lineage_pane = BatchLineagePane()
+        self.workspace_splitter.addWidget(self.lineage_pane)
+        self.workspace_splitter.setStretchFactor(0, 1)
+        self.workspace_splitter.setStretchFactor(1, 1)
+        self.workspace_splitter.setSizes([560, 560])
+        root.addWidget(self.workspace_splitter, 1)
+
+        self.constraints_drawer_scrim = _DrawerScrim(self)
+        self.constraints_drawer_scrim.setObjectName("DashboardConstraintsDrawerScrim")
+        self.constraints_drawer_scrim.setAttribute(Qt.WA_StyledBackground, True)
+        self.constraints_drawer_scrim.setVisible(False)
+        self.constraints_drawer_scrim.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+
+        self.constraints_drawer = QFrame(self)
+        self.constraints_drawer.setObjectName("DashboardConstraintsDrawer")
+        self.constraints_drawer.setAttribute(Qt.WA_StyledBackground, True)
+        self.constraints_drawer.setVisible(False)
+        self.constraints_drawer.setMaximumHeight(0)
+        drawer_layout = QVBoxLayout(self.constraints_drawer)
+        drawer_layout.setContentsMargins(8, 8, 8, 8)
+        drawer_layout.setSpacing(0)
+        self.constraints_drawer_content = ConstraintSummaryGrid(mode="full")
+        self.constraints_drawer_content.request_open_editor.connect(self.request_open_constraint_editor.emit)
+        drawer_layout.addWidget(self.constraints_drawer_content, 1)
+        self._constraints_drawer_height_anim = QPropertyAnimation(self.constraints_drawer, b"maximumHeight", self)
+        self._constraints_drawer_height_anim.setDuration(180)
+        self._constraints_drawer_height_anim.setEasingCurve(QEasingCurve.InOutCubic)
+        self._constraints_drawer_height_anim.valueChanged.connect(self._on_constraints_drawer_height_anim_value)
+        self._constraints_drawer_height_anim.finished.connect(self._on_constraints_drawer_anim_finished)
+        self.constraints_drawer_scrim.clicked.connect(lambda: self._set_constraints_drawer_expanded(False, animated=True))
+        self.constraints_summary.set_drawer_enabled(False)
 
         self.new_batch_btn.clicked.connect(self.request_new_batch.emit)
         self.edit_batch_btn.clicked.connect(self._emit_edit)
@@ -5381,10 +6043,22 @@ class DashboardPage(QWidget):
         self.manage_runs_btn.clicked.connect(self.request_manage_runs.emit)
         if self.cleanup_testdata_btn is not None:
             self.cleanup_testdata_btn.clicked.connect(self.request_cleanup_testdata.emit)
-        self.settings_btn.clicked.connect(self.request_settings.emit)
+        self.batch_list.currentItemChanged.connect(self._on_batch_list_selection_changed)
+        self.lineage_pane.batch_activated.connect(self._on_lineage_batch_activated)
+        QTimer.singleShot(0, self._layout_constraints_drawer_overlay)
 
     def set_constraints_payload(self, payload: Optional[Dict[str, Any]]) -> None:
         self.constraints_summary.set_constraints_payload(payload)
+        self.constraints_drawer_content.set_constraints_payload(payload)
+        row_count = int(self.constraints_drawer_content.entry_count())
+        can_expand = bool(payload) and row_count > int(self._constraints_drawer_min_entries)
+        self.constraints_summary.set_drawer_enabled(can_expand)
+        if not can_expand and self._constraints_drawer_expanded:
+            self._set_constraints_drawer_expanded(False, animated=False)
+
+    def set_batch_lineage_rows(self, rows: Optional[Sequence[Dict[str, Any]]]) -> None:
+        self.lineage_pane.set_lineage_rows(rows)
+        self.lineage_pane.select_batch(self._selected_batch_id())
 
     def _selected_batch_id(self) -> Optional[str]:
         item = self.batch_list.currentItem()
@@ -5402,6 +6076,102 @@ class DashboardPage(QWidget):
         batch_id = self._selected_batch_id()
         if batch_id:
             self.request_clone_batch.emit(batch_id)
+
+    def _on_batch_list_selection_changed(self, current: QListWidgetItem | None, previous: QListWidgetItem | None) -> None:
+        _ = previous
+        batch_id = None
+        if isinstance(current, QListWidgetItem):
+            data = current.data(Qt.UserRole)
+            batch_id = str(data or "").strip() or None
+        self.lineage_pane.select_batch(batch_id)
+
+    def _on_lineage_batch_activated(self, batch_id: str) -> None:
+        token = str(batch_id or "").strip()
+        if not token:
+            return
+        for index in range(self.batch_list.count()):
+            item = self.batch_list.item(index)
+            if not isinstance(item, QListWidgetItem):
+                continue
+            item_batch_id = str(item.data(Qt.UserRole) or "").strip()
+            if item_batch_id != token:
+                continue
+            self.batch_list.setCurrentItem(item)
+            self.request_edit_batch.emit(token)
+            return
+
+    def _toggle_constraints_drawer(self) -> None:
+        self._set_constraints_drawer_expanded(not bool(self._constraints_drawer_expanded), animated=True)
+
+    def _on_constraints_drawer_height_anim_value(self, value: Any) -> None:
+        try:
+            self._constraints_drawer_current_height = max(int(float(value)), 0)
+        except Exception:
+            self._constraints_drawer_current_height = 0
+        self._layout_constraints_drawer_overlay()
+
+    def _on_constraints_drawer_anim_finished(self) -> None:
+        if not bool(self._constraints_drawer_expanded):
+            self.constraints_drawer.setVisible(False)
+            self.constraints_drawer_scrim.setVisible(False)
+            self.constraints_drawer_scrim.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+
+    def _set_constraints_drawer_expanded(self, expanded: bool, *, animated: bool) -> None:
+        toggle_btn = self.constraints_summary.drawer_toggle_btn
+        if not (isinstance(toggle_btn, QToolButton) and toggle_btn.isEnabled()):
+            expanded = False
+        self._constraints_drawer_expanded = bool(expanded)
+        self.constraints_summary.set_drawer_expanded(self._constraints_drawer_expanded)
+        self._layout_constraints_drawer_overlay()
+        target_height = int(self._constraints_drawer_target_height if self._constraints_drawer_expanded else 0)
+        start_height = int(self._constraints_drawer_current_height)
+        self._constraints_drawer_height_anim.stop()
+        if self._constraints_drawer_expanded:
+            self.constraints_drawer.setVisible(True)
+            self.constraints_drawer_scrim.setVisible(True)
+            self.constraints_drawer_scrim.setAttribute(Qt.WA_TransparentForMouseEvents, False)
+        if animated:
+            self._constraints_drawer_height_anim.setStartValue(start_height)
+            self._constraints_drawer_height_anim.setEndValue(target_height)
+            self._constraints_drawer_height_anim.start()
+        else:
+            self._constraints_drawer_current_height = int(target_height)
+            self.constraints_drawer.setMaximumHeight(int(target_height))
+            self._layout_constraints_drawer_overlay()
+            if not self._constraints_drawer_expanded:
+                self.constraints_drawer.setVisible(False)
+                self.constraints_drawer_scrim.setVisible(False)
+                self.constraints_drawer_scrim.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+
+    def _layout_constraints_drawer_overlay(self) -> None:
+        anchor = self.constraints_summary
+        if not isinstance(anchor, QWidget) or not anchor.isVisible():
+            return
+        anchor_pos = anchor.mapTo(self, QPoint(0, 0))
+        drawer_x = int(anchor_pos.x())
+        drawer_y = int(anchor_pos.y() + anchor.height() + 4)
+        drawer_width = int(anchor.width())
+        available_height = max(int(self.height() - drawer_y - 8), 0)
+        content_hint = int(self.constraints_drawer_content.sizeHint().height() + 16)
+        self._constraints_drawer_target_height = max(160, min(content_hint, max(available_height, 160)))
+        if self._constraints_drawer_expanded:
+            current_height = int(max(min(self._constraints_drawer_current_height, available_height), 0))
+        else:
+            current_height = 0
+        self.constraints_drawer.setGeometry(drawer_x, drawer_y, max(drawer_width, 0), current_height)
+        self.constraints_drawer.setMaximumHeight(current_height)
+        self.constraints_drawer.raise_()
+        scrim_enabled = bool(self._constraints_drawer_expanded) and current_height > 0 and available_height > 0
+        self.constraints_drawer_scrim.setVisible(scrim_enabled)
+        self.constraints_drawer_scrim.setAttribute(Qt.WA_TransparentForMouseEvents, not scrim_enabled)
+        if scrim_enabled:
+            self.constraints_drawer_scrim.setGeometry(0, drawer_y, int(self.width()), max(int(self.height() - drawer_y), 0))
+            self.constraints_drawer_scrim.raise_()
+            self.constraints_drawer.raise_()
+
+    def resizeEvent(self, event) -> None:  # type: ignore[override]
+        super().resizeEvent(event)
+        self._layout_constraints_drawer_overlay()
 
 class ProjectIssuesPanel(QFrame):
     issue_selected = Signal(str)
@@ -7559,18 +8329,18 @@ class AnalysePage(QWidget):
         self.version_dims_row = QWidget()
         dims_layout = QHBoxLayout(self.version_dims_row)
         dims_layout.setContentsMargins(0, 0, 0, 0)
-        dims_layout.setSpacing(6)
-        self.version_dims_key_label = QLabel("Dim (LxWxH)")
+        dims_layout.setSpacing(0)
+        self.version_dims_key_label = QLabel("")
         self.version_dims_key_label.setObjectName("SummaryMeta")
         self.version_dims_key_label.setProperty("analyzerInfoKey", True)
         self.version_dims_key_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.version_dims_key_label.hide()
         self.version_dims_value_label = ElidedTitleLabel("—")
         self.version_dims_value_label.setObjectName("SummaryMeta")
         self.version_dims_value_label.setProperty("analyzerInfoValue", True)
         self.version_dims_value_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.version_dims_value_label.setToolTip("Not available")
         self.version_dims_value_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        dims_layout.addWidget(self.version_dims_key_label, 0, Qt.AlignLeft | Qt.AlignVCenter)
         dims_layout.addWidget(self.version_dims_value_label, 1)
         col1_layout.addWidget(self.version_dims_row, 0)
         self._version_chip_labels: Dict[str, QLabel] = {}
@@ -12993,7 +13763,7 @@ class ProjectManagerWindow(QMainWindow):
         central = QWidget()
         self.setCentralWidget(central)
         outer = QVBoxLayout(central)
-        outer.setContentsMargins(10, 10, 10, 10)
+        outer.setContentsMargins(12, 12, 12, 12)
         outer.setSpacing(0)
         shell = QFrame()
         shell.setObjectName("FramelessShell")
@@ -13004,7 +13774,7 @@ class ProjectManagerWindow(QMainWindow):
 
         title_bar = QWidget()
         title_row = QHBoxLayout(title_bar)
-        title_row.setContentsMargins(0, 0, 0, 0)
+        title_row.setContentsMargins(0, 1, 2, 1)
         title_row.setSpacing(8)
         title = QLabel("Project Manager")
         title.setObjectName("SectionTitle")
@@ -13025,14 +13795,12 @@ class ProjectManagerWindow(QMainWindow):
         self.project_list.setViewMode(QListView.IconMode)
         self.project_list.setResizeMode(QListView.Adjust)
         self.project_list.setMovement(QListView.Static)
-        self.project_list.setSelectionMode(QAbstractItemView.SingleSelection)
         self.project_list.setWrapping(True)
-        self.project_list.setSpacing(ProjectCardV2.grid_spacing())
-        self.project_list.setGridSize(ProjectCardV2.grid_size_hint())
-        self.project_list.setWordWrap(False)
+        self.project_list.setSpacing(12)
+        self.project_list.setIconSize(QSize(170, 120))
+        self.project_list.setGridSize(QSize(210, 170))
+        self.project_list.setWordWrap(True)
         self.project_list.setSelectionRectVisible(False)
-        self.project_list.setUniformItemSizes(True)
-        self._project_tile_columns = 1
         list_palette = self.project_list.palette()
         list_palette.setColor(QPalette.Highlight, QColor(0, 0, 0, 0))
         list_palette.setColor(QPalette.HighlightedText, QColor("#F1F1F1"))
@@ -13059,10 +13827,9 @@ class ProjectManagerWindow(QMainWindow):
         self.new_btn.clicked.connect(self.create_project.emit)
         self.settings_btn.clicked.connect(self.request_settings.emit)
         self.refresh_btn.clicked.connect(self.refresh)
-        self.project_list.currentItemChanged.connect(lambda _current, _previous: self._sync_project_list_state())
-        self.project_list.itemSelectionChanged.connect(self._sync_project_list_state)
+        self.project_list.currentItemChanged.connect(lambda _current, _previous: self._sync_open_enabled())
+        self.project_list.itemSelectionChanged.connect(self._sync_open_enabled)
         self.project_list.itemDoubleClicked.connect(self._emit_open)
-        self._update_project_grid_metrics()
         self.refresh()
 
     def refresh(self) -> None:
@@ -13072,62 +13839,70 @@ class ProjectManagerWindow(QMainWindow):
         selected_index = -1
         for project in self.service.list_projects():
             item = QListWidgetItem()
-            item.setSizeHint(ProjectCardV2.size_hint())
-            item.setToolTip(str(project.name or "Project"))
+            item.setIcon(self._project_tile_icon(project.name, project.project_id))
+            item.setText("")
+            item.setToolTip(f"{project.project_id} | {project.name}")
             item.setData(Qt.UserRole, project.project_id)
             self.project_list.addItem(item)
-            card = ProjectCardV2(project_name=project.name, parent=self.project_list)
-            image_path = self.service.project_preview_image_path(project.project_id)
-            preview = QPixmap(str(image_path)) if image_path.exists() else QPixmap()
-            card.set_preview_pixmap(preview)
-            card.clicked.connect(lambda current_item=item: self._select_project_item(current_item))
-            card.doubleClicked.connect(lambda current_item=item: self._open_project_item(current_item))
-            self.project_list.setItemWidget(item, card)
             if previous_id and str(project.project_id) == previous_id:
                 selected_index = self.project_list.count() - 1
         if self.project_list.count() > 0:
             self.project_list.setCurrentRow(selected_index if selected_index >= 0 else 0)
-        self._update_project_grid_metrics()
-        self._sync_project_list_state()
-
-    def _update_project_grid_metrics(self) -> None:
-        card_size = ProjectCardV2.size_hint()
-        spacing = ProjectCardV2.grid_spacing()
-        self.project_list.setSpacing(spacing)
-        self.project_list.setGridSize(card_size)
-        viewport_width = max(1, int(self.project_list.viewport().width()))
-        self._project_tile_columns = max(1, int((viewport_width + spacing) // (card_size.width() + spacing)))
-        self.project_list.setProperty("projectTileColumns", int(self._project_tile_columns))
-
-    def resizeEvent(self, event) -> None:  # type: ignore[override]
-        super().resizeEvent(event)
-        self._update_project_grid_metrics()
-
-    def _sync_project_list_state(self) -> None:
-        self._sync_project_card_states()
         self._sync_open_enabled()
 
-    def _sync_project_card_states(self) -> None:
-        current = self.project_list.currentItem()
-        for index in range(self.project_list.count()):
-            item = self.project_list.item(index)
-            card = self.project_list.itemWidget(item)
-            if isinstance(card, ProjectCardV2):
-                card.set_selected(bool(item is current or item.isSelected()))
+    def _project_tile_icon(self, project_name: str, project_id: str) -> QIcon:
+        pixmap = QPixmap(170, 120)
+        pixmap.fill(Qt.transparent)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing, True)
 
-    def _select_project_item(self, item: QListWidgetItem | None) -> None:
-        if item is None:
-            return
-        self.project_list.setCurrentItem(item)
-        item.setSelected(True)
-        self.project_list.setFocus(Qt.MouseFocusReason)
-        self._sync_project_list_state()
+        frame = QPainterPath()
+        frame.addRoundedRect(1, 1, 168, 118, 10, 10)
+        painter.fillPath(frame, QColor("#13161A"))
+        painter.setPen(QColor("#2C323A"))
+        painter.drawPath(frame)
 
-    def _open_project_item(self, item: QListWidgetItem | None) -> None:
-        if item is None:
-            return
-        self._select_project_item(item)
-        self._emit_open(item)
+        painter.setPen(QColor("#F1F1F1"))
+        title_font = QFont("Segoe UI", 9)
+        title_font.setBold(True)
+        painter.setFont(title_font)
+        painter.drawText(8, 8, 154, 22, Qt.AlignCenter | Qt.TextWordWrap, str(project_name or "Project"))
+
+        thumbnail_rect = (18, 36, 134, 72)
+        image_path = self.service.project_preview_image_path(project_id)
+        preview = QPixmap(str(image_path)) if image_path.exists() else QPixmap()
+        if not preview.isNull():
+            zoom_factor = 1.8
+            crop_w = max(1, int(preview.width() / zoom_factor))
+            crop_h = max(1, int(preview.height() / zoom_factor))
+            crop_x = max(0, (preview.width() - crop_w) // 2)
+            crop_y = max(0, (preview.height() - crop_h) // 2)
+            cropped = preview.copy(crop_x, crop_y, crop_w, crop_h)
+            clipped = cropped.scaled(
+                thumbnail_rect[2],
+                thumbnail_rect[3],
+                Qt.KeepAspectRatioByExpanding,
+                Qt.SmoothTransformation,
+            )
+            draw_x = thumbnail_rect[0] - max(0, (clipped.width() - thumbnail_rect[2]) // 2)
+            draw_y = thumbnail_rect[1] - max(0, (clipped.height() - thumbnail_rect[3]) // 2)
+            painter.setClipRect(*thumbnail_rect)
+            painter.drawPixmap(draw_x, draw_y, clipped)
+            painter.setClipping(False)
+            painter.setPen(QColor("#323941"))
+            painter.drawRoundedRect(*thumbnail_rect, 8, 8)
+        else:
+            painter.setPen(QColor("#252B33"))
+            painter.setBrush(QColor("#1A1F25"))
+            painter.drawRoundedRect(*thumbnail_rect, 8, 8)
+            painter.setPen(QColor("#3A424D"))
+            painter.drawLine(28, 95, 78, 58)
+            painter.drawLine(78, 58, 112, 86)
+            painter.drawLine(112, 86, 138, 65)
+            painter.setBrush(QColor("#3A424D"))
+            painter.drawEllipse(38, 54, 8, 8)
+        painter.end()
+        return QIcon(pixmap)
 
     def _sync_open_enabled(self) -> None:
         has_selection = self.project_list.currentItem() is not None or bool(self.project_list.selectedItems())
@@ -13205,6 +13980,9 @@ class MainWindow(QMainWindow):
         self._run_fullscreen_active = False
         self._window_state_before_run = Qt.WindowNoState
         self._window_topmost_before_run = False
+        self._draft_created_via = "manual"
+        self._draft_parent_batch_id: Optional[str] = None
+        self._draft_created_from_version_id: Optional[str] = None
 
         self.setWindowTitle("WUT Batcher")
         self.setMinimumSize(1280, 800)
@@ -13857,6 +14635,7 @@ class MainWindow(QMainWindow):
     def refresh_dashboard(self) -> None:
         if self.current_project is None:
             self.dashboard_page.set_constraints_payload(None)
+            self.dashboard_page.set_batch_lineage_rows([])
             self.dashboard_page.batch_list.clear()
             self.analyse_page.set_project_context(None)
             return
@@ -13868,6 +14647,11 @@ class MainWindow(QMainWindow):
             item = QListWidgetItem(label)
             item.setData(Qt.UserRole, batch.batch_id)
             self.dashboard_page.batch_list.addItem(item)
+        try:
+            lineage_rows = self.service.list_batch_lineage(project_id=self.current_project.project_id)
+        except Exception:
+            lineage_rows = []
+        self.dashboard_page.set_batch_lineage_rows(lineage_rows)
 
     def _open_project_constraint_editor(self, key: str) -> None:
         if self.current_project is None:
@@ -13897,9 +14681,48 @@ class MainWindow(QMainWindow):
             self._sync_navigation_state()
             return
         self._exit_run_presentation()
+        self._set_draft_lineage_context(created_via="manual")
         self.batch_page.reset_draft()
         self._on_batch_draft_changed(self.batch_page._payload(include_name=False))
         self.stack.setCurrentWidget(self.batch_page)
+
+    def _set_draft_lineage_context(
+        self,
+        *,
+        created_via: str = "manual",
+        parent_batch_id: Optional[str] = None,
+        created_from_version_id: Optional[str] = None,
+    ) -> None:
+        created_via_token = str(created_via or "").strip().lower()
+        if created_via_token not in {"manual", "iterate", "clone"}:
+            created_via_token = "manual"
+        parent_batch_token = str(parent_batch_id or "").strip() or None
+        created_from_version_token = str(created_from_version_id or "").strip() or None
+        if created_via_token == "manual":
+            parent_batch_token = None
+            created_from_version_token = None
+        elif created_via_token == "clone":
+            created_from_version_token = None
+        self._draft_created_via = created_via_token
+        self._draft_parent_batch_id = parent_batch_token
+        self._draft_created_from_version_id = created_from_version_token
+
+    def _current_draft_lineage_payload(self) -> Dict[str, Any]:
+        created_via_token = str(getattr(self, "_draft_created_via", "manual") or "").strip().lower()
+        if created_via_token not in {"manual", "iterate", "clone"}:
+            created_via_token = "manual"
+        parent_batch_token = str(getattr(self, "_draft_parent_batch_id", "") or "").strip() or None
+        created_from_version_token = str(getattr(self, "_draft_created_from_version_id", "") or "").strip() or None
+        if created_via_token == "manual":
+            parent_batch_token = None
+            created_from_version_token = None
+        elif created_via_token == "clone":
+            created_from_version_token = None
+        return {
+            "created_via": created_via_token,
+            "parent_batch_id": parent_batch_token,
+            "created_from_version_id": created_from_version_token,
+        }
 
     def show_analyse(self) -> None:
         self._stop_preview_worker()
@@ -13956,7 +14779,15 @@ class MainWindow(QMainWindow):
             self._project_create_in_progress = False
             self.project_page.set_creating(False)
 
-    def _save_batch(self, payload: Dict[str, object], *, for_run: bool = False) -> Optional[str]:
+    def _save_batch(
+        self,
+        payload: Dict[str, object],
+        *,
+        for_run: bool = False,
+        created_via: Optional[str] = None,
+        parent_batch_id: Optional[str] = None,
+        created_from_version_id: Optional[str] = None,
+    ) -> Optional[str]:
         if self.current_project is None:
             self.set_status("No project loaded.")
             return None
@@ -14000,6 +14831,23 @@ class MainWindow(QMainWindow):
             ):
                 self.set_status("Batch save blocked by validation.")
                 return None
+        lineage = self._current_draft_lineage_payload()
+        if created_via is not None:
+            lineage["created_via"] = str(created_via or "").strip().lower()
+        if parent_batch_id is not None:
+            lineage["parent_batch_id"] = str(parent_batch_id or "").strip() or None
+        if created_from_version_id is not None:
+            lineage["created_from_version_id"] = str(created_from_version_id or "").strip() or None
+        created_via_token = str(lineage.get("created_via") or "manual").strip().lower()
+        if created_via_token not in {"manual", "iterate", "clone"}:
+            created_via_token = "manual"
+        parent_batch_token = str(lineage.get("parent_batch_id") or "").strip() or None
+        created_from_version_token = str(lineage.get("created_from_version_id") or "").strip() or None
+        if created_via_token == "manual":
+            parent_batch_token = None
+            created_from_version_token = None
+        elif created_via_token == "clone":
+            created_from_version_token = None
         summary = self.service.create_batch(
             project_id=self.current_project.project_id,
             batch_name=str(payload.get("batch_name", "")),
@@ -14007,6 +14855,9 @@ class MainWindow(QMainWindow):
             sweeps=dict(payload.get("sweeps", {}) or {}),
             sweep_mode=str(payload.get("sweep_mode", "single")),
             sim_export_params=dict(payload.get("sim_export_params", {}) or {}),
+            created_via=created_via_token,
+            parent_batch_id=parent_batch_token,
+            created_from_version_id=created_from_version_token,
         )
         self.set_status(
             f"Batch saved: {summary.batch_id}, versions={summary.version_count}",
@@ -14140,6 +14991,7 @@ class MainWindow(QMainWindow):
             str(payload["version_id"]),
             bool(payload["export_stl"]),
             bool(payload["export_abec"]),
+            str(payload.get("destination_dir") or ""),
         )
 
     def _open_run_manager(self) -> None:
@@ -14167,6 +15019,7 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             self.set_status(f"Edit Batch failed for {batch_id}", detail=str(exc))
             return
+        self._set_draft_lineage_context(created_via="manual")
         self.batch_page.load_from_batch(batch)
         self._on_batch_draft_changed(self.batch_page._payload(include_name=False))
         self.stack.setCurrentWidget(self.batch_page)
@@ -14237,7 +15090,13 @@ class MainWindow(QMainWindow):
             "sweep_mode": "single",
             "sim_export_params": dict(parent_export_payload),
         }
-        child_batch_id = self._save_batch(child_payload, for_run=False)
+        child_batch_id = self._save_batch(
+            child_payload,
+            for_run=False,
+            created_via="iterate",
+            parent_batch_id=batch_id,
+            created_from_version_id=version_id,
+        )
         if not child_batch_id:
             self.set_status("Iterate failed: child batch was not created.")
             return
@@ -14256,12 +15115,41 @@ class MainWindow(QMainWindow):
             return
         source_name = str(batch.extra.get("batch_name", batch.batch_id)).strip() or batch.batch_id
         clone_name = f"{source_name} Clone"
+        self._set_draft_lineage_context(created_via="clone", parent_batch_id=batch.batch_id)
         self.batch_page.load_from_batch(batch, batch_name=clone_name)
         self._on_batch_draft_changed(self.batch_page._payload(include_name=False))
         self.stack.setCurrentWidget(self.batch_page)
         self.set_status(f"Batch cloned into draft: {clone_name}")
 
-    def _export_version(self, batch_id: str, version_id: str, export_stl: bool, export_abec: bool) -> None:
+    @staticmethod
+    def _copy_export_bundle_to_destination(export_dir: Path, destination_dir: Path) -> Path:
+        source_dir = export_dir.expanduser().resolve()
+        target_dir = destination_dir.expanduser().resolve()
+        if source_dir == target_dir:
+            return target_dir
+        source_token = str(source_dir)
+        target_token = str(target_dir)
+        if target_token.startswith(source_token + os.sep):
+            raise RuntimeError("Export destination cannot be inside the generated export folder.")
+        if not source_dir.exists() or not source_dir.is_dir():
+            raise RuntimeError(f"Export folder is missing: {source_dir}")
+        target_dir.mkdir(parents=True, exist_ok=True)
+        for child in source_dir.iterdir():
+            target_child = target_dir / child.name
+            if child.is_dir():
+                shutil.copytree(child, target_child, dirs_exist_ok=True)
+            else:
+                shutil.copy2(child, target_child)
+        return target_dir
+
+    def _export_version(
+        self,
+        batch_id: str,
+        version_id: str,
+        export_stl: bool,
+        export_abec: bool,
+        destination_dir: str = "",
+    ) -> None:
         if self.current_project is None:
             self.set_status("No project loaded.")
             return
@@ -14273,8 +15161,26 @@ class MainWindow(QMainWindow):
                 export_stl=export_stl,
                 export_abec=export_abec,
             )
+            destination_token = str(destination_dir or "").strip()
+            if destination_token:
+                export_dir_token = str(result.get("export_dir") or "").strip()
+                if not export_dir_token:
+                    raise RuntimeError("Export completed but returned no export folder.")
+                copied_to = self._copy_export_bundle_to_destination(
+                    Path(export_dir_token),
+                    Path(destination_token),
+                )
+                result = dict(result)
+                result["selected_destination_dir"] = str(copied_to)
         except Exception as exc:
+            if LOGGER.isEnabledFor(logging.DEBUG):
+                LOGGER.debug("Export failed for %s/%s.", str(batch_id), str(version_id), exc_info=True)
             self.set_status(f"Export failed for {version_id}", detail=str(exc))
+            QMessageBox.critical(
+                self,
+                "Export failed",
+                f"Could not export {version_id}.\n{exc}\n\nSee status details or logs for more information.",
+            )
             return
         self.set_status(f"Export finished for {version_id}", detail=json.dumps(result, indent=2, ensure_ascii=False))
 

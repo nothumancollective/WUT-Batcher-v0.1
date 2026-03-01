@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from contextlib import closing
 from pathlib import Path
 import re
+import sqlite3
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -160,6 +162,29 @@ class ServiceExportTests(unittest.TestCase):
             self.assertEqual(rows[0]["batch_id"], batch.batch_id)
             self.assertEqual(rows[0]["version_id"], batch.version_ids[0])
 
+    def test_list_batch_lineage_reads_sql_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            library_root = Path(tmp_dir) / "projects"
+            settings_path = Path(tmp_dir) / "settings.json"
+            store = SettingsStore(settings_path)
+            store.save(UserSettings(library_root=str(library_root)))
+            service = OrchestratorService(settings_store=store)
+            project = service.create_project("List Lineage", {"fixed_params": {"Length": 100}, "limits": {}})
+            batch = service.create_batch(
+                project_id=project.project_id,
+                batch_name="B1",
+                selected_params={"Throat.Diameter": 30.0},
+                sweeps={},
+                sweep_mode="single",
+                sim_export_params={},
+            )
+            rows = service.list_batch_lineage(project_id=project.project_id)
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(str(rows[0]["batch_id"]), str(batch.batch_id))
+            self.assertEqual(str(rows[0]["created_via"]), "manual")
+            self.assertIsNone(rows[0]["parent_batch_id"])
+            self.assertIsNone(rows[0]["created_from_version_id"])
+
     def test_run_batch_auto_uses_dry_run_when_tools_missing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             library_root = Path(tmp_dir) / "projects"
@@ -266,6 +291,64 @@ class ServiceExportTests(unittest.TestCase):
             self.assertNotIn("Source.Shape", cfg)
             self.assertNotIn("Source.Radius", cfg)
             self.assertNotIn("LE.Voltage         = 9", cfg)
+
+    def test_create_batch_persists_lineage_provenance(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            library_root = Path(tmp_dir) / "projects"
+            settings_path = Path(tmp_dir) / "settings.json"
+            store = SettingsStore(settings_path)
+            store.save(UserSettings(library_root=str(library_root)))
+            service = OrchestratorService(settings_store=store)
+            project = service.create_project("Lineage Provenance", {"fixed_params": {"Length": 100}, "limits": {}})
+
+            parent = service.create_batch(
+                project_id=project.project_id,
+                batch_name="Parent",
+                selected_params={"Throat.Diameter": 30.0},
+                sweeps={},
+                sweep_mode="single",
+                sim_export_params={},
+            )
+            child = service.create_batch(
+                project_id=project.project_id,
+                batch_name="Child",
+                selected_params={"Throat.Diameter": 32.0},
+                sweeps={},
+                sweep_mode="single",
+                sim_export_params={},
+                created_via="iterate",
+                parent_batch_id=parent.batch_id,
+                created_from_version_id=str(parent.version_ids[0]),
+            )
+
+            project_paths = service.repo.project_paths(project.project_id, ensure=True)
+            db_path = project_paths.dataset_dir / "project.sqlite"
+            with closing(sqlite3.connect(str(db_path))) as conn:
+                parent_row = conn.execute(
+                    """
+                    SELECT created_via, parent_batch_id, created_from_version_id
+                    FROM batches
+                    WHERE project_id = ? AND batch_id = ?
+                    """,
+                    (project.project_id, parent.batch_id),
+                ).fetchone()
+                child_row = conn.execute(
+                    """
+                    SELECT created_via, parent_batch_id, created_from_version_id
+                    FROM batches
+                    WHERE project_id = ? AND batch_id = ?
+                    """,
+                    (project.project_id, child.batch_id),
+                ).fetchone()
+            self.assertIsNotNone(parent_row)
+            self.assertIsNotNone(child_row)
+            assert parent_row is not None and child_row is not None
+            self.assertEqual(str(parent_row[0]), "manual")
+            self.assertIsNone(parent_row[1])
+            self.assertIsNone(parent_row[2])
+            self.assertEqual(str(child_row[0]), "iterate")
+            self.assertEqual(str(child_row[1]), parent.batch_id)
+            self.assertEqual(str(child_row[2]), str(parent.version_ids[0]))
 
 
 if __name__ == "__main__":

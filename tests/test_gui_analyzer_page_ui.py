@@ -317,11 +317,20 @@ class AnalyzerPageUiTests(unittest.TestCase):
             self.assertEqual(len(new_ids), 1)
             child_batch = service.repo.load_batch(project.project_id, new_ids[0])
             self.assertEqual(str(child_batch.extra.get("batch_name") or ""), "Parent Batch Child")
+            self.assertEqual(str(child_batch.extra.get("created_via") or ""), "iterate")
+            self.assertEqual(str(child_batch.extra.get("parent_batch_id") or ""), str(parent.batch_id))
+            self.assertEqual(str(child_batch.extra.get("created_from_version_id") or ""), str(version_id))
             actual_params = {
                 str(key): (value.value if hasattr(value, "value") else value)
                 for key, value in dict(child_batch.selected_params or {}).items()
             }
             self.assertEqual(dict(actual_params), dict(expected_params))
+            lineage_rows = service.list_batch_lineage(project_id=project.project_id)
+            lineage_by_batch = {str(row.get("batch_id") or ""): row for row in lineage_rows}
+            self.assertEqual(str(lineage_by_batch[parent.batch_id]["created_via"]), "manual")
+            self.assertEqual(str(lineage_by_batch[new_ids[0]]["created_via"]), "iterate")
+            self.assertEqual(str(lineage_by_batch[new_ids[0]]["parent_batch_id"]), str(parent.batch_id))
+            self.assertEqual(str(lineage_by_batch[new_ids[0]]["created_from_version_id"]), str(version_id))
             self.assertIs(window.stack.currentWidget(), window.batch_page)
             loaded_payload = window.batch_page._payload(include_name=True)
             self.assertEqual(str(loaded_payload.get("batch_name") or ""), "Parent Batch Child")
@@ -899,7 +908,8 @@ class AnalyzerPageUiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="wut_ui2x_dims_lxmxh_") as tmp:
             service = _build_service(Path(tmp))
             page = AnalysePage(service=service)
-            self.assertEqual(str(page.version_dims_key_label.text() or ""), "Dim (LxWxH)")
+            self.assertEqual(str(page.version_dims_key_label.text() or ""), "")
+            self.assertFalse(page.version_dims_key_label.isVisible())
             payload = {
                 "project_id": "P001",
                 "batch_id": "B001",

@@ -29,7 +29,7 @@ class StyledDialogBase(QDialog):
         self._drag_offset: Optional[QPoint] = None
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(10, 10, 10, 10)
+        outer.setContentsMargins(12, 12, 12, 12)
         outer.setSpacing(0)
 
         shell = QFrame(self)
@@ -37,12 +37,12 @@ class StyledDialogBase(QDialog):
         outer.addWidget(shell)
 
         shell_root = QVBoxLayout(shell)
-        shell_root.setContentsMargins(12, 10, 12, 12)
+        shell_root.setContentsMargins(14, 12, 14, 14)
         shell_root.setSpacing(10)
 
         title_bar = QWidget(shell)
         title_row = QHBoxLayout(title_bar)
-        title_row.setContentsMargins(0, 0, 0, 0)
+        title_row.setContentsMargins(0, 1, 2, 1)
         title_row.setSpacing(8)
 
         self.title_label = QLabel(str(title or "").strip(), title_bar)
