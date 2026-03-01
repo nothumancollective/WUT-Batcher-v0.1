@@ -19,7 +19,7 @@ class _ElidedSingleLineLabel(QLabel):
         self.setWordWrap(False)
         self.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.setFixedHeight(22)
+        self.setFixedHeight(20)
         self.setText(text)
 
     def setText(self, text: str) -> None:  # type: ignore[override]
@@ -41,23 +41,24 @@ class _ElidedSingleLineLabel(QLabel):
 
 
 class _ProjectCardPreview(QWidget):
-    def __init__(self, *, corner_radius: int = 16, parent: QWidget | None = None) -> None:
+    def __init__(self, *, corner_radius: int = 15, size_hint: QSize, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._corner_radius = int(corner_radius)
+        self._size_hint = QSize(size_hint)
         self._pixmap = QPixmap()
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.setFixedHeight(196)
-        self.setMinimumWidth(196)
+        self.setFixedHeight(int(self._size_hint.height()))
+        self.setMinimumWidth(int(self._size_hint.width()))
 
     def set_pixmap(self, pixmap: QPixmap) -> None:
         self._pixmap = QPixmap(pixmap) if isinstance(pixmap, QPixmap) else QPixmap()
         self.update()
 
     def sizeHint(self) -> QSize:  # type: ignore[override]
-        return QSize(196, 196)
+        return QSize(self._size_hint)
 
     def minimumSizeHint(self) -> QSize:  # type: ignore[override]
-        return QSize(196, 196)
+        return QSize(self._size_hint)
 
     def paintEvent(self, event) -> None:  # type: ignore[override]
         _ = event
@@ -104,9 +105,23 @@ class ProjectCardV2(QWidget):
     clicked = Signal()
     doubleClicked = Signal()
 
-    _OUTER_SIZE = QSize(236, 268)
-    _CARD_INSET = 4
+    _OUTER_SIZE = QSize(240, 180)
+    _CARD_INSET = 2
     _CARD_RADIUS = 20
+    _CONTENT_PADDING = 12
+    _CONTENT_SPACING = 8
+    _GRID_SPACING = 13
+    _TITLE_HEIGHT = 20
+
+    @classmethod
+    def preview_size_hint(cls) -> QSize:
+        width = max(1, int(cls._OUTER_SIZE.width()) - (2 * int(cls._CONTENT_PADDING)))
+        height = max(1, int(round(float(width) * 9.0 / 16.0)))
+        return QSize(width, height)
+
+    @classmethod
+    def grid_spacing(cls) -> int:
+        return int(cls._GRID_SPACING)
 
     def __init__(self, *, project_name: str = "", parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -120,21 +135,26 @@ class ProjectCardV2(QWidget):
         self.setMouseTracking(True)
         self.setCursor(Qt.PointingHandCursor)
         self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        self.setMinimumSize(self._OUTER_SIZE)
-        self.resize(self._OUTER_SIZE)
+        self.setFixedSize(self._OUTER_SIZE)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(12)
+        layout.setContentsMargins(
+            int(self._CONTENT_PADDING),
+            int(self._CONTENT_PADDING),
+            int(self._CONTENT_PADDING),
+            int(self._CONTENT_PADDING),
+        )
+        layout.setSpacing(int(self._CONTENT_SPACING))
 
-        self.preview = _ProjectCardPreview(parent=self)
+        self.preview = _ProjectCardPreview(size_hint=self.preview_size_hint(), parent=self)
         self.preview.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self.title_label = _ElidedSingleLineLabel(project_name, self)
         self.title_label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         title_font = QFont(self.title_label.font())
-        title_font.setPointSizeF(max(10.0, float(title_font.pointSizeF() or 10.0)))
+        title_font.setPointSizeF(max(9.0, float(title_font.pointSizeF() or 9.0)))
         title_font.setBold(True)
         self.title_label.setFont(title_font)
+        self.title_label.setFixedHeight(int(self._TITLE_HEIGHT))
         self.title_label.setObjectName("ProjectCardTitle")
         self.title_label.setStyleSheet(f"color: {colors['text']}; background: transparent;")
 
@@ -147,7 +167,7 @@ class ProjectCardV2(QWidget):
 
     @classmethod
     def grid_size_hint(cls) -> QSize:
-        return QSize(cls._OUTER_SIZE.width() + 12, cls._OUTER_SIZE.height() + 12)
+        return QSize(cls._OUTER_SIZE)
 
     def sizeHint(self) -> QSize:  # type: ignore[override]
         return self.size_hint()

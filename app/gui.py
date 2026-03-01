@@ -13027,11 +13027,12 @@ class ProjectManagerWindow(QMainWindow):
         self.project_list.setMovement(QListView.Static)
         self.project_list.setSelectionMode(QAbstractItemView.SingleSelection)
         self.project_list.setWrapping(True)
-        self.project_list.setSpacing(12)
+        self.project_list.setSpacing(ProjectCardV2.grid_spacing())
         self.project_list.setGridSize(ProjectCardV2.grid_size_hint())
         self.project_list.setWordWrap(False)
         self.project_list.setSelectionRectVisible(False)
         self.project_list.setUniformItemSizes(True)
+        self._project_tile_columns = 1
         list_palette = self.project_list.palette()
         list_palette.setColor(QPalette.Highlight, QColor(0, 0, 0, 0))
         list_palette.setColor(QPalette.HighlightedText, QColor("#F1F1F1"))
@@ -13061,6 +13062,7 @@ class ProjectManagerWindow(QMainWindow):
         self.project_list.currentItemChanged.connect(lambda _current, _previous: self._sync_project_list_state())
         self.project_list.itemSelectionChanged.connect(self._sync_project_list_state)
         self.project_list.itemDoubleClicked.connect(self._emit_open)
+        self._update_project_grid_metrics()
         self.refresh()
 
     def refresh(self) -> None:
@@ -13085,7 +13087,21 @@ class ProjectManagerWindow(QMainWindow):
                 selected_index = self.project_list.count() - 1
         if self.project_list.count() > 0:
             self.project_list.setCurrentRow(selected_index if selected_index >= 0 else 0)
+        self._update_project_grid_metrics()
         self._sync_project_list_state()
+
+    def _update_project_grid_metrics(self) -> None:
+        card_size = ProjectCardV2.size_hint()
+        spacing = ProjectCardV2.grid_spacing()
+        self.project_list.setSpacing(spacing)
+        self.project_list.setGridSize(card_size)
+        viewport_width = max(1, int(self.project_list.viewport().width()))
+        self._project_tile_columns = max(1, int((viewport_width + spacing) // (card_size.width() + spacing)))
+        self.project_list.setProperty("projectTileColumns", int(self._project_tile_columns))
+
+    def resizeEvent(self, event) -> None:  # type: ignore[override]
+        super().resizeEvent(event)
+        self._update_project_grid_metrics()
 
     def _sync_project_list_state(self) -> None:
         self._sync_project_card_states()

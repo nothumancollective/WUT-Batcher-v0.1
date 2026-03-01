@@ -48,6 +48,8 @@ class ProjectManagerUiTests(unittest.TestCase):
         self.assertIsInstance(card, ProjectCardV2)
         assert isinstance(card, ProjectCardV2)
         self.assertEqual(first.sizeHint(), ProjectCardV2.size_hint())
+        self.assertEqual(window.project_list.gridSize(), ProjectCardV2.grid_size_hint())
+        self.assertEqual(window.project_list.spacing(), ProjectCardV2.grid_spacing())
         self.assertTrue(card.is_selected())
 
     def test_project_list_selection_highlight_is_transparent(self) -> None:

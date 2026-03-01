@@ -31,9 +31,12 @@ class ProjectCardUiTests(unittest.TestCase):
         self.app.processEvents()
         self.assertEqual(card.sizeHint(), ProjectCardV2.size_hint())
         self.assertEqual(card.minimumSizeHint(), ProjectCardV2.size_hint())
-        self.assertEqual(card.preview.sizeHint().width(), card.preview.sizeHint().height())
+        self.assertEqual(card.sizeHint().width(), 240)
+        self.assertEqual(card.sizeHint().height(), 180)
+        self.assertEqual(card.preview.sizeHint(), ProjectCardV2.preview_size_hint())
+        self.assertEqual(card.preview.sizeHint().height(), round(card.preview.sizeHint().width() * 9 / 16))
         self.assertTrue(bool(card.title_label.text()))
-        card.resize(236, 268)
+        card.resize(240, 180)
         self.app.processEvents()
 
 
