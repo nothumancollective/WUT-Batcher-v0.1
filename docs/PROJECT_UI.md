@@ -183,3 +183,35 @@ The Batch page is now implemented as a companion to the PROJECT form design.
   - keep the existing list selection/open behavior
   - replace icon-painting with a dedicated lightweight card widget that owns only card/preview/title presentation
   - remove list-item framing so only the card widget draws the visible card surface/border
+
+## ProjectCardV2 Spec / Implementation (2026-03-01)
+- New card widget:
+  - `ui/widgets/project_card.py`
+  - single visible hierarchy:
+    - card surface
+    - rounded square preview
+    - single-line title
+- Card presentation:
+  - card radius: `20`
+  - preview radius: `16`
+  - card padding: `16` inside a small outer inset reserved for hover/selected shadow
+  - preview/title gap: `12`
+  - title is left-aligned, single-line, and elided
+- Preview rendering:
+  - source remains unchanged and still comes from `service.project_preview_image_path(project_id)`
+  - preview is rendered by the card widget with `QPainterPath` clipping, so rounded corners now clip the pixmap correctly
+  - preview area is fixed `1:1`
+- Interaction policy:
+  - idle: neutral surface + subtle low-alpha border
+  - hover: slightly brighter surface/border plus a light custom-painted shadow
+  - selected: stronger neutral outline + slightly stronger surface + slightly stronger shadow
+  - no blue or accent-colored idle state
+- Performance rationale:
+  - no `QGraphicsDropShadowEffect` is kept active across the whole project grid
+  - shadow is a lightweight custom paint pass and only appears for hover/selected cards
+  - the list still owns selection/open semantics, so keyboard/mouse behavior remains unchanged
+- What was removed:
+  - icon-painted outer tile frame
+  - icon-painted inner preview border shell
+  - `QListWidget::item` border shell for Project Manager tiles
+  - title-above-preview painted canvas layout

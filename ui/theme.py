@@ -1543,14 +1543,12 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         selection-background-color: transparent;
     }}
     QListWidget#ProjectTileList::item {{
-        border: 1px solid {c['border']};
-        border-radius: {r['md']}px;
-        margin: 4px;
-        padding: 4px;
+        border: none;
+        margin: 0px;
+        padding: 0px;
         background: transparent;
     }}
     QListWidget#ProjectTileList::item:selected {{
-        border: 2px solid #8d8d8d;
         background: transparent;
         color: {c['text']};
     }}
@@ -1560,7 +1558,10 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         color: {c['text']};
     }}
     QListWidget#ProjectTileList::item:hover {{
-        border: 2px solid #7d7d7d;
+        background: transparent;
+    }}
+    QLabel#ProjectCardTitle {{
+        color: {c['text']};
         background: transparent;
     }}
     QPushButton#ProjectManagerButton {{
