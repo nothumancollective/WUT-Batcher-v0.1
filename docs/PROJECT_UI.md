@@ -154,3 +154,32 @@ The Batch page is now implemented as a companion to the PROJECT form design.
 - Offscreen GUI smoke:
   - main window startup, project dashboard render, resize passes (`980x720` and `1280x860`)
   - dashboard chip interaction path tested (`OSSE` chip click) without crash
+
+## Audit Findings: Project Manager Card V2 (2026-03-01)
+- Current Project Manager tile implementation lives entirely in `ProjectManagerWindow`:
+  - list/grid host: `app/gui.py:13022-13037`
+  - tile painting: `app/gui.py:13082-13134`
+- Current presentation path is `QListWidget` in `IconMode` plus per-item `QIcon` painting, not a dedicated card widget.
+- Visual layering that creates the current "box-in-box-in-box" look:
+  - `QListWidget#ProjectTileList::item` adds its own rounded border in `ui/theme.py:1539-1564`
+  - `_project_tile_icon(...)` paints a second rounded outer frame around the whole icon in `app/gui.py:13087-13094`
+  - `_project_tile_icon(...)` paints a third framed thumbnail region in `app/gui.py:13119-13127`
+- Current content hierarchy is inverted from the desired card spec:
+  - title is painted first into the icon canvas near the top (`app/gui.py:13096-13101`)
+  - preview is painted as a smaller inset image region below it (`app/gui.py:13103-13127`)
+  - the preview is visually subordinate to multiple borders instead of being the main card body
+- Hover/selection handling is owned by the item view, not a tile widget:
+  - selection/open logic currently relies on `currentItemChanged`, `itemSelectionChanged`, and `itemDoubleClicked` in `app/gui.py:13059-13061`
+  - visual hover/selected states come from `QListWidget#ProjectTileList::item:hover` and `::item:selected` in `ui/theme.py:1545-1564`
+  - no dedicated card widget currently owns hover/selected presentation
+- Source of the unwanted accent/glow:
+  - the list host suppresses palette highlight in `app/gui.py:13033-13036`, but the item view still contributes its own hover/selection shell via the item stylesheet and focus handling
+  - this is why the tile reads as a highlighted list item plus an inner painted card, instead of a single neutral card surface
+- Preview source and current shape:
+  - preview source path already comes from `service.project_preview_image_path(project_id)` in `app/gui.py:13104`
+  - current renderer center-crops the source pixmap with `zoom_factor = 1.8` into a `134x72` inset rectangle (`app/gui.py:13107-13121`)
+  - current clipping is rectangular (`setClipRect`), so the rounded preview frame does not actually clip image corners
+- Safe V2 direction:
+  - keep the existing list selection/open behavior
+  - replace icon-painting with a dedicated lightweight card widget that owns only card/preview/title presentation
+  - remove list-item framing so only the card widget draws the visible card surface/border
