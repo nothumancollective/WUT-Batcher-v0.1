@@ -83,6 +83,7 @@ _RUNTIME_LOG_INSTALLED = False
 _PREVIOUS_QT_MESSAGE_HANDLER = None
 _RUNTIME_CONTEXT_PROVIDER: Callable[[], Dict[str, Any]] | None = None
 _FAULT_DIAGNOSTICS_ENABLED = False
+_WINDOW_FLICKER_TRACE_INSTALLED = False
 
 
 def _runtime_log_path() -> Path:
@@ -103,6 +104,91 @@ def _append_runtime_log(lines: List[str]) -> None:
     except Exception:
         # Logging should never crash the app flow.
         pass
+
+
+def _window_flicker_log_path() -> Path:
+    return _runtime_log_path().with_name("window_flicker_debug.jsonl")
+
+
+def _append_window_flicker_entry(payload: Dict[str, Any]) -> None:
+    try:
+        log_path = _window_flicker_log_path()
+        line = json.dumps(payload, ensure_ascii=False) + "\n"
+        with _RUNTIME_LOG_LOCK:
+            with log_path.open("a", encoding="utf-8") as handle:
+                handle.write(line)
+    except Exception:
+        pass
+
+
+def _install_window_flicker_trace(app: QApplication) -> None:
+    global _WINDOW_FLICKER_TRACE_INSTALLED
+    if _WINDOW_FLICKER_TRACE_INSTALLED:
+        return
+    if str(os.environ.get("WUT_DEBUG_WINDOW_FLICKER", "")).strip() != "1":
+        return
+    _WINDOW_FLICKER_TRACE_INSTALLED = True
+    try:
+        _window_flicker_log_path().unlink(missing_ok=True)
+    except Exception:
+        pass
+
+    event_names = {
+        int(QEvent.Show): "show",
+        int(QEvent.Hide): "hide",
+        int(QEvent.ShowToParent): "show_to_parent",
+        int(QEvent.HideToParent): "hide_to_parent",
+        int(QEvent.WindowStateChange): "window_state_change",
+    }
+
+    class _WindowFlickerTraceFilter(QObject):
+        def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # type: ignore[override]
+            widget = watched if isinstance(watched, QWidget) else None
+            if widget is None or not widget.isWindow():
+                return False
+            event_name = event_names.get(int(event.type()))
+            if not event_name:
+                return False
+            geom = widget.frameGeometry()
+            try:
+                stack = [
+                    line.strip()
+                    for line in traceback.format_stack(limit=8)
+                    if "app\\gui.py" in line or "app/gui.py" in line or "ui\\" in line or "ui/" in line
+                ]
+            except Exception:
+                stack = []
+            _append_window_flicker_entry(
+                {
+                    "ts": datetime.now(timezone.utc).isoformat(),
+                    "event": event_name,
+                    "class": type(widget).__name__,
+                    "object_name": str(widget.objectName() or ""),
+                    "title": str(widget.windowTitle() or ""),
+                    "visible": bool(widget.isVisible()),
+                    "flags": int(widget.windowFlags()),
+                    "geometry": {
+                        "x": int(geom.x()),
+                        "y": int(geom.y()),
+                        "w": int(geom.width()),
+                        "h": int(geom.height()),
+                    },
+                    "stack": stack,
+                }
+            )
+            return False
+
+    trace_filter = _WindowFlickerTraceFilter(app)
+    app.installEventFilter(trace_filter)
+    app.setProperty("_wut_window_flicker_trace_filter", trace_filter)
+
+    exit_ms_raw = str(os.environ.get("WUT_DEBUG_WINDOW_FLICKER_EXIT_MS", "")).strip()
+    try:
+        exit_ms = max(int(exit_ms_raw), 0) if exit_ms_raw else 0
+    except Exception:
+        exit_ms = 0
+    if exit_ms > 0:
+        QTimer.singleShot(exit_ms, app.quit)
 
 
 def _install_runtime_exception_logging(*, context_provider: Callable[[], Dict[str, Any]] | None = None) -> None:
@@ -15548,6 +15634,7 @@ def launch_gui() -> int:
     _enable_fault_diagnostics()
     app = QApplication.instance() or QApplication([])
     apply_theme(app)
+    _install_window_flicker_trace(app)
 
     _install_runtime_exception_logging()
     service = OrchestratorService()

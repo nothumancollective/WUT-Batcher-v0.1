@@ -227,3 +227,6 @@ The Batch page is now implemented as a companion to the PROJECT form design.
 - Restoration plan:
   - restore non-Project-Manager UI files from `0850f67`
   - then re-apply only the PM card/grid changes on top, with strict PM-only scope
+
+## Cross-Reference
+- Doctor popup and startup flicker audit notes now live in `docs/DOCTOR_AUDIT.md`.
