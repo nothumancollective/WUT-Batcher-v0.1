@@ -57,6 +57,9 @@ Finalization policy:
 | Slow solves | One fixed timeout treated real CPU progress like a hang and provided no useful telemetry. | Record solve heartbeats (`1f17612`); timeout is inactivity-based while progress continues, with a bounded hard limit (`c2d930b`). |
 | Failure cleanup | VacsViewer was left open after AKABAK failure; process-exit races could fail cleanup itself. | Close VACS on failed upstream stages (`a916eec`) and tolerate already-exited process races (`dc57350`). |
 | UI polling | Recursive UIA descendant scans became slow/unstable while AKABAK and VACS were busy. | Use bounded native HWND enumeration and consider all diagnostic windows before selecting maxima (`46bc0b5`, `dfc947d`). |
+| Native AKABAK import | Global UIA discovery, unsafe button retries and applying before the import report settled caused hangs or a real AKABAK access violation. A later native control reference also escaped into JSON diagnostics. | Scope discovery and modals to process-owned HWNDs, bound native messages, verify importer activity, require a complete stable report and persist only the control handle (`57a55c7`, `3c07775`, `77fa566`, `f6286d0`, `5cca792`). |
+| Successful VACS handoff | The service asked the AKABAK driver to perform its default close even after a successful solve. That close correctly removed the owned VACS process before the following export stage could use it. | Preserve the solved VACS instance only across the successful AKABAK-to-export boundary; timeout and failure paths retain strict cleanup (`71332f0`). |
+| Windows process output | Localized `tasklist` output occasionally contained byte `0x81`, which CP1252 cannot decode and which crashed subprocess reader threads during polling. | All high-frequency AKABAK/runtime process queries now decode with replacement at the diagnostic boundary (`5cca792`, `71332f0`). |
 | Version storage | Re-running an unchanged batch materialized another immutable version cohort. | Reuse the canonical existing version (`5c35a57`); audit historical duplicates read-only (`97d2ac9`). |
 | Compatibility messages | ATH experiment hypotheses appeared like proven incompatibility warnings. | Evidence-backed constraints remain warnings; hypotheses are explicitly non-blocking hints (`2b52bda`). |
 | Diagnostics | CLI Doctor inspected obsolete `app_config.json` concepts instead of live GUI/runtime settings. | CLI and GUI now share `SettingsStore` checks (`ace3226`). |
@@ -81,6 +84,10 @@ All tests below used the already installed executables:
   graphs and four raw exports, clean process exit.
 - Five-repeat runner harness: 5/5 successful, 20/20 requested exports, roughly
   46 s per run, no surviving tool process.
+- Definitive five-repeat run on commit `71332f0`: 5/5 successful in 332.18 s
+  wall time, with individual toolchain times of 41.03, 41.16, 41.31, 41.85
+  and 41.03 s. The DB records 20 graphs, 120 points, 65/65 passing
+  validations, 40 TXT files and the exact tested commit for every run.
 - Real service batch after strict graph coverage/path staging: run
   `75e1bc08-576e-4ac6-9d16-2c652f69a1d7`, 5/5 versions successful. Each version
   produced H, V, D and radiation-impedance data with 40 frequency points and
@@ -89,6 +96,10 @@ All tests below used the already installed executables:
   `007cd807-6637-4ca9-a510-b18d827cbd22`, success in 70.1 s. All seven stages
   passed; AKABAK heartbeats showed actual progress; four graphs/eight files
   were preserved; process and temporary-stage cleanup completed.
+- Final service-handoff regression run
+  `13b5ffcd-39dd-4320-86af-f5f5efb30cba`: all seven stages passed in
+  192.84 s. It produced four graphs, 40 DB points and eight non-empty TXT
+  files; stderr was empty and no tool process survived.
 
 ### Resource-intensive two-version batch
 
@@ -110,6 +121,20 @@ fixes, the isolated on-screen capture ran from 20:57:12 to 21:02:49 local time:
 
 The capture started after `dfc947d`, so it validates the final native VACS
 readiness polling rather than the earlier recursive UIA implementation.
+
+The final rerun on commit `71332f0` deliberately repeated the same two
+materialized heavy variants after two additional real failures exposed the
+native-diagnostic serialization and successful-VACS-handoff defects. The
+definitive run was `fc00ac81-cc09-4fa6-8ce6-58cb78153f99`:
+
+- 333.91 s wall time, return code 0 and `run_status=succeeded`;
+- 14/14 stages `ok`, zero failed or timed-out stages;
+- V001 and V002 both persisted with status `success`;
+- eight current-run graphs and 256 graph points in the project DB;
+- per version, three 59-line polar exports and one 61-line impedance export,
+  each retained both raw and normalized (eight TXT files per version);
+- two current-run ATH dimension rows reported by the runtime summary;
+- empty stderr and no ATH, Gmsh, AKABAK or VACS process afterward.
 
 ### VACS discovery edge case
 
@@ -178,9 +203,9 @@ classified as disposable. No cleanup or migration was performed.
 
 ## Automated validation
 
-Before the final integration-only documentation changes, the repository-wide
-suite completed with `622 passed, 10 skipped` in 249.01 s. Focused suites added
-during the later work also passed:
+Before the final native fixes, repository-wide checkpoints completed with
+`622 passed, 10 skipped` and later `666 passed, 10 skipped`. Focused suites
+added during the later work also passed:
 
 - setup/first-run and runtime-state isolation;
 - Doctor service/CLI/GUI routing;
@@ -189,8 +214,10 @@ during the later work also passed:
 - compatibility verification and timeout process-tree cleanup;
 - 40 compatibility/DSL/UI/fuzz tests.
 
-The definitive post-documentation full-suite result is appended during final
-branch integration.
+The definitive suite on commit `71332f0` completed with `670 passed, 10
+skipped` in 243.00 s (269.5 s shell wall time). Its 9,235 warnings are all the
+known Qt `QTableWidgetItem.setTextAlignment(int)` deprecation warnings; no new
+runtime, resource or process warning was emitted.
 
 ## Residual risks and deliberate non-actions
 
@@ -226,5 +253,7 @@ classifying a long solve as hung.
 
 ## Final integration record
 
-Pending final full-suite validation and the content-preserving archived-main
-history merge.
+The product tree and both histories are ready for the content-preserving
+archived-`main` merge. The exact merge and final local `main` head are recorded
+in the follow-up integration-only commit so that this tested implementation
+commit remains identifiable as `71332f0`.
