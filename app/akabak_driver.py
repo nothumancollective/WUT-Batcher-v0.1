@@ -47,6 +47,97 @@ VACS_IMAGE_CANDIDATES = ("vacsviewer_32.exe", "vacsviewer.exe")
 VACS_GRAPH_KEYWORDS = ("graph", "impedance", "spl", "phase", "radiation", "polar", "directivity")
 MESH_FILE_MISSING_RE = re.compile(r"cannot\s+find\s+mesh[-\s]*file", re.IGNORECASE)
 ALL_SOURCES_MUTED_RE = re.compile(r"all\s+sources\s+muted", re.IGNORECASE)
+PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+
+
+class _FileTime(ctypes.Structure):
+    _fields_ = [("dwLowDateTime", ctypes.c_ulong), ("dwHighDateTime", ctypes.c_ulong)]
+
+
+def _filetime_ticks(value: _FileTime) -> int:
+    return (int(value.dwHighDateTime) << 32) | int(value.dwLowDateTime)
+
+
+def _process_cpu_time_seconds(process_id: int) -> Optional[float]:
+    """Return kernel + user CPU time for a Windows process without extra dependencies."""
+    pid = int(process_id or 0)
+    if pid <= 0 or not hasattr(ctypes, "windll"):
+        return None
+    handle = None
+    try:
+        kernel32 = ctypes.windll.kernel32
+        open_process = kernel32.OpenProcess
+        open_process.argtypes = [ctypes.c_ulong, ctypes.c_int, ctypes.c_ulong]
+        open_process.restype = ctypes.c_void_p
+        handle = open_process(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid)
+        if not handle:
+            return None
+        created = _FileTime()
+        exited = _FileTime()
+        kernel = _FileTime()
+        user = _FileTime()
+        get_process_times = kernel32.GetProcessTimes
+        get_process_times.argtypes = [
+            ctypes.c_void_p,
+            ctypes.POINTER(_FileTime),
+            ctypes.POINTER(_FileTime),
+            ctypes.POINTER(_FileTime),
+            ctypes.POINTER(_FileTime),
+        ]
+        get_process_times.restype = ctypes.c_int
+        if not get_process_times(handle, created, exited, kernel, user):
+            return None
+        return float(_filetime_ticks(kernel) + _filetime_ticks(user)) / 10_000_000.0
+    except Exception:
+        return None
+    finally:
+        if handle:
+            try:
+                ctypes.windll.kernel32.CloseHandle(handle)
+            except Exception:
+                pass
+
+
+def _solve_snapshot_made_progress(
+    previous: Dict[str, Any],
+    current: Dict[str, Any],
+    *,
+    minimum_cpu_delta_s: float = 0.05,
+) -> bool:
+    """Detect real solver/import progress instead of treating mere process presence as progress."""
+    previous_workers = {int(pid) for pid in previous.get("new_akabak_pids", []) or []}
+    current_workers = {int(pid) for pid in current.get("new_akabak_pids", []) or []}
+    if current_workers and current_workers != previous_workers:
+        return True
+
+    previous_cpu = dict(previous.get("akabak_cpu_times_s", previous.get("worker_cpu_times_s", {})) or {})
+    current_cpu = dict(current.get("akabak_cpu_times_s", current.get("worker_cpu_times_s", {})) or {})
+    active_solver_pids = set(current_workers)
+    main_pid = int(current.get("main_pid", 0) or 0)
+    if main_pid > 0:
+        active_solver_pids.add(main_pid)
+    for pid in active_solver_pids:
+        before = previous_cpu.get(str(pid))
+        after = current_cpu.get(str(pid))
+        if before is None or after is None:
+            continue
+        try:
+            if float(after) - float(before) >= max(0.0, float(minimum_cpu_delta_s)):
+                return True
+        except (TypeError, ValueError):
+            continue
+
+    if bool(current.get("progress_window_present")) and not bool(previous.get("progress_window_present")):
+        return True
+    previous_vacs = dict(previous.get("vacs_ui", {}) or {})
+    current_vacs = dict(current.get("vacs_ui", {}) or {})
+    for key in ("max_controls_count", "max_graph_keyword_hits"):
+        try:
+            if int(current_vacs.get(key, 0) or 0) > int(previous_vacs.get(key, 0) or 0):
+                return True
+        except (TypeError, ValueError):
+            continue
+    return False
 
 
 def _new_process_ids(current: List[int], baseline: List[int] | set[int]) -> List[int]:
@@ -62,6 +153,7 @@ def _solve_heartbeat_payload(snapshot: Dict[str, Any], *, elapsed_s: float) -> D
         "main_pid": int(snapshot.get("main_pid", 0) or 0),
         "akabak_pids": [int(pid) for pid in list(snapshot.get("akabak_pids", []) or [])],
         "new_akabak_pids": [int(pid) for pid in list(snapshot.get("new_akabak_pids", []) or [])],
+        "akabak_cpu_times_s": dict(snapshot.get("akabak_cpu_times_s", {}) or {}),
         "vacs_pids": [int(pid) for pid in list(snapshot.get("vacs_pids", []) or [])],
         "new_vacs_pids": [int(pid) for pid in list(snapshot.get("new_vacs_pids", []) or [])],
         "progress_window_present": bool(snapshot.get("progress_window_present", False)),
@@ -314,11 +406,22 @@ class AkabakDriver:
             title_regex=AKABAK_SOLVE_PROGRESS.title_regex,
             class_name_regex=AKABAK_SOLVE_PROGRESS.class_name_regex,
         )
+        akabak_cpu_times_s = {
+            str(pid): cpu_time
+            for pid in akabak_pids
+            if (cpu_time := _process_cpu_time_seconds(pid)) is not None
+        }
+        worker_pids = [pid for pid in akabak_pids if pid != main_pid]
+        worker_cpu_times_s = {
+            str(pid): akabak_cpu_times_s[str(pid)] for pid in worker_pids if str(pid) in akabak_cpu_times_s
+        }
         return {
             "main_pid": main_pid,
             "akabak_pids": akabak_pids,
             "vacs_pids": vacs_pids,
-            "worker_akabak_pids": [pid for pid in akabak_pids if pid != main_pid],
+            "worker_akabak_pids": worker_pids,
+            "akabak_cpu_times_s": akabak_cpu_times_s,
+            "worker_cpu_times_s": worker_cpu_times_s,
             "progress_window_present": bool(progress is not None),
             "vacs_ui": vacs_ui,
         }
@@ -2401,31 +2504,81 @@ class AkabakDriver:
             return False, snapshot
 
         completion_snapshot: Dict[str, Any]
-        try:
-            completion_snapshot = wait_until(
-                predicate=_completed,
-                timeout_s=max(1.0, float(timeout_s)),
-                initial_interval_s=0.08,
-                max_interval_s=0.5,
-                backoff_factor=1.7,
-            )
-        except TimeoutError as exc:
+        inactivity_timeout_s = max(1.0, float(timeout_s))
+        hard_timeout_s = max(inactivity_timeout_s * 2.0, inactivity_timeout_s + 60.0)
+        started_at = time.perf_counter()
+        last_progress_at = started_at
+        previous_snapshot = dict(start_snapshot)
+        interval_s = 0.08
+        extension_logged = False
+        timeout_kind = ""
+        last_snapshot: Dict[str, Any] = dict(start_snapshot)
+        while True:
+            completed, snapshot_value = _completed()
+            completion_snapshot = dict(snapshot_value)
+            last_snapshot = completion_snapshot
+            now = time.perf_counter()
+            if completed:
+                break
+            if _solve_snapshot_made_progress(previous_snapshot, completion_snapshot):
+                last_progress_at = now
+            previous_snapshot = completion_snapshot
+            elapsed_s = max(0.0, now - started_at)
+            idle_s = max(0.0, now - last_progress_at)
+            if not extension_logged and elapsed_s >= inactivity_timeout_s and idle_s < inactivity_timeout_s:
+                extension_logged = True
+                self._log(
+                    level="info",
+                    step=step,
+                    event="active_solve_grace_window",
+                    payload={
+                        "configured_timeout_s": inactivity_timeout_s,
+                        "hard_timeout_s": hard_timeout_s,
+                        "elapsed_s": elapsed_s,
+                        "idle_s": idle_s,
+                    },
+                )
+            if idle_s >= inactivity_timeout_s:
+                timeout_kind = "solver_inactive"
+                break
+            if elapsed_s >= hard_timeout_s:
+                timeout_kind = "hard_limit"
+                break
+            time.sleep(interval_s)
+            interval_s = min(0.5, interval_s * 1.7)
+
+        if timeout_kind:
+            now = time.perf_counter()
             diagnostics_path = self._write_solve_diagnostics(
                 step=step,
                 reason="solve_completion_timeout",
-                context={"timeout_s": timeout_s, "start_snapshot": start_snapshot},
+                context={
+                    "timeout_s": timeout_s,
+                    "timeout_kind": timeout_kind,
+                    "hard_timeout_s": hard_timeout_s,
+                    "elapsed_s": max(0.0, now - started_at),
+                    "idle_s": max(0.0, now - last_progress_at),
+                    "start_snapshot": start_snapshot,
+                    "last_snapshot": last_snapshot,
+                },
             )
             self.last_solve_diagnostics_path = str(diagnostics_path) if diagnostics_path is not None else None
             self._log(
                 level="error",
                 step=step,
                 event="timeout",
-                payload={"timeout_s": timeout_s, "diagnostics_path": self.last_solve_diagnostics_path},
+                payload={
+                    "timeout_s": timeout_s,
+                    "timeout_kind": timeout_kind,
+                    "hard_timeout_s": hard_timeout_s,
+                    "diagnostics_path": self.last_solve_diagnostics_path,
+                },
             )
             raise TimeoutError(
-                f"AKABAK solve did not complete within {timeout_s}s."
+                f"AKABAK solve did not complete ({timeout_kind}) within the "
+                f"{int(inactivity_timeout_s)}s inactivity / {int(hard_timeout_s)}s hard limit."
                 + (f" diagnostics={self.last_solve_diagnostics_path}" if self.last_solve_diagnostics_path else "")
-            ) from exc
+            )
         self.state = "completed"
         self._log(level="info", step=step, event="completed", payload={"state": self.state, "completion": completion_snapshot})
         return AkabakDriverResult(ok=True, status=self.state, details={"completion": completion_snapshot})

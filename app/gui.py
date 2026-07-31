@@ -4458,7 +4458,8 @@ class SettingsDialog(StyledDialogBase):
         self.simulation_timeout_minutes.setRange(SIMULATION_TIMEOUT_MINUTES_MIN, SIMULATION_TIMEOUT_MINUTES_MAX)
         self.simulation_timeout_minutes.setSuffix(" min")
         self.simulation_timeout_minutes.setToolTip(
-            "Maximum wait time for AKABAK solve completion per version before timeout."
+            "Maximum AKABAK inactivity per version. An actively computing solver may use one additional "
+            "grace window of the same duration before the hard limit."
         )
         self.analyzer_data_source = QComboBox()
         self.analyzer_data_source.setObjectName("AnalyzerDataSourceSettingsCombo")

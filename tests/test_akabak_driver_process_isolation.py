@@ -19,6 +19,7 @@ class AkabakDriverProcessIsolationTests(unittest.TestCase):
                 "main_pid": 7160,
                 "akabak_pids": [7160],
                 "new_akabak_pids": [],
+                "akabak_cpu_times_s": {"7160": 470.1},
                 "vacs_pids": [9308],
                 "new_vacs_pids": [9308],
                 "progress_window_present": False,
@@ -30,6 +31,7 @@ class AkabakDriverProcessIsolationTests(unittest.TestCase):
         self.assertEqual(payload["elapsed_s"], 31.235)
         self.assertEqual(payload["status"], "waiting_vacs_graph_import")
         self.assertEqual(payload["akabak_pids"], [7160])
+        self.assertEqual(payload["akabak_cpu_times_s"], {"7160": 470.1})
         self.assertEqual(payload["vacs_pids"], [9308])
         self.assertEqual(payload["vacs_max_controls_count"], 42)
         self.assertEqual(payload["vacs_max_graph_keyword_hits"], 3)
