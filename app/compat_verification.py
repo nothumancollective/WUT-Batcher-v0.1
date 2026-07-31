@@ -170,7 +170,9 @@ def _run_case(
     runtime_dir.mkdir(parents=True, exist_ok=True)
     output_root = _case_output_root(case_dir)
     output_root.mkdir(parents=True, exist_ok=True)
-    _write_runtime_ath_cfg(runtime_dir / "ath.cfg", output_root=output_root, mesh_cmd="gmsh.exe")
+    # Bare gmsh.exe opens the GUI without a file and can leave a responsive but
+    # permanently blocking child behind. ATH replaces %f with its generated GEO.
+    _write_runtime_ath_cfg(runtime_dir / "ath.cfg", output_root=output_root, mesh_cmd="gmsh.exe %f -")
 
     command = [ath_executable, *list(ath_base_args), str(cfg_path)]
     env = dict(os.environ)
@@ -182,25 +184,43 @@ def _run_case(
     return_code = -1
     stdout = ""
     stderr = ""
+    popen_kwargs: Dict[str, Any] = {
+        "cwd": str(runtime_dir),
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.PIPE,
+        "text": True,
+        "encoding": "utf-8",
+        "errors": "replace",
+        "env": env,
+    }
+    if os.name == "nt":
+        popen_kwargs["creationflags"] = int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+    else:
+        popen_kwargs["start_new_session"] = True
+    proc = subprocess.Popen(command, **popen_kwargs)
     try:
-        proc = subprocess.run(
-            command,
-            cwd=str(runtime_dir),
-            timeout=max(1, int(timeout_s)),
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            check=False,
-            env=env,
-        )
-        return_code = int(proc.returncode)
-        stdout = proc.stdout or ""
-        stderr = proc.stderr or ""
+        stdout, stderr = proc.communicate(timeout=max(1, int(timeout_s)))
+        return_code = int(proc.returncode or 0)
     except subprocess.TimeoutExpired as exc:
         timed_out = True
-        stdout = str(exc.stdout or "")
-        stderr = str(exc.stderr or "")
+        if os.name == "nt":
+            subprocess.run(
+                ["taskkill", "/PID", str(int(proc.pid)), "/T", "/F"],
+                capture_output=True,
+                text=True,
+                check=False,
+                creationflags=int(getattr(subprocess, "CREATE_NO_WINDOW", 0)),
+            )
+        else:
+            try:
+                os.killpg(int(proc.pid), 9)
+            except OSError:
+                proc.kill()
+        try:
+            stdout, stderr = proc.communicate(timeout=5)
+        except Exception:
+            stdout = str(exc.stdout or "")
+            stderr = str(exc.stderr or "")
 
     project_subdir = _project_subdir(output_root, cfg_path)
     stl_files = list(project_subdir.rglob("*.stl")) if project_subdir.exists() else []
@@ -267,7 +287,14 @@ def run_compat_verification(
 ) -> Dict[str, Any]:
     project_root_path = Path(project_root)
     project_root_path.mkdir(parents=True, exist_ok=True)
-    writer = TidyDatasetWriter(project_root_path, library_root=project_root_path.parent)
+    writer: Optional[TidyDatasetWriter] = None
+    if persist_sql:
+        library_root = (
+            project_root_path.parent.parent
+            if project_root_path.parent.name.lower() == "projects"
+            else project_root_path.parent
+        )
+        writer = TidyDatasetWriter(project_root_path, library_root=library_root)
 
     bundle = load_ath_knowledge()
     normalized = normalize_ruleset(bundle.ruleset, bundle.catalog)
@@ -332,6 +359,7 @@ def run_compat_verification(
 
     sql_result: Dict[str, Any] = {}
     if persist_sql:
+        assert writer is not None
         sql_rows = [
             {
                 "project_id": project_id,
