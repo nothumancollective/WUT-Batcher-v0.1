@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 from app.akabak_driver import (
     AkabakDriver,
@@ -12,6 +14,16 @@ from app.akabak_driver import (
 
 
 class AkabakDriverProcessIsolationTests(unittest.TestCase):
+    def test_process_listing_replaces_undecodable_windows_output(self) -> None:
+        driver = AkabakDriver.__new__(AkabakDriver)
+        completed = SimpleNamespace(stdout='"AKABAK.exe","1234","Console","1","1 K"\n')
+
+        with patch("app.akabak_driver.subprocess.run", return_value=completed) as run_mock:
+            pids = driver._list_process_ids_by_image("AKABAK.exe")
+
+        self.assertEqual(pids, [1234])
+        self.assertEqual(run_mock.call_args.kwargs["errors"], "replace")
+
     def test_preexisting_akabak_pid_is_not_treated_as_new_worker(self) -> None:
         self.assertEqual(_new_process_ids([5048, 9940], {5048, 9940}), [])
 

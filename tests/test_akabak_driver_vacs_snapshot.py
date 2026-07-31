@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from types import SimpleNamespace
 import unittest
@@ -14,6 +15,7 @@ class AkabakDriverVacsSnapshotTests(unittest.TestCase):
         interpreter = object()
         apply_button = Mock()
         apply_button.is_enabled.return_value = True
+        apply_button.element_info = SimpleNamespace(handle=404)
         driver._find_interpreter_window = lambda **_: interpreter
         driver._find_interpreter_modal = lambda **_: None
         driver._find_first_control = lambda *_args, **_kwargs: apply_button
@@ -33,6 +35,8 @@ class AkabakDriverVacsSnapshotTests(unittest.TestCase):
         self.assertTrue(second_ready)
         self.assertEqual(second["status"], "apply_ready")
         self.assertGreaterEqual(second["report_stable_for_s"], 0.75)
+        self.assertNotIn("apply_button", second)
+        json.dumps(second)
 
     def test_apply_wait_reports_akabak_exit_instead_of_successful_auto_close(self) -> None:
         driver = AkabakDriver.__new__(AkabakDriver)

@@ -405,6 +405,7 @@ class AkabakDriver:
                 ["tasklist", "/FI", f"IMAGENAME eq {target}", "/FO", "CSV", "/NH"],
                 capture_output=True,
                 text=True,
+                errors="replace",
                 check=False,
             )
         except Exception:
@@ -484,6 +485,7 @@ class AkabakDriver:
                         ["taskkill", "/PID", str(int(pid)), "/T", "/F"],
                         capture_output=True,
                         text=True,
+                        errors="replace",
                         check=False,
                         timeout=5.0,
                     )
@@ -1721,7 +1723,11 @@ class AkabakDriver:
         if has_import_progress and stable_for_s >= 0.75:
             return True, {
                 "status": "apply_ready",
-                "apply_button": apply_button,
+                # Wait-state dictionaries are copied into persistent JSON
+                # diagnostics.  Never leak a live UIA/native control wrapper
+                # into that boundary: both pywinauto controls and the native
+                # HWND adapter are intentionally not JSON serializable.
+                "apply_button_handle": self._window_handle(apply_button),
                 "report_chars": len(report_normalized),
                 "report_stable_for_s": round(stable_for_s, 3),
             }
