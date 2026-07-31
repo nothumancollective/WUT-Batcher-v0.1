@@ -273,10 +273,13 @@ class RuntimeOrchestratorTests(unittest.TestCase):
                     "app.runtime_orchestrator._list_vacs_process_ids",
                     side_effect=[[111], [222]],
                 ):
-                    with patch(
-                        "app.runtime_orchestrator._terminate_process_ids",
-                        return_value={"requested": [111], "terminated": [111], "failed": []},
-                    ) as terminate_mock:
+                    with (
+                        patch("app.runtime_orchestrator._list_akabak_process_ids", side_effect=[[], []]),
+                        patch(
+                            "app.runtime_orchestrator._terminate_process_ids",
+                            return_value={"requested": [111], "terminated": [111], "failed": []},
+                        ) as terminate_mock,
+                    ):
                         stage, payload, ok = _run_akabak_ui_driver_stage(
                             version_id="V001",
                             executable="C:\\Tools\\AKABAK\\AKABAK.exe",
@@ -332,6 +335,7 @@ class RuntimeOrchestratorTests(unittest.TestCase):
             ]
             with (
                 patch("app.runtime_orchestrator.AkabakDriver", _TimeoutAkabakDriver),
+                patch("app.runtime_orchestrator._list_akabak_process_ids", side_effect=[[], []]),
                 patch("app.runtime_orchestrator._list_vacs_process_ids", side_effect=[[111], [222]]),
                 patch("app.runtime_orchestrator._terminate_process_ids", side_effect=cleanup_results) as terminate_mock,
             ):
@@ -593,7 +597,10 @@ class RuntimeOrchestratorTests(unittest.TestCase):
                     _FakeAkabakDriver.calls.append("close")
                     return SimpleNamespace(ok=True, status="closed")
 
-            with patch("app.runtime_orchestrator.AkabakDriver", _FakeAkabakDriver):
+            with (
+                patch("app.runtime_orchestrator.AkabakDriver", _FakeAkabakDriver),
+                patch("app.runtime_orchestrator._list_akabak_process_ids", side_effect=[[], []]),
+            ):
                 summary = run_batch_pipeline(
                     project=project,
                     batch=batch,
