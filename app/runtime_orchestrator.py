@@ -1205,6 +1205,7 @@ def _run_akabak_ui_driver_stage(
             except Exception as exc:
                 payload["steps"]["close"] = {"ok": False, "status": "failed", "error": str(exc)}
             payload["watchdog_events"] = list(getattr(driver, "watchdog_events", []) or [])
+            payload["solve_heartbeats"] = list(getattr(driver, "solve_heartbeats", []) or [])
             payload["diagnostics"] = {
                 "open_dialog": str(getattr(driver, "last_open_dialog_diagnostics_path", "") or ""),
                 "import": str(getattr(driver, "last_import_diagnostics_path", "") or ""),

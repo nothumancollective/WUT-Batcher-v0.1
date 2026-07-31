@@ -54,6 +54,22 @@ def _new_process_ids(current: List[int], baseline: List[int] | set[int]) -> List
     return sorted({int(pid) for pid in current if int(pid) > 0 and int(pid) not in baseline_ids})
 
 
+def _solve_heartbeat_payload(snapshot: Dict[str, Any], *, elapsed_s: float) -> Dict[str, Any]:
+    vacs_ui = dict(snapshot.get("vacs_ui", {}) or {})
+    return {
+        "elapsed_s": round(max(0.0, float(elapsed_s)), 3),
+        "status": str(snapshot.get("status", "") or ""),
+        "main_pid": int(snapshot.get("main_pid", 0) or 0),
+        "akabak_pids": [int(pid) for pid in list(snapshot.get("akabak_pids", []) or [])],
+        "new_akabak_pids": [int(pid) for pid in list(snapshot.get("new_akabak_pids", []) or [])],
+        "vacs_pids": [int(pid) for pid in list(snapshot.get("vacs_pids", []) or [])],
+        "new_vacs_pids": [int(pid) for pid in list(snapshot.get("new_vacs_pids", []) or [])],
+        "progress_window_present": bool(snapshot.get("progress_window_present", False)),
+        "vacs_max_controls_count": int(vacs_ui.get("max_controls_count", 0) or 0),
+        "vacs_max_graph_keyword_hits": int(vacs_ui.get("max_graph_keyword_hits", 0) or 0),
+    }
+
+
 @dataclass(frozen=True)
 class AkabakDriverResult:
     ok: bool
@@ -86,6 +102,7 @@ class AkabakDriver:
         self.logger = StructuredStepLogger(self.log_dir / "akabak_driver.log.jsonl")
         self.watchdog: Optional[ModalDialogWatchdog] = None
         self.watchdog_events: List[Dict[str, Any]] = []
+        self.solve_heartbeats: List[Dict[str, Any]] = []
         self.last_open_dialog_diagnostics_path: Optional[str] = None
         self.last_import_diagnostics_path: Optional[str] = None
         self.last_solve_diagnostics_path: Optional[str] = None
@@ -1045,6 +1062,7 @@ class AkabakDriver:
             "main_pid": int(self.session.process_id or 0),
             "solve_snapshot": self._solve_signal_snapshot(),
             "watchdog_events": list(self.watchdog_events),
+            "solve_heartbeats": list(self.solve_heartbeats),
         }
         try:
             payload["akabak_windows"] = [
@@ -2318,6 +2336,18 @@ class AkabakDriver:
         start_vacs_ui = dict(start_snapshot.get("vacs_ui", {}))
         start_controls = int(start_vacs_ui.get("max_controls_count", 0) or 0)
         start_graph_hits = int(start_vacs_ui.get("max_graph_keyword_hits", 0) or 0)
+        heartbeat_started = time.perf_counter()
+        last_heartbeat_elapsed = -15.0
+
+        def _record_heartbeat(snapshot: Dict[str, Any]) -> None:
+            nonlocal last_heartbeat_elapsed
+            elapsed_s = float(time.perf_counter() - heartbeat_started)
+            if elapsed_s - last_heartbeat_elapsed < 15.0:
+                return
+            row = _solve_heartbeat_payload(snapshot, elapsed_s=elapsed_s)
+            self.solve_heartbeats.append(row)
+            last_heartbeat_elapsed = elapsed_s
+            self._log(level="info", step=step, event="solve_heartbeat", payload=row)
 
         def _completed() -> Tuple[bool, Dict[str, Any]]:
             if self.watchdog:
@@ -2333,6 +2363,7 @@ class AkabakDriver:
 
             if snapshot.get("progress_window_present") or new_akabak:
                 snapshot["status"] = "running"
+                _record_heartbeat(snapshot)
                 return False, snapshot
 
             vacs_ui = dict(snapshot.get("vacs_ui", {}))
@@ -2353,16 +2384,20 @@ class AkabakDriver:
 
             if not bool(require_vacs_graph_import):
                 snapshot["status"] = "completed_no_vacs_signal_required"
+                _record_heartbeat(snapshot)
                 return True, snapshot
 
             if new_vacs or snapshot.get("vacs_pids"):
                 if graphs_imported:
                     snapshot["status"] = "completed_vacs_graphs_imported"
+                    _record_heartbeat(snapshot)
                     return True, snapshot
                 snapshot["status"] = "waiting_vacs_graph_import"
+                _record_heartbeat(snapshot)
                 return False, snapshot
 
             snapshot["status"] = "waiting_vacs_after_solve_start"
+            _record_heartbeat(snapshot)
             return False, snapshot
 
         completion_snapshot: Dict[str, Any]
