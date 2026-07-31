@@ -1,0 +1,39 @@
+name: mirror-backup
+
+on:
+  schedule:
+    - cron: "7,37 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mirror-backup
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mirror clone source repo (auth via GITHUB_TOKEN)
+        run: |
+          git clone --mirror "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" repo.mirror
+
+      - name: Remove workflow files from backup mirror
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-pip
+          pip3 install git-filter-repo
+          cd repo.mirror
+          # Remove only Actions workflows from the backup history.
+          git filter-repo --force --path .github/workflows --invert-paths
+
+      - name: Push mirror to backup repo
+        env:
+          BACKUP_REPO: ${{ secrets.BACKUP_REPO }}
+          BACKUP_TOKEN: ${{ secrets.BACKUP_TOKEN }}
+        run: |
+          cd repo.mirror
+          git remote add backup "https://x-access-token:${BACKUP_TOKEN}@github.com/${BACKUP_REPO}.git"
+          git push --mirror backup
