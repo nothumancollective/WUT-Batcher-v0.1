@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 import faulthandler
 import html
@@ -62,6 +62,16 @@ from app.settings_store import (
     SIMULATION_TIMEOUT_MINUTES_MAX,
     SIMULATION_TIMEOUT_MINUTES_MIN,
     UserSettings,
+)
+from app.setup_assistant import (
+    AKABAK_DOWNLOAD_URL,
+    ATH_DOWNLOAD_URL,
+    GMSH_DOWNLOAD_URL,
+    RND_LICENSE_URL,
+    VACS_DOWNLOAD_URL,
+    autoconfigure_detected_tools,
+    inspect_setup,
+    install_gmsh_with_winget,
 )
 from app.storage_manager import StorageManager
 from app.ui_validation import UiValidationEngine
@@ -4449,6 +4459,37 @@ class SettingsDialog(StyledDialogBase):
         self.akabak_exe = QLineEdit()
         self.vacs_exe = QLineEdit()
         self.template_cfg = QLineEdit()
+        self.setup_status_label = QLabel()
+        self.setup_status_label.setObjectName("SummaryMeta")
+        self.setup_status_label.setWordWrap(True)
+        self.setup_detect_btn = QPushButton("Auto-detect installed tools")
+        self.setup_detect_btn.setObjectName("SetupDetectToolsButton")
+        self.setup_detect_btn.clicked.connect(self._detect_installed_tools)
+        self.setup_ath_link_btn = QPushButton("ATH download")
+        self.setup_akabak_link_btn = QPushButton("AKABAK download")
+        self.setup_vacs_link_btn = QPushButton("VACS download")
+        self.setup_license_link_btn = QPushButton("License terms")
+        self.setup_gmsh_link_btn = QPushButton("Gmsh website")
+        self.setup_gmsh_install_btn = QPushButton("Install Gmsh with winget")
+        self.setup_ath_link_btn.clicked.connect(lambda: self._open_setup_url(ATH_DOWNLOAD_URL))
+        self.setup_akabak_link_btn.clicked.connect(lambda: self._open_setup_url(AKABAK_DOWNLOAD_URL))
+        self.setup_vacs_link_btn.clicked.connect(lambda: self._open_setup_url(VACS_DOWNLOAD_URL))
+        self.setup_license_link_btn.clicked.connect(lambda: self._open_setup_url(RND_LICENSE_URL))
+        self.setup_gmsh_link_btn.clicked.connect(lambda: self._open_setup_url(GMSH_DOWNLOAD_URL))
+        self.setup_gmsh_install_btn.clicked.connect(self._install_gmsh)
+        setup_action_row = QWidget()
+        setup_action_layout = QGridLayout(setup_action_row)
+        setup_action_layout.setContentsMargins(0, 0, 0, 0)
+        setup_action_layout.setSpacing(6)
+        setup_action_layout.addWidget(self.setup_detect_btn, 0, 0)
+        setup_action_layout.addWidget(self.setup_ath_link_btn, 0, 1)
+        setup_action_layout.addWidget(self.setup_akabak_link_btn, 0, 2)
+        setup_action_layout.addWidget(self.setup_vacs_link_btn, 1, 0)
+        setup_action_layout.addWidget(self.setup_license_link_btn, 1, 1)
+        setup_action_layout.addWidget(self.setup_gmsh_link_btn, 1, 2)
+        setup_action_layout.addWidget(self.setup_gmsh_install_btn, 2, 0, 1, 3)
+        for column in range(3):
+            setup_action_layout.setColumnStretch(column, 1)
         self.background_automation_mode = QCheckBox("Enable Background Automation Mode")
         self.background_automation_mode.setToolTip(
             "When enabled, the RUN screen stays in front while AKABAK/VACS automation runs in the background."
@@ -4491,6 +4532,8 @@ class SettingsDialog(StyledDialogBase):
         general_form.addRow("AKABAK", self.akabak_exe)
         general_form.addRow("VACS", self.vacs_exe)
         general_form.addRow("Template CFG", self.template_cfg)
+        general_form.addRow("Tool setup", setup_action_row)
+        general_form.addRow("", self.setup_status_label)
         general_form.addRow("Automation", self.background_automation_mode)
         general_form.addRow("Simulation Timeout", self.simulation_timeout_minutes)
 
@@ -4556,6 +4599,66 @@ class SettingsDialog(StyledDialogBase):
         self.analyzer_cache_keep_last.setValue(int(getattr(settings, "analyzer_cache_keep_last_n", 5) or 5))
         self._sync_library_root_controls()
         self._sync_cache_controls()
+        self._refresh_setup_status()
+
+    def _settings_from_tool_fields(self) -> UserSettings:
+        return replace(
+            self.service.settings,
+            ath_exe=self.ath_exe.text().strip() or None,
+            akabak_exe=self.akabak_exe.text().strip() or None,
+            vacs_exe=self.vacs_exe.text().strip() or None,
+        )
+
+    def _refresh_setup_status(self) -> None:
+        inspection = inspect_setup(self._settings_from_tool_fields())
+        statuses = []
+        for tool in inspection.tools:
+            statuses.append(f"{tool.label}: {'ready' if tool.found else 'missing'}")
+        prefix = "All external tools are ready." if inspection.ready else "Setup is incomplete."
+        self.setup_status_label.setText(prefix + "  " + " | ".join(statuses))
+        gmsh = next((tool for tool in inspection.tools if tool.key == "gmsh"), None)
+        self.setup_gmsh_install_btn.setEnabled(bool(gmsh is not None and not gmsh.found and inspection.winget_available))
+        self.setup_gmsh_install_btn.setToolTip(
+            "Installs only the GPL Gmsh package after confirmation. WUT never installs ATH, AKABAK or VACS."
+        )
+
+    def _detect_installed_tools(self) -> None:
+        inspection = inspect_setup(self._settings_from_tool_fields())
+        by_key = {tool.key: tool for tool in inspection.tools}
+        for key, editor in (("ath", self.ath_exe), ("akabak", self.akabak_exe), ("vacs", self.vacs_exe)):
+            detected = by_key[key].path
+            current = editor.text().strip()
+            try:
+                current_valid = bool(current and Path(current).expanduser().is_file())
+            except OSError:
+                current_valid = False
+            if detected and not current_valid:
+                editor.setText(detected)
+        self._refresh_setup_status()
+
+    @staticmethod
+    def _open_setup_url(url: str) -> None:
+        QDesktopServices.openUrl(QUrl(str(url)))
+
+    def _install_gmsh(self) -> None:
+        answer = QMessageBox.question(
+            self,
+            "Install Gmsh",
+            "Install the open-source Gmsh package through Windows Package Manager?\n\n"
+            "This action is separate from ATH, AKABAK and VACS and requires your confirmation.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
+        result = install_gmsh_with_winget(confirmed=True)
+        status = str(result.get("status") or "failed")
+        if status in {"installed", "already_installed"}:
+            QMessageBox.information(self, "Gmsh", f"Gmsh status: {status}.\n{result.get('path') or ''}")
+        else:
+            detail = str(result.get("stderr") or result.get("message") or "Installation failed.")
+            QMessageBox.warning(self, "Gmsh installation", detail[-2000:])
+        self._refresh_setup_status()
 
     def _save(self) -> None:
         policy = resolve_cache_policy(
@@ -15679,6 +15782,10 @@ def launch_gui() -> int:
 
     _install_runtime_exception_logging()
     service = OrchestratorService()
+    setup_result = autoconfigure_detected_tools(service.settings_store)
+    if bool(setup_result.get("changed")):
+        service.reload_settings()
+    setup_inspection = inspect_setup(service.settings)
     splash = _make_splash(app)
     doctor_payload = _run_doctor_for_splash(service)
     controller = GuiController(service)
@@ -15698,6 +15805,12 @@ def launch_gui() -> int:
         )
     splash.finish(controller.project_manager)
     controller.show_project_manager()
+    if not setup_inspection.ready:
+        controller.set_startup_status(
+            "External tool setup required: opening Settings.",
+            detail=json.dumps(setup_inspection.to_dict(), indent=2, ensure_ascii=False),
+        )
+        QTimer.singleShot(0, controller._open_settings_from_project_manager)
     return app.exec()
 
 

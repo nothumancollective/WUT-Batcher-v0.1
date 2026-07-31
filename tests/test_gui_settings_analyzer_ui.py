@@ -13,10 +13,11 @@ from app.services import OrchestratorService
 from app.settings_store import SettingsStore, UserSettings
 
 try:
-    from PySide6.QtWidgets import QApplication, QComboBox, QTabWidget
+    from PySide6.QtWidgets import QApplication, QComboBox, QPushButton, QTabWidget
 except ImportError:  # pragma: no cover
     QApplication = None  # type: ignore[assignment]
     QComboBox = None  # type: ignore[assignment]
+    QPushButton = None  # type: ignore[assignment]
     QTabWidget = None  # type: ignore[assignment]
 
 
@@ -63,6 +64,17 @@ class SettingsAnalyzerUiTests(unittest.TestCase):
                 dialog._save()
                 self.assertEqual(accept_mock.call_count, 1)
             self.assertEqual(str(service.settings.analyzer_data_source), "global")
+
+    def test_settings_exposes_license_aware_tool_setup(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_settings_setup_ui_") as tmp:
+            dialog = SettingsDialog(_build_service(Path(tmp)))
+            detect_button = dialog.findChild(QPushButton, "SetupDetectToolsButton")
+            self.assertIsNotNone(detect_button)
+            self.assertTrue(str(dialog.setup_status_label.text() or "").strip())
+            self.assertIn("ATH download", str(dialog.setup_ath_link_btn.text()))
+            self.assertIn("AKABAK download", str(dialog.setup_akabak_link_btn.text()))
+            self.assertIn("VACS download", str(dialog.setup_vacs_link_btn.text()))
+            self.assertIn("winget", str(dialog.setup_gmsh_install_btn.text()).lower())
 
 
 if __name__ == "__main__":
