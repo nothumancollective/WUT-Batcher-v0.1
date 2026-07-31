@@ -13,7 +13,7 @@ def _write(path: Path, payload: dict) -> None:
 
 
 class UiValidationCandidatesTests(unittest.TestCase):
-    def test_osse_superformula_candidate_warns(self) -> None:
+    def test_osse_superformula_candidate_is_advisory(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             _write(root / "range_suggestions.v1.3.json", {"per_key": {}})
@@ -41,8 +41,35 @@ class UiValidationCandidatesTests(unittest.TestCase):
                 ],
             }
             issues = engine.evaluate_experiment_issues(draft, visible_keys={"Throat.Profile", "GCurve.Type"})
-            keys = sorted(item.key for item in issues if item.severity == "warn")
+            keys = sorted(item.key for item in issues if item.severity == "info")
             self.assertEqual(keys, ["GCurve.Type", "Throat.Profile"])
+            self.assertFalse(any(item.severity == "warn" for item in issues))
+
+    def test_generated_rollback_candidate_does_not_reject_explicit_zero(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write(root / "range_suggestions.v1.3.json", {"per_key": {}})
+            _write(
+                root / "compat_rule_candidates.v2.json",
+                {
+                    "candidates": [
+                        {
+                            "id": "fatal_rollback_not_supported",
+                            "severity": "fatal",
+                            "condition": "isDefined('Rollback')",
+                            "suggested_message_en": "Rollback unsupported.",
+                        }
+                    ]
+                },
+            )
+            engine = UiValidationEngine(reports_root=root)
+            draft = {
+                "fixed_params": {"Rollback": 0},
+                "limits": {},
+                "param_states": [{"param_name": "Rollback", "is_set": 1, "value": 0}],
+            }
+            issues = engine.evaluate_experiment_issues(draft, visible_keys={"Rollback"})
+            self.assertFalse(any(item.rule_id == "fatal_rollback_not_supported" for item in issues))
 
     def test_normative_issues_are_mapped(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

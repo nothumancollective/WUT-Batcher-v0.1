@@ -60,8 +60,12 @@ class UiValidationRangesTests(unittest.TestCase):
                 "limits": {},
                 "param_states": [{"param_name": "Length", "is_set": 1, "value": 1100.0}],
             }
-            warn_issues = engine.evaluate_experiment_issues(draft_warn, visible_keys={"Length"})
-            self.assertTrue(any(item.severity == "warn" and item.key == "Length" for item in warn_issues))
+            hint_issues = engine.evaluate_experiment_issues(draft_warn, visible_keys={"Length"})
+            self.assertTrue(any(item.severity == "info" and item.key == "Length" for item in hint_issues))
+            self.assertFalse(any(item.severity == "warn" and item.key == "Length" for item in hint_issues))
+            range_hint = next(item for item in hint_issues if item.key == "Length")
+            self.assertIn("successful experiment samples", range_hint.message)
+            self.assertIn("not a validity limit", range_hint.suggestion)
 
             draft_fatal = {
                 "fixed_params": {"Length": 6000.0},
@@ -69,7 +73,8 @@ class UiValidationRangesTests(unittest.TestCase):
                 "param_states": [{"param_name": "Length", "is_set": 1, "value": 6000.0}],
             }
             fatal_issues = engine.evaluate_experiment_issues(draft_fatal, visible_keys={"Length"})
-            self.assertTrue(any(item.severity == "fatal" and item.key == "Length" for item in fatal_issues))
+            hard_cap = next(item for item in fatal_issues if item.severity == "fatal" and item.key == "Length")
+            self.assertEqual(hard_cap.source, "normative")
 
     def test_latest_versioned_files_are_preferred(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

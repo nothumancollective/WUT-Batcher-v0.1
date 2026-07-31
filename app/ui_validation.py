@@ -44,6 +44,7 @@ class _RangeHint:
 class _CandidateRule:
     rule_id: str
     severity: str
+    source: str
     condition: str
     message: str
     evidence_ref: str
@@ -485,6 +486,22 @@ class UiValidationEngine:
             severity = str(raw.get("severity", raw.get("kind", ""))).strip().lower()
             if severity not in {"warn", "fatal"}:
                 continue
+            rule_id = str(raw.get("id", "experiment_candidate"))
+            # Rollback is already represented by the authoritative ruleset.
+            # The generated candidate used isDefined(), which also matched the
+            # supported explicit value Rollback=0 and produced a false fatal.
+            if rule_id == "fatal_rollback_not_supported":
+                continue
+            source = "experiment"
+            if rule_id == "fatal_input_hard_cap_5000_mm":
+                # This is an explicit resource/safety policy, not a statistical
+                # correlation. It remains blocking and is labelled accordingly.
+                source = "normative"
+            elif severity == "warn":
+                # Generated correlations are hypotheses. They may guide the
+                # user but must not be presented or counted as compatibility
+                # warnings until a counterfactual verification promotes them.
+                severity = "info"
             condition = str(raw.get("condition", raw.get("when", ""))).strip()
             if not condition:
                 continue
@@ -497,8 +514,9 @@ class UiValidationEngine:
                     evidence_ref = str(evidence.get("ath_pattern", ""))
             out.append(
                 _CandidateRule(
-                    rule_id=str(raw.get("id", "experiment_candidate")),
+                    rule_id=rule_id,
                     severity=severity,
+                    source=source,
                     condition=condition,
                     message=_normalize_candidate_message(raw),
                     evidence_ref=evidence_ref,
@@ -586,15 +604,18 @@ class UiValidationEngine:
                 issues.append(
                     FieldIssue(
                         key=key,
-                        severity="warn",
+                        severity="info",
                         source="experiment",
-                        rule_id="exp_range_safe",
+                        rule_id="exp_range_envelope",
                         message=(
-                            f"{key} is outside the safe range "
+                            f"{key} is outside the range covered by 98% of successful experiment samples "
                             f"[{_fmt_num(hint.safe_min)}, {_fmt_num(hint.safe_max)}]."
                         ),
                         evidence_ref=hint.notes,
-                        suggestion=f"Recommended range: [{_fmt_num(hint.rec_p05)}, {_fmt_num(hint.rec_p95)}].",
+                        suggestion=(
+                            "This is an empirical frequency hint, not a validity limit. "
+                            f"Common sample range: [{_fmt_num(hint.rec_p05)}, {_fmt_num(hint.rec_p95)}]."
+                        ),
                     )
                 )
                 continue
@@ -602,15 +623,15 @@ class UiValidationEngine:
                 issues.append(
                     FieldIssue(
                         key=key,
-                        severity="warn",
+                        severity="info",
                         source="experiment",
-                        rule_id="exp_range_recommended",
+                        rule_id="exp_range_common",
                         message=(
-                            f"{key} is outside the recommended range "
+                            f"{key} is outside the central 90% of successful experiment samples "
                             f"[{_fmt_num(hint.rec_p05)}, {_fmt_num(hint.rec_p95)}]."
                         ),
                         evidence_ref=hint.notes,
-                        suggestion=f"Safe range: [{_fmt_num(hint.safe_min)}, {_fmt_num(hint.safe_max)}].",
+                        suggestion="This is an empirical frequency hint, not a validity limit.",
                     )
                 )
                 continue
@@ -656,7 +677,7 @@ class UiValidationEngine:
                         key=key,
                         severity=candidate.severity,
                         message=candidate.message,
-                        source="experiment",
+                        source=candidate.source,
                         evidence_ref=candidate.evidence_ref,
                         suggestion=candidate.suggestion,
                         rule_id=candidate.rule_id,
