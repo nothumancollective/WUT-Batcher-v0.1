@@ -328,6 +328,38 @@ class RuntimeOrchestratorTests(unittest.TestCase):
             self.assertEqual(post.get("terminated"), [222])
             self.assertFalse(bool(post.get("skipped")))
 
+    def test_akabak_stage_blocks_preexisting_akabak_without_terminating_it(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            logs_dir = Path(tmp_dir) / "logs"
+            abec_path = Path(tmp_dir) / "Project.abec"
+            abec_path.write_text("stub", encoding="utf-8")
+
+            with (
+                patch("app.runtime_orchestrator.AkabakDriver") as driver_mock,
+                patch("app.runtime_orchestrator._list_akabak_process_ids", side_effect=[[333], [333]]),
+                patch("app.runtime_orchestrator._list_vacs_process_ids", side_effect=[[], []]),
+                patch("app.runtime_orchestrator._terminate_process_ids") as terminate_mock,
+            ):
+                stage, result, ok = _run_akabak_ui_driver_stage(
+                    version_id="V001",
+                    executable="C:\\Tools\\AKABAK\\AKABAK.exe",
+                    abec_project_path=abec_path,
+                    version_logs_dir=logs_dir,
+                    require_vacs_graph_import=True,
+                    preserve_vacs_for_export=True,
+                )
+
+            self.assertFalse(ok)
+            self.assertEqual(stage.status, "failed")
+            driver_mock.assert_not_called()
+            terminate_mock.assert_not_called()
+            self.assertIn("already running", str(result.get("error", "")))
+            summary_payload = json.loads(Path(stage.summary_log).read_text(encoding="utf-8-sig"))
+            process_payload = dict(summary_payload.get("akabak_processes", {}) or {})
+            self.assertEqual(process_payload.get("before_stage_pids"), [333])
+            self.assertEqual(process_payload.get("after_stage_pids"), [333])
+            self.assertEqual(process_payload.get("owned_post_stage_pids"), [])
+
     def test_sync_generated_abec_copies_referenced_sidecars(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)

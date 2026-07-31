@@ -49,6 +49,11 @@ MESH_FILE_MISSING_RE = re.compile(r"cannot\s+find\s+mesh[-\s]*file", re.IGNORECA
 ALL_SOURCES_MUTED_RE = re.compile(r"all\s+sources\s+muted", re.IGNORECASE)
 
 
+def _new_process_ids(current: List[int], baseline: List[int] | set[int]) -> List[int]:
+    baseline_ids = {int(pid) for pid in baseline if int(pid) > 0}
+    return sorted({int(pid) for pid in current if int(pid) > 0 and int(pid) not in baseline_ids})
+
+
 @dataclass(frozen=True)
 class AkabakDriverResult:
     ok: bool
@@ -2220,14 +2225,14 @@ class AkabakDriver:
             snapshot = self._solve_signal_snapshot(include_vacs_ui=False)
             baseline_akabak = {int(pid) for pid in baseline.get("akabak_pids", [])}
             baseline_vacs = {int(pid) for pid in baseline.get("vacs_pids", [])}
-            new_akabak = [pid for pid in snapshot.get("akabak_pids", []) if int(pid) not in baseline_akabak]
-            new_vacs = [pid for pid in snapshot.get("vacs_pids", []) if int(pid) not in baseline_vacs]
+            new_akabak = _new_process_ids(list(snapshot.get("akabak_pids", []) or []), baseline_akabak)
+            new_vacs = _new_process_ids(list(snapshot.get("vacs_pids", []) or []), baseline_vacs)
             snapshot["new_akabak_pids"] = new_akabak
             snapshot["new_vacs_pids"] = new_vacs
             if bool(snapshot.get("progress_window_present")):
                 snapshot["start_signal"] = "progress_window_present"
                 return True, snapshot
-            if new_akabak or snapshot.get("worker_akabak_pids"):
+            if new_akabak:
                 snapshot["start_signal"] = "akabak_worker_process_started"
                 return True, snapshot
             if new_vacs:
@@ -2308,6 +2313,7 @@ class AkabakDriver:
             self._log(level="error", step=step, event="missing_start_context", payload={})
             raise RuntimeError("AKABAK solve completion wait missing start context; run_solve start signal was not captured.")
 
+        baseline_akabak = {int(pid) for pid in self.solve_context.get("baseline", {}).get("akabak_pids", [])}
         baseline_vacs = {int(pid) for pid in self.solve_context.get("baseline", {}).get("vacs_pids", [])}
         start_vacs_ui = dict(start_snapshot.get("vacs_ui", {}))
         start_controls = int(start_vacs_ui.get("max_controls_count", 0) or 0)
@@ -2320,10 +2326,12 @@ class AkabakDriver:
                     self._record_watchdog_events(step=step, events=handled)
                     self._log(level="info", step=step, event="watchdog_handled", payload={"count": len(handled)})
             snapshot = self._solve_signal_snapshot()
-            new_vacs = [pid for pid in snapshot.get("vacs_pids", []) if int(pid) not in baseline_vacs]
+            new_akabak = _new_process_ids(list(snapshot.get("akabak_pids", []) or []), baseline_akabak)
+            new_vacs = _new_process_ids(list(snapshot.get("vacs_pids", []) or []), baseline_vacs)
+            snapshot["new_akabak_pids"] = new_akabak
             snapshot["new_vacs_pids"] = new_vacs
 
-            if snapshot.get("progress_window_present") or snapshot.get("worker_akabak_pids"):
+            if snapshot.get("progress_window_present") or new_akabak:
                 snapshot["status"] = "running"
                 return False, snapshot
 
