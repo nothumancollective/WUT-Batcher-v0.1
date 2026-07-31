@@ -81,8 +81,8 @@ Current GUI startup Doctor payload on this machine is now `overall_status=ok`.
 
 Notes:
 
-- CLI `doctor` still keeps the broader `app_config.json`-driven audit surface.
-- The GUI splash Doctor now uses the persisted GUI settings file as its source of truth and only skips the legacy export-root checks that are not authoritative in this startup path.
+- The GUI splash Doctor uses the persisted GUI settings file as its source of truth and skips legacy export-root checks that are not authoritative in this startup path.
+- The former CLI difference described here was removed in Phase 2 below.
 
 ### Startup Flicker Forensics: After Fix
 
@@ -128,3 +128,32 @@ Broader smoke note:
 
 - The existing fake-toolchain stress test `tests/test_ui_e2e_stress_runs.py::UiE2EStressRunsTests::test_three_full_ui_runs_are_stable` still fails in the batch-run path with `Run failed for B001`.
 - That failure reproduces both with lazy `MainWindow` startup and with an explicitly eager-created `MainWindow`, so it is not attributable to this Doctor/startup fix scope.
+
+## Phase 2: One authoritative settings source (2026-07-31)
+
+The CLI and GUI now call `run_settings_doctor_checks()` and therefore inspect
+the same `SettingsStore` data used by the runtime. The legacy `AppConfig` path
+is used only when a caller explicitly supplies global `--config`.
+
+Behavioral contracts:
+
+- Default settings: `%USERPROFILE%\.wut_batcher\config.json`.
+- Default report: `%USERPROFILE%\.wut_batcher\logs\doctor_report.json`.
+- Legacy runner and export-root checks are not emitted for modern settings.
+- `--kill-zombies` remains explicit; a normal Doctor run never terminates a
+  process.
+- The writeability check creates and removes a small sentinel file. It does not
+  alter projects, manifests or databases.
+
+Final live check on the validation VM:
+
+```powershell
+python -m app doctor --report-path tmp\doctor_final_20260731.json
+```
+
+Result: `overall_status=ok`. Config, active Project Library, templates,
+integrated runtime, ATH, AKABAK, VACS, process state and report output all
+reported `ok`. No known simulation-tool processes were left running.
+
+Regression coverage includes the settings wrapper, CLI default/legacy routing,
+report destination and GUI use of the modern wrapper.

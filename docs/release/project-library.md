@@ -104,3 +104,41 @@ Choice rationale:
   - These command-scoped overrides must not persist to user GUI settings.
 - Safety rule:
   - The app must not silently rewrite a user’s configured library root just because a test/sample command used an alternate root.
+
+## 10) Read-only operational audit (2026-07-31)
+
+Run the structural audit without opening, initializing or migrating a library:
+
+```powershell
+python -m app library audit --scan-siblings
+```
+
+Use `--library-root <path>` to inspect a non-active root and `--report-path
+<path>` to store JSON outside the library. The command never repairs or deletes
+data. It reports:
+
+- canonical root markers and project folder/manifest identity;
+- preferred versus legacy project database placement;
+- batch, version, normal-run and auxiliary-run directory counts;
+- duplicate immutable version plans and their run/export ownership;
+- sibling folders that look like libraries;
+- detached `library.sqlite` candidates whose authority is unknown.
+
+### Validation-machine findings
+
+The active root `Desktop\WUT Project Library` is canonical and contains seven
+projects. There is one root index (`library.sqlite`), no `global.sqlite`, and no
+project contains both preferred and legacy databases. `PRAGMA quick_check` was
+run against copies of all eight databases (one library plus seven project DBs)
+and returned `ok` for each copy.
+
+The audit reports 37 historical duplicate-plan groups: 28 in P0003 and three
+each in P0005, P0006 and P0007. They were retained because individual versions
+can own different run/export history. Current batch materialization reuses an
+equivalent stored version, preventing new duplicate cohorts without rewriting
+history.
+
+Several February QA/E2E library roots, a detached `Desktop\projects` container
+and a detached `Desktop\library.sqlite` also exist. They are inactive and were
+only reported. Their deletion or migration requires an explicit, separately
+reviewed user decision.
