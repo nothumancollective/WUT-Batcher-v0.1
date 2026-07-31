@@ -20,6 +20,7 @@ from app.runtime_orchestrator import (
     _apply_sim_export_settings_to_cfg,
     _resolve_export_specs,
     _run_akabak_ui_driver_stage,
+    _supports_uia_executable,
     _sync_generated_abec,
     run_batch_pipeline,
 )
@@ -45,6 +46,11 @@ def _library_db_path(library_root: Path) -> Path:
 
 
 class RuntimeOrchestratorTests(unittest.TestCase):
+    def test_uia_automation_requires_native_executable(self) -> None:
+        self.assertTrue(_supports_uia_executable(r"C:\Program Files\RDTeam\AKABAK\AKABAK.exe"))
+        self.assertFalse(_supports_uia_executable(r"C:\qa\akabak_fake.cmd"))
+        self.assertFalse(_supports_uia_executable(None))
+
     def test_read_log_tail_limits_bytes_and_keeps_final_dimension_lines(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             log_path = Path(tmp_dir) / "ath.stdout.log"
@@ -311,6 +317,29 @@ class RuntimeOrchestratorTests(unittest.TestCase):
             self.assertTrue((target_abec.parent / "sample_mesh.msh").exists())
             self.assertEqual(result.get("sidecar_missing"), [])
             self.assertEqual(result.get("sidecar_copy_errors"), [])
+
+    def test_sync_generated_abec_defers_repairable_le_driver_sidecar(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            source_dir = root / "ath_out"
+            source_dir.mkdir(parents=True, exist_ok=True)
+            (source_dir / "Project.abec").write_text(
+                "[LEScript]\nScriptname_LEScript=generic25.txt\n",
+                encoding="utf-8",
+            )
+            target_abec = root / "project" / "abec" / "Project.abec"
+
+            result = _sync_generated_abec(
+                target_abec=target_abec,
+                search_roots=[source_dir],
+                logs_dir=root / "logs",
+                deferred_sidecar_names=("generic25.txt",),
+            )
+
+            self.assertTrue(result.get("ok"))
+            self.assertEqual(result.get("sidecar_missing"), [])
+            self.assertEqual(result.get("sidecar_deferred"), ["generic25.txt"])
+            self.assertFalse((target_abec.parent / "generic25.txt").exists())
 
     def test_pipeline_wires_post_ath_repair_with_diagnostics(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -634,11 +663,16 @@ class RuntimeOrchestratorTests(unittest.TestCase):
             run_log_path = Path(summary.run_debug_log_path)
             self.assertTrue(run_log_path.exists())
             self.assertEqual(run_log_path.parent, Path(summary.run_root))
+            self.assertEqual(Path(summary.project_db_path), _project_db_path(Path(summary.project_root)))
+            self.assertTrue(Path(summary.library_db_path).exists())
             lines = [line.strip() for line in run_log_path.read_text(encoding="utf-8").splitlines() if line.strip()]
             self.assertTrue(any('"event": "run_start"' in line for line in lines))
             self.assertTrue(any('"event": "run_end"' in line for line in lines))
             self.assertTrue(any('"event": "stage_start"' in line for line in lines))
             self.assertTrue(any('"event": "stage_end"' in line for line in lines))
+            start_event = next(json.loads(line) for line in lines if '"event": "run_start"' in line)
+            self.assertEqual(str(start_event.get("project_db_path") or ""), summary.project_db_path)
+            self.assertEqual(str(start_event.get("library_db_path") or ""), summary.library_db_path)
 
             version_log_path = Path(summary.project_root) / "versions" / summary.versions[0] / "logs" / "pipeline.stage_debug.jsonl"
             self.assertTrue(version_log_path.exists())

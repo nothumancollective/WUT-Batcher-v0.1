@@ -145,7 +145,7 @@ class RunsGovernanceTests(unittest.TestCase):
             self.assertTrue(bool(result["deleted"]))
             self.assertEqual(set(result["run_ids"]), {"R003", "R004", "R005"})
 
-            db_path = project_root / "dataset" / "project.sqlite"
+            db_path = writer.project_db_path
             with closing(sqlite3.connect(str(db_path))) as conn:
                 run_ids = [str(row[0]) for row in conn.execute("SELECT run_id FROM runs ORDER BY run_id").fetchall()]
                 graph_count = conn.execute("SELECT COUNT(*) FROM graphs").fetchone()[0]
@@ -168,7 +168,7 @@ class RunsGovernanceTests(unittest.TestCase):
             )
             result = writer.cleanup_unpinned_runs(delete_exports=True, dry_run=True)
             self.assertFalse(bool(result["deleted"]))
-            db_path = Path(project.root_path) / "dataset" / "project.sqlite"
+            db_path = writer.project_db_path
             with closing(sqlite3.connect(str(db_path))) as conn:
                 run_count = conn.execute("SELECT COUNT(*) FROM runs").fetchone()[0]
             self.assertEqual(int(run_count), 1)

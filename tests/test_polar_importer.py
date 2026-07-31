@@ -100,8 +100,8 @@ class PolarImporterTests(unittest.TestCase):
         self.assertEqual(int(ingest.get("polar_measurements_written", 0)), 1)
         self.assertEqual(int(ingest.get("polar_points_written", 0)), 6)
 
-        project_db = project_root / "dataset" / "project.sqlite"
-        global_db = project_root.parent / "global.sqlite"
+        project_db = writer.project_db_path
+        global_db = writer.global_db_path
         with closing(sqlite3.connect(str(project_db))) as conn:
             meas_count = conn.execute("SELECT COUNT(*) FROM polar_measurements").fetchone()[0]
             point_count = conn.execute("SELECT COUNT(*) FROM polar_points").fetchone()[0]
@@ -180,7 +180,7 @@ class PolarImporterTests(unittest.TestCase):
         self.assertEqual(int(second.get("polar_measurements_written", 0)), 0)
         self.assertEqual(int(second.get("polar_duplicates_skipped", 0)), 1)
 
-        project_db = project_root / "dataset" / "project.sqlite"
+        project_db = writer.project_db_path
         with closing(sqlite3.connect(str(project_db))) as conn:
             meas_count = conn.execute("SELECT COUNT(*) FROM polar_measurements").fetchone()[0]
             point_count = conn.execute("SELECT COUNT(*) FROM polar_points").fetchone()[0]
@@ -226,7 +226,7 @@ class PolarImporterTests(unittest.TestCase):
         self.assertEqual(int(ingest.get("polar_measurements_written", 0)), 1)
         self.assertEqual(int(ingest.get("polar_points_written", 0)), 6)
 
-        project_db = project_root / "dataset" / "project.sqlite"
+        project_db = writer.project_db_path
         with closing(sqlite3.connect(str(project_db))) as conn:
             meas = conn.execute(
                 """

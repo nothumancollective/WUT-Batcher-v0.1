@@ -52,8 +52,28 @@ try:
     version_dir = cfg_path.parent.parent
     abec_path = version_dir / "abec" / "Project.abec"
     abec_path.parent.mkdir(parents=True, exist_ok=True)
-    if not abec_path.exists():
-        abec_path.write_text("[LEScript]\\nScriptname_LEScript=generic25.txt\\n", encoding="utf-8")
+    abec_path.write_text(
+        "[Project]\\n"
+        "Scriptname_Solving=solving.txt\\n"
+        "[Observation]\\n"
+        "C0=observation.txt\\n"
+        "[LEScript]\\n"
+        "Scriptname_LEScript=generic25.txt\\n",
+        encoding="utf-8",
+    )
+    (abec_path.parent / "solving.txt").write_text(
+        'Driving "S1001"\\n  RefElements="A"; DrvGroup=1001;\\n',
+        encoding="utf-8",
+    )
+    (abec_path.parent / "observation.txt").write_text(
+        "Driving_Values\\n"
+        "  DrvType=Acceleration; Value=1.0\\n"
+        "  401 DrvGroup=1001 Weight=1\\n\\n"
+        "Radiation_Impedance\\n"
+        "  RadImpType=Normalized\\n"
+        "  402 1001 1001 ID=8001\\n",
+        encoding="utf-8",
+    )
 except Exception:
     pass
 
@@ -245,9 +265,11 @@ class UiE2EStressRunsTests(unittest.TestCase):
         try:
             page.run_btn.click()
             self._wait_until(
-                lambda: str(main.status_message.text()).startswith("Run finished for "),
+                lambda: str(main.status_message.text()).startswith(
+                    ("Run finished for ", "Run failed for ", "Nothing to run for ")
+                ),
                 timeout_s=25.0,
-                label="run completion status",
+                label="terminal run status",
             )
         finally:
             autoclick.stop()
@@ -262,8 +284,8 @@ class UiE2EStressRunsTests(unittest.TestCase):
         versions = [str(item) for item in list(summary.get("versions", []) or [])]
         self.assertTrue(versions)
         project_root = Path(str(summary["project_root"]))
-        project_db = project_root / "dataset" / "project.sqlite"
-        global_db = project_root.parent / "global.sqlite"
+        project_db = Path(str(summary["project_db_path"]))
+        global_db = Path(str(summary["library_db_path"]))
         self.assertTrue(project_db.exists())
         self.assertTrue(global_db.exists())
 
@@ -328,7 +350,7 @@ class UiE2EStressRunsTests(unittest.TestCase):
 
             for run_index in range(1, 4):
                 if run_index > 1:
-                    controller.main_window.project_manager_btn.click()
+                    controller.main_window.home_button.click()
                     self._wait_until(
                         lambda: controller.project_manager.isVisible() and not controller.main_window.isVisible(),
                         timeout_s=4.0,

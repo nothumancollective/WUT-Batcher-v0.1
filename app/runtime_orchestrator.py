@@ -46,6 +46,14 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
+def _supports_uia_executable(executable: str | Path | None) -> bool:
+    """Return whether the configured target can expose a native Windows UIA process."""
+
+    if not executable:
+        return False
+    return Path(str(executable)).suffix.lower() == ".exe"
+
+
 def _append_stage_debug_log(version_logs_dir: Path, *, event: str, payload: Dict[str, Any]) -> None:
     path = version_logs_dir / "pipeline.stage_debug.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -134,6 +142,8 @@ class RuntimeSummary:
     project_id: str
     batch_id: str
     project_root: str
+    project_db_path: str
+    library_db_path: str
     run_root: str
     run_debug_log_path: str
     versions: List[str]
@@ -661,6 +671,7 @@ def _sync_generated_abec(
     search_roots: Sequence[Path],
     logs_dir: Path,
     min_mtime_ns: Optional[int] = None,
+    deferred_sidecar_names: Sequence[str] = (),
 ) -> Dict[str, Any]:
     source = _select_generated_abec(search_roots, min_mtime_ns=min_mtime_ns)
     payload: Dict[str, Any] = {
@@ -672,6 +683,7 @@ def _sync_generated_abec(
         "sidecar_referenced": [],
         "sidecar_copied": [],
         "sidecar_missing": [],
+        "sidecar_deferred": [],
         "sidecar_copy_errors": [],
     }
     if source is None:
@@ -769,7 +781,21 @@ def _sync_generated_abec(
         if mesh_fallback_repaired:
             payload["mesh_fallback_repaired"] = mesh_fallback_repaired
             payload["mesh_fallback_file"] = str(mesh_fallback_file or "")
-            payload["sidecar_missing"] = sidecar_missing
+        deferred_names = {
+            str(Path(str(item)).name).strip().lower()
+            for item in deferred_sidecar_names
+            if str(item).strip()
+        }
+        sidecar_deferred = [
+            token
+            for token in sidecar_missing
+            if str(Path(str(token)).name).strip().lower() in deferred_names
+        ]
+        if sidecar_deferred:
+            deferred_tokens = {str(token) for token in sidecar_deferred}
+            sidecar_missing = [token for token in sidecar_missing if str(token) not in deferred_tokens]
+        payload["sidecar_missing"] = sidecar_missing
+        payload["sidecar_deferred"] = sidecar_deferred
         if sidecar_missing:
             payload["error"] = "abec_sidecar_missing"
             return payload
@@ -1833,6 +1859,7 @@ def run_batch_pipeline(
             "run_debug_log_path": str(run_debug_log_path),
             "version_debug_log_pattern": str(project_root / "versions" / "*" / "logs" / "pipeline.stage_debug.jsonl"),
             "project_db_path": str(writer.project_db_path),
+            "library_db_path": str(writer.global_db_path),
             "planned_versions": list(planned_version_ids),
             "planned_count": len(planned_version_ids),
         },
@@ -1877,6 +1904,7 @@ def run_batch_pipeline(
         not dry_run
         and bool(akabak_executable)
         and not bool(list(akabak_base_args or []))
+        and _supports_uia_executable(akabak_executable)
         and AkabakDriver is not None
     )
 
@@ -2281,6 +2309,7 @@ def run_batch_pipeline(
                         search_roots=version_run.abec_sync_roots(),
                         logs_dir=version_logs_dir,
                         min_mtime_ns=max(0, int(ath_start_wall_ns) - int(_ABEC_SYNC_MTIME_SLOP_NS)),
+                        deferred_sidecar_names=("generic25.txt",),
                     )
                     abec_sync["ath_stdout_log"] = str(ath_result.stdout_log)
                     abec_sync["ath_stderr_log"] = str(ath_result.stderr_log)
@@ -2343,6 +2372,7 @@ def run_batch_pipeline(
                                 "target_abec": str(abec_sync.get("target_abec") or ""),
                                 "source_abec": str(abec_sync.get("source_abec") or ""),
                                 "sidecar_copied": list(abec_sync.get("sidecar_copied") or []),
+                                "sidecar_deferred": list(abec_sync.get("sidecar_deferred") or []),
                                 "summary_log": str(abec_sync_log),
                             },
                         )
@@ -2359,6 +2389,7 @@ def run_batch_pipeline(
                                 "target_abec": str(abec_sync.get("target_abec") or ""),
                                 "source_abec": str(abec_sync.get("source_abec") or ""),
                                 "sidecar_copied": list(abec_sync.get("sidecar_copied") or []),
+                                "sidecar_deferred": list(abec_sync.get("sidecar_deferred") or []),
                                 "summary_log": str(abec_sync_log),
                             },
                         )
@@ -2860,7 +2891,13 @@ def run_batch_pipeline(
                     run_status = "failed"
                     continue
 
-            elif ath_stage_ok and akabak_stage_ok and vacs_executable and export_specs:
+            elif (
+                ath_stage_ok
+                and akabak_stage_ok
+                and vacs_executable
+                and export_specs
+                and _supports_uia_executable(vacs_executable)
+            ):
                 exports_dir = version_run.export_dir
                 exports_dir.mkdir(parents=True, exist_ok=True)
                 vacs_summary_path = version_logs_dir / "vacs.export_pipeline.json"
@@ -3061,7 +3098,12 @@ def run_batch_pipeline(
                         run_status = "failed"
                         continue
 
-            elif ath_stage_ok and akabak_stage_ok and vacs_runner is not None and bool(vacs_base_args_list):
+            elif (
+                ath_stage_ok
+                and akabak_stage_ok
+                and vacs_runner is not None
+                and (bool(vacs_base_args_list) or not _supports_uia_executable(vacs_executable))
+            ):
                 exports_dir = version_run.export_dir
                 exports_dir.mkdir(parents=True, exist_ok=True)
                 _run_stage_start(
@@ -3344,6 +3386,8 @@ def run_batch_pipeline(
         project_id=project.project_id,
         batch_id=batch.batch_id,
         project_root=str(project_root),
+        project_db_path=str(writer.project_db_path),
+        library_db_path=str(writer.global_db_path),
         run_root=str(run_paths.run_root),
         run_debug_log_path=str(run_debug_log_path),
         versions=list(planned_version_ids),

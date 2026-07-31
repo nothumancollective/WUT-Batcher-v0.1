@@ -66,7 +66,7 @@ class CompatVerificationHarnessTests(unittest.TestCase):
             self.assertEqual(summary["status_counts"]["fail"], 0)
             self.assertGreaterEqual(summary["status_counts"]["pass"], 5)
 
-            db_path = project_root / "dataset" / "project.sqlite"
+            db_path = Path(str(summary["sql_result"]["project_db_path"]))
             with closing(sqlite3.connect(str(db_path))) as conn:
                 count = conn.execute("SELECT COUNT(*) FROM compat_verification_results").fetchone()[0]
             self.assertEqual(int(count), int(summary["status_counts"]["pass"]))
