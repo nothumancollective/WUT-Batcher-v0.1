@@ -2,13 +2,133 @@
 
 from __future__ import annotations
 
+import ctypes
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
 import re
 import time
 from typing import Any, Dict, Iterable, List, Optional, Sequence
+
+
+BM_CLICK = 0x00F5
+WM_GETTEXT = 0x000D
+WM_KEYDOWN = 0x0100
+WM_KEYUP = 0x0101
+VK_RETURN = 0x0D
+SMTO_ABORTIFHUNG = 0x0002
+
+
+@dataclass(frozen=True)
+class _NativeElementInfo:
+    handle: int
+    name: str
+    class_name: str
+    control_type: str
+    automation_id: str = ""
+
+
+class _NativeWindow:
+    """Small HWND adapter used by the watchdog on Windows.
+
+    Keeping modal polling on Win32 handles avoids an unbounded COM/UIA tree
+    traversal while AKABAK is transitioning between interpreter and solver.
+    """
+
+    def __init__(self, *, user32: Any, handle: int, title: str, class_name: str) -> None:
+        self._user32 = user32
+        self.element_info = _NativeElementInfo(
+            handle=int(handle),
+            name=str(title or ""),
+            class_name=str(class_name or ""),
+            control_type="Button" if re.search(r"button|btn", class_name, re.IGNORECASE) else "Text",
+        )
+
+    def window_text(self) -> str:
+        return str(self.element_info.name or "")
+
+    def children(self, *, control_type: Optional[str] = None) -> List["_NativeWindow"]:
+        callback_type = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p)
+        rows: List[_NativeWindow] = []
+
+        def _text(hwnd: int) -> str:
+            buffer = ctypes.create_unicode_buffer(2048)
+            result = ctypes.c_size_t(0)
+            ok = self._user32.SendMessageTimeoutW(
+                hwnd,
+                WM_GETTEXT,
+                len(buffer) - 1,
+                buffer,
+                SMTO_ABORTIFHUNG,
+                500,
+                ctypes.byref(result),
+            )
+            if not ok:
+                self._user32.GetWindowTextW(hwnd, buffer, len(buffer))
+            return str(buffer.value or "")
+
+        def _class(hwnd: int) -> str:
+            buffer = ctypes.create_unicode_buffer(256)
+            self._user32.GetClassNameW(hwnd, buffer, len(buffer))
+            return str(buffer.value or "")
+
+        def _callback(raw_hwnd: int, _lparam: int) -> int:
+            hwnd = int(raw_hwnd or 0)
+            child = _NativeWindow(user32=self._user32, handle=hwnd, title=_text(hwnd), class_name=_class(hwnd))
+            if not control_type or child.element_info.control_type == control_type:
+                rows.append(child)
+            return 1
+
+        callback = callback_type(_callback)
+        self._user32.EnumChildWindows(int(self.element_info.handle), callback, 0)
+        return rows
+
+    def child_window(self, *, title: str, control_type: str) -> "_NativeQuery":
+        matches = [
+            child
+            for child in self.children(control_type=control_type)
+            if child.window_text().strip().lower() == str(title or "").strip().lower()
+        ]
+        return _NativeQuery(matches[0] if matches else None)
+
+    def type_keys(self, keys: str) -> None:
+        if str(keys).upper() != "{ENTER}":
+            raise ValueError(f"Unsupported native watchdog key sequence: {keys}")
+        hwnd = int(self.element_info.handle)
+        self._user32.PostMessageW(hwnd, WM_KEYDOWN, VK_RETURN, 0)
+        self._user32.PostMessageW(hwnd, WM_KEYUP, VK_RETURN, 0)
+
+
+class _NativeQuery:
+    def __init__(self, window: Optional[_NativeWindow]) -> None:
+        self._window = window
+
+    def exists(self, timeout: float = 0.0) -> bool:
+        _ = timeout
+        return self._window is not None
+
+    def invoke(self) -> None:
+        if self._window is None:
+            raise RuntimeError("Native watchdog control does not exist.")
+        result = ctypes.c_ulong()
+        ok = self._window._user32.SendMessageTimeoutW(
+            int(self._window.element_info.handle),
+            BM_CLICK,
+            0,
+            0,
+            SMTO_ABORTIFHUNG,
+            1000,
+            ctypes.byref(result),
+        )
+        if not ok:
+            raise RuntimeError("Native watchdog button did not accept BM_CLICK.")
+
+    def type_keys(self, keys: str) -> None:
+        if self._window is None:
+            raise RuntimeError("Native watchdog control does not exist.")
+        self._window.type_keys(keys)
 
 
 def _now_iso() -> str:
@@ -67,6 +187,20 @@ class ModalDialogWatchdog:
                     action="ok",
                     notes="Edge-length/mesh warning should be acknowledged with Yes/OK in harness runs.",
                 ),
+                DialogRule(
+                    rule_id="cancel_project_save_as",
+                    title_regex=r"^(save\s+as|speichern\s+unter)$",
+                    message_regex=r".*",
+                    action="cancel",
+                    notes="Discard the transient AKABAK project-save dialog after a completed ABEC import.",
+                ),
+                DialogRule(
+                    rule_id="discard_imported_project_changes",
+                    title_regex=r"^akabak$",
+                    message_regex=r"(save|speichern|project|projekt|changes|.nderungen|aenderungen)",
+                    action="cancel",
+                    notes="Do not persist the temporary project created by a batch import.",
+                ),
             ]
         )
 
@@ -78,6 +212,8 @@ class ModalDialogWatchdog:
         return Desktop
 
     def _candidate_dialogs(self) -> List[Any]:
+        if os.name == "nt":
+            return self._candidate_dialogs_native()
         Desktop = self._import_pywinauto()
         if Desktop is None:
             return []
@@ -95,6 +231,46 @@ class ModalDialogWatchdog:
                 continue
             if re.search(r"(warning|error|confirm|message)", title, re.IGNORECASE):
                 rows.append(window)
+        return rows
+
+    def _candidate_dialogs_native(self) -> List[Any]:
+        process_id = int(self.process_id or 0)
+        if process_id <= 0 or not hasattr(ctypes, "windll") or not hasattr(ctypes, "WINFUNCTYPE"):
+            return []
+        user32 = ctypes.windll.user32
+        callback_type = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p)
+        rows: List[Any] = []
+
+        def _text(hwnd: int) -> str:
+            buffer = ctypes.create_unicode_buffer(2048)
+            user32.GetWindowTextW(hwnd, buffer, len(buffer))
+            return str(buffer.value or "")
+
+        def _class(hwnd: int) -> str:
+            buffer = ctypes.create_unicode_buffer(256)
+            user32.GetClassNameW(hwnd, buffer, len(buffer))
+            return str(buffer.value or "")
+
+        def _callback(raw_hwnd: int, _lparam: int) -> int:
+            hwnd = int(raw_hwnd or 0)
+            owner_pid = ctypes.c_ulong(0)
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(owner_pid))
+            if int(owner_pid.value) != process_id or not bool(user32.IsWindowVisible(hwnd)):
+                return 1
+            class_name = _class(hwnd)
+            title = _text(hwnd)
+            is_dialog_class = class_name == "#32770" or bool(
+                re.search(r"(dialog|message)", class_name, re.IGNORECASE)
+            )
+            is_dialog_title = bool(
+                re.search(r"(warning|warnung|error|fehler|confirm|best.*tig|message|meldung)", title, re.IGNORECASE)
+            )
+            if is_dialog_class or is_dialog_title:
+                rows.append(_NativeWindow(user32=user32, handle=hwnd, title=title, class_name=class_name))
+            return 1
+
+        callback = callback_type(_callback)
+        user32.EnumWindows(callback, 0)
         return rows
 
     def _window_message(self, window) -> str:
@@ -140,6 +316,7 @@ class ModalDialogWatchdog:
             "automation_id": automation_id,
             "control_type": control_type,
             "process_id": self.process_id,
+            "message": self._window_message(window),
         }
         debug_path = self.output_dir / f"unknown_dialog_{stamp}.json"
         debug_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -150,8 +327,8 @@ class ModalDialogWatchdog:
         normalized = str(action).lower().strip()
         button_titles = {
             "ok": ("OK", "Ok", "Yes", "Ja", "Continue", "Fortfahren"),
-            "cancel": ("Cancel", "No"),
-            "close": ("Close", "Cancel", "No"),
+            "cancel": ("Cancel", "Abbrechen", "No", "Nein"),
+            "close": ("Close", "Schließen", "Cancel", "Abbrechen", "No", "Nein"),
         }
         expected = button_titles.get(normalized, ("OK",))
         for caption in expected:
