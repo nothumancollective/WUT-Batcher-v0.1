@@ -87,6 +87,11 @@ Status: active convention for `wut-batcher/rebuild` runtime pipeline
 - Primary rule: deterministic direct paths first; discovery only as bounded fallback.
 - Allowed bounded discovery:
   - within context-defined roots for the current version/run only (no global scans, no cleanup folder scans).
+- VACS is a legacy 32-bit application whose Save As dialog can reject long
+  canonical project paths. UI export therefore uses a short, unique OS-temp
+  staging directory; verified files are then copied to compact names inside the
+  canonical version/run export directory. Semantic graph titles remain in the
+  export metadata even when a filename must be shortened.
 - Fallback must be explicit in logs:
   - include searched roots/candidates and selected path.
 - Long-term migration direction:

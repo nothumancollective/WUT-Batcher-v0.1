@@ -75,6 +75,48 @@ class VacsExportPipelineTests(unittest.TestCase):
             self.assertIn("--mode", cmd)
             self.assertIn("auto", cmd)
             self.assertIn("--assume-vacs-ready", cmd)
+            staging_arg = Path(cmd[cmd.index("--export-dir") + 1])
+            self.assertNotEqual(staging_arg, root / "exports")
+            self.assertIn("wut_vacs_export_", staging_arg.name)
+
+    def test_external_runner_relocates_short_staging_outputs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            captured_staging: list[Path] = []
+
+            def _fake_run(cmd, capture_output, text, check):  # type: ignore[no-untyped-def]
+                staging = Path(cmd[cmd.index("--export-dir") + 1])
+                captured_staging.append(staging)
+                source = staging / "Radiation_Impedance_with_a_descriptive_title.txt"
+                source.write_text("Data_LevelType=Impedance10\nData\n100 0 0\n", encoding="utf-8")
+
+                class _Proc:
+                    returncode = 0
+                    stdout = json.dumps(
+                        {
+                            "ok": True,
+                            "run_id": "r1",
+                            "exported_files": [{"graph": {"title": "Radiation Impedance"}, "path": str(source)}],
+                        }
+                    )
+                    stderr = ""
+
+                return _Proc()
+
+            with patch("app.vacs_export_pipeline.subprocess.run", side_effect=_fake_run):
+                payload = _run_external_vacs_export_save_all(
+                    executable="C:\\Tools\\VACS\\vacsviewer_32.exe",
+                    akabak_executable="C:\\Tools\\AKABAK\\AKABAK.exe",
+                    export_dir=root / "canonical" / "exports",
+                    log_dir=root / "logs",
+                )
+
+            relocated = Path(payload["exported_files"][0]["path"])
+            self.assertTrue(relocated.exists())
+            self.assertEqual(relocated.name, "external_raw_01.txt")
+            self.assertEqual(relocated.parent, root / "canonical" / "exports")
+            self.assertTrue(bool(payload["staging"]["used"]))
+            self.assertFalse(captured_staging[0].exists())
 
     def test_external_runner_surfaces_structured_error_on_nonzero_exit(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

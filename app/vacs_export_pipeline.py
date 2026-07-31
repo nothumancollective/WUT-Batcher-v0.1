@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from typing import Any, Dict, Iterable, List
 
 from app.export_specs import ExportSpec
@@ -19,6 +21,28 @@ from app.vacs_graph_catalog import build_catalog_index, load_graph_catalog, reso
 
 class VacsExportPipelineError(RuntimeError):
     pass
+
+
+LEGACY_VACS_PATH_BUDGET = 240
+
+
+def _bounded_export_filename(export_root: Path, desired_name: str, *, fallback_stem: str) -> str:
+    """Keep files entered into legacy VACS dialogs below a conservative path budget."""
+
+    desired = str(desired_name or "").strip() or "export.txt"
+    if len(str(export_root / desired)) <= LEGACY_VACS_PATH_BUDGET:
+        return desired
+    suffix = Path(desired).suffix or ".txt"
+    digest = hashlib.sha256(desired.encode("utf-8", errors="replace")).hexdigest()[:8]
+    safe_stem = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(fallback_stem or "export")).strip("._") or "export"
+    compact = f"{safe_stem}_{digest}{suffix}"
+    if len(str(export_root / compact)) > LEGACY_VACS_PATH_BUDGET:
+        compact = f"x_{digest}{suffix}"
+    if len(str(export_root / compact)) > LEGACY_VACS_PATH_BUDGET:
+        raise VacsExportPipelineError(
+            f"VACS export directory is too long for its legacy Save As dialog: {export_root}"
+        )
+    return compact
 
 
 def _graph_kind_tokens(kind: str) -> List[str]:
@@ -136,62 +160,89 @@ def _run_external_vacs_export_save_all(
         raise VacsExportPipelineError(f"Missing script: {script_path}")
     output_dir = log_dir / "external_vacs_export_save_all"
     output_dir.mkdir(parents=True, exist_ok=True)
-    cmd = [
-        sys.executable,
-        str(script_path),
-        "--mode",
-        "auto",
-        "--assume-vacs-ready",
-        "--akabak-exe",
-        str(akabak_executable),
-        "--vacs-exe",
-        str(executable),
-        "--export-dir",
-        str(export_dir),
-        "--output-dir",
-        str(output_dir),
-        "--max-runtime-s",
-        "240",
-    ]
-    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
-    stdout = str(proc.stdout or "").strip()
-    stderr = str(proc.stderr or "").strip()
-    payload: Dict[str, Any] | None = None
-    parse_error: str = ""
-    if stdout:
-        try:
-            loaded = json.loads(stdout)
-            if isinstance(loaded, dict):
-                payload = loaded
-            else:
-                parse_error = "external vacs export returned non-object json payload"
-        except json.JSONDecodeError as exc:
-            parse_error = str(exc)
-    if proc.returncode != 0:
-        failure_parts: List[str] = []
-        if isinstance(payload, dict):
-            payload_error = str(payload.get("error", "") or "").strip()
-            if payload_error:
-                failure_parts.append(payload_error)
-            summary_file = str(payload.get("summary_file", "") or "").strip()
-            trace_file = str(payload.get("trace_file", "") or "").strip()
-            if summary_file:
-                failure_parts.append(f"summary_file={summary_file}")
-            if trace_file:
-                failure_parts.append(f"trace_file={trace_file}")
-        elif parse_error:
-            failure_parts.append(f"invalid_json={parse_error}")
-        reason = " | ".join(failure_parts) or stderr or stdout or "no output"
-        raise VacsExportPipelineError(
-            f"external vacs export failed (rc={proc.returncode}): {reason}"
-        )
-    if payload is None:
-        raise VacsExportPipelineError(
-            f"external vacs export returned invalid json: {parse_error or 'missing output payload'}"
-        )
-    if not bool(payload.get("ok")):
-        raise VacsExportPipelineError(f"external vacs export reported failure: {payload}")
-    return payload
+    export_dir.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="wut_vacs_export_") as staging_dir_raw:
+        staging_dir = Path(staging_dir_raw)
+        cmd = [
+            sys.executable,
+            str(script_path),
+            "--mode",
+            "auto",
+            "--assume-vacs-ready",
+            "--akabak-exe",
+            str(akabak_executable),
+            "--vacs-exe",
+            str(executable),
+            "--export-dir",
+            str(staging_dir),
+            "--output-dir",
+            str(output_dir),
+            "--max-runtime-s",
+            "240",
+        ]
+        proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        stdout = str(proc.stdout or "").strip()
+        stderr = str(proc.stderr or "").strip()
+        payload: Dict[str, Any] | None = None
+        parse_error: str = ""
+        if stdout:
+            try:
+                loaded = json.loads(stdout)
+                if isinstance(loaded, dict):
+                    payload = loaded
+                else:
+                    parse_error = "external vacs export returned non-object json payload"
+            except json.JSONDecodeError as exc:
+                parse_error = str(exc)
+        if proc.returncode != 0:
+            failure_parts: List[str] = []
+            if isinstance(payload, dict):
+                payload_error = str(payload.get("error", "") or "").strip()
+                if payload_error:
+                    failure_parts.append(payload_error)
+                summary_file = str(payload.get("summary_file", "") or "").strip()
+                trace_file = str(payload.get("trace_file", "") or "").strip()
+                if summary_file:
+                    failure_parts.append(f"summary_file={summary_file}")
+                if trace_file:
+                    failure_parts.append(f"trace_file={trace_file}")
+            elif parse_error:
+                failure_parts.append(f"invalid_json={parse_error}")
+            reason = " | ".join(failure_parts) or stderr or stdout or "no output"
+            raise VacsExportPipelineError(
+                f"external vacs export failed (rc={proc.returncode}): {reason}"
+            )
+        if payload is None:
+            raise VacsExportPipelineError(
+                f"external vacs export returned invalid json: {parse_error or 'missing output payload'}"
+            )
+        if not bool(payload.get("ok")):
+            raise VacsExportPipelineError(f"external vacs export reported failure: {payload}")
+
+        relocated: List[Dict[str, Any]] = []
+        for index, row_raw in enumerate(list(payload.get("exported_files", []) or []), start=1):
+            row = dict(row_raw or {})
+            source = Path(str(row.get("path", "") or ""))
+            if not source.exists() or not source.is_file():
+                raise VacsExportPipelineError(f"external VACS staging file is missing: {source}")
+            suffix = source.suffix or ".txt"
+            target_name = _bounded_export_filename(
+                export_dir,
+                f"external_raw_{index:02d}{suffix}",
+                fallback_stem=f"raw_{index:02d}",
+            )
+            target = export_dir / target_name
+            shutil.copy2(source, target)
+            row["staged_path"] = str(source)
+            row["path"] = str(target)
+            relocated.append(row)
+        payload["exported_files"] = relocated
+        payload["staging"] = {
+            "used": True,
+            "relocated_count": len(relocated),
+            "path_budget": LEGACY_VACS_PATH_BUDGET,
+        }
+        return payload
 
 
 def _build_external_any_graph_exports(
@@ -214,7 +265,12 @@ def _build_external_any_graph_exports(
         metadata = _read_vacs_export_metadata(source)
         orientation_token = _orientation_token_from_metadata(metadata)
         suffix = f"_{orientation_token}" if orientation_token else ""
-        output_path = export_root / f"{version_id}_anygraph_{index:02d}_{safe_title}{suffix}.txt"
+        desired_name = f"{version_id}_anygraph_{index:02d}_{safe_title}{suffix}.txt"
+        output_path = export_root / _bounded_export_filename(
+            export_root,
+            desired_name,
+            fallback_stem=f"{version_id}_anygraph_{index:02d}",
+        )
         output_path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, output_path)
         inferred_kind = _infer_graph_kind_for_any_mapping(
@@ -260,7 +316,12 @@ def _render_output_path(
     spec: ExportSpec,
 ) -> Path:
     name = spec.render_output_name(project_id=project_id, batch_id=batch_id, version_id=version_id)
-    return export_dir / name
+    bounded_name = _bounded_export_filename(
+        export_dir,
+        name,
+        fallback_stem=f"{version_id}_{spec.id or spec.graph_kind or 'export'}",
+    )
+    return export_dir / bounded_name
 
 
 def run_vacs_export_specs(
