@@ -34,6 +34,38 @@ class AkabakDriverVacsSnapshotTests(unittest.TestCase):
         self.assertEqual(second["status"], "apply_ready")
         self.assertGreaterEqual(second["report_stable_for_s"], 0.75)
 
+    def test_apply_wait_reports_akabak_exit_instead_of_successful_auto_close(self) -> None:
+        driver = AkabakDriver.__new__(AkabakDriver)
+        main_window = SimpleNamespace(_wut_native_handle=101)
+        driver.session = SimpleNamespace(process_id=77)
+        driver._find_interpreter_window = Mock(return_value=None)
+        driver._list_akabak_process_ids = Mock(return_value=[])
+        user32 = Mock()
+        user32.IsWindow.return_value = 0
+        driver._user32 = lambda: user32
+
+        ready, state = driver._import_apply_ready_state(main_window=main_window)
+
+        self.assertTrue(ready)
+        self.assertEqual(state["status"], "akabak_exited_before_apply")
+        self.assertFalse(state["main_present"])
+        self.assertFalse(state["process_present"])
+
+    def test_apply_wait_accepts_interpreter_auto_close_only_while_main_process_lives(self) -> None:
+        driver = AkabakDriver.__new__(AkabakDriver)
+        main_window = SimpleNamespace(_wut_native_handle=101)
+        driver.session = SimpleNamespace(process_id=77)
+        driver._find_interpreter_window = Mock(return_value=None)
+        driver._list_akabak_process_ids = Mock(return_value=[77])
+        user32 = Mock()
+        user32.IsWindow.return_value = 1
+        driver._user32 = lambda: user32
+
+        ready, state = driver._import_apply_ready_state(main_window=main_window)
+
+        self.assertTrue(ready)
+        self.assertEqual(state["status"], "interpreter_closed_before_apply")
+
     def test_interpreter_button_container_is_not_treated_as_modal(self) -> None:
         driver = AkabakDriver.__new__(AkabakDriver)
         candidate_classes = ["TRzDialogButtons"]

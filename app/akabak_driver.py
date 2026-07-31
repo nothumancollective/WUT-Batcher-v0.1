@@ -859,8 +859,20 @@ class AkabakDriver:
         if ctrl_id <= 0:
             return False
         wparam = (int(ctrl_id) & 0xFFFF) | ((int(BN_CLICKED) & 0xFFFF) << 16)
-        user32.SendMessageW(parent_hwnd, WM_COMMAND, wparam, control_hwnd)
-        return True
+        try:
+            result = ctypes.c_ulong()
+            sent = user32.SendMessageTimeoutW(
+                parent_hwnd,
+                WM_COMMAND,
+                wparam,
+                control_hwnd,
+                SMTO_ABORTIFHUNG,
+                1000,
+                ctypes.byref(result),
+            )
+            return bool(sent)
+        except Exception:
+            return False
 
     def _send_bm_click(self, control_hwnd: int, *, timeout_ms: int = 1000) -> bool:
         """Click one known button HWND without mouse input or unbounded UIA."""
@@ -898,6 +910,9 @@ class AkabakDriver:
             y = max(0, int(rect.bottom - rect.top) // 2)
             lparam = (y << 16) | (x & 0xFFFF)
             down = bool(user32.PostMessageW(hwnd, WM_LBUTTONDOWN, MK_LBUTTON, lparam))
+            # Delphi/Raize controls can discard an immediate up message while
+            # they are still processing the pressed-state transition.
+            time.sleep(0.05)
             up = bool(user32.PostMessageW(hwnd, WM_LBUTTONUP, 0, lparam))
             return bool(down and up)
         except Exception:
@@ -1655,6 +1670,17 @@ class AkabakDriver:
     def _import_apply_ready_state(self, *, main_window: Any) -> Tuple[bool, Dict[str, Any]]:
         interpreter = self._find_interpreter_window(main_window=main_window)
         if interpreter is None:
+            main_handle = self._window_handle(main_window)
+            process_id = int(self.session.process_id or 0)
+            main_present = bool(main_handle > 0 and self._user32().IsWindow(main_handle))
+            process_present = process_id in self._list_akabak_process_ids()
+            if not main_present or not process_present:
+                return True, {
+                    "status": "akabak_exited_before_apply",
+                    "main_present": main_present,
+                    "process_present": process_present,
+                    "process_id": process_id,
+                }
             return True, {"status": "interpreter_closed_before_apply"}
         modal = self._find_interpreter_modal(interpreter_window=interpreter)
         if modal is not None:
@@ -3279,6 +3305,34 @@ class AkabakDriver:
         try:
             self._import_report_candidate = ""
             self._import_report_stable_since = time.monotonic()
+            report_before_start = self._read_interpreter_report_text(interpreter)
+            attempt_trace.append({"phase": "pre_start_report", "chars": len(report_before_start)})
+
+            def _start_action_active() -> Tuple[bool, Dict[str, Any]]:
+                interpreter_now = self._find_interpreter_window(main_window=main_window)
+                if interpreter_now is None:
+                    return True, {"status": "interpreter_closed"}
+                start_button_now = self._find_first_control(
+                    interpreter_now,
+                    class_name_regex=r"TRzBitBtn",
+                    title_regex=r"start\s+importing",
+                )
+                start_enabled = True
+                if start_button_now is not None:
+                    try:
+                        start_enabled = bool(start_button_now.is_enabled())
+                    except Exception:
+                        start_enabled = True
+                report_now = self._read_interpreter_report_text(interpreter_now)
+                report_changed = bool(str(report_now or "").strip() != str(report_before_start or "").strip())
+                active = bool(not start_enabled or report_changed)
+                return active, {
+                    "status": "active" if active else "unchanged",
+                    "start_enabled": start_enabled,
+                    "report_changed": report_changed,
+                    "report_chars": len(report_now),
+                }
+
             start_action = self._invoke_interpreter_button(
                 interpreter_window=interpreter,
                 title_regex=r"start\s+importing",
@@ -3291,27 +3345,35 @@ class AkabakDriver:
             try:
                 apply_ready = wait_until(
                     predicate=lambda: self._import_apply_ready_state(main_window=main_window),
-                    timeout_s=min(3.0, max(1.0, float(self.step_timeout_s))),
+                    timeout_s=min(15.0, max(1.0, float(self.step_timeout_s))),
                     initial_interval_s=0.03,
                     max_interval_s=0.2,
                     backoff_factor=1.6,
                 )
             except TimeoutError:
-                interpreter_retry = self._find_interpreter_window(main_window=main_window) or interpreter
-                retry_action = self._invoke_interpreter_button(
-                    interpreter_window=interpreter_retry,
-                    title_regex=r"start\s+importing",
-                    step=step,
-                    action_name="start_importing_retry",
-                    prefer_bm_click=True,
-                )
-                attempt_trace.append({"phase": "start_importing_retry", **retry_action})
+                active, activity = _start_action_active()
+                attempt_trace.append({"phase": "start_importing_activity_after_mouse", **activity})
+                if not active:
+                    # A posted click can be lost while the VCL window is
+                    # transitioning. Retry the same benign mouse gesture once;
+                    # BM_CLICK/WM_COMMAND can re-enter the importer and has
+                    # terminated AKABAK in real runs.
+                    interpreter_retry = self._find_interpreter_window(main_window=main_window) or interpreter
+                    retry_action = self._invoke_interpreter_button(
+                        interpreter_window=interpreter_retry,
+                        title_regex=r"start\s+importing",
+                        step=step,
+                        action_name="start_importing_retry",
+                    )
+                    attempt_trace.append({"phase": "start_importing_retry", **retry_action})
                 apply_ready = wait_until(
                     predicate=lambda: self._import_apply_ready_state(main_window=main_window),
                     timeout_s=max(15.0, float(self.step_timeout_s)),
                 )
             apply_status = str(apply_ready.get("status", "unknown"))
-            attempt_trace.append({"phase": "wait_apply_ready", "status": apply_status})
+            attempt_trace.append({"phase": "wait_apply_ready", **apply_ready})
+            if apply_status == "akabak_exited_before_apply":
+                raise RuntimeError(f"AKABAK exited while importing the ABEC project: {apply_ready}")
             if apply_status == "interpreter_closed_before_apply":
                 close_state = self._ensure_import_window_closed(main_window=main_window, step=step)
                 attempt_trace.append({"phase": "ensure_main_only_after_auto_import", **close_state})
