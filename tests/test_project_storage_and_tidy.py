@@ -38,6 +38,13 @@ class ProjectStorageAndTidyTests(unittest.TestCase):
             summary = materialize_batch_plan(project, batch, projects_root=projects_root)
             self.assertEqual(summary.version_count, 1)
 
+            repeated = materialize_batch_plan(project, batch, projects_root=projects_root)
+            self.assertEqual(repeated.version_ids, summary.version_ids)
+            self.assertEqual(
+                sorted(path.name for path in (projects_root / "P001" / "versions").iterdir() if path.is_dir()),
+                ["V001"],
+            )
+
             project_root = projects_root / "P001"
             writer = TidyDatasetWriter(project_root, library_root=projects_root)
             self.assertTrue((project_root / "project.json").exists())

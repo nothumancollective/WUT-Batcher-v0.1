@@ -162,6 +162,28 @@ class ServiceExportTests(unittest.TestCase):
             self.assertEqual(rows[0]["batch_id"], batch.batch_id)
             self.assertEqual(rows[0]["version_id"], batch.version_ids[0])
 
+    def test_resolve_versions_reuses_materialized_batch_ids(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            library_root = Path(tmp_dir) / "projects"
+            settings_path = Path(tmp_dir) / "settings.json"
+            store = SettingsStore(settings_path)
+            store.save(UserSettings(library_root=str(library_root)))
+            service = OrchestratorService(settings_store=store)
+            project = service.create_project("Stable plan IDs", {"fixed_params": {}, "limits": {}})
+            batch = service.create_batch(
+                project_id=project.project_id,
+                batch_name="B1",
+                selected_params={},
+                sweeps={"Length": {"start": 80, "end": 100, "steps": 3}},
+                sweep_mode="single",
+                sim_export_params={},
+            )
+
+            resolved = service.resolve_versions(project.project_id, batch.batch_id)
+
+            self.assertEqual([row["version_id"] for row in resolved["versions"]], batch.version_ids)
+            self.assertEqual(resolved["issues"], [])
+
     def test_list_batch_lineage_reads_sql_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             library_root = Path(tmp_dir) / "projects"

@@ -95,6 +95,13 @@ Status: active convention for `wut-batcher/rebuild` runtime pipeline
 ## 6) Idempotency and safety
 
 - Re-running the same batch creates a new `run_id` and isolated run diagnostics.
+- Re-running a materialized batch reuses its canonical `version_id` set. The
+  planner matches immutable plan content and must not allocate a fresh version
+  cohort merely because the batch is executed again.
+- Historical duplicate cohorts created by older releases remain untouched, but
+  the lowest-ID matching cohort is reused so subsequent runs do not multiply
+  the duplicates. Changing a materialized plan in place is rejected; create a
+  new batch for changed sweep or simulation settings.
 - Stage re-entry must not corrupt existing version artifacts; updates are overwrite-safe for canonical files (`Project.abec`, stage logs) and append-safe for run logs.
 - Cleanup is explicit and guarded; never delete outside allowed context roots.
 

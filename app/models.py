@@ -496,6 +496,24 @@ class VersionSpec:
     status: str = "planned"
     created_at: str = field(default_factory=_now_iso)
 
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "VersionSpec":
+        return cls(
+            project_id=str(data.get("project_id", "")),
+            batch_id=str(data.get("batch_id", "")),
+            version_id=str(data.get("version_id", "")),
+            sweep_mode=str(data.get("sweep_mode", "single")),
+            sequence_index=int(data.get("sequence_index", 0) or 0),
+            parameters=dict(data.get("parameters", {}) or {}),
+            variable_parameters=dict(data.get("variable_parameters", {}) or {}),
+            unset_parameters=[str(item) for item in list(data.get("unset_parameters", []) or [])],
+            sweep_parameters=dict(data.get("sweep_parameters", {}) or {}),
+            sim_export_settings=dict(data.get("sim_export_settings", {}) or {}),
+            paths={str(key): str(value) for key, value in dict(data.get("paths", {}) or {}).items()},
+            status=str(data.get("status", "planned") or "planned"),
+            created_at=str(data.get("created_at", "") or _now_iso()),
+        )
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "project_id": self.project_id,

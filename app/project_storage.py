@@ -229,6 +229,24 @@ class ProjectRepository:
             return []
         return sorted(entry.name for entry in paths.versions_dir.iterdir() if entry.is_dir())
 
+    def list_versions(self, project_id: str, *, batch_id: str | None = None) -> List[VersionSpec]:
+        paths = self.project_paths(project_id, ensure=False)
+        if not paths.versions_dir.exists():
+            return []
+        versions: List[VersionSpec] = []
+        for entry in sorted(paths.versions_dir.iterdir(), key=lambda item: item.name):
+            version_json = entry / "version.json"
+            if not entry.is_dir() or not version_json.exists():
+                continue
+            try:
+                version = VersionSpec.from_dict(_read_json(version_json))
+            except Exception:
+                continue
+            if batch_id is not None and version.batch_id != str(batch_id):
+                continue
+            versions.append(version)
+        return versions
+
     def allocate_project_version_ids(self, project_id: str, count: int) -> List[str]:
         existing = self.existing_version_ids(project_id)
         return allocate_version_ids(count, existing)

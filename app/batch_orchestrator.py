@@ -23,6 +23,52 @@ class PlanningSummary:
     table_file: str
 
 
+def _version_plan_signature(version: VersionSpec) -> Dict[str, Any]:
+    """Return the immutable plan portion of a materialized version."""
+
+    return {
+        "project_id": str(version.project_id),
+        "batch_id": str(version.batch_id),
+        "sweep_mode": str(version.sweep_mode),
+        "sequence_index": int(version.sequence_index),
+        "parameters": dict(version.parameters),
+        "variable_parameters": dict(version.variable_parameters),
+        "unset_parameters": sorted(str(item) for item in version.unset_parameters),
+        "sweep_parameters": dict(version.sweep_parameters),
+        "sim_export_settings": dict(version.sim_export_settings),
+    }
+
+
+def match_materialized_versions(
+    existing_versions: List[VersionSpec],
+    desired_versions: List[VersionSpec],
+) -> List[VersionSpec]:
+    """Match one canonical stored version to every desired plan row.
+
+    Older releases could create the same version cohort again on every run.
+    Selecting the lowest-ID match for each desired row keeps those projects
+    runnable without creating a third cohort.  Extra historical duplicates are
+    intentionally left untouched for a separate, evidence-backed cleanup.
+    """
+
+    remaining = sorted(existing_versions, key=lambda item: str(item.version_id))
+    matched: List[VersionSpec] = []
+    for desired in sorted(desired_versions, key=lambda item: (int(item.sequence_index), str(item.version_id))):
+        desired_signature = _version_plan_signature(desired)
+        match_index = next(
+            (
+                index
+                for index, candidate in enumerate(remaining)
+                if _version_plan_signature(candidate) == desired_signature
+            ),
+            None,
+        )
+        if match_index is None:
+            return []
+        matched.append(remaining.pop(match_index))
+    return matched
+
+
 def materialize_batch_plan(
     project: Project,
     batch: Batch,
@@ -38,23 +84,44 @@ def materialize_batch_plan(
 
     repo = ProjectRepository(projects_root=projects_root)
     paths = repo.init_project(project)
+    existing_batch_versions = repo.list_versions(project.project_id, batch_id=batch.batch_id)
+    reuse_existing = bool(existing_batch_versions)
+    if existing_batch_versions:
+        desired = resolve_versions(
+            project.constraints,
+            batch,
+            existing_version_ids=(),
+            strict=True,
+        )
+        versions = match_materialized_versions(existing_batch_versions, desired.versions)
+        if len(versions) != len(desired.versions):
+            raise ValueError(
+                f"Batch {batch.batch_id} is already materialized with a different version plan; "
+                "create a new batch instead of changing an existing batch definition."
+            )
+    else:
+        existing_ids = repo.existing_version_ids(project.project_id)
+        resolved = resolve_versions(
+            project.constraints,
+            batch,
+            existing_version_ids=existing_ids,
+            strict=True,
+        )
+        versions = resolved.versions
+
     repo.save_batch(project.project_id, batch)
 
-    existing_ids = repo.existing_version_ids(project.project_id)
-    resolved = resolve_versions(
-        project.constraints,
-        batch,
-        existing_version_ids=existing_ids,
-        strict=True,
-    )
-    versions: List[VersionSpec] = resolved.versions
-
-    materialized = repo.materialize_versions(
-        project.project_id,
-        batch.batch_id,
-        versions,
-        cfg_placeholder_text=cfg_placeholder_text,
-    )
+    if reuse_existing:
+        # Do not rewrite version.json here: completed versions contain run and
+        # stage diagnostics beyond VersionSpec's immutable planning fields.
+        materialized = versions
+    else:
+        materialized = repo.materialize_versions(
+            project.project_id,
+            batch.batch_id,
+            versions,
+            cfg_placeholder_text=cfg_placeholder_text,
+        )
 
     writer = TidyDatasetWriter(paths.project_dir, library_root=library_root)
     version_dataset = writer.write_plan_bundle(project=project, batch=batch, versions=materialized)

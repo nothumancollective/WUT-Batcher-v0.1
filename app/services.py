@@ -37,7 +37,7 @@ from app.analyzer.presets import (
 )
 from app.analyzer.reason_codes import reason_items_for_codes
 from app.analyzer.stage_plot_engine import compute_di_proxy_curve, compute_stage_plot_payload
-from app.batch_orchestrator import PlanningSummary, materialize_batch_plan
+from app.batch_orchestrator import PlanningSummary, match_materialized_versions, materialize_batch_plan
 from app.ath_knowledge import load_ath_knowledge
 from app.ath_driver_assets import repair_post_ath_le_binding
 from app.compatibility_service import CompatibilityService
@@ -3695,12 +3695,28 @@ class OrchestratorService:
     def resolve_versions(self, project_id: str, batch_id: str) -> Dict[str, Any]:
         project = self.repo.load_project(project_id)
         batch = self.repo.load_batch(project_id, batch_id)
-        existing_ids = self.repo.existing_version_ids(project_id)
-        resolved = resolve_versions(project.constraints, batch, existing_version_ids=existing_ids, strict=False)
+        resolved = resolve_versions(project.constraints, batch, existing_version_ids=(), strict=False)
+        existing = self.repo.list_versions(project_id, batch_id=batch_id)
+        matched = match_materialized_versions(existing, resolved.versions) if existing else []
+        versions = matched if len(matched) == len(resolved.versions) else resolved.versions
+        issues = [issue.to_dict() for issue in resolved.issues]
+        if existing and len(matched) != len(resolved.versions):
+            issues.append(
+                {
+                    "rule_id": "materialized_plan_mismatch",
+                    "severity": "fatal",
+                    "message": (
+                        f"Batch {batch_id} is already materialized with a different version plan; "
+                        "create a new batch instead of changing it in place."
+                    ),
+                    "scope": "batch",
+                    "source": "storage",
+                }
+            )
         return {
-            "version_count": len(resolved.versions),
-            "versions": [asdict(version) for version in resolved.versions],
-            "issues": [issue.to_dict() for issue in resolved.issues],
+            "version_count": len(versions),
+            "versions": [asdict(version) for version in versions],
+            "issues": issues,
         }
 
     def run_batch(
