@@ -8,10 +8,38 @@ import unittest
 
 from app.batch_orchestrator import materialize_batch_plan
 from app.models import Batch, ParamSelection, Project, ProjectConstraints
+from app.project_storage import ProjectRepository
 from app.tidy_dataset import TidyDatasetWriter
 
 
 class ProjectStorageAndTidyTests(unittest.TestCase):
+    def test_materialized_plan_reuses_numeric_ui_strings_after_json_reload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            projects_root = Path(tmp_dir) / "projects"
+            project = Project(
+                project_id="P001",
+                name="Numeric UI plan",
+                root_path=str(projects_root / "P001"),
+                constraints=ProjectConstraints(project_id="P001", fixed_params={}, limits={}),
+            )
+            batch = Batch(
+                batch_id="B001",
+                project_id="P001",
+                selected_params={"Length": ParamSelection(value="100.0")},
+                sweep_mode="single",
+            )
+
+            initial = materialize_batch_plan(project, batch, projects_root=projects_root)
+            reloaded = ProjectRepository(projects_root=projects_root).load_batch("P001", "B001")
+            repeated = materialize_batch_plan(project, reloaded, projects_root=projects_root)
+
+            self.assertEqual(initial.version_ids, ["V001"])
+            self.assertEqual(repeated.version_ids, initial.version_ids)
+            self.assertEqual(
+                sorted(path.name for path in (projects_root / "P001" / "versions").iterdir() if path.is_dir()),
+                ["V001"],
+            )
+
     def test_materialize_plan_and_write_tidy_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             projects_root = Path(tmp_dir) / "projects"

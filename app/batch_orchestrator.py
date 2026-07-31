@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from pathlib import Path
+import re
 from typing import Any, Dict, List
 
 from app.models import Batch, Project, VersionSpec
@@ -23,6 +25,27 @@ class PlanningSummary:
     table_file: str
 
 
+_NUMERIC_TEXT_RE = re.compile(r"^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$")
+
+
+def _canonical_plan_value(value: Any) -> Any:
+    """Normalize serialization-only numeric differences in immutable plans."""
+    if isinstance(value, dict):
+        return {key: _canonical_plan_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_canonical_plan_value(item) for item in value]
+    if isinstance(value, str):
+        token = value.strip()
+        if _NUMERIC_TEXT_RE.fullmatch(token):
+            try:
+                numeric = float(token)
+            except ValueError:
+                return value
+            if math.isfinite(numeric):
+                return numeric
+    return value
+
+
 def _version_plan_signature(version: VersionSpec) -> Dict[str, Any]:
     """Return the immutable plan portion of a materialized version."""
 
@@ -31,11 +54,11 @@ def _version_plan_signature(version: VersionSpec) -> Dict[str, Any]:
         "batch_id": str(version.batch_id),
         "sweep_mode": str(version.sweep_mode),
         "sequence_index": int(version.sequence_index),
-        "parameters": dict(version.parameters),
-        "variable_parameters": dict(version.variable_parameters),
+        "parameters": _canonical_plan_value(dict(version.parameters)),
+        "variable_parameters": _canonical_plan_value(dict(version.variable_parameters)),
         "unset_parameters": sorted(str(item) for item in version.unset_parameters),
-        "sweep_parameters": dict(version.sweep_parameters),
-        "sim_export_settings": dict(version.sim_export_settings),
+        "sweep_parameters": _canonical_plan_value(dict(version.sweep_parameters)),
+        "sim_export_settings": _canonical_plan_value(dict(version.sim_export_settings)),
     }
 
 
