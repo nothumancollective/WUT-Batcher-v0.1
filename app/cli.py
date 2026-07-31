@@ -190,6 +190,20 @@ def cmd_setup_install_gmsh(args: argparse.Namespace) -> int:
     return 0 if str(result.get("status") or "") in {"already_installed", "installed"} else 3
 
 
+def cmd_library_audit(args: argparse.Namespace) -> int:
+    from app.library_audit import audit_library_root
+
+    root = str(args.library_root or SettingsStore().load().library_root)
+    report = audit_library_root(root, scan_siblings=bool(args.scan_siblings))
+    rendered = json.dumps(report, indent=2, ensure_ascii=False, default=_json_default)
+    if args.report_path:
+        target = Path(args.report_path).expanduser()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(rendered + "\n", encoding="utf-8")
+    print(rendered)
+    return 3 if str(report.get("status") or "") == "error" else 0
+
+
 def cmd_batch_job_count(args: argparse.Namespace) -> int:
     import app.batch_planner as batch_planner
 
@@ -993,6 +1007,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_setup_gmsh.add_argument("--timeout-seconds", type=int, default=600)
     p_setup_gmsh.set_defaults(func=cmd_setup_install_gmsh)
+
+    p_library = sub.add_parser("library", help="Project Library inspection utilities.")
+    sub_library = p_library.add_subparsers(dest="library_cmd", required=True)
+    p_library_audit = sub_library.add_parser("audit", help="Run a strictly read-only structural audit.")
+    p_library_audit.add_argument("--library-root", help="Override the active settings library root.")
+    p_library_audit.add_argument(
+        "--scan-siblings",
+        action="store_true",
+        help="List sibling directories with Project Library markers; does not modify or migrate them.",
+    )
+    p_library_audit.add_argument("--report-path", help="Optionally write the JSON report outside the library.")
+    p_library_audit.set_defaults(func=cmd_library_audit)
 
     p_batch = sub.add_parser("batch", help="Batch utilities.")
     sub_batch = p_batch.add_subparsers(dest="batch_cmd", required=True)
