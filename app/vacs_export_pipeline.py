@@ -135,6 +135,37 @@ def _infer_graph_kind_for_any_mapping(
     return best_kind
 
 
+def _graph_kind_family(kind: str) -> str:
+    token = str(kind or "").strip().lower()
+    if token in {"spl", "polar", "directivity"}:
+        return "sound_pressure"
+    if token in {"imp", "impedance", "radiation_impedance"}:
+        return "impedance"
+    return token or "unknown"
+
+
+def _missing_requested_graph_coverage(
+    *,
+    requested_specs: Iterable[ExportSpec],
+    exports: Iterable[Dict[str, Any]],
+) -> Dict[str, Dict[str, int]]:
+    requested_counts: Dict[str, int] = {}
+    exported_counts: Dict[str, int] = {}
+    for spec in list(requested_specs or []):
+        family = _graph_kind_family(spec.graph_kind)
+        requested_counts[family] = int(requested_counts.get(family, 0)) + 1
+    for row in list(exports or []):
+        spec_payload = dict(row.get("spec", {}) or {})
+        family = _graph_kind_family(str(spec_payload.get("graph_kind", "") or ""))
+        exported_counts[family] = int(exported_counts.get(family, 0)) + 1
+    missing: Dict[str, Dict[str, int]] = {}
+    for family, required in requested_counts.items():
+        available = int(exported_counts.get(family, 0))
+        if available < int(required):
+            missing[family] = {"required": int(required), "available": available}
+    return missing
+
+
 def _orientation_token_from_metadata(metadata: Dict[str, str] | None) -> str:
     raw = str((metadata or {}).get("Param_Coord_x3", "") or "").strip().strip("'").strip('"')
     if not raw:
@@ -368,6 +399,15 @@ def run_vacs_export_specs(
             )
             if not exports:
                 raise VacsExportPipelineError("external vacs export produced no usable graph files")
+            missing_coverage = _missing_requested_graph_coverage(
+                requested_specs=specs,
+                exports=exports,
+            )
+            if missing_coverage:
+                raise VacsExportPipelineError(
+                    "external vacs export did not cover all requested graph families: "
+                    f"{json.dumps(missing_coverage, sort_keys=True)}"
+                )
             return {
                 "executed": True,
                 "catalog_path": None,

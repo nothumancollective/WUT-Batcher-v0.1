@@ -457,6 +457,46 @@ class VacsExportPipelineTests(unittest.TestCase):
                     )
             self.assertIn("no usable graph files", str(ctx.exception))
 
+    def test_external_any_graph_fallback_requires_requested_kind_coverage(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            source = root / "raw_spl.txt"
+            source.write_text(
+                "Data_LevelType=SoundPressure\nData_Legend='SPL'\nData\n100 1.0\n",
+                encoding="utf-8",
+            )
+            specs = [
+                ExportSpec(id="polar", tool="vacs", graph_kind="polar", format="txt"),
+                ExportSpec(id="radimp", tool="vacs", graph_kind="impedance", format="txt"),
+            ]
+            with patch(
+                "app.vacs_export_pipeline._run_external_vacs_export_save_all",
+                return_value={
+                    "ok": True,
+                    "run_id": "run_x",
+                    "exported_files": [
+                        {"graph": {"title": "Mic Polar - BE_Spectrum #2"}, "path": str(source)},
+                    ],
+                    "summary_file": str(root / "summary.json"),
+                },
+            ):
+                with self.assertRaises(VacsExportPipelineError) as ctx:
+                    run_vacs_export_specs(
+                        executable="C:\\Tools\\VACS\\vacsviewer_32.exe",
+                        vacs_version="default",
+                        project_id="P001",
+                        batch_id="B001",
+                        version_id="V001",
+                        abec_path=root / "Project.abec",
+                        export_specs=specs,
+                        export_dir=root / "exports",
+                        log_dir=root / "logs",
+                        akabak_executable="C:\\Tools\\AKABAK\\AKABAK.exe",
+                        allow_graph_kind_fallback=True,
+                    )
+            self.assertIn("requested graph families", str(ctx.exception))
+            self.assertIn("impedance", str(ctx.exception))
+
     def test_external_any_graph_fallback_includes_orientation_token_in_filename(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
