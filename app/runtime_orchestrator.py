@@ -8,6 +8,7 @@ import csv
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
 import re
 import shutil
@@ -101,6 +102,19 @@ def _read_json(path: Path) -> Dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError(f"Expected JSON object in {path}")
     return payload
+
+
+def _read_log_tail_text(path: str | Path, *, max_bytes: int = 65_536) -> str:
+    log_path = Path(path)
+    limit = max(1_024, int(max_bytes))
+    with log_path.open("rb") as handle:
+        handle.seek(0, os.SEEK_END)
+        size = handle.tell()
+        if size > limit:
+            handle.seek(-limit, os.SEEK_END)
+        else:
+            handle.seek(0)
+        return handle.read().decode("utf-8", errors="replace")
 
 
 @dataclass(frozen=True)
@@ -1759,6 +1773,12 @@ def run_batch_pipeline(
     settings_hash: Optional[str] = None,
     ath_export_root: str | Path | None = ATH_PREVIEW_EXPORT_ROOT,
 ) -> RuntimeSummary:
+    debug_pipeline_stages = str(os.environ.get("WUT_DEBUG_PIPELINE_STAGES", "")).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
     effective_library_root: Path | None = None
     if library_root is not None:
         effective_library_root = Path(str(library_root)).expanduser().resolve()
@@ -1884,6 +1904,7 @@ def run_batch_pipeline(
     run_logs_dir.mkdir(parents=True, exist_ok=True)
     first_failure: Optional[Dict[str, Any]] = None
     last_stage_started: Optional[Dict[str, str]] = None
+    stage_started_ns: Dict[Tuple[str, str], int] = {}
 
     def _run_stage_start(version_id: str, stage: str, payload: Optional[Dict[str, Any]] = None) -> None:
         nonlocal last_stage_started
@@ -1896,6 +1917,8 @@ def run_batch_pipeline(
             "version_id": str(version_id),
             "stage": str(stage),
         }
+        if debug_pipeline_stages:
+            stage_started_ns[(str(version_id), str(stage))] = time.perf_counter_ns()
         if isinstance(payload, dict):
             row.update(dict(payload))
         _append_run_debug_log(run_debug_log_path, event="stage_start", payload=row)
@@ -1920,6 +1943,10 @@ def run_batch_pipeline(
         }
         if reason:
             row["error"] = str(reason)
+        if debug_pipeline_stages:
+            started_ns = stage_started_ns.pop((str(stage_execution.version_id), str(stage_execution.stage)), None)
+            if started_ns is not None:
+                row["elapsed_ms"] = round((time.perf_counter_ns() - int(started_ns)) / 1_000_000.0, 3)
         if isinstance(payload, dict):
             row.update(dict(payload))
         _append_run_debug_log(run_debug_log_path, event="stage_end", payload=row)
@@ -2181,8 +2208,8 @@ def run_batch_pipeline(
                 _track_sync("update_version_status.ath", ath_status)
                 ath_stage_ok = ath_result.ok
 
-                ath_stdout = Path(ath_result.stdout_log).read_text(encoding="utf-8")
-                dims = parse_ath_dimensions(ath_stdout)
+                ath_stdout_tail = _read_log_tail_text(ath_result.stdout_log)
+                dims = parse_ath_dimensions(ath_stdout_tail)
                 # Persist final dimensions before downstream export/ingest stages.
                 if None not in (dims.horn_length_mm, dims.horn_width_mm, dims.horn_height_mm):
                     raw_line = (
@@ -2210,6 +2237,35 @@ def run_batch_pipeline(
                     )
                     _track_sync("write_ath_dimensions", dims_result)
                     ath_dimension_rows += 1
+                    if debug_pipeline_stages:
+                        _append_run_debug_log(
+                            run_debug_log_path,
+                            event="ath_dimensions",
+                            payload={
+                                "run_id": effective_run_id,
+                                "version_id": version_id,
+                                "status": "persisted",
+                                "length_mm": dims.horn_length_mm,
+                                "width_mm": dims.horn_width_mm,
+                                "height_mm": dims.horn_height_mm,
+                                "source_file": str(ath_result.stdout_log),
+                            },
+                        )
+                elif debug_pipeline_stages:
+                    _append_run_debug_log(
+                        run_debug_log_path,
+                        event="ath_dimensions",
+                        payload={
+                            "run_id": effective_run_id,
+                            "version_id": version_id,
+                            "status": "skipped",
+                            "reason": "incomplete_dimensions_from_stdout_tail",
+                            "length_mm": dims.horn_length_mm,
+                            "width_mm": dims.horn_width_mm,
+                            "height_mm": dims.horn_height_mm,
+                            "source_file": str(ath_result.stdout_log),
+                        },
+                    )
 
                 ath_failure_reason = "ath_failed"
                 if ath_result.ok and needs_abec_artifact:

@@ -51,6 +51,19 @@ class RunnerTests(unittest.TestCase):
         self.assertIn("Final Width", parsed.raw_line)
         self.assertIn("Final Height", parsed.raw_line)
 
+    def test_ath_dimension_parser_accepts_device_width_x_height_line(self) -> None:
+        stdout_text = "\n".join(
+            [
+                "Device width x height = 270.97 x 270.97 mm (10.668 x 10.668\")",
+                "Device length =         140.00 mm (5.512\")",
+            ]
+        )
+        parsed = parse_ath_dimensions(stdout_text)
+        self.assertEqual(parsed.horn_length_mm, 140.0)
+        self.assertEqual(parsed.horn_width_mm, 270.97)
+        self.assertEqual(parsed.horn_height_mm, 270.97)
+        self.assertIn("Device width x height", parsed.raw_line)
+
     def test_ath_dimension_parser_prefers_final_dimension_lines_over_param_echoes(self) -> None:
         stdout_text = "\n".join(
             [

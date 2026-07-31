@@ -65,6 +65,106 @@
 - Import diagnostics dump on failure (`import_failure_*.json/.txt`) persisted into `artifacts` + `ui_observations`.
 - AKABAK contract updated with explicit `import_start_apply` action and missing-mesh modal classification.
 
+## ATH Final Dimensions Audit Findings (2026-02-27, no code changes)
+
+Scope:
+- Full path audit for ATH final dimensions: extraction -> persistence -> analyzer retrieval -> UI binding.
+- Data source under audit: ATH geometry-stage terminal output (before AKABAK/VACS).
+
+Authoritative docs used in this audit:
+- Runner/pipeline source of truth: `docs/RUNNER_STATUS.md`, `docs/RUNNER_AUDIT.md`.
+- Final-dimensions analyzer mapping: `docs/analyzer/09_final_dimensions_data_gap.md`.
+- Recent storage and dual-write behavior context: `docs/release/storage-audit.md`, `docs/analyzer/merge_preflight_project_library_2026-02-25.md`.
+
+Audit findings:
+1. Source output exists in ATH logs
+   - Real run logs contain dimensions in this form:
+     - `Device width x height = <W> x <H> mm`
+     - `Device length = <L> mm`
+   - Example path: `.../versions/V045/logs/ath.stdout.log`.
+2. Extraction fails for current ATH line shape
+   - `app/runners.py::parse_ath_dimensions` uses one generic token regex.
+   - On `Device width x height = ...`, parser captures width but misses height, yielding partial tuple `(L, W, None)`.
+3. Persistence is gated on complete triple
+   - `app/runtime_orchestrator.py` writes dimensions only when `length/width/height` are all non-null.
+   - With `height=None`, no write occurs.
+4. DB remains empty for dimensions
+   - `ath_dimensions` rows: `0` in audited project DB.
+   - `versions.ath_length_mm/ath_width_mm/ath_height_mm`: all null in audited rows.
+5. Retrieval/UI wiring appears intact
+   - Analyzer service (`app/services.py`) and Version Information UI mapping (`app/gui.py`) already read and format dimensions when DB values exist.
+   - Missing values therefore surface as `—`, consistent with current UI contract.
+
+Most likely breakpoint:
+- Primary failure is extraction/parser behavior for ATH `Device width x height` line format, which prevents downstream persistence.
+
+Applied fix (2026-02-27):
+- `app/runners.py::parse_ath_dimensions`
+  - Added explicit ATH signature parsing for:
+    - `Device width x height = <W> x <H> mm`
+    - `Device length = <L> mm`
+  - Width and height are now both extracted from the paired line.
+- `app/runtime_orchestrator.py::run_batch_pipeline`
+  - Final dimensions are parsed from the ATH stdout log tail after ATH completes.
+  - Extra dimension diagnostics are emitted only when `WUT_DEBUG_PIPELINE_STAGES=1`.
+  - Runtime semantics unchanged: missing dimensions do not fail the run.
+
+Validation snapshot after fix:
+- Real run: `run_id=9f33fb6a-7e8d-46eb-8e0f-0197d998fe0b`, batch `B010`, versions `V047` and `V048`.
+- Runtime summary reports `ath_dimension_rows=2`.
+- For `V048`, both DBs contain:
+  - `versions.ath_length_mm=140.0`, `ath_width_mm=270.97`, `ath_height_mm=270.97`
+  - `ath_dimensions.length_mm=140.0`, `width_mm=270.97`, `height_mm=270.97`
+- Analyzer retrieval (`analyzer_list_polar_runs`) returns `V048` with populated `ath_*` dimensions.
+
+## Runner Regression Forensics (2026-03-01)
+
+Question under test:
+- Did the ATH final-dimensions write-side fix introduce a real runner slowdown or a deterministic new downstream failure?
+
+Recent runner changes since last known good:
+- Commit `a7d3055` (`runtime: parse and persist ATH device dimensions reliably`) modified only:
+  - `app/runners.py`
+  - `app/runtime_orchestrator.py`
+- The runner-path changes in that commit were:
+  - extra ATH terminal parsing support for `Device width x height` / `Device length`,
+  - reading both `ath.stdout.log` and `ath.stderr.log` back into memory after ATH,
+  - unconditional extra stage-debug events for parsed/persisted/skipped dimensions.
+
+Measured current evidence:
+- Debug timing is now available behind `WUT_DEBUG_PIPELINE_STAGES=1` in run-root `pipeline.stage_debug.jsonl` as `elapsed_ms`.
+- Real current run (`B012`, run `46b322c5-8854-40b2-ac35-20fd5b70ca75`) showed:
+  - slowest stage: `akabak` at about `33-35 s` per version,
+  - ATH stage: about `0.5 s`,
+  - ATH dimension extraction/persistence is not a dominant runtime cost.
+- One GUI/offscreen reproduction hit:
+  - failing stage: `vacs`
+  - failure: `external vacs export failed (rc=1): vacs_not_ready_after_f4`
+- Control runs on the same real batch:
+  - baseline detached worktree at `cb5f9cc`: succeeded (`run_id=27fa55b7-93ae-45eb-a212-697f32cfc2e4`)
+  - current `HEAD`: also succeeded (`run_id=28a295e1-a05b-4e97-abc3-46b1eb573570`)
+
+Forensic conclusion:
+- No reproducible stage-time explosion was found in the dimension path itself.
+- The dim fix did, however, add unnecessary hot-path work:
+  - full-file readback of ATH `stdout` and `stderr`,
+  - unconditional extra debug-log writes.
+- The observed VACS failure is intermittent and downstream of ATH; it was not reproduced deterministically from the dimension parser change alone.
+- Safe remediation is therefore to minimize the dim path back to:
+  - parse only the ATH stdout log tail,
+  - keep debug detail behind `WUT_DEBUG_PIPELINE_STAGES=1`,
+  - preserve DB/UI dimension behavior.
+
+Applied remediation (2026-03-01):
+- `app/runtime_orchestrator.py`
+  - replaced full-log readback with bounded ATH stdout tail read (`64 KiB`) after ATH completes,
+  - removed unconditional per-version dimension debug rows from the hot path,
+  - kept explicit dimension decision logging only behind `WUT_DEBUG_PIPELINE_STAGES=1` in run-root logs.
+- Real verification after remediation:
+  - CLI run `9bfbca7e-7891-449f-ab36-a13a062380e7` on `B012`: succeeded, `ath_dimension_rows=2`
+  - GUI/offscreen worker run `b1ad0971-7084-44fa-822b-0243b6a9cdec` on `B013`: succeeded, `ath_dimension_rows=2`
+  - Analyzer UI still rendered dimensions for the selected run: `140.0 × 271.0 × 271.0 mm`
+
 ## Pipeline Map (2026-02-25)
 
 ### Authoritative docs by subsystem (latest used source)
@@ -114,7 +214,7 @@ Stage sequence in `run_batch_pipeline`:
    - Outputs: ATH stdout/stderr logs, generated ABEC artifacts
 4. Final dimensions extraction/persist (first export-data persistence step)
    - Modules: `app/runners.py` `parse_ath_dimensions`, `app/tidy_dataset.py` writer
-   - Inputs: ATH stdout
+   - Inputs: ATH stdout log tail after ATH completion
    - Outputs: `ath_dimensions` + `versions.ath_*` in project DB and library DB mirror
 5. ABEC sync + LE repair + pre-AKABAK guards
    - Module: `app/runtime_orchestrator.py` (`_sync_generated_abec`, `repair_post_ath_le_binding`, contract checks)

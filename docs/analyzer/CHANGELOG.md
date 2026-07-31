@@ -1,5 +1,11 @@
 ﻿# Analyzer Docs Ã¢â‚¬â€ Changelog
 
+## 2026-02-27 (ATH final dimensions persistence repair)
+- Root cause: runner dimensions parser missed ATH `Device width x height = <W> x <H> mm` signatures, producing incomplete `(L,W,H)` tuples and skipping DB writes.
+- Fix: `app/runners.py::parse_ath_dimensions` now extracts width+height from paired ATH device-dimension lines and keeps existing `Final ...` parsing behavior.
+- Runtime now reads dimensions from the ATH `stdout` log tail after ATH completes; extra dimension diagnostics are debug-only behind `WUT_DEBUG_PIPELINE_STAGES=1`.
+- Analyzer read and UI binding contracts unchanged; with persisted data present, Version Information renders `Dim (LxWxH)` as `<L:.1f> × <W:.1f> × <H:.1f> mm`.
+
 ## 2026-02-25 (Iterate tab scaffold + centered analysis tab group)
 - Analyzer mode bar now centers the `Explorer | Compare | Iterate` button group horizontally in its row.
 - Added a third Analyzer tab `Iterate` (no plots) with a pinned-only version table.
