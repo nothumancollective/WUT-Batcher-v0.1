@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from app.ath_knowledge import load_ath_knowledge
 from app.compat_schema import normalize_ruleset
+from app.runners import run_process_with_tree_timeout
 from app.tidy_dataset import TidyDatasetWriter
 
 
@@ -184,43 +185,25 @@ def _run_case(
     return_code = -1
     stdout = ""
     stderr = ""
-    popen_kwargs: Dict[str, Any] = {
-        "cwd": str(runtime_dir),
-        "stdout": subprocess.PIPE,
-        "stderr": subprocess.PIPE,
-        "text": True,
-        "encoding": "utf-8",
-        "errors": "replace",
-        "env": env,
-    }
-    if os.name == "nt":
-        popen_kwargs["creationflags"] = int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
-    else:
-        popen_kwargs["start_new_session"] = True
-    proc = subprocess.Popen(command, **popen_kwargs)
     try:
-        stdout, stderr = proc.communicate(timeout=max(1, int(timeout_s)))
-        return_code = int(proc.returncode or 0)
+        proc = run_process_with_tree_timeout(
+            command,
+            cwd=str(runtime_dir),
+            timeout=max(1, int(timeout_s)),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+            env=env,
+        )
+        return_code = int(proc.returncode)
+        stdout = proc.stdout or ""
+        stderr = proc.stderr or ""
     except subprocess.TimeoutExpired as exc:
         timed_out = True
-        if os.name == "nt":
-            subprocess.run(
-                ["taskkill", "/PID", str(int(proc.pid)), "/T", "/F"],
-                capture_output=True,
-                text=True,
-                check=False,
-                creationflags=int(getattr(subprocess, "CREATE_NO_WINDOW", 0)),
-            )
-        else:
-            try:
-                os.killpg(int(proc.pid), 9)
-            except OSError:
-                proc.kill()
-        try:
-            stdout, stderr = proc.communicate(timeout=5)
-        except Exception:
-            stdout = str(exc.stdout or "")
-            stderr = str(exc.stderr or "")
+        stdout = str(exc.stdout or "")
+        stderr = str(exc.stderr or "")
 
     project_subdir = _project_subdir(output_root, cfg_path)
     stl_files = list(project_subdir.rglob("*.stl")) if project_subdir.exists() else []

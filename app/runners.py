@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+import ctypes
 import math
 import re
 import os
@@ -214,7 +215,7 @@ class _SubprocessRunner:
                     "errors": "replace",
                     "check": False,
                 }
-                proc = _run_with_process_tree_timeout(
+                proc = run_process_with_tree_timeout(
                     command,
                     **popen_kwargs,
                 )
@@ -272,7 +273,87 @@ class _SubprocessRunner:
         )
 
 
-def _run_with_process_tree_timeout(
+class _WindowsKillOnCloseJob:
+    """Own a Windows job whose complete process tree dies when the handle closes."""
+
+    _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
+    _JOB_OBJECT_EXTENDED_LIMIT_INFORMATION = 9
+
+    def __init__(self) -> None:
+        from ctypes import wintypes
+
+        class _IoCounters(ctypes.Structure):
+            _fields_ = [
+                ("ReadOperationCount", ctypes.c_ulonglong),
+                ("WriteOperationCount", ctypes.c_ulonglong),
+                ("OtherOperationCount", ctypes.c_ulonglong),
+                ("ReadTransferCount", ctypes.c_ulonglong),
+                ("WriteTransferCount", ctypes.c_ulonglong),
+                ("OtherTransferCount", ctypes.c_ulonglong),
+            ]
+
+        class _BasicLimitInformation(ctypes.Structure):
+            _fields_ = [
+                ("PerProcessUserTimeLimit", ctypes.c_longlong),
+                ("PerJobUserTimeLimit", ctypes.c_longlong),
+                ("LimitFlags", wintypes.DWORD),
+                ("MinimumWorkingSetSize", ctypes.c_size_t),
+                ("MaximumWorkingSetSize", ctypes.c_size_t),
+                ("ActiveProcessLimit", wintypes.DWORD),
+                ("Affinity", ctypes.c_size_t),
+                ("PriorityClass", wintypes.DWORD),
+                ("SchedulingClass", wintypes.DWORD),
+            ]
+
+        class _ExtendedLimitInformation(ctypes.Structure):
+            _fields_ = [
+                ("BasicLimitInformation", _BasicLimitInformation),
+                ("IoInfo", _IoCounters),
+                ("ProcessMemoryLimit", ctypes.c_size_t),
+                ("JobMemoryLimit", ctypes.c_size_t),
+                ("PeakProcessMemoryUsed", ctypes.c_size_t),
+                ("PeakJobMemoryUsed", ctypes.c_size_t),
+            ]
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.CreateJobObjectW.argtypes = [ctypes.c_void_p, wintypes.LPCWSTR]
+        kernel32.CreateJobObjectW.restype = wintypes.HANDLE
+        kernel32.SetInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
+        kernel32.SetInformationJobObject.restype = wintypes.BOOL
+        kernel32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+        kernel32.AssignProcessToJobObject.restype = wintypes.BOOL
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel32.CloseHandle.restype = wintypes.BOOL
+
+        handle = kernel32.CreateJobObjectW(None, None)
+        if not handle:
+            raise ctypes.WinError(ctypes.get_last_error())
+        self._kernel32 = kernel32
+        self._handle = handle
+        limits = _ExtendedLimitInformation()
+        limits.BasicLimitInformation.LimitFlags = self._JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        if not kernel32.SetInformationJobObject(
+            handle,
+            self._JOB_OBJECT_EXTENDED_LIMIT_INFORMATION,
+            ctypes.byref(limits),
+            ctypes.sizeof(limits),
+        ):
+            error = ctypes.get_last_error()
+            self.close()
+            raise ctypes.WinError(error)
+
+    def assign(self, process_handle: int) -> None:
+        if not self._handle or not self._kernel32.AssignProcessToJobObject(self._handle, process_handle):
+            raise ctypes.WinError(ctypes.get_last_error())
+
+    def close(self) -> None:
+        handle = getattr(self, "_handle", None)
+        if handle:
+            self._handle = None
+            self._kernel32.CloseHandle(handle)
+
+
+def run_process_with_tree_timeout(
     command: Sequence[str],
     *,
     cwd: str | None,
@@ -282,7 +363,10 @@ def _run_with_process_tree_timeout(
     encoding: str,
     errors: str,
     check: bool,
+    env: Optional[dict[str, str]] = None,
 ) -> subprocess.CompletedProcess[str]:
+    """Run a command and guarantee bounded full-tree cleanup on timeout."""
+
     if not capture_output:
         raise ValueError("capture_output must be True for runner logging")
     popen_kwargs = {
@@ -292,6 +376,7 @@ def _run_with_process_tree_timeout(
         "text": text,
         "encoding": encoding,
         "errors": errors,
+        "env": env,
     }
     if os.name == "nt":
         popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
@@ -299,10 +384,23 @@ def _run_with_process_tree_timeout(
         popen_kwargs["start_new_session"] = True
 
     proc = subprocess.Popen(list(command), **popen_kwargs)
+    windows_job: Optional[_WindowsKillOnCloseJob] = None
+    if os.name == "nt":
+        try:
+            windows_job = _WindowsKillOnCloseJob()
+            windows_job.assign(int(proc._handle))  # type: ignore[attr-defined]
+        except OSError:
+            if windows_job is not None:
+                windows_job.close()
+            windows_job = None
     try:
         stdout, stderr = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired as exc:
-        _terminate_process_tree(proc.pid)
+        if windows_job is not None:
+            windows_job.close()
+            windows_job = None
+        else:
+            _terminate_process_tree(proc.pid)
         timeout_stdout = ""
         timeout_stderr = ""
         try:
@@ -316,6 +414,9 @@ def _run_with_process_tree_timeout(
             output=timeout_stdout,
             stderr=timeout_stderr,
         )
+    finally:
+        if windows_job is not None:
+            windows_job.close()
 
     completed = subprocess.CompletedProcess(
         args=list(command),
