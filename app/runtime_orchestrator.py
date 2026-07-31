@@ -1192,7 +1192,7 @@ def _run_akabak_ui_driver_stage(
                 "solve": str(getattr(driver, "last_solve_diagnostics_path", "") or ""),
             }
         vacs_after_stage = _list_vacs_process_ids()
-        if preserve_vacs_for_export:
+        if preserve_vacs_for_export and stage_ok:
             vacs_post_cleanup = {
                 "requested": [],
                 "terminated": [],

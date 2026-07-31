@@ -273,6 +273,61 @@ class RuntimeOrchestratorTests(unittest.TestCase):
             self.assertTrue(bool(post.get("skipped")))
             self.assertEqual(str(post.get("reason")), "preserve_for_vacs_export")
 
+    def test_akabak_stage_terminates_vacs_after_timeout(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            logs_dir = Path(tmp_dir) / "logs"
+            abec_path = Path(tmp_dir) / "Project.abec"
+            abec_path.write_text("stub", encoding="utf-8")
+
+            class _TimeoutAkabakDriver:
+                def __init__(self, *, executable: str, log_dir: Path) -> None:
+                    self.watchdog_events: list[dict] = []
+                    self.last_open_dialog_diagnostics_path = ""
+                    self.last_import_diagnostics_path = ""
+                    self.last_solve_diagnostics_path = "solve-timeout.json"
+
+                def open_project(self, abec_project_path: Path):
+                    return SimpleNamespace(ok=True, status="project_open")
+
+                def import_if_needed(self):
+                    return SimpleNamespace(ok=True, status="project_open")
+
+                def run_solve(self):
+                    return SimpleNamespace(ok=True, status="running")
+
+                def wait_for_completion(self, timeout_s: int = 300, require_vacs_graph_import: bool = False):
+                    raise TimeoutError("solve timeout")
+
+                def close(self):
+                    return SimpleNamespace(ok=True, status="closed")
+
+            cleanup_results = [
+                {"requested": [111], "terminated": [111], "failed": []},
+                {"requested": [222], "terminated": [222], "failed": []},
+            ]
+            with (
+                patch("app.runtime_orchestrator.AkabakDriver", _TimeoutAkabakDriver),
+                patch("app.runtime_orchestrator._list_vacs_process_ids", side_effect=[[111], [222]]),
+                patch("app.runtime_orchestrator._terminate_process_ids", side_effect=cleanup_results) as terminate_mock,
+            ):
+                stage, _, ok = _run_akabak_ui_driver_stage(
+                    version_id="V001",
+                    executable="C:\\Tools\\AKABAK\\AKABAK.exe",
+                    abec_project_path=abec_path,
+                    version_logs_dir=logs_dir,
+                    require_vacs_graph_import=True,
+                    preserve_vacs_for_export=True,
+                )
+
+            self.assertFalse(ok)
+            self.assertTrue(stage.timed_out)
+            self.assertEqual(terminate_mock.call_count, 2)
+            summary_payload = json.loads(Path(stage.summary_log).read_text(encoding="utf-8-sig"))
+            post = dict(dict(summary_payload.get("vacs_cleanup", {}) or {}).get("post_stage", {}) or {})
+            self.assertEqual(post.get("requested"), [222])
+            self.assertEqual(post.get("terminated"), [222])
+            self.assertFalse(bool(post.get("skipped")))
+
     def test_sync_generated_abec_copies_referenced_sidecars(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
