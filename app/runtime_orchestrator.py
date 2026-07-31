@@ -1063,6 +1063,7 @@ def _list_process_ids_by_image(image_name: str) -> List[int]:
             ["tasklist", "/FI", f"IMAGENAME eq {target}", "/FO", "CSV", "/NH"],
             capture_output=True,
             text=True,
+            errors="replace",
             check=False,
         )
     except Exception:
@@ -1104,6 +1105,7 @@ def _process_id_is_alive(process_id: int) -> bool:
             ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
             capture_output=True,
             text=True,
+            errors="replace",
             check=False,
         )
     except Exception:
@@ -1130,6 +1132,7 @@ def _terminate_process_ids(process_ids: Sequence[int]) -> Dict[str, Any]:
                 ["taskkill", "/PID", str(pid), "/T", "/F"],
                 capture_output=True,
                 text=True,
+                errors="replace",
                 check=False,
             )
             if int(cp.returncode) == 0:
@@ -1236,7 +1239,13 @@ def _run_akabak_ui_driver_stage(
     finally:
         if driver is not None:
             try:
-                closed = driver.close()
+                if preserve_vacs_for_export and stage_ok:
+                    # A successful solve hands its live VACS instance to the
+                    # immediately following export stage. Failure paths retain
+                    # strict process-tree cleanup through the default close.
+                    closed = driver.close(preserve_vacs=True)
+                else:
+                    closed = driver.close()
                 payload["steps"]["close"] = {"ok": bool(closed.ok), "status": str(closed.status)}
             except Exception as exc:
                 payload["steps"]["close"] = {"ok": False, "status": "failed", "error": str(exc)}

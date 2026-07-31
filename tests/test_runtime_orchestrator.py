@@ -16,6 +16,7 @@ from app.models import Batch, ParamSelection, Project, ProjectConstraints, SimEx
 from app.runners import parse_ath_dimensions
 from app.runtime_orchestrator import (
     StageExecution,
+    _list_process_ids_by_image,
     _read_log_tail_text,
     _apply_sim_export_settings_to_cfg,
     _resolve_export_specs,
@@ -47,6 +48,15 @@ def _library_db_path(library_root: Path) -> Path:
 
 
 class RuntimeOrchestratorTests(unittest.TestCase):
+    def test_process_listing_replaces_undecodable_windows_output(self) -> None:
+        completed = SimpleNamespace(stdout='"VACSVIEWER_32.exe","222","Console","1","1 K"\n')
+
+        with patch("app.runtime_orchestrator.subprocess.run", return_value=completed) as run_mock:
+            pids = _list_process_ids_by_image("VACSVIEWER_32.exe")
+
+        self.assertEqual(pids, [222])
+        self.assertEqual(run_mock.call_args.kwargs["errors"], "replace")
+
     def test_process_cleanup_treats_raced_exit_as_success(self) -> None:
         completed = SimpleNamespace(returncode=255, stdout="process not found", stderr="")
         with (
@@ -245,6 +255,7 @@ class RuntimeOrchestratorTests(unittest.TestCase):
             logs_dir = Path(tmp_dir) / "logs"
             abec_path = Path(tmp_dir) / "Project.abec"
             abec_path.write_text("stub", encoding="utf-8")
+            close_calls: list[bool] = []
 
             class _FakeAkabakDriver:
                 def __init__(self, *, executable: str, log_dir: Path) -> None:
@@ -265,7 +276,8 @@ class RuntimeOrchestratorTests(unittest.TestCase):
                 def wait_for_completion(self, timeout_s: int = 300, require_vacs_graph_import: bool = False):
                     return SimpleNamespace(ok=True, status="completed")
 
-                def close(self):
+                def close(self, *, preserve_vacs: bool = False):
+                    close_calls.append(bool(preserve_vacs))
                     return SimpleNamespace(ok=True, status="closed")
 
             with patch("app.runtime_orchestrator.AkabakDriver", _FakeAkabakDriver):
@@ -291,6 +303,7 @@ class RuntimeOrchestratorTests(unittest.TestCase):
 
             self.assertTrue(ok)
             self.assertEqual(stage.status, "ok")
+            self.assertEqual(close_calls, [True])
             self.assertEqual(terminate_mock.call_count, 1)
             self.assertEqual(str(payload.get("summary_log")), str(stage.summary_log))
             summary_payload = json.loads(Path(stage.summary_log).read_text(encoding="utf-8-sig"))
