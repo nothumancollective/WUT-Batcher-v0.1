@@ -1094,9 +1094,34 @@ def _list_akabak_process_ids() -> List[int]:
     return sorted(set(rows))
 
 
+def _process_id_is_alive(process_id: int) -> bool:
+    pid = int(process_id or 0)
+    if pid <= 0:
+        return False
+    try:
+        cp = subprocess.run(
+            ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except Exception:
+        return False
+    for row in csv.reader(io.StringIO(str(cp.stdout or ""))):
+        if len(row) < 2:
+            continue
+        try:
+            if int(str(row[1] or "").strip().strip('"')) == pid:
+                return True
+        except Exception:
+            continue
+    return False
+
+
 def _terminate_process_ids(process_ids: Sequence[int]) -> Dict[str, Any]:
     requested = sorted({int(pid) for pid in process_ids if int(pid) > 0})
     terminated: List[int] = []
+    already_exited: List[int] = []
     failed: List[Dict[str, Any]] = []
     for pid in requested:
         try:
@@ -1108,6 +1133,8 @@ def _terminate_process_ids(process_ids: Sequence[int]) -> Dict[str, Any]:
             )
             if int(cp.returncode) == 0:
                 terminated.append(int(pid))
+            elif not _process_id_is_alive(pid):
+                already_exited.append(int(pid))
             else:
                 failed.append(
                     {
@@ -1118,8 +1145,16 @@ def _terminate_process_ids(process_ids: Sequence[int]) -> Dict[str, Any]:
                     }
                 )
         except Exception as exc:
-            failed.append({"pid": int(pid), "error": str(exc)})
-    return {"requested": requested, "terminated": terminated, "failed": failed}
+            if _process_id_is_alive(pid):
+                failed.append({"pid": int(pid), "error": str(exc)})
+            else:
+                already_exited.append(int(pid))
+    return {
+        "requested": requested,
+        "terminated": terminated,
+        "already_exited": already_exited,
+        "failed": failed,
+    }
 
 
 def _run_akabak_ui_driver_stage(

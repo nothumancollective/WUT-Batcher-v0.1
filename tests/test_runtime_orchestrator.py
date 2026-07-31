@@ -20,6 +20,7 @@ from app.runtime_orchestrator import (
     _apply_sim_export_settings_to_cfg,
     _resolve_export_specs,
     _run_akabak_ui_driver_stage,
+    _terminate_process_ids,
     _supports_uia_executable,
     _sync_generated_abec,
     run_batch_pipeline,
@@ -46,6 +47,30 @@ def _library_db_path(library_root: Path) -> Path:
 
 
 class RuntimeOrchestratorTests(unittest.TestCase):
+    def test_process_cleanup_treats_raced_exit_as_success(self) -> None:
+        completed = SimpleNamespace(returncode=255, stdout="process not found", stderr="")
+        with (
+            patch("app.runtime_orchestrator.subprocess.run", return_value=completed),
+            patch("app.runtime_orchestrator._process_id_is_alive", return_value=False),
+        ):
+            result = _terminate_process_ids([10996])
+
+        self.assertEqual(result.get("requested"), [10996])
+        self.assertEqual(result.get("terminated"), [])
+        self.assertEqual(result.get("already_exited"), [10996])
+        self.assertEqual(result.get("failed"), [])
+
+    def test_process_cleanup_keeps_live_failed_pid_as_error(self) -> None:
+        completed = SimpleNamespace(returncode=5, stdout="", stderr="access denied")
+        with (
+            patch("app.runtime_orchestrator.subprocess.run", return_value=completed),
+            patch("app.runtime_orchestrator._process_id_is_alive", return_value=True),
+        ):
+            result = _terminate_process_ids([333])
+
+        self.assertEqual(result.get("already_exited"), [])
+        self.assertEqual([row.get("pid") for row in result.get("failed", [])], [333])
+
     def test_uia_automation_requires_native_executable(self) -> None:
         self.assertTrue(_supports_uia_executable(r"C:\Program Files\RDTeam\AKABAK\AKABAK.exe"))
         self.assertFalse(_supports_uia_executable(r"C:\qa\akabak_fake.cmd"))
