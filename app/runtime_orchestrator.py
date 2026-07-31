@@ -490,12 +490,13 @@ def _resolve_export_specs(sim_export_payload: Dict[str, Any]) -> List[ExportSpec
 
 
 def _best_mesh_cmd_for_runtime(ath_executable: str | Path | None) -> str:
-    if not ath_executable:
-        return ""
-    candidate = Path(str(ath_executable)).expanduser().parent / "gmsh.exe"
-    if candidate.exists() and candidate.is_file():
-        return str(candidate.resolve())
-    return ""
+    from app.setup_assistant import discover_tool_path
+
+    candidate, _source = discover_tool_path(
+        "gmsh",
+        ath_executable=str(ath_executable) if ath_executable else None,
+    )
+    return str(candidate or "")
 
 
 def _ensure_runtime_gmsh_wrapper(*, gmsh_exe: str) -> str:

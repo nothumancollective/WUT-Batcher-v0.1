@@ -162,6 +162,34 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     return 0 if status.lower() != "fail" else 3
 
 
+def cmd_setup_status(_args: argparse.Namespace) -> int:
+    from app.setup_assistant import inspect_setup
+
+    inspection = inspect_setup(SettingsStore().load())
+    print(json.dumps(inspection.to_dict(), indent=2, ensure_ascii=False))
+    return 0 if inspection.ready else 2
+
+
+def cmd_setup_detect(_args: argparse.Namespace) -> int:
+    from app.setup_assistant import autoconfigure_detected_tools
+
+    result = autoconfigure_detected_tools(SettingsStore())
+    print(json.dumps(result, indent=2, ensure_ascii=False, default=_json_default))
+    inspection = dict(result.get("inspection", {}) or {})
+    return 0 if bool(inspection.get("ready")) else 2
+
+
+def cmd_setup_install_gmsh(args: argparse.Namespace) -> int:
+    from app.setup_assistant import install_gmsh_with_winget
+
+    result = install_gmsh_with_winget(
+        confirmed=bool(args.yes),
+        timeout_seconds=int(args.timeout_seconds),
+    )
+    print(json.dumps(result, indent=2, ensure_ascii=False, default=_json_default))
+    return 0 if str(result.get("status") or "") in {"already_installed", "installed"} else 3
+
+
 def cmd_batch_job_count(args: argparse.Namespace) -> int:
     import app.batch_planner as batch_planner
 
@@ -947,6 +975,24 @@ def build_parser() -> argparse.ArgumentParser:
     p_doctor.add_argument("--kill-zombies", action="store_true", help="Attempt to kill stuck tool processes.")
     p_doctor.add_argument("--report-path", help="Write doctor_report.json to this path.")
     p_doctor.set_defaults(func=cmd_doctor)
+
+    p_setup = sub.add_parser("setup", help="Discover external tools and run license-aware setup actions.")
+    sub_setup = p_setup.add_subparsers(dest="setup_cmd", required=True)
+    p_setup_status = sub_setup.add_parser("status", help="Show configured and detected tool status.")
+    p_setup_status.set_defaults(func=cmd_setup_status)
+    p_setup_detect = sub_setup.add_parser(
+        "detect",
+        help="Persist detected ATH/AKABAK/VACS paths without replacing valid settings.",
+    )
+    p_setup_detect.set_defaults(func=cmd_setup_detect)
+    p_setup_gmsh = sub_setup.add_parser("install-gmsh", help="Install the GPL Gmsh package with winget.")
+    p_setup_gmsh.add_argument(
+        "--yes",
+        action="store_true",
+        help="Confirm the external winget installation. Without this flag nothing is installed.",
+    )
+    p_setup_gmsh.add_argument("--timeout-seconds", type=int, default=600)
+    p_setup_gmsh.set_defaults(func=cmd_setup_install_gmsh)
 
     p_batch = sub.add_parser("batch", help="Batch utilities.")
     sub_batch = p_batch.add_subparsers(dest="batch_cmd", required=True)
