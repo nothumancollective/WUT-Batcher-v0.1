@@ -13,14 +13,27 @@ class AkabakDriverVacsSnapshotTests(unittest.TestCase):
 
         def native_metrics(process_id: int):
             native_calls.append(process_id)
-            return [
+            rows = [
                 {
                     "title": "VacsViewer",
                     "class_name": "TForm_DatMain",
                     "controls_count": 22 if process_id == 101 else 151,
                     "graph_keyword_hits": 1 if process_id == 101 else 9,
+                    "is_visible": True,
                 }
             ]
+            if process_id == 202:
+                rows = [
+                    {
+                        "title": f"helper-{index}",
+                        "class_name": "TPUtilWindow",
+                        "controls_count": index,
+                        "graph_keyword_hits": 0,
+                        "is_visible": False,
+                    }
+                    for index in range(9)
+                ] + rows
+            return rows
 
         driver._native_vacs_window_metrics = native_metrics
         driver._process_top_level_windows = lambda **_: self.fail("UIA polling must not run")
@@ -32,6 +45,8 @@ class AkabakDriverVacsSnapshotTests(unittest.TestCase):
         self.assertEqual(snapshot["max_controls_count"], 151)
         self.assertEqual(snapshot["max_graph_keyword_hits"], 9)
         self.assertEqual(snapshot["snapshot_backend"], "win32_hwnd")
+        self.assertEqual(snapshot["windows"]["202"][0]["title"], "VacsViewer")
+        self.assertLessEqual(len(snapshot["windows"]["202"]), 8)
 
 
 if __name__ == "__main__":

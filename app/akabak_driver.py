@@ -426,11 +426,22 @@ class AkabakDriver:
         max_keyword_hits = 0
         vacs_pids = self._list_vacs_process_ids()
         for pid in vacs_pids:
-            rows = self._native_vacs_window_metrics(pid)[:4]
-            for metrics in rows:
+            all_rows = self._native_vacs_window_metrics(pid)
+            for metrics in all_rows:
                 max_controls = max(max_controls, int(metrics.get("controls_count", 0)))
                 max_keyword_hits = max(max_keyword_hits, int(metrics.get("graph_keyword_hits", 0)))
-            pid_rows[str(pid)] = rows
+            # Helper/editor HWNDs often enumerate before the visible VACS forms.
+            # Keep the strongest diagnostic rows, but compute readiness over all.
+            diagnostic_rows = sorted(
+                all_rows,
+                key=lambda row: (
+                    bool(row.get("is_visible")),
+                    int(row.get("graph_keyword_hits", 0)),
+                    int(row.get("controls_count", 0)),
+                ),
+                reverse=True,
+            )[:8]
+            pid_rows[str(pid)] = diagnostic_rows
         return {
             "pids": vacs_pids,
             "windows": pid_rows,
