@@ -42,7 +42,7 @@ from app.analyzer.presets import (
     resolve_band_limits,
 )
 from app.analyzer.reason_codes import reason_items_for_codes
-from app.doctor_service import run_doctor_checks
+from app.doctor_service import run_settings_doctor_checks
 from app.constants import DEFAULT_RUNNER_MODE
 import app.resources_rc  # noqa: F401  # Registers Qt resource paths used by icons/QSS.
 from app.models import AppConfig, Batch, Project, ProjectConstraints
@@ -15634,20 +15634,12 @@ def _make_splash(app: QApplication) -> QSplashScreen:
 
 def _run_doctor_for_splash(service: OrchestratorService) -> Dict[str, object]:
     settings = service.settings
-    config = AppConfig(projects_root=settings.library_root)
-    report = run_doctor_checks(
-        config,
-        config_path=service.settings_store.path,
+    report = run_settings_doctor_checks(
+        settings,
+        settings_path=service.settings_store.path,
         fix=False,
         kill_zombies=False,
         report_path=None,
-        tool_paths={
-            "ath_exe": settings.ath_exe,
-            "akabak_exe": settings.akabak_exe,
-            "vacs_exe": settings.vacs_exe,
-        },
-        include_batch_results_root_check=False,
-        include_ath_export_root_check=False,
     )
     tool_versions: Dict[str, str] = {}
     for key, exe_path in {

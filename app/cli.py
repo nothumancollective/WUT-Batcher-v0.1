@@ -135,14 +135,24 @@ def _table_count_for_versions(db_path: Path, table: str, version_ids: list[str])
 def cmd_doctor(args: argparse.Namespace) -> int:
     import app.doctor_service as doctor_service
 
-    config = AppConfig.load(args.config)
-    report = doctor_service.run_doctor_checks(
-        config,
-        config_path=Path(args.config) if args.config else None,
-        fix=args.fix,
-        kill_zombies=args.kill_zombies,
-        report_path=Path(args.report_path) if args.report_path else None,
-    )
+    if args.config:
+        config = AppConfig.load(args.config)
+        report = doctor_service.run_doctor_checks(
+            config,
+            config_path=Path(args.config),
+            fix=args.fix,
+            kill_zombies=args.kill_zombies,
+            report_path=Path(args.report_path) if args.report_path else None,
+        )
+    else:
+        settings_store = SettingsStore()
+        report = doctor_service.run_settings_doctor_checks(
+            settings_store.load(),
+            settings_path=settings_store.path,
+            fix=args.fix,
+            kill_zombies=args.kill_zombies,
+            report_path=Path(args.report_path) if args.report_path else None,
+        )
     print(json.dumps(report, indent=2, ensure_ascii=False, default=_json_default))
     status = ""
     if isinstance(report, dict):
@@ -168,7 +178,7 @@ def cmd_batch_job_count(args: argparse.Namespace) -> int:
 def cmd_dataset_build_or_update(args: argparse.Namespace, *, rebuild: bool) -> int:
     import app.dataset_pipeline as dataset_pipeline
 
-    config = AppConfig.load(args.config)
+    config = AppConfig.load(args.config or "app_config.json")
     project_root = _default_project_root(config, args.project_id)
     manifest_path = Path(args.manifest_path) if args.manifest_path else (project_root / "dataset_manifest.json")
 
@@ -924,7 +934,11 @@ def cmd_runs_cleanup_testdata(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="batch-software")
-    parser.add_argument("--config", default="app_config.json", help="Path to app_config.json (optional).")
+    parser.add_argument(
+        "--config",
+        default=None,
+        help="Legacy app_config.json path. Doctor uses active user settings when omitted.",
+    )
 
     sub = parser.add_subparsers(dest="cmd", required=True)
 

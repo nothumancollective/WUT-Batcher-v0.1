@@ -17,8 +17,8 @@ class CliExitCodeTests(unittest.TestCase):
             kill_zombies=False,
             report_path=None,
         )
-        with patch("app.cli.AppConfig.load", return_value=object()):
-            with patch("app.doctor_service.run_doctor_checks", return_value={"overall_status": "fail"}):
+        with patch("app.cli.SettingsStore.load", return_value=object()):
+            with patch("app.doctor_service.run_settings_doctor_checks", return_value={"overall_status": "fail"}):
                 with patch("builtins.print"):
                     exit_code = cli.cmd_doctor(args)
         self.assertEqual(exit_code, 3)
@@ -30,8 +30,8 @@ class CliExitCodeTests(unittest.TestCase):
             kill_zombies=False,
             report_path=None,
         )
-        with patch("app.cli.AppConfig.load", return_value=object()):
-            with patch("app.doctor_service.run_doctor_checks", return_value={"overall_status": "warn"}):
+        with patch("app.cli.SettingsStore.load", return_value=object()):
+            with patch("app.doctor_service.run_settings_doctor_checks", return_value={"overall_status": "warn"}):
                 with patch("builtins.print"):
                     exit_code = cli.cmd_doctor(args)
         self.assertEqual(exit_code, 0)

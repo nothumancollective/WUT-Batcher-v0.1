@@ -5,8 +5,9 @@ import os
 import tempfile
 import unittest
 
-from app.doctor_service import _check_runner_dir, run_doctor_checks
+from app.doctor_service import _check_runner_dir, run_doctor_checks, run_settings_doctor_checks
 from app.models import AppConfig
+from app.settings_store import UserSettings
 
 
 class DoctorServiceTests(unittest.TestCase):
@@ -73,6 +74,22 @@ class DoctorServiceTests(unittest.TestCase):
             check = _check_runner_dir(root)
             self.assertEqual(check.status, "ok")
             self.assertIn("integrated runtime", check.detail.lower())
+
+    def test_settings_doctor_skips_obsolete_storage_roots(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            settings_path = root / "config.json"
+            settings_path.write_text("{}", encoding="utf-8")
+            report = run_settings_doctor_checks(
+                UserSettings(library_root=str(root / "library")),
+                settings_path=settings_path,
+                fix=True,
+                report_path=root / "doctor.json",
+            )
+            keys = {check.key for check in report.checks}
+            self.assertNotIn("batch_results_root_exists", keys)
+            self.assertNotIn("ath_export_root_exists", keys)
+            self.assertIn("Projects root_exists", keys)
 
 
 if __name__ == "__main__":

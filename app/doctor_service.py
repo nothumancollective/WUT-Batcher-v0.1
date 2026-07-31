@@ -11,6 +11,7 @@ import subprocess
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 from app.models import AppConfig
+from app.settings_store import UserSettings
 
 
 STATUS_OK = "ok"
@@ -61,8 +62,7 @@ def _read_config_payload(config_path: Optional[Path]) -> Tuple[Dict[str, Any], O
 
 
 def _default_report_path() -> Path:
-    repo_root = Path(__file__).resolve().parents[1]
-    return repo_root / "logs" / "doctor_report.json"
+    return Path.home() / ".wut_batcher" / "logs" / "doctor_report.json"
 
 
 def _report_payload(report: DoctorReport) -> Dict[str, Any]:
@@ -222,7 +222,7 @@ def _check_exe(config_data: Dict[str, Any], key: str, label: str) -> DoctorCheck
             key=key,
             label=label,
             status=STATUS_WARN,
-            detail=f"{label} not configured in app_config.json.",
+            detail=f"{label} not configured in the active settings.",
         )
 
     path = Path(str(raw))
@@ -291,7 +291,7 @@ def _check_exe_with_dir_fallback(
         key=exe_key,
         label=label,
         status=STATUS_WARN,
-        detail=f"{label} not configured in app_config.json.",
+        detail=f"{label} not configured in the active settings.",
     )
 
 
@@ -555,5 +555,35 @@ def run_doctor_checks(
             pass
 
     return report
+
+
+def run_settings_doctor_checks(
+    settings: UserSettings,
+    settings_path: Optional[Path] = None,
+    *,
+    fix: bool = False,
+    kill_zombies: bool = False,
+    report_path: Optional[Path] = None,
+) -> DoctorReport:
+    """Run the modern doctor against the same settings used by GUI/runtime.
+
+    The legacy ``AppConfig`` doctor remains available for old dataset commands, but
+    it contains roots that no longer exist in the project-library storage model.
+    """
+
+    return run_doctor_checks(
+        AppConfig(projects_root=str(settings.library_root)),
+        config_path=settings_path,
+        fix=fix,
+        kill_zombies=kill_zombies,
+        report_path=report_path,
+        tool_paths={
+            "ath_exe": settings.ath_exe,
+            "akabak_exe": settings.akabak_exe,
+            "vacs_exe": settings.vacs_exe,
+        },
+        include_batch_results_root_check=False,
+        include_ath_export_root_check=False,
+    )
 
 
