@@ -1385,7 +1385,7 @@ def build_stylesheet(tokens: ThemeTokens = DEFAULT_THEME) -> str:
         border: 1px solid {c['border']};
         border-radius: {r['md']}px;
         font-weight: 600;
-        min-height: 28px;
+        min-height: 30px;
         padding: 0px {s['md']}px;
     }}
     QPushButton#StatusActionButton:hover {{
