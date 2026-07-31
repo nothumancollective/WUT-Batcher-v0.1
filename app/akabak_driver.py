@@ -45,6 +45,7 @@ IMPORT_ABEC_COMMAND_ID = 113
 AKABAK_IMAGE_NAME = "akabak.exe"
 VACS_IMAGE_CANDIDATES = ("vacsviewer_32.exe", "vacsviewer.exe")
 VACS_GRAPH_KEYWORDS = ("graph", "impedance", "spl", "phase", "radiation", "polar", "directivity")
+VACS_GRAPH_CLASS_NAMES = ("tform_datcontour", "tform_datgraph")
 MESH_FILE_MISSING_RE = re.compile(r"cannot\s+find\s+mesh[-\s]*file", re.IGNORECASE)
 ALL_SOURCES_MUTED_RE = re.compile(r"all\s+sources\s+muted", re.IGNORECASE)
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
@@ -329,45 +330,113 @@ class AkabakDriver:
             "is_visible": is_visible,
         }
 
-    def _vacs_window_metrics(self, window: Any) -> Dict[str, Any]:
-        row = self._window_signature_row(window)
-        controls = 0
-        keyword_hits = 0
+    def _native_window_text(self, hwnd: int, *, max_chars: int = 2048) -> str:
+        if hwnd <= 0:
+            return ""
         try:
-            descendants = list(window.descendants())
-            controls = len(descendants)
-            for control in descendants[:1500]:
-                try:
-                    title = str(control.window_text() or "").strip().lower()
-                except Exception:
-                    title = ""
-                if not title:
-                    continue
-                if any(token in title for token in VACS_GRAPH_KEYWORDS):
-                    keyword_hits += 1
+            buffer = ctypes.create_unicode_buffer(max(2, int(max_chars)))
+            self._user32().GetWindowTextW(hwnd, buffer, len(buffer))
+            return str(buffer.value or "").strip()
         except Exception:
-            pass
-        row["controls_count"] = int(controls)
-        row["graph_keyword_hits"] = int(keyword_hits)
-        return row
+            return ""
+
+    def _native_window_class(self, hwnd: int, *, max_chars: int = 256) -> str:
+        if hwnd <= 0:
+            return ""
+        try:
+            buffer = ctypes.create_unicode_buffer(max(2, int(max_chars)))
+            self._user32().GetClassNameW(hwnd, buffer, len(buffer))
+            return str(buffer.value or "").strip()
+        except Exception:
+            return ""
+
+    def _native_vacs_window_metrics(self, process_id: int) -> List[Dict[str, Any]]:
+        """Inspect VACS HWNDs without recursive COM/UIA traversal.
+
+        Repeated ``pywinauto`` ``descendants()`` calls can raise an uncatchable
+        Windows COM exception while VACS mutates its graph tree during a solve.
+        Native HWND enumeration supplies the readiness metrics needed here and
+        keeps the fragile UIA tree out of the high-frequency polling path.
+        """
+        pid = int(process_id or 0)
+        if pid <= 0 or not hasattr(ctypes, "windll") or not hasattr(ctypes, "WINFUNCTYPE"):
+            return []
+        user32 = self._user32()
+        callback_type = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p)
+        rows: List[Dict[str, Any]] = []
+
+        def _top_level_callback(raw_hwnd: int, _lparam: int) -> int:
+            hwnd = int(raw_hwnd or 0)
+            owner_pid = ctypes.c_ulong(0)
+            try:
+                user32.GetWindowThreadProcessId(hwnd, ctypes.byref(owner_pid))
+            except Exception:
+                return 1
+            if int(owner_pid.value) != pid:
+                return 1
+
+            controls_count = 0
+            graph_keyword_hits = 0
+
+            def _child_callback(raw_child_hwnd: int, _child_lparam: int) -> int:
+                nonlocal controls_count, graph_keyword_hits
+                child_hwnd = int(raw_child_hwnd or 0)
+                controls_count += 1
+                title = self._native_window_text(child_hwnd).lower()
+                class_name = self._native_window_class(child_hwnd).lower()
+                if any(token in title for token in VACS_GRAPH_KEYWORDS) or any(
+                    token in class_name for token in VACS_GRAPH_CLASS_NAMES
+                ):
+                    graph_keyword_hits += 1
+                return 1
+
+            child_callback = callback_type(_child_callback)
+            try:
+                user32.EnumChildWindows(hwnd, child_callback, 0)
+            except Exception:
+                pass
+            try:
+                is_visible = bool(user32.IsWindowVisible(hwnd))
+            except Exception:
+                is_visible = False
+            rows.append(
+                {
+                    "title": self._native_window_text(hwnd),
+                    "class_name": self._native_window_class(hwnd),
+                    "control_type": "native_hwnd",
+                    "automation_id": "",
+                    "native_handle": hwnd,
+                    "is_visible": is_visible,
+                    "controls_count": int(controls_count),
+                    "graph_keyword_hits": int(graph_keyword_hits),
+                }
+            )
+            return 1
+
+        top_level_callback = callback_type(_top_level_callback)
+        try:
+            user32.EnumWindows(top_level_callback, 0)
+        except Exception:
+            return []
+        return rows
 
     def _vacs_ui_snapshot(self) -> Dict[str, Any]:
         pid_rows: Dict[str, Any] = {}
         max_controls = 0
         max_keyword_hits = 0
-        for pid in self._list_vacs_process_ids():
-            rows: List[Dict[str, Any]] = []
-            for window in self._process_top_level_windows(process_id=pid)[:4]:
-                metrics = self._vacs_window_metrics(window)
-                rows.append(metrics)
+        vacs_pids = self._list_vacs_process_ids()
+        for pid in vacs_pids:
+            rows = self._native_vacs_window_metrics(pid)[:4]
+            for metrics in rows:
                 max_controls = max(max_controls, int(metrics.get("controls_count", 0)))
                 max_keyword_hits = max(max_keyword_hits, int(metrics.get("graph_keyword_hits", 0)))
             pid_rows[str(pid)] = rows
         return {
-            "pids": self._list_vacs_process_ids(),
+            "pids": vacs_pids,
             "windows": pid_rows,
             "max_controls_count": int(max_controls),
             "max_graph_keyword_hits": int(max_keyword_hits),
+            "snapshot_backend": "win32_hwnd",
         }
 
     def _is_interpreter_window_row(self, row: Dict[str, Any]) -> bool:
