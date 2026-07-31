@@ -253,7 +253,14 @@ classifying a long solve as hung.
 
 ## Final integration record
 
-The product tree and both histories are ready for the content-preserving
-archived-`main` merge. The exact merge and final local `main` head are recorded
-in the follow-up integration-only commit so that this tested implementation
-commit remains identifiable as `71332f0`.
+The content-preserving merge is `48c1869` with parents `e29f827` (validated
+product tree plus evidence) and `532a351` (archived `main`). Its tree hash
+`5f502fc6cba1d0b6ca1e5ecd0c316d6c92acb35a` is identical to the pre-merge
+`e29f827` tree, so the history reconnect changed no product file.
+
+The former local `main` is recoverable as tag
+`archive/main-pre-20260731 -> 532a351`. Local `main` was moved to `48c1869`
+and this documentation-only integration record was then committed on `main`.
+The project-manager (`c5e6860`), batch-lineage (`0850f67`) and archived-main
+heads are all ancestors of the resulting branch. Historical branches were
+retained, the working tree was clean, and no remote ref was pushed.
