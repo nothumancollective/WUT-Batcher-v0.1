@@ -38,7 +38,7 @@ from app.safe_cleanup import (
     guarded_delete_tree_in_workspace,
 )
 from app.le_driver_registry import load_le_driver_registry
-from app.runtime_orchestrator import _apply_sim_export_settings_to_cfg
+from app.runtime_orchestrator import _apply_sim_export_settings_to_cfg, _to_windows_short_path
 from app.ui_automation.waits import wait_until
 from app.ui_automation.discover import discover_app_ui
 from app.vacs_export_pipeline import VacsExportPipelineError, run_vacs_export_specs
@@ -478,12 +478,18 @@ def _split_meshcmd_rhs(rhs_value: str) -> Tuple[str, str]:
     rhs = str(rhs_value or "").strip()
     if not rhs:
         return "", ""
+    # MeshCmd values are frequently quoted as one ATH string while the
+    # executable itself may also contain spaces. Split at the executable
+    # suffix instead of the first whitespace so Program Files paths survive.
+    match = re.match(r"(?is)^[\"']?(?P<exe>.+?\.exe)[\"']?(?P<args>\s+.*)?$", rhs)
+    if match:
+        exe_candidate = str(match.group("exe") or "").strip().strip('"').strip("'")
+        args = str(match.group("args") or "").strip().rstrip('"').rstrip("'").strip()
+        normalized = " ".join(item for item in (exe_candidate, args) if item)
+        return exe_candidate, normalized
     if rhs.startswith('"') and rhs.endswith('"') and len(rhs) >= 2:
         rhs = rhs[1:-1].strip()
-    if "%f" in rhs:
-        exe_candidate = rhs.split("%f", 1)[0].strip().rstrip('"').rstrip("'").strip()
-    else:
-        exe_candidate = rhs.split(" ", 1)[0].strip().rstrip('"').rstrip("'").strip()
+    exe_candidate = rhs.split(" ", 1)[0].strip().rstrip('"').rstrip("'").strip()
     return exe_candidate, rhs
 
 
@@ -501,11 +507,16 @@ def _normalize_meshcmd_rhs(
         name = Path(executable).name.lower()
     except Exception:
         name = ""
+    runtime_executable = _to_windows_short_path(executable)
+    if runtime_executable and runtime_executable != executable and normalized:
+        normalized = normalized.replace(executable, runtime_executable, 1)
+        changed = True
+        reason = "short_path_for_whitespace"
     # ATH often forwards the current .geo via "%f". Bare gmsh.exe opens GUI and can stall runs.
     if name == "gmsh.exe" and normalized and "%f" not in normalized.lower():
-        normalized = f"{executable} %f -".strip()
+        normalized = f"{runtime_executable or executable} %f -".strip()
         changed = True
-        reason = "append_placeholder_for_gmsh"
+        reason = "+".join(item for item in (reason, "append_placeholder_for_gmsh") if item)
     return {
         "meshcmd_rhs": normalized,
         "normalized": changed,
@@ -566,6 +577,21 @@ def _resolve_meshcmd_rhs(
                     "meshcmd_rhs_normalization_reason": str(normalized_info.get("reason", "") or ""),
                     "ath_cfg_source": str(ath_cfg),
                 }
+
+    if ath_executable:
+        sibling = Path(str(ath_executable)).expanduser().parent / "gmsh.exe"
+        if sibling.exists() and sibling.is_file():
+            rhs = f"{sibling} %f -"
+            normalized_info = _normalize_meshcmd_rhs(meshcmd_executable=str(sibling), meshcmd_rhs=rhs)
+            return {
+                "source": "ath_sibling",
+                "meshcmd_rhs": str(normalized_info.get("meshcmd_rhs", rhs) or "").strip(),
+                "meshcmd_executable": str(sibling),
+                "meshcmd_executable_exists": True,
+                "meshcmd_rhs_normalized": bool(normalized_info.get("normalized")),
+                "meshcmd_rhs_normalization_reason": str(normalized_info.get("reason", "") or ""),
+                "ath_cfg_source": str(ath_cfg) if ath_cfg is not None else None,
+            }
 
     fallback_candidates = [
         Path(r"C:\Program Files\gmsh\gmsh.exe"),

@@ -14,6 +14,7 @@ from app.runner_test_harness import (
     _patch_observation_radimp_profile,
     _parse_abec_mesh_requirements,
     _resolve_meshcmd_rhs,
+    _split_meshcmd_rhs,
     run_runner_test_le_proof_matrix,
     run_runner_test_radimp_3scope_matrix,
     run_runner_test_radimp_driving_matrix,
@@ -478,6 +479,25 @@ class RunnerTestHarnessTests(unittest.TestCase):
             self.assertTrue(bool(meshcmd["meshcmd_rhs_normalized"]))
             self.assertEqual(str(meshcmd["meshcmd_rhs_normalization_reason"]), "append_placeholder_for_gmsh")
             self.assertIn("%f -", str(meshcmd["meshcmd_rhs"]))
+
+    def test_resolve_meshcmd_rhs_prefers_gmsh_next_to_ath(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            ath_exe = root / "ath.exe"
+            gmsh_exe = root / "gmsh.exe"
+            ath_exe.write_text("", encoding="utf-8")
+            gmsh_exe.write_text("", encoding="utf-8")
+
+            meshcmd = _resolve_meshcmd_rhs(ath_executable=ath_exe, meshcmd_override=None)
+
+            self.assertEqual(meshcmd["source"], "ath_sibling")
+            self.assertEqual(Path(str(meshcmd["meshcmd_executable"])), gmsh_exe)
+            self.assertIn("%f -", str(meshcmd["meshcmd_rhs"]))
+
+    def test_split_meshcmd_rhs_preserves_quoted_program_files_path(self) -> None:
+        executable, normalized = _split_meshcmd_rhs('"C:\\Program Files\\gmsh\\gmsh.exe %f -"')
+        self.assertEqual(executable, r"C:\Program Files\gmsh\gmsh.exe")
+        self.assertEqual(normalized, r"C:\Program Files\gmsh\gmsh.exe %f -")
 
     def test_open_dialog_only_dry_run_writes_db_records(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
