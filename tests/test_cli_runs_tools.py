@@ -42,6 +42,7 @@ class CliRunsToolsTests(unittest.TestCase):
             run_payload = json.loads(run_result.stdout)
             project_id = str(run_payload["project_id"])
             run_id = str(run_payload["runtime_summary"]["run_id"])
+            self.assertEqual(Path(run_payload["library_root"]).resolve(), library_root.resolve())
 
             pin_result = subprocess.run(
                 [
@@ -53,6 +54,8 @@ class CliRunsToolsTests(unittest.TestCase):
                     run_id,
                     "--project-id",
                     project_id,
+                    "--library-root",
+                    str(library_root),
                     "--tag",
                     "baseline",
                 ],
@@ -73,6 +76,8 @@ class CliRunsToolsTests(unittest.TestCase):
                     "cleanup-testdata",
                     "--project-id",
                     project_id,
+                    "--library-root",
+                    str(library_root),
                     "--dry-run",
                 ],
                 env=env,
@@ -95,6 +100,8 @@ class CliRunsToolsTests(unittest.TestCase):
                     run_id,
                     "--project-id",
                     project_id,
+                    "--library-root",
+                    str(library_root),
                 ],
                 env=env,
                 capture_output=True,
@@ -113,6 +120,8 @@ class CliRunsToolsTests(unittest.TestCase):
                     "cleanup-testdata",
                     "--project-id",
                     project_id,
+                    "--library-root",
+                    str(library_root),
                     "--dry-run",
                 ],
                 env=env,

@@ -50,6 +50,16 @@ def _settings_store_for_library_root_override(
     return override_store
 
 
+def _service_for_optional_library_root(library_root: str | Path | None) -> OrchestratorService:
+    settings_store = SettingsStore()
+    if library_root:
+        settings_store = _settings_store_for_library_root_override(
+            base_settings=settings_store.load(),
+            library_root=library_root,
+        )
+    return OrchestratorService(settings_store=settings_store)
+
+
 def _ath_experiment_has_failures(summary: Mapping[str, Any]) -> bool:
     status_counts = dict(summary.get("status_counts", {}) or {})
     if int(status_counts.get("ath_error", 0) or 0) > 0:
@@ -346,6 +356,7 @@ def cmd_run_sample(args: argparse.Namespace) -> int:
     payload = {
         "ok": ok,
         "mode": "dry-run" if dry_run else "real",
+        "library_root": str(service.settings.library_root),
         "project_id": project.project_id,
         "batch_id": batch_id,
         "version_ids": version_ids,
@@ -856,7 +867,7 @@ def _resolve_run_project_id(service: OrchestratorService, run_id: str, project_i
 
 
 def cmd_runs_pin(args: argparse.Namespace) -> int:
-    service = OrchestratorService(settings_store=SettingsStore())
+    service = _service_for_optional_library_root(args.library_root)
     project_id = _resolve_run_project_id(service, args.run_id, args.project_id)
     result = service.pin_run(project_id=project_id, run_id=args.run_id, tag=args.tag)
     print(json.dumps({"ok": True, "project_id": project_id, "run_id": args.run_id, **result}, indent=2, ensure_ascii=False))
@@ -864,7 +875,7 @@ def cmd_runs_pin(args: argparse.Namespace) -> int:
 
 
 def cmd_runs_unpin(args: argparse.Namespace) -> int:
-    service = OrchestratorService(settings_store=SettingsStore())
+    service = _service_for_optional_library_root(args.library_root)
     project_id = _resolve_run_project_id(service, args.run_id, args.project_id)
     result = service.unpin_run(project_id=project_id, run_id=args.run_id)
     print(json.dumps({"ok": True, "project_id": project_id, "run_id": args.run_id, **result}, indent=2, ensure_ascii=False))
@@ -872,7 +883,7 @@ def cmd_runs_unpin(args: argparse.Namespace) -> int:
 
 
 def cmd_runs_cleanup_testdata(args: argparse.Namespace) -> int:
-    service = OrchestratorService(settings_store=SettingsStore())
+    service = _service_for_optional_library_root(args.library_root)
     if args.project_id:
         projects = [args.project_id]
     else:
@@ -1856,12 +1867,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_runs_pin = sub_runs.add_parser("pin", help="Pin a run to keep it during cleanup.")
     p_runs_pin.add_argument("run_id", help="Run identifier")
     p_runs_pin.add_argument("--project-id", help="Project id override if run id exists in multiple projects")
+    p_runs_pin.add_argument("--library-root", help="Use this Project Library without changing saved settings")
     p_runs_pin.add_argument("--tag", help="Optional tag (e.g. baseline/final)")
     p_runs_pin.set_defaults(func=cmd_runs_pin)
 
     p_runs_unpin = sub_runs.add_parser("unpin", help="Remove pin from a run.")
     p_runs_unpin.add_argument("run_id", help="Run identifier")
     p_runs_unpin.add_argument("--project-id", help="Project id override if run id exists in multiple projects")
+    p_runs_unpin.add_argument("--library-root", help="Use this Project Library without changing saved settings")
     p_runs_unpin.set_defaults(func=cmd_runs_unpin)
 
     p_runs_cleanup = sub_runs.add_parser(
@@ -1869,6 +1882,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Delete all unpinned runs (test data) with optional export file deletion.",
     )
     p_runs_cleanup.add_argument("--project-id", help="Limit cleanup to one project id")
+    p_runs_cleanup.add_argument("--library-root", help="Use this Project Library without changing saved settings")
     p_runs_cleanup.add_argument(
         "--delete-exports",
         action="store_true",
