@@ -97,6 +97,10 @@ class EnforcedControlResult:
 # Built from deterministic dialog evidence (phase0 + phase2 probe):
 # - `Export of parameters` must stay checked to keep Param_Coord_x2/x3 header metadata.
 # - Matrix/abscissa/single-file/phase-radian toggles stay unchecked for legacy polar matrix output.
+# - Live 2026-07-31 evidence shows VACS opens ``Try matrix form`` checked for
+#   ``TForm_DatGraph`` (Radiation Impedance), while it is unchecked for
+#   ``TForm_DatContour`` (polar data).  That control must therefore be resolved
+#   from the graph class instead of applying the polar contract globally.
 # No stable AutomationId has been observed for these controls in contour exports,
 # so robust fallback selectors include class/title regex and checkbox ordering.
 REQUIRED_EXPORT_CONTROLS: Tuple[RequiredControlSpec, ...] = (
@@ -171,6 +175,29 @@ REQUIRED_EXPORT_CONTROLS: Tuple[RequiredControlSpec, ...] = (
         },
     ),
 )
+
+
+def required_export_controls_for_graph_class(
+    graph_class_name: str,
+    required_controls: Iterable[RequiredControlSpec] = REQUIRED_EXPORT_CONTROLS,
+) -> Tuple[RequiredControlSpec, ...]:
+    """Return the export-dialog contract for a VACS graph-window class.
+
+    Unknown/empty graph classes keep the historic contour contract so existing
+    callers remain conservative.  VACS makes ``Try matrix form`` read-only in
+    the observed dialogs, so accepting either state would hide a wrong target;
+    selecting the expected state from the graph class preserves fail-fast
+    verification without rejecting valid 1-D graph exports.
+    """
+
+    is_data_graph = str(graph_class_name or "").strip().casefold() == "tform_datgraph"
+    expected_matrix_state = BST_CHECKED if is_data_graph else BST_UNCHECKED
+    return tuple(
+        replace(spec, expected_state=expected_matrix_state)
+        if spec.purpose == "TryMatrixForm"
+        else spec
+        for spec in required_controls
+    )
 
 
 class EnforcerBackend(Protocol):
@@ -556,7 +583,7 @@ def _configuration_error(purpose: str, expected_state: Optional[int], found: str
     return ExportConfigurationError(
         "Export configuration invalid: "
         f"[{purpose}] expected [{expected}], found [{found}]. "
-        "Please enable this option in VACS preferences or export dialog."
+        "Please set this option to the expected state in VACS preferences or the export dialog."
     )
 
 
@@ -674,5 +701,6 @@ __all__ = [
     "enforce_export_dialog_for_process",
     "enforce_required_controls_with_backend",
     "find_export_dialog",
+    "required_export_controls_for_graph_class",
     "resolve_required_controls",
 ]

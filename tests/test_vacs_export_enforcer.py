@@ -14,6 +14,7 @@ from app.vacs_export_enforcer import (
     RequiredControlSpec,
     Win32UiaExportDialogBackend,
     enforce_required_controls_with_backend,
+    required_export_controls_for_graph_class,
     resolve_required_controls,
 )
 
@@ -94,6 +95,25 @@ class VacsExportEnforcerTests(unittest.TestCase):
             enforce_required_controls_with_backend(backend, [spec])
         self.assertIn("Export configuration invalid", str(ctx.exception))
         self.assertIn("IncludeHeader", str(ctx.exception))
+        self.assertIn("set this option to the expected state", str(ctx.exception))
+
+    def test_try_matrix_form_is_graph_class_specific(self) -> None:
+        contour = required_export_controls_for_graph_class("TForm_DatContour")
+        graph = required_export_controls_for_graph_class("TForm_DatGraph")
+        unknown = required_export_controls_for_graph_class("")
+
+        self.assertEqual(
+            next(row.expected_state for row in contour if row.purpose == "TryMatrixForm"),
+            BST_UNCHECKED,
+        )
+        self.assertEqual(
+            next(row.expected_state for row in graph if row.purpose == "TryMatrixForm"),
+            BST_CHECKED,
+        )
+        self.assertEqual(
+            next(row.expected_state for row in unknown if row.purpose == "TryMatrixForm"),
+            BST_UNCHECKED,
+        )
 
     def test_probe_report_overrides_settable_flag(self) -> None:
         spec = RequiredControlSpec(

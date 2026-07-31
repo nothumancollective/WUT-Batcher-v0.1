@@ -13,7 +13,7 @@ Current enforced specification (`app/vacs_export_enforcer.py`):
 |---|---|
 | `IncludeHeader` | `CHECKED` |
 | `AbscissaDataBlocks` | `UNCHECKED` |
-| `TryMatrixForm` | `UNCHECKED` |
+| `TryMatrixForm` | `UNCHECKED` for `TForm_DatContour`; `CHECKED` for `TForm_DatGraph` |
 | `SingleFile` | `UNCHECKED` |
 | `ComplexFormat` | `UNCHECKED` |
 
@@ -28,6 +28,10 @@ Selector priority per control:
   - `app/vacs_driver.py` in `VacsDriver.export_txt(...)`
   - `scripts/vacs_export_save_all.py` in both `run_once_safe(...)` and `run_once_fast(...)`
 - For each required control:
+  - derive the `TryMatrixForm` expectation from the selected graph class; live
+    evidence from 2026-07-31 showed `UNCHECKED` for all three polar
+    `TForm_DatContour` windows and `CHECKED` for the Radiation Impedance
+    `TForm_DatGraph` window
   - read current state (`BM_GETCHECK`, UIA toggle fallback)
   - if already expected: no action
   - if mismatched:
@@ -67,7 +71,7 @@ Selector priority per control:
 ## Failure Handling
 - Error type: `ExportConfigurationError`
 - Message format:
-  - `Export configuration invalid: [ControlPurpose] expected [X], found [Y]. Please enable this option in VACS preferences or export dialog.`
+  - `Export configuration invalid: [ControlPurpose] expected [X], found [Y]. Please set this option to the expected state in VACS preferences or the export dialog.`
 - Additional failure guards:
   - export dialog missing
   - control missing/unreadable

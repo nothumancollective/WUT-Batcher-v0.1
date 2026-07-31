@@ -25,7 +25,11 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from app.vacs_export_enforcer import ExportConfigurationError, enforce_export_dialog_controls
+from app.vacs_export_enforcer import (
+    ExportConfigurationError,
+    enforce_export_dialog_controls,
+    required_export_controls_for_graph_class,
+)
 
 
 WM_COMMAND = 0x0111
@@ -641,14 +645,19 @@ def _dialog_controls(dialog: Any) -> List[Dict[str, Any]]:
     return rows
 
 
-def _enforce_export_dialog_configuration(export_dialog: Any) -> Dict[str, Any]:
+def _enforce_export_dialog_configuration(export_dialog: Any, *, graph_class_name: str = "") -> Dict[str, Any]:
     events: List[Dict[str, Any]] = []
 
     def _logger(event: str, payload: Dict[str, Any]) -> None:
         events.append({"event": str(event), "payload": dict(payload or {})})
 
     try:
-        result = enforce_export_dialog_controls(dialog=export_dialog, logger=_logger)
+        required_controls = required_export_controls_for_graph_class(graph_class_name)
+        result = enforce_export_dialog_controls(
+            dialog=export_dialog,
+            required_controls=required_controls,
+            logger=_logger,
+        )
         return {"ok": True, "result": result, "events": events}
     except ExportConfigurationError as exc:
         return {"ok": False, "error": str(exc), "events": events}
@@ -1813,7 +1822,10 @@ def run_once_safe(args: argparse.Namespace) -> Dict[str, Any]:
             row["data_export_controls"] = _dialog_controls(export_dialog)
             row["data_export_win32_children"] = _win32_children(int(exp_sig.get("handle", 0) or 0))
 
-        enforcement = _enforce_export_dialog_configuration(export_dialog)
+        enforcement = _enforce_export_dialog_configuration(
+            export_dialog,
+            graph_class_name=str(t_sig.get("class_name", "") or ""),
+        )
         row["export_config_enforcement"] = enforcement
         step("graph_export_config_enforcement", loop=loop_idx, enforcement=enforcement)
         if not bool(enforcement.get("ok")):
@@ -2320,7 +2332,10 @@ def run_once_fast(args: argparse.Namespace) -> Dict[str, Any]:
         row["data_export_dialog"] = exp_sig
         step("graph_data_export_found", loop=loop_idx, dialog=exp_sig)
 
-        enforcement = _enforce_export_dialog_configuration(export_dialog)
+        enforcement = _enforce_export_dialog_configuration(
+            export_dialog,
+            graph_class_name=str(t_sig.get("class_name", "") or ""),
+        )
         row["export_config_enforcement"] = enforcement
         step("graph_export_config_enforcement", loop=loop_idx, enforcement=enforcement)
         if not bool(enforcement.get("ok")):
