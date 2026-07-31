@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from itertools import product
+from math import prod
 import re
 from typing import Any, Dict, Iterable, List, Sequence, Tuple
 
 from app.batch_planner import build_sweep_values
 from app.compat_engine import sweepable_params, validity_report, visible_params
+from app.constants import MAX_BATCH_VERSIONS, MAX_PREVIEW_VALIDATED_VERSIONS
 from app.models import (
     Batch,
     ParamSelection,
@@ -57,6 +59,16 @@ class CompatibilityRule:
             "severity": self.severity,
             "evidence": self.evidence,
         }
+
+
+@dataclass(frozen=True)
+class VersionPlanPreview:
+    """Bounded compatibility result for an exact batch-size estimate."""
+
+    version_count: int
+    estimated_version_count: int
+    issues: List[ResolutionIssue]
+    fully_validated: bool
 
 
 def _as_constraints_payload(project_or_constraints: Project | ProjectConstraints | Dict[str, Any]) -> Dict[str, Any]:
@@ -270,6 +282,97 @@ def _candidate_sweeps(mode: str, sweeps: List[Tuple[str, List[float]]]) -> List[
     return candidates
 
 
+def _candidate_sweep_count(mode: str, sweeps: List[Tuple[str, List[float]]]) -> int:
+    if not sweeps:
+        return 1
+    counts = [len(values) for _key, values in sweeps]
+    if mode == "single":
+        return sum(counts)
+    return prod(counts)
+
+
+def version_count_for_batch(batch: Batch) -> int:
+    """Return the exact candidate count without materializing combinations."""
+
+    return _candidate_sweep_count(_effective_sweep_mode(batch), _iter_sweeps(batch))
+
+
+def preview_version_plan(
+    project_or_constraints: Project | ProjectConstraints | Dict[str, Any],
+    batch: Batch,
+    *,
+    validation_limit: int = MAX_PREVIEW_VALIDATED_VERSIONS,
+    max_versions: int = MAX_BATCH_VERSIONS,
+) -> VersionPlanPreview:
+    """Validate small plans fully and keep large-plan UI checks bounded."""
+
+    constraints_payload = _as_constraints_payload(project_or_constraints)
+    runner_mode = _effective_runner_mode(batch, constraints_payload)
+    issues = _compatibility_precheck(batch, constraints_payload, runner_mode)
+    estimated_count = version_count_for_batch(batch)
+    if any(issue.severity == "fatal" for issue in issues):
+        return VersionPlanPreview(
+            version_count=0,
+            estimated_version_count=estimated_count,
+            issues=issues,
+            fully_validated=False,
+        )
+
+    if estimated_count > max_versions:
+        issues.append(
+            ResolutionIssue(
+                rule_id="batch_version_limit_exceeded",
+                severity="fatal",
+                message=(
+                    f"Combined sweeps describe {estimated_count:,} versions; "
+                    f"the safety limit is {max_versions:,}. Reduce sweep steps or use single mode."
+                ),
+                scope="batch",
+                source="resolver",
+            )
+        )
+        return VersionPlanPreview(
+            version_count=0,
+            estimated_version_count=estimated_count,
+            issues=issues,
+            fully_validated=False,
+        )
+
+    if estimated_count > validation_limit:
+        issues.append(
+            ResolutionIssue(
+                rule_id="batch_version_validation_deferred",
+                severity="warn",
+                message=(
+                    f"The {estimated_count:,}-version plan is too large for live per-version validation. "
+                    "It will be fully validated when the batch is created."
+                ),
+                scope="batch",
+                source="resolver",
+            )
+        )
+        return VersionPlanPreview(
+            version_count=estimated_count,
+            estimated_version_count=estimated_count,
+            issues=issues,
+            fully_validated=False,
+        )
+
+    resolved = resolve_versions(
+        constraints_payload,
+        batch,
+        existing_version_ids=(),
+        strict=False,
+        max_versions=max_versions,
+    )
+    return VersionPlanPreview(
+        version_count=len(resolved.versions),
+        estimated_version_count=estimated_count,
+        issues=list(resolved.issues),
+        fully_validated=True,
+    )
+
+
 def _version_validity_issues(
     resolved_params: Dict[str, Any],
     constraints_payload: Dict[str, Any],
@@ -305,6 +408,7 @@ def resolve_versions(
     *,
     existing_version_ids: Iterable[str] = (),
     strict: bool = True,
+    max_versions: int = MAX_BATCH_VERSIONS,
 ) -> ResolveVersionsResult:
     constraints_payload = _as_constraints_payload(project_or_constraints)
     mode = _effective_sweep_mode(batch)
@@ -328,6 +432,23 @@ def resolve_versions(
     sweep_defs = _iter_sweeps(batch)
     sweep_keys = [key for key, _ in sweep_defs]
     variable_keys.update(sweep_keys)
+
+    candidate_count = _candidate_sweep_count(mode, sweep_defs)
+    if candidate_count > max_versions:
+        limit_issue = ResolutionIssue(
+            rule_id="batch_version_limit_exceeded",
+            severity="fatal",
+            message=(
+                f"Combined sweeps describe {candidate_count:,} versions; "
+                f"the safety limit is {max_versions:,}. Reduce sweep steps or use single mode."
+            ),
+            scope="batch",
+            source="resolver",
+        )
+        issues.append(limit_issue)
+        if strict:
+            raise VersionResolutionError([limit_issue])
+        return ResolveVersionsResult(versions=[], issues=issues)
 
     candidates = _candidate_sweeps(mode, sweep_defs)
     valid_payloads: List[Tuple[int, Dict[str, Any], Dict[str, float], List[str]]] = []

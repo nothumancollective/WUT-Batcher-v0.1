@@ -37,3 +37,10 @@ ATH_PREVIEW_CFG_NAME: Final[str] = "preview_current.cfg"
 PREVIEW_CACHE_APPDIR: Final[Tuple[str, ...]] = ("WUTBatcher", "preview_cache")
 PREVIEW_CACHE_KEEP_FILES: Final[int] = 10
 PREVIEW_CACHE_MAX_AGE_DAYS: Final[int] = 7
+
+# Batch planning guardrails. Compatibility previews must stay responsive even
+# when combined sweeps describe a very large Cartesian product. The full
+# resolver keeps a higher hard limit to prevent accidental memory/disk
+# exhaustion during materialization.
+MAX_PREVIEW_VALIDATED_VERSIONS: Final[int] = 250
+MAX_BATCH_VERSIONS: Final[int] = 10_000

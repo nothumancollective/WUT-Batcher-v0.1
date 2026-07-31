@@ -3,7 +3,13 @@ from __future__ import annotations
 import unittest
 
 from app.models import Batch, ParamSelection, SweepSpec
-from app.version_resolver import VersionResolutionError, allocate_version_ids, resolve_versions
+from app.version_resolver import (
+    VersionResolutionError,
+    allocate_version_ids,
+    preview_version_plan,
+    resolve_versions,
+    version_count_for_batch,
+)
 
 
 class VersionResolverTests(unittest.TestCase):
@@ -51,6 +57,53 @@ class VersionResolverTests(unittest.TestCase):
             self.assertIn("Coverage.Angle", version.parameters)
             self.assertIn("Throat.Diameter", version.parameters)
             self.assertEqual(version.unset_parameters, [])
+
+    def test_combined_count_is_exact_without_materializing_versions(self) -> None:
+        batch = Batch(
+            batch_id="B001",
+            project_id="P001",
+            sweeps={
+                "Coverage.Angle": SweepSpec(start=20, end=80, steps=101),
+                "Throat.Diameter": SweepSpec(start=20, end=80, steps=101),
+            },
+            sweep_mode="combined",
+            runner_mode="AthGuidePreview",
+        )
+        self.assertEqual(version_count_for_batch(batch), 10_201)
+
+    def test_resolver_blocks_cartesian_product_above_safety_limit(self) -> None:
+        constraints = {"fixed_params": {"Length": 90}, "limits": {}}
+        batch = Batch(
+            batch_id="B001",
+            project_id="P001",
+            sweeps={
+                "Coverage.Angle": SweepSpec(start=20, end=80, steps=101),
+                "Throat.Diameter": SweepSpec(start=20, end=80, steps=101),
+            },
+            sweep_mode="combined",
+            runner_mode="AthGuidePreview",
+        )
+        with self.assertRaises(VersionResolutionError) as raised:
+            resolve_versions(constraints, batch, strict=True)
+        self.assertIn("batch_version_limit_exceeded", {item.rule_id for item in raised.exception.issues})
+
+    def test_preview_defers_per_version_validation_for_large_safe_plan(self) -> None:
+        constraints = {"fixed_params": {"Length": 90}, "limits": {}}
+        batch = Batch(
+            batch_id="B001",
+            project_id="P001",
+            sweeps={
+                "Coverage.Angle": SweepSpec(start=20, end=80, steps=17),
+                "Throat.Diameter": SweepSpec(start=20, end=80, steps=17),
+            },
+            sweep_mode="combined",
+            runner_mode="AthGuidePreview",
+        )
+        preview = preview_version_plan(constraints, batch)
+        self.assertEqual(preview.version_count, 289)
+        self.assertEqual(preview.estimated_version_count, 289)
+        self.assertFalse(preview.fully_validated)
+        self.assertIn("batch_version_validation_deferred", {item.rule_id for item in preview.issues})
 
     def test_resolution_blocks_sweep_for_fixed_constraint(self) -> None:
         constraints = {"fixed_params": {"Length": 90}, "limits": {}}

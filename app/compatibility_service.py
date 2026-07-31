@@ -11,7 +11,7 @@ from app.compat_engine import sweepable_params, validity_report, visible_params
 from app.compat_schema import normalize_ruleset
 from app.constants import DEFAULT_RUNNER_MODE
 from app.models import Batch, ParamSelection, ProjectConstraints, ResolutionIssue, SweepSpec
-from app.version_resolver import resolve_versions
+from app.version_resolver import preview_version_plan
 
 
 _KEY_IN_QUOTE_RE = re.compile(r"'([^']+)'")
@@ -355,13 +355,17 @@ class CompatibilityService:
         issues.extend(parse_issues)
 
         has_parse_fatal = any(issue.severity == "fatal" for issue in parse_issues)
+        version_count_estimate = 0
+        version_validation_complete = False
         if has_parse_fatal:
             resolved_issues: List[ResolutionIssue] = []
             version_count_preview = 0
         else:
-            resolved = resolve_versions(constraints_payload, batch, existing_version_ids=(), strict=False)
-            resolved_issues = list(resolved.issues)
-            version_count_preview = len(resolved.versions)
+            preview = preview_version_plan(constraints_payload, batch)
+            resolved_issues = list(preview.issues)
+            version_count_preview = int(preview.version_count)
+            version_count_estimate = int(preview.estimated_version_count)
+            version_validation_complete = bool(preview.fully_validated)
         issues.extend(self._from_resolution_issue(item) for item in resolved_issues)
 
         sorted_issues = self._sort_and_dedup_issues(issues)
@@ -373,4 +377,6 @@ class CompatibilityService:
             "issues": [issue.to_dict() for issue in sorted_issues],
             "issue_count": len(sorted_issues),
             "version_count_preview": version_count_preview,
+            "version_count_estimate": version_count_estimate,
+            "version_validation_complete": version_validation_complete,
         }
