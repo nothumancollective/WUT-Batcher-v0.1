@@ -2,7 +2,13 @@ from __future__ import annotations
 
 import unittest
 
-from app.akabak_driver import _new_process_ids, _solve_heartbeat_payload
+from app.akabak_driver import (
+    AkabakDriver,
+    _is_noninteractive_tool_window,
+    _new_process_ids,
+    _solve_heartbeat_payload,
+    _title_matches_regex,
+)
 
 
 class AkabakDriverProcessIsolationTests(unittest.TestCase):
@@ -11,6 +17,29 @@ class AkabakDriverProcessIsolationTests(unittest.TestCase):
 
     def test_only_process_started_after_baseline_is_a_worker_signal(self) -> None:
         self.assertEqual(_new_process_ids([5048, 9940, 12000], {5048, 9940}), [12000])
+
+    def test_interpreter_title_match_ignores_windows_accelerator_marker(self) -> None:
+        self.assertTrue(_title_matches_regex(r"start\s+importing", "Start &Importing"))
+
+    def test_only_titleless_delphi_infrastructure_window_is_noninteractive(self) -> None:
+        self.assertTrue(_is_noninteractive_tool_window({"title": "", "class_name": "TApplication"}))
+        self.assertFalse(_is_noninteractive_tool_window({"title": "Save As", "class_name": "#32770"}))
+        self.assertFalse(_is_noninteractive_tool_window({"title": "Helper", "class_name": "TApplication"}))
+
+    def test_cleanup_ownership_excludes_preexisting_tool_processes(self) -> None:
+        driver = AkabakDriver.__new__(AkabakDriver)
+        driver.initial_akabak_pids = {5048}
+        driver.initial_vacs_pids = {6000}
+        driver.owned_akabak_pids = set()
+        driver.owned_vacs_pids = set()
+        driver._list_akabak_process_ids = lambda: [5048, 9940]
+        driver._list_vacs_process_ids = lambda: [6000, 12000]
+
+        owned = driver._refresh_owned_tool_process_ids()
+
+        self.assertEqual(owned, {"akabak": [9940], "vacs": [12000]})
+        self.assertNotIn(5048, driver.owned_akabak_pids)
+        self.assertNotIn(6000, driver.owned_vacs_pids)
 
     def test_solve_heartbeat_keeps_compact_progress_signals(self) -> None:
         payload = _solve_heartbeat_payload(

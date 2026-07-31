@@ -8,11 +8,12 @@ from datetime import datetime, timezone
 from dataclasses import dataclass
 import io
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from app.ui_automation.session import UiaSession, UiaSessionError
 from app.ui_automation.step_logger import StructuredStepLogger
@@ -30,14 +31,21 @@ WM_CLOSE = 0x0010
 WM_COMMAND = 0x0111
 WM_KEYDOWN = 0x0100
 WM_KEYUP = 0x0101
+WM_CHAR = 0x0102
 WM_SETTEXT = 0x000C
+WM_GETTEXT = 0x000D
+WM_CLEAR = 0x0303
 BM_CLICK = 0x00F5
+WM_LBUTTONDOWN = 0x0201
+WM_LBUTTONUP = 0x0202
 SMTO_ABORTIFHUNG = 0x0002
 VK_SPACE = 0x20
 VK_RETURN = 0x0D
 VK_F4 = 0x73
 IDOK = 1
 BN_CLICKED = 0
+MK_LBUTTON = 0x0001
+EM_SETSEL = 0x00B1
 CBN_SELCHANGE = 1
 OPEN_FILE_NAME_CONTROL_ID = 1148
 OPEN_FILE_TYPE_CONTROL_ID = 1136
@@ -51,8 +59,71 @@ ALL_SOURCES_MUTED_RE = re.compile(r"all\s+sources\s+muted", re.IGNORECASE)
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 
 
+@dataclass(frozen=True)
+class _NativeElementInfo:
+    handle: int
+    name: str
+    class_name: str
+    control_type: str
+    automation_id: str
+
+
+class _NativeHwndControl:
+    """Minimal pywinauto-compatible adapter for a process-owned child HWND."""
+
+    def __init__(self, *, user32: Any, handle: int, title: str, class_name: str, control_id: int) -> None:
+        class_lower = str(class_name or "").lower()
+        if "button" in class_lower or "btn" in class_lower:
+            control_type = "Button"
+        elif "combo" in class_lower:
+            control_type = "ComboBox"
+        elif "edit" in class_lower:
+            control_type = "Edit"
+        else:
+            control_type = "Text"
+        self._user32 = user32
+        self.element_info = _NativeElementInfo(
+            handle=int(handle),
+            name=str(title or ""),
+            class_name=str(class_name or ""),
+            control_type=control_type,
+            automation_id=str(int(control_id)) if int(control_id) > 0 else "",
+        )
+
+    def window_text(self) -> str:
+        return str(self.element_info.name or "")
+
+    def is_enabled(self) -> bool:
+        return bool(self._user32.IsWindowEnabled(int(self.element_info.handle)))
+
+    def set_focus(self) -> None:
+        self._user32.SetFocus(int(self.element_info.handle))
+
+    def set_edit_text(self, value: str) -> None:
+        hwnd = int(self.element_info.handle)
+        text = ctypes.c_wchar_p(str(value))
+        try:
+            if self._user32.SetWindowTextW(hwnd, text):
+                return
+        except Exception:
+            pass
+        self._user32.SendMessageW(hwnd, WM_SETTEXT, 0, text)
+
+    def set_text(self, value: str) -> None:
+        self.set_edit_text(value)
+
+
 class _FileTime(ctypes.Structure):
     _fields_ = [("dwLowDateTime", ctypes.c_ulong), ("dwHighDateTime", ctypes.c_ulong)]
+
+
+class _ClientRect(ctypes.Structure):
+    _fields_ = [
+        ("left", ctypes.c_long),
+        ("top", ctypes.c_long),
+        ("right", ctypes.c_long),
+        ("bottom", ctypes.c_long),
+    ]
 
 
 def _filetime_ticks(value: _FileTime) -> int:
@@ -146,6 +217,23 @@ def _new_process_ids(current: List[int], baseline: List[int] | set[int]) -> List
     return sorted({int(pid) for pid in current if int(pid) > 0 and int(pid) not in baseline_ids})
 
 
+def _title_matches_regex(pattern: str, title: str) -> bool:
+    """Match visible captions while ignoring Windows accelerator markers."""
+
+    value = str(title or "")
+    if re.search(pattern, value, re.IGNORECASE):
+        return True
+    return bool(re.search(pattern, value.replace("&", ""), re.IGNORECASE))
+
+
+def _is_noninteractive_tool_window(row: Dict[str, Any]) -> bool:
+    """Return true only for known, titleless Delphi infrastructure HWNDs."""
+
+    title = str(row.get("title", "") or "").strip()
+    class_name = str(row.get("class_name", "") or "").strip().lower()
+    return not title and class_name in {"tapplication", "tputilwindow"}
+
+
 def _solve_heartbeat_payload(snapshot: Dict[str, Any], *, elapsed_s: float) -> Dict[str, Any]:
     vacs_ui = dict(snapshot.get("vacs_ui", {}) or {})
     return {
@@ -200,6 +288,12 @@ class AkabakDriver:
         self.last_import_diagnostics_path: Optional[str] = None
         self.last_solve_diagnostics_path: Optional[str] = None
         self.solve_context: Dict[str, Any] = {}
+        self._import_report_candidate = ""
+        self._import_report_stable_since = 0.0
+        self.initial_akabak_pids = set(self._list_akabak_process_ids())
+        self.initial_vacs_pids = set(self._list_vacs_process_ids())
+        self.owned_akabak_pids: set[int] = set()
+        self.owned_vacs_pids: set[int] = set()
 
     def _log(self, *, level: str, step: str, event: str, payload: Dict[str, Any]) -> None:
         self.logger.write(level=level, step=step, event=event, payload=payload)
@@ -214,6 +308,16 @@ class AkabakDriver:
         return ctypes.windll.user32
 
     def _window_handle(self, window: Any) -> int:
+        state = vars(window) if hasattr(window, "__dict__") else {}
+        cached_handle = int(state.get("_wut_native_handle", 0) or 0)
+        if cached_handle > 0:
+            return cached_handle
+        for criterion in reversed(list(state.get("criteria", []) or [])):
+            if not isinstance(criterion, dict):
+                continue
+            criterion_handle = int(criterion.get("handle", 0) or 0)
+            if criterion_handle > 0:
+                return criterion_handle
         try:
             return int(getattr(window.element_info, "handle", 0) or 0)
         except Exception:
@@ -226,11 +330,37 @@ class AkabakDriver:
         class_name_regex: Optional[str] = None,
         title_regex: Optional[str] = None,
     ) -> List[Any]:
-        rows: List[Any] = []
+        if os.name == "nt":
+            parent_handle = self._window_handle(parent_window)
+            native_rows = self._native_process_window_rows(
+                process_id=int(self.session.process_id or 0),
+                parent_handle=parent_handle,
+            )
+            matching_rows = [
+                row
+                for row in native_rows
+                if int(row.get("native_handle", 0) or 0) != parent_handle
+                and (
+                    str(row.get("class_name", "") or "") == "#32770"
+                    or str(row.get("class_name", "") or "").startswith("TForm_")
+                )
+                and (
+                    not class_name_regex
+                    or re.search(class_name_regex, str(row.get("class_name", "") or ""), re.IGNORECASE)
+                )
+                and (
+                    not title_regex
+                    or re.search(title_regex, str(row.get("title", "") or ""), re.IGNORECASE)
+                )
+            ]
+            return self._uia_windows_from_native_rows(matching_rows)
+
+        # Non-Windows fallback retained for tests and unsupported developer hosts.
         try:
             children = list(parent_window.children(control_type="Window"))
         except Exception:
-            children = []
+            return []
+        rows: List[Any] = []
         for child in children:
             try:
                 info = child.element_info
@@ -301,10 +431,91 @@ class AkabakDriver:
             rows.extend(self._list_process_ids_by_image(image))
         return sorted(set(rows))
 
+    def _refresh_owned_tool_process_ids(self) -> Dict[str, List[int]]:
+        baseline_akabak = {int(pid) for pid in getattr(self, "initial_akabak_pids", set()) if int(pid) > 0}
+        baseline_vacs = {int(pid) for pid in getattr(self, "initial_vacs_pids", set()) if int(pid) > 0}
+        current_akabak = {int(pid) for pid in self._list_akabak_process_ids() if int(pid) > 0}
+        current_vacs = {int(pid) for pid in self._list_vacs_process_ids() if int(pid) > 0}
+        owned_akabak = set(getattr(self, "owned_akabak_pids", set()))
+        owned_vacs = set(getattr(self, "owned_vacs_pids", set()))
+        owned_akabak.update(current_akabak - baseline_akabak)
+        owned_vacs.update(current_vacs - baseline_vacs)
+        self.owned_akabak_pids = owned_akabak
+        self.owned_vacs_pids = owned_vacs
+        return {
+            "akabak": sorted(owned_akabak),
+            "vacs": sorted(owned_vacs),
+        }
+
+    def _terminate_owned_tool_processes(
+        self,
+        *,
+        grace_s: float = 5.0,
+        preserve_vacs: bool = False,
+    ) -> Dict[str, Any]:
+        """Wait briefly, then terminate only tool processes created this session."""
+
+        owned = self._refresh_owned_tool_process_ids()
+        deadline = time.monotonic() + max(0.0, float(grace_s))
+
+        def _remaining() -> Dict[str, List[int]]:
+            refreshed = self._refresh_owned_tool_process_ids()
+            owned["akabak"] = sorted(set(owned["akabak"]) | set(refreshed["akabak"]))
+            owned["vacs"] = sorted(set(owned["vacs"]) | set(refreshed["vacs"]))
+            current_akabak = set(self._list_akabak_process_ids())
+            current_vacs = set(self._list_vacs_process_ids())
+            return {
+                "akabak": sorted(set(owned["akabak"]) & current_akabak),
+                "vacs": [] if preserve_vacs else sorted(set(owned["vacs"]) & current_vacs),
+            }
+
+        remaining = _remaining()
+        # Observe the whole grace window even when initially clean: AKABAK can
+        # spawn its worker process several seconds after the launcher exits.
+        while time.monotonic() < deadline:
+            time.sleep(0.1)
+            remaining = _remaining()
+
+        kill_results: List[Dict[str, Any]] = []
+        for app_name, pids in remaining.items():
+            for pid in pids:
+                try:
+                    completed = subprocess.run(
+                        ["taskkill", "/PID", str(int(pid)), "/T", "/F"],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                        timeout=5.0,
+                    )
+                    kill_results.append(
+                        {
+                            "app": app_name,
+                            "pid": int(pid),
+                            "returncode": int(completed.returncode),
+                        }
+                    )
+                except Exception as exc:
+                    kill_results.append({"app": app_name, "pid": int(pid), "error": repr(exc)})
+
+        final_deadline = time.monotonic() + 2.0
+        final_remaining = _remaining()
+        while any(final_remaining.values()) and time.monotonic() < final_deadline:
+            time.sleep(0.1)
+            final_remaining = _remaining()
+        return {
+            "owned": owned,
+            "forced": kill_results,
+            "remaining": final_remaining,
+        }
+
     def _process_top_level_windows(self, *, process_id: Optional[int] = None) -> List[Any]:
         pid = int(process_id or self.session.process_id or 0)
         if pid <= 0:
             return []
+        if os.name == "nt":
+            return self._uia_windows_from_native_rows(
+                self._native_process_window_rows(process_id=pid)
+            )
         try:
             from pywinauto import Desktop
         except Exception:
@@ -315,6 +526,21 @@ class AkabakDriver:
             return []
 
     def _window_signature_row(self, window: Any) -> Dict[str, Any]:
+        state = vars(window) if hasattr(window, "__dict__") else {}
+        handle = self._window_handle(window)
+        if handle > 0:
+            try:
+                is_visible = bool(self._user32().IsWindowVisible(handle))
+            except Exception:
+                is_visible = False
+            return {
+                "title": str(state.get("_wut_native_title") or self._native_window_text(handle)),
+                "class_name": str(state.get("_wut_native_class_name") or self._native_window_class(handle)),
+                "control_type": "native_hwnd",
+                "automation_id": "",
+                "native_handle": handle,
+                "is_visible": is_visible,
+            }
         info = getattr(window, "element_info", None)
         is_visible = False
         try:
@@ -420,6 +646,94 @@ class AkabakDriver:
             return []
         return rows
 
+    def _native_process_window_rows(
+        self,
+        *,
+        process_id: int,
+        parent_handle: int = 0,
+    ) -> List[Dict[str, Any]]:
+        """Enumerate process HWNDs without traversing the COM/UIA tree."""
+
+        pid = int(process_id or 0)
+        if pid <= 0 or not hasattr(ctypes, "windll") or not hasattr(ctypes, "WINFUNCTYPE"):
+            return []
+        user32 = self._user32()
+        callback_type = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p)
+        handles: List[int] = []
+        seen: set[int] = set()
+
+        def _record(raw_hwnd: int) -> None:
+            hwnd = int(raw_hwnd or 0)
+            if hwnd <= 0 or hwnd in seen:
+                return
+            owner_pid = ctypes.c_ulong(0)
+            try:
+                user32.GetWindowThreadProcessId(hwnd, ctypes.byref(owner_pid))
+            except Exception:
+                return
+            if int(owner_pid.value) != pid:
+                return
+            seen.add(hwnd)
+            handles.append(hwnd)
+
+        def _callback(raw_hwnd: int, _lparam: int) -> int:
+            _record(raw_hwnd)
+            return 1
+
+        callback = callback_type(_callback)
+        try:
+            user32.EnumWindows(callback, 0)
+        except Exception:
+            pass
+        if int(parent_handle or 0) > 0:
+            child_callback = callback_type(_callback)
+            try:
+                user32.EnumChildWindows(int(parent_handle), child_callback, 0)
+            except Exception:
+                pass
+
+        rows: List[Dict[str, Any]] = []
+        for hwnd in handles:
+            try:
+                is_visible = bool(user32.IsWindowVisible(hwnd))
+            except Exception:
+                is_visible = False
+            rows.append(
+                {
+                    "title": self._native_window_text(hwnd),
+                    "class_name": self._native_window_class(hwnd),
+                    "native_handle": hwnd,
+                    "is_visible": is_visible,
+                }
+            )
+        return rows
+
+    def _uia_windows_from_native_rows(self, rows: Sequence[Dict[str, Any]]) -> List[Any]:
+        if not rows:
+            return []
+        try:
+            from pywinauto import Desktop
+        except Exception:
+            return []
+        desktop = Desktop(backend="uia")
+        windows: List[Any] = []
+        for row in rows:
+            hwnd = int(row.get("native_handle", 0) or 0)
+            if hwnd <= 0:
+                continue
+            try:
+                window = desktop.window(handle=hwnd)
+                try:
+                    setattr(window, "_wut_native_handle", hwnd)
+                    setattr(window, "_wut_native_title", str(row.get("title", "") or ""))
+                    setattr(window, "_wut_native_class_name", str(row.get("class_name", "") or ""))
+                except Exception:
+                    pass
+                windows.append(window)
+            except Exception:
+                continue
+        return windows
+
     def _vacs_ui_snapshot(self) -> Dict[str, Any]:
         pid_rows: Dict[str, Any] = {}
         max_controls = 0
@@ -511,6 +825,24 @@ class AkabakDriver:
             return ""
         try:
             buffer = ctypes.create_unicode_buffer(max_chars)
+            result = ctypes.c_size_t(0)
+            ok = self._user32().SendMessageTimeoutW(
+                hwnd,
+                WM_GETTEXT,
+                max_chars - 1,
+                buffer,
+                SMTO_ABORTIFHUNG,
+                500,
+                ctypes.byref(result),
+            )
+            if ok:
+                value = str(buffer.value or "").strip()
+                if value:
+                    return value
+        except Exception:
+            pass
+        try:
+            buffer = ctypes.create_unicode_buffer(max_chars)
             self._user32().GetWindowTextW(hwnd, buffer, max_chars - 1)
             return str(buffer.value or "").strip()
         except Exception:
@@ -530,6 +862,92 @@ class AkabakDriver:
         user32.SendMessageW(parent_hwnd, WM_COMMAND, wparam, control_hwnd)
         return True
 
+    def _send_bm_click(self, control_hwnd: int, *, timeout_ms: int = 1000) -> bool:
+        """Click one known button HWND without mouse input or unbounded UIA."""
+
+        hwnd = int(control_hwnd or 0)
+        if hwnd <= 0:
+            return False
+        try:
+            result = ctypes.c_ulong()
+            ok = self._user32().SendMessageTimeoutW(
+                hwnd,
+                BM_CLICK,
+                0,
+                0,
+                SMTO_ABORTIFHUNG,
+                max(1, int(timeout_ms)),
+                ctypes.byref(result),
+            )
+            return bool(ok)
+        except Exception:
+            return False
+
+    def _post_native_mouse_click(self, control_hwnd: int) -> bool:
+        """Post a window-local click without moving the real mouse cursor."""
+
+        hwnd = int(control_hwnd or 0)
+        if hwnd <= 0:
+            return False
+        try:
+            user32 = self._user32()
+            rect = _ClientRect()
+            if not bool(user32.GetClientRect(hwnd, ctypes.byref(rect))):
+                return False
+            x = max(0, int(rect.right - rect.left) // 2)
+            y = max(0, int(rect.bottom - rect.top) // 2)
+            lparam = (y << 16) | (x & 0xFFFF)
+            down = bool(user32.PostMessageW(hwnd, WM_LBUTTONDOWN, MK_LBUTTON, lparam))
+            up = bool(user32.PostMessageW(hwnd, WM_LBUTTONUP, 0, lparam))
+            return bool(down and up)
+        except Exception:
+            return False
+
+    def _post_native_text_entry(self, edit_hwnd: int, value: str) -> bool:
+        """Enter text through one edit HWND so its owner receives edit events."""
+
+        hwnd = int(edit_hwnd or 0)
+        if hwnd <= 0:
+            return False
+        user32 = self._user32()
+        try:
+            result = ctypes.c_ulong()
+            selected = user32.SendMessageTimeoutW(
+                hwnd,
+                EM_SETSEL,
+                0,
+                -1,
+                SMTO_ABORTIFHUNG,
+                1000,
+                ctypes.byref(result),
+            )
+            cleared = user32.SendMessageTimeoutW(
+                hwnd,
+                WM_CLEAR,
+                0,
+                0,
+                SMTO_ABORTIFHUNG,
+                1000,
+                ctypes.byref(result),
+            )
+            if not selected or not cleared:
+                return False
+            for character in str(value):
+                accepted = user32.SendMessageTimeoutW(
+                    hwnd,
+                    WM_CHAR,
+                    ord(character),
+                    1,
+                    SMTO_ABORTIFHUNG,
+                    500,
+                    ctypes.byref(result),
+                )
+                if not accepted:
+                    return False
+            return True
+        except Exception:
+            return False
+
     def _record_watchdog_events(self, *, step: str, events: List[Dict[str, Any]]) -> None:
         if not events:
             return
@@ -538,6 +956,15 @@ class AkabakDriver:
             self.watchdog_events.append(row)
 
     def _window_title(self, control: Any) -> str:
+        state = vars(control) if hasattr(control, "__dict__") else {}
+        cached_title = str(state.get("_wut_native_title", "") or "").strip()
+        if cached_title:
+            return cached_title
+        handle = self._window_handle(control)
+        if handle > 0:
+            native_title = self._native_window_text(handle)
+            if native_title:
+                return native_title
         try:
             return str(control.window_text() or "").strip()
         except Exception:
@@ -611,6 +1038,21 @@ class AkabakDriver:
         class_name_regex: Optional[str] = None,
         title_regex: Optional[str] = None,
     ) -> Optional[Any]:
+        root_handle = self._window_handle(root)
+        if os.name == "nt" and root_handle > 0:
+            for control in self._native_descendant_controls(root_handle):
+                info = control.element_info
+                if control_type and str(info.control_type) != control_type:
+                    continue
+                if automation_id and str(info.automation_id) != automation_id:
+                    continue
+                if class_name_regex and not re.search(class_name_regex, str(info.class_name), re.IGNORECASE):
+                    continue
+                if title_regex and not _title_matches_regex(title_regex, str(info.name)):
+                    continue
+                return control
+            return None
+
         controls: List[Any] = []
         try:
             controls = list(root.descendants())
@@ -631,12 +1073,71 @@ class AkabakDriver:
                 continue
             if class_name_regex and not re.search(class_name_regex, info_class_name, re.IGNORECASE):
                 continue
-            if title_regex and not re.search(title_regex, info_title, re.IGNORECASE):
+            if title_regex and not _title_matches_regex(title_regex, info_title):
                 continue
             return control
         return None
 
+    def _native_descendant_controls(self, root_handle: int) -> List[_NativeHwndControl]:
+        hwnd = int(root_handle or 0)
+        if hwnd <= 0 or not hasattr(ctypes, "WINFUNCTYPE"):
+            return []
+        user32 = self._user32()
+        callback_type = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p)
+        rows: List[_NativeHwndControl] = []
+
+        def _callback(raw_child_hwnd: int, _lparam: int) -> int:
+            child_hwnd = int(raw_child_hwnd or 0)
+            try:
+                control_id = int(user32.GetDlgCtrlID(child_hwnd) or 0)
+            except Exception:
+                control_id = 0
+            rows.append(
+                _NativeHwndControl(
+                    user32=user32,
+                    handle=child_hwnd,
+                    title=self._native_window_text(child_hwnd),
+                    class_name=self._native_window_class(child_hwnd),
+                    control_id=control_id,
+                )
+            )
+            return 1
+
+        callback = callback_type(_callback)
+        try:
+            user32.EnumChildWindows(hwnd, callback, 0)
+        except Exception:
+            return []
+        return rows
+
     def _find_open_dialog_controls(self, file_dialog: Any) -> Tuple[Optional[Any], Optional[Any]]:
+        dialog_handle = self._window_handle(file_dialog)
+        if os.name == "nt" and dialog_handle > 0:
+            edit_handle = self._dialog_filename_edit_handle(dialog_handle)
+            edit = None
+            if edit_handle > 0:
+                try:
+                    edit_id = int(self._user32().GetDlgCtrlID(edit_handle) or 0)
+                except Exception:
+                    edit_id = 0
+                edit = _NativeHwndControl(
+                    user32=self._user32(),
+                    handle=edit_handle,
+                    title=self._native_window_text(edit_handle),
+                    class_name=self._native_window_class(edit_handle),
+                    control_id=edit_id,
+                )
+            button = self._find_first_control(
+                file_dialog,
+                control_type="Button",
+                automation_id=str(IDOK),
+            ) or self._find_first_control(
+                file_dialog,
+                control_type="Button",
+                title_regex=r"(open|oeffnen|ok)",
+            )
+            return edit, button
+
         edit_candidates: List[Tuple[int, Any]] = []
         button_candidates: List[Tuple[int, Any]] = []
         try:
@@ -689,15 +1190,46 @@ class AkabakDriver:
         open_button = sorted(button_candidates, key=lambda item: item[0], reverse=True)[0][1] if button_candidates else None
         return edit, open_button
 
+    def _dialog_filename_edit_handle(self, dialog_handle: int) -> int:
+        dialog_hwnd = int(dialog_handle or 0)
+        if dialog_hwnd <= 0:
+            return 0
+        user32 = self._user32()
+        try:
+            container = int(user32.GetDlgItem(dialog_hwnd, OPEN_FILE_NAME_CONTROL_ID) or 0)
+        except Exception:
+            return 0
+        if container <= 0:
+            return 0
+        if re.search(r"Edit", self._native_window_class(container), re.IGNORECASE):
+            return container
+        callback_type = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p)
+        edit_handle = 0
+
+        def _callback(raw_hwnd: int, _lparam: int) -> int:
+            nonlocal edit_handle
+            hwnd = int(raw_hwnd or 0)
+            if re.search(r"Edit", self._native_window_class(hwnd), re.IGNORECASE):
+                edit_handle = hwnd
+                return 0
+            return 1
+
+        callback = callback_type(_callback)
+        try:
+            user32.EnumChildWindows(container, callback, 0)
+        except Exception:
+            return 0
+        return edit_handle
+
     def _dialog_has_filename_control(self, dialog_window: Any) -> bool:
         handle = self._window_handle(dialog_window)
         if handle > 0:
-            try:
-                edit_handle = int(self._user32().GetDlgItem(handle, OPEN_FILE_NAME_CONTROL_ID) or 0)
-                if edit_handle > 0:
-                    return True
-            except Exception:
-                pass
+            if self._dialog_filename_edit_handle(handle) > 0:
+                return True
+            if os.name == "nt":
+                # A known HWND must stay on the bounded Win32 path. Resolving
+                # ``descendants()`` here can block indefinitely in UIA/COM.
+                return False
         try:
             for control in dialog_window.descendants():
                 info = control.element_info
@@ -711,13 +1243,120 @@ class AkabakDriver:
     def _dialog_filename_readback(self, dialog_handle: int) -> str:
         if dialog_handle <= 0:
             return ""
+        edit_handle = self._dialog_filename_edit_handle(dialog_handle)
+        if edit_handle > 0:
+            return self._read_window_text_by_handle(edit_handle)
         readback = ctypes.create_unicode_buffer(2048)
         self._user32().GetDlgItemTextW(dialog_handle, OPEN_FILE_NAME_CONTROL_ID, readback, 2047)
         return str(readback.value or "")
 
+    def _write_dialog_filename_verified(self, *, dialog_handle: int, value: str) -> Dict[str, Any]:
+        """Replace and verify the common-dialog filename without keyboard input.
+
+        ``GetWindowTextW`` cannot reliably read an edit control owned by another
+        process. Use the system ``WM_GETTEXT`` message via
+        ``_read_window_text_by_handle`` and never submit the dialog until the
+        exact absolute path can be read back.
+        """
+
+        user32 = self._user32()
+        dialog_hwnd = int(dialog_handle or 0)
+        target_value = str(value)
+        try:
+            container_handle = int(user32.GetDlgItem(dialog_hwnd, OPEN_FILE_NAME_CONTROL_ID) or 0)
+        except Exception:
+            container_handle = 0
+        edit_handle = self._dialog_filename_edit_handle(dialog_hwnd)
+
+        def _normalize(text: str) -> str:
+            return str(text or "").strip().strip('"').replace("/", "\\").lower()
+
+        expected = _normalize(target_value)
+
+        def _readbacks() -> Dict[str, str]:
+            values = {
+                "edit": self._read_window_text_by_handle(edit_handle) if edit_handle > 0 else "",
+                "container": self._read_window_text_by_handle(container_handle) if container_handle > 0 else "",
+                "dialog": self._dialog_filename_readback(dialog_hwnd),
+            }
+            return values
+
+        attempts: List[Dict[str, Any]] = []
+
+        def _record(method: str, action: Any) -> Optional[Dict[str, Any]]:
+            error = ""
+            result: Any = None
+            try:
+                result = action()
+            except Exception as exc:
+                error = repr(exc)
+            readbacks = _readbacks()
+            verified = bool(expected) and any(_normalize(item) == expected for item in readbacks.values())
+            attempt = {
+                "method": method,
+                "result": bool(result),
+                "readbacks": readbacks,
+                "verified": verified,
+                "error": error or None,
+            }
+            attempts.append(attempt)
+            return attempt if verified else None
+
+        text_pointer = ctypes.c_wchar_p(target_value)
+        actions: List[Tuple[str, Any]] = []
+        if dialog_hwnd > 0:
+            actions.append(
+                (
+                    "SetDlgItemTextW_id1148",
+                    lambda: user32.SetDlgItemTextW(dialog_hwnd, OPEN_FILE_NAME_CONTROL_ID, text_pointer),
+                )
+            )
+        for label, hwnd in (("edit", edit_handle), ("container", container_handle)):
+            if hwnd <= 0:
+                continue
+            actions.append((f"SetWindowTextW_{label}", lambda hwnd=hwnd: user32.SetWindowTextW(hwnd, text_pointer)))
+
+            def _send_text(target_hwnd: int = hwnd) -> Any:
+                message_result = ctypes.c_size_t(0)
+                ok = user32.SendMessageTimeoutW(
+                    target_hwnd,
+                    WM_SETTEXT,
+                    0,
+                    text_pointer,
+                    SMTO_ABORTIFHUNG,
+                    1000,
+                    ctypes.byref(message_result),
+                )
+                return bool(ok)
+
+            actions.append((f"SendMessageTimeoutW_WM_SETTEXT_{label}", _send_text))
+
+        for method, action in actions:
+            verified_attempt = _record(method, action)
+            if verified_attempt is not None:
+                return {
+                    "verified": True,
+                    "method": method,
+                    "readbacks": verified_attempt["readbacks"],
+                    "attempts": attempts,
+                    "edit_handle": edit_handle,
+                    "container_handle": container_handle,
+                }
+
+        return {
+            "verified": False,
+            "method": "",
+            "readbacks": _readbacks(),
+            "attempts": attempts,
+            "edit_handle": edit_handle,
+            "container_handle": container_handle,
+        }
+
     def _edit_readback(self, edit_control: Optional[Any]) -> str:
         if edit_control is None:
             return ""
+        if isinstance(edit_control, _NativeHwndControl):
+            return self._read_window_text_by_handle(self._window_handle(edit_control))
         try:
             value = str(edit_control.window_text() or "").strip()
             if value:
@@ -758,14 +1397,15 @@ class AkabakDriver:
             if token in main_title_lower:
                 return True, f"main_title_contains_{token}"
 
-        try:
-            for control in main_window.descendants():
-                title = self._window_title(control).lower()
-                for token in tokens:
-                    if token in title:
-                        return True, f"child_title_contains_{token}"
-        except Exception:
-            pass
+        if os.name != "nt":
+            try:
+                for control in main_window.descendants():
+                    title = self._window_title(control).lower()
+                    for token in tokens:
+                        if token in title:
+                            return True, f"child_title_contains_{token}"
+            except Exception:
+                pass
 
         interpreter = self._find_interpreter_window(main_window=main_window)
         if interpreter is not None:
@@ -816,22 +1456,31 @@ class AkabakDriver:
         return bool(payload["ok"]), payload
 
     def _find_interpreter_modal(self, *, interpreter_window: Any) -> Optional[Any]:
-        rows = self._child_windows(interpreter_window, class_name_regex=r"(#32770|Dialog)")
+        # ``TRzDialogButtons`` is the interpreter's permanent Apply/Close
+        # container, not a modal. Match only actual common-dialog windows.
+        rows = self._child_windows(interpreter_window, class_name_regex=r"^(#32770|Dialog)$")
         if rows:
             return rows[0]
         return None
 
     def _modal_details(self, modal_window: Any) -> Dict[str, Any]:
-        details: Dict[str, Any] = {"title": self._window_title(modal_window), "class_name": "", "message": "", "buttons": []}
-        try:
-            info = modal_window.element_info
-            details["class_name"] = str(getattr(info, "class_name", "") or "")
-        except Exception:
-            pass
+        signature = self._window_signature_row(modal_window)
+        details: Dict[str, Any] = {
+            "title": str(signature.get("title", "") or ""),
+            "class_name": str(signature.get("class_name", "") or ""),
+            "message": "",
+            "buttons": [],
+        }
         messages: List[str] = []
         buttons: List[str] = []
+        modal_handle = self._window_handle(modal_window)
         try:
-            for control in modal_window.descendants():
+            controls = (
+                self._native_descendant_controls(modal_handle)
+                if os.name == "nt" and modal_handle > 0
+                else list(modal_window.descendants())
+            )
+            for control in controls:
                 text = self._window_title(control)
                 if not text:
                     continue
@@ -958,6 +1607,15 @@ class AkabakDriver:
             row["status"] = "no_confirm_needed"
             return row
 
+        if os.name == "nt":
+            # A blind Enter is unsafe for AKABAK's VCL interpreter: focus can
+            # remain on "Open ABEC Project" and reopen the file dialog after a
+            # successful Start/Apply action. Native modal enumeration above is
+            # authoritative; without a detected modal there is nothing to
+            # confirm.
+            row["status"] = "no_confirm_needed"
+            return row
+
         interpreter_handle = self._window_handle(interpreter)
         if interpreter_handle > 0:
             self._send_key_enter(interpreter_handle)
@@ -1008,12 +1666,45 @@ class AkabakDriver:
         )
         if apply_button is None:
             return False, {"status": "waiting_apply_button"}
+        apply_enabled = True
         try:
-            if bool(apply_button.is_enabled()):
-                return True, {"status": "apply_ready", "apply_button": apply_button}
+            apply_enabled = bool(apply_button.is_enabled())
         except Exception:
-            return True, {"status": "apply_ready", "apply_button": apply_button}
-        return False, {"status": "waiting_apply_button_enabled"}
+            apply_enabled = True
+        if not apply_enabled:
+            return False, {"status": "waiting_apply_button_enabled"}
+
+        report_text = self._read_interpreter_report_text(interpreter)
+        report_normalized = str(report_text or "").strip()
+        has_import_progress = bool(
+            len(report_normalized) > len("Importing whole ABEC project")
+            and re.search(r"(opening|loading|interpreting|completed|finished)", report_normalized, re.IGNORECASE)
+        )
+        now = time.monotonic()
+        previous = str(getattr(self, "_import_report_candidate", "") or "")
+        if report_normalized != previous:
+            self._import_report_candidate = report_normalized
+            self._import_report_stable_since = now
+            return False, {
+                "status": "waiting_import_report_stable",
+                "report_chars": len(report_normalized),
+                "has_import_progress": has_import_progress,
+            }
+        stable_since = float(getattr(self, "_import_report_stable_since", now) or now)
+        stable_for_s = max(0.0, now - stable_since)
+        if has_import_progress and stable_for_s >= 0.75:
+            return True, {
+                "status": "apply_ready",
+                "apply_button": apply_button,
+                "report_chars": len(report_normalized),
+                "report_stable_for_s": round(stable_for_s, 3),
+            }
+        return False, {
+            "status": "waiting_import_report_complete",
+            "report_chars": len(report_normalized),
+            "report_stable_for_s": round(stable_for_s, 3),
+            "has_import_progress": has_import_progress,
+        }
 
     def _import_post_apply_state(self, *, main_window: Any, report_before: str = "") -> Tuple[bool, Dict[str, Any]]:
         interpreter = self._find_interpreter_window(main_window=main_window)
@@ -1049,7 +1740,55 @@ class AkabakDriver:
             return True, {"status": "report_text_changed", "report_text": report_text[:1200]}
         return False, {"status": "waiting_post_apply", "report_text": report_text[:1200]}
 
-    def _invoke_interpreter_button(self, *, interpreter_window: Any, title_regex: str, step: str, action_name: str) -> Dict[str, Any]:
+    def _invoke_interpreter_button(
+        self,
+        *,
+        interpreter_window: Any,
+        title_regex: str,
+        step: str,
+        action_name: str,
+        prefer_bm_click: bool = False,
+    ) -> Dict[str, Any]:
+        parent_handle = self._window_handle(interpreter_window)
+        if os.name == "nt" and parent_handle > 0:
+            native_matches = [
+                row
+                for row in self._native_process_window_rows(
+                    process_id=int(self.session.process_id or 0),
+                    parent_handle=parent_handle,
+                )
+                if int(row.get("native_handle", 0) or 0) != parent_handle
+                and re.search(
+                    r"TRzBitBtn|TRzMenuButton",
+                    str(row.get("class_name", "") or ""),
+                    re.IGNORECASE,
+                )
+                and _title_matches_regex(title_regex, str(row.get("title", "") or ""))
+            ]
+            self._require(
+                bool(native_matches),
+                f"Interpreter button for '{action_name}' not found by native HWND lookup.",
+                step,
+            )
+            handle = int(native_matches[0].get("native_handle", 0) or 0)
+            if prefer_bm_click and self._send_bm_click(handle):
+                invoke_method = "native_bm_click"
+            elif self._post_native_mouse_click(handle):
+                invoke_method = "native_window_mouse_click"
+            elif self._send_bm_click(handle):
+                invoke_method = "native_bm_click"
+            elif self._send_wm_command_click(parent_hwnd=parent_handle, control_hwnd=handle):
+                invoke_method = "native_wm_command_click"
+            else:
+                self._require(False, f"Native interpreter button click failed for '{action_name}'.", step)
+                invoke_method = ""
+            return {
+                "handle": handle,
+                "parent_handle": parent_handle,
+                "invoke_method": invoke_method,
+                "action_name": action_name,
+            }
+
         target = self._find_first_control(
             interpreter_window,
             class_name_regex=r"TRzBitBtn|TRzMenuButton",
@@ -1057,7 +1796,6 @@ class AkabakDriver:
         )
         self._require(target is not None, f"Interpreter button for '{action_name}' not found.", step)
         handle = self._window_handle(target)
-        parent_handle = self._window_handle(interpreter_window)
         invoke_method = ""
         try:
             target.set_focus()
@@ -1194,14 +1932,17 @@ class AkabakDriver:
         self._require(main_handle > 0, "AKABAK main window handle unavailable in import-close assertion.", step)
 
         closed_handles: List[int] = []
+        latest_state: Dict[str, Any] = {}
 
         def _state() -> Tuple[bool, Dict[str, Any]]:
-            nonlocal closed_handles
+            nonlocal closed_handles, latest_state
             windows = self._process_top_level_windows()
             rows = [self._window_signature_row(window) for window in windows]
             visible = [row for row in rows if bool(row.get("is_visible", False))]
             main_visible = [row for row in visible if int(row.get("native_handle", 0) or 0) == main_handle]
-            extras = [row for row in visible if int(row.get("native_handle", 0) or 0) != main_handle]
+            all_extras = [row for row in visible if int(row.get("native_handle", 0) or 0) != main_handle]
+            ignored_extras = [row for row in all_extras if _is_noninteractive_tool_window(row)]
+            extras = [row for row in all_extras if not _is_noninteractive_tool_window(row)]
             interpreter_extras = [row for row in extras if self._is_interpreter_window_row(row)]
 
             for row in interpreter_extras:
@@ -1212,25 +1953,36 @@ class AkabakDriver:
                 closed_handles.append(hwnd)
 
             if main_visible and not extras:
-                return True, {
+                latest_state = {
                     "status": "main_only_open",
                     "visible_window_count": len(visible),
                     "main_handle": main_handle,
+                    "ignored_auxiliary_windows": ignored_extras[:6],
                     "closed_interpreter_handles": list(closed_handles),
                 }
+                return True, latest_state
 
-            return False, {
+            latest_state = {
                 "status": "waiting_main_only",
                 "visible_window_count": len(visible),
                 "main_handle": main_handle,
                 "extras": extras[:6],
+                "ignored_auxiliary_windows": ignored_extras[:6],
                 "closed_interpreter_handles": list(closed_handles),
             }
+            return False, latest_state
 
-        return wait_until(
-            predicate=_state,
-            timeout_s=min(20.0, float(self.step_timeout_s)),
-        )
+        try:
+            return wait_until(
+                predicate=_state,
+                timeout_s=min(20.0, float(self.step_timeout_s)),
+            )
+        except TimeoutError as exc:
+            self._log(level="error", step=step, event="import_window_close_timeout", payload=latest_state)
+            raise RuntimeError(
+                "AKABAK import window close assertion timed out: "
+                + json.dumps(latest_state, ensure_ascii=False, sort_keys=True)
+            ) from exc
 
     def _write_solve_diagnostics(self, *, step: str, reason: str, context: Dict[str, Any]) -> Optional[Path]:
         self.log_dir.mkdir(parents=True, exist_ok=True)
@@ -1292,20 +2044,32 @@ class AkabakDriver:
             "generated_at": datetime.now(timezone.utc).isoformat(),
         }
         try:
-            info = file_dialog.element_info
-            payload["dialog_signature"] = {
-                "title": str(getattr(info, "name", "") or ""),
-                "class_name": str(getattr(info, "class_name", "") or ""),
-                "control_type": str(getattr(info, "control_type", "") or ""),
-                "automation_id": str(getattr(info, "automation_id", "") or ""),
-                "handle": int(getattr(info, "handle", dialog_handle) or dialog_handle),
-            }
+            payload["dialog_signature"] = self._window_signature_row(file_dialog)
         except Exception:
             payload["dialog_signature"] = {"handle": int(dialog_handle)}
+        try:
+            payload["process_windows"] = [
+                self._window_signature_row(window) for window in self._process_top_level_windows()
+            ]
+        except Exception as exc:
+            payload["process_windows_error"] = repr(exc)
+        try:
+            idok_handle = int(self._user32().GetDlgItem(dialog_handle, IDOK) or 0)
+            payload["open_button"] = {
+                "handle": idok_handle,
+                "enabled": bool(self._user32().IsWindowEnabled(idok_handle)) if idok_handle > 0 else False,
+                "visible": bool(self._user32().IsWindowVisible(idok_handle)) if idok_handle > 0 else False,
+            }
+        except Exception as exc:
+            payload["open_button_error"] = repr(exc)
 
         try:
             lines: List[str] = []
-            capture_controls = list(file_dialog.descendants())
+            capture_controls = (
+                self._native_descendant_controls(dialog_handle)
+                if os.name == "nt" and dialog_handle > 0
+                else list(file_dialog.descendants())
+            )
             for control in capture_controls[:400]:
                 try:
                     info = control.element_info
@@ -1354,12 +2118,7 @@ class AkabakDriver:
             "context": dict(context or {}),
         }
         if interpreter_window is not None:
-            payload["interpreter_signature"] = {
-                "title": self._window_title(interpreter_window),
-                "class_name": str(getattr(interpreter_window.element_info, "class_name", "") or ""),
-                "control_type": str(getattr(interpreter_window.element_info, "control_type", "") or ""),
-                "native_handle": self._window_handle(interpreter_window),
-            }
+            payload["interpreter_signature"] = self._window_signature_row(interpreter_window)
             payload["interpreter_button_states"] = self._interpreter_button_states(interpreter_window)
             payload["interpreter_report_text"] = self._read_interpreter_report_text(interpreter_window)
         else:
@@ -1370,7 +2129,13 @@ class AkabakDriver:
                 continue
             lines: List[str] = []
             try:
-                for child in list(control.descendants())[:400]:
+                control_handle = self._window_handle(control)
+                children = (
+                    self._native_descendant_controls(control_handle)
+                    if os.name == "nt" and control_handle > 0
+                    else list(control.descendants())
+                )
+                for child in children[:400]:
                     info = child.element_info
                     lines.append(
                         "\t".join(
@@ -1396,7 +2161,64 @@ class AkabakDriver:
             return None
         return json_path
 
+    def _visible_startup_window_rows(self, *, main_window: Any) -> List[Dict[str, Any]]:
+        main_handle = self._window_handle(main_window)
+        return [
+            row
+            for row in self._native_process_window_rows(
+                process_id=int(self.session.process_id or 0),
+                parent_handle=main_handle,
+            )
+            if int(row.get("native_handle", 0) or 0) != main_handle
+            and bool(row.get("is_visible", False))
+            and re.search(
+                r"TForm_ExampleFiles",
+                str(row.get("class_name", "") or ""),
+                re.IGNORECASE,
+            )
+        ]
+
     def _dismiss_startup_windows(self, *, main_window: Any, step: str) -> None:
+        if os.name == "nt":
+            main_handle = self._window_handle(main_window)
+            closed_handles: set[int] = set()
+
+            def _startup_rows() -> List[Dict[str, Any]]:
+                return self._visible_startup_window_rows(main_window=main_window)
+
+            def _ready_state() -> Tuple[bool, Dict[str, Any]]:
+                startup_rows = _startup_rows()
+                for row in startup_rows:
+                    hwnd = int(row.get("native_handle", 0) or 0)
+                    if hwnd <= 0 or hwnd in closed_handles:
+                        continue
+                    self._user32().SendMessageW(hwnd, WM_CLOSE, 0, 0)
+                    closed_handles.add(hwnd)
+                    self._log(
+                        level="info",
+                        step=step,
+                        event="startup_modal_closed",
+                        payload={"class_name": "TForm_ExampleFiles", "handle": hwnd},
+                    )
+                visible = bool(main_handle > 0 and self._user32().IsWindowVisible(main_handle))
+                enabled = bool(main_handle > 0 and self._user32().IsWindowEnabled(main_handle))
+                ready = bool(visible and enabled and not startup_rows)
+                return ready, {
+                    "visible": visible,
+                    "enabled": enabled,
+                    "startup_window_count": len(startup_rows),
+                    "closed_handles": sorted(closed_handles),
+                }
+
+            readiness = wait_until(
+                predicate=_ready_state,
+                timeout_s=min(20.0, float(getattr(self, "startup_timeout_s", 20.0))),
+                initial_interval_s=0.05,
+                max_interval_s=0.3,
+            )
+            self._log(level="info", step=step, event="main_window_ready", payload=readiness)
+            return
+
         startup_windows = self._child_windows(
             main_window,
             class_name_regex=r"TForm_ExampleFiles",
@@ -1445,6 +2267,31 @@ class AkabakDriver:
         interpreter = self._find_interpreter_window(main_window=main_window)
         interpreter_handle = self._window_handle(interpreter) if interpreter is not None else 0
         process_id = int(self.session.process_id or 0)
+
+        if os.name == "nt" and process_id > 0:
+            native_rows = self._native_process_window_rows(
+                process_id=process_id,
+                parent_handle=interpreter_handle or main_handle,
+            )
+            for row in native_rows:
+                handle = int(row.get("native_handle", 0) or 0)
+                if handle <= 0 or handle in {main_handle, interpreter_handle}:
+                    continue
+                try:
+                    control_id = int(self._user32().GetDlgCtrlID(handle) or 0)
+                except Exception:
+                    control_id = 0
+                candidate = _NativeHwndControl(
+                    user32=self._user32(),
+                    handle=handle,
+                    title=str(row.get("title", "") or ""),
+                    class_name=str(row.get("class_name", "") or ""),
+                    control_id=control_id,
+                )
+                if self._dialog_has_filename_control(candidate):
+                    return candidate
+            return None
+
         try:
             from pywinauto import Desktop
         except Exception:
@@ -1456,7 +2303,9 @@ class AkabakDriver:
                     handle = self._window_handle(candidate)
                     if handle <= 0 or handle in {main_handle, interpreter_handle}:
                         continue
-                    class_name = str(getattr(candidate.element_info, "class_name", "") or "")
+                    class_name = self._native_window_class(handle)
+                    if not class_name:
+                        class_name = str(getattr(candidate.element_info, "class_name", "") or "")
                     if not re.search(r"(#32770|Dialog)", class_name, re.IGNORECASE):
                         continue
                     edit, open_button = self._find_open_dialog_controls(candidate)
@@ -1546,7 +2395,12 @@ class AkabakDriver:
             payload={"command_id": IMPORT_ABEC_COMMAND_ID, "result": int(result.value)},
         )
 
-    def _trigger_interpreter_open_button(self, *, main_window: Any, interpreter_window: Any, step: str) -> None:
+    def _trigger_interpreter_open_button(self, *, main_window: Any, interpreter_window: Any, step: str) -> Any:
+        # AKABAK may create its "Example Files" startup modal lazily after the
+        # import command, even when the main window was already reported ready.
+        # Close it immediately before clicking the interpreter button so the
+        # window message is not silently discarded behind a modal owner.
+        self._dismiss_startup_windows(main_window=main_window, step=step)
         try:
             action = self._invoke_interpreter_button(
                 interpreter_window=interpreter_window,
@@ -1561,15 +2415,83 @@ class AkabakDriver:
                 step=step,
                 action_name="open_abec_project_fallback",
             )
-        dialog = wait_until(
-            predicate=lambda: (
-                self._find_open_file_dialog(main_window=main_window) is not None,
-                self._find_open_file_dialog(main_window=main_window),
-            ),
-            timeout_s=min(8.0, float(self.step_timeout_s)),
-        )
+        self._log(level="info", step=step, event="interpreter_open_button_invoked", payload={"action": action})
+        dialog = None
+        try:
+            transition = wait_until(
+                predicate=lambda: self._open_dialog_or_startup_transition(main_window=main_window),
+                timeout_s=min(2.0, float(self.step_timeout_s)),
+                initial_interval_s=0.03,
+                max_interval_s=0.2,
+                backoff_factor=1.6,
+            )
+            dialog = transition.get("dialog")
+            startup_rows = list(transition.get("startup_rows", []) or [])
+            if dialog is None and startup_rows:
+                self._dismiss_startup_windows(main_window=main_window, step=step)
+                retry_action = self._invoke_interpreter_button(
+                    interpreter_window=interpreter_window,
+                    title_regex=r"open.*abec",
+                    step=step,
+                    action_name="open_abec_project_after_startup_modal",
+                )
+                action = {"initial": action, "retry": retry_action, "startup_modal_count": len(startup_rows)}
+                self._log(
+                    level="info",
+                    step=step,
+                    event="interpreter_open_button_retried_after_startup_modal",
+                    payload={"action": action},
+                )
+        except TimeoutError:
+            pass
+        try:
+            if dialog is None:
+                dialog = wait_until(
+                    predicate=lambda: (
+                        self._find_open_file_dialog(main_window=main_window) is not None,
+                        self._find_open_file_dialog(main_window=main_window),
+                    ),
+                    timeout_s=min(8.0, float(self.step_timeout_s)),
+                )
+        except TimeoutError:
+            interpreter_handle = self._window_handle(interpreter_window)
+            native_rows = self._native_process_window_rows(
+                process_id=int(self.session.process_id or 0),
+                parent_handle=interpreter_handle,
+            )
+            self._log(
+                level="error",
+                step=step,
+                event="open_dialog_missing_after_interpreter_action",
+                payload={"action": action, "native_rows": native_rows[:120]},
+            )
+            raise
         self._require(dialog is not None, "Open-file dialog did not appear after Open ABEC Project action.", step)
         self._log(level="info", step=step, event="interpreter_open_button_triggered", payload={"action": action})
+        return dialog
+
+    def _open_dialog_or_startup_transition(self, *, main_window: Any) -> Tuple[bool, Dict[str, Any]]:
+        dialog = self._find_open_file_dialog(main_window=main_window)
+        startup_rows = self._visible_startup_window_rows(main_window=main_window)
+        return bool(dialog is not None or startup_rows), {
+            "dialog": dialog,
+            "startup_rows": startup_rows,
+        }
+
+    def _open_dialog_native_controls_ready(self, dialog_handle: int) -> Tuple[bool, Dict[str, int]]:
+        hwnd = int(dialog_handle or 0)
+        if hwnd <= 0 or not bool(self._user32().IsWindow(hwnd)):
+            return False, {"dialog_handle": hwnd, "edit_handle": 0, "open_button_handle": 0}
+        edit_handle = self._dialog_filename_edit_handle(hwnd)
+        try:
+            open_button_handle = int(self._user32().GetDlgItem(hwnd, IDOK) or 0)
+        except Exception:
+            open_button_handle = 0
+        return bool(edit_handle > 0 and open_button_handle > 0), {
+            "dialog_handle": hwnd,
+            "edit_handle": edit_handle,
+            "open_button_handle": open_button_handle,
+        }
 
     def _submit_open_file_dialog(
         self,
@@ -1583,7 +2505,32 @@ class AkabakDriver:
         self.last_open_dialog_diagnostics_path = None
         user32 = self._user32()
         dialog_handle = self._window_handle(file_dialog)
+        if os.name == "nt" and dialog_handle > 0 and not bool(user32.IsWindow(dialog_handle)):
+            self._log(
+                level="info",
+                step=step,
+                event="stale_open_dialog_reopen",
+                payload={"stale_handle": dialog_handle},
+            )
+            self._dismiss_startup_windows(main_window=main_window, step=step)
+            interpreter = self._find_interpreter_window(main_window=main_window)
+            self._require(interpreter is not None, "Interpreter unavailable while reopening stale file dialog.", step)
+            file_dialog = self._trigger_interpreter_open_button(
+                main_window=main_window,
+                interpreter_window=interpreter,
+                step=step,
+            )
+            dialog_handle = self._window_handle(file_dialog)
         self._require(dialog_handle > 0, "Open-file dialog handle unavailable.", step)
+        if os.name == "nt":
+            self._require(bool(user32.IsWindow(dialog_handle)), "Open-file dialog handle is stale after reopen.", step)
+            wait_until(
+                predicate=lambda: self._open_dialog_native_controls_ready(dialog_handle),
+                timeout_s=min(4.0, float(self.step_timeout_s)),
+                initial_interval_s=0.03,
+                max_interval_s=0.2,
+                backoff_factor=1.6,
+            )
         filename_edit, open_button = self._find_open_dialog_controls(file_dialog)
         strict_filename_edit = self._find_first_control(
             file_dialog,
@@ -1604,6 +2551,7 @@ class AkabakDriver:
         edit_handle = self._window_handle(filename_edit) if filename_edit is not None else 0
         combo_handle = self._window_handle(filename_combo) if filename_combo is not None else 0
         attempts: List[Dict[str, Any]] = []
+        confirmation_trace: List[Dict[str, Any]] = []
         path_written_once = False
         dialog_close_wait_fast_s = min(0.35, max(0.18, float(self.step_timeout_s) / 600.0))
         dialog_close_wait_fallback_s = min(1.2, max(0.6, float(self.step_timeout_s) / 90.0))
@@ -1746,6 +2694,92 @@ class AkabakDriver:
                     continue
             return ""
 
+        def _confirm_by_scoped_input() -> str:
+            """Click the exact Open HWND without requiring an active desktop."""
+
+            if open_button_handle <= 0:
+                confirmation_trace.append({"phase": "confirm_button", "status": "button_missing"})
+                return ""
+            try:
+                if not bool(user32.IsWindowEnabled(open_button_handle)):
+                    confirmation_trace.append({"phase": "confirm_button", "status": "button_disabled"})
+                    return ""
+                clicked = self._send_bm_click(open_button_handle)
+                if not clicked:
+                    confirmation_trace.append({"phase": "confirm_button", "status": "bm_click_rejected"})
+                    return ""
+                closed = _wait_dialog_closed_with_fallback()
+                confirmation_trace.append(
+                    {"phase": "confirm_button", "status": "closed" if closed else "still_open", "method": "bm_click"}
+                )
+                if closed:
+                    return "native_bm_click"
+            except Exception as exc:
+                confirmation_trace.append({"phase": "confirm_button", "status": "error", "error": repr(exc)})
+                return ""
+            return ""
+
+        def _rewrite_and_confirm_by_scoped_input() -> str:
+            """Generate native edit notifications through the exact edit HWND.
+
+            Some common-dialog implementations display text set through
+            ``WM_SETTEXT`` but keep their internal filename model unchanged.
+            Focused keyboard input is therefore the final, verified fallback.
+            """
+
+            if edit_handle <= 0 or open_button_handle <= 0:
+                confirmation_trace.append({"phase": "rewrite_confirm", "status": "control_missing"})
+                return ""
+            try:
+                if not bool(user32.IsWindowEnabled(edit_handle)) or not bool(user32.IsWindowEnabled(open_button_handle)):
+                    confirmation_trace.append({"phase": "rewrite_confirm", "status": "control_disabled"})
+                    return ""
+                text_sent = self._post_native_text_entry(edit_handle, str(project_path))
+                if not text_sent:
+                    confirmation_trace.append({"phase": "rewrite_confirm", "status": "text_rejected"})
+                    return ""
+                try:
+                    readback = wait_until(
+                        predicate=lambda: (
+                            _path_matches(self._read_window_text_by_handle(edit_handle)),
+                            self._read_window_text_by_handle(edit_handle),
+                        ),
+                        timeout_s=min(2.0, float(self.step_timeout_s)),
+                        initial_interval_s=0.02,
+                        max_interval_s=0.1,
+                        backoff_factor=1.5,
+                    )
+                except TimeoutError:
+                    confirmation_trace.append(
+                        {
+                            "phase": "rewrite_confirm",
+                            "status": "readback_timeout",
+                            "readback": self._read_window_text_by_handle(edit_handle),
+                        }
+                    )
+                    return ""
+                clicked = self._send_bm_click(open_button_handle)
+                if not clicked:
+                    confirmation_trace.append(
+                        {"phase": "rewrite_confirm", "status": "bm_click_rejected", "readback": str(readback)}
+                    )
+                    return ""
+                closed = _wait_dialog_closed_with_fallback()
+                confirmation_trace.append(
+                    {
+                        "phase": "rewrite_confirm",
+                        "status": "closed" if closed else "still_open",
+                        "readback": str(readback),
+                        "after_click_readback": self._read_window_text_by_handle(edit_handle),
+                    }
+                )
+                if closed:
+                    return "native_posted_text_and_bm_click"
+            except Exception as exc:
+                confirmation_trace.append({"phase": "rewrite_confirm", "status": "error", "error": repr(exc)})
+                return ""
+            return ""
+
         def _confirm_open_dialog(*, prefer_uia: bool) -> str:
             actions: List[Tuple[str, Any]] = []
 
@@ -1788,18 +2822,22 @@ class AkabakDriver:
                     continue
             return ""
 
-        file_type_state: Dict[str, Any] = {
-            "strategy": "no_file_type_switch",
-            "available": False,
-            "ok": True,
-        }
+        file_type_state = _ensure_abec_file_type()
+        file_type_state["strategy"] = "select_abec_filter_when_available"
         self._log(level="info", step=step, event="open_dialog_file_type", payload=file_type_state)
 
         # Tier A: fast path - write filename and confirm with Open button.
         try:
             filename_target = filename_edit or filename_combo
             set_method = ""
-            if filename_target is not None:
+            write_state: Dict[str, Any] = {}
+            if os.name == "nt":
+                write_state = self._write_dialog_filename_verified(
+                    dialog_handle=dialog_handle,
+                    value=str(project_path),
+                )
+                set_method = str(write_state.get("method", "") or "")
+            elif filename_target is not None:
                 if hasattr(filename_target, "set_edit_text"):
                     filename_target.set_edit_text(str(project_path))
                     set_method = "uia_set_edit_text"
@@ -1812,12 +2850,21 @@ class AkabakDriver:
                         iface_value.SetValue(str(project_path))
                         set_method = "uia_value_pattern"
             self._require(bool(set_method), "Open dialog filename edit control unavailable for Tier A.", step)
-            path_written_once = True
             readback_before_submit = _readback_snapshot()
             readback_match = _path_matches(readback_before_submit.get("edit", "")) or _path_matches(
                 readback_before_submit.get("dialog", "")
             )
-            confirm_method = _confirm_open_dialog(prefer_uia=True)
+            if write_state:
+                readback_match = bool(write_state.get("verified", False))
+            self._require(readback_match, "Open dialog filename write could not be verified in Tier A.", step)
+            path_written_once = True
+            confirm_method = _rewrite_and_confirm_by_scoped_input() if os.name == "nt" else ""
+            if not confirm_method and os.name == "nt":
+                confirm_method = _confirm_by_scoped_input()
+            if not confirm_method:
+                confirm_method = _confirm_open_dialog(prefer_uia=True)
+            if not confirm_method:
+                confirm_method = _confirm_by_enter()
             self._require(bool(confirm_method), "Open dialog confirm failed in Tier A.", step)
             state_snapshot: Dict[str, Any] = {}
             ok = False
@@ -1841,6 +2888,7 @@ class AkabakDriver:
                     "readback_edit": str(readback_before_submit.get("edit", "")),
                     "readback_dialog": str(readback_before_submit.get("dialog", "")),
                     "readback_match": bool(readback_match),
+                    "write_state": write_state or None,
                     "readback": self._dialog_filename_readback(dialog_handle),
                     "file_type_state": file_type_state,
                     "result": "ok" if ok else "postcondition_failed",
@@ -1897,6 +2945,7 @@ class AkabakDriver:
                     "error": repr(exc),
                     "readback": self._dialog_filename_readback(dialog_handle),
                     "file_type_state": file_type_state,
+                    "confirmation_trace": list(confirmation_trace),
                 }
             )
 
@@ -1925,22 +2974,26 @@ class AkabakDriver:
         # Tier B: Win32 fallback.
         try:
             set_method = ""
-            if edit_handle > 0:
-                user32.SendMessageW(edit_handle, WM_SETTEXT, 0, str(project_path))
-                set_method = "WM_SETTEXT_edit_handle"
-            if not set_method and combo_handle > 0:
-                user32.SendMessageW(combo_handle, WM_SETTEXT, 0, str(project_path))
-                set_method = "WM_SETTEXT_combo_handle"
-            if not set_method:
-                set_ok = bool(user32.SetDlgItemTextW(dialog_handle, OPEN_FILE_NAME_CONTROL_ID, str(project_path)))
-                if set_ok:
-                    set_method = "SetDlgItemTextW_id1148"
+            write_state = self._write_dialog_filename_verified(
+                dialog_handle=dialog_handle,
+                value=str(project_path),
+            )
+            set_method = str(write_state.get("method", "") or "")
             self._require(bool(set_method), "Unable to write project path into Dateiname field (Tier B).", step)
             readback_before_submit = _readback_snapshot()
             readback_match = _path_matches(readback_before_submit.get("edit", "")) or _path_matches(
                 readback_before_submit.get("dialog", "")
             )
-            confirm_method = _confirm_open_dialog(prefer_uia=False)
+            readback_match = bool(write_state.get("verified", False))
+            self._require(readback_match, "Open dialog filename write could not be verified in Tier B.", step)
+            path_written_once = True
+            confirm_method = _rewrite_and_confirm_by_scoped_input() if os.name == "nt" else ""
+            if not confirm_method and os.name == "nt":
+                confirm_method = _confirm_by_scoped_input()
+            if not confirm_method:
+                confirm_method = _confirm_open_dialog(prefer_uia=False)
+            if not confirm_method:
+                confirm_method = _confirm_by_enter()
             self._require(bool(confirm_method), "Unable to confirm open dialog (Tier B).", step)
             state_snapshot: Dict[str, Any] = {}
             ok = False
@@ -1964,6 +3017,7 @@ class AkabakDriver:
                     "readback_edit": str(readback_before_submit.get("edit", "")),
                     "readback_dialog": str(readback_before_submit.get("dialog", "")),
                     "readback_match": bool(readback_match),
+                    "write_state": write_state,
                     "readback": self._dialog_filename_readback(dialog_handle),
                     "file_type_state": file_type_state,
                     "result": "ok" if ok else "postcondition_failed",
@@ -1987,6 +3041,20 @@ class AkabakDriver:
                     "readback": self._dialog_filename_readback(dialog_handle),
                     "file_type_state": file_type_state,
                 }
+            )
+
+        if path_written_once:
+            diagnostics_path = self._write_open_dialog_diagnostics(
+                step=step,
+                file_dialog=file_dialog,
+                dialog_handle=dialog_handle,
+                project_path=project_path,
+                attempts=attempts,
+            )
+            self.last_open_dialog_diagnostics_path = str(diagnostics_path) if diagnostics_path is not None else None
+            raise RuntimeError(
+                "ABEC open-file dialog did not reach a loaded-project signal after verified Win32 submission."
+                + (f" diagnostics={self.last_open_dialog_diagnostics_path}" if self.last_open_dialog_diagnostics_path else "")
             )
 
         # Tier C: controlled keystrokes only with verified focus on filename edit.
@@ -2119,7 +3187,9 @@ class AkabakDriver:
         try:
             # Keep open-dialog wait tight to avoid perceived idle time before filename entry.
             open_dialog_timeout = min(float(self.step_timeout_s), 5.0)
-            main_window.set_focus()
+            main_handle = self._window_handle(main_window)
+            if main_handle > 0:
+                self._user32().SetForegroundWindow(main_handle)
             try:
                 file_dialog = self._open_dialog_via_main_menu(
                     main_window=main_window,
@@ -2147,13 +3217,10 @@ class AkabakDriver:
                     ),
                     timeout_s=min(float(self.step_timeout_s), 10.0),
                 )
-                self._trigger_interpreter_open_button(main_window=main_window, interpreter_window=interpreter, step=step)
-                file_dialog = wait_until(
-                    predicate=lambda: (
-                        self._find_open_file_dialog(main_window=main_window) is not None,
-                        self._find_open_file_dialog(main_window=main_window),
-                    ),
-                    timeout_s=open_dialog_timeout,
+                file_dialog = self._trigger_interpreter_open_button(
+                    main_window=main_window,
+                    interpreter_window=interpreter,
+                    step=step,
                 )
             self._submit_open_file_dialog(
                 main_window=main_window,
@@ -2210,6 +3277,8 @@ class AkabakDriver:
 
         attempt_trace: List[Dict[str, Any]] = []
         try:
+            self._import_report_candidate = ""
+            self._import_report_stable_since = time.monotonic()
             start_action = self._invoke_interpreter_button(
                 interpreter_window=interpreter,
                 title_regex=r"start\s+importing",
@@ -2219,12 +3288,48 @@ class AkabakDriver:
             attempt_trace.append({"phase": "start_importing", **start_action})
             attempt_trace.append(self._confirm_after_interpreter_action(main_window=main_window, step=step, phase="confirm_after_start"))
 
-            apply_ready = wait_until(
-                predicate=lambda: self._import_apply_ready_state(main_window=main_window),
-                timeout_s=max(15.0, float(self.step_timeout_s)),
-            )
+            try:
+                apply_ready = wait_until(
+                    predicate=lambda: self._import_apply_ready_state(main_window=main_window),
+                    timeout_s=min(3.0, max(1.0, float(self.step_timeout_s))),
+                    initial_interval_s=0.03,
+                    max_interval_s=0.2,
+                    backoff_factor=1.6,
+                )
+            except TimeoutError:
+                interpreter_retry = self._find_interpreter_window(main_window=main_window) or interpreter
+                retry_action = self._invoke_interpreter_button(
+                    interpreter_window=interpreter_retry,
+                    title_regex=r"start\s+importing",
+                    step=step,
+                    action_name="start_importing_retry",
+                    prefer_bm_click=True,
+                )
+                attempt_trace.append({"phase": "start_importing_retry", **retry_action})
+                apply_ready = wait_until(
+                    predicate=lambda: self._import_apply_ready_state(main_window=main_window),
+                    timeout_s=max(15.0, float(self.step_timeout_s)),
+                )
             apply_status = str(apply_ready.get("status", "unknown"))
             attempt_trace.append({"phase": "wait_apply_ready", "status": apply_status})
+            if apply_status == "interpreter_closed_before_apply":
+                close_state = self._ensure_import_window_closed(main_window=main_window, step=step)
+                attempt_trace.append({"phase": "ensure_main_only_after_auto_import", **close_state})
+                self._log(
+                    level="info",
+                    step=step,
+                    event="import_start_auto_closed_ok",
+                    payload={"attempt_trace": attempt_trace},
+                )
+                return AkabakDriverResult(
+                    ok=True,
+                    status=self.state,
+                    details={
+                        "import_needed": True,
+                        "import_mode": "start_importing_auto_closed",
+                        "attempt_trace": attempt_trace,
+                    },
+                )
             if apply_status == "modal_detected":
                 modal = apply_ready.get("modal_window")
                 modal_details = self._modal_details(modal) if modal is not None else {"title": "unknown", "message": ""}
@@ -2265,6 +3370,11 @@ class AkabakDriver:
             )
             attempt_trace.append({"phase": "apply", **apply_action})
             attempt_trace.append(self._confirm_after_interpreter_action(main_window=main_window, step=step, phase="confirm_after_apply"))
+
+            # AKABAK applies the imported VCL model asynchronously. A short
+            # settle barrier prevents closing the interpreter while its event
+            # handler is still dereferencing the imported model.
+            time.sleep(1.0)
 
             # Only a short settle window after Apply; close/confirm path handles late transitions.
             post_apply_timeout_s = min(1.2, max(0.35, float(self.step_timeout_s) / 180.0))
@@ -2691,7 +3801,12 @@ class AkabakDriver:
         matches: List[str] = []
         controls: List[Any] = []
         try:
-            controls = list(interpreter.descendants())
+            interpreter_handle = self._window_handle(interpreter)
+            controls = (
+                self._native_descendant_controls(interpreter_handle)
+                if os.name == "nt" and interpreter_handle > 0
+                else list(interpreter.descendants())
+            )
         except Exception:
             controls = []
         for control in controls:
@@ -2715,20 +3830,43 @@ class AkabakDriver:
         self._log(level="info", step=step, event="result", payload=payload)
         return payload
 
-    def close(self) -> AkabakDriverResult:
+    def close(self, *, preserve_vacs: bool = False) -> AkabakDriverResult:
         step = "close"
         if self.state == "closed":
             return AkabakDriverResult(ok=True, status=self.state, details={"idempotent": True})
+        owned_before_close = self._refresh_owned_tool_process_ids()
         main_window = self.session.find_window(
             title_regex=AKABAK_MAIN_WINDOW.title_regex,
             class_name_regex=AKABAK_MAIN_WINDOW.class_name_regex,
         )
         if main_window is not None:
-            try:
-                main_window.close()
-            except Exception:
-                pass
+            main_handle = self._window_handle(main_window)
+            if os.name == "nt" and main_handle > 0:
+                try:
+                    result = ctypes.c_ulong()
+                    self._user32().SendMessageTimeoutW(
+                        main_handle,
+                        WM_CLOSE,
+                        0,
+                        0,
+                        SMTO_ABORTIFHUNG,
+                        1000,
+                        ctypes.byref(result),
+                    )
+                except Exception:
+                    pass
+            else:
+                try:
+                    main_window.close()
+                except Exception:
+                    pass
         self.session.close()
+        cleanup = self._terminate_owned_tool_processes(grace_s=5.0, preserve_vacs=preserve_vacs)
         self.state = "closed"
-        self._log(level="info", step=step, event="closed", payload={})
-        return AkabakDriverResult(ok=True, status=self.state, details={})
+        details = {
+            "owned_before_close": owned_before_close,
+            "preserve_vacs": bool(preserve_vacs),
+            "cleanup": cleanup,
+        }
+        self._log(level="info", step=step, event="closed", payload=details)
+        return AkabakDriverResult(ok=not any(cleanup.get("remaining", {}).values()), status=self.state, details=details)

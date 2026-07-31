@@ -41,6 +41,7 @@ from app.le_driver_registry import load_le_driver_registry
 from app.runtime_orchestrator import _apply_sim_export_settings_to_cfg, _to_windows_short_path
 from app.ui_automation.waits import wait_until
 from app.ui_automation.discover import discover_app_ui
+from app.ui_automation.session import UiaSession
 from app.vacs_export_pipeline import VacsExportPipelineError, run_vacs_export_specs
 from app.vacs_txt_parser import VacsGraph, parse_vacs_txt_file
 from app.version_resolver import resolve_versions
@@ -664,6 +665,48 @@ def _capture_ui_observation(
     pid: Optional[int],
     executable: Optional[str],
 ) -> Optional[Dict[str, Any]]:
+    if os.name == "nt" and int(pid or 0) > 0:
+        try:
+            session = UiaSession(
+                executable=str(executable or ""),
+                app_name=str(app),
+                startup_timeout_s=1,
+                allow_fallback=False,
+            )
+            session.process_id = int(pid or 0)
+            session.backend = "pywinauto-uia"
+            window_rows = [row.to_dict() for row in session.list_top_windows()]
+            payload = {
+                "app": str(app),
+                "pid": int(pid or 0),
+                "backend": "win32_hwnd",
+                "window_count": len(window_rows),
+                "windows": window_rows,
+                "tree_path": None,
+            }
+            db.add_ui_observation(
+                test_run_id=test_run_id,
+                app=app,
+                window_signature={
+                    "pid": payload["pid"],
+                    "window_count": payload["window_count"],
+                    "windows": window_rows[:10],
+                    "snapshot_backend": "win32_hwnd",
+                },
+                control_dump_path=None,
+                notes=f"{notes}; native_hwnd_snapshot",
+            )
+            return payload
+        except Exception as exc:
+            db.add_ui_observation(
+                test_run_id=test_run_id,
+                app=app,
+                window_signature={"error": str(exc), "pid": pid, "snapshot_backend": "win32_hwnd"},
+                control_dump_path=None,
+                notes=f"{notes}; native_snapshot_failed",
+            )
+            return None
+
     try:
         payload = discover_app_ui(
             app=app,
@@ -2504,6 +2547,7 @@ def run_runner_test_harness(
                 )
                 akabak_pid_registered = False
                 akabak_watchdog_events: List[Dict[str, Any]] = []
+                akabak_stage_succeeded = False
 
                 def _register_akabak_pid() -> None:
                     nonlocal akabak_pid_registered
@@ -2542,6 +2586,7 @@ def run_runner_test_harness(
                         control_dump_path=None,
                         notes="post_solve_window_snapshot",
                     )
+                    akabak_stage_succeeded = True
                 except Exception:
                     akabak_watchdog_events = list(getattr(akabak_driver, "watchdog_events", []) or [])
                     _register_akabak_pid()
@@ -2579,6 +2624,9 @@ def run_runner_test_harness(
                     raise
                 finally:
                     try:
+                        akabak_driver.close(preserve_vacs=akabak_stage_succeeded)
+                    except TypeError:
+                        # Compatibility for test doubles and older injected drivers.
                         akabak_driver.close()
                     except Exception:
                         pass
