@@ -18,6 +18,8 @@ logs/
 output/
 outputs/
 exports/
+/tmp/
+/Result_*.txt
 
 # Data / datasets (project-specific)
 **/dataset/
