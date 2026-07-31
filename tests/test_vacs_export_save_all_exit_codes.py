@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import unittest
+from argparse import Namespace
+from unittest.mock import patch
 
-from scripts.vacs_export_save_all import _apply_exit_status, build_exit_status
+from scripts.vacs_export_save_all import _apply_exit_status, build_exit_status, run_once
 
 
 class VacsExportSaveAllExitCodeTests(unittest.TestCase):
@@ -70,6 +72,39 @@ class VacsExportSaveAllExitCodeTests(unittest.TestCase):
         self.assertTrue(bool(summary.get("hard_failure")))
         hard = list(summary.get("hard_failure_reasons", []) or [])
         self.assertIn("fatal:vacs_main_missing", hard)
+
+    def test_auto_mode_preserves_actionable_graph_export_failure(self) -> None:
+        fast = {
+            "ok": False,
+            "error": "required_graph_export_failed",
+            "per_graph": [{"loop": 1, "error": "export_file_missing_or_empty"}],
+            "summary_file": "fast-summary.json",
+        }
+        with (
+            patch("scripts.vacs_export_save_all.run_once_fast", return_value=fast),
+            patch("scripts.vacs_export_save_all.run_once_safe") as safe,
+        ):
+            result = run_once(Namespace(mode="auto"))
+
+        safe.assert_not_called()
+        self.assertIs(result, fast)
+        self.assertFalse(bool(result.get("fallback_used")))
+        self.assertEqual(result.get("fallback_skipped_reason"), "fast_path_reached_graph_export")
+        self.assertEqual(result["per_graph"][0]["error"], "export_file_missing_or_empty")
+
+    def test_auto_mode_still_falls_back_for_readiness_failure(self) -> None:
+        fast = {"ok": False, "error": "vacs_not_ready_after_f4", "summary_file": "fast-summary.json"}
+        safe_result = {"ok": True, "summary_file": "safe-summary.json", "run_id": "safe-run"}
+        with (
+            patch("scripts.vacs_export_save_all.run_once_fast", return_value=fast),
+            patch("scripts.vacs_export_save_all.run_once_safe", return_value=safe_result) as safe,
+        ):
+            result = run_once(Namespace(mode="auto"))
+
+        safe.assert_called_once()
+        self.assertIs(result, safe_result)
+        self.assertTrue(bool(result.get("fallback_used")))
+        self.assertEqual(result.get("fallback_reason"), "fast_mode_failed")
 
 
 if __name__ == "__main__":

@@ -2014,6 +2014,21 @@ def _copy_args_with(args: argparse.Namespace, **overrides: Any) -> argparse.Name
     return argparse.Namespace(**data)
 
 
+def _should_try_safe_fallback(fast_result: Dict[str, Any]) -> bool:
+    """Use the safe path only when the fast path never reached graph export.
+
+    Once a graph row exists, the fast path has already found VACS and entered the
+    export workflow. Starting the safe path at that point destroys the original
+    UI state and often replaces the actionable export error with a secondary
+    readiness error.
+    """
+    if bool(fast_result.get("ok")):
+        return False
+    if list(fast_result.get("per_graph", []) or []):
+        return False
+    return str(fast_result.get("error", "") or "").strip() in TOP_LEVEL_HARD_ERRORS
+
+
 def run_once_fast(args: argparse.Namespace) -> Dict[str, Any]:
     export_root = Path(args.export_dir).resolve()
     export_root.mkdir(parents=True, exist_ok=True)
@@ -2491,6 +2506,10 @@ def run_once(args: argparse.Namespace) -> Dict[str, Any]:
     fast = run_once_fast(args)
     if bool(fast.get("ok")):
         fast["fallback_used"] = False
+        return fast
+    if not _should_try_safe_fallback(fast):
+        fast["fallback_used"] = False
+        fast["fallback_skipped_reason"] = "fast_path_reached_graph_export"
         return fast
     safe_primary_args = _copy_args_with(args, mode="safe")
     safe = run_once_safe(safe_primary_args)
