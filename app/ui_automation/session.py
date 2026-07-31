@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import ctypes
 import io
 import json
+import os
 from contextlib import redirect_stdout
 from pathlib import Path
 import re
@@ -172,10 +174,22 @@ class UiaSession:
         imported = self._import_pywinauto()
         if imported is None:
             return False
-        Application, Desktop, _ = imported
+        Application, _, _ = imported
         app = Application(backend="uia")
         exe_path = Path(self.executable)
         connected = False
+        if self.prefer_start and os.name == "nt":
+            if not exe_path.is_file():
+                raise UiaSessionError(f"Executable not found: {exe_path}")
+            try:
+                process = subprocess.Popen([str(exe_path)], close_fds=True)
+            except Exception as exc:
+                raise UiaSessionError(f"Unable to start {self.app_name}: {exc}") from exc
+            self._app = process
+            self.process_id = int(process.pid)
+            self.backend = "pywinauto-uia"
+            self.started_process = True
+            return True
         if self.prefer_start:
             try:
                 app = Application(backend="uia").start(str(exe_path), timeout=self.startup_timeout_s)
@@ -205,8 +219,9 @@ class UiaSession:
         self._app = app
         self.process_id = int(app.process)
         self.backend = "pywinauto-uia"
-        # Warm-up call to ensure Desktop backend is ready.
-        Desktop(backend="uia").windows(process=self.process_id)
+        # Do not enumerate the global UIA desktop here. Some native tools can
+        # block that COM call indefinitely while their window tree initializes.
+        # Callers already perform bounded, tool-specific main-window waits.
         return True
 
     def _connect_or_start_uiautomation(self) -> bool:
@@ -271,6 +286,8 @@ class UiaSession:
         return []
 
     def _list_top_windows_pywinauto(self) -> List[WindowInfo]:
+        if os.name == "nt":
+            return self._native_top_level_window_rows()
         imported = self._import_pywinauto()
         if imported is None:
             return []
@@ -293,6 +310,61 @@ class UiaSession:
                     handle=int(getattr(info, "handle", 0) or 0),
                 )
             )
+        return rows
+
+    def _native_top_level_window_rows(self) -> List[WindowInfo]:
+        process_id = int(self.process_id or 0)
+        if process_id <= 0 or not hasattr(ctypes, "windll") or not hasattr(ctypes, "WINFUNCTYPE"):
+            return []
+        user32 = ctypes.windll.user32
+        callback_type = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p)
+        rows: List[WindowInfo] = []
+        process_name = Path(self.executable).name.lower()
+
+        def _window_text(hwnd: int, *, max_chars: int = 2048) -> str:
+            buffer = ctypes.create_unicode_buffer(max_chars)
+            try:
+                user32.GetWindowTextW(hwnd, buffer, len(buffer))
+            except Exception:
+                return ""
+            return str(buffer.value or "").strip()
+
+        def _window_class(hwnd: int, *, max_chars: int = 256) -> str:
+            buffer = ctypes.create_unicode_buffer(max_chars)
+            try:
+                user32.GetClassNameW(hwnd, buffer, len(buffer))
+            except Exception:
+                return ""
+            return str(buffer.value or "").strip()
+
+        def _callback(raw_hwnd: int, _lparam: int) -> int:
+            hwnd = int(raw_hwnd or 0)
+            owner_pid = ctypes.c_ulong(0)
+            try:
+                user32.GetWindowThreadProcessId(hwnd, ctypes.byref(owner_pid))
+            except Exception:
+                return 1
+            if int(owner_pid.value) != process_id:
+                return 1
+            rows.append(
+                WindowInfo(
+                    title=_window_text(hwnd),
+                    class_name=_window_class(hwnd),
+                    process_id=process_id,
+                    process_name=process_name,
+                    framework="native_hwnd",
+                    control_type="Window",
+                    automation_id="",
+                    handle=hwnd,
+                )
+            )
+            return 1
+
+        callback = callback_type(_callback)
+        try:
+            user32.EnumWindows(callback, 0)
+        except Exception:
+            return []
         return rows
 
     def _list_top_windows_uiautomation(self) -> List[WindowInfo]:
@@ -431,6 +503,11 @@ class UiaSession:
 
     def find_window(self, *, title_regex: Optional[str] = None, class_name_regex: Optional[str] = None):
         if self.backend == "pywinauto-uia":
+            if os.name == "nt":
+                return self._find_window_pywinauto_native(
+                    title_regex=title_regex,
+                    class_name_regex=class_name_regex,
+                )
             imported = self._import_pywinauto()
             if imported is not None:
                 _, Desktop, _ = imported
@@ -451,8 +528,57 @@ class UiaSession:
             return self._find_window_uiautomation(title_regex=title_regex, class_name_regex=class_name_regex)
         return None
 
+    def _find_window_pywinauto_native(
+        self,
+        *,
+        title_regex: Optional[str],
+        class_name_regex: Optional[str],
+    ):
+        """Resolve one process-owned top-level HWND before creating a UIA wrapper.
+
+        Enumerating ``Desktop(backend="uia").windows(...)`` can block inside
+        Windows COM while a native application initializes. Win32 HWND lookup
+        is synchronous and cheap; UIA is used only for the already selected
+        window.
+        """
+
+        imported = self._import_pywinauto()
+        if int(self.process_id or 0) <= 0 or imported is None:
+            return None
+        _, Desktop, _ = imported
+        desktop = Desktop(backend="uia")
+        for row in self._native_top_level_window_rows():
+            if title_regex and not re.search(title_regex, row.title, re.IGNORECASE):
+                continue
+            if class_name_regex and not re.search(class_name_regex, row.class_name, re.IGNORECASE):
+                continue
+            try:
+                window = desktop.window(handle=int(row.handle))
+                try:
+                    setattr(window, "_wut_native_handle", int(row.handle))
+                    setattr(window, "_wut_native_title", str(row.title))
+                    setattr(window, "_wut_native_class_name", str(row.class_name))
+                except Exception:
+                    pass
+                return window
+            except Exception:
+                continue
+        return None
+
     def close(self) -> None:
         if self.backend == "pywinauto-uia" and self._app is not None and bool(self.started_process):
+            if isinstance(self._app, subprocess.Popen):
+                try:
+                    self._app.terminate()
+                    self._app.wait(timeout=3.0)
+                    return
+                except Exception:
+                    try:
+                        self._app.kill()
+                        self._app.wait(timeout=2.0)
+                        return
+                    except Exception:
+                        pass
             try:
                 self._app.kill(soft=True)  # type: ignore[attr-defined]
                 return
