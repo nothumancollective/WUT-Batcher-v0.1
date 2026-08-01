@@ -332,6 +332,10 @@ class Batch:
     sim_export_settings: SimExportSettings = field(default_factory=SimExportSettings)
     runner_mode: str = DEFAULT_RUNNER_MODE
     geometry_id: str = ""
+    driver_selection_mode: str = "geometry_default"
+    driver_override_revision_id: str = ""
+    # Legacy compatibility fields. New batches keep selection references above;
+    # immutable snapshots are resolved and persisted per run.
     driver_revision_id: str = ""
     driver_snapshot: Dict[str, Any] = field(default_factory=dict)
     extra: Dict[str, Any] = field(default_factory=dict)
@@ -386,11 +390,16 @@ class Batch:
             "sim_export_settings",
             "runner_mode",
             "geometry_id",
+            "driver_selection_mode",
+            "driver_override_revision_id",
             "driver_revision_id",
             "driver_snapshot",
         }
         extra = {k: v for k, v in data.items() if k not in known}
 
+        selection_mode = str(data.get("driver_selection_mode", "geometry_default") or "geometry_default")
+        if selection_mode not in {"geometry_default", "explicit_override"}:
+            selection_mode = "geometry_default"
         return cls(
             schema_version=str(data.get("schema_version", "1.1")),
             batch_id=str(data.get("batch_id", data.get("id", ""))),
@@ -401,6 +410,8 @@ class Batch:
             sim_export_settings=sim_export_settings,
             runner_mode=str(data.get("runner_mode", DEFAULT_RUNNER_MODE)),
             geometry_id=str(data.get("geometry_id", "") or ""),
+            driver_selection_mode=selection_mode,
+            driver_override_revision_id=str(data.get("driver_override_revision_id", "") or ""),
             driver_revision_id=str(data.get("driver_revision_id", "") or ""),
             driver_snapshot=dict(data.get("driver_snapshot", {}) or {}),
             extra=extra,
@@ -418,6 +429,8 @@ class Batch:
             "sim_export_settings": self.sim_export_settings.to_dict(),
             "runner_mode": self.runner_mode,
             "geometry_id": self.geometry_id,
+            "driver_selection_mode": self.driver_selection_mode,
+            "driver_override_revision_id": self.driver_override_revision_id,
             "driver_revision_id": self.driver_revision_id,
             "driver_snapshot": dict(self.driver_snapshot),
         }

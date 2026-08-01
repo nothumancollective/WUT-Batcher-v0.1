@@ -17,7 +17,7 @@ from app.geometry_domain import ensure_project_geometry_schema
 from app.models import Batch, Project, VersionSpec
 
 
-SCHEMA_VERSION = "2.9"
+SCHEMA_VERSION = "2.10"
 
 
 def _now_iso() -> str:
@@ -217,6 +217,8 @@ class SqlDatasetStore:
                     parent_batch_id TEXT,
                     created_via TEXT NOT NULL DEFAULT 'manual',
                     created_from_version_id TEXT,
+                    driver_selection_mode TEXT NOT NULL DEFAULT 'geometry_default',
+                    driver_override_revision_id TEXT,
                     created_at TEXT NOT NULL,
                     PRIMARY KEY (project_id, batch_id),
                     FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE
@@ -581,6 +583,10 @@ class SqlDatasetStore:
             conn.execute("ALTER TABLE batches ADD COLUMN created_via TEXT NOT NULL DEFAULT 'manual'")
         if "created_from_version_id" not in columns:
             conn.execute("ALTER TABLE batches ADD COLUMN created_from_version_id TEXT")
+        if "driver_selection_mode" not in columns:
+            conn.execute("ALTER TABLE batches ADD COLUMN driver_selection_mode TEXT NOT NULL DEFAULT 'geometry_default'")
+        if "driver_override_revision_id" not in columns:
+            conn.execute("ALTER TABLE batches ADD COLUMN driver_override_revision_id TEXT")
 
     def _migrate_ath_dimensions_schema(self, conn: sqlite3.Connection) -> None:
         columns = self._table_columns(conn, "ath_dimensions")
@@ -1217,8 +1223,9 @@ class SqlDatasetStore:
             """
             INSERT INTO batches (
                 project_id, batch_id, batch_name, sweep_definitions, sweep_mode, sim_export_params,
-                parent_batch_id, created_via, created_from_version_id, created_at, geometry_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                parent_batch_id, created_via, created_from_version_id, driver_selection_mode,
+                driver_override_revision_id, created_at, geometry_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(project_id, batch_id) DO UPDATE SET
                 batch_name=excluded.batch_name,
                 sweep_definitions=excluded.sweep_definitions,
@@ -1227,6 +1234,8 @@ class SqlDatasetStore:
                 parent_batch_id=excluded.parent_batch_id,
                 created_via=excluded.created_via,
                 created_from_version_id=excluded.created_from_version_id,
+                driver_selection_mode=excluded.driver_selection_mode,
+                driver_override_revision_id=excluded.driver_override_revision_id,
                 geometry_id=excluded.geometry_id
             """,
             (
@@ -1239,6 +1248,8 @@ class SqlDatasetStore:
                 parent_batch_id,
                 created_via,
                 created_from_version_id,
+                str(payload.get("driver_selection_mode") or "geometry_default"),
+                str(payload.get("driver_override_revision_id") or "") or None,
                 str(payload.get("created_at") or _now_iso()),
                 str(payload.get("geometry_id") or "") or None,
             ),
@@ -1790,12 +1801,14 @@ class SqlDatasetStore:
         conn.execute(
             """INSERT INTO run_driver_snapshots
             (run_id, version_id, project_id, geometry_id, driver_id, revision_id,
-             snapshot_hash, le_network_hash, staged_le_hash, snapshot_json, staged_le_path, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             selection_source, snapshot_hash, le_network_hash, staged_le_hash,
+             snapshot_json, staged_le_path, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(run_id, version_id) DO UPDATE SET
                 geometry_id=excluded.geometry_id,
                 driver_id=excluded.driver_id,
                 revision_id=excluded.revision_id,
+                selection_source=excluded.selection_source,
                 snapshot_hash=excluded.snapshot_hash,
                 le_network_hash=excluded.le_network_hash,
                 staged_le_hash=excluded.staged_le_hash,
@@ -1804,6 +1817,7 @@ class SqlDatasetStore:
             (
                 str(payload["run_id"]), str(payload["version_id"]), str(payload["project_id"]),
                 str(payload["geometry_id"]), str(payload["driver_id"]), str(payload["revision_id"]),
+                str(payload.get("selection_source") or "legacy_runtime"),
                 str(payload["snapshot_hash"]), payload.get("le_network_hash"),
                 payload.get("staged_le_hash"),
                 str(payload["snapshot_json"]), payload.get("staged_le_path"),
@@ -2162,7 +2176,10 @@ class SqlDatasetStore:
             "parent_batch_id": lineage.get("parent_batch_id"),
             "created_via": lineage.get("created_via"),
             "created_from_version_id": lineage.get("created_from_version_id"),
+            "driver_selection_mode": batch.driver_selection_mode,
+            "driver_override_revision_id": batch.driver_override_revision_id or None,
             "created_at": _now_iso(),
+            "geometry_id": batch.geometry_id,
         }
         return self._dual_write("upsert_batch", payload)
 
@@ -2236,7 +2253,10 @@ class SqlDatasetStore:
             "parent_batch_id": lineage.get("parent_batch_id"),
             "created_via": lineage.get("created_via"),
             "created_from_version_id": lineage.get("created_from_version_id"),
+            "driver_selection_mode": batch.driver_selection_mode,
+            "driver_override_revision_id": batch.driver_override_revision_id or None,
             "created_at": now,
+            "geometry_id": batch.geometry_id,
         }
 
         version_rows: List[Dict[str, Any]] = []

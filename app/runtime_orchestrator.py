@@ -2140,6 +2140,7 @@ def run_batch_pipeline(
         batch=batch,
         projects_root=projects_root,
         library_root=effective_library_root,
+        persist_batch=False,
     )
     planned_version_ids = [str(version_id) for version_id in list(planning_summary.version_ids or [])]
     project_root = Path(planning_summary.project_root).expanduser().resolve()
@@ -2183,6 +2184,7 @@ def run_batch_pipeline(
             "batch_id": batch.batch_id,
             "geometry_id": effective_geometry_id,
             "driver_snapshot_hash": driver_snapshot.snapshot_hash if driver_snapshot else None,
+            "driver_selection_source": str(batch.extra.get("driver_selection_source") or "legacy_runtime"),
             "dry_run": bool(dry_run),
             "app_root": str(run_paths.app_root),
             "ath_executable": str(run_paths.tools.ath_executable or ""),
@@ -2253,6 +2255,7 @@ def run_batch_pipeline(
                 "geometry_id": effective_geometry_id,
                 "driver_id": str(driver_snapshot.driver.get("driver_id") or ""),
                 "revision_id": str(driver_snapshot.revision.get("revision_id") or ""),
+                "selection_source": str(batch.extra.get("driver_selection_source") or "legacy_runtime"),
                 "snapshot_hash": driver_snapshot.snapshot_hash,
                 "le_network_hash": driver_snapshot.le_network_hash,
                 "staged_le_hash": driver_snapshot.le_network_hash,
@@ -2826,6 +2829,7 @@ def run_batch_pipeline(
                                 "geometry_id": effective_geometry_id,
                                 "driver_id": str(driver_snapshot.driver.get("driver_id") or ""),
                                 "revision_id": str(driver_snapshot.revision.get("revision_id") or ""),
+                                "selection_source": str(batch.extra.get("driver_selection_source") or "legacy_runtime"),
                                 "snapshot_hash": driver_snapshot.snapshot_hash,
                                 "le_network_hash": driver_snapshot.le_network_hash,
                                 "staged_le_hash": effective_hash,

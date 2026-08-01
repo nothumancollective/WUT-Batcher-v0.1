@@ -239,6 +239,7 @@ def ensure_project_geometry_schema(conn: sqlite3.Connection) -> None:
             geometry_id TEXT NOT NULL,
             driver_id TEXT NOT NULL,
             revision_id TEXT NOT NULL,
+            selection_source TEXT,
             snapshot_hash TEXT NOT NULL,
             le_network_hash TEXT,
             staged_le_hash TEXT,
@@ -254,6 +255,8 @@ def ensure_project_geometry_schema(conn: sqlite3.Connection) -> None:
     snapshot_columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(run_driver_snapshots)").fetchall()}
     if "staged_le_hash" not in snapshot_columns:
         conn.execute("ALTER TABLE run_driver_snapshots ADD COLUMN staged_le_hash TEXT")
+    if "selection_source" not in snapshot_columns:
+        conn.execute("ALTER TABLE run_driver_snapshots ADD COLUMN selection_source TEXT")
     for table in ("batches", "versions", "runs", "run_versions", "graphs", "polar_measurements"):
         columns = {str(row[1]) for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
         if columns and "geometry_id" not in columns:

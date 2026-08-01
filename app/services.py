@@ -1672,6 +1672,65 @@ class OrchestratorService:
         updated = repo.update(geometry_id, default_driver_revision_id=(token or None))
         return {**updated.to_dict(), "compatibility_findings": [item.to_dict() for item in findings]}
 
+    def resolve_batch_driver_selection(
+        self,
+        project_id: str,
+        batch: Batch,
+        *,
+        require_runnable: bool = False,
+    ) -> Dict[str, Any]:
+        """Resolve one effective revision without mutating the stored batch."""
+
+        geometry_id = str(batch.geometry_id or self.ensure_legacy_geometry(project_id)["geometry_id"])
+        geometry = self._geometry_repo(project_id).get(geometry_id)
+        mode = str(batch.driver_selection_mode or "geometry_default")
+        if mode not in {"geometry_default", "explicit_override"}:
+            mode = "geometry_default"
+
+        revision_id = ""
+        source = ""
+        if mode == "explicit_override":
+            revision_id = str(batch.driver_override_revision_id or "").strip()
+            source = "batch_override"
+            if not revision_id:
+                raise ValueError("batch_driver_override_required: explicit override has no Driver revision")
+        elif geometry.default_driver_revision_id:
+            revision_id = str(geometry.default_driver_revision_id)
+            source = "geometry_default"
+        elif str(batch.driver_revision_id or "").strip():
+            revision_id = str(batch.driver_revision_id).strip()
+            source = "legacy_batch_revision"
+        else:
+            generic = self.driver_library.revisions("generic25")
+            if generic:
+                revision_id = generic[-1].revision_id
+                source = "legacy_generic25"
+
+        snapshot = self.driver_library.snapshot(revision_id) if revision_id else None
+        findings = validate_geometry_driver(
+            geometry,
+            snapshot,
+            requires_le_network=bool(require_runnable or revision_id),
+        )
+        if require_runnable and not revision_id:
+            raise ValueError(
+                "driver_le_network_required: no Batch override, Geometry default, "
+                "legacy Batch revision or built-in generic25 is available"
+            )
+        fatal = [item for item in findings if item.severity == "fatal"]
+        if fatal:
+            raise ValueError("; ".join(f"{item.rule_id}: {item.message}" for item in fatal))
+        return {
+            "geometry_id": geometry_id,
+            "selection_mode": mode,
+            "selection_source": source or "unresolved",
+            "revision_id": revision_id,
+            "snapshot": asdict(snapshot) if snapshot else {},
+            "snapshot_hash": snapshot.snapshot_hash if snapshot else "",
+            "le_network_hash": snapshot.le_network_hash if snapshot else "",
+            "findings": [item.to_dict() for item in findings],
+        }
+
     def list_drivers(self, *, query: str = "", kind: str | None = None, include_archived: bool = False) -> List[Dict[str, Any]]:
         result: List[Dict[str, Any]] = []
         for definition in self.driver_library.list_definitions(query=query, kind=kind, include_archived=include_archived):
@@ -3787,6 +3846,8 @@ class OrchestratorService:
         created_from_version_id: Optional[str] = None,
         geometry_id: Optional[str] = None,
         driver_revision_id: Optional[str] = None,
+        driver_selection_mode: str = "geometry_default",
+        driver_override_revision_id: Optional[str] = None,
     ) -> PlanningSummary:
         project = self.repo.load_project(project_id)
         geometry_repo = self._geometry_repo(project_id)
@@ -3794,15 +3855,14 @@ class OrchestratorService:
         if not geometry_token:
             geometry_token = str(self.ensure_legacy_geometry(project_id)["geometry_id"])
         geometry = geometry_repo.get(geometry_token)
-        revision_token = str(driver_revision_id or geometry.default_driver_revision_id or "").strip()
-        if not revision_token:
-            generic = self.driver_library.revisions("generic25")
-            revision_token = generic[-1].revision_id if generic else ""
-        driver_snapshot = self.driver_library.snapshot(revision_token) if revision_token else None
-        findings = validate_geometry_driver(geometry, driver_snapshot, requires_le_network=bool(revision_token))
-        fatal = [item for item in findings if item.severity == "fatal"]
-        if fatal:
-            raise ValueError("; ".join(f"{item.rule_id}: {item.message}" for item in fatal))
+        selection_mode = str(driver_selection_mode or "geometry_default").strip()
+        if selection_mode not in {"geometry_default", "explicit_override"}:
+            raise ValueError(f"Unsupported driver selection mode: {selection_mode}")
+        override_revision_id = str(driver_override_revision_id or "").strip()
+        # Compatibility adapter for callers predating ADR-008.
+        if driver_revision_id and not override_revision_id:
+            selection_mode = "explicit_override"
+            override_revision_id = str(driver_revision_id).strip()
         batches = self.repo.list_batches(project_id)
         batch_id = _next_prefixed_id([batch.batch_id for batch in batches], "B")
         locked_keys = set(self.compatibility.runner_locked_keys(project.constraints.runner_mode))
@@ -3837,16 +3897,23 @@ class OrchestratorService:
             sweep_mode=sweep_mode if sweep_mode in {"single", "combined"} else "single",
             runner_mode=project.constraints.runner_mode,
             geometry_id=geometry_token,
-            driver_revision_id=revision_token,
-            driver_snapshot=asdict(driver_snapshot) if driver_snapshot else {},
+            driver_selection_mode=selection_mode,
+            driver_override_revision_id=override_revision_id,
+            driver_revision_id="",
+            driver_snapshot={},
             extra={
                 "batch_name": batch_name.strip() or batch_id,
                 "parent_batch_id": parent_batch_token,
                 "created_via": created_via_token,
                 "created_from_version_id": created_from_version_token,
-                "geometry_driver_findings": [item.to_dict() for item in findings],
             },
         )
+        resolution = self.resolve_batch_driver_selection(project_id, batch, require_runnable=False)
+        batch.extra["geometry_driver_findings"] = list(resolution["findings"])
+        batch.extra["driver_selection_preview"] = {
+            key: resolution[key]
+            for key in ("selection_source", "revision_id", "snapshot_hash", "le_network_hash")
+        }
 
         sim_settings = dict(sim_export_params or {})
         if sim_settings:
@@ -3896,6 +3963,12 @@ class OrchestratorService:
     ) -> RuntimeSummary:
         project = self.repo.load_project(project_id)
         batch = self.repo.load_batch(project_id, batch_id)
+        resolution = self.resolve_batch_driver_selection(project_id, batch, require_runnable=True)
+        runtime_batch = Batch.from_dict(batch.to_dict())
+        runtime_batch.geometry_id = str(resolution["geometry_id"])
+        runtime_batch.driver_revision_id = str(resolution["revision_id"])
+        runtime_batch.driver_snapshot = dict(resolution["snapshot"])
+        runtime_batch.extra["driver_selection_source"] = str(resolution["selection_source"])
         if dry_run is None:
             tools = [self.settings.ath_exe, self.settings.akabak_exe, self.settings.vacs_exe]
             dry_run = not all(_is_executable_path(path) for path in tools)
@@ -3913,7 +3986,7 @@ class OrchestratorService:
             ath_export_root = ATH_PREVIEW_EXPORT_ROOT
         return run_batch_pipeline(
             project=project,
-            batch=batch,
+            batch=runtime_batch,
             projects_root=self.repo.projects_root,
             library_root=self.settings.library_root,
             template_cfg_path=self.settings.template_cfg,
