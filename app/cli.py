@@ -207,6 +207,12 @@ def cmd_library_audit(args: argparse.Namespace) -> int:
 def cmd_library_migrate_geometries(args: argparse.Namespace) -> int:
     from app.geometry_domain import migrate_legacy_project
 
+    if bool(args.apply) and not args.backup_root:
+        print(json.dumps({
+            "status": "error",
+            "error": "--backup-root is required with --apply",
+        }, indent=2))
+        return 2
     report = migrate_legacy_project(
         Path(args.project_root).expanduser(),
         dry_run=not bool(args.apply),
