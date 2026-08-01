@@ -29,6 +29,7 @@ from app.ui_contracts.window_signatures import (
 
 WM_CLOSE = 0x0010
 WM_COMMAND = 0x0111
+WM_USER = 0x0400
 WM_KEYDOWN = 0x0100
 WM_KEYUP = 0x0101
 WM_CHAR = 0x0102
@@ -41,22 +42,38 @@ WM_LBUTTONUP = 0x0202
 SMTO_ABORTIFHUNG = 0x0002
 VK_SPACE = 0x20
 VK_RETURN = 0x0D
+KEYEVENTF_KEYUP = 0x0002
 VK_F4 = 0x73
+VK_F7 = 0x76
 IDOK = 1
 BN_CLICKED = 0
 MK_LBUTTON = 0x0001
 EM_SETSEL = 0x00B1
 CBN_SELCHANGE = 1
+CDM_SETCONTROLTEXT = WM_USER + 104
+MF_BYPOSITION = 0x0400
+MF_BYCOMMAND = 0x0000
+MF_GRAYED = 0x0001
+MF_DISABLED = 0x0002
 OPEN_FILE_NAME_CONTROL_ID = 1148
 OPEN_FILE_TYPE_CONTROL_ID = 1136
 IMPORT_ABEC_COMMAND_ID = 113
+CALCULATE_ALL_COMMAND_ID = 94
 AKABAK_IMAGE_NAME = "akabak.exe"
 VACS_IMAGE_CANDIDATES = ("vacsviewer_32.exe", "vacsviewer.exe")
 VACS_GRAPH_KEYWORDS = ("graph", "impedance", "spl", "phase", "radiation", "polar", "directivity")
 VACS_GRAPH_CLASS_NAMES = ("tform_datcontour", "tform_datgraph")
+VACS_STARTUP_EDITOR_CLASS_NAME = "tform_editor"
+VACS_STARTUP_EDITOR_TITLE_RE = re.compile(r"^editor\s*-\s*\d+$", re.IGNORECASE)
+VACS_STARTUP_EDITOR_SIGNATURES = (
+    ("vacs viewer", "skip this note next time", "saving projects is only possible"),
+    ("welcome to visualize acoustics", "skip this note next time", "import some data"),
+)
 MESH_FILE_MISSING_RE = re.compile(r"cannot\s+find\s+mesh[-\s]*file", re.IGNORECASE)
 ALL_SOURCES_MUTED_RE = re.compile(r"all\s+sources\s+muted", re.IGNORECASE)
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+TH32CS_SNAPPROCESS = 0x00000002
+MAX_PATH = 260
 
 
 @dataclass(frozen=True)
@@ -107,7 +124,16 @@ class _NativeHwndControl:
                 return
         except Exception:
             pass
-        self._user32.SendMessageW(hwnd, WM_SETTEXT, 0, text)
+        result = ctypes.c_size_t()
+        self._user32.SendMessageTimeoutW(
+            hwnd,
+            WM_SETTEXT,
+            0,
+            text,
+            SMTO_ABORTIFHUNG,
+            1000,
+            ctypes.byref(result),
+        )
 
     def set_text(self, value: str) -> None:
         self.set_edit_text(value)
@@ -126,8 +152,72 @@ class _ClientRect(ctypes.Structure):
     ]
 
 
+class _ProcessEntry32W(ctypes.Structure):
+    _fields_ = [
+        ("dwSize", ctypes.c_ulong),
+        ("cntUsage", ctypes.c_ulong),
+        ("th32ProcessID", ctypes.c_ulong),
+        ("th32DefaultHeapID", ctypes.c_void_p),
+        ("th32ModuleID", ctypes.c_ulong),
+        ("cntThreads", ctypes.c_ulong),
+        ("th32ParentProcessID", ctypes.c_ulong),
+        ("pcPriClassBase", ctypes.c_long),
+        ("dwFlags", ctypes.c_ulong),
+        ("szExeFile", ctypes.c_wchar * MAX_PATH),
+    ]
+
+
 def _filetime_ticks(value: _FileTime) -> int:
     return (int(value.dwHighDateTime) << 32) | int(value.dwLowDateTime)
+
+
+def _native_process_ids_by_image(image_name: str) -> List[int]:
+    """Enumerate Windows processes without shelling out to access-sensitive tasklist."""
+
+    target = str(image_name or "").strip().lower()
+    if not target or os.name != "nt" or not hasattr(ctypes, "windll"):
+        return []
+    kernel32 = ctypes.windll.kernel32
+    try:
+        kernel32.CreateToolhelp32Snapshot.restype = ctypes.c_void_p
+        snapshot = int(kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) or 0)
+    except Exception:
+        return []
+    invalid_handle = int(ctypes.c_void_p(-1).value or 0)
+    if snapshot <= 0 or snapshot == invalid_handle:
+        return []
+    rows: List[int] = []
+    entry = _ProcessEntry32W()
+    entry.dwSize = ctypes.sizeof(_ProcessEntry32W)
+    try:
+        ok = bool(kernel32.Process32FirstW(snapshot, ctypes.byref(entry)))
+        while ok:
+            if str(entry.szExeFile or "").strip().lower() == target:
+                rows.append(int(entry.th32ProcessID))
+            ok = bool(kernel32.Process32NextW(snapshot, ctypes.byref(entry)))
+    except Exception:
+        return []
+    finally:
+        try:
+            kernel32.CloseHandle(snapshot)
+        except Exception:
+            pass
+    return sorted(set(rows))
+
+
+def _solve_menu_candidate(rows: Sequence[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    valid = [row for row in rows if int(row.get("command_id", 0) or 0) > 0]
+    for row in valid:
+        if re.search(r"(?:\t|\s)f4\b", str(row.get("title", "") or ""), re.IGNORECASE):
+            return row
+    for row in valid:
+        if int(row.get("command_id", 0) or 0) == CALCULATE_ALL_COMMAND_ID:
+            return row
+    for row in valid:
+        title = str(row.get("title", "") or "").replace("&", " ")
+        if re.search(r"\b(calculate|calculation|solve|berechnen)\b", title, re.IGNORECASE):
+            return row
+    return None
 
 
 def _process_cpu_time_seconds(process_id: int) -> Optional[float]:
@@ -246,6 +336,7 @@ def _solve_heartbeat_payload(snapshot: Dict[str, Any], *, elapsed_s: float) -> D
         "vacs_pids": [int(pid) for pid in list(snapshot.get("vacs_pids", []) or [])],
         "new_vacs_pids": [int(pid) for pid in list(snapshot.get("new_vacs_pids", []) or [])],
         "progress_window_present": bool(snapshot.get("progress_window_present", False)),
+        "solve_command_enabled": snapshot.get("solve_command_enabled"),
         "vacs_max_controls_count": int(vacs_ui.get("max_controls_count", 0) or 0),
         "vacs_max_graph_keyword_hits": int(vacs_ui.get("max_graph_keyword_hits", 0) or 0),
     }
@@ -264,10 +355,12 @@ class AkabakDriver:
         *,
         executable: str | Path,
         log_dir: str | Path,
+        vacs_executable: str | Path | None = None,
         startup_timeout_s: int = 20,
         step_timeout_s: int = 90,
     ) -> None:
         self.executable = str(executable)
+        self.vacs_executable = str(vacs_executable) if vacs_executable else ""
         self.log_dir = Path(log_dir)
         self.startup_timeout_s = max(5, int(startup_timeout_s))
         self.step_timeout_s = max(1, int(step_timeout_s))
@@ -294,6 +387,8 @@ class AkabakDriver:
         self.initial_vacs_pids = set(self._list_vacs_process_ids())
         self.owned_akabak_pids: set[int] = set()
         self.owned_vacs_pids: set[int] = set()
+        self._vacs_launch_process: Optional[Any] = None
+        self._solve_main_handle = 0
 
     def _log(self, *, level: str, step: str, event: str, payload: Dict[str, Any]) -> None:
         self.logger.write(level=level, step=step, event=event, payload=payload)
@@ -389,17 +484,28 @@ class AkabakDriver:
         user32.PostMessageW(hwnd, WM_KEYDOWN, VK_RETURN, 0)
         user32.PostMessageW(hwnd, WM_KEYUP, VK_RETURN, 0)
 
-    def _send_key_f4(self, hwnd: int) -> None:
+    def _send_key_f4(self, hwnd: int) -> bool:
         if hwnd <= 0:
-            return
+            return False
         user32 = self._user32()
-        user32.PostMessageW(hwnd, WM_KEYDOWN, VK_F4, 0)
-        user32.PostMessageW(hwnd, WM_KEYUP, VK_F4, 0)
+        down = bool(user32.PostMessageW(hwnd, WM_KEYDOWN, VK_F4, 0))
+        up = bool(user32.PostMessageW(hwnd, WM_KEYUP, VK_F4, 0))
+        return bool(down and up)
+
+    def _send_key_f7(self, hwnd: int) -> bool:
+        if hwnd <= 0:
+            return False
+        user32 = self._user32()
+        down = bool(user32.PostMessageW(hwnd, WM_KEYDOWN, VK_F7, 0))
+        up = bool(user32.PostMessageW(hwnd, WM_KEYUP, VK_F7, 0))
+        return bool(down and up)
 
     def _list_process_ids_by_image(self, image_name: str) -> List[int]:
         target = str(image_name or "").strip().lower()
         if not target:
             return []
+        if os.name == "nt":
+            return _native_process_ids_by_image(target)
         try:
             cp = subprocess.run(
                 ["tasklist", "/FI", f"IMAGENAME eq {target}", "/FO", "CSV", "/NH"],
@@ -431,6 +537,128 @@ class AkabakDriver:
         for image in VACS_IMAGE_CANDIDATES:
             rows.extend(self._list_process_ids_by_image(image))
         return sorted(set(rows))
+
+    def _native_menu_rows(self, main_handle: int) -> List[Dict[str, Any]]:
+        hwnd = int(main_handle or 0)
+        if hwnd <= 0 or os.name != "nt":
+            return []
+        user32 = self._user32()
+        try:
+            user32.GetMenu.restype = ctypes.c_void_p
+            user32.GetSubMenu.restype = ctypes.c_void_p
+            user32.GetMenuItemID.restype = ctypes.c_uint
+            root_menu = int(user32.GetMenu(hwnd) or 0)
+        except Exception:
+            return []
+        if root_menu <= 0:
+            return []
+        rows: List[Dict[str, Any]] = []
+
+        def _walk(menu_handle: int, parent_path: List[str], depth: int) -> None:
+            if depth > 4:
+                return
+            try:
+                count = int(user32.GetMenuItemCount(menu_handle))
+            except Exception:
+                return
+            for position in range(max(0, count)):
+                buffer = ctypes.create_unicode_buffer(512)
+                try:
+                    user32.GetMenuStringW(menu_handle, position, buffer, len(buffer), MF_BYPOSITION)
+                    title = str(buffer.value or "").strip()
+                    submenu = int(user32.GetSubMenu(menu_handle, position) or 0)
+                    command_id_raw = int(user32.GetMenuItemID(menu_handle, position))
+                except Exception:
+                    continue
+                command_id = 0 if command_id_raw in {-1, 0xFFFFFFFF} else command_id_raw
+                path = [*parent_path, title] if title else list(parent_path)
+                rows.append(
+                    {
+                        "title": title,
+                        "path": " -> ".join(item.replace("&", "") for item in path if item),
+                        "command_id": command_id,
+                        "depth": depth,
+                    }
+                )
+                if submenu > 0:
+                    _walk(submenu, path, depth + 1)
+
+        _walk(root_menu, [], 0)
+        return rows
+
+    def _native_menu_command_enabled(self, main_handle: int, command_id: int) -> Optional[bool]:
+        """Read one exact menu item's enabled bit without opening or invoking the menu."""
+
+        hwnd = int(main_handle or 0)
+        command = int(command_id or 0)
+        if hwnd <= 0 or command <= 0 or os.name != "nt":
+            return None
+        user32 = self._user32()
+        try:
+            user32.GetMenu.restype = ctypes.c_void_p
+            root_menu = int(user32.GetMenu(hwnd) or 0)
+            if root_menu <= 0:
+                return None
+            state = int(user32.GetMenuState(root_menu, command, MF_BYCOMMAND)) & 0xFFFFFFFF
+        except Exception:
+            return None
+        if state == 0xFFFFFFFF:
+            return None
+        return not bool(state & (MF_GRAYED | MF_DISABLED))
+
+    def _trigger_solve_native(self, main_handle: int) -> Dict[str, Any]:
+        menu_rows = self._native_menu_rows(main_handle)
+        candidate = _solve_menu_candidate(menu_rows)
+        if candidate is not None:
+            command_id = int(candidate.get("command_id", 0) or 0)
+            sent = self._send_message_timeout(main_handle, WM_COMMAND, command_id, 0)
+            # A synchronous menu handler can enter a modal loop before it
+            # returns. In that case SendMessageTimeout reports a timeout even
+            # though the command was dispatched; never issue a second F4.
+            return {
+                "trigger": "hwnd_menu_command",
+                "status": "sent" if sent else "dispatch_timed_out",
+                "main_handle": int(main_handle),
+                "command_id": command_id,
+                "menu_path": str(candidate.get("path", "") or ""),
+            }
+        sent = self._send_key_f4(main_handle)
+        return {
+            "trigger": "hwnd_postmessage_f4",
+            "status": "sent" if sent else "rejected",
+            "main_handle": int(main_handle),
+            "menu_candidates": [
+                row
+                for row in menu_rows
+                if int(row.get("command_id", 0) or 0) > 0
+                and (
+                    85 <= int(row.get("command_id", 0) or 0) <= 115
+                    or re.search(r"calculate|solve|berechnen|processing", str(row.get("path", "")), re.IGNORECASE)
+                )
+            ][:40],
+        }
+
+    def _trigger_vacs_reimport_native(self, main_handle: int) -> Dict[str, Any]:
+        sent = self._send_key_f7(main_handle)
+        return {
+            "trigger": "hwnd_postmessage_f7",
+            "status": "sent" if sent else "rejected",
+            "main_handle": int(main_handle),
+        }
+
+    def _start_vacs_for_handoff(self, main_handle: int) -> Dict[str, Any]:
+        """Request VACS through AKABAK's F7 handoff instead of starting it externally.
+
+        VACS uses an in-process COM/RPC link to AKABAK.  A direct ``Popen`` can
+        create a viewer that only receives the mesh or reports an unavailable
+        RPC server.  F7 lets AKABAK create and bind the viewer itself.
+        """
+
+        existing = self._list_vacs_process_ids()
+        if existing:
+            return {"status": "already_running", "pids": existing, "method": "existing_vacs"}
+        trigger = self._trigger_vacs_reimport_native(int(main_handle or 0))
+        return {**trigger, "method": "akabak_f7"}
 
     def _refresh_owned_tool_process_ids(self) -> Dict[str, List[int]]:
         baseline_akabak = {int(pid) for pid in getattr(self, "initial_akabak_pids", set()) if int(pid) > 0}
@@ -710,6 +938,78 @@ class AkabakDriver:
             )
         return rows
 
+    def _native_descendant_window_rows(self, *, process_id: int, parent_handle: int) -> List[Dict[str, Any]]:
+        """Return bounded native descendants for one exact process-owned parent HWND."""
+
+        pid = int(process_id or 0)
+        parent = int(parent_handle or 0)
+        if pid <= 0 or parent <= 0 or not hasattr(ctypes, "windll") or not hasattr(ctypes, "WINFUNCTYPE"):
+            return []
+        user32 = self._user32()
+        callback_type = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p)
+        rows: List[Dict[str, Any]] = []
+
+        def _callback(raw_hwnd: int, _lparam: int) -> int:
+            hwnd = int(raw_hwnd or 0)
+            owner_pid = ctypes.c_ulong(0)
+            try:
+                user32.GetWindowThreadProcessId(hwnd, ctypes.byref(owner_pid))
+            except Exception:
+                return 1
+            if int(owner_pid.value) != pid:
+                return 1
+            rows.append(
+                {
+                    "title": self._read_window_text_by_handle(hwnd, max_chars=4096),
+                    "class_name": self._native_window_class(hwnd),
+                    "native_handle": hwnd,
+                }
+            )
+            return 1
+
+        callback = callback_type(_callback)
+        try:
+            user32.EnumChildWindows(parent, callback, 0)
+        except Exception:
+            return []
+        return rows[:256]
+
+    def _dismiss_vacs_startup_editors(self, process_ids: Sequence[int]) -> List[Dict[str, Any]]:
+        """Close only the two known VACS first-start RTF editors by exact content signatures."""
+
+        actions: List[Dict[str, Any]] = []
+        for pid in [int(item) for item in process_ids if int(item) > 0]:
+            for row in self._native_process_window_rows(process_id=pid):
+                hwnd = int(row.get("native_handle", 0) or 0)
+                title = str(row.get("title", "") or "").strip()
+                class_name = str(row.get("class_name", "") or "").strip().lower()
+                if (
+                    hwnd <= 0
+                    or class_name != VACS_STARTUP_EDITOR_CLASS_NAME
+                    or not VACS_STARTUP_EDITOR_TITLE_RE.fullmatch(title)
+                ):
+                    continue
+                descendants = self._native_descendant_window_rows(process_id=pid, parent_handle=hwnd)
+                content = " ".join(str(item.get("title", "") or "") for item in descendants).lower()
+                signature = next(
+                    (tokens for tokens in VACS_STARTUP_EDITOR_SIGNATURES if all(token in content for token in tokens)),
+                    None,
+                )
+                if signature is None:
+                    continue
+                closed = self._send_message_timeout(hwnd, WM_CLOSE, timeout_ms=1000)
+                actions.append(
+                    {
+                        "pid": pid,
+                        "native_handle": hwnd,
+                        "title": title,
+                        "class_name": class_name,
+                        "signature": list(signature),
+                        "status": "close_sent" if closed else "close_rejected",
+                    }
+                )
+        return actions
+
     def _uia_windows_from_native_rows(self, rows: Sequence[Dict[str, Any]]) -> List[Any]:
         if not rows:
             return []
@@ -819,6 +1119,10 @@ class AkabakDriver:
             "akabak_cpu_times_s": akabak_cpu_times_s,
             "worker_cpu_times_s": worker_cpu_times_s,
             "progress_window_present": bool(progress is not None),
+            "solve_command_enabled": self._native_menu_command_enabled(
+                int(getattr(self, "_solve_main_handle", 0) or 0),
+                CALCULATE_ALL_COMMAND_ID,
+            ),
             "vacs_ui": vacs_ui,
         }
 
@@ -861,15 +1165,31 @@ class AkabakDriver:
         if ctrl_id <= 0:
             return False
         wparam = (int(ctrl_id) & 0xFFFF) | ((int(BN_CLICKED) & 0xFFFF) << 16)
+        return self._send_message_timeout(parent_hwnd, WM_COMMAND, wparam, control_hwnd)
+
+    def _send_message_timeout(
+        self,
+        hwnd: int,
+        message: int,
+        wparam: Any = 0,
+        lparam: Any = 0,
+        *,
+        timeout_ms: int = 1000,
+    ) -> bool:
+        """Send one cross-process window message without an unbounded wait."""
+
+        target = int(hwnd or 0)
+        if target <= 0:
+            return False
         try:
-            result = ctypes.c_ulong()
-            sent = user32.SendMessageTimeoutW(
-                parent_hwnd,
-                WM_COMMAND,
+            result = ctypes.c_size_t()
+            sent = self._user32().SendMessageTimeoutW(
+                target,
+                int(message),
                 wparam,
-                control_hwnd,
+                lparam,
                 SMTO_ABORTIFHUNG,
-                1000,
+                max(1, int(timeout_ms)),
                 ctypes.byref(result),
             )
             return bool(sent)
@@ -882,20 +1202,7 @@ class AkabakDriver:
         hwnd = int(control_hwnd or 0)
         if hwnd <= 0:
             return False
-        try:
-            result = ctypes.c_ulong()
-            ok = self._user32().SendMessageTimeoutW(
-                hwnd,
-                BM_CLICK,
-                0,
-                0,
-                SMTO_ABORTIFHUNG,
-                max(1, int(timeout_ms)),
-                ctypes.byref(result),
-            )
-            return bool(ok)
-        except Exception:
-            return False
+        return self._send_message_timeout(hwnd, BM_CLICK, timeout_ms=timeout_ms)
 
     def _post_native_mouse_click(self, control_hwnd: int) -> bool:
         """Post a window-local click without moving the real mouse cursor."""
@@ -928,7 +1235,7 @@ class AkabakDriver:
             return False
         user32 = self._user32()
         try:
-            result = ctypes.c_ulong()
+            result = ctypes.c_size_t()
             selected = user32.SendMessageTimeoutW(
                 hwnd,
                 EM_SETSEL,
@@ -961,6 +1268,42 @@ class AkabakDriver:
                 )
                 if not accepted:
                     return False
+            return True
+        except Exception:
+            return False
+
+    def _send_native_dialog_enter(self, dialog_hwnd: int, edit_hwnd: int) -> bool:
+        """Send one real Enter key only after exact dialog/control focus validation."""
+
+        dialog = int(dialog_hwnd or 0)
+        edit = int(edit_hwnd or 0)
+        if dialog <= 0 or edit <= 0 or os.name != "nt" or not hasattr(ctypes, "windll"):
+            return False
+        user32 = self._user32()
+        kernel32 = ctypes.windll.kernel32
+        try:
+            if not bool(user32.IsWindow(dialog)) or not bool(user32.IsWindow(edit)):
+                return False
+            target_thread = int(user32.GetWindowThreadProcessId(dialog, None) or 0)
+            current_thread = int(kernel32.GetCurrentThreadId() or 0)
+            if target_thread <= 0 or current_thread <= 0:
+                return False
+            attached = target_thread != current_thread and bool(
+                user32.AttachThreadInput(current_thread, target_thread, True)
+            )
+            if target_thread != current_thread and not attached:
+                return False
+            try:
+                user32.SetForegroundWindow(dialog)
+                user32.SetActiveWindow(dialog)
+                user32.SetFocus(edit)
+                if int(user32.GetFocus() or 0) != edit:
+                    return False
+                user32.keybd_event(VK_RETURN, 0, 0, 0)
+                user32.keybd_event(VK_RETURN, 0, KEYEVENTF_KEYUP, 0)
+            finally:
+                if attached:
+                    user32.AttachThreadInput(current_thread, target_thread, False)
             return True
         except Exception:
             return False
@@ -1262,7 +1605,17 @@ class AkabakDriver:
             return ""
         edit_handle = self._dialog_filename_edit_handle(dialog_handle)
         if edit_handle > 0:
-            return self._read_window_text_by_handle(edit_handle)
+            edit_value = self._read_window_text_by_handle(edit_handle)
+            if edit_value:
+                return edit_value
+        try:
+            container_handle = int(self._user32().GetDlgItem(dialog_handle, OPEN_FILE_NAME_CONTROL_ID) or 0)
+        except Exception:
+            container_handle = 0
+        if container_handle > 0:
+            container_value = self._read_window_text_by_handle(container_handle)
+            if container_value:
+                return container_value
         readback = ctypes.create_unicode_buffer(2048)
         self._user32().GetDlgItemTextW(dialog_handle, OPEN_FILE_NAME_CONTROL_ID, readback, 2047)
         return str(readback.value or "")
@@ -1308,7 +1661,10 @@ class AkabakDriver:
             except Exception as exc:
                 error = repr(exc)
             readbacks = _readbacks()
-            verified = bool(expected) and any(_normalize(item) == expected for item in readbacks.values())
+            if edit_handle > 0:
+                verified = bool(expected) and _normalize(readbacks.get("edit", "")) == expected
+            else:
+                verified = bool(expected) and any(_normalize(item) == expected for item in readbacks.values())
             attempt = {
                 "method": method,
                 "result": bool(result),
@@ -1322,6 +1678,19 @@ class AkabakDriver:
         text_pointer = ctypes.c_wchar_p(target_value)
         actions: List[Tuple[str, Any]] = []
         if dialog_hwnd > 0:
+            def _set_common_dialog_text() -> Any:
+                message_result = ctypes.c_size_t(0)
+                return user32.SendMessageTimeoutW(
+                    dialog_hwnd,
+                    CDM_SETCONTROLTEXT,
+                    OPEN_FILE_NAME_CONTROL_ID,
+                    text_pointer,
+                    SMTO_ABORTIFHUNG,
+                    1000,
+                    ctypes.byref(message_result),
+                )
+
+            actions.append(("CDM_SETCONTROLTEXT_id1148", _set_common_dialog_text))
             actions.append(
                 (
                     "SetDlgItemTextW_id1148",
@@ -1564,8 +1933,7 @@ class AkabakDriver:
         except Exception:
             pass
         if handle > 0:
-            self._user32().SendMessageW(handle, BM_CLICK, 0, 0)
-            return True
+            return self._send_bm_click(handle)
         return False
 
     def _run_watchdog_modal_sweep(self, *, step: str, phase: str, timeout_s: float = 4.0) -> Dict[str, Any]:
@@ -1847,8 +2215,7 @@ class AkabakDriver:
                 invoke_method = ""
         if not invoke_method and self._send_wm_command_click(parent_hwnd=parent_handle, control_hwnd=handle):
             invoke_method = "wm_command_click"
-        if not invoke_method and handle > 0:
-            self._user32().SendMessageW(handle, BM_CLICK, 0, 0)
+        if not invoke_method and handle > 0 and self._send_bm_click(handle):
             invoke_method = "bm_click"
         if not invoke_method and handle > 0:
             self._send_key_space(handle)
@@ -1921,8 +2288,7 @@ class AkabakDriver:
                     except Exception:
                         pass
                     close_hwnd = self._window_handle(close_button)
-                    if close_hwnd > 0:
-                        self._user32().SendMessageW(close_hwnd, BM_CLICK, 0, 0)
+                    if close_hwnd > 0 and self._send_bm_click(close_hwnd):
                         return False, {"status": "close_retry_bm_click"}
                     return False, {"status": "close_retry_noop"}
 
@@ -1947,7 +2313,7 @@ class AkabakDriver:
         # Last resort only: force-close interpreter window if deterministic close path stalled.
         hwnd = self._window_handle(interpreter)
         if hwnd > 0:
-            self._user32().SendMessageW(hwnd, WM_CLOSE, 0, 0)
+            self._send_message_timeout(hwnd, WM_CLOSE)
             try:
                 close_wait = wait_until(
                     predicate=_close_state,
@@ -1981,7 +2347,7 @@ class AkabakDriver:
                 hwnd = int(row.get("native_handle", 0) or 0)
                 if hwnd <= 0 or hwnd in closed_handles:
                     continue
-                self._user32().SendMessageW(hwnd, WM_CLOSE, 0, 0)
+                self._send_message_timeout(hwnd, WM_CLOSE)
                 closed_handles.append(hwnd)
 
             if main_visible and not extras:
@@ -2224,7 +2590,7 @@ class AkabakDriver:
                     hwnd = int(row.get("native_handle", 0) or 0)
                     if hwnd <= 0 or hwnd in closed_handles:
                         continue
-                    self._user32().SendMessageW(hwnd, WM_CLOSE, 0, 0)
+                    self._send_message_timeout(hwnd, WM_CLOSE)
                     closed_handles.add(hwnd)
                     self._log(
                         level="info",
@@ -2262,7 +2628,7 @@ class AkabakDriver:
             hwnd = self._window_handle(popup)
             if hwnd <= 0:
                 continue
-            user32.SendMessageW(hwnd, WM_CLOSE, 0, 0)
+            self._send_message_timeout(hwnd, WM_CLOSE)
             self._log(
                 level="info",
                 step=step,
@@ -2409,7 +2775,7 @@ class AkabakDriver:
         hwnd = self._window_handle(main_window)
         self._require(hwnd > 0, "AKABAK main window handle unavailable.", step)
         user32 = self._user32()
-        result = ctypes.c_ulong()
+        result = ctypes.c_size_t()
         ok = user32.SendMessageTimeoutW(
             hwnd,
             WM_COMMAND,
@@ -2629,8 +2995,29 @@ class AkabakDriver:
         def _readback_snapshot() -> Dict[str, str]:
             return {
                 "edit": self._edit_readback(filename_edit),
+                "combo": self._read_window_text_by_handle(combo_handle) if combo_handle > 0 else "",
                 "dialog": self._dialog_filename_readback(dialog_handle),
             }
+
+        def _scoped_filename_readback_state() -> Tuple[bool, Dict[str, str]]:
+            state = _readback_snapshot()
+            return any(_path_matches(value) for value in state.values()), state
+
+        def _sync_filename_model() -> Dict[str, Any]:
+            details: Dict[str, Any] = {"attempted": False, "sent": False, "verified": False}
+            if os.name != "nt" or edit_handle <= 0:
+                return details
+            details["attempted"] = True
+            # Shell auto-complete can still be applying a just-selected file
+            # filter. Wait briefly, then generate real edit notifications by
+            # replacing the text through the exact inner Edit HWND.
+            time.sleep(0.35)
+            details["sent"] = self._post_native_text_entry(edit_handle, str(project_path))
+            details["readback"] = _readback_snapshot()
+            details["verified"] = bool(details["sent"]) and _path_matches(
+                dict(details["readback"]).get("edit", "")
+            )
+            return details
 
         def _ensure_abec_file_type() -> Dict[str, Any]:
             details: Dict[str, Any] = {
@@ -2702,12 +3089,12 @@ class AkabakDriver:
 
         def _confirm_by_enter() -> str:
             actions: List[Tuple[str, Any]] = []
-            if filename_edit is not None:
+            if os.name != "nt" and filename_edit is not None:
                 if hasattr(filename_edit, "set_focus"):
                     actions.append(("edit_set_focus", lambda: filename_edit.set_focus()))
                 if hasattr(filename_edit, "type_keys"):
                     actions.append(("edit_enter", lambda: filename_edit.type_keys("{ENTER}", set_foreground=True)))
-            if filename_combo is not None:
+            if os.name != "nt" and filename_combo is not None:
                 if hasattr(filename_combo, "set_focus"):
                     actions.append(("combo_set_focus", lambda: filename_combo.set_focus()))
                 if hasattr(filename_combo, "type_keys"):
@@ -2736,16 +3123,31 @@ class AkabakDriver:
                 if not bool(user32.IsWindowEnabled(open_button_handle)):
                     confirmation_trace.append({"phase": "confirm_button", "status": "button_disabled"})
                     return ""
-                clicked = self._send_bm_click(open_button_handle)
-                if not clicked:
-                    confirmation_trace.append({"phase": "confirm_button", "status": "bm_click_rejected"})
-                    return ""
-                closed = _wait_dialog_closed_with_fallback()
-                confirmation_trace.append(
-                    {"phase": "confirm_button", "status": "closed" if closed else "still_open", "method": "bm_click"}
-                )
-                if closed:
-                    return "native_bm_click"
+                actions = [
+                    (
+                        "foreground_enter",
+                        lambda: self._send_native_dialog_enter(dialog_handle, edit_handle),
+                    ),
+                    (
+                        "post_wm_command_idok",
+                        lambda: user32.PostMessageW(dialog_handle, WM_COMMAND, IDOK, open_button_handle),
+                    ),
+                    ("post_bm_click", lambda: user32.PostMessageW(open_button_handle, BM_CLICK, 0, 0)),
+                    ("bounded_bm_click", lambda: self._send_bm_click(open_button_handle)),
+                ]
+                for method, action in actions:
+                    accepted = bool(action())
+                    closed = _wait_dialog_closed_with_fallback()
+                    confirmation_trace.append(
+                        {
+                            "phase": "confirm_button",
+                            "status": "closed" if closed else "still_open",
+                            "method": method,
+                            "accepted": accepted,
+                        }
+                    )
+                    if closed:
+                        return f"native_{method}"
             except Exception as exc:
                 confirmation_trace.append({"phase": "confirm_button", "status": "error", "error": repr(exc)})
                 return ""
@@ -2754,9 +3156,10 @@ class AkabakDriver:
         def _rewrite_and_confirm_by_scoped_input() -> str:
             """Generate native edit notifications through the exact edit HWND.
 
-            Some common-dialog implementations display text set through
-            ``WM_SETTEXT`` but keep their internal filename model unchanged.
-            Focused keyboard input is therefore the final, verified fallback.
+            Re-apply the exact filename through the common-dialog controls and
+            submit it asynchronously. Character-by-character ``WM_CHAR`` input
+            races the shell dialog's auto-complete model and can rotate long
+            paths while the cursor is being repositioned.
             """
 
             if edit_handle <= 0 or open_button_handle <= 0:
@@ -2766,16 +3169,18 @@ class AkabakDriver:
                 if not bool(user32.IsWindowEnabled(edit_handle)) or not bool(user32.IsWindowEnabled(open_button_handle)):
                     confirmation_trace.append({"phase": "rewrite_confirm", "status": "control_disabled"})
                     return ""
-                text_sent = self._post_native_text_entry(edit_handle, str(project_path))
-                if not text_sent:
-                    confirmation_trace.append({"phase": "rewrite_confirm", "status": "text_rejected"})
+                rewrite_state = self._write_dialog_filename_verified(
+                    dialog_handle=dialog_handle,
+                    value=str(project_path),
+                )
+                if not bool(rewrite_state.get("verified", False)):
+                    confirmation_trace.append(
+                        {"phase": "rewrite_confirm", "status": "text_rejected", "write_state": rewrite_state}
+                    )
                     return ""
                 try:
                     readback = wait_until(
-                        predicate=lambda: (
-                            _path_matches(self._read_window_text_by_handle(edit_handle)),
-                            self._read_window_text_by_handle(edit_handle),
-                        ),
+                        predicate=_scoped_filename_readback_state,
                         timeout_s=min(2.0, float(self.step_timeout_s)),
                         initial_interval_s=0.02,
                         max_interval_s=0.1,
@@ -2786,27 +3191,23 @@ class AkabakDriver:
                         {
                             "phase": "rewrite_confirm",
                             "status": "readback_timeout",
-                            "readback": self._read_window_text_by_handle(edit_handle),
+                            "readback": _readback_snapshot(),
                         }
                     )
                     return ""
-                clicked = self._send_bm_click(open_button_handle)
-                if not clicked:
-                    confirmation_trace.append(
-                        {"phase": "rewrite_confirm", "status": "bm_click_rejected", "readback": str(readback)}
-                    )
-                    return ""
-                closed = _wait_dialog_closed_with_fallback()
+                confirm_method = _confirm_by_scoped_input()
+                closed = bool(confirm_method)
                 confirmation_trace.append(
                     {
                         "phase": "rewrite_confirm",
                         "status": "closed" if closed else "still_open",
-                        "readback": str(readback),
-                        "after_click_readback": self._read_window_text_by_handle(edit_handle),
+                        "readback": readback,
+                        "after_click_readback": _readback_snapshot(),
+                        "confirm_method": confirm_method or None,
                     }
                 )
                 if closed:
-                    return "native_posted_text_and_bm_click"
+                    return f"native_rewrite_then_{confirm_method}"
             except Exception as exc:
                 confirmation_trace.append({"phase": "rewrite_confirm", "status": "error", "error": repr(exc)})
                 return ""
@@ -2815,7 +3216,7 @@ class AkabakDriver:
         def _confirm_open_dialog(*, prefer_uia: bool) -> str:
             actions: List[Tuple[str, Any]] = []
 
-            if prefer_uia and open_button is not None:
+            if prefer_uia and os.name != "nt" and open_button is not None:
                 if hasattr(open_button, "set_focus"):
                     actions.append(("uia_set_focus_open_button", lambda: open_button.set_focus()))
                 if hasattr(open_button, "invoke"):
@@ -2823,8 +3224,18 @@ class AkabakDriver:
                 if hasattr(open_button, "click"):
                     actions.append(("uia_click", lambda: open_button.click()))
 
-            actions.append(("wm_command_idok", lambda: user32.SendMessageW(dialog_handle, WM_COMMAND, IDOK, open_button_handle)))
-            actions.append(("wm_command_idok_lparam0", lambda: user32.SendMessageW(dialog_handle, WM_COMMAND, IDOK, 0)))
+            actions.append(
+                (
+                    "wm_command_idok",
+                    lambda: self._send_message_timeout(dialog_handle, WM_COMMAND, IDOK, open_button_handle),
+                )
+            )
+            actions.append(
+                (
+                    "wm_command_idok_lparam0",
+                    lambda: self._send_message_timeout(dialog_handle, WM_COMMAND, IDOK, 0),
+                )
+            )
             if open_button_handle > 0:
                 actions.append(
                     (
@@ -2832,11 +3243,11 @@ class AkabakDriver:
                         lambda: self._send_wm_command_click(parent_hwnd=dialog_handle, control_hwnd=open_button_handle),
                     )
                 )
-                actions.append(("bm_click", lambda: user32.SendMessageW(open_button_handle, BM_CLICK, 0, 0)))
+                actions.append(("bm_click", lambda: self._send_bm_click(open_button_handle)))
             actions.append(
                 (
                     "wm_command_bn_clicked",
-                    lambda: user32.SendMessageW(
+                    lambda: self._send_message_timeout(
                         dialog_handle,
                         WM_COMMAND,
                         (int(IDOK) & 0xFFFF) | ((int(BN_CLICKED) & 0xFFFF) << 16),
@@ -2889,10 +3300,18 @@ class AkabakDriver:
             if write_state:
                 readback_match = bool(write_state.get("verified", False))
             self._require(readback_match, "Open dialog filename write could not be verified in Tier A.", step)
+            model_sync = _sync_filename_model()
+            if os.name == "nt":
+                self._require(
+                    bool(model_sync.get("verified", False)),
+                    "Open dialog filename model could not be synchronized in Tier A.",
+                    step,
+                )
+                write_state["model_sync"] = model_sync
             path_written_once = True
-            confirm_method = _rewrite_and_confirm_by_scoped_input() if os.name == "nt" else ""
+            confirm_method = _confirm_by_scoped_input() if os.name == "nt" else ""
             if not confirm_method and os.name == "nt":
-                confirm_method = _confirm_by_scoped_input()
+                confirm_method = _rewrite_and_confirm_by_scoped_input()
             if not confirm_method:
                 confirm_method = _confirm_open_dialog(prefer_uia=True)
             if not confirm_method:
@@ -3018,10 +3437,18 @@ class AkabakDriver:
             )
             readback_match = bool(write_state.get("verified", False))
             self._require(readback_match, "Open dialog filename write could not be verified in Tier B.", step)
+            model_sync = _sync_filename_model()
+            if os.name == "nt":
+                self._require(
+                    bool(model_sync.get("verified", False)),
+                    "Open dialog filename model could not be synchronized in Tier B.",
+                    step,
+                )
+                write_state["model_sync"] = model_sync
             path_written_once = True
-            confirm_method = _rewrite_and_confirm_by_scoped_input() if os.name == "nt" else ""
+            confirm_method = _confirm_by_scoped_input() if os.name == "nt" else ""
             if not confirm_method and os.name == "nt":
-                confirm_method = _confirm_by_scoped_input()
+                confirm_method = _rewrite_and_confirm_by_scoped_input()
             if not confirm_method:
                 confirm_method = _confirm_open_dialog(prefer_uia=False)
             if not confirm_method:
@@ -3579,16 +4006,22 @@ class AkabakDriver:
         self._require(main_window is not None, "AKABAK main window is unavailable.", step)
         main_handle = self._window_handle(main_window)
         self._require(main_handle > 0, "AKABAK main window handle unavailable for solve.", step)
+        self._solve_main_handle = main_handle
         baseline = {
             "main_pid": int(self.session.process_id or 0),
+            "main_handle": main_handle,
             "akabak_pids": self._list_akabak_process_ids(),
             "vacs_pids": self._list_vacs_process_ids(),
+            "main_cpu_time_s": _process_cpu_time_seconds(int(self.session.process_id or 0)),
         }
         trigger_attempts: List[Dict[str, Any]] = []
 
         def _started_state() -> Tuple[bool, Dict[str, Any]]:
             if self.watchdog:
-                handled = self.watchdog.run_watch(step_name=f"{step}_startup_watch", timeout_s=1)
+                # This predicate is already polled by ``wait_until``. One
+                # bounded watchdog pass avoids turning a successfully handled
+                # dialog into a false timeout while its window is closing.
+                handled = self.watchdog.handle_once()
                 if handled:
                     self._record_watchdog_events(step=step, events=handled)
             process_modal = self._find_main_process_modal()
@@ -3608,6 +4041,12 @@ class AkabakDriver:
             new_vacs = _new_process_ids(list(snapshot.get("vacs_pids", []) or []), baseline_vacs)
             snapshot["new_akabak_pids"] = new_akabak
             snapshot["new_vacs_pids"] = new_vacs
+            baseline_main_cpu = baseline.get("main_cpu_time_s")
+            current_main_cpu = dict(snapshot.get("akabak_cpu_times_s", {}) or {}).get(str(baseline["main_pid"]))
+            if baseline_main_cpu is not None and current_main_cpu is not None:
+                snapshot["main_cpu_growth_s"] = max(0.0, float(current_main_cpu) - float(baseline_main_cpu))
+            else:
+                snapshot["main_cpu_growth_s"] = 0.0
             if bool(snapshot.get("progress_window_present")):
                 snapshot["start_signal"] = "progress_window_present"
                 return True, snapshot
@@ -3617,20 +4056,28 @@ class AkabakDriver:
             if new_vacs:
                 snapshot["start_signal"] = "vacs_process_started"
                 return True, snapshot
+            if float(snapshot.get("main_cpu_growth_s", 0.0) or 0.0) >= 0.25:
+                snapshot["start_signal"] = "main_process_cpu_progress"
+                return True, snapshot
             snapshot["start_signal"] = "not_started"
             return False, snapshot
 
         try:
-            # Fast dual-trigger: UIA F4 plus hwnd F4, then fast start wait with
-            # an extended fallback window to avoid false negatives on slower hosts.
-            try:
+            # Resolve the native HWND once and stay off UIA/COM on Windows.
+            # Exact UIA wrappers can block indefinitely while AKABAK changes
+            # its window tree during solve startup.
+            if os.name == "nt":
+                native_trigger = self._trigger_solve_native(main_handle)
+                self._require(
+                    native_trigger.get("status") in {"sent", "dispatch_timed_out"},
+                    "Native solve trigger was rejected by AKABAK.",
+                    step,
+                )
+                trigger_attempts.append(native_trigger)
+            else:
                 main_window.set_focus()
                 main_window.type_keys("{F4}", set_foreground=True)
                 trigger_attempts.append({"trigger": "uia_type_keys_f4", "status": "sent"})
-            except Exception as exc:
-                trigger_attempts.append({"trigger": "uia_type_keys_f4", "status": "error", "error": repr(exc)})
-            self._send_key_f4(main_handle)
-            trigger_attempts.append({"trigger": "hwnd_postmessage_f4", "status": "sent", "main_handle": main_handle})
             started: Dict[str, Any]
             try:
                 started = wait_until(
@@ -3643,16 +4090,18 @@ class AkabakDriver:
                 trigger_attempts.append({"trigger": "wait_tier_fast", "status": "started"})
             except TimeoutError:
                 trigger_attempts.append({"trigger": "wait_tier_fast", "status": "timeout"})
-                try:
+                if os.name != "nt":
                     main_window.set_focus()
                     main_window.type_keys("{F4}", set_foreground=True)
                     trigger_attempts.append({"trigger": "uia_type_keys_f4_retry", "status": "sent"})
-                except Exception as retry_exc:
-                    trigger_attempts.append(
-                        {"trigger": "uia_type_keys_f4_retry", "status": "error", "error": repr(retry_exc)}
+                else:
+                    native_retry = self._trigger_solve_native(main_handle)
+                    self._require(
+                        native_retry.get("status") in {"sent", "dispatch_timed_out"},
+                        "Native solve retry was rejected by AKABAK.",
+                        step,
                     )
-                self._send_key_f4(main_handle)
-                trigger_attempts.append({"trigger": "hwnd_postmessage_f4_retry", "status": "sent", "main_handle": main_handle})
+                    trigger_attempts.append({**native_retry, "trigger": f"{native_retry['trigger']}_retry"})
                 started = wait_until(
                     predicate=_started_state,
                     timeout_s=min(30.0, float(self.step_timeout_s)),
@@ -3661,7 +4110,11 @@ class AkabakDriver:
                     backoff_factor=1.8,
                 )
                 trigger_attempts.append({"trigger": "wait_tier_extended", "status": "started"})
-            self.solve_context = {"baseline": baseline, "started": started, "trigger_attempts": trigger_attempts}
+            self.solve_context = {
+                "baseline": baseline,
+                "started": started,
+                "trigger_attempts": trigger_attempts,
+            }
             self.state = "running"
             self._log(
                 level="info",
@@ -3669,7 +4122,14 @@ class AkabakDriver:
                 event="solve_started",
                 payload={"state": self.state, "trigger_attempts": trigger_attempts, "started": started},
             )
-            return AkabakDriverResult(ok=True, status=self.state, details={"started": started, "trigger_attempts": trigger_attempts})
+            return AkabakDriverResult(
+                ok=True,
+                status=self.state,
+                details={
+                    "started": started,
+                    "trigger_attempts": trigger_attempts,
+                },
+            )
         except Exception as exc:
             diagnostics_path = self._write_solve_diagnostics(
                 step=step,
@@ -3699,6 +4159,13 @@ class AkabakDriver:
         start_graph_hits = int(start_vacs_ui.get("max_graph_keyword_hits", 0) or 0)
         heartbeat_started = time.perf_counter()
         last_heartbeat_elapsed = -15.0
+        vacs_graphless_since: Optional[float] = None
+        vacs_reimport: Dict[str, Any] = {"triggered": False}
+        vacs_launch: Dict[str, Any] = {"attempted": False}
+        solver_activity_snapshot: Dict[str, Any] = dict(start_snapshot)
+        solver_quiet_since: Optional[float] = None
+        solver_numerically_complete = False
+        solve_command_was_disabled = bool(start_snapshot.get("solve_command_enabled") is False)
 
         def _record_heartbeat(snapshot: Dict[str, Any]) -> None:
             nonlocal last_heartbeat_elapsed
@@ -3711,8 +4178,11 @@ class AkabakDriver:
             self._log(level="info", step=step, event="solve_heartbeat", payload=row)
 
         def _completed() -> Tuple[bool, Dict[str, Any]]:
+            nonlocal vacs_graphless_since, vacs_reimport, vacs_launch
+            nonlocal solver_activity_snapshot, solver_quiet_since, solver_numerically_complete
+            nonlocal solve_command_was_disabled
             if self.watchdog:
-                handled = self.watchdog.run_watch(step_name=f"{step}_modal_watch", timeout_s=1)
+                handled = self.watchdog.handle_once()
                 if handled:
                     self._record_watchdog_events(step=step, events=handled)
                     self._log(level="info", step=step, event="watchdog_handled", payload={"count": len(handled)})
@@ -3721,11 +4191,51 @@ class AkabakDriver:
             new_vacs = _new_process_ids(list(snapshot.get("vacs_pids", []) or []), baseline_vacs)
             snapshot["new_akabak_pids"] = new_akabak
             snapshot["new_vacs_pids"] = new_vacs
+            current_solve_enabled = snapshot.get("solve_command_enabled")
+            if current_solve_enabled is False:
+                solve_command_was_disabled = True
 
-            if snapshot.get("progress_window_present") or new_akabak:
+            if not solver_numerically_complete and (snapshot.get("progress_window_present") or new_akabak):
+                solver_activity_snapshot = dict(snapshot)
+                solver_quiet_since = None
                 snapshot["status"] = "running"
                 _record_heartbeat(snapshot)
                 return False, snapshot
+
+            if (
+                not solver_numerically_complete
+                and solve_command_was_disabled
+                and current_solve_enabled is True
+            ):
+                solver_numerically_complete = True
+                snapshot["numerical_completion_signal"] = "calculate_command_reenabled"
+
+            if not solver_numerically_complete:
+                main_pid = int(snapshot.get("main_pid", 0) or 0)
+                current_cpu = dict(snapshot.get("akabak_cpu_times_s", {}) or {}).get(str(main_pid))
+                previous_cpu = dict(solver_activity_snapshot.get("akabak_cpu_times_s", {}) or {}).get(str(main_pid))
+                if current_cpu is not None and previous_cpu is not None:
+                    now = time.perf_counter()
+                    cpu_delta = max(0.0, float(current_cpu) - float(previous_cpu))
+                    snapshot["main_cpu_delta_s"] = round(cpu_delta, 4)
+                    if cpu_delta >= 0.05:
+                        solver_activity_snapshot = dict(snapshot)
+                        solver_quiet_since = now
+                        snapshot["status"] = "running_main_process"
+                        _record_heartbeat(snapshot)
+                        return False, snapshot
+                    if solver_quiet_since is None:
+                        solver_quiet_since = now
+                    quiet_s = max(0.0, now - solver_quiet_since)
+                    snapshot["solver_quiet_s"] = round(quiet_s, 3)
+                    if quiet_s < 2.0:
+                        snapshot["status"] = "waiting_solver_quiescence"
+                        _record_heartbeat(snapshot)
+                        return False, snapshot
+                    snapshot["numerical_completion_signal"] = "main_process_cpu_quiet"
+                else:
+                    snapshot["numerical_completion_signal"] = "no_progress_or_worker_process"
+                solver_numerically_complete = True
 
             vacs_ui = dict(snapshot.get("vacs_ui", {}))
             max_controls = int(vacs_ui.get("max_controls_count", 0) or 0)
@@ -3753,10 +4263,59 @@ class AkabakDriver:
                     snapshot["status"] = "completed_vacs_graphs_imported"
                     _record_heartbeat(snapshot)
                     return True, snapshot
+                if new_vacs:
+                    startup_actions = self._dismiss_vacs_startup_editors(new_vacs)
+                    if startup_actions:
+                        snapshot["vacs_startup_editors"] = startup_actions
+                        vacs_graphless_since = None
+                        self._log(
+                            level="info",
+                            step=step,
+                            event="vacs_startup_editors_closed",
+                            payload={"actions": startup_actions},
+                        )
+                    now = time.perf_counter()
+                    if vacs_graphless_since is None:
+                        vacs_graphless_since = now
+                    graphless_s = max(0.0, now - vacs_graphless_since)
+                    snapshot["vacs_graphless_s"] = round(graphless_s, 3)
+                    if graphless_s >= 3.0 and not bool(vacs_reimport.get("triggered")):
+                        main_handle = int(self.solve_context.get("baseline", {}).get("main_handle", 0) or 0)
+                        trigger = self._trigger_vacs_reimport_native(main_handle)
+                        self._require(
+                            trigger.get("status") == "sent",
+                            "VACS F7 re-import trigger was rejected by AKABAK.",
+                            step,
+                        )
+                        vacs_reimport = {
+                            "triggered": True,
+                            "reason": "new_vacs_without_graphs",
+                            "graphless_s": round(graphless_s, 3),
+                            **trigger,
+                        }
+                        self._log(level="info", step=step, event="vacs_reimport_triggered", payload=vacs_reimport)
+                snapshot["vacs_reimport"] = dict(vacs_reimport)
                 snapshot["status"] = "waiting_vacs_graph_import"
                 _record_heartbeat(snapshot)
                 return False, snapshot
 
+            if not bool(vacs_launch.get("attempted")):
+                main_handle = int(self.solve_context.get("baseline", {}).get("main_handle", 0) or 0)
+                launch = self._start_vacs_for_handoff(main_handle)
+                vacs_launch = {"attempted": True, **launch}
+                snapshot["vacs_launch"] = dict(vacs_launch)
+                self._require(
+                    launch.get("status") in {"sent", "already_running"},
+                    "AKABAK did not accept the VACS handoff trigger. "
+                    f"status={launch.get('status')} main_handle={main_handle}",
+                    step,
+                )
+                self._log(level="info", step=step, event="vacs_handoff_launch", payload=vacs_launch)
+                snapshot["status"] = "launching_vacs_for_handoff"
+                _record_heartbeat(snapshot)
+                return False, snapshot
+
+            snapshot["vacs_launch"] = dict(vacs_launch)
             snapshot["status"] = "waiting_vacs_after_solve_start"
             _record_heartbeat(snapshot)
             return False, snapshot
@@ -3838,8 +4397,17 @@ class AkabakDriver:
                 + (f" diagnostics={self.last_solve_diagnostics_path}" if self.last_solve_diagnostics_path else "")
             )
         self.state = "completed"
-        self._log(level="info", step=step, event="completed", payload={"state": self.state, "completion": completion_snapshot})
-        return AkabakDriverResult(ok=True, status=self.state, details={"completion": completion_snapshot})
+        self._log(
+            level="info",
+            step=step,
+            event="completed",
+            payload={"state": self.state, "completion": completion_snapshot},
+        )
+        return AkabakDriverResult(
+            ok=True,
+            status=self.state,
+            details={"completion": completion_snapshot},
+        )
 
     def detect_le_script_binding_signal(self, expected_script_name: str = "generic25.txt") -> Dict[str, Any]:
         step = "detect_le_script_binding_signal"
@@ -3911,7 +4479,7 @@ class AkabakDriver:
             main_handle = self._window_handle(main_window)
             if os.name == "nt" and main_handle > 0:
                 try:
-                    result = ctypes.c_ulong()
+                    result = ctypes.c_size_t()
                     self._user32().SendMessageTimeoutW(
                         main_handle,
                         WM_CLOSE,

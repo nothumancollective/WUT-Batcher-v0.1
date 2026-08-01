@@ -4,12 +4,155 @@ import json
 import re
 from types import SimpleNamespace
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
-from app.akabak_driver import AkabakDriver
+from app.akabak_driver import AkabakDriver, _solve_menu_candidate
 
 
 class AkabakDriverVacsSnapshotTests(unittest.TestCase):
+    def test_native_menu_command_enabled_decodes_exact_windows_menu_state(self) -> None:
+        class FakeFunction:
+            def __init__(self, result: int) -> None:
+                self.result = result
+                self.restype = None
+
+            def __call__(self, *_args: object) -> int:
+                return self.result
+
+        driver = AkabakDriver.__new__(AkabakDriver)
+        fake_user32 = SimpleNamespace(
+            GetMenu=FakeFunction(900),
+            GetMenuState=FakeFunction(0),
+        )
+        driver._user32 = Mock(return_value=fake_user32)
+
+        with patch("app.akabak_driver.os.name", "nt"):
+            self.assertTrue(driver._native_menu_command_enabled(101, 94))
+            fake_user32.GetMenuState.result = 1
+            self.assertFalse(driver._native_menu_command_enabled(101, 94))
+            fake_user32.GetMenuState.result = 2
+            self.assertFalse(driver._native_menu_command_enabled(101, 94))
+            fake_user32.GetMenuState.result = 0xFFFFFFFF
+            self.assertIsNone(driver._native_menu_command_enabled(101, 94))
+
+    def test_vacs_startup_editors_close_only_on_exact_class_title_and_content(self) -> None:
+        driver = AkabakDriver.__new__(AkabakDriver)
+        driver._native_process_window_rows = Mock(
+            return_value=[
+                {"native_handle": 101, "class_name": "TForm_Editor", "title": "Editor - 1"},
+                {"native_handle": 102, "class_name": "TForm_Editor", "title": "My measurements"},
+                {"native_handle": 103, "class_name": "TForm_DatGraph", "title": "Editor - 2"},
+            ]
+        )
+        driver._native_descendant_window_rows = Mock(
+            side_effect=lambda **kwargs: [
+                {
+                    "title": "Welcome to Visualize Acoustics ! Skip this note next time Import some data",
+                    "class_name": "TRichEdit",
+                    "native_handle": 201,
+                }
+            ]
+            if kwargs["parent_handle"] == 101
+            else []
+        )
+        driver._send_message_timeout = Mock(return_value=True)
+
+        actions = driver._dismiss_vacs_startup_editors([77])
+
+        self.assertEqual([item["native_handle"] for item in actions], [101])
+        driver._send_message_timeout.assert_called_once_with(101, 0x0010, timeout_ms=1000)
+
+    def test_windows_solve_trigger_uses_native_hwnd_without_resolving_uia_control(self) -> None:
+        class HandleOnlyMainWindow:
+            def __init__(self) -> None:
+                self._wut_native_handle = 101
+
+            def set_focus(self) -> None:
+                raise AssertionError("Windows solve must not resolve the UIA wrapper")
+
+            def type_keys(self, *_args, **_kwargs) -> None:
+                raise AssertionError("Windows solve must not type through UIA")
+
+        driver = AkabakDriver.__new__(AkabakDriver)
+        driver.state = "project_open"
+        driver.last_solve_diagnostics_path = None
+        driver.solve_context = {}
+        driver.step_timeout_s = 30.0
+        driver.watchdog = None
+        driver.session = SimpleNamespace(process_id=77, find_window=Mock(return_value=HandleOnlyMainWindow()))
+        driver._connect = Mock()
+        driver._log = Mock()
+        driver._list_akabak_process_ids = Mock(return_value=[77])
+        driver._list_vacs_process_ids = Mock(return_value=[])
+        driver._find_main_process_modal = Mock(return_value=None)
+        driver._trigger_solve_native = Mock(
+            return_value={"trigger": "hwnd_menu_command", "status": "sent", "command_id": 42}
+        )
+        driver._solve_signal_snapshot = Mock(
+            return_value={
+                "akabak_pids": [77],
+                "vacs_pids": [],
+                "akabak_cpu_times_s": {"77": 1.0},
+                "progress_window_present": True,
+            }
+        )
+
+        with patch("app.akabak_driver.os.name", "nt"), patch(
+            "app.akabak_driver._process_cpu_time_seconds", return_value=1.0
+        ):
+            result = driver.run_solve()
+
+        self.assertTrue(result.ok)
+        self.assertEqual(result.details["started"]["start_signal"], "progress_window_present")
+        driver._trigger_solve_native.assert_called_once_with(101)
+
+    def test_solve_menu_candidate_prefers_explicit_f4_accelerator(self) -> None:
+        candidate = _solve_menu_candidate(
+            [
+                {"title": "Open", "command_id": 10},
+                {"title": "&Calculate\tF4", "command_id": 42, "path": "Calculation -> Calculate"},
+            ]
+        )
+
+        self.assertIsNotNone(candidate)
+        self.assertEqual(candidate["command_id"], 42)
+
+    def test_solve_menu_candidate_uses_present_calculate_all_command_id(self) -> None:
+        candidate = _solve_menu_candidate(
+            [
+                {"title": "", "command_id": 94, "path": "Processing"},
+                {"title": "Unknown localized item", "command_id": 95},
+            ]
+        )
+
+        self.assertIsNotNone(candidate)
+        self.assertEqual(candidate["command_id"], 94)
+
+    def test_solve_trigger_does_not_double_send_after_menu_dispatch_timeout(self) -> None:
+        driver = AkabakDriver.__new__(AkabakDriver)
+        driver._native_menu_rows = Mock(
+            return_value=[{"title": "Calculate all\tF4", "command_id": 94, "path": "Processing"}]
+        )
+        driver._send_message_timeout = Mock(return_value=False)
+        driver._send_key_f4 = Mock(return_value=True)
+
+        result = driver._trigger_solve_native(101)
+
+        self.assertEqual(result["status"], "dispatch_timed_out")
+        self.assertEqual(result["command_id"], 94)
+        driver._send_key_f4.assert_not_called()
+
+    def test_windows_process_inventory_uses_native_snapshot(self) -> None:
+        driver = AkabakDriver.__new__(AkabakDriver)
+
+        with patch("app.akabak_driver.os.name", "nt"), patch(
+            "app.akabak_driver._native_process_ids_by_image", return_value=[77, 88]
+        ) as snapshot:
+            rows = driver._list_process_ids_by_image("AKABAK.exe")
+
+        self.assertEqual(rows, [77, 88])
+        snapshot.assert_called_once_with("akabak.exe")
+
     def test_apply_waits_for_import_report_to_be_complete_and_stable(self) -> None:
         driver = AkabakDriver.__new__(AkabakDriver)
         interpreter = object()
@@ -182,7 +325,7 @@ class AkabakDriverVacsSnapshotTests(unittest.TestCase):
             }
         ]
         user32 = Mock()
-        user32.SendMessageW.side_effect = lambda *_: rows.clear()
+        user32.SendMessageTimeoutW.side_effect = lambda *_: (rows.clear() or 1)
         driver._user32 = lambda: user32
         driver._native_process_window_rows = lambda **_: list(rows)
         driver._child_windows = lambda *_args, **_kwargs: self.fail("UIA wrapper lookup must not run")
@@ -191,7 +334,7 @@ class AkabakDriverVacsSnapshotTests(unittest.TestCase):
         with patch("app.akabak_driver.os.name", "nt"):
             driver._dismiss_startup_windows(main_window=main_window, step="open_project")
 
-        user32.SendMessageW.assert_called_once()
+        user32.SendMessageTimeoutW.assert_called_once()
         self.assertEqual(rows, [])
 
     def test_interpreter_button_uses_native_child_handle_without_descendants(self) -> None:
@@ -284,6 +427,34 @@ class AkabakDriverVacsSnapshotTests(unittest.TestCase):
         self.assertIsNotNone(edit)
         self.assertEqual(driver._window_handle(edit), 303)
 
+    def test_dialog_filename_readback_falls_back_to_container_for_blank_nested_edit(self) -> None:
+        driver = AkabakDriver.__new__(AkabakDriver)
+        user32 = Mock()
+        user32.GetDlgItem.return_value = 202
+        driver._user32 = lambda: user32
+        driver._dialog_filename_edit_handle = Mock(return_value=303)
+        driver._read_window_text_by_handle = Mock(
+            side_effect=lambda hwnd: "C:\\horns\\Project.abec" if hwnd == 202 else ""
+        )
+
+        value = driver._dialog_filename_readback(101)
+
+        self.assertEqual(value, "C:\\horns\\Project.abec")
+        self.assertEqual(driver._read_window_text_by_handle.call_args_list, [call(303), call(202)])
+
+    def test_cross_process_window_messages_are_bounded(self) -> None:
+        driver = AkabakDriver.__new__(AkabakDriver)
+        user32 = Mock()
+        user32.SendMessageTimeoutW.return_value = 1
+        driver._user32 = lambda: user32
+
+        sent = driver._send_message_timeout(101, 0x0010, timeout_ms=250)
+
+        self.assertTrue(sent)
+        user32.SendMessageTimeoutW.assert_called_once()
+        self.assertEqual(user32.SendMessageTimeoutW.call_args.args[0:2], (101, 0x0010))
+        self.assertEqual(user32.SendMessageTimeoutW.call_args.args[5], 250)
+
     def test_close_uses_known_native_main_handle_without_resolving_uia_wrapper(self) -> None:
         class HandleOnlyWindow:
             def __init__(self) -> None:
@@ -298,6 +469,12 @@ class AkabakDriverVacsSnapshotTests(unittest.TestCase):
             find_window=Mock(return_value=HandleOnlyWindow()),
             close=Mock(),
         )
+        driver.initial_akabak_pids = set()
+        driver.initial_vacs_pids = set()
+        driver.owned_akabak_pids = set()
+        driver.owned_vacs_pids = set()
+        driver._list_akabak_process_ids = Mock(return_value=[])
+        driver._list_vacs_process_ids = Mock(return_value=[])
         user32 = Mock()
         user32.SendMessageTimeoutW.return_value = 1
         driver._user32 = lambda: user32
@@ -362,6 +539,12 @@ class AkabakDriverVacsSnapshotTests(unittest.TestCase):
         )
         self.assertTrue(all(call.args[0] == 303 for call in user32.SendMessageTimeoutW.call_args_list))
 
+    def test_native_dialog_enter_rejects_missing_exact_handles(self) -> None:
+        driver = AkabakDriver.__new__(AkabakDriver)
+
+        self.assertFalse(driver._send_native_dialog_enter(0, 303))
+        self.assertFalse(driver._send_native_dialog_enter(101, 0))
+
     def test_filename_writer_verifies_standard_dialog_write_before_submit(self) -> None:
         driver = AkabakDriver.__new__(AkabakDriver)
         user32 = Mock()
@@ -369,10 +552,20 @@ class AkabakDriverVacsSnapshotTests(unittest.TestCase):
         values = {202: "", 303: ""}
 
         def set_dialog_text(_dialog, _control_id, pointer) -> int:
-            values[303] = str(pointer.value)
+            values[202] = str(pointer.value)
             return 1
 
+        def set_common_dialog_text(*_args) -> int:
+            values[202] = "C:\\horns\\Project.abec"
+            return 1
+
+        def set_window_text(hwnd, pointer) -> int:
+            values[hwnd] = str(pointer.value)
+            return 1
+
+        user32.SendMessageTimeoutW.side_effect = set_common_dialog_text
         user32.SetDlgItemTextW.side_effect = set_dialog_text
+        user32.SetWindowTextW.side_effect = set_window_text
         driver._user32 = lambda: user32
         driver._dialog_filename_edit_handle = lambda _dialog: 303
         driver._read_window_text_by_handle = lambda hwnd: values.get(hwnd, "")
@@ -381,9 +574,11 @@ class AkabakDriverVacsSnapshotTests(unittest.TestCase):
         result = driver._write_dialog_filename_verified(dialog_handle=101, value="C:\\horns\\Project.abec")
 
         self.assertTrue(result["verified"])
-        self.assertEqual(result["method"], "SetDlgItemTextW_id1148")
+        self.assertEqual(result["method"], "SetWindowTextW_edit")
         self.assertEqual(result["readbacks"]["edit"], "C:\\horns\\Project.abec")
-        user32.SetWindowTextW.assert_not_called()
+        user32.SendMessageTimeoutW.assert_called_once()
+        user32.SetDlgItemTextW.assert_called_once()
+        user32.SetWindowTextW.assert_called_once()
 
     def test_filename_writer_rejects_success_without_matching_readback(self) -> None:
         driver = AkabakDriver.__new__(AkabakDriver)

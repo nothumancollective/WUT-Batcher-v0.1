@@ -1,12 +1,153 @@
 from __future__ import annotations
 
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from app.akabak_driver import AkabakDriver, _solve_snapshot_made_progress
 
 
 class AkabakDriverProgressTimeoutTests(unittest.TestCase):
+    def test_completion_poll_uses_single_watchdog_pass(self) -> None:
+        driver = AkabakDriver.__new__(AkabakDriver)
+        driver.state = "running"
+        driver.watchdog = Mock()
+        driver.watchdog.handle_once.return_value = []
+        driver.watchdog.run_watch.side_effect = AssertionError("bounded poll must not enter a timeout loop")
+        driver.solve_context = {
+            "baseline": {"akabak_pids": [100], "vacs_pids": []},
+            "started": {"vacs_ui": {}},
+        }
+        driver.watchdog_events = []
+        driver.solve_heartbeats = []
+        driver.last_solve_diagnostics_path = None
+        driver._connect = Mock()
+        driver._log = Mock()
+        driver._solve_signal_snapshot = Mock(
+            return_value={
+                "akabak_pids": [100],
+                "vacs_pids": [],
+                "progress_window_present": False,
+                "vacs_ui": {},
+            }
+        )
+
+        result = driver.wait_for_completion(timeout_s=1, require_vacs_graph_import=False)
+
+        self.assertTrue(result.ok)
+        driver.watchdog.handle_once.assert_called_once_with()
+        driver.watchdog.run_watch.assert_not_called()
+
+    def test_graphless_new_vacs_gets_one_bounded_f7_reimport(self) -> None:
+        driver = AkabakDriver.__new__(AkabakDriver)
+        driver.state = "running"
+        driver.watchdog = None
+        driver.solve_context = {
+            "baseline": {"main_handle": 101, "akabak_pids": [100], "vacs_pids": []},
+            "started": {"solve_command_enabled": False, "vacs_ui": {}},
+        }
+        driver.watchdog_events = []
+        driver.solve_heartbeats = []
+        driver.last_solve_diagnostics_path = None
+        driver._connect = Mock()
+        driver._log = Mock()
+        driver._trigger_vacs_reimport_native = Mock(
+            return_value={"trigger": "hwnd_postmessage_f7", "status": "sent", "main_handle": 101}
+        )
+        snapshots = iter(
+            [
+                {
+                    "akabak_pids": [100],
+                    "vacs_pids": [200],
+                    "progress_window_present": False,
+                    "vacs_ui": {"max_controls_count": 21, "max_graph_keyword_hits": 1},
+                },
+                {
+                    "akabak_pids": [100],
+                    "vacs_pids": [200],
+                    "progress_window_present": False,
+                    "vacs_ui": {"max_controls_count": 21, "max_graph_keyword_hits": 1},
+                },
+                {
+                    "akabak_pids": [100],
+                    "vacs_pids": [200],
+                    "progress_window_present": False,
+                    "vacs_ui": {"max_controls_count": 80, "max_graph_keyword_hits": 5},
+                },
+            ]
+        )
+        driver._solve_signal_snapshot = lambda: next(snapshots)
+
+        with patch(
+            "app.akabak_driver.time.perf_counter",
+            side_effect=[0.0, 0.0, 0.0, 0.0, 0.0, 4.0, 4.0, 4.0, 4.0, 4.0],
+        ), patch("app.akabak_driver.time.sleep"):
+            result = driver.wait_for_completion(timeout_s=300, require_vacs_graph_import=True)
+
+        self.assertTrue(result.ok)
+        driver._trigger_vacs_reimport_native.assert_called_once_with(101)
+
+    def test_completed_solve_starts_vacs_through_akabak_f7_handoff(self) -> None:
+        driver = AkabakDriver.__new__(AkabakDriver)
+        driver.state = "running"
+        driver.watchdog = None
+        driver.solve_context = {
+            "baseline": {"main_handle": 101, "akabak_pids": [100], "vacs_pids": []},
+            "started": {"vacs_ui": {}},
+        }
+        driver.watchdog_events = []
+        driver.solve_heartbeats = []
+        driver.last_solve_diagnostics_path = None
+        driver._connect = Mock()
+        driver._log = Mock()
+        driver._start_vacs_for_handoff = Mock(
+            return_value={
+                "trigger": "hwnd_postmessage_f7",
+                "status": "sent",
+                "main_handle": 101,
+                "method": "akabak_f7",
+            }
+        )
+        driver._dismiss_vacs_startup_editors = Mock(return_value=[])
+        driver._trigger_vacs_reimport_native = Mock()
+        snapshots = iter(
+            [
+                {
+                    "akabak_pids": [100],
+                    "vacs_pids": [],
+                    "progress_window_present": False,
+                    "solve_command_enabled": True,
+                    "vacs_ui": {},
+                },
+                {
+                    "akabak_pids": [100],
+                    "vacs_pids": [200],
+                    "progress_window_present": False,
+                    "vacs_ui": {"max_controls_count": 21, "max_graph_keyword_hits": 1},
+                },
+                {
+                    "akabak_pids": [100],
+                    "vacs_pids": [200],
+                    "progress_window_present": False,
+                    "vacs_ui": {"max_controls_count": 80, "max_graph_keyword_hits": 5},
+                },
+            ]
+        )
+        driver._solve_signal_snapshot = lambda: next(snapshots)
+
+        with patch("app.akabak_driver.time.sleep"):
+            result = driver.wait_for_completion(timeout_s=300, require_vacs_graph_import=True)
+
+        self.assertTrue(result.ok)
+        driver._start_vacs_for_handoff.assert_called_once_with(101)
+        launch_log = next(
+            call_row
+            for call_row in driver._log.call_args_list
+            if call_row.kwargs.get("event") == "vacs_handoff_launch"
+        )
+        self.assertEqual(launch_log.kwargs["payload"]["status"], "sent")
+        driver._dismiss_vacs_startup_editors.assert_called_once_with([200])
+        driver._trigger_vacs_reimport_native.assert_not_called()
+
     def test_worker_cpu_growth_counts_as_progress(self) -> None:
         previous = {
             "new_akabak_pids": [200],

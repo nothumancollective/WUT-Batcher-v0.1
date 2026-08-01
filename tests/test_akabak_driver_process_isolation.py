@@ -18,7 +18,9 @@ class AkabakDriverProcessIsolationTests(unittest.TestCase):
         driver = AkabakDriver.__new__(AkabakDriver)
         completed = SimpleNamespace(stdout='"AKABAK.exe","1234","Console","1","1 K"\n')
 
-        with patch("app.akabak_driver.subprocess.run", return_value=completed) as run_mock:
+        with patch("app.akabak_driver.os.name", "posix"), patch(
+            "app.akabak_driver.subprocess.run", return_value=completed
+        ) as run_mock:
             pids = driver._list_process_ids_by_image("AKABAK.exe")
 
         self.assertEqual(pids, [1234])

@@ -1168,6 +1168,7 @@ def _run_akabak_ui_driver_stage(
     abec_project_path: Path,
     version_logs_dir: Path,
     require_vacs_graph_import: bool,
+    vacs_executable: str | Path | None = None,
     akabak_solve_timeout_s: int = 600,
     preserve_vacs_for_export: bool = False,
 ) -> Tuple[StageExecution, Dict[str, Any], bool]:
@@ -1211,7 +1212,10 @@ def _run_akabak_ui_driver_stage(
                 "AKABAK is already running outside this simulation stage "
                 f"(PID(s): {joined_pids}). Close it before starting the batch to avoid cross-run UI interference."
             )
-        driver = AkabakDriver(executable=str(executable), log_dir=driver_log_dir)
+        driver_kwargs: Dict[str, Any] = {"executable": str(executable), "log_dir": driver_log_dir}
+        if vacs_executable:
+            driver_kwargs["vacs_executable"] = str(vacs_executable)
+        driver = AkabakDriver(**driver_kwargs)
         opened = driver.open_project(abec_project_path)
         payload["steps"]["open_project"] = {"ok": bool(opened.ok), "status": str(opened.status)}
 
@@ -2713,6 +2717,7 @@ def run_batch_pipeline(
                     abec_project_path=target_abec_path,
                     version_logs_dir=version_logs_dir,
                     require_vacs_graph_import=require_vacs_graph_import,
+                    vacs_executable=vacs_executable,
                     akabak_solve_timeout_s=akabak_solve_timeout_s,
                     preserve_vacs_for_export=preserve_vacs_for_export,
                 )

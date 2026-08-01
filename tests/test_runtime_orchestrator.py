@@ -256,9 +256,17 @@ class RuntimeOrchestratorTests(unittest.TestCase):
             abec_path = Path(tmp_dir) / "Project.abec"
             abec_path.write_text("stub", encoding="utf-8")
             close_calls: list[bool] = []
+            init_vacs_paths: list[str | None] = []
 
             class _FakeAkabakDriver:
-                def __init__(self, *, executable: str, log_dir: Path) -> None:
+                def __init__(
+                    self,
+                    *,
+                    executable: str,
+                    log_dir: Path,
+                    vacs_executable: str | None = None,
+                ) -> None:
+                    init_vacs_paths.append(vacs_executable)
                     self.watchdog_events: list[dict] = []
                     self.last_open_dialog_diagnostics_path = ""
                     self.last_import_diagnostics_path = ""
@@ -298,12 +306,14 @@ class RuntimeOrchestratorTests(unittest.TestCase):
                             abec_project_path=abec_path,
                             version_logs_dir=logs_dir,
                             require_vacs_graph_import=True,
+                            vacs_executable="C:\\Tools\\VACS\\VacsViewer.exe",
                             preserve_vacs_for_export=True,
                         )
 
             self.assertTrue(ok)
             self.assertEqual(stage.status, "ok")
             self.assertEqual(close_calls, [True])
+            self.assertEqual(init_vacs_paths, ["C:\\Tools\\VACS\\VacsViewer.exe"])
             self.assertEqual(terminate_mock.call_count, 1)
             self.assertEqual(str(payload.get("summary_log")), str(stage.summary_log))
             summary_payload = json.loads(Path(stage.summary_log).read_text(encoding="utf-8-sig"))

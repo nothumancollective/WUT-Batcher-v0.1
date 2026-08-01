@@ -2544,6 +2544,7 @@ def run_runner_test_harness(
                 akabak_driver = AkabakDriver(
                     executable=str(akabak_executable),
                     log_dir=workspace.logs_dir / test_run_id / "akabak",
+                    vacs_executable=str(vacs_executable) if vacs_executable else None,
                 )
                 akabak_pid_registered = False
                 akabak_watchdog_events: List[Dict[str, Any]] = []
