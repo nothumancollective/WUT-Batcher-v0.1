@@ -8,4 +8,6 @@ Project Library layout unless a later ADR explicitly supersedes them.
 - [ADR-002: Driver identity, revisions and snapshots](002-driver-revisions-snapshots.md)
 - [ADR-003: Additive storage and migration](003-additive-storage-migration.md)
 - [ADR-004: Compatibility rules and execution contract](004-compatibility-execution-contract.md)
-
+- [ADR-005: Future speaker assemblies and DSP simulation](005-speaker-assembly-and-dsp-future.md)
+- [ADR-006: Future CAD import, meshing and hierarchical export](006-cad-interoperability-future.md)
+- [ADR-007: Future curated driver data sources](007-curated-driver-data-future.md)

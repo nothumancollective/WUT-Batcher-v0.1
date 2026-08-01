@@ -3109,6 +3109,50 @@ Validation executed:
 - Final clean full suite after both fixes: 744 passed, 10 skipped, zero failed
   in 826.45 s (9,235 existing Qt deprecation warnings).
 
+### Update 82 (Geometry and Driver Foundation)
+
+#### Architecture and storage
+
+- Introduced the explicit `Project -> Geometry -> Batch -> Version` aggregate
+  without moving historical batch, version, run or export directories.
+- Added an idempotent, additive Legacy Geometry migration with dry-run reports,
+  explicit backup-before-write mode and partial-state repair. The active Project
+  Library was inventoried read-only only; no bulk migration was performed.
+- Extended project SQLite to schema 2.9 with Geometry assignments and immutable
+  run driver snapshots while retaining legacy adapters and IDs.
+
+#### Driver library and execution
+
+- Added a single central revisioned driver library for compression, cone,
+  generic/test and future/unknown definitions. Missing values stay null and all
+  numeric values require explicit units.
+- Seeded the installed `generic25` LE network as a content-addressed,
+  built-in/read-only revision. No T/S-to-LE conversion or external download was
+  added.
+- Runs now carry `geometry_id` and a complete immutable `DriverSnapshot`; exact
+  LE bytes are staged per run and both source and effective hashes are persisted.
+- Added four narrow compatibility rules with stable IDs, rationale and evidence
+  type. Existing ATH compatibility hypotheses were not promoted to facts.
+
+#### User interface and scope
+
+- Added project Geometry management, active Geometry context, Geometry-scoped
+  dashboard batches, default-driver selection and a searchable Driver Library
+  with revisions, provenance, JSON import/export and built-in immutability.
+- Added proposed-only ADRs for speaker assemblies/DSP, CAD interop and curated
+  driver sources. No coupled systems, CAD or download features were implemented.
+- Detailed workflow, schema, migration, Safe Clean expectations and limits are
+  documented in `docs/GEOMETRY_DRIVER_FOUNDATION.md`.
+
+#### Focused validation
+
+- Baseline storage/UI/runtime group before implementation: 137 passed, 8 skipped.
+- Combined Geometry/Driver/storage/runtime/UI regression group: 148 passed,
+  8 skipped.
+- Focused UI gate after final signal handling fix: 98 passed, 8 skipped.
+- Geometry migration CLI plus domain tests: 4 passed.
+- Runtime Geometry/Driver snapshot persistence: 1 passed.
+
 
 
 
