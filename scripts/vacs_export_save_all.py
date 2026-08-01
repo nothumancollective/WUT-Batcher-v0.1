@@ -1163,16 +1163,37 @@ def _wait_for_dialog_quiescence(vacs_pid: int, main_handle: int, timeout_s: floa
     return {"status": "timeout", "quiescent": False, "actions": actions, "remaining": remaining}
 
 
+_SAVE_AS_TITLE_RE = re.compile(r"^\s*(?:save\s+as|speichern\s+unter)\s*$", re.IGNORECASE)
+
+
+def _dialog_has_filename_edit(dialog: Any) -> bool:
+    hwnd = int(_sig(dialog).get("handle", 0) or 0)
+    if hwnd <= 0:
+        return False
+    rows = _win32_children(hwnd)
+    if any(int(r.get("ctrl_id", -1)) == 1148 for r in rows):
+        return True
+    return any(str(r.get("class_name", "")).lower() == "edit" for r in rows)
+
+
+def _is_save_as_dialog_candidate(dialog: Any) -> bool:
+    """Recognize classic and modern Windows Save As dialogs.
+
+    Modern shell dialogs can expose the file-name editor only through UIA, so
+    requiring a Win32 ``Edit`` child rejects otherwise unambiguous localized
+    dialogs. The caller has already restricted candidates to the VACS PID.
+    """
+    signature = _sig(dialog)
+    class_name = str(signature.get("class_name", "") or "")
+    if not re.search(r"^(?:#32770|TForm_.*)$", class_name, re.IGNORECASE):
+        return False
+    if _dialog_has_filename_edit(dialog):
+        return True
+    title = str(signature.get("title", "") or "")
+    return bool(_SAVE_AS_TITLE_RE.fullmatch(title))
+
+
 def _find_save_as_dialog(target_pid: int, main_handle: int, timeout_s: float) -> Optional[Any]:
-    def _has_filename_edit(dialog: Any) -> bool:
-        hwnd = int(_sig(dialog).get("handle", 0) or 0)
-        if hwnd <= 0:
-            return False
-        rows = _win32_children(hwnd)
-        if any(int(r.get("ctrl_id", -1)) == 1148 for r in rows):
-            return True
-        edits = [r for r in rows if str(r.get("class_name", "")).lower() == "edit"]
-        return bool(edits)
 
     def _resolve_intermediate_confirm(dialog: Any) -> None:
         _resolve_confirm_dialog(dialog)
@@ -1188,9 +1209,8 @@ def _find_save_as_dialog(target_pid: int, main_handle: int, timeout_s: float) ->
             if class_name == "TForm_Confirm":
                 _resolve_intermediate_confirm(w)
                 continue
-            if re.search(r"(#32770|TForm_.*)", class_name, re.IGNORECASE):
-                if _has_filename_edit(w):
-                    return w
+            if _is_save_as_dialog_candidate(w):
+                return w
         # Fallback on process-scoped descendant dialogs under main.
         main = _find_main(int(target_pid))
         if main is not None:
@@ -1202,22 +1222,13 @@ def _find_save_as_dialog(target_pid: int, main_handle: int, timeout_s: float) ->
                     continue
                 if cls in {"TForm_Export", *CHILD_CLASSES}:
                     continue
-                if _has_filename_edit(d):
+                if _is_save_as_dialog_candidate(d):
                     return d
         time.sleep(0.03)
     return None
 
 
 def _find_save_as_dialog_fast(target_pid: int, timeout_s: float) -> Optional[Any]:
-    def _has_filename_edit(dialog: Any) -> bool:
-        hwnd = int(_sig(dialog).get("handle", 0) or 0)
-        if hwnd <= 0:
-            return False
-        rows = _win32_children(hwnd)
-        if any(int(r.get("ctrl_id", -1)) == 1148 for r in rows):
-            return True
-        return bool([r for r in rows if str(r.get("class_name", "")).lower() == "edit"])
-
     deadline = time.perf_counter() + float(timeout_s)
     while time.perf_counter() < deadline:
         for w in _top_windows_for_pid_fast(int(target_pid)):
@@ -1226,11 +1237,9 @@ def _find_save_as_dialog_fast(target_pid: int, timeout_s: float) -> Optional[Any
             if class_name == "TForm_Confirm":
                 _resolve_confirm_dialog(w)
                 continue
-            if not re.search(r"(#32770|TForm_.*)", class_name, re.IGNORECASE):
-                continue
             if class_name == "TForm_Export":
                 continue
-            if _has_filename_edit(w):
+            if _is_save_as_dialog_candidate(w):
                 return w
         time.sleep(0.01)
     return None
@@ -1255,6 +1264,7 @@ def _set_save_path(dialog: Any, full_target_path: Path, *, quick: bool = False) 
                 filename_row = r
                 break
 
+    uia_dialog = None
     if filename_row is not None:
         h = int(filename_row.get("handle", 0) or 0)
         user32.SendMessageW(h, WM_SETTEXT, 0, target)
@@ -1265,18 +1275,38 @@ def _set_save_path(dialog: Any, full_target_path: Path, *, quick: bool = False) 
         result["filename_readback"] = readback
         result["filename_exact_match"] = bool(readback.strip() == target)
     else:
-        # UIA fallback typing.
+        # Modern Windows shell dialogs expose the filename field through UIA
+        # even when EnumChildWindows has no classic Edit/control-id 1148.
         try:
-            edits = [c for c in dialog.descendants() if str(_sig(c).get("control_type", "")) == "Edit"]
+            dialog_handle = int(_sig(dialog).get("handle", 0) or 0)
+            uia_dialog = Desktop(backend="uia").window(handle=dialog_handle)
+            edits = [c for c in uia_dialog.descendants() if str(_sig(c).get("control_type", "")) == "Edit"]
         except Exception:
             edits = []
         if edits:
-            edit = edits[0]
+            def _edit_priority(control: Any) -> tuple[int, str]:
+                signature = _sig(control)
+                automation_id = str(signature.get("automation_id", "") or "").strip().lower()
+                name = str(signature.get("title", "") or "").strip().lower()
+                if automation_id in {"1001", "1148", "filenamecontrolhost"}:
+                    return (0, name)
+                if re.search(r"(?:file\s*name|dateiname)", name, re.IGNORECASE):
+                    return (1, name)
+                if re.search(r"(?:search|suchen)", name, re.IGNORECASE):
+                    return (100, name)
+                return (10, name)
+
+            edit = sorted(edits, key=_edit_priority)[0]
             try:
                 edit.set_focus()
-                edit.type_keys("^a{BACKSPACE}", set_foreground=True)
-                edit.type_keys(target, with_spaces=True, set_foreground=True)
-                result["filename_uia"] = "typed"
+                try:
+                    edit.set_edit_text(target)
+                    result["filename_uia"] = "set_edit_text"
+                except Exception:
+                    edit.type_keys("^a{BACKSPACE}", set_foreground=True)
+                    edit.type_keys(target, with_spaces=True, set_foreground=True)
+                    result["filename_uia"] = "typed"
+                result["filename_uia_signature"] = _sig(edit)
                 try:
                     rb = str(edit.window_text() or "")
                     result["filename_readback"] = rb
@@ -1305,7 +1335,8 @@ def _set_save_path(dialog: Any, full_target_path: Path, *, quick: bool = False) 
         if save_clicked:
             break
         try:
-            btn = dialog.child_window(title=caption, control_type="Button")
+            button_dialog = uia_dialog or dialog
+            btn = button_dialog.child_window(title=caption, control_type="Button")
             if btn.exists(timeout=0.2):
                 try:
                     btn.invoke()
