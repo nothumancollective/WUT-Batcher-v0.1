@@ -1004,6 +1004,20 @@ def _resolve_solving_files(abec_path: Path) -> List[Path]:
     return files
 
 
+def _resolve_le_script_files(abec_path: Path) -> List[Path]:
+    rows = _parse_abec_section_entries(abec_path, "lescript")
+    base = abec_path.parent
+    files: List[Path] = []
+    for item in rows:
+        path = (base / item).resolve()
+        if path.exists() and path.is_file():
+            files.append(path)
+    fallback = (base / "generic25.txt").resolve()
+    if fallback.exists() and fallback.is_file() and all(fallback != item for item in files):
+        files.append(fallback)
+    return files
+
+
 def _extract_drvgroups_from_text(content: str) -> List[str]:
     groups = re.findall(r"\bDrvGroup\s*=\s*([0-9]+)\b", str(content), flags=re.IGNORECASE)
     ordered: List[str] = []
@@ -1014,6 +1028,17 @@ def _extract_drvgroups_from_text(content: str) -> List[str]:
             seen.add(token)
             ordered.append(token)
     return ordered
+
+
+def _extract_le_driver_drvgroups(content: str) -> List[str]:
+    groups: List[str] = []
+    for raw_line in str(content).splitlines():
+        if not re.match(r"^\s*Driver\s+", raw_line, flags=re.IGNORECASE):
+            continue
+        match = re.search(r"\bDrvGroup\s*=\s*([0-9]+)\b", raw_line, flags=re.IGNORECASE)
+        if match and match.group(1) not in groups:
+            groups.append(match.group(1))
+    return groups
 
 
 def _extract_radimp_groups_from_observation(content: str) -> Dict[str, Any]:
@@ -1055,7 +1080,11 @@ def _assess_pre_akabak_le_driving_contract(
 ) -> Dict[str, Any]:
     solving_files = _resolve_solving_files(abec_path)
     observation_files = _resolve_observation_files(abec_path)
+    le_script_files = _resolve_le_script_files(abec_path)
     solving_groups: List[str] = []
+    le_driver_groups: List[str] = []
+    le_has_def_driving = False
+    le_has_resistor = False
     observation_driving_groups: List[str] = []
     observation_radimp_pairs: List[List[str]] = []
     observation_radimp_groups: List[str] = []
@@ -1066,6 +1095,18 @@ def _assess_pre_akabak_le_driving_contract(
         for token in _extract_drvgroups_from_text(text):
             if token not in solving_groups:
                 solving_groups.append(token)
+
+    for path in le_script_files:
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for token in _extract_le_driver_drvgroups(text):
+            if token not in le_driver_groups:
+                le_driver_groups.append(token)
+        le_has_def_driving = le_has_def_driving or bool(
+            re.search(r"^\s*Def_Driving\b", text, flags=re.IGNORECASE | re.MULTILINE)
+        )
+        le_has_resistor = le_has_resistor or bool(
+            re.search(r"^\s*Resistor\s+", text, flags=re.IGNORECASE | re.MULTILINE)
+        )
 
     for path in observation_files:
         text = path.read_text(encoding="utf-8", errors="replace")
@@ -1088,6 +1129,8 @@ def _assess_pre_akabak_le_driving_contract(
         violations.append("solving_file_missing")
     if not observation_files:
         violations.append("observation_file_missing")
+    if not le_script_files:
+        violations.append("le_script_file_missing")
     if not observation_has_radimp_section:
         violations.append("radimp_section_missing")
     if observation_has_radimp_section and not observation_radimp_pairs:
@@ -1095,6 +1138,8 @@ def _assess_pre_akabak_le_driving_contract(
     if expected:
         if expected not in solving_groups:
             violations.append("expected_drvgroup_missing_in_solving")
+        if expected not in le_driver_groups:
+            violations.append("expected_drvgroup_missing_on_le_driver")
         if expected not in observation_driving_groups:
             violations.append("expected_drvgroup_missing_in_observation_driving")
         if expected not in observation_radimp_groups:
@@ -1106,7 +1151,11 @@ def _assess_pre_akabak_le_driving_contract(
         "expected_drvgroup": expected or None,
         "solving_files": [str(path) for path in solving_files],
         "observation_files": [str(path) for path in observation_files],
+        "le_script_files": [str(path) for path in le_script_files],
         "solving_drvgroups": solving_groups,
+        "le_driver_drvgroups": le_driver_groups,
+        "le_has_def_driving": le_has_def_driving,
+        "le_has_resistor": le_has_resistor,
         "observation_driving_drvgroups": observation_driving_groups,
         "observation_radimp_pairs": observation_radimp_pairs,
         "observation_radimp_groups": observation_radimp_groups,

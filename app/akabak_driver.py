@@ -4219,6 +4219,20 @@ class AkabakDriver:
             current_solve_enabled = snapshot.get("solve_command_enabled")
             if current_solve_enabled is False:
                 solve_command_was_disabled = True
+                # The native Calculate command is the authoritative busy
+                # signal.  AKABAK can stay CPU-quiet for a few seconds after
+                # F4 before disabling the command, so discard any premature
+                # CPU-quiescence completion and allow a later, real F7
+                # handoff after the command becomes enabled again.
+                solver_numerically_complete = False
+                solver_activity_snapshot = dict(snapshot)
+                solver_quiet_since = None
+                vacs_graphless_since = None
+                vacs_reimport = {"triggered": False}
+                vacs_launch = {"attempted": False}
+                snapshot["status"] = "running_solve_command_disabled"
+                _record_heartbeat(snapshot)
+                return False, snapshot
 
             if not solver_numerically_complete and (snapshot.get("progress_window_present") or new_akabak):
                 solver_activity_snapshot = dict(snapshot)
@@ -4236,6 +4250,13 @@ class AkabakDriver:
                 snapshot["numerical_completion_signal"] = "calculate_command_reenabled"
 
             if not solver_numerically_complete:
+                if current_solve_enabled is True and not solve_command_was_disabled:
+                    activation_elapsed_s = max(0.0, float(time.perf_counter() - heartbeat_started))
+                    snapshot["solver_activation_elapsed_s"] = round(activation_elapsed_s, 3)
+                    if activation_elapsed_s < 8.0:
+                        snapshot["status"] = "waiting_solver_activation"
+                        _record_heartbeat(snapshot)
+                        return False, snapshot
                 main_pid = int(snapshot.get("main_pid", 0) or 0)
                 current_cpu = dict(snapshot.get("akabak_cpu_times_s", {}) or {}).get(str(main_pid))
                 previous_cpu = dict(solver_activity_snapshot.get("akabak_cpu_times_s", {}) or {}).get(str(main_pid))

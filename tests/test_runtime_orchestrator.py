@@ -16,6 +16,7 @@ from app.models import Batch, ParamSelection, Project, ProjectConstraints, SimEx
 from app.runners import parse_ath_dimensions
 from app.runtime_orchestrator import (
     StageExecution,
+    _assess_pre_akabak_le_driving_contract,
     _list_process_ids_by_image,
     _read_log_tail_text,
     _apply_sim_export_settings_to_cfg,
@@ -48,6 +49,32 @@ def _library_db_path(library_root: Path) -> Path:
 
 
 class RuntimeOrchestratorTests(unittest.TestCase):
+    def test_le_contract_requires_drvgroup_on_le_driver_not_only_radimp(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            abec = root / "Project.abec"
+            abec.write_text(
+                "[Project]\nScriptname_Solving=solving.txt\n[Observation]\nC0=observation.txt\n"
+                "[LEScript]\nScriptname_LEScript=generic25.txt\n",
+                encoding="utf-8",
+            )
+            (root / "solving.txt").write_text("Driving 'S1001' DrvGroup=1001\n", encoding="utf-8")
+            (root / "observation.txt").write_text(
+                "Driving_Values\n  401 DrvGroup=1001 Weight=1\n"
+                "Radiation_Impedance\n  402 1001 1001 ID=8001\n",
+                encoding="utf-8",
+            )
+            (root / "generic25.txt").write_text(
+                "System 'S1'\n  Driver 'D1' Def='Drv1' Node=1=0=10=20\n"
+                "  RadImp 'Throat' Node=20 DrvGroup=1001\n",
+                encoding="utf-8",
+            )
+
+            result = _assess_pre_akabak_le_driving_contract(abec_path=abec, expected_drvgroup="1001")
+
+            self.assertFalse(result["ok"])
+            self.assertIn("expected_drvgroup_missing_on_le_driver", result["violations"])
+
     def test_process_listing_replaces_undecodable_windows_output(self) -> None:
         completed = SimpleNamespace(stdout='"VACSVIEWER_32.exe","222","Console","1","1 K"\n')
 

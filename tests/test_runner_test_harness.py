@@ -74,11 +74,19 @@ class RunnerTestHarnessTests(unittest.TestCase):
             abec = root / "Project.abec"
             solving = root / "solving.txt"
             observation = root / "observation.txt"
+            le_script = root / "generic25.txt"
             abec.write_text(
-                "[Project]\nScriptname_Solving=solving.txt\n[Observation]\nC0=observation.txt\n",
+                "[Project]\nScriptname_Solving=solving.txt\n[Observation]\nC0=observation.txt\n"
+                "[LEScript]\nScriptname_LEScript=generic25.txt\n",
                 encoding="utf-8",
             )
             solving.write_text("Driving \"S1001\"\n  RefElements=\"A\"; DrvGroup=1001;\n", encoding="utf-8")
+            le_script.write_text(
+                "Def_Driving \"Voltage source\" Value=1V IsRms\n"
+                "System 'S1'\n  Resistor 'Rg' Node=1=2 R=1ohm\n"
+                "  Driver 'D1' Def='Drv1' Node=2=0=10=20 DrvGroup=1001\n",
+                encoding="utf-8",
+            )
             observation.write_text(
                 "Driving_Values\n  DrvType=Acceleration; Value=1.0\n  401 DrvGroup=1001 Weight=1\n\n"
                 "Radiation_Impedance\n  RadImpType=Normalized\n  402 1001 1001 ID=8001\n",
@@ -87,6 +95,36 @@ class RunnerTestHarnessTests(unittest.TestCase):
             result = _assess_pre_akabak_le_driving_contract(abec_path=abec, expected_drvgroup="1001")
             self.assertTrue(result["ok"])
             self.assertIn("1001", result["solving_drvgroups"])
+            self.assertEqual(result["le_driver_drvgroups"], ["1001"])
+            self.assertTrue(result["le_has_def_driving"])
+            self.assertTrue(result["le_has_resistor"])
+
+    def test_assess_pre_akabak_le_driving_contract_rejects_radimp_only_group(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            abec = root / "Project.abec"
+            abec.write_text(
+                "[Project]\nScriptname_Solving=solving.txt\n[Observation]\nC0=observation.txt\n"
+                "[LEScript]\nScriptname_LEScript=generic25.txt\n",
+                encoding="utf-8",
+            )
+            (root / "solving.txt").write_text("Driving 'S1001' DrvGroup=1001\n", encoding="utf-8")
+            (root / "observation.txt").write_text(
+                "Driving_Values\n  401 DrvGroup=1001 Weight=1\n"
+                "Radiation_Impedance\n  402 1001 1001 ID=8001\n",
+                encoding="utf-8",
+            )
+            (root / "generic25.txt").write_text(
+                "System 'S1'\n  Driver 'D1' Def='Drv1' Node=1=0=10=20\n"
+                "  RadImp 'Throat' Node=20 DrvGroup=1001\n",
+                encoding="utf-8",
+            )
+
+            result = _assess_pre_akabak_le_driving_contract(abec_path=abec, expected_drvgroup="1001")
+
+            self.assertFalse(result["ok"])
+            self.assertIn("expected_drvgroup_missing_on_le_driver", result["violations"])
+            self.assertEqual(result["le_driver_drvgroups"], [])
 
     def test_assess_pre_akabak_le_driving_contract_flags_missing_radimp(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
