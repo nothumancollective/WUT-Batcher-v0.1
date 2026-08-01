@@ -24,23 +24,31 @@ class VacsExportPipelineError(RuntimeError):
 
 
 LEGACY_VACS_PATH_BUDGET = 240
+LEGACY_WINDOWS_FILE_PATH_BUDGET = 259
 
 
-def _bounded_export_filename(export_root: Path, desired_name: str, *, fallback_stem: str) -> str:
-    """Keep files entered into legacy VACS dialogs below a conservative path budget."""
+def _bounded_export_filename(
+    export_root: Path,
+    desired_name: str,
+    *,
+    fallback_stem: str,
+    path_budget: int = LEGACY_VACS_PATH_BUDGET,
+) -> str:
+    """Keep an export path below the budget of the component that will consume it."""
 
     desired = str(desired_name or "").strip() or "export.txt"
-    if len(str(export_root / desired)) <= LEGACY_VACS_PATH_BUDGET:
+    budget = max(1, int(path_budget))
+    if len(str(export_root / desired)) <= budget:
         return desired
     suffix = Path(desired).suffix or ".txt"
     digest = hashlib.sha256(desired.encode("utf-8", errors="replace")).hexdigest()[:8]
     safe_stem = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(fallback_stem or "export")).strip("._") or "export"
     compact = f"{safe_stem}_{digest}{suffix}"
-    if len(str(export_root / compact)) > LEGACY_VACS_PATH_BUDGET:
+    if len(str(export_root / compact)) > budget:
         compact = f"x_{digest}{suffix}"
-    if len(str(export_root / compact)) > LEGACY_VACS_PATH_BUDGET:
+    if len(str(export_root / compact)) > budget:
         raise VacsExportPipelineError(
-            f"VACS export directory is too long for its legacy Save As dialog: {export_root}"
+            f"VACS export directory is too long for the active path budget ({budget}): {export_root}"
         )
     return compact
 
@@ -261,6 +269,7 @@ def _run_external_vacs_export_save_all(
                 export_dir,
                 f"external_raw_{index:02d}{suffix}",
                 fallback_stem=f"raw_{index:02d}",
+                path_budget=LEGACY_WINDOWS_FILE_PATH_BUDGET,
             )
             target = export_dir / target_name
             shutil.copy2(source, target)
@@ -271,7 +280,8 @@ def _run_external_vacs_export_save_all(
         payload["staging"] = {
             "used": True,
             "relocated_count": len(relocated),
-            "path_budget": LEGACY_VACS_PATH_BUDGET,
+            "dialog_path_budget": LEGACY_VACS_PATH_BUDGET,
+            "final_path_budget": LEGACY_WINDOWS_FILE_PATH_BUDGET,
         }
         return payload
 
@@ -301,6 +311,7 @@ def _build_external_any_graph_exports(
             export_root,
             desired_name,
             fallback_stem=f"{version_id}_anygraph_{index:02d}",
+            path_budget=LEGACY_WINDOWS_FILE_PATH_BUDGET,
         )
         output_path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, output_path)
@@ -345,12 +356,14 @@ def _render_output_path(
     batch_id: str,
     version_id: str,
     spec: ExportSpec,
+    path_budget: int = LEGACY_VACS_PATH_BUDGET,
 ) -> Path:
     name = spec.render_output_name(project_id=project_id, batch_id=batch_id, version_id=version_id)
     bounded_name = _bounded_export_filename(
         export_dir,
         name,
         fallback_stem=f"{version_id}_{spec.id or spec.graph_kind or 'export'}",
+        path_budget=path_budget,
     )
     return export_dir / bounded_name
 
@@ -449,6 +462,7 @@ def run_vacs_export_specs(
                 batch_id=batch_id,
                 version_id=version_id,
                 spec=spec,
+                path_budget=LEGACY_WINDOWS_FILE_PATH_BUDGET,
             )
             output_path.parent.mkdir(parents=True, exist_ok=True)
             match_index = None

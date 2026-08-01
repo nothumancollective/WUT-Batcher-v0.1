@@ -232,6 +232,48 @@ class VacsExportPipelineTests(unittest.TestCase):
             output_path = Path(result["exports"][0]["output_path"])
             self.assertTrue(output_path.exists())
 
+    def test_external_export_relocates_to_final_path_above_dialog_budget(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            source = root / "raw_spl.txt"
+            source.write_text(
+                "Data_LevelType=SoundPressure\nData_Legend='SPL'\nData\n1000 1.0\n",
+                encoding="utf-8",
+            )
+            target_length = 231
+            pad_length = target_length - len(str(root)) - 1
+            self.assertGreater(pad_length, 0)
+            export_dir = root / ("x" * pad_length)
+            spec = ExportSpec(id="spl_main", tool="vacs", graph_kind="spl", format="txt")
+            with patch(
+                "app.vacs_export_pipeline._run_external_vacs_export_save_all",
+                return_value={
+                    "ok": True,
+                    "run_id": "run_long_final_path",
+                    "exported_files": [
+                        {"graph": {"title": "SPL spectrum"}, "path": str(source)},
+                    ],
+                    "summary_file": str(root / "summary.json"),
+                },
+            ):
+                result = run_vacs_export_specs(
+                    executable="C:\\Tools\\VACS\\vacsviewer_32.exe",
+                    vacs_version="default",
+                    project_id="P001",
+                    batch_id="B001",
+                    version_id="V001",
+                    abec_path=root / "Project.abec",
+                    export_specs=[spec],
+                    export_dir=export_dir,
+                    log_dir=root / "logs",
+                    akabak_executable="C:\\Tools\\AKABAK\\AKABAK.exe",
+                )
+
+            output_path = Path(result["exports"][0]["output_path"])
+            self.assertTrue(output_path.exists())
+            self.assertGreater(len(str(output_path)), 240)
+            self.assertLessEqual(len(str(output_path)), 259)
+
     def test_graph_kind_match_score_uses_metadata(self) -> None:
         score = _graph_kind_match_score(
             graph_kind="impedance",
