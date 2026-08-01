@@ -29,6 +29,19 @@ CASES: dict[str, dict[str, float | int]] = {
     "mouth_45_n4": {},
     "mouth_60_n4": {"Coverage.Angle": 60},
     "mouth_45_n6": {"Term.n": 6},
+    "mesh_coarse": {
+        "Mesh.AngularSegments": 24,
+        "Mesh.LengthSegments": 12,
+        "Mesh.MouthResolution": 24,
+        "Mesh.ThroatResolution": 14,
+    },
+    "mesh_medium": {},
+    "mesh_fine": {
+        "Mesh.AngularSegments": 72,
+        "Mesh.LengthSegments": 28,
+        "Mesh.MouthResolution": 12,
+        "Mesh.ThroatResolution": 8,
+    },
 }
 
 BASE_PARAMETERS: dict[str, float | int] = {
@@ -203,6 +216,7 @@ def _parse_args() -> argparse.Namespace:
         type=Path,
         default=REPO_ROOT / "runner_test_cases" / "templates" / "smoke_fast_min.cfg",
     )
+    parser.add_argument("--case", action="append", choices=tuple(CASES), dest="cases")
     return parser.parse_args()
 
 
@@ -225,7 +239,9 @@ def main() -> None:
         "sim_settings": SIM_SETTINGS,
         "cases": {},
     }
-    for case_name, overrides in CASES.items():
+    selected_cases = args.cases or list(CASES)
+    for case_name in selected_cases:
+        overrides = CASES[case_name]
         case_root = output_root / case_name
         work = case_root / "work"
         output = case_root / "output"

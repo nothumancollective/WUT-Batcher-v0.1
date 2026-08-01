@@ -1,0 +1,520 @@
+{
+  "created_at": "2026-08-01T15:31:12.835970+00:00",
+  "status": "pressure_convergence_verified_mesh_convergence_incomplete",
+  "application_commit_at_analysis": "ffea8cc4451d99660513a9df311a61e2e7c150bd",
+  "ath_manifest": "tmp/scientific_validation_phase2/mesh_ath_probe_r1/manifest.json",
+  "ath_manifest_sha256": "164f89016a36a9d444034dc12de78b25ff23a47567d72f99f05776e1bddbc28a",
+  "mesh_levels": {
+    "coarse": {
+      "nodes": 178,
+      "triangles": 302,
+      "mesh_sha256": "6702acbc42499899e47c87844f88636dee9af2427e5168d2a08660fea2763c4a",
+      "physical_groups": [
+        "I1-2",
+        "SD1D1001",
+        "SD1G0",
+        "SD2G0"
+      ],
+      "ath_elapsed_s": 0.39392345899977954
+    },
+    "medium": {
+      "nodes": 251,
+      "triangles": 428,
+      "mesh_sha256": "e14de4063b22da19830c6fcc05c15c31d37de1e6ffba7696c7a23269a01bafab",
+      "physical_groups": [
+        "I1-2",
+        "SD1D1001",
+        "SD1G0",
+        "SD2G0"
+      ],
+      "ath_elapsed_s": 0.595956874996773
+    },
+    "fine": {
+      "nodes": 375,
+      "triangles": 660,
+      "mesh_sha256": "2da2516e4742fb821b148a4681132b4dd1d09f9d8dc15eb73379325005ae3320",
+      "physical_groups": [
+        "I1-2",
+        "SD1D1001",
+        "SD1G0",
+        "SD2G0"
+      ],
+      "ath_elapsed_s": 0.693307540997921
+    }
+  },
+  "runs": {
+    "coarse": {
+      "workspace": "tmp/scientific_validation_phase2/mesh_coarse_real_r1",
+      "run_id": "eb08b12d-215c-4fbb-8a6a-183567ad3aee",
+      "status": "succeeded",
+      "git_commit": "ffea8cc4451d99660513a9df311a61e2e7c150bd",
+      "runtime_s": 40.2,
+      "started_at": "2026-08-01T15:24:24+00:00",
+      "finished_at": "2026-08-01T15:25:04+00:00",
+      "steps": [
+        {
+          "name": "akabak",
+          "status": "ok",
+          "started_at": "2026-08-01T15:24:24+00:00",
+          "finished_at": "2026-08-01T15:24:53+00:00"
+        },
+        {
+          "name": "ath",
+          "status": "ok",
+          "started_at": "2026-08-01T15:24:24+00:00",
+          "finished_at": "2026-08-01T15:24:24+00:00"
+        },
+        {
+          "name": "generate_cfg",
+          "status": "ok",
+          "started_at": "2026-08-01T15:24:24+00:00",
+          "finished_at": "2026-08-01T15:24:24+00:00"
+        },
+        {
+          "name": "post_ath_driving_patch",
+          "status": "ok",
+          "started_at": "2026-08-01T15:24:24+00:00",
+          "finished_at": "2026-08-01T15:24:24+00:00"
+        },
+        {
+          "name": "post_ath_le_repair",
+          "status": "ok",
+          "started_at": "2026-08-01T15:24:24+00:00",
+          "finished_at": "2026-08-01T15:24:24+00:00"
+        },
+        {
+          "name": "post_ath_observation_patch",
+          "status": "ok",
+          "started_at": "2026-08-01T15:24:24+00:00",
+          "finished_at": "2026-08-01T15:24:24+00:00"
+        },
+        {
+          "name": "pre_akabak_guard",
+          "status": "ok",
+          "started_at": "2026-08-01T15:24:24+00:00",
+          "finished_at": "2026-08-01T15:24:24+00:00"
+        },
+        {
+          "name": "pre_akabak_le_driving_guard",
+          "status": "ok",
+          "started_at": "2026-08-01T15:24:24+00:00",
+          "finished_at": "2026-08-01T15:24:24+00:00"
+        },
+        {
+          "name": "preflight",
+          "status": "ok",
+          "started_at": "2026-08-01T15:24:24+00:00",
+          "finished_at": "2026-08-01T15:24:24+00:00"
+        },
+        {
+          "name": "resolve_case",
+          "status": "ok",
+          "started_at": "2026-08-01T15:24:24+00:00",
+          "finished_at": "2026-08-01T15:24:24+00:00"
+        },
+        {
+          "name": "vacs_export",
+          "status": "ok",
+          "started_at": "2026-08-01T15:24:53+00:00",
+          "finished_at": "2026-08-01T15:25:04+00:00"
+        },
+        {
+          "name": "ingest",
+          "status": "ok",
+          "started_at": "2026-08-01T15:25:04+00:00",
+          "finished_at": "2026-08-01T15:25:04+00:00"
+        },
+        {
+          "name": "safe_clean",
+          "status": "ok",
+          "started_at": "2026-08-01T15:25:04+00:00",
+          "finished_at": "2026-08-01T15:25:04+00:00"
+        }
+      ],
+      "contract_hashes": {
+        "Project.abec": "3dbb64eb88080cecd138fce42ddf3e221d62afd1304d5de20ac2590a4ccffc17",
+        "solving.txt": "d08f3b52cc1ee287497f0666c4f68d03ee759002c92f5f6b909594938c88265b",
+        "observation.txt": "6176ab70eb3b383d340be533c50b4db531f00c5550b7d0ef7de54a03179a3d38",
+        "generic25.txt": "053701a2158347cdf3fdd242fc053de4a225bff93607b134efc5c80a6ed3ce9a"
+      },
+      "db_sha256": "79d5cba888aae9c062d3072974b31df4db36666ca32a2829b3efb5da692aad5a",
+      "exports": [
+        {
+          "path": "exports/eb08b12d-215c-4fbb-8a6a-183567ad3aee/V001_anygraph_01_Mic_Polar_-_BE_Spectrum_2_D.txt",
+          "sha256": "fdc65174f66e43c7fed6657ae85f210936a6beee538e85203cc5e8408f928cee",
+          "bytes": 3069
+        },
+        {
+          "path": "exports/eb08b12d-215c-4fbb-8a6a-183567ad3aee/V001_anygraph_02_Mic_Polar_-_BE_Spectrum_3_H.txt",
+          "sha256": "852bb2693f95ccdaf9eccdd1d4e070436a5a9fbf4d33a2b5f373eb539a1847c5",
+          "bytes": 3068
+        },
+        {
+          "path": "exports/eb08b12d-215c-4fbb-8a6a-183567ad3aee/V001_anygraph_03_Mic_Polar_-_BE_Spectrum_4_V.txt",
+          "sha256": "22cceb8349b2bd661911c9c3b14ef4712fa7e41810b4bf9698f529d04b4976ba",
+          "bytes": 3069
+        },
+        {
+          "path": "exports/eb08b12d-215c-4fbb-8a6a-183567ad3aee/V001_anygraph_04_Radiation_Impedance_-_Radiation_Impedance_5_H.txt",
+          "sha256": "f94b42dfa43989c997063135daf87540b86e921352c4080c5347f9bcc733f40c",
+          "bytes": 732
+        }
+      ]
+    },
+    "medium": {
+      "workspace": "tmp/scientific_validation_phase2/mesh_medium_real_r1",
+      "run_id": "b8ce0410-45b4-416a-9cc0-0ad127dc7a7a",
+      "status": "succeeded",
+      "git_commit": "ffea8cc4451d99660513a9df311a61e2e7c150bd",
+      "runtime_s": 54.98,
+      "started_at": "2026-08-01T15:25:22+00:00",
+      "finished_at": "2026-08-01T15:26:17+00:00",
+      "steps": [
+        {
+          "name": "ath",
+          "status": "ok",
+          "started_at": "2026-08-01T15:25:22+00:00",
+          "finished_at": "2026-08-01T15:25:22+00:00"
+        },
+        {
+          "name": "generate_cfg",
+          "status": "ok",
+          "started_at": "2026-08-01T15:25:22+00:00",
+          "finished_at": "2026-08-01T15:25:22+00:00"
+        },
+        {
+          "name": "post_ath_driving_patch",
+          "status": "ok",
+          "started_at": "2026-08-01T15:25:22+00:00",
+          "finished_at": "2026-08-01T15:25:22+00:00"
+        },
+        {
+          "name": "post_ath_le_repair",
+          "status": "ok",
+          "started_at": "2026-08-01T15:25:22+00:00",
+          "finished_at": "2026-08-01T15:25:22+00:00"
+        },
+        {
+          "name": "post_ath_observation_patch",
+          "status": "ok",
+          "started_at": "2026-08-01T15:25:22+00:00",
+          "finished_at": "2026-08-01T15:25:22+00:00"
+        },
+        {
+          "name": "preflight",
+          "status": "ok",
+          "started_at": "2026-08-01T15:25:22+00:00",
+          "finished_at": "2026-08-01T15:25:22+00:00"
+        },
+        {
+          "name": "resolve_case",
+          "status": "ok",
+          "started_at": "2026-08-01T15:25:22+00:00",
+          "finished_at": "2026-08-01T15:25:22+00:00"
+        },
+        {
+          "name": "akabak",
+          "status": "ok",
+          "started_at": "2026-08-01T15:25:23+00:00",
+          "finished_at": "2026-08-01T15:26:06+00:00"
+        },
+        {
+          "name": "pre_akabak_guard",
+          "status": "ok",
+          "started_at": "2026-08-01T15:25:23+00:00",
+          "finished_at": "2026-08-01T15:25:23+00:00"
+        },
+        {
+          "name": "pre_akabak_le_driving_guard",
+          "status": "ok",
+          "started_at": "2026-08-01T15:25:23+00:00",
+          "finished_at": "2026-08-01T15:25:23+00:00"
+        },
+        {
+          "name": "vacs_export",
+          "status": "ok",
+          "started_at": "2026-08-01T15:26:06+00:00",
+          "finished_at": "2026-08-01T15:26:17+00:00"
+        },
+        {
+          "name": "ingest",
+          "status": "ok",
+          "started_at": "2026-08-01T15:26:17+00:00",
+          "finished_at": "2026-08-01T15:26:17+00:00"
+        },
+        {
+          "name": "safe_clean",
+          "status": "ok",
+          "started_at": "2026-08-01T15:26:17+00:00",
+          "finished_at": "2026-08-01T15:26:17+00:00"
+        }
+      ],
+      "contract_hashes": {
+        "Project.abec": "3dbb64eb88080cecd138fce42ddf3e221d62afd1304d5de20ac2590a4ccffc17",
+        "solving.txt": "d08f3b52cc1ee287497f0666c4f68d03ee759002c92f5f6b909594938c88265b",
+        "observation.txt": "6176ab70eb3b383d340be533c50b4db531f00c5550b7d0ef7de54a03179a3d38",
+        "generic25.txt": "053701a2158347cdf3fdd242fc053de4a225bff93607b134efc5c80a6ed3ce9a"
+      },
+      "db_sha256": "279a4faa87a598d6dabb6a80abc55ca441c69b6aeeede9f9e5755cce7021c9f9",
+      "exports": [
+        {
+          "path": "exports/b8ce0410-45b4-416a-9cc0-0ad127dc7a7a/V001_anygraph_01_Mic_Polar_-_BE_Spectrum_2_D.txt",
+          "sha256": "6dcada42e1d7018b7ba6fa017d5410c7028be01a6ab214f487f596699a0e8084",
+          "bytes": 3069
+        },
+        {
+          "path": "exports/b8ce0410-45b4-416a-9cc0-0ad127dc7a7a/V001_anygraph_02_Mic_Polar_-_BE_Spectrum_3_H.txt",
+          "sha256": "9848a2a551c8877f83dba3d458298199f1c1614e20e570ec074d08ba7cea0d3c",
+          "bytes": 3068
+        },
+        {
+          "path": "exports/b8ce0410-45b4-416a-9cc0-0ad127dc7a7a/V001_anygraph_03_Mic_Polar_-_BE_Spectrum_4_V.txt",
+          "sha256": "9e116442a53808d70c4b72b8cdca2a5c0cc9f223828a991d1ae71af2298733bf",
+          "bytes": 3069
+        },
+        {
+          "path": "exports/b8ce0410-45b4-416a-9cc0-0ad127dc7a7a/V001_anygraph_04_Radiation_Impedance_-_Radiation_Impedance_5_H.txt",
+          "sha256": "f94b42dfa43989c997063135daf87540b86e921352c4080c5347f9bcc733f40c",
+          "bytes": 732
+        }
+      ]
+    },
+    "fine": {
+      "workspace": "tmp/scientific_validation_phase2/mesh_fine_real_r1",
+      "run_id": "3bac7831-368a-4f3f-b4d2-26d29fe51015",
+      "status": "succeeded",
+      "git_commit": "ffea8cc4451d99660513a9df311a61e2e7c150bd",
+      "runtime_s": 51.14,
+      "started_at": "2026-08-01T15:26:36+00:00",
+      "finished_at": "2026-08-01T15:27:27+00:00",
+      "steps": [
+        {
+          "name": "akabak",
+          "status": "ok",
+          "started_at": "2026-08-01T15:26:36+00:00",
+          "finished_at": "2026-08-01T15:27:14+00:00"
+        },
+        {
+          "name": "ath",
+          "status": "ok",
+          "started_at": "2026-08-01T15:26:36+00:00",
+          "finished_at": "2026-08-01T15:26:36+00:00"
+        },
+        {
+          "name": "generate_cfg",
+          "status": "ok",
+          "started_at": "2026-08-01T15:26:36+00:00",
+          "finished_at": "2026-08-01T15:26:36+00:00"
+        },
+        {
+          "name": "post_ath_driving_patch",
+          "status": "ok",
+          "started_at": "2026-08-01T15:26:36+00:00",
+          "finished_at": "2026-08-01T15:26:36+00:00"
+        },
+        {
+          "name": "post_ath_le_repair",
+          "status": "ok",
+          "started_at": "2026-08-01T15:26:36+00:00",
+          "finished_at": "2026-08-01T15:26:36+00:00"
+        },
+        {
+          "name": "post_ath_observation_patch",
+          "status": "ok",
+          "started_at": "2026-08-01T15:26:36+00:00",
+          "finished_at": "2026-08-01T15:26:36+00:00"
+        },
+        {
+          "name": "pre_akabak_guard",
+          "status": "ok",
+          "started_at": "2026-08-01T15:26:36+00:00",
+          "finished_at": "2026-08-01T15:26:36+00:00"
+        },
+        {
+          "name": "pre_akabak_le_driving_guard",
+          "status": "ok",
+          "started_at": "2026-08-01T15:26:36+00:00",
+          "finished_at": "2026-08-01T15:26:36+00:00"
+        },
+        {
+          "name": "preflight",
+          "status": "ok",
+          "started_at": "2026-08-01T15:26:36+00:00",
+          "finished_at": "2026-08-01T15:26:36+00:00"
+        },
+        {
+          "name": "resolve_case",
+          "status": "ok",
+          "started_at": "2026-08-01T15:26:36+00:00",
+          "finished_at": "2026-08-01T15:26:36+00:00"
+        },
+        {
+          "name": "vacs_export",
+          "status": "ok",
+          "started_at": "2026-08-01T15:27:14+00:00",
+          "finished_at": "2026-08-01T15:27:27+00:00"
+        },
+        {
+          "name": "ingest",
+          "status": "ok",
+          "started_at": "2026-08-01T15:27:27+00:00",
+          "finished_at": "2026-08-01T15:27:27+00:00"
+        },
+        {
+          "name": "safe_clean",
+          "status": "ok",
+          "started_at": "2026-08-01T15:27:27+00:00",
+          "finished_at": "2026-08-01T15:27:27+00:00"
+        }
+      ],
+      "contract_hashes": {
+        "Project.abec": "3dbb64eb88080cecd138fce42ddf3e221d62afd1304d5de20ac2590a4ccffc17",
+        "solving.txt": "d08f3b52cc1ee287497f0666c4f68d03ee759002c92f5f6b909594938c88265b",
+        "observation.txt": "6176ab70eb3b383d340be533c50b4db531f00c5550b7d0ef7de54a03179a3d38",
+        "generic25.txt": "053701a2158347cdf3fdd242fc053de4a225bff93607b134efc5c80a6ed3ce9a"
+      },
+      "db_sha256": "e7d93eea7a92b43bf0cd3ed713661ecb590a39d4ce3a4d9baf4050b89e5a47c7",
+      "exports": [
+        {
+          "path": "exports/3bac7831-368a-4f3f-b4d2-26d29fe51015/V001_anygraph_01_Mic_Polar_-_BE_Spectrum_2_D.txt",
+          "sha256": "e5d0ca8839163e9bcdda97e6af50cc6ff7f1348adb1293762fd0adaa402385de",
+          "bytes": 3069
+        },
+        {
+          "path": "exports/3bac7831-368a-4f3f-b4d2-26d29fe51015/V001_anygraph_02_Mic_Polar_-_BE_Spectrum_3_H.txt",
+          "sha256": "ce0b1b19ec8ac0cdd9d9b7c12003be13c10365264e7cd1619853e4ce0fe43987",
+          "bytes": 3068
+        },
+        {
+          "path": "exports/3bac7831-368a-4f3f-b4d2-26d29fe51015/V001_anygraph_03_Mic_Polar_-_BE_Spectrum_4_V.txt",
+          "sha256": "49178bc3fc3b6e1dcde4939080eb55bca9a1d3234b50a100a6de2f97f3387e33",
+          "bytes": 3069
+        },
+        {
+          "path": "exports/3bac7831-368a-4f3f-b4d2-26d29fe51015/V001_anygraph_04_Radiation_Impedance_-_Radiation_Impedance_5_H.txt",
+          "sha256": "f94b42dfa43989c997063135daf87540b86e921352c4080c5347f9bcc733f40c",
+          "bytes": 732
+        }
+      ]
+    }
+  },
+  "pair_metrics": {
+    "coarse_medium": {
+      "polar_sample_count": 228,
+      "normalized_polar_rms_db": 0.03226079777245023,
+      "normalized_polar_p95_abs_db": 0.06524591087239173,
+      "axial_spl_rms_db": 0.026607048687069063,
+      "axial_spl_max_abs_db": 0.03789784687778308,
+      "beamwidth_candidate_count": 9,
+      "beamwidth_excluded_saturated_or_inferred_count": 9,
+      "beamwidth_comparable_count": 0,
+      "beamwidth_mean_abs_deg": null,
+      "beamwidth_max_abs_deg": null,
+      "di_proxy_rms_db": 0.025234524209482117
+    },
+    "medium_fine": {
+      "polar_sample_count": 228,
+      "normalized_polar_rms_db": 0.016977862302125966,
+      "normalized_polar_p95_abs_db": 0.03392414329024973,
+      "axial_spl_rms_db": 0.040242061916337335,
+      "axial_spl_max_abs_db": 0.052735894881422496,
+      "beamwidth_candidate_count": 9,
+      "beamwidth_excluded_saturated_or_inferred_count": 9,
+      "beamwidth_comparable_count": 0,
+      "beamwidth_mean_abs_deg": null,
+      "beamwidth_max_abs_deg": null,
+      "di_proxy_rms_db": 0.01337506167599235
+    }
+  },
+  "pressure_checks": {
+    "all_runs_succeeded": true,
+    "topology_strictly_refined": true,
+    "physical_groups_identical": true,
+    "solver_observation_and_le_contracts_identical": true,
+    "medium_fine_polar_rms_le_0_75_db": true,
+    "medium_fine_polar_p95_le_1_50_db": true,
+    "medium_fine_axial_rms_le_0_75_db": true,
+    "medium_fine_axial_max_le_1_50_db": true,
+    "medium_fine_di_proxy_rms_le_0_75_db": true,
+    "polar_convergence_trend": true,
+    "all_runtimes_below_2400_s": true
+  },
+  "pressure_convergence_status": "verified",
+  "beamwidth_status": "not_validated_all_available_widths_are_flagged_saturated_or_one_sided_inferred",
+  "beamwidth_note": "The frozen matrix excludes saturated widths; WUT flags every 0..90 symmetry-inferred width as saturated, leaving no admissible pair.",
+  "impedance": {
+    "finite": true,
+    "any_nonzero": false,
+    "values": {
+      "coarse": [
+        {
+          "freq_hz": 800.0,
+          "re": 0.0,
+          "im": 0.0
+        },
+        {
+          "freq_hz": 1007.937,
+          "re": 0.0,
+          "im": 0.0
+        },
+        {
+          "freq_hz": 1269.921,
+          "re": 0.0,
+          "im": 0.0
+        },
+        {
+          "freq_hz": 1600.0,
+          "re": 0.0,
+          "im": 0.0
+        }
+      ],
+      "medium": [
+        {
+          "freq_hz": 800.0,
+          "re": 0.0,
+          "im": 0.0
+        },
+        {
+          "freq_hz": 1007.937,
+          "re": 0.0,
+          "im": 0.0
+        },
+        {
+          "freq_hz": 1269.921,
+          "re": 0.0,
+          "im": 0.0
+        },
+        {
+          "freq_hz": 1600.0,
+          "re": 0.0,
+          "im": 0.0
+        }
+      ],
+      "fine": [
+        {
+          "freq_hz": 800.0,
+          "re": 0.0,
+          "im": 0.0
+        },
+        {
+          "freq_hz": 1007.937,
+          "re": 0.0,
+          "im": 0.0
+        },
+        {
+          "freq_hz": 1269.921,
+          "re": 0.0,
+          "im": 0.0
+        },
+        {
+          "freq_hz": 1600.0,
+          "re": 0.0,
+          "im": 0.0
+        }
+      ]
+    },
+    "status": "not_validated_all_exported_values_are_zero"
+  },
+  "native_process_snapshot_after": [],
+  "no_relevant_native_processes_after": true
+}
