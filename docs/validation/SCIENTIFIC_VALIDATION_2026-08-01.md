@@ -304,3 +304,7 @@ those contracts. Mouth/profile parameter isolation, result convergence,
 independent solver equivalence, physical distance/axis response, complete KPI
 aggregation and simulation-versus-measurement comparison remain explicitly
 **unvalidated**.
+
+Final regression after the two observation fixes and this evidence update:
+740 passed, 10 skipped, zero failed in 949.03 seconds on `b5ad794`; exit code 0
+and zero relevant native/GUI processes before and after.

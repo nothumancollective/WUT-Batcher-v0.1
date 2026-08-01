@@ -3037,6 +3037,8 @@ Validation executed:
 - Analyzer plot/stage/KPI regression group: 29 passed.
 - Real ATH-only normalization contract: exit 0, no timeout, three H/V/D
   `NormalizingAngle=20` entries, zero ATH processes before and after.
+- Final clean full suite on `b5ad794`: 740 passed, 10 skipped, zero failed in
+  949.03 s; exit 0 and zero relevant GUI/native processes before and after.
 - Evidence: `docs/validation/evidence/le_observation_contracts_2026-08-01.json`.
 
 

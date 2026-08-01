@@ -510,10 +510,17 @@ equivalence, physical distance doubling, full Analyzer KPI aggregation and a
 measurement benchmark remain unvalidated; no absolute acoustic-correctness
 claim is made.
 
+The final post-fix full regression on `b5ad794` completed with **740 passed,
+10 skipped and zero failures in 949.03 s**. The command returned 0; relevant
+GUI/ATH/Gmsh/AKABAK/VACS process counts were zero before and after. The 9,235
+messages remain the known Qt alignment deprecations.
+
 ### Final branch state
 
-At the final code gate, `main` and `origin/main` both pointed to `5f4c6cf` and
-the worktree was clean. Of 51 inspected non-main refs, every product, UI,
+At the branch-integration gate, `main` and `origin/main` both pointed to
+`5f4c6cf` and the worktree was clean. The later GUI, scientific evidence and
+normalization commits were made directly as small synchronized `main` commits.
+Of 51 inspected non-main refs, every product, UI,
 analyzer, storage, cleanup, integration and scientific-validation ref was an
 ancestor of `main`. Only the intentionally historical `audit/2026-02-20` and
 `audit/2026-02-21-legacy-census` refs (local and remote) were not ancestors.
