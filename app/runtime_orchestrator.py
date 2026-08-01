@@ -230,7 +230,12 @@ class RuntimeSummary:
 
 
 def _runtime_cfg_basename(*, project_id: str, batch_id: str, version_id: str, run_id: str) -> str:
-    token = "_".join([str(project_id), str(batch_id), str(version_id), str(run_id)[:8]])
+    # The full project id contains a UUID in Project Library mode.  Repeating
+    # it below the already project-scoped version directory pushed otherwise
+    # valid Windows paths beyond MAX_PATH.  Keep the human-readable display
+    # id and the run token; the surrounding project root supplies uniqueness.
+    project_label = str(project_id).split("__", 1)[0][:16]
+    token = "_".join([project_label, str(batch_id), str(version_id), str(run_id)[:8]])
     cleaned = re.sub(r"[^A-Za-z0-9_.-]+", "_", token).strip("._")
     return cleaned or f"run_{version_id}"
 

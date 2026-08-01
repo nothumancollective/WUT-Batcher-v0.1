@@ -21,6 +21,7 @@ from app.runtime_orchestrator import (
     _read_log_tail_text,
     _apply_sim_export_settings_to_cfg,
     _resolve_export_specs,
+    _runtime_cfg_basename,
     _run_akabak_ui_driver_stage,
     _serialize_native_tool_pipeline,
     _terminate_process_ids,
@@ -190,6 +191,66 @@ class RuntimeOrchestratorTests(unittest.TestCase):
             self.assertEqual(parsed.horn_length_mm, 140.0)
             self.assertEqual(parsed.horn_width_mm, 270.97)
             self.assertEqual(parsed.horn_height_mm, 270.97)
+
+    def test_pipeline_compacts_runtime_cfg_name_for_uuid_project_on_long_windows_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_id = "P0001__40a6f067-5940-4146-b04f-04f0246b6472"
+            batch_id = "B001"
+            version_id = "V001"
+            run_id = "12345678-aaaa-bbbb-cccc-1234567890ab"
+            old_basename = "_".join([project_id, batch_id, version_id, run_id[:8]])
+            compact_basename = _runtime_cfg_basename(
+                project_id=project_id,
+                batch_id=batch_id,
+                version_id=version_id,
+                run_id=run_id,
+            )
+            padding = "long_" + ("x" * 70)
+            projects_root = Path(tmp_dir) / padding / "projects"
+            project_root = projects_root / project_id
+            old_ath_cfg = project_root / "versions" / version_id / "ath_work" / f"{old_basename}.cfg"
+            compact_ath_cfg = project_root / "versions" / version_id / "ath_work" / f"{compact_basename}.cfg"
+            self.assertGreaterEqual(len(str(old_ath_cfg)), 260)
+            self.assertLess(len(str(compact_ath_cfg)), 260)
+            self.assertEqual(compact_basename, "P0001_B001_V001_12345678")
+
+            project = Project(
+                project_id=project_id,
+                name="Long Path Runtime Test",
+                root_path=str(project_root),
+                constraints=ProjectConstraints(
+                    project_id=project_id,
+                    fixed_params={"Length": 120},
+                    limits={},
+                    runner_mode="AthGuidePreview",
+                ),
+            )
+            batch = Batch(
+                batch_id=batch_id,
+                project_id=project_id,
+                selected_params={"Throat.Diameter": ParamSelection(value=30.0)},
+                sweep_mode="single",
+                runner_mode="AthGuidePreview",
+            )
+
+            summary = run_batch_pipeline(
+                project=project,
+                batch=batch,
+                projects_root=projects_root,
+                ath_executable=sys.executable,
+                ath_base_args=["-c", "print('Length=111 Width=222 Height=333')"],
+                continue_on_error=True,
+                run_id=run_id,
+            )
+
+            self.assertEqual(summary.run_status, "succeeded")
+            version_payload = json.loads(
+                (Path(summary.project_root) / "versions" / version_id / "version.json").read_text(
+                    encoding="utf-8-sig"
+                )
+            )
+            self.assertEqual(Path(str(version_payload["run_cfg_path"])).stem, compact_basename)
+            self.assertTrue((project_root / "versions" / version_id / "ath_work" / f"{compact_basename}.cfg").exists())
 
     def test_default_polar_export_specs_use_h_v_d_inclinations(self) -> None:
         specs = _resolve_export_specs({"auto_default_polar_exports": True})
