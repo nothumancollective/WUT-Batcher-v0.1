@@ -146,9 +146,9 @@ class AkabakDriverProgressTimeoutTests(unittest.TestCase):
 
         driver._solve_signal_snapshot = _next_snapshot
 
-        with patch("app.akabak_driver.time.perf_counter", side_effect=lambda: clock[0]), patch(
-            "app.akabak_driver.time.sleep"
-        ):
+        with patch("app.akabak_driver.SOLVE_COMMAND_REENABLE_STABLE_S", 0.0), patch(
+            "app.akabak_driver.time.perf_counter", side_effect=lambda: clock[0]
+        ), patch("app.akabak_driver.time.sleep"):
             result = driver.wait_for_completion(timeout_s=300, require_vacs_graph_import=True)
 
         self.assertTrue(result.ok)
@@ -209,7 +209,9 @@ class AkabakDriverProgressTimeoutTests(unittest.TestCase):
         )
         driver._solve_signal_snapshot = lambda: next(snapshots)
 
-        with patch("app.akabak_driver.time.sleep"):
+        with patch("app.akabak_driver.SOLVE_COMMAND_REENABLE_STABLE_S", 0.0), patch(
+            "app.akabak_driver.time.sleep"
+        ):
             result = driver.wait_for_completion(timeout_s=300, require_vacs_graph_import=True)
 
         self.assertTrue(result.ok)
@@ -277,9 +279,9 @@ class AkabakDriverProgressTimeoutTests(unittest.TestCase):
 
         driver._solve_signal_snapshot = _next_snapshot
 
-        with patch("app.akabak_driver.time.perf_counter", side_effect=lambda: clock[0]), patch(
-            "app.akabak_driver.time.sleep"
-        ):
+        with patch("app.akabak_driver.SOLVE_COMMAND_REENABLE_STABLE_S", 0.0), patch(
+            "app.akabak_driver.time.perf_counter", side_effect=lambda: clock[0]
+        ), patch("app.akabak_driver.time.sleep"):
             result = driver.wait_for_completion(timeout_s=300, require_vacs_graph_import=True)
 
         self.assertTrue(result.ok)

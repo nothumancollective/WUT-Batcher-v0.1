@@ -77,7 +77,7 @@ MAX_PATH = 260
 VACS_REIMPORT_RETRY_DELAYS_S = (3.0, 15.0, 45.0)
 VACS_HANDOFF_RETRY_DELAYS_S = (0.0, 3.0, 15.0, 45.0)
 VACS_HANDOFF_FAILURE_GRACE_S = 15.0
-SOLVE_COMMAND_REENABLE_QUIET_S = 2.0
+SOLVE_COMMAND_REENABLE_STABLE_S = 3.0
 
 
 def _vacs_reimport_retry_due_s(*, attempt_count: int, graphless_s: float) -> Optional[float]:
@@ -4209,7 +4209,6 @@ class AkabakDriver:
         solver_numerically_complete = False
         solve_command_was_disabled = bool(start_snapshot.get("solve_command_enabled") is False)
         solve_command_reenabled_since: Optional[float] = None
-        solve_command_reenabled_cpu: Optional[float] = None
 
         def _record_heartbeat(snapshot: Dict[str, Any]) -> None:
             nonlocal last_heartbeat_elapsed
@@ -4225,7 +4224,7 @@ class AkabakDriver:
             nonlocal vacs_graphless_since, vacs_reimport, vacs_reimport_attempts, vacs_launch
             nonlocal vacs_launch_started_at, vacs_launch_attempts
             nonlocal solver_activity_snapshot, solver_quiet_since, solver_numerically_complete
-            nonlocal solve_command_was_disabled, solve_command_reenabled_since, solve_command_reenabled_cpu
+            nonlocal solve_command_was_disabled, solve_command_reenabled_since
             if self.watchdog:
                 handled = self.watchdog.handle_once()
                 if handled:
@@ -4252,7 +4251,6 @@ class AkabakDriver:
                     vacs_reimport_attempts = []
                     vacs_launch = {"attempted": False}
                     solve_command_reenabled_since = None
-                    solve_command_reenabled_cpu = None
                     snapshot["status"] = "running_solve_command_disabled"
                     _record_heartbeat(snapshot)
                     return False, snapshot
@@ -4273,33 +4271,19 @@ class AkabakDriver:
                 and solve_command_was_disabled
                 and current_solve_enabled is True
             ):
-                main_pid = int(snapshot.get("main_pid", 0) or 0)
-                current_cpu_raw = dict(snapshot.get("akabak_cpu_times_s", {}) or {}).get(str(main_pid))
-                if main_pid > 0 and current_cpu_raw is not None:
-                    now = time.perf_counter()
-                    current_cpu = float(current_cpu_raw)
-                    if solve_command_reenabled_since is None or solve_command_reenabled_cpu is None:
-                        solve_command_reenabled_since = now
-                        solve_command_reenabled_cpu = current_cpu
-                        snapshot["status"] = "waiting_solve_reenabled_quiescence"
-                        snapshot["solve_reenabled_quiet_s"] = 0.0
-                        _record_heartbeat(snapshot)
-                        return False, snapshot
-                    cpu_delta = max(0.0, current_cpu - float(solve_command_reenabled_cpu))
-                    snapshot["solve_reenabled_cpu_delta_s"] = round(cpu_delta, 4)
-                    if cpu_delta >= 0.05:
-                        solve_command_reenabled_since = now
-                        solve_command_reenabled_cpu = current_cpu
-                        snapshot["status"] = "running_after_solve_command_reenabled"
-                        snapshot["solve_reenabled_quiet_s"] = 0.0
-                        _record_heartbeat(snapshot)
-                        return False, snapshot
-                    quiet_s = max(0.0, now - float(solve_command_reenabled_since))
-                    snapshot["solve_reenabled_quiet_s"] = round(quiet_s, 3)
-                    if quiet_s < SOLVE_COMMAND_REENABLE_QUIET_S:
-                        snapshot["status"] = "waiting_solve_reenabled_quiescence"
-                        _record_heartbeat(snapshot)
-                        return False, snapshot
+                now = time.perf_counter()
+                if solve_command_reenabled_since is None:
+                    solve_command_reenabled_since = now
+                stable_s = max(0.0, now - float(solve_command_reenabled_since))
+                snapshot["solve_reenabled_stable_s"] = round(stable_s, 3)
+                if stable_s < SOLVE_COMMAND_REENABLE_STABLE_S:
+                    # AKABAK can briefly re-enable Calculate between native
+                    # processing phases.  A continuous menu-state window is
+                    # reliable here; process CPU is not, because the animated
+                    # 3D view keeps consuming CPU even while the solver is Ready.
+                    snapshot["status"] = "waiting_solve_reenabled_stability"
+                    _record_heartbeat(snapshot)
+                    return False, snapshot
                 solver_numerically_complete = True
                 snapshot["numerical_completion_signal"] = "calculate_command_reenabled"
 
