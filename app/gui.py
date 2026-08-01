@@ -6099,6 +6099,7 @@ class DashboardPage(QWidget):
     request_cleanup_testdata = Signal()
     request_settings = Signal()
     request_open_constraint_editor = Signal(str)
+    request_manage_geometries = Signal()
 
     def __init__(self) -> None:
         super().__init__()
@@ -6167,6 +6168,24 @@ class DashboardPage(QWidget):
         batch_col_layout.addLayout(batch_grid)
         batch_col_layout.addStretch(1)
         actions_columns.addWidget(batch_col, 1)
+
+        geometry_col = QWidget()
+        geometry_col_layout = QVBoxLayout(geometry_col)
+        geometry_col_layout.setContentsMargins(0, 0, 0, 0)
+        geometry_col_layout.setSpacing(6)
+        geometry_label = QLabel("Geometry")
+        geometry_label.setObjectName("SummaryMeta")
+        geometry_col_layout.addWidget(geometry_label)
+        self.geometry_context_label = QLabel("Not selected")
+        self.geometry_context_label.setObjectName("GeometryDashboardContext")
+        self.geometry_context_label.setWordWrap(False)
+        self.geometry_context_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        geometry_col_layout.addWidget(self.geometry_context_label)
+        self.manage_geometries_btn = QPushButton("Geometries & Drivers")
+        self.manage_geometries_btn.setObjectName("BatchSecondaryButton")
+        geometry_col_layout.addWidget(self.manage_geometries_btn, 0, Qt.AlignTop)
+        geometry_col_layout.addStretch(1)
+        actions_columns.addWidget(geometry_col, 1)
 
         export_col = QWidget()
         export_col_layout = QVBoxLayout(export_col)
@@ -6239,11 +6258,26 @@ class DashboardPage(QWidget):
         self.clone_batch_btn.clicked.connect(self._emit_clone)
         self.export_btn.clicked.connect(self.request_open_export_dialog.emit)
         self.manage_runs_btn.clicked.connect(self.request_manage_runs.emit)
+        self.manage_geometries_btn.clicked.connect(self.request_manage_geometries.emit)
         if self.cleanup_testdata_btn is not None:
             self.cleanup_testdata_btn.clicked.connect(self.request_cleanup_testdata.emit)
         self.batch_list.currentItemChanged.connect(self._on_batch_list_selection_changed)
         self.lineage_pane.batch_activated.connect(self._on_lineage_batch_activated)
         QTimer.singleShot(0, self._layout_constraints_drawer_overlay)
+
+    def set_geometry_context(self, geometry: Dict[str, Any] | None) -> None:
+        if not geometry:
+            self.geometry_context_label.setText("Not selected")
+            self.geometry_context_label.setToolTip("No active Geometry")
+            return
+        name = str(geometry.get("name") or geometry.get("geometry_id") or "Unknown")
+        role = str(geometry.get("role") or "unknown")
+        revision = str(geometry.get("default_driver_revision_id") or "no default driver")
+        legacy = " · legacy" if geometry.get("legacy") else ""
+        self.geometry_context_label.setText(f"{name} [{role}]{legacy}")
+        self.geometry_context_label.setToolTip(
+            f"Geometry {geometry.get('geometry_id')}\nDefault driver revision: {revision}"
+        )
 
     def set_constraints_payload(self, payload: Optional[Dict[str, Any]]) -> None:
         self.constraints_summary.set_constraints_payload(payload)
@@ -14370,6 +14404,7 @@ class MainWindow(QMainWindow):
         self.dashboard_page.request_cleanup_testdata.connect(self._open_cleanup_dialog)
         self.dashboard_page.request_settings.connect(self._open_settings)
         self.dashboard_page.request_open_constraint_editor.connect(self._open_project_constraint_editor)
+        self.dashboard_page.request_manage_geometries.connect(self._open_geometry_manager)
 
         self.project_page.submit_project.connect(self._create_project)
         self.project_page.draft_changed.connect(self._queue_project_draft_changed)
@@ -14896,6 +14931,7 @@ class MainWindow(QMainWindow):
     def _sync_geometry_context(self) -> None:
         if self.current_project is None:
             self.project_page.set_geometry_context(None)
+            self.dashboard_page.set_geometry_context(None)
             return
         rows = self.service.list_geometries(self.current_project.project_id)
         selected = next((row for row in rows if row["geometry_id"] == self.current_geometry_id), None)
@@ -14903,6 +14939,7 @@ class MainWindow(QMainWindow):
             selected = rows[0]
             self.current_geometry_id = str(selected["geometry_id"])
         self.project_page.set_geometry_context(selected)
+        self.dashboard_page.set_geometry_context(selected)
         if selected is not None:
             self.batch_page.command_header.name_label.setText(f"Batch · {selected.get('name')}")
             self.batch_page.command_header.name_label.setToolTip(

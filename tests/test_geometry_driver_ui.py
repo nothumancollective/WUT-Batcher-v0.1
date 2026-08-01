@@ -63,9 +63,12 @@ class GeometryDriverUiTests(unittest.TestCase):
             window.load_project(project)
             self.assertEqual(window.current_geometry_id, first["geometry_id"])
             self.assertIn("Simulation context", window.batch_page.execution_context_label.text())
+            self.assertIn(first["name"], window.dashboard_page.geometry_context_label.text())
+            self.assertTrue(window.dashboard_page.manage_geometries_btn.isEnabled())
             window.current_geometry_id = second["geometry_id"]
             window._sync_geometry_context()
             self.assertIn("Second", window.batch_page.command_header.name_label.text())
+            self.assertIn("Second", window.dashboard_page.geometry_context_label.text())
             window.close()
 
     def test_driver_library_empty_state_is_usable(self) -> None:
