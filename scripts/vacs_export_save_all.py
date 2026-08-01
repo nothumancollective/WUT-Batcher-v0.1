@@ -500,6 +500,13 @@ def _terminate_vacs_pids(process_ids: List[int]) -> Dict[str, Any]:
             check=False,
         )
         live_after = set(_running_vacs_pids())
+        # taskkill can report success a few milliseconds before tasklist drops
+        # the process. Poll only the exact registered PID so this exit race is
+        # not mislabeled as a cleanup failure.
+        exit_deadline = time.perf_counter() + 1.5
+        while pid in live_after and time.perf_counter() < exit_deadline:
+            time.sleep(0.05)
+            live_after = set(_running_vacs_pids())
         if pid not in live_after:
             terminated.append(pid)
             continue

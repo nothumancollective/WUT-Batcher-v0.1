@@ -40,6 +40,22 @@ class VacsExportSaveAllProcessTests(unittest.TestCase):
         self.assertEqual(command[:3], ["taskkill", "/PID", "13632"])
         self.assertNotIn("/IM", command)
 
+    def test_cleanup_waits_for_successful_taskkill_exit_race(self) -> None:
+        completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="SUCCESS", stderr="")
+        with (
+            patch(
+                "scripts.vacs_export_save_all._running_vacs_pids",
+                side_effect=[[13632], [13632], []],
+            ),
+            patch("scripts.vacs_export_save_all.subprocess.run", return_value=completed),
+            patch("scripts.vacs_export_save_all.time.sleep") as sleep_mock,
+        ):
+            result = _terminate_vacs_pids([13632])
+
+        self.assertEqual(result["terminated"], [13632])
+        self.assertEqual(result["failed"], [])
+        sleep_mock.assert_called_once_with(0.05)
+
     def test_standalone_fast_mode_blocks_contaminated_baseline(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
