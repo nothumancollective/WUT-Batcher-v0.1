@@ -147,9 +147,16 @@ def _connect_existing(executable: str) -> Tuple[Application, int]:
     return app, pid
 
 
-def _kill_vacs_processes() -> None:
-    for image in ("vacsviewer_32.exe", "vacsviewer.exe"):
-        subprocess.run(["taskkill", "/IM", image, "/T", "/F"], capture_output=True, text=True)
+def _kill_vacs_pid(pid: int) -> None:
+    value = int(pid or 0)
+    if value <= 0:
+        return
+    subprocess.run(
+        ["taskkill", "/PID", str(value), "/T", "/F"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
 
 
 def _connect_existing_vacs(executable: str, timeout_s: int) -> Tuple[Application, int]:
@@ -635,7 +642,7 @@ def run_interim(args: argparse.Namespace) -> Dict[str, Any]:
     if not baseline_fresh and bool(args.force_fresh_vacs):
         close_result = _close_vacs_without_saving(vacs_pid)
         log("vacs_force_fresh_close", result=close_result)
-        _kill_vacs_processes()
+        _kill_vacs_pid(vacs_pid)
         time.sleep(0.3)
         vacs_pid, vacs_started, vacs_open_meta = _connect_vacs_via_akabak(
             vacs_executable=vacs_exe,
@@ -748,7 +755,7 @@ def run_interim(args: argparse.Namespace) -> Dict[str, Any]:
                         log_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
                         return summary
                     try:
-                        _kill_vacs_processes()
+                        _kill_vacs_pid(vacs_pid)
                         time.sleep(0.3)
                         vacs_pid, vacs_started, vacs_open_meta = _connect_vacs_via_akabak(
                             vacs_executable=vacs_exe,

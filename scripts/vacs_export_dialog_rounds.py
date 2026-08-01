@@ -28,6 +28,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from scripts.vacs_export_save_all import _running_vacs_pids
+
 
 ROUND_RECIPES: List[Dict[str, Any]] = [
     {"round_id": "r1_datgraph_basic", "target_class": "TForm_DatGraph", "pre_action_key": None, "note": "baseline graph window"},
@@ -327,11 +329,6 @@ def _start_vacs(vacs_exe: str) -> Dict[str, Any]:
     return {"pid": int(proc.pid), "exe": str(vacs_exe)}
 
 
-def _kill_vacs_processes() -> None:
-    for image in ("VACSVIEWER_32.exe", "vacsviewer.exe"):
-        subprocess.run(["taskkill", "/IM", image, "/T", "/F"], capture_output=True, text=True, check=False)
-
-
 def _kill_vacs_pid(pid: int) -> None:
     if int(pid or 0) <= 0:
         return
@@ -358,7 +355,14 @@ def run_round(args: argparse.Namespace, recipe: Dict[str, Any], output_dir: Path
     def step(name: str, **payload: Any) -> None:
         row["steps"].append({"time": _now_iso(), "step": name, "payload": payload})
 
-    _kill_vacs_processes()
+    preexisting_vacs_pids = _running_vacs_pids()
+    if preexisting_vacs_pids:
+        step("contaminated_vacs_baseline", pids=preexisting_vacs_pids)
+        row["ok"] = False
+        row["error"] = "preexisting_vacs_processes_not_owned"
+        row["preexisting_vacs_pids"] = preexisting_vacs_pids
+        row["finished_at"] = _now_iso()
+        return row
     start_info = _start_vacs(str(args.vacs_exe))
     step("start_vacs", **start_info)
 
@@ -376,6 +380,7 @@ def run_round(args: argparse.Namespace, recipe: Dict[str, Any], output_dir: Path
     row["vacs_pid"] = vacs_pid
     main = _find_vacs_main_window(vacs_pid)
     if main is None:
+        _kill_vacs_pid(int(vacs_pid or start_info.get("pid", 0) or 0))
         row["ok"] = False
         row["error"] = "vacs_main_window_missing"
         row["finished_at"] = _now_iso()
@@ -390,6 +395,7 @@ def run_round(args: argparse.Namespace, recipe: Dict[str, Any], output_dir: Path
 
     target = _pick_target_child(main, str(recipe.get("target_class", "")))
     if target is None:
+        _kill_vacs_pid(vacs_pid)
         row["ok"] = False
         row["error"] = "no_child_window_available"
         row["finished_at"] = _now_iso()
@@ -402,6 +408,7 @@ def run_round(args: argparse.Namespace, recipe: Dict[str, Any], output_dir: Path
         w32_target = Desktop(backend="win32").window(handle=int(target_sig.get("handle", 0)))
         w32_target.set_focus()
     except Exception as exc:
+        _kill_vacs_pid(vacs_pid)
         row["ok"] = False
         row["error"] = f"target_focus_failed: {exc!r}"
         row["finished_at"] = _now_iso()
