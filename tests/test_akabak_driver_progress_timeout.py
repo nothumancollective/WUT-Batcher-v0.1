@@ -241,19 +241,24 @@ class AkabakDriverProgressTimeoutTests(unittest.TestCase):
         driver.last_solve_diagnostics_path = None
         driver._connect = Mock()
         driver._log = Mock()
-        driver._start_vacs_for_handoff = Mock(
-            return_value={
+        snapshot_count = [0]
+
+        def _launch_after_quiescence(_main_handle: int) -> dict:
+            self.assertGreaterEqual(snapshot_count[0], 6)
+            return {
                 "trigger": "hwnd_postmessage_f7",
                 "status": "sent",
                 "main_handle": 101,
                 "method": "akabak_f7",
             }
-        )
+
+        driver._start_vacs_for_handoff = Mock(side_effect=_launch_after_quiescence)
         driver._dismiss_vacs_startup_editors = Mock(return_value=[])
         driver._trigger_vacs_reimport_native = Mock()
+        clock = [0.0]
         snapshots = iter(
             [
-                {
+                (0.0, {
                     "main_pid": 100,
                     "akabak_pids": [100],
                     "akabak_cpu_times_s": {"100": 10.0},
@@ -261,8 +266,8 @@ class AkabakDriverProgressTimeoutTests(unittest.TestCase):
                     "progress_window_present": False,
                     "solve_command_enabled": True,
                     "vacs_ui": {},
-                },
-                {
+                }),
+                (1.0, {
                     "main_pid": 100,
                     "akabak_pids": [100],
                     "akabak_cpu_times_s": {"100": 10.0},
@@ -270,8 +275,8 @@ class AkabakDriverProgressTimeoutTests(unittest.TestCase):
                     "progress_window_present": False,
                     "solve_command_enabled": False,
                     "vacs_ui": {},
-                },
-                {
+                }),
+                (2.0, {
                     "main_pid": 100,
                     "akabak_pids": [100],
                     "akabak_cpu_times_s": {"100": 10.5},
@@ -279,21 +284,57 @@ class AkabakDriverProgressTimeoutTests(unittest.TestCase):
                     "progress_window_present": False,
                     "solve_command_enabled": True,
                     "vacs_ui": {},
-                },
-                {
+                }),
+                (3.0, {
                     "main_pid": 100,
                     "akabak_pids": [100],
-                    "akabak_cpu_times_s": {"100": 10.5},
+                    "akabak_cpu_times_s": {"100": 10.7},
+                    "vacs_pids": [],
+                    "progress_window_present": False,
+                    "solve_command_enabled": True,
+                    "vacs_ui": {},
+                }),
+                (4.0, {
+                    "main_pid": 100,
+                    "akabak_pids": [100],
+                    "akabak_cpu_times_s": {"100": 10.7},
+                    "vacs_pids": [],
+                    "progress_window_present": False,
+                    "solve_command_enabled": True,
+                    "vacs_ui": {},
+                }),
+                (6.0, {
+                    "main_pid": 100,
+                    "akabak_pids": [100],
+                    "akabak_cpu_times_s": {"100": 10.7},
+                    "vacs_pids": [],
+                    "progress_window_present": False,
+                    "solve_command_enabled": True,
+                    "vacs_ui": {},
+                }),
+                (6.0, {
+                    "main_pid": 100,
+                    "akabak_pids": [100],
+                    "akabak_cpu_times_s": {"100": 10.7},
                     "vacs_pids": [200],
                     "progress_window_present": False,
                     "solve_command_enabled": True,
                     "vacs_ui": {"max_controls_count": 80, "max_graph_keyword_hits": 5},
-                },
+                }),
             ]
         )
-        driver._solve_signal_snapshot = lambda: next(snapshots)
 
-        with patch("app.akabak_driver.time.sleep"):
+        def _next_snapshot() -> dict:
+            at_s, row = next(snapshots)
+            clock[0] = at_s
+            snapshot_count[0] += 1
+            return row
+
+        driver._solve_signal_snapshot = _next_snapshot
+
+        with patch("app.akabak_driver.time.perf_counter", side_effect=lambda: clock[0]), patch(
+            "app.akabak_driver.time.sleep"
+        ):
             result = driver.wait_for_completion(timeout_s=300, require_vacs_graph_import=True)
 
         self.assertTrue(result.ok)
