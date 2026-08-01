@@ -1311,11 +1311,17 @@ def _save_filename_edit_priority(control: Any) -> tuple[int, str]:
     return (10, name)
 
 
-def _discover_save_filename_target(dialog: Any, *, timeout_s: float) -> Dict[str, Any]:
+def _discover_save_filename_target(
+    dialog: Any,
+    *,
+    timeout_s: float,
+    min_attempts: int = 1,
+) -> Dict[str, Any]:
     """Wait briefly for the modern shell dialog's filename control to materialize."""
 
     dialog_handle = int(_sig(dialog).get("handle", 0) or 0)
     deadline = time.perf_counter() + max(0.0, float(timeout_s))
+    required_attempts = max(1, int(min_attempts))
     attempts = 0
     last_rows: List[Dict[str, Any]] = []
     last_uia_error = ""
@@ -1360,7 +1366,7 @@ def _discover_save_filename_target(dialog: Any, *, timeout_s: float) -> Dict[str
                 "uia_dialog": uia_dialog,
                 "uia_edit": sorted(edits, key=_save_filename_edit_priority)[0],
             }
-        if time.perf_counter() >= deadline:
+        if attempts >= required_attempts and time.perf_counter() >= deadline:
             return {
                 "attempts": attempts,
                 "rows": last_rows,
@@ -1377,7 +1383,11 @@ def _set_save_path(dialog: Any, full_target_path: Path, *, quick: bool = False) 
     user32 = ctypes.windll.user32
     result: Dict[str, Any] = {"target": target}
 
-    discovery = _discover_save_filename_target(dialog, timeout_s=0.55 if quick else 1.5)
+    discovery = _discover_save_filename_target(
+        dialog,
+        timeout_s=0.55 if quick else 1.5,
+        min_attempts=3,
+    )
     rows = list(discovery.get("rows", []) or [])
     filename_row = discovery.get("filename_row")
     uia_dialog = discovery.get("uia_dialog")

@@ -99,6 +99,33 @@ class VacsExportSaveAllDialogTests(unittest.TestCase):
         self.assertEqual(result["attempts"], 2)
         self.assertEqual(result["filename_row"], edit_row)
 
+    def test_filename_discovery_honors_minimum_attempts_after_slow_scan(self) -> None:
+        dialog = object()
+        save_row = {"handle": 601, "ctrl_id": 1, "class_name": "Button"}
+        edit_row = {"handle": 602, "ctrl_id": 1148, "class_name": "Edit"}
+        with (
+            patch("scripts.vacs_export_save_all._sig", return_value={"handle": 600}),
+            patch(
+                "scripts.vacs_export_save_all._win32_children",
+                side_effect=[[save_row], [save_row], [save_row, edit_row]],
+            ),
+            patch("scripts.vacs_export_save_all.Desktop") as desktop,
+            patch(
+                "scripts.vacs_export_save_all.time.perf_counter",
+                side_effect=[0.0, 2.0, 2.1],
+            ),
+            patch("scripts.vacs_export_save_all.time.sleep"),
+        ):
+            desktop.return_value.window.return_value.descendants.return_value = []
+            result = _discover_save_filename_target(
+                dialog,
+                timeout_s=0.5,
+                min_attempts=3,
+            )
+
+        self.assertEqual(result["attempts"], 3)
+        self.assertEqual(result["filename_row"], edit_row)
+
     def test_missing_filename_control_never_clicks_default_save(self) -> None:
         dialog = object()
         with (
