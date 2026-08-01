@@ -1698,15 +1698,19 @@ def _is_polar_export_candidate(
     format_complex = str(metadata.get("Data_Format", "") or "").strip().lower() == "complex"
     has_angle_list = bool(str(metadata.get("Param_Coord_x2", "") or "").strip())
     has_orientation = bool(str(metadata.get("Param_Coord_x3", "") or "").strip())
-    header_signal = format_complex and has_angle_list and has_orientation
+    data_level_type = str(metadata.get("Data_LevelType", "") or "").strip()
+    data_level_token = data_level_type.lower().replace(" ", "").replace("_", "")
+    sound_pressure_level = data_level_token in {"soundpressure", "spl"}
+    explicit_non_polar_level = bool(data_level_token) and not sound_pressure_level
+    header_signal = format_complex and has_angle_list and has_orientation and sound_pressure_level
 
     contract_kind = ""
     if isinstance(contract, dict):
         contract_kind = str(contract.get("graph_kind", "") or "").strip().lower()
-    contract_signal = contract_kind == "polar"
+    contract_signal = contract_kind == "polar" and not explicit_non_polar_level
 
     name_token = path.name.lower()
-    filename_signal = ("mic_polar" in name_token) or ("mic polar" in name_token)
+    filename_signal = (("mic_polar" in name_token) or ("mic polar" in name_token)) and not explicit_non_polar_level
 
     return (
         bool(header_signal or contract_signal or filename_signal),
@@ -1715,6 +1719,9 @@ def _is_polar_export_candidate(
             "contract_signal": bool(contract_signal),
             "filename_signal": bool(filename_signal),
             "contract_kind": contract_kind,
+            "data_level_type": data_level_type,
+            "sound_pressure_level": bool(sound_pressure_level),
+            "explicit_non_polar_level": bool(explicit_non_polar_level),
         },
     )
 

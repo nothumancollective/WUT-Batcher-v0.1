@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from app.analyzer.cache import AnalyzerPlotCache, resolve_cache_policy
 from app.analyzer.presets import ALGO_VERSION
@@ -103,6 +104,82 @@ def _write_synthetic_run(
 
 
 class AnalyzerKpiServiceTests(unittest.TestCase):
+    def test_kpi_compute_ignores_non_sound_pressure_polar_rows(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_kpi_level_filter_") as tmp:
+            service = _build_service(Path(tmp))
+            project = service.create_project("Analyzer KPI Level Filter", {})
+            paths = service.repo.project_paths(project.project_id, ensure=True)
+            dataset = TidyDatasetWriter(paths.project_dir, library_root=service.settings.library_root)
+            _write_synthetic_run(
+                dataset=dataset,
+                project_id=project.project_id,
+                batch_id="B001",
+                run_id="R001",
+                version_id="V001",
+                hash_seed="pressure",
+                orientations=("H",),
+            )
+            dataset.write_polar_measurement(
+                measurement={
+                    "project_id": project.project_id,
+                    "batch_id": "B001",
+                    "version_id": "V001",
+                    "run_id": "R001",
+                    "graph_id": None,
+                    "orientation": "H",
+                    "orientation_raw": 0.0,
+                    "norm_angle_deg": 0.0,
+                    "data_level_type": "Impedance10",
+                    "data_base_unit": "Ohm",
+                    "data_absc_unit": "Hz",
+                    "freq_min_hz": 200.0,
+                    "freq_max_hz": 200.0,
+                    "freq_count": 1,
+                    "angle_min_deg": 90.0,
+                    "angle_max_deg": 90.0,
+                    "angle_step_deg": None,
+                    "angle_count": 1,
+                    "angles_deg_json": json.dumps([90.0]),
+                    "source_file": "radiation_impedance.txt",
+                    "file_hash": "impedance",
+                    "export_meta_json": json.dumps({"fixture": True}),
+                    "created_at": _now_iso(),
+                },
+                points=[
+                    {
+                        "freq_index": 0,
+                        "angle_index": 0,
+                        "freq_hz": 200.0,
+                        "angle_deg": 90.0,
+                        "re": 99.0,
+                        "im": 0.0,
+                    }
+                ],
+            )
+            captured: dict[str, object] = {}
+
+            def _capture_kpis(**kwargs):
+                captured.update(kwargs)
+                return {"aggregate": {}, "flags": {}}
+
+            with patch("app.services.compute_run_kpis", side_effect=_capture_kpis), patch(
+                "app.services.compute_stage_score", return_value=0.0
+            ):
+                summary = service.analyzer_compute_batch_kpis(
+                    project_id=project.project_id,
+                    batch_id="B001",
+                    target_h_deg=60.0,
+                    target_v_deg=60.0,
+                    tol_deg=5.0,
+                    band_low_hz=200.0,
+                    band_high_hz=1600.0,
+                )
+
+            self.assertEqual(int(summary.get("computed") or 0), 1)
+            h_points = dict(captured["planes_points"])["H"]  # type: ignore[arg-type]
+            self.assertEqual(len(h_points), 44)
+            self.assertFalse(any(float(point["re"]) == 99.0 for point in h_points))
+
     def test_compute_and_cache_skip_logic_for_batch(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_kpi_service_") as tmp:
             service = _build_service(Path(tmp))

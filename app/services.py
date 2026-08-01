@@ -2105,6 +2105,10 @@ class OrchestratorService:
                             COUNT(*) AS measurement_count,
                             COUNT(DISTINCT pm.batch_id) AS batch_count
                         FROM polar_measurements pm
+                        WHERE (
+                            TRIM(COALESCE(pm.data_level_type, '')) = ''
+                            OR LOWER(REPLACE(TRIM(pm.data_level_type), ' ', '')) IN ('soundpressure', 'spl')
+                        )
                         GROUP BY pm.project_id
                         ORDER BY pm.project_id
                         """
@@ -2140,6 +2144,10 @@ class OrchestratorService:
                             COUNT(DISTINCT batch_id) AS batch_count
                         FROM polar_measurements
                         WHERE project_id = ?
+                          AND (
+                            TRIM(COALESCE(data_level_type, '')) = ''
+                            OR LOWER(REPLACE(TRIM(data_level_type), ' ', '')) IN ('soundpressure', 'spl')
+                          )
                         """,
                         (target_id,),
                     ).fetchone()
@@ -2198,6 +2206,10 @@ class OrchestratorService:
                           ON b.project_id = pm.project_id
                          AND b.batch_id = pm.batch_id
                         WHERE pm.project_id = ?
+                          AND (
+                            TRIM(COALESCE(pm.data_level_type, '')) = ''
+                            OR LOWER(REPLACE(TRIM(pm.data_level_type), ' ', '')) IN ('soundpressure', 'spl')
+                          )
                         GROUP BY pm.project_id, pm.batch_id, COALESCE(NULLIF(TRIM(b.batch_name), ''), pm.batch_id)
                         ORDER BY pm.batch_id
                         """,
@@ -2215,6 +2227,10 @@ class OrchestratorService:
                             MAX(pm.created_at) AS imported_at
                         FROM polar_measurements pm
                         WHERE pm.project_id = ?
+                          AND (
+                            TRIM(COALESCE(pm.data_level_type, '')) = ''
+                            OR LOWER(REPLACE(TRIM(pm.data_level_type), ' ', '')) IN ('soundpressure', 'spl')
+                          )
                         GROUP BY pm.project_id, pm.batch_id
                         ORDER BY pm.batch_id
                         """,
@@ -2310,6 +2326,10 @@ class OrchestratorService:
                         angles_deg_json
                     FROM polar_measurements
                     WHERE project_id = ? AND batch_id = ?
+                      AND (
+                        TRIM(COALESCE(data_level_type, '')) = ''
+                        OR LOWER(REPLACE(TRIM(data_level_type), ' ', '')) IN ('soundpressure', 'spl')
+                      )
                     """,
                     (project_token, batch_token),
                 ).fetchall()
@@ -2542,6 +2562,10 @@ class OrchestratorService:
                        AND v.project_id = pm.project_id
                        AND v.batch_id = pm.batch_id
                     WHERE pm.project_id = ? AND pm.batch_id = ?
+                      AND (
+                        TRIM(COALESCE(pm.data_level_type, '')) = ''
+                        OR LOWER(REPLACE(TRIM(pm.data_level_type), ' ', '')) IN ('soundpressure', 'spl')
+                      )
                     GROUP BY pm.project_id, pm.batch_id, COALESCE(pm.run_id, ''), pm.version_id
                     ORDER BY imported_at DESC, pm.version_id DESC
                     """,
@@ -3458,6 +3482,10 @@ class OrchestratorService:
                           AND pm.batch_id = ?
                           AND pm.version_id = ?
                           AND COALESCE(pm.run_id, '') = ?
+                          AND (
+                            TRIM(COALESCE(pm.data_level_type, '')) = ''
+                            OR LOWER(REPLACE(TRIM(pm.data_level_type), ' ', '')) IN ('soundpressure', 'spl')
+                          )
                         ORDER BY pm.orientation, pp.freq_hz, pp.angle_deg
                         """,
                         (

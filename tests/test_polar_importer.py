@@ -294,6 +294,69 @@ class PolarImporterTests(unittest.TestCase):
         self.assertEqual(int(meas[2]), 3)
         self.assertEqual(int(point_count), 6)
 
+    def test_complex_impedance_export_is_not_written_as_polar_measurement(self) -> None:
+        project_root, writer, project, batch = self._prepare_project()
+        exports_dir = project_root / "versions" / "V001" / "exports" / "RUN001"
+        exports_dir.mkdir(parents=True, exist_ok=True)
+        output_file = exports_dir / "radiation_impedance.txt"
+        output_file.write_text(
+            "\n".join(
+                [
+                    "SourceDesc=VACS_Data_Text",
+                    "StartString_Data=Data",
+                    "EndString_Data=Data_End",
+                    "Data_Format=Complex",
+                    "Data_Domain=Frequency",
+                    "Data_LevelType=Impedance10",
+                    "Data_AbscUnit=Hz",
+                    "Data_Legend='Radiation_Impedance #5; ; Normalized'",
+                    "Param_Coord_x1=1",
+                    "Param_Coord_x2=90",
+                    "Param_Coord_x3=0",
+                    "Param_Coord_Type=Spherical",
+                    "Data",
+                    "400 1.0 0.1",
+                    "800 1.5 0.2",
+                    "Data_End",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        vacs_summary = {
+            "exports": [
+                {
+                    "spec": {
+                        "id": "radimp",
+                        "tool": "vacs",
+                        "graph_kind": "impedance",
+                        "variant": "main",
+                        "format": "txt",
+                    },
+                    "entry": {"graph_kind": "impedance", "graph_variant": "main", "format": "txt"},
+                    "plugin_id": "test",
+                    "output_path": str(output_file),
+                    "details": {},
+                }
+            ]
+        }
+
+        ingest = _ingest_vacs_exports(
+            writer=writer,
+            project=project,
+            batch=batch,
+            run_id="RUN001",
+            version_id="V001",
+            exports_dir=exports_dir,
+            vacs_export_summary=vacs_summary,
+        )
+
+        self.assertEqual(ingest.get("parse_errors"), [])
+        self.assertEqual(int(ingest.get("polar_measurements_written", 0)), 0)
+        with closing(sqlite3.connect(str(writer.project_db_path))) as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM polar_measurements").fetchone()[0], 0)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM graphs").fetchone()[0], 1)
+
     def test_import_fails_fast_on_missing_required_headers(self) -> None:
         project_root, writer, project, batch = self._prepare_project()
         exports_dir = project_root / "versions" / "V001" / "exports" / "RUN001"

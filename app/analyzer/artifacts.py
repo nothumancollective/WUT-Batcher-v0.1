@@ -73,6 +73,10 @@ class PolarArtifact:
               AND batch_id = ?
               AND version_id = ?
               AND COALESCE(run_id, '') = ?
+              AND (
+                TRIM(COALESCE(data_level_type, '')) = ''
+                OR LOWER(REPLACE(TRIM(data_level_type), ' ', '')) IN ('soundpressure', 'spl')
+              )
             """,
             (str(project_id), str(batch_id), str(version_id), run_token),
         ).fetchone()

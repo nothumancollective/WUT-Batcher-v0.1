@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from contextlib import closing
+import sqlite3
+import tempfile
+from pathlib import Path
 import unittest
 from unittest.mock import patch
 
@@ -105,6 +109,65 @@ class AnalyzerPlotServiceMathTests(unittest.TestCase):
         # The interpolated half-angle is 16 degrees; beamwidth is full width.
         self.assertAlmostEqual(float(curve[0]["beamwidth_deg"]), 32.0)
         self.assertTrue(bool(curve[0].get("saturated")))
+
+    def test_plot_payload_ignores_non_sound_pressure_polar_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "project.sqlite"
+            with closing(sqlite3.connect(str(db_path))) as conn:
+                conn.executescript(
+                    """
+                    CREATE TABLE polar_measurements (
+                        polar_id TEXT PRIMARY KEY,
+                        project_id TEXT,
+                        batch_id TEXT,
+                        version_id TEXT,
+                        run_id TEXT,
+                        orientation TEXT,
+                        norm_angle_deg REAL,
+                        data_level_type TEXT
+                    );
+                    CREATE TABLE polar_points (
+                        polar_id TEXT,
+                        freq_hz REAL,
+                        angle_deg REAL,
+                        re REAL,
+                        im REAL
+                    );
+                    """
+                )
+                conn.execute(
+                    "INSERT INTO polar_measurements VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    ("pressure", "P001", "B001", "V001", "R001", "H", None, "SoundPressure"),
+                )
+                conn.execute(
+                    "INSERT INTO polar_measurements VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    ("impedance", "P001", "B001", "V001", "R001", "H", None, "Impedance10"),
+                )
+                conn.executemany(
+                    "INSERT INTO polar_points VALUES (?, ?, ?, ?, ?)",
+                    [
+                        ("pressure", 1000.0, 0.0, 1.0, 0.0),
+                        ("pressure", 1000.0, 45.0, 0.5, 0.0),
+                        ("pressure", 1000.0, 90.0, 0.25, 0.0),
+                        ("impedance", 1000.0, 90.0, 10.0, 0.0),
+                    ],
+                )
+                conn.commit()
+
+            cache = AnalyzerPlotCache(AnalyzerCachePolicy(mode="low", size_limit_mb=0, keep_last_n=1))
+            payload = AnalyzerPlotService(cache).load_plane_plot_payload(
+                db_path=db_path,
+                project_id="P001",
+                batch_id="B001",
+                run_id="R001",
+                version_id="V001",
+                plane="H",
+                band_low_hz=1000.0,
+                band_high_hz=1000.0,
+            )
+
+        angle_index = payload["angles_deg"].index(90.0)
+        self.assertAlmostEqual(float(payload["matrix_db"][angle_index][0]), -12.041199826559248)
 
     def test_normalize_prefers_provided_norm_angle_when_present(self) -> None:
         freqs = [1000.0]
