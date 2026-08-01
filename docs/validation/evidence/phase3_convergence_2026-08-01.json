@@ -1,9 +1,35 @@
 {
-  "created_at": "2026-08-01T18:37:55.949853+00:00",
-  "analysis_commit": "7150d755a0160d020127fbdac68dab9a80289515",
+  "created_at": "2026-08-01T18:39:46.779397+00:00",
+  "analysis_commit": "85a35c4da4cc9c0507a9843f9d3e87f98eeaa605",
   "status": "verified",
   "criteria_commit": "cdc022c",
   "observation_repair_commit": "7150d75",
+  "toolchain": {
+    "ATH": {
+      "version": "4.8.2",
+      "path": "C:\\Tools\\ATH\\ath.exe",
+      "sha256": "639cb0184cf5dae233f3d2624cf279057a217da26948bde6d1d6510314b9a1e1",
+      "bytes": 807936
+    },
+    "Gmsh": {
+      "version": "4.14.0",
+      "path": "C:\\Tools\\ATH\\gmsh.exe",
+      "sha256": "0aeea78040f6c367e7718f05bb2ace05aa7f45912f9aee77353191c428e47d96",
+      "bytes": 89454080
+    },
+    "AKABAK": {
+      "version": "3.2.4.126",
+      "path": "C:\\Program Files (x86)\\RDTeam\\AKABAK\\AKABAK.exe",
+      "sha256": "f5c7621684d368ed5e9405c7ac958a8cb0b79522327a84425fd43d053e6e7e26",
+      "bytes": 34761728
+    },
+    "VacsViewer": {
+      "version": "2.1.3.33",
+      "path": "C:\\Program Files (x86)\\RDTeam\\VACSVIEWER_32\\VACSVIEWER_32.exe",
+      "sha256": "a3631c245d99e3e417bf9ccde5209d59b13fd81d97168e611ce4fbb360fa8623",
+      "bytes": 13727744
+    }
+  },
   "runs": {
     "coarse": {
       "run_id": "ef3d2618-366e-4f0d-a131-30656c484f84",
@@ -767,7 +793,7 @@
     }
   },
   "chain": {
-    "analysis_db": "tmp/scientific_validation_phase3/analysis_chain_r3/library/P_SCI_P3_ANALYSIS/db/project.sqlite",
+    "analysis_db": "tmp/scientific_validation_phase3/analysis_chain_r4/library/P_SCI_P3_ANALYSIS/db/project.sqlite",
     "polar_matrix_max_abs_db": 2.842170943040401e-14,
     "beamwidth_max_abs_deg": 2.5579538487363607e-13
   },

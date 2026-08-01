@@ -5,7 +5,7 @@
 - Repository baseline: `c7d0df7a812f8db27b6ee9ae654a1f436869d772`
 - Branch: `codex/scientific-validation-phase3-2026-08-01`
 - Native tools remain the installed, Phase-2-frozen ATH 4.8.2, Gmsh 4.14.0,
-  AKABAK 3.2.4.126 and VACS Viewer 2.2. No installation, preference or Registry
+  AKABAK 3.2.4.126 and VACS Viewer 2.1.3.33. No installation, preference or Registry
   change is permitted.
 - Exactly three native runs are budgeted: one coarse, one medium and one fine
   mesh of the same case. They jointly answer impedance and H/V beamwidth

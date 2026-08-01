@@ -26,6 +26,12 @@ from app.vacs_txt_parser import parse_vacs_txt_file
 
 LEVELS = ("coarse", "medium", "fine")
 PLANES = ("H", "V")
+TOOLCHAIN = {
+    "ATH": {"version": "4.8.2", "path": Path(r"C:\Tools\ATH\ath.exe")},
+    "Gmsh": {"version": "4.14.0", "path": Path(r"C:\Tools\ATH\gmsh.exe")},
+    "AKABAK": {"version": "3.2.4.126", "path": Path(r"C:\Program Files (x86)\RDTeam\AKABAK\AKABAK.exe")},
+    "VacsViewer": {"version": "2.1.3.33", "path": Path(r"C:\Program Files (x86)\RDTeam\VACSVIEWER_32\VACSVIEWER_32.exe")},
+}
 
 
 def _sha256(path: Path) -> str:
@@ -357,6 +363,15 @@ def main() -> None:
         "status": "verified" if all(checks.values()) else "failed_frozen_criteria",
         "criteria_commit": "cdc022c",
         "observation_repair_commit": "7150d75",
+        "toolchain": {
+            name: {
+                "version": item["version"],
+                "path": str(item["path"]),
+                "sha256": _sha256(item["path"]),
+                "bytes": item["path"].stat().st_size,
+            }
+            for name, item in TOOLCHAIN.items()
+        },
         "runs": {
             level: {
                 key: runs[level][key] for key in ("run_id", "status", "git_commit", "runtime_s", "started_at", "finished_at", "mesh_parameters", "contract_hashes")
