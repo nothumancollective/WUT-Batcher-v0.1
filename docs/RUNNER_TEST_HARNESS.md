@@ -27,7 +27,8 @@ Alle Harness-Artefakte bleiben in diesem Root.
 
 ## Safe Clean Policy
 
-Safe clean nutzt nur Guard-Funktionen mit absoluten Pfaden:
+Safe clean umfasst Datei- und Prozessbesitz. Für Dateien nutzt es nur
+Guard-Funktionen mit absoluten Pfaden:
 - `guarded_delete_file_in_workspace(...)`
 - `guarded_delete_tree_in_workspace(...)`
 
@@ -37,10 +38,25 @@ Erzwingt:
 - parent/name checks (z. B. `ath_out/<run_version>`)
 - denylist-Pruefung
 
-Gel�scht wird pro Run:
+Gelöscht wird pro Run:
 - erzeugte CFG in `cfg/`
 - ATH-Ausgabeordner in `ath_out/`
 - optional Exportordner in `exports/` (nur wenn `--keep-exports false`)
+
+Für jeden echten nativen Lauf gilt zusätzlich:
+
+- vor dem Start werden PID, Parent-PID, Executable-Pfad, Startzeit, CPU und RAM
+  aller relevanten Tools erfasst;
+- nur Prozesse, die der aktuelle Lauf gestartet oder anhand dieser Identität
+  übernommen hat, dürfen beendet werden;
+- PID-Abstammung muss auch zeitlich stimmen (Kindstart nicht vor Elternstart),
+  damit Windows-PID-Wiederverwendung keine falschen Prozessbäume erzeugt;
+- fremde oder nicht eindeutig zuordenbare AKABAK-/VACS-Instanzen blockieren den
+  Test statt namensweit beendet zu werden;
+- vor dem Folgefall und am Batchende werden Prozess-, Fenster- und
+  Ressourcenzustand erneut erfasst; eigene Reste sind ein Testfehler;
+- `taskkill /IM`, globale Prozessnamen-Kills und ungebundene "Zombie"-Bereinigung
+  sind für aktuelle Runner-Tests unzulässig.
 
 ## Runner_Test DB
 
@@ -77,10 +93,11 @@ Simulation-Overrides:
 - `freq_start_hz = 800`
 - `freq_end_hz = 4000`
 - `num_points = 6`
+- `simulation_timeout_minutes = 10`
 
 Begruendung:
-- reduziert Mesh-/Frequenzaufl�sung fuer schnellere Testzyklen
-- beh�lt validen ATH->AKABAK->VACS Toolflow bei
+- reduziert Mesh-/Frequenzauflösung fuer schnellere Testzyklen
+- behält validen ATH->AKABAK->VACS Toolflow bei
 
 Verification Plan (im Profil hinterlegt):
 1. gleiche Case einmal mit `fast` und einmal baseline laufen lassen, Step-Dauern vergleichen
@@ -88,6 +105,36 @@ Verification Plan (im Profil hinterlegt):
 
 Persistenz:
 - Profil + effektive Overrides werden pro Lauf in `test_runs.tool_versions` und `validations` (`test_profile_applied`) gespeichert.
+
+## Weitere TestProfile
+
+`baseline` wendet keine Harness-Overrides an. Es dient als unveränderte
+Referenz für die effektiven Werte des Case/Templates.
+
+`resource` erhöht die Last kontrolliert, ohne den Zwei-Fall-Stresstest
+unbegrenzt werden zu lassen:
+
+- `Mesh.AngularSegments = 28`
+- `Mesh.LengthSegments = 18`
+- `Mesh.CornerSegments = 4`
+- `Mesh.ThroatSegments = 2`
+- `Mesh.ThroatResolution = 14.0`
+- `Mesh.MouthResolution = 26.0`
+- `Mesh.RearResolution = 32.0`
+- `freq_start_hz = 600`
+- `freq_end_hz = 6000`
+- `num_points = 8`
+- `simulation_timeout_minutes = 20`
+
+Der Ressourcenwert wird vom Harness als 1.200 Sekunden Inaktivitätsgrenze an
+den AKABAK-Treiber weitergegeben; dessen begrenzte Hard-Limit-Logik ergibt
+2.400 Sekunden. Diese Änderung gilt nur für das Harness-Profil `resource`.
+Der allgemeine Produktstandard und die UI-Vorgabe bleiben bei zehn Minuten
+und weiterhin konfigurierbar.
+
+Das Profil ist für den geforderten ressourcenintensiveren Repeat mit maximal
+zwei Einzelsimulationen vorgesehen. Profilname und effektive Werte werden wie
+bei `fast` in DB und Validierungen gespeichert.
 
 ## CLI Nutzung
 
@@ -100,13 +147,14 @@ python -m app runner-test run --case smoke_fast --dry-run
 ### E2E mit Tools
 
 ```powershell
-python -m app runner-test run --case smoke_fast --repeats 5 --keep-exports true --test-profile fast --ath-exe "C:\\Tools\\ATH\\ATH.exe" --akabak-exe "C:\\Tools\\AKABAK\\AKABAK.exe" --vacs-exe "C:\\Tools\\VACS\\vacsviewer_32.exe"
+python -m app runner-test run --case smoke_fast --repeats 5 --keep-exports true --test-profile fast --ath-exe "C:\Tools\ATH\ath.exe" --akabak-exe "C:\Program Files (x86)\RDTeam\AKABAK\AKABAK.exe" --vacs-exe "C:\Program Files (x86)\RDTeam\VACSVIEWER_32\VACSVIEWER_32.exe" --template-cfg "C:\Tools\ATH\test.cfg"
 ```
 
 Defaults:
 - `--repeats 1`
 - `--keep-exports true`
 - `--test-profile fast`
+- alternative Profile: `baseline`, `resource`
 - `--workspace-root runner_test_workspace`
 - `--cases-root runner_test_cases`
 

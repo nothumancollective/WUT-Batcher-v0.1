@@ -15,7 +15,9 @@ Purpose: semantic behavior extraction for contract-driven UIA hardening; no code
 3. Solve completion is required before export handoff.
 4. VACS stage receives data (`F7` handoff from AKABAK), discovers graph/child windows, exports TXT files.
 5. Export validation checks file existence/content and fails run when outputs are missing/invalid.
-6. Cleanup closes AKABAK/VACS and may kill leftover processes on retries.
+6. Cleanup closes AKABAK/VACS and historically killed leftover processes on
+   retries. That name-wide fallback is evidence only and is prohibited in the
+   current runtime.
 
 ## AKABAK Semantic Flow (Observed)
 1. Ensure AKABAK main window exists.
@@ -84,6 +86,11 @@ Purpose: semantic behavior extraction for contract-driven UIA hardening; no code
 - Significant use of prohibited mechanisms:
 - `pyautogui`, image template matching, coordinate clicks.
 - fixed tab-count macros.
+
+Current policy is stricter: only exact run-owned PIDs, validated with
+executable path, parent relationship and start time, may be terminated.
+Unknown/manual tool instances block the next test; they are never cleaned by
+global image name.
 
 ## Implications For Current UIA Contracts
 - AKABAK open/import must treat dialog-close + project-loaded as hard postconditions.

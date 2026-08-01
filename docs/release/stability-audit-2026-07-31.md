@@ -226,9 +226,9 @@ runtime, resource or process warning was emitted.
   stderr stream.
 - The test suite emits a large number of existing Qt/deprecation warnings.
   They are noisy but did not correlate with the reproduced runtime hangs.
-- One Windows SQLite temp-cleanup lock appeared once during an earlier full
-  suite, then did not reproduce in 48 focused analyzer tests or the next full
-  run. No speculative data-layer change was made without a repeatable cause.
+- A Windows SQLite temp-cleanup lock first appeared transiently, then recurred
+  on the exact final-commit suite. The repeated cause and correction are
+  recorded in the 2026-08-01 follow-up below.
 - Historical duplicate versions and detached library candidates remain. Any
   destructive deduplication or migration must first define run/export
   ownership and create a recoverable backup.
@@ -264,3 +264,150 @@ and this documentation-only integration record was then committed on `main`.
 The project-manager (`c5e6860`), batch-lineage (`0850f67`) and archived-main
 heads are all ancestors of the resulting branch. Historical branches were
 retained, the working tree was clean, and no remote ref was pushed.
+
+## 2026-08-01 follow-up hardening
+
+This addendum records the post-reboot application-cold/warm repeats and the
+additional faults found while making those repeats deterministic. A real
+Windows/VM reboot test is not an acceptance gate in this pass; the user
+explicitly deferred the truly fresh VACS-profile case to another VM.
+
+### Additional root causes and commits
+
+| Area | Reproduced failure | Correction |
+| --- | --- | --- |
+| Late AKABAK startup popup | `TForm_ExampleFiles` could reappear after import and outlive the original startup-modal phase. | Close the exact process-owned class after import as well (`c538f60`). |
+| LE coupling | The smoke case could inherit an unstable or incomplete driver/coupling definition. | Pin and apply the verified LE repair/coupling profile (`e846e72`, `ab2db9f`). |
+| Solve-to-VACS timing | VACS could be requested before AKABAK had stably returned from a solve; slow post-processing exhausted the re-import budget. | Require stable reactivation, keep retry budget after solve, and use bounded delayed re-imports (`8f708f0`, `fc50907`, `f4ce113`, `f4a34f7`, `43439d6`, `4c338de`). |
+| Invalid acoustic success | An all-zero acoustic export could pass structural checks. | Reject unclassified zero-valued acoustic output (`eee4aab`). |
+| Localized Save As | German modern `Speichern unter` dialogs appeared before their filename edit was discoverable; the fallback could press Save without proving the requested path. | Recognize localized dialogs, retry exact Win32/UIA filename discovery, and never confirm until the path is set (`da2cf53`, `c17200f`, `895b4e9`, `155bb64`). |
+| Native serialization | Concurrent harness/service runs could contend for single-instance AKABAK/VACS and COM state. | Serialize native pipelines and the E2E harness across processes (`dd355f6`, `7fca36d`). |
+| Process handles and cleanup | A transient process handle could be closed too early; successful `taskkill` could be reported failed while the exact PID was still exiting. | Preserve native handles and poll the exact PID after termination (`7499d95`, `d206db4`). |
+| Cleanup ownership | Helper cleanup still contained broad or baseline-delta behavior. | Retain only run-owned VACS cleanup and remove global helper kills (`be87a64`, `9887148`). |
+| Doctor write safety | Normal CLI/GUI Doctor runs wrote a fixed `.doctor_write_test` file even without `--fix`; the legacy kill option used image-wide `taskkill /IM`. | Default checks are read-only, active probes use unique temporary names only with `--fix`, and unowned name-wide cleanup is refused (`cb0fd7c`, `e0a1897`). |
+| Slow solve window lifecycle | AKABAK could recreate or hide its main/solve window after import or during long progress polling. | Refresh recreated solve-window identities and restore the exact hidden process-owned main window (`85e1671`, `0a587e2`). |
+| Harness resource timeout | The heavier V002 case reached the old 1,200 s hard limit while CPU time and heartbeats still advanced. | Keep product/UI defaults unchanged, but set the `resource` harness profile to 20 minutes inactivity / 40 minutes hard limit and verify forwarding in fast tests (`9bc68f2`). |
+| UI stress fixture | The fake LE fixture contained literal `\\n` tokens and was correctly rejected by the hardened driver guard. | Emit real line breaks in the fixture without weakening production validation (`4d2dbe4`). |
+| Analyzer database handle | The SQLite context manager completed transactions but did not guarantee immediate native-handle closure on Windows; two full suites exposed temporary project cleanup locks. | Explicitly close the plot-loader connection and enforce that contract in a regression test (`d9e4563`). |
+
+### Final runner-harness evidence
+
+The bounded `resource` profile added in `39e00d7` uses 28 angular by 18
+length segments, throat/mouth/rear resolutions 14/26/32, and eight frequency
+points from 600 Hz to 6 kHz. Commit `9bc68f2` gives this profile a 20-minute
+inactivity budget and a 40-minute hard limit. The `baseline` profile applies
+no geometry/frequency overrides and retains the ten-minute timeout; the
+general product default and UI were not changed.
+
+Resource repeat workspace:
+`tmp/real_e2e_native_akabak_20260801_root_d206db4_resource2_final_r1`.
+
+- two of two runs succeeded on exactly `d206db4`;
+- individual toolchain times: 139.61 s and 231.22 s;
+- 26/26 steps and 26/26 validations were `ok`;
+- eight graphs, eight series, 64 points and 32 artifacts were persisted;
+- each run exported and verified 4/4 current VACS graphs;
+- exact VACS PIDs 7460 and 9592 were terminated, with no cleanup failure;
+- 23 resource snapshots recorded up to 100% CPU; free physical memory stayed
+  between 1775.4 and 2417.2 MB;
+- the wrapper returned 0 and the post-exit native-tool list was empty.
+
+Uniform release-repeat workspace:
+`tmp/real_e2e_native_akabak_20260801_root_d206db4_fast5_release_g1`.
+
+- five of five runs succeeded on exactly `d206db4` (no mid-batch commit drift);
+- individual toolchain times: 129.80, 114.65, 185.64, 130.19 and 122.71 s;
+- 65/65 steps and 65/65 validations were `ok`;
+- 20 graphs, 20 series, 120 points and 80 artifacts were persisted;
+- all 20 VACS exports were present, non-empty and verified; every export
+  summary reported 4 successful and zero failed graphs;
+- exact VACS PIDs 12628, 8940, 10020, 8080 and 12676 were terminated with no
+  cleanup failure;
+- 41 resource snapshots recorded 51-100% total CPU and 1783.7-2389.2 MB free
+  physical memory; free memory was 2155.6 MB before and 2389.2 MB after;
+- wrapper return code was 0, status was `clean_exit`, and both the guarded
+  post-exit ledger and an independent CIM query found zero native tool
+  processes.
+
+Visible captures during these gates showed the expected horn meshes, six or
+eight requested frequency rows, active percentage progress, and final AKABAK
+`Ready / 100%` with all solve phases green. Long runs were classified by
+heartbeats, CPU-time growth and visible progress rather than wall time alone.
+
+An additional heavier service scenario is preserved under
+`tmp/real_service_heavy2_e0a1897_20260801_r3`. It used a 72-by-28 mesh,
+32 frequencies from 400 Hz to 16 kHz, two 90/120 mm versions, H/V/D plus
+impedance, and the then-current ten-minute setting (600 s inactivity,
+1,200 s hard limit):
+
+- V001 completed in 999.26 s, exported four current VACS graphs, and persisted
+  four graphs/series, 128 points and eight files;
+- V002 continued to emit progress heartbeats and accumulate AKABAK CPU time up
+  to the old 1,200 s hard limit, then timed out in a controlled manner;
+- the scenario therefore returned 2 and is **not** reported as two of two
+  successful; its true result is V001 success, V002 old-budget timeout;
+- the owned VACS/AKABAK processes were cleaned and the recorded final native
+  count was zero.
+
+Per explicit user decision, no second long Heavy-2 gate was required after
+raising the profile budget. Several already-launched V002-only helper attempts
+were stopped by exact PID/parent/path/start-time ownership when they were found
+running. The 282.84 s `674a8a7` artifact and later `85e1671`/`0a587e2`
+setups are aborted non-gates; they do not prove success or failure of the
+heavy scenario. Timeout forwarding and hard-limit arithmetic instead passed
+the focused automated tests.
+
+### Process-hygiene invariant
+
+Every real test must start and end with an explicit process/resource snapshot.
+Ownership requires exact PID, executable path, parent relation and start time;
+parent/child creation order is checked so Windows PID reuse cannot create a
+false tree. Only owned PIDs may be terminated. Unknown/manual native tools
+block the next test, and global image-name cleanup is prohibited.
+
+One separately launched Heavy-2 service process overlapped an early Pytest
+attempt after the native release gate had already finished. It started 53
+seconds after the Fast-5 post-exit snapshot, so it did not contaminate that
+gate, but it held the native serialization lock and reduced free RAM. The fake
+LE fixture was corrected independently. A Windows SQLite cleanup lock later
+recurred without native-tool overlap, which made the plot-loader handle leak a
+repeatable cause rather than a one-off; `d9e4563` closes it explicitly.
+
+The definitive clean suite on `d9e4563`, with no native process or Heavy
+wrapper in the pre-state, completed with 725 passed, 10 skipped and zero
+failures in 693.89 s. The 9,235 warnings are the existing Qt
+`QTableWidgetItem.setTextAlignment(int)` deprecations. The post-suite native
+state was empty before an external V002 helper tried to restart; that exact
+owned helper tree was identified and stopped and is not part of the gate.
+
+### Setup, Doctor and library follow-up
+
+`setup status` reports ready with no missing key and reuses all four installed
+tools. ATH, AKABAK and VACS remain manual-link installations with license
+summaries; Gmsh remains explicit opt-in Winget only. Nothing was installed or
+reconfigured.
+
+The 2026-08-01 structural audit again found seven canonical projects, zero
+errors and 37 historical duplicate-plan warnings. It listed the inactive
+February QA/UX/E2E library roots, detached `Desktop/projects`, and detached
+`Desktop/library.sqlite` without inferring authority or changing them. No
+migration, deletion or deduplication was performed.
+
+The pre-fix Doctor invocation created and deleted its fixed probe in the active
+library, changing only the root directory timestamp to
+`2026-08-01T08:19:36.5127719Z`; no probe file or project-data change remained.
+The real post-fix check left that timestamp byte-for-byte unchanged and
+reported that the active write probe was skipped. Doctor process reporting
+also treats an unowned AKABAK/VACS instance as contamination and never kills
+it by image name.
+
+### VACS first-process-start boundary
+
+The two known startup notes are exact `TForm_Editor` children sourced from
+`Vacs_Welcome.rtf` and `VACSVIEWER.rtf`. Their `Skip this note next time` links
+persist `Skip_WelcomeScript` and `Skip_VacsViewerScript`, respectively, but the
+already-open editor must still be closed. They are not COM-registration
+dialogs. The application-cold and warm repeats in the current Windows session
+showed no such editors and reached four graphs directly. A truly fresh
+VM/profile first VACS session remains a documented external validation point,
+not a blocker for this release.

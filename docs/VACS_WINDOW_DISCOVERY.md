@@ -82,6 +82,27 @@ Relevant export action:
 2. Enumerating child window classes and titles for graph-type discrimination.
 3. Identifying modal classes and save-prompt controls with stable signatures.
 
+## Startup editor notes
+
+VACS can open two non-graph `TForm_Editor` children on the first process start
+of a Windows/profile session. Their installed sources are:
+
+- `C:\Program Files (x86)\RDTeam\VACSVIEWER_32\Vacs_Welcome.rtf`, with
+  `Vacs_Command=Skip_WelcomeScript`;
+- `C:\Program Files (x86)\RDTeam\VACSVIEWER_32\VACSVIEWER.rtf`, with
+  `Vacs_Command=Skip_VacsViewerScript`.
+
+Both expose the exact link text `Skip this note next time`. Activating the
+link persists the corresponding skip state, but does not close the editor
+already on screen; that exact `TForm_Editor` must then be closed. This state is
+separate from COM-registration dialogs and must never be handled by a generic
+click.
+
+The 2026-08-01 warm application-start repeats opened no startup editors and
+reached four graph children directly. A truly fresh VM/profile first-session
+test is deliberately deferred to another VM; it is not inferred from the
+warm-start result.
+
 ## What remains unstable
 1. Deep probe loops that combine child activation + immediate export-dialog interaction can hang in this VM/session.
 2. For now, this is treated as an automation robustness issue in the probe path, not as a selector gap in the discovered signatures.

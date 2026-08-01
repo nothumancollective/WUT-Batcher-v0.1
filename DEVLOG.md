@@ -2951,6 +2951,44 @@ Validation executed:
 - `python -m pytest tests/test_project_manager_ui.py tests/test_project_form_ui.py -q`
 - `python -m pytest tests/test_batch_page_ui.py -q` (known pre-existing failures in current branch; unrelated to this pass)
 
+## 2026-08-01
+### Update 77 (Native Stability Closure + Process Ownership)
+#### Done
+- Reconnected all product branch heads on `main` without dropping product-tree
+  content; historical/audit branches and recovery tag were retained.
+- Hardened AKABAK/VACS automation around exact startup popups, recreated/hidden
+  main windows, post-solve VACS handoff, localized Save As dialogs, progress
+  heartbeats and bounded delayed retries.
+- Enforced run-owned PID cleanup using executable path, parent relation and
+  start time; global image-name cleanup is prohibited and contaminated starts
+  block instead of killing unknown applications.
+- Preserved the installed ATH/Gmsh/AKABAK/VACS setup and added a read-only
+  default Doctor path. No tool was reinstalled or reconfigured.
+- Audited the active library (7 canonical projects, 0 errors, 37 historical
+  duplicate-plan warnings) and left detached/inactive libraries untouched.
+- Added bounded `fast`, `resource` and `baseline` runner profiles. The resource
+  profile now uses 20 minutes inactivity / 40 minutes hard limit; product/UI
+  defaults remain unchanged.
+- Reproduced a Windows Analyzer cleanup lock and fixed the underlying SQLite
+  plot connection so the native database handle is closed deterministically.
+- Documented the two exact VACS startup-note signatures; true fresh-VM/profile
+  validation remains explicitly deferred.
+
+#### Real gates
+- Resource batch: 2/2 full ATH -> AKABAK -> VACS cycles succeeded, 8/8 current
+  exports persisted, exact native cleanup verified.
+- Fast batch: 5/5 cycles succeeded, 20/20 exports persisted, exact native
+  cleanup verified.
+- Separate heavier service case: V001 succeeded; V002 reached the old
+  20-minute hard limit with advancing CPU/heartbeats and was controlledly
+  stopped. This is not reported as 2/2 success and was not rerun as a gate.
+
+#### Automated validation
+- Focused AKABAK/profile/harness checks: 80 passed.
+- Analyzer handle and UI regression group: 53 passed.
+- Definitive clean full suite on `d9e4563`: 725 passed, 10 skipped, 0 failed
+  in 693.89 s (9,235 existing Qt deprecation warnings).
+
 
 
 
