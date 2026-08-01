@@ -126,7 +126,7 @@ print("VACS OK", str(target))
     drivers_dir.mkdir(parents=True, exist_ok=True)
     _write_executable(
         drivers_dir / "generic25.txt",
-        "Def_Driver 'D1'\\nDriver 'D1'\\n",
+        "Def_Driver 'D1'\nDriver 'D1'\n",
     )
     return {
         "ath_exe": str(ath_cmd),
