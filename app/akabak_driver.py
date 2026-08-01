@@ -2420,14 +2420,49 @@ class AkabakDriver:
 
         closed_handles: List[int] = []
         closed_startup_handles: List[int] = []
+        restored_main_handles: List[int] = []
         latest_state: Dict[str, Any] = {}
 
         def _state() -> Tuple[bool, Dict[str, Any]]:
-            nonlocal closed_handles, closed_startup_handles, latest_state
+            nonlocal main_handle, closed_handles, closed_startup_handles, restored_main_handles, latest_state
             windows = self._process_top_level_windows()
             rows = [self._window_signature_row(window) for window in windows]
             visible = [row for row in rows if bool(row.get("is_visible", False))]
             main_visible = [row for row in visible if int(row.get("native_handle", 0) or 0) == main_handle]
+            main_candidates = [row for row in rows if self._is_main_window_row(row)]
+            if not main_visible and main_candidates:
+                main_candidates.sort(key=lambda row: bool(row.get("is_visible", False)), reverse=True)
+                replacement = main_candidates[0]
+                replacement_handle = int(replacement.get("native_handle", 0) or 0)
+                if replacement_handle > 0:
+                    previous_main_handle = main_handle
+                    main_handle = replacement_handle
+                    try:
+                        setattr(main_window, "_wut_native_handle", replacement_handle)
+                    except Exception:
+                        pass
+                    if not bool(replacement.get("is_visible", False)) and replacement_handle not in restored_main_handles:
+                        try:
+                            restored = bool(self._user32().ShowWindowAsync(replacement_handle, 9))
+                        except Exception:
+                            restored = False
+                        restored_main_handles.append(replacement_handle)
+                        self._log(
+                            level="info",
+                            step=step,
+                            event="main_window_restore_requested_after_import",
+                            payload={
+                                "previous_main_handle": previous_main_handle,
+                                "main_handle": replacement_handle,
+                                "show_window_accepted": restored,
+                            },
+                        )
+                    visible = [row for row in rows if bool(row.get("is_visible", False))]
+                    main_visible = [
+                        row
+                        for row in visible
+                        if int(row.get("native_handle", 0) or 0) == main_handle
+                    ]
             all_extras = [row for row in visible if int(row.get("native_handle", 0) or 0) != main_handle]
             ignored_extras = [row for row in all_extras if _is_noninteractive_tool_window(row)]
             extras = [row for row in all_extras if not _is_noninteractive_tool_window(row)]
@@ -2470,6 +2505,7 @@ class AkabakDriver:
                     "ignored_auxiliary_windows": ignored_extras[:6],
                     "closed_interpreter_handles": list(closed_handles),
                     "closed_startup_handles": list(closed_startup_handles),
+                    "restored_main_handles": list(restored_main_handles),
                 }
                 return True, latest_state
 
@@ -2478,9 +2514,11 @@ class AkabakDriver:
                 "visible_window_count": len(visible),
                 "main_handle": main_handle,
                 "extras": extras[:6],
+                "main_candidates": main_candidates[:6],
                 "ignored_auxiliary_windows": ignored_extras[:6],
                 "closed_interpreter_handles": list(closed_handles),
                 "closed_startup_handles": list(closed_startup_handles),
+                "restored_main_handles": list(restored_main_handles),
             }
             return False, latest_state
 

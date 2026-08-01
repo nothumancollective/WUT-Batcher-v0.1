@@ -448,6 +448,46 @@ class AkabakDriverVacsSnapshotTests(unittest.TestCase):
             payload={"class_name": "TForm_ExampleFiles", "handle": 202},
         )
 
+    def test_hidden_recreated_main_window_is_restored_after_import(self) -> None:
+        driver = AkabakDriver.__new__(AkabakDriver)
+        driver.step_timeout_s = 1.0
+        main_window = SimpleNamespace(_wut_native_handle=101)
+        main_row = {
+            "native_handle": 202,
+            "title": "Akabak-Demo",
+            "class_name": "TForm_Main",
+            "is_visible": False,
+        }
+        helper_row = {
+            "native_handle": 303,
+            "title": "",
+            "class_name": "TApplication",
+            "is_visible": True,
+        }
+        rows = [main_row, helper_row]
+        driver._process_top_level_windows = Mock(side_effect=lambda: list(rows))
+        driver._window_signature_row = Mock(side_effect=lambda row: dict(row))
+        user32 = Mock()
+
+        def _restore(hwnd: int, command: int) -> bool:
+            self.assertEqual((hwnd, command), (202, 9))
+            main_row["is_visible"] = True
+            return True
+
+        user32.ShowWindowAsync.side_effect = _restore
+        driver._user32 = Mock(return_value=user32)
+        driver._send_message_timeout = Mock()
+        driver._log = Mock()
+
+        state = driver._ensure_import_window_closed(main_window=main_window, step="import_if_needed")
+
+        self.assertEqual(state["status"], "main_only_open")
+        self.assertEqual(state["main_handle"], 202)
+        self.assertEqual(state["restored_main_handles"], [202])
+        self.assertEqual(main_window._wut_native_handle, 202)
+        user32.ShowWindowAsync.assert_called_once_with(202, 9)
+        driver._send_message_timeout.assert_not_called()
+
     def test_interpreter_button_uses_native_child_handle_without_descendants(self) -> None:
         driver = AkabakDriver.__new__(AkabakDriver)
         driver.session = SimpleNamespace(process_id=77)
