@@ -9,16 +9,64 @@ import json
 import os
 from pathlib import Path
 import re
+import subprocess
+import sys
 import time
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 
 BM_CLICK = 0x00F5
+WM_COMMAND = 0x0111
 WM_GETTEXT = 0x000D
 WM_KEYDOWN = 0x0100
 WM_KEYUP = 0x0101
 VK_RETURN = 0x0D
 SMTO_ABORTIFHUNG = 0x0002
+
+
+def _bounded_uia_dialog_snapshot(handle: int, *, timeout_s: float = 5.0) -> Dict[str, Any]:
+    """Read DirectUI accessibility text in an isolated, time-bounded process."""
+
+    hwnd = int(handle or 0)
+    if hwnd <= 0:
+        return {"status": "invalid_handle", "children": []}
+    script = (
+        "import json,sys\n"
+        "from pywinauto import Desktop\n"
+        "w=Desktop(backend='uia').window(handle=int(sys.argv[1]))\n"
+        "rows=[]\n"
+        "for c in w.descendants():\n"
+        " i=c.element_info\n"
+        " rows.append({'title':str(getattr(i,'name','') or ''),"
+        "'class_name':str(getattr(i,'class_name','') or ''),"
+        "'control_type':str(getattr(i,'control_type','') or ''),"
+        "'automation_id':str(getattr(i,'automation_id','') or '')})\n"
+        "print(json.dumps(rows, ensure_ascii=False))\n"
+    )
+    try:
+        completed = subprocess.run(
+            [sys.executable, "-c", script, str(hwnd)],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=max(0.5, float(timeout_s)),
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return {"status": "timeout", "children": []}
+    except Exception as exc:
+        return {"status": "error", "error": repr(exc), "children": []}
+    try:
+        children = json.loads(str(completed.stdout or "[]"))
+    except Exception:
+        children = []
+    return {
+        "status": "ok" if completed.returncode == 0 else "failed",
+        "returncode": int(completed.returncode),
+        "stderr": str(completed.stderr or "")[-2000:],
+        "children": children if isinstance(children, list) else [],
+    }
 
 
 @dataclass(frozen=True)
@@ -91,7 +139,7 @@ class _NativeWindow:
             for child in self.children(control_type=control_type)
             if child.window_text().strip().lower() == str(title or "").strip().lower()
         ]
-        return _NativeQuery(matches[0] if matches else None)
+        return _NativeQuery(matches[0] if matches else None, parent_handle=int(self.element_info.handle))
 
     def type_keys(self, keys: str) -> None:
         if str(keys).upper() != "{ENTER}":
@@ -102,8 +150,9 @@ class _NativeWindow:
 
 
 class _NativeQuery:
-    def __init__(self, window: Optional[_NativeWindow]) -> None:
+    def __init__(self, window: Optional[_NativeWindow], *, parent_handle: int = 0) -> None:
         self._window = window
+        self._parent_handle = int(parent_handle or 0)
 
     def exists(self, timeout: float = 0.0) -> bool:
         _ = timeout
@@ -112,7 +161,7 @@ class _NativeQuery:
     def invoke(self) -> None:
         if self._window is None:
             raise RuntimeError("Native watchdog control does not exist.")
-        result = ctypes.c_ulong()
+        result = ctypes.c_size_t()
         ok = self._window._user32.SendMessageTimeoutW(
             int(self._window.element_info.handle),
             BM_CLICK,
@@ -122,8 +171,26 @@ class _NativeQuery:
             1000,
             ctypes.byref(result),
         )
+        if ok and self._parent_handle > 0:
+            deadline = time.monotonic() + 0.25
+            while time.monotonic() < deadline:
+                if not bool(self._window._user32.IsWindow(self._parent_handle)):
+                    return
+                time.sleep(0.025)
+        if self._parent_handle > 0:
+            control_id = int(self._window._user32.GetDlgCtrlID(int(self._window.element_info.handle)) or 1)
+            posted = bool(
+                self._window._user32.PostMessageW(
+                    self._parent_handle,
+                    WM_COMMAND,
+                    control_id & 0xFFFF,
+                    int(self._window.element_info.handle),
+                )
+            )
+            if posted:
+                return
         if not ok:
-            raise RuntimeError("Native watchdog button did not accept BM_CLICK.")
+            raise RuntimeError("Native watchdog button did not accept BM_CLICK or WM_COMMAND.")
 
     def type_keys(self, keys: str) -> None:
         if self._window is None:
@@ -188,6 +255,19 @@ class ModalDialogWatchdog:
                     notes="Edge-length/mesh warning should be acknowledged with Yes/OK in harness runs.",
                 ),
                 DialogRule(
+                    rule_id="vacs_com_registration_missing_continue",
+                    title_regex=r"^(error|fehler|akabak)$",
+                    message_regex=(
+                        r"cannot\s+locate\s+vacs(?:\.exe|viewer\.exe).*"
+                        r"(?:com\s+service|regserver)"
+                    ),
+                    action="ok",
+                    notes=(
+                        "AKABAK can still complete the solve and create VACS through its F7 handoff; "
+                        "this exact registration warning is distinct from VACS first-start editors."
+                    ),
+                ),
+                DialogRule(
                     rule_id="cancel_project_save_as",
                     title_regex=r"^(save\s+as|speichern\s+unter)$",
                     message_regex=r".*",
@@ -196,9 +276,9 @@ class ModalDialogWatchdog:
                 ),
                 DialogRule(
                     rule_id="discard_imported_project_changes",
-                    title_regex=r"^akabak$",
-                    message_regex=r"(save|speichern|project|projekt|changes|.nderungen|aenderungen)",
-                    action="cancel",
+                    title_regex=r"^(akabak|warning|warnung)$",
+                    message_regex=r"((save|speichern).*(project|projekt)|(project|projekt).*(save|speichern))",
+                    action="discard",
                     notes="Do not persist the temporary project created by a batch import.",
                 ),
             ]
@@ -293,7 +373,13 @@ class ModalDialogWatchdog:
         except Exception:
             return ""
 
-    def _capture_debug_artifacts(self, *, window, reason: str) -> Dict[str, Any]:
+    def _capture_debug_artifacts(
+        self,
+        *,
+        window,
+        reason: str,
+        uia_snapshot: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         title = ""
         class_name = ""
@@ -318,6 +404,20 @@ class ModalDialogWatchdog:
             "process_id": self.process_id,
             "message": self._window_message(window),
         }
+        try:
+            payload["children"] = [
+                {
+                    "title": child.window_text(),
+                    "class_name": str(getattr(child.element_info, "class_name", "") or ""),
+                    "control_type": str(getattr(child.element_info, "control_type", "") or ""),
+                    "native_handle": int(getattr(child.element_info, "handle", 0) or 0),
+                }
+                for child in window.children()
+            ]
+        except Exception:
+            payload["children"] = []
+        handle = int(getattr(getattr(window, "element_info", None), "handle", 0) or 0)
+        payload["uia_snapshot"] = uia_snapshot or _bounded_uia_dialog_snapshot(handle)
         debug_path = self.output_dir / f"unknown_dialog_{stamp}.json"
         debug_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
         screenshot_path = None
@@ -328,6 +428,7 @@ class ModalDialogWatchdog:
         button_titles = {
             "ok": ("OK", "Ok", "Yes", "Ja", "Continue", "Fortfahren"),
             "cancel": ("Cancel", "Abbrechen", "No", "Nein"),
+            "discard": ("No", "Nein", "Don't Save", "Nicht speichern"),
             "close": ("Close", "Schließen", "Cancel", "Abbrechen", "No", "Nein"),
         }
         expected = button_titles.get(normalized, ("OK",))
@@ -342,6 +443,10 @@ class ModalDialogWatchdog:
                     return True
             except Exception:
                 continue
+        if normalized in {"cancel", "discard"}:
+            # Never let Enter accept a default save action when the intended
+            # non-persisting button could not be identified exactly.
+            return False
         try:
             window.type_keys("{ENTER}")
             return True
@@ -361,12 +466,40 @@ class ModalDialogWatchdog:
                 if rule.matches(title=title, message=message):
                     matched_rule = rule
                     break
+            uia_snapshot: Optional[Dict[str, Any]] = None
             if matched_rule is None:
-                debug = self._capture_debug_artifacts(window=window, reason="unknown_modal_dialog")
+                handle = int(getattr(getattr(window, "element_info", None), "handle", 0) or 0)
+                uia_snapshot = _bounded_uia_dialog_snapshot(handle)
+                accessible_text = " ".join(
+                    str(child.get("title", "") or "").strip()
+                    for child in list(uia_snapshot.get("children", []) or [])
+                    if isinstance(child, dict) and str(child.get("title", "") or "").strip()
+                )
+                if accessible_text:
+                    message = f"{message} {accessible_text}".strip()
+                    for rule in self.whitelist_rules:
+                        if rule.matches(title=title, message=message):
+                            matched_rule = rule
+                            break
+            if matched_rule is None:
+                debug = self._capture_debug_artifacts(
+                    window=window,
+                    reason="unknown_modal_dialog",
+                    uia_snapshot=uia_snapshot,
+                )
                 raise UnknownDialogError(
                     f"Unknown modal dialog detected: {title}. Debug: {debug['debug_path']}"
                 )
-            self._click_action(window=window, action=matched_rule.action)
+            clicked = self._click_action(window=window, action=matched_rule.action)
+            if not clicked:
+                debug = self._capture_debug_artifacts(
+                    window=window,
+                    reason=f"matched_dialog_action_failed:{matched_rule.rule_id}",
+                    uia_snapshot=uia_snapshot,
+                )
+                raise UnknownDialogError(
+                    f"Matched modal dialog could not be handled safely: {title}. Debug: {debug['debug_path']}"
+                )
             handled.append(
                 {
                     "handled_at": _now_iso(),
