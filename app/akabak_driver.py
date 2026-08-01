@@ -75,6 +75,8 @@ PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 TH32CS_SNAPPROCESS = 0x00000002
 MAX_PATH = 260
 VACS_REIMPORT_RETRY_DELAYS_S = (3.0, 15.0, 45.0)
+VACS_HANDOFF_RETRY_DELAYS_S = (0.0, 3.0, 15.0, 45.0)
+VACS_HANDOFF_FAILURE_GRACE_S = 15.0
 SOLVE_COMMAND_REENABLE_QUIET_S = 2.0
 
 
@@ -4200,6 +4202,8 @@ class AkabakDriver:
         vacs_reimport: Dict[str, Any] = {"triggered": False, "attempt_count": 0}
         vacs_reimport_attempts: List[Dict[str, Any]] = []
         vacs_launch: Dict[str, Any] = {"attempted": False}
+        vacs_launch_started_at: Optional[float] = None
+        vacs_launch_attempts: List[Dict[str, Any]] = []
         solver_activity_snapshot: Dict[str, Any] = dict(start_snapshot)
         solver_quiet_since: Optional[float] = None
         solver_numerically_complete = False
@@ -4219,6 +4223,7 @@ class AkabakDriver:
 
         def _completed() -> Tuple[bool, Dict[str, Any]]:
             nonlocal vacs_graphless_since, vacs_reimport, vacs_reimport_attempts, vacs_launch
+            nonlocal vacs_launch_started_at, vacs_launch_attempts
             nonlocal solver_activity_snapshot, solver_quiet_since, solver_numerically_complete
             nonlocal solve_command_was_disabled, solve_command_reenabled_since, solve_command_reenabled_cpu
             if self.watchdog:
@@ -4404,21 +4409,54 @@ class AkabakDriver:
                 _record_heartbeat(snapshot)
                 return False, snapshot
 
-            if not bool(vacs_launch.get("attempted")):
+            now = time.perf_counter()
+            if vacs_launch_started_at is None:
+                vacs_launch_started_at = now
+            handoff_wait_s = max(0.0, now - float(vacs_launch_started_at))
+            attempt_index = len(vacs_launch_attempts)
+            retry_due_s = (
+                VACS_HANDOFF_RETRY_DELAYS_S[attempt_index]
+                if attempt_index < len(VACS_HANDOFF_RETRY_DELAYS_S)
+                else None
+            )
+            snapshot["vacs_handoff_wait_s"] = round(handoff_wait_s, 3)
+            snapshot["vacs_launch_attempts"] = [dict(row) for row in vacs_launch_attempts]
+            if (
+                current_solve_enabled is not False
+                and retry_due_s is not None
+                and handoff_wait_s >= float(retry_due_s)
+            ):
                 main_handle = int(self.solve_context.get("baseline", {}).get("main_handle", 0) or 0)
                 launch = self._start_vacs_for_handoff(main_handle)
-                vacs_launch = {"attempted": True, **launch}
+                vacs_launch = {
+                    "attempted": True,
+                    "attempt_count": attempt_index + 1,
+                    "max_attempts": len(VACS_HANDOFF_RETRY_DELAYS_S),
+                    "retry_due_s": float(retry_due_s),
+                    "handoff_wait_s": round(handoff_wait_s, 3),
+                    **launch,
+                }
+                vacs_launch_attempts.append(dict(vacs_launch))
                 snapshot["vacs_launch"] = dict(vacs_launch)
+                snapshot["vacs_launch_attempts"] = [dict(row) for row in vacs_launch_attempts]
                 self._require(
                     launch.get("status") in {"sent", "already_running"},
                     "AKABAK did not accept the VACS handoff trigger. "
                     f"status={launch.get('status')} main_handle={main_handle}",
                     step,
                 )
-                self._log(level="info", step=step, event="vacs_handoff_launch", payload=vacs_launch)
+                event = "vacs_handoff_launch" if attempt_index == 0 else "vacs_handoff_retry"
+                self._log(level="info", step=step, event=event, payload=vacs_launch)
                 snapshot["status"] = "launching_vacs_for_handoff"
                 _record_heartbeat(snapshot)
                 return False, snapshot
+
+            failure_after_s = float(VACS_HANDOFF_RETRY_DELAYS_S[-1]) + float(VACS_HANDOFF_FAILURE_GRACE_S)
+            if retry_due_s is None and handoff_wait_s >= failure_after_s:
+                raise RuntimeError(
+                    "VACS did not start after the bounded AKABAK F7 handoff attempts. "
+                    f"attempts={len(vacs_launch_attempts)} waited_s={handoff_wait_s:.1f}"
+                )
 
             snapshot["vacs_launch"] = dict(vacs_launch)
             snapshot["status"] = "waiting_vacs_after_solve_start"
