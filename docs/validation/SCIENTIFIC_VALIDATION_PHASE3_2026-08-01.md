@@ -85,6 +85,11 @@ strictly coarse < medium < fine.
 | P1 | The observed change is a mesh effect, not a changed contract. | SHA-256 and semantic extraction of CFG, `Project.abec`, solving, observation and LE snapshots. | Geometry/solver/observation/LE settings listed above are identical except mesh controls and mesh filename; physical groups identical; all runs succeed; each runtime is below the configured 40-minute hard limit. |
 | M1 | A public primary measurement source is adequate for a numeric comparison. | Official ATH/AKABAK/VACS material, developer-published project data, peer-reviewed paper supplement, or manufacturer raw data. | Before inspecting numeric agreement, the source must provide reusable numeric complex impedance and/or polar/SPL data, exact horn and driver identity/geometry, frequency and angle grids, measurement distance/origin/axis, environment and gating/windowing, stimulus/reference/normalization, calibration, and clear lawful accessibility. Missing any mandatory field rejects it for numeric comparison; plot digitization is prohibited. |
 
+**Scope supersession (2026-08-01):** after the A/B convergence work, the user
+explicitly removed simulation-to-measurement from Phase 3. M1 remains above as
+the frozen historical criterion, but it is no longer an acceptance gate and no
+further source research, digitization or comparison belongs to this phase.
+
 No I2 pass is allowed from the known normalized-zero BEM graph. If ATH 4.8.2
 still does not generate its documented LE impedance observation despite the
 explicit system/driver tags, that is a failed model/export contract, not numeric
@@ -200,21 +205,16 @@ Current runner DB snapshots prove those tuples, and Project/solving/observation/
 snapshots are byte-identical between the three runs. This is explicit provenance,
 not a claim that deleted Phase-3 mesh bytes were re-hashed.
 
-### C - simulation versus measurement: remains open
+### C - simulation versus measurement: deliberately deferred
 
-The primary-source review is recorded in
-`evidence/phase3_measurement_source_review_2026-08-01.json`. Official ATH pages
-for the Extended-Throat work, ST260 and A460D provide useful geometry, simulation
-or measurement figures but not reusable numeric arrays plus every required setup
-field. R&D Team's official studies and already-installed AKABAK example package
-contain relevant model projects/comparison presentations, but no reusable
-CSV/FRD/ZMA measurement data set satisfying M1. The primary AkAbak compression
-driver paper likewise has figures without a machine-readable supplement suitable
-for this WUT case.
-
-Accordingly no graph was digitized and no numeric agreement was invented.
-Simulation-to-measurement is **not validated**. The frozen fallback protocol above
-is the exact acquisition contract for a future comparison.
+The user explicitly deferred this comparison after the A/B convergence work and
+removed it from the Phase-3 acceptance gates. The already completed, bounded
+primary-source review is retained as historical provenance in
+`evidence/phase3_measurement_source_review_2026-08-01.json`; it triggers no
+further research. No graph was digitized and no numeric comparison was performed.
+Simulation-to-measurement is therefore **open / not validated**, deliberately
+outside the completed Phase-3 scope. The frozen protocol above may be used only
+if a separate future validation task is authorized.
 
 ## Classification and remaining boundaries
 
@@ -228,5 +228,5 @@ is the exact acquisition contract for a future comparison.
   is test/runtime-contract support, not a new product feature.
 - Dimensionless normalized BEM radiation impedance for this topology:
   **not validated** (still a separate all-zero secondary graph).
-- Simulation agreement with physical measurements: **not validated** pending a
-  source satisfying M1.
+- Simulation agreement with physical measurements: **deliberately deferred and
+  not validated**; it is not a Phase-3 blocker or gate.

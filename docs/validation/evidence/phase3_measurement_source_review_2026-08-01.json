@@ -2,6 +2,8 @@
   "created_at": "2026-08-01",
   "status": "no_source_passed_frozen_M1",
   "classification": "simulation_to_measurement_not_validated",
+  "final_scope_disposition": "deliberately_deferred_by_user_not_a_phase3_gate",
+  "research_path": "closed_no_further_search_or_digitization_authorized_in_phase3",
   "search_policy": "Primary sources only; no plot digitization; numeric reuse requires every M1 metadata field.",
   "reviewed_sources": [
     {
@@ -55,5 +57,5 @@
     },
     "note": "Read-only inspection of the already installed official example package; no tool installation/update and no external files copied into the repository."
   },
-  "decision": "No numeric comparison was performed. The Phase-3 report's frozen measurement protocol is the required handoff for a future suitable data package."
+  "decision": "No numeric comparison was performed. The user subsequently deferred simulation-to-measurement entirely; it remains open/not validated and is not a Phase-3 acceptance gate. The frozen protocol is retained only for a separately authorized future task."
 }
