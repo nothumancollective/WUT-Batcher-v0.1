@@ -3189,6 +3189,32 @@ Validation executed:
 
 - `docs/validation/evidence/geometry_driver_gui_gate_2026-08-01.json`
 
+### Update 84 (Guided Driver Editor and LE Workflow)
+
+#### Driver creation and revision UI
+
+- Replaced JSON as the normal creation path with scrollable Compression and
+  Cone forms for identity, optional acoustic/electrical parameters, explicit
+  units and provenance. Missing values remain missing and are shown as such.
+- Added understandable simulation-ready/incomplete status, while retaining
+  schema-versioned JSON import/export as an Advanced workflow.
+- Kept built-in `generic25` read-only and made new user revisions append-only.
+
+#### Safe LE ingestion and Geometry assignment
+
+- Added LE file preview with file name, byte size and SHA-256, plus
+  content-addressed copying through the central driver-library service.
+- Empty, whitespace-only, unreadable and non-text sources are rejected; the
+  selected source is never moved or deleted and a preview hash is rechecked at
+  save time.
+- Geometry selectors now distinguish ready revisions from incomplete/no-LE
+  revisions and show the effective LE hash before assignment.
+- A visible isolated GUI smoke created two revisions, retained the LE hash,
+  assigned revision 2 to a Geometry and reopened it successfully. The native
+  Windows picker deadlock found on the first attempt was fixed by using Qt's
+  non-native picker for the nested dialog. Full evidence is in
+  `docs/validation/DRIVER_FORM_UI_SMOKE_2026-08-01.md`.
+
 
 
 

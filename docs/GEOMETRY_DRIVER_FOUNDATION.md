@@ -15,13 +15,25 @@ driver library therefore cannot change an old run.
 1. Open a project and choose **Manage Geometries & Drivers**.
 2. Create, rename, duplicate, archive or open a geometry. The deterministic
    Legacy Geometry keeps pre-migration content readable and cannot be archived.
-3. Open **Driver Library** to search/filter drivers, create compression or cone
-   drivers, add revisions, duplicate/archive user drivers, or import/export
-   versioned JSON. `generic25` is shown as built-in/read-only.
-4. Select a default driver revision for the geometry, or explicitly retain
+3. Open **Driver Library** and choose **New Compression** or **New Cone** for
+   the normal form workflow. Enter identity, optional Exit/diaphragm,
+   T/S/impedance/power and provenance values. Every numeric value has an
+   explicit unit selector; blank values remain unknown. JSON import/export is
+   retained in the separately labelled **Advanced** row.
+4. Choose an LE-network file in the form. Before saving, WUT shows its file
+   name, byte size and SHA-256. Saving copies the bytes into the existing
+   content-addressed library asset store; the selected source file is never
+   moved or deleted. Empty, whitespace-only, unreadable and non-text files are
+   rejected. The form reports whether the revision is simulation-ready or
+   incomplete because no LE network is present.
+5. Use **New Revision** to edit a user driver. The existing revision stays
+   immutable and its LE asset remains selected unless it is explicitly
+   replaced or removed. `generic25` remains built-in/read-only.
+6. Select a default driver revision for the geometry, or explicitly retain
    **No default driver**. Missing optional values remain visible and are never
-   synthesized.
-5. Create and run batches inside the selected geometry. The Batch page shows
+   synthesized. The selector marks each revision as `ready` or
+   `incomplete / no LE`; **Set Default Driver** persists the choice.
+7. Create and run batches inside the selected geometry. The Batch page shows
    the geometry, revision and abbreviated revision hash before simulation.
 
 Old service callers remain supported: batches without an explicit geometry are

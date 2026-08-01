@@ -232,6 +232,42 @@ class GeometryDriverUiTests(unittest.TestCase):
             self.assertIn(first["revision_hash"][:12], window.batch_page.execution_context_label.text())
             window.close()
 
+    def test_ready_driver_revision_can_be_assigned_and_geometry_opened(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_driver_ready_geometry_ui_") as tmp:
+            root = Path(tmp)
+            service = _service(root)
+            project = service.create_project("Ready driver UI", {"fixed_params": {}, "limits": {}})
+            geometry = service.list_geometries(project.project_id)[0]
+            source = root / "ready.le"
+            source.write_text("System 'S1'\nDriver 'D1'\n", encoding="utf-8")
+            created = service.create_driver(
+                definition=DriverDefinition(
+                    driver_id="D-READY-UI", manufacturer="Example", model="CD-Ready",
+                    kind="compression_driver",
+                ).__dict__,
+                revision=DriverRevision(
+                    revision_id="DR-READY-UI-1", driver_id="D-READY-UI", revision_number=1,
+                    provenance={"source": "test", "trust": "user_asserted"},
+                ).__dict__,
+                le_source_path=str(source),
+            )
+
+            dialog = GeometryManagerDialog(service, project.project_id)
+            dialog.default_driver.setCurrentIndex(
+                dialog.default_driver.findData(created["revision_id"]),
+            )
+            self.assertIn("Simulation-ready", dialog.driver_status.text())
+            self.assertIn(created["le_network_hash"], dialog.driver_status.text())
+
+            dialog._set_default_driver()
+            updated = next(
+                item for item in service.list_geometries(project.project_id)
+                if item["geometry_id"] == geometry["geometry_id"]
+            )
+            self.assertEqual(updated["default_driver_revision_id"], created["revision_id"])
+            dialog._open()
+            self.assertEqual(dialog.result(), dialog.DialogCode.Accepted)
+
 
 if __name__ == "__main__":
     unittest.main()
