@@ -11,6 +11,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from app.geometry_driver_ui import DriverLibraryDialog, DriverRevisionEditorDialog, GeometryManagerDialog
 from app.gui import MainWindow, ProjectPage
 from app.driver_library import DriverDefinition, DriverRevision
+from app.models import Batch
 from app.services import OrchestratorService
 from app.settings_store import SettingsStore, UserSettings
 
@@ -228,8 +229,8 @@ class GeometryDriverUiTests(unittest.TestCase):
 
             window = MainWindow(service)
             window.load_project(project)
-            self.assertIn("DR-UI-1", window.batch_page.execution_context_label.text())
-            self.assertIn(first["revision_hash"][:12], window.batch_page.execution_context_label.text())
+            self.assertIn("DR-UI-1", window.batch_page.driver_status.text())
+            self.assertIn(first["revision_hash"], window.batch_page.driver_status.text())
             window.close()
 
     def test_ready_driver_revision_can_be_assigned_and_geometry_opened(self) -> None:
@@ -267,6 +268,74 @@ class GeometryDriverUiTests(unittest.TestCase):
             self.assertEqual(updated["default_driver_revision_id"], created["revision_id"])
             dialog._open()
             self.assertEqual(dialog.result(), dialog.DialogCode.Accepted)
+
+    def test_geometry_is_persistent_navigation_mode_and_legacy_action_routes_to_it(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_geometry_navigation_ui_") as tmp:
+            service = _service(Path(tmp))
+            project = service.create_project("Geometry navigation", {"fixed_params": {}, "limits": {}})
+            window = MainWindow(service)
+            window.load_project(project)
+
+            self.assertEqual(window.geometry_mode_button.text(), "Geometry")
+            window.show_geometry()
+            self.assertIs(window.stack.currentWidget(), window.geometry_page)
+            self.assertTrue(window.geometry_mode_button.isChecked())
+            self.assertEqual(window.geometry_page.list.count(), 1)
+
+            window.show_dashboard()
+            window._open_geometry_manager()
+            self.assertIs(window.stack.currentWidget(), window.geometry_page)
+            window.close()
+
+    def test_batch_driver_policy_round_trip_and_small_page_layout(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_batch_driver_policy_ui_") as tmp:
+            root = Path(tmp)
+            service = _service(root)
+            project = service.create_project("Batch Driver UI", {"fixed_params": {}, "limits": {}})
+            geometry = service.list_geometries(project.project_id)[0]
+            source = root / "override.le"
+            source.write_text("System 'S1'\nDriver 'D1'\n", encoding="utf-8")
+            ready = service.create_driver(
+                definition=DriverDefinition(
+                    driver_id="D-BATCH-UI", manufacturer="Example", model="Override",
+                    kind="compression_driver",
+                ).__dict__,
+                revision=DriverRevision(
+                    revision_id="DR-BATCH-UI-1", driver_id="D-BATCH-UI", revision_number=1,
+                    provenance={"source": "test", "trust": "user_asserted"},
+                ).__dict__,
+                le_source_path=source,
+            )
+            service.set_geometry_default_driver(project.project_id, geometry["geometry_id"], ready["revision_id"])
+            window = MainWindow(service)
+            window.load_project(project)
+            window.resize(1280, 800)
+            window.geometry_page.resize(720, 560)
+
+            self.assertEqual(window.batch_page.driver_selection_mode.currentData(), "geometry_default")
+            self.assertIn("Geometry default", window.batch_page.driver_status.text())
+            self.assertIn(ready["revision_hash"], window.batch_page.driver_status.text())
+            window.batch_page.driver_selection_mode.setCurrentIndex(
+                window.batch_page.driver_selection_mode.findData("explicit_override"),
+            )
+            window.batch_page.driver_override.setCurrentIndex(
+                window.batch_page.driver_override.findData(ready["revision_id"]),
+            )
+            payload = window.batch_page._payload()
+            self.assertEqual(payload["driver_selection_mode"], "explicit_override")
+            self.assertEqual(payload["driver_override_revision_id"], ready["revision_id"])
+            self.assertTrue(window.batch_page.driver_library_button.isEnabled())
+
+            stored = Batch(
+                batch_id="B-UI", project_id=project.project_id, geometry_id=geometry["geometry_id"],
+                driver_selection_mode="explicit_override",
+                driver_override_revision_id=ready["revision_id"],
+            )
+            window.batch_page.load_from_batch(stored, batch_name="Reloaded override")
+            self.assertEqual(window.batch_page.driver_selection_mode.currentData(), "explicit_override")
+            self.assertEqual(window.batch_page.driver_override.currentData(), ready["revision_id"])
+            self.assertIn("Batch override", window.batch_page.driver_status.text())
+            window.close()
 
 
 if __name__ == "__main__":

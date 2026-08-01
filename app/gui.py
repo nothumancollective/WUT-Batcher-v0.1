@@ -47,7 +47,7 @@ from app.constants import DEFAULT_RUNNER_MODE
 import app.resources_rc  # noqa: F401  # Registers Qt resource paths used by icons/QSS.
 from app.models import AppConfig, Batch, Project, ProjectConstraints
 from app.geometry_domain import legacy_geometry_id
-from app.geometry_driver_ui import GeometryManagerDialog
+from app.geometry_driver_ui import GeometryPage
 from app.project_issue_model import UiProjectIssue, classify_ui_severity, issue_counts, normalize_project_issues
 from app.services import OrchestratorService, PreviewGenerationCancelled
 from app.settings_store import (
@@ -7089,6 +7089,7 @@ class BatchPage(QWidget):
     run_batch = Signal(dict)
     draft_changed = Signal(dict)
     blocked_interaction = Signal(str, str, str)
+    open_driver_library = Signal()
 
     def __init__(self) -> None:
         super().__init__()
@@ -7107,6 +7108,34 @@ class BatchPage(QWidget):
         self.execution_context_label.setObjectName("GeometryExecutionContext")
         self.execution_context_label.setWordWrap(True)
         root.addWidget(self.execution_context_label)
+
+        driver_group = QGroupBox("Driver selection", self)
+        driver_group.setObjectName("BatchDriverSelection")
+        driver_grid = QGridLayout(driver_group)
+        driver_grid.setContentsMargins(10, 8, 10, 8)
+        driver_grid.setHorizontalSpacing(8)
+        driver_grid.setVerticalSpacing(6)
+        self.driver_selection_mode = QComboBox(driver_group)
+        self.driver_selection_mode.setObjectName("BatchDriverSelectionMode")
+        self.driver_selection_mode.addItem("Use Geometry default", "geometry_default")
+        self.driver_selection_mode.addItem("Use explicit Driver revision", "explicit_override")
+        self.driver_override = QComboBox(driver_group)
+        self.driver_override.setObjectName("BatchDriverOverrideRevision")
+        self.driver_override.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.driver_override.setMinimumContentsLength(24)
+        self.driver_status = QLabel("No Geometry/Driver context loaded.", driver_group)
+        self.driver_status.setObjectName("BatchDriverStatus")
+        self.driver_status.setWordWrap(True)
+        self.driver_library_button = QPushButton("Open Driver Library", driver_group)
+        self.driver_library_button.setObjectName("BatchSecondaryButton")
+        driver_grid.addWidget(QLabel("Policy", driver_group), 0, 0)
+        driver_grid.addWidget(self.driver_selection_mode, 0, 1)
+        driver_grid.addWidget(QLabel("Override revision", driver_group), 1, 0)
+        driver_grid.addWidget(self.driver_override, 1, 1)
+        driver_grid.addWidget(self.driver_library_button, 0, 2, 2, 1)
+        driver_grid.addWidget(self.driver_status, 2, 0, 1, 3)
+        driver_grid.setColumnStretch(1, 1)
+        root.addWidget(driver_group)
 
         self.parameter_form = BatchParameterForm(build_project_form_schema())
         self.export_panel = BatchExportPanel()
@@ -7151,6 +7180,9 @@ class BatchPage(QWidget):
         self.export_panel.changed.connect(self._emit_draft_changed)
         self.export_panel.open_enclosure.connect(self.parameter_form.open_enclosure_dialog)
         self.batch_name.textChanged.connect(self._emit_draft_changed)
+        self.driver_selection_mode.currentIndexChanged.connect(self._driver_selection_changed)
+        self.driver_override.currentIndexChanged.connect(self._driver_selection_changed)
+        self.driver_library_button.clicked.connect(self.open_driver_library.emit)
 
         self._body_layout = body
         self._left_panel = left_panel
@@ -7164,6 +7196,8 @@ class BatchPage(QWidget):
         self._eta_chip_text = "ETA: unknown"
         self._eta_chip_tooltip = "No historical duration data available yet."
         self._suspend_draft_events = False
+        self._driver_geometry: Dict[str, Any] = {}
+        self._driver_revisions: Dict[str, Dict[str, Any]] = {}
         self._update_summary_widgets()
         QTimer.singleShot(0, self._apply_equal_widths)
 
@@ -7189,6 +7223,61 @@ class BatchPage(QWidget):
             return
         self._update_summary_widgets()
         self.draft_changed.emit(self._payload(include_name=False))
+
+    def _driver_selection_changed(self) -> None:
+        explicit = self.driver_selection_mode.currentData() == "explicit_override"
+        self.driver_override.setEnabled(explicit)
+        self._sync_driver_status()
+        self._emit_draft_changed()
+
+    def set_driver_context(self, geometry: Dict[str, Any] | None, drivers: Sequence[Dict[str, Any]]) -> None:
+        selected_revision = str(self.driver_override.currentData() or "")
+        self._driver_geometry = dict(geometry or {})
+        self._driver_revisions = {}
+        self.driver_override.blockSignals(True)
+        self.driver_override.clear()
+        self.driver_override.addItem("Select a Driver revision", "")
+        for driver in drivers:
+            for revision in list(driver.get("revisions", []) or []):
+                revision_id = str(revision.get("revision_id") or "")
+                if not revision_id:
+                    continue
+                row = {**dict(revision), "manufacturer": driver.get("manufacturer"), "model": driver.get("model")}
+                self._driver_revisions[revision_id] = row
+                ready = revision.get("completeness") == "simulation_ready" and bool(revision.get("le_network_hash"))
+                state = "ready" if ready else "incomplete / no LE"
+                self.driver_override.addItem(
+                    f"{driver.get('manufacturer')} | {driver.get('model')} | r{revision.get('revision_number')} | {state}",
+                    revision_id,
+                )
+        index = self.driver_override.findData(selected_revision)
+        self.driver_override.setCurrentIndex(index if index >= 0 else 0)
+        self.driver_override.blockSignals(False)
+        self._driver_selection_changed()
+
+    def _sync_driver_status(self) -> None:
+        mode = str(self.driver_selection_mode.currentData() or "geometry_default")
+        if mode == "explicit_override":
+            revision_id = str(self.driver_override.currentData() or "")
+            source = "Batch override"
+        else:
+            revision_id = str(self._driver_geometry.get("default_driver_revision_id") or "")
+            source = "Geometry default"
+        revision = self._driver_revisions.get(revision_id, {})
+        if not revision_id:
+            self.driver_status.setText(
+                f"{source}: none. A documented legacy fallback may be used, but select a ready revision for an explicit, reproducible setup."
+            )
+            return
+        if not revision:
+            self.driver_status.setText(f"{source}: revision {revision_id} is missing or archived and cannot be inspected.")
+            return
+        ready = revision.get("completeness") == "simulation_ready" and bool(revision.get("le_network_hash"))
+        state = "ready" if ready else "incomplete / no LE"
+        self.driver_status.setText(
+            f"{source}: {revision.get('manufacturer')} {revision.get('model')} · {revision_id} · {state} · "
+            f"Revision SHA-256 {revision.get('revision_hash') or 'none'} · LE SHA-256 {revision.get('le_network_hash') or 'none'}"
+        )
 
     def set_preview_busy(self, busy: bool) -> None:
         self.preview_panel.set_busy(bool(busy))
@@ -7283,6 +7372,11 @@ class BatchPage(QWidget):
             "selected_params": selected,
             "sweeps": sweeps,
             "sim_export_params": self.export_panel.sim_export_params_payload(),
+            "driver_selection_mode": str(self.driver_selection_mode.currentData() or "geometry_default"),
+            "driver_override_revision_id": (
+                str(self.driver_override.currentData() or "")
+                if self.driver_selection_mode.currentData() == "explicit_override" else ""
+            ),
         }
         if include_name:
             payload["batch_name"] = self.batch_name.text().strip()
@@ -7301,6 +7395,8 @@ class BatchPage(QWidget):
             self.preview_panel.set_busy(False)
             self.preview_panel.set_preview_parameters({})
             self.preview_panel.set_info_message("No preview mesh loaded.")
+            self.driver_selection_mode.setCurrentIndex(0)
+            self.driver_override.setCurrentIndex(0)
         finally:
             self._suspend_draft_events = False
         self._emit_draft_changed()
@@ -7316,6 +7412,10 @@ class BatchPage(QWidget):
             self.export_panel.set_sweep_mode(mode if mode in {"single", "combined"} else "single")
             self.parameter_form.set_from_batch(batch)
             self.export_panel.set_from_batch(batch)
+            mode_index = self.driver_selection_mode.findData(batch.driver_selection_mode)
+            self.driver_selection_mode.setCurrentIndex(mode_index if mode_index >= 0 else 0)
+            override_index = self.driver_override.findData(batch.driver_override_revision_id)
+            self.driver_override.setCurrentIndex(override_index if override_index >= 0 else 0)
         finally:
             self._suspend_draft_events = False
         self._emit_draft_changed()
@@ -14253,12 +14353,14 @@ class MainWindow(QMainWindow):
         self.stack.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.dashboard_page = DashboardPage()
         self.project_page = ProjectPage()
+        self.geometry_page = GeometryPage(self.service)
         self.batch_page = BatchPage()
         self.analyse_page = AnalysePage(service=self.service)
         self.run_page = RunPage()
 
         self.stack.addWidget(self.dashboard_page)
         self.stack.addWidget(self.project_page)
+        self.stack.addWidget(self.geometry_page)
         self.stack.addWidget(self.batch_page)
         self.stack.addWidget(self.analyse_page)
         self.stack.addWidget(self.run_page)
@@ -14325,9 +14427,10 @@ class MainWindow(QMainWindow):
         self.mode_button_group = QButtonGroup(self)
         self.mode_button_group.setExclusive(True)
         self.project_mode_button = ElidedToolButton("Project")
+        self.geometry_mode_button = ElidedToolButton("Geometry")
         self.batch_mode_button = ElidedToolButton("Batch")
         self.analyse_mode_button = ElidedToolButton("Analyse")
-        for button in (self.project_mode_button, self.batch_mode_button, self.analyse_mode_button):
+        for button in (self.project_mode_button, self.geometry_mode_button, self.batch_mode_button, self.analyse_mode_button):
             button.setObjectName("ModeBarButton")
             button.setCheckable(True)
             button.setMinimumHeight(28)
@@ -14337,6 +14440,7 @@ class MainWindow(QMainWindow):
             mode_row.addWidget(button)
 
         self.project_mode_button.clicked.connect(self.show_dashboard)
+        self.geometry_mode_button.clicked.connect(self.show_geometry)
         self.batch_mode_button.clicked.connect(self.show_batch)
         self.analyse_mode_button.clicked.connect(self.show_analyse)
 
@@ -14356,6 +14460,8 @@ class MainWindow(QMainWindow):
     def _title_for_page(self, page: QWidget | None) -> str:
         if page is self.batch_page:
             return "BATCH"
+        if page is self.geometry_page:
+            return "Geometry"
         if page is self.analyse_page:
             return "Analyse"
         if page is self.run_page:
@@ -14364,11 +14470,13 @@ class MainWindow(QMainWindow):
 
     def _sync_mode_buttons(self, page: QWidget | None) -> None:
         target = self.project_mode_button
-        if page is self.batch_page or page is self.run_page:
+        if page is self.geometry_page:
+            target = self.geometry_mode_button
+        elif page is self.batch_page or page is self.run_page:
             target = self.batch_mode_button
         elif page is self.analyse_page:
             target = self.analyse_mode_button
-        for button in (self.project_mode_button, self.batch_mode_button, self.analyse_mode_button):
+        for button in (self.project_mode_button, self.geometry_mode_button, self.batch_mode_button, self.analyse_mode_button):
             button.blockSignals(True)
             button.setChecked(button is target)
             button.blockSignals(False)
@@ -14410,11 +14518,14 @@ class MainWindow(QMainWindow):
         self.project_page.draft_changed.connect(self._queue_project_draft_changed)
         self.project_page.blocked_interaction.connect(self._on_project_blocked_interaction)
         self.project_page.manage_geometries.connect(self._open_geometry_manager)
+        self.geometry_page.geometry_opened.connect(self._activate_geometry)
+        self.geometry_page.geometry_changed.connect(self._activate_geometry)
 
         self.batch_page.save_batch.connect(self._save_batch)
         self.batch_page.run_batch.connect(self._run_batch)
         self.batch_page.draft_changed.connect(self._queue_batch_draft_changed)
         self.batch_page.blocked_interaction.connect(self._on_batch_blocked_interaction)
+        self.batch_page.open_driver_library.connect(self._open_driver_library_from_batch)
         self.batch_page.compat_panel.request_show_details.connect(
             lambda: self._show_validation_details(self.batch_page.compat_panel.issues(), "Batch Validation Details")
         )
@@ -14871,6 +14982,7 @@ class MainWindow(QMainWindow):
     def enter_new_project_flow(self) -> None:
         self.current_project = None
         self.current_geometry_id = None
+        self.geometry_page.set_project("")
         self.project_page.set_geometry_context(None)
         self.project_page.set_constraints_locked(False)
         self.batch_page.set_project_fixed_keys([])
@@ -14890,6 +15002,7 @@ class MainWindow(QMainWindow):
         self.current_project = project
         geometries = self.service.list_geometries(project.project_id)
         self.current_geometry_id = str(geometries[0]["geometry_id"]) if geometries else legacy_geometry_id(project.project_id)
+        self.geometry_page.set_project(project.project_id, active_geometry_id=self.current_geometry_id)
         self._sync_geometry_context()
         self.project_page.set_constraints_locked(True)
         fixed_keys = self._project_fixed_keys_from_constraints(project.constraints)
@@ -14932,6 +15045,7 @@ class MainWindow(QMainWindow):
         if self.current_project is None:
             self.project_page.set_geometry_context(None)
             self.dashboard_page.set_geometry_context(None)
+            self.batch_page.set_driver_context(None, [])
             return
         rows = self.service.list_geometries(self.current_project.project_id)
         selected = next((row for row in rows if row["geometry_id"] == self.current_geometry_id), None)
@@ -14940,31 +15054,18 @@ class MainWindow(QMainWindow):
             self.current_geometry_id = str(selected["geometry_id"])
         self.project_page.set_geometry_context(selected)
         self.dashboard_page.set_geometry_context(selected)
+        self.geometry_page.refresh(preferred_geometry_id=self.current_geometry_id)
+        drivers = self.service.list_drivers(include_archived=True)
+        self.batch_page.set_driver_context(selected, drivers)
         if selected is not None:
             self.batch_page.command_header.name_label.setText(f"Batch · {selected.get('name')}")
             self.batch_page.command_header.name_label.setToolTip(
                 f"Geometry {selected.get('geometry_id')} · Default driver {selected.get('default_driver_revision_id') or 'none'}"
             )
-            revision_id = str(selected.get("default_driver_revision_id") or "")
-            driver_row = None
-            revision_row = None
-            if revision_id:
-                for row in self.service.list_drivers(include_archived=True):
-                    revision = next(
-                        (item for item in row.get("revisions", [])
-                         if str(item.get("revision_id") or "") == revision_id),
-                        None,
-                    )
-                    if revision is not None:
-                        driver_row = row
-                        revision_row = revision
-                        break
-            revision_hash = str((revision_row or {}).get("revision_hash") or "")
-            driver_text = (
-                f"{(driver_row or {}).get('manufacturer')} {(driver_row or {}).get('model')} · {revision_id} · SHA-256 {revision_hash[:12]}…"
-                if driver_row else "no default driver — current AKABAK coupling may be incomplete"
+            context_text = (
+                f"Simulation context · Geometry {selected.get('geometry_id')} · "
+                "Driver is resolved at Run start from the Batch policy shown below."
             )
-            context_text = f"Simulation context · Geometry {selected.get('geometry_id')} · Driver snapshot: {driver_text}"
             self.batch_page.execution_context_label.setText(context_text)
             self.batch_page.execution_context_label.setToolTip(context_text)
 
@@ -14972,17 +15073,21 @@ class MainWindow(QMainWindow):
         if self.current_project is None:
             self.set_status("Create or open a project before managing geometries.")
             return
-        dialog = GeometryManagerDialog(
-            self.service,
+        self.geometry_page.set_project(
             self.current_project.project_id,
             active_geometry_id=self.current_geometry_id,
-            parent=self,
         )
-        if dialog.exec() == QDialog.Accepted and dialog.selected_geometry_id:
-            self.current_geometry_id = str(dialog.selected_geometry_id)
-            self._sync_geometry_context()
-            self.refresh_dashboard()
-            self.set_status(f"Active geometry: {self.current_geometry_id}")
+        self.show_geometry()
+
+    def _activate_geometry(self, geometry_id: str) -> None:
+        self.current_geometry_id = str(geometry_id)
+        self._sync_geometry_context()
+        self.refresh_dashboard()
+        self.set_status(f"Active geometry: {self.current_geometry_id}")
+
+    def _open_driver_library_from_batch(self) -> None:
+        self.geometry_page.open_driver_library()
+        self._sync_geometry_context()
 
     def _open_project_constraint_editor(self, key: str) -> None:
         if self.current_project is None:
@@ -15004,6 +15109,20 @@ class MainWindow(QMainWindow):
         self._exit_run_presentation()
         self._on_project_draft_changed(self.project_page._raw_constraints_payload())
         self.stack.setCurrentWidget(self.project_page)
+
+    def show_geometry(self) -> None:
+        if self.current_project is None:
+            self.set_status("Open or create a project before entering Geometry mode.")
+            self.show_dashboard()
+            self._sync_navigation_state()
+            return
+        self._stop_preview_worker()
+        self._exit_run_presentation()
+        self.geometry_page.set_project(
+            self.current_project.project_id,
+            active_geometry_id=self.current_geometry_id,
+        )
+        self.stack.setCurrentWidget(self.geometry_page)
 
     def show_batch(self) -> None:
         if self.current_project is None:
@@ -15190,6 +15309,8 @@ class MainWindow(QMainWindow):
             parent_batch_id=parent_batch_token,
             created_from_version_id=created_from_version_token,
             geometry_id=self.current_geometry_id,
+            driver_selection_mode=str(payload.get("driver_selection_mode") or "geometry_default"),
+            driver_override_revision_id=str(payload.get("driver_override_revision_id") or "") or None,
         )
         self.set_status(
             f"Batch saved: {summary.batch_id}, versions={summary.version_count}",

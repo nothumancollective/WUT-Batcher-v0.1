@@ -11,7 +11,7 @@ import uuid
 from app.driver_library import DriverDefinition, DriverRevision, TRUST_STATES
 
 try:
-    from PySide6.QtCore import Qt
+    from PySide6.QtCore import Qt, Signal
     from PySide6.QtGui import QDoubleValidator
     from PySide6.QtWidgets import (
         QComboBox, QDialog, QFileDialog, QFormLayout, QGridLayout, QGroupBox,
@@ -488,15 +488,25 @@ class DriverLibraryDialog(QDialog):
             Path(path).write_text(json.dumps(self.service.export_driver_json(driver_id), indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
-class GeometryManagerDialog(QDialog):
-    def __init__(self, service: Any, project_id: str, *, active_geometry_id: str | None = None, parent: QWidget | None = None) -> None:
+class GeometryPage(QWidget):
+    geometry_opened = Signal(str)
+    geometry_changed = Signal(str)
+
+    def __init__(self, service: Any, project_id: str = "", *, active_geometry_id: str | None = None, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.service = service
         self.project_id = project_id
         self.selected_geometry_id = active_geometry_id
-        self.setWindowTitle("Project Geometries")
-        self.resize(860, 560)
         root = QVBoxLayout(self)
+        heading = QLabel("Reusable project geometries", self)
+        heading.setObjectName("PageTitle")
+        root.addWidget(heading)
+        help_text = QLabel(
+            "Manage Geometry identity and ATH context here. The default Driver is used by Batches unless they select an explicit revision override.",
+            self,
+        )
+        help_text.setWordWrap(True)
+        root.addWidget(help_text)
         self.list = QListWidget(self)
         self.list.setObjectName("GeometryManagerList")
         root.addWidget(self.list, 1)
@@ -535,6 +545,11 @@ class GeometryManagerDialog(QDialog):
         self.default_driver.currentIndexChanged.connect(lambda *_: self._show_driver_status())
         self.refresh()
 
+    def set_project(self, project_id: str, *, active_geometry_id: str | None = None) -> None:
+        self.project_id = str(project_id or "")
+        self.selected_geometry_id = active_geometry_id
+        self.refresh(preferred_geometry_id=active_geometry_id)
+
     def current_geometry_id(self) -> str | None:
         item = self.list.currentItem()
         return str(item.data(Qt.UserRole)) if item is not None else None
@@ -542,6 +557,15 @@ class GeometryManagerDialog(QDialog):
     def refresh(self, *, preferred_geometry_id: str | None = None) -> None:
         selected = preferred_geometry_id or self.current_geometry_id() or self.selected_geometry_id
         self.list.clear()
+        if not self.project_id:
+            self.default_driver.clear()
+            self.default_driver.addItem("No default driver", "")
+            self.driver_status.setText("Open a project to manage Geometries and their default Drivers.")
+            for button in (self.create_button, self.rename_button, self.duplicate_button, self.archive_button, self.set_driver_button, self.open_button):
+                button.setEnabled(False)
+            return
+        for button in (self.create_button, self.rename_button, self.duplicate_button, self.archive_button, self.set_driver_button, self.open_button):
+            button.setEnabled(True)
         for row in self.service.list_geometries(self.project_id):
             legacy = " · legacy" if row.get("legacy") else ""
             driver = row.get("default_driver_revision_id") or "no default driver"
@@ -644,6 +668,9 @@ class GeometryManagerDialog(QDialog):
         DriverLibraryDialog(self.service, self).exec()
         self._reload_drivers()
 
+    def open_driver_library(self) -> None:
+        self._drivers()
+
     def _set_default_driver(self) -> None:
         geometry_id = self.current_geometry_id()
         if geometry_id:
@@ -652,8 +679,44 @@ class GeometryManagerDialog(QDialog):
             except Exception as exc:
                 QMessageBox.warning(self, "Default driver not changed", str(exc))
             self.refresh()
+            self.geometry_changed.emit(geometry_id)
 
     def _open(self) -> None:
         self.selected_geometry_id = self.current_geometry_id()
         if self.selected_geometry_id:
-            self.accept()
+            self.geometry_opened.emit(self.selected_geometry_id)
+
+
+class GeometryManagerDialog(QDialog):
+    """Compatibility wrapper around the canonical Geometry page."""
+
+    def __init__(self, service: Any, project_id: str, *, active_geometry_id: str | None = None, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Project Geometries")
+        self.resize(860, 620)
+        root = QVBoxLayout(self)
+        self.page = GeometryPage(service, project_id, active_geometry_id=active_geometry_id, parent=self)
+        root.addWidget(self.page)
+        for name in (
+            "list", "default_driver", "driver_status", "create_button", "rename_button",
+            "duplicate_button", "archive_button", "driver_library_button", "set_driver_button", "open_button",
+        ):
+            setattr(self, name, getattr(self.page, name))
+        self.selected_geometry_id = active_geometry_id
+        self.page.geometry_opened.connect(self._accept_geometry)
+
+    def _accept_geometry(self, geometry_id: str) -> None:
+        self.selected_geometry_id = str(geometry_id)
+        self.accept()
+
+    def current_geometry_id(self) -> str | None:
+        return self.page.current_geometry_id()
+
+    def refresh(self, *, preferred_geometry_id: str | None = None) -> None:
+        self.page.refresh(preferred_geometry_id=preferred_geometry_id)
+
+    def _set_default_driver(self) -> None:
+        self.page._set_default_driver()
+
+    def _open(self) -> None:
+        self.page._open()
