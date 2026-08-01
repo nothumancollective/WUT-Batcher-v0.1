@@ -3,6 +3,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import sqlite3
+from unittest.mock import patch
+
+import pytest
 
 from app.driver_library import DriverDefinition, DriverRevision
 from app.models import Batch
@@ -151,3 +154,27 @@ def test_geometry_default_is_resolved_per_run_without_mutating_old_snapshot(tmp_
     assert by_run[run_second.run_id][2] != by_run[run_first.run_id][2]
     stored = service.repo.load_batch(project.project_id, planned.batch_id)
     assert stored.driver_snapshot == {}
+
+
+def test_dry_run_allows_unresolved_driver_but_real_run_rejects_it(tmp_path: Path) -> None:
+    store = SettingsStore(tmp_path / "settings.json")
+    store.save(UserSettings(library_root=str(tmp_path / "library")))
+    service = OrchestratorService(store)
+    project = service.create_project("Unresolved dry run", {"fixed_params": {"Length": 100}, "limits": {}})
+    batch = service.create_batch(
+        project_id=project.project_id,
+        batch_name="No driver yet",
+        selected_params={"Throat.Diameter": 30.0},
+        sweeps={},
+        sweep_mode="single",
+        sim_export_params={},
+    )
+
+    with patch("app.services.run_batch_pipeline", return_value=object()) as pipeline_mock:
+        service.run_batch(project.project_id, batch.batch_id, dry_run=True)
+    runtime_batch = pipeline_mock.call_args.kwargs["batch"]
+    assert runtime_batch.extra["driver_selection_source"] == "unresolved"
+    assert runtime_batch.driver_snapshot == {}
+
+    with pytest.raises(ValueError, match="driver_le_network_required"):
+        service.run_batch(project.project_id, batch.batch_id, dry_run=False)

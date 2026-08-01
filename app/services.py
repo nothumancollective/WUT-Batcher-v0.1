@@ -3963,15 +3963,19 @@ class OrchestratorService:
     ) -> RuntimeSummary:
         project = self.repo.load_project(project_id)
         batch = self.repo.load_batch(project_id, batch_id)
-        resolution = self.resolve_batch_driver_selection(project_id, batch, require_runnable=True)
+        if dry_run is None:
+            tools = [self.settings.ath_exe, self.settings.akabak_exe, self.settings.vacs_exe]
+            dry_run = not all(_is_executable_path(path) for path in tools)
+        resolution = self.resolve_batch_driver_selection(
+            project_id,
+            batch,
+            require_runnable=not bool(dry_run),
+        )
         runtime_batch = Batch.from_dict(batch.to_dict())
         runtime_batch.geometry_id = str(resolution["geometry_id"])
         runtime_batch.driver_revision_id = str(resolution["revision_id"])
         runtime_batch.driver_snapshot = dict(resolution["snapshot"])
         runtime_batch.extra["driver_selection_source"] = str(resolution["selection_source"])
-        if dry_run is None:
-            tools = [self.settings.ath_exe, self.settings.akabak_exe, self.settings.vacs_exe]
-            dry_run = not all(_is_executable_path(path) for path in tools)
         simulation_timeout_minutes = int(
             getattr(self.settings, "simulation_timeout_minutes", SIMULATION_TIMEOUT_MINUTES_DEFAULT)
             or SIMULATION_TIMEOUT_MINUTES_DEFAULT
