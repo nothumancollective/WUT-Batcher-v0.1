@@ -2330,10 +2330,11 @@ class AkabakDriver:
         self._require(main_handle > 0, "AKABAK main window handle unavailable in import-close assertion.", step)
 
         closed_handles: List[int] = []
+        closed_startup_handles: List[int] = []
         latest_state: Dict[str, Any] = {}
 
         def _state() -> Tuple[bool, Dict[str, Any]]:
-            nonlocal closed_handles, latest_state
+            nonlocal closed_handles, closed_startup_handles, latest_state
             windows = self._process_top_level_windows()
             rows = [self._window_signature_row(window) for window in windows]
             visible = [row for row in rows if bool(row.get("is_visible", False))]
@@ -2342,6 +2343,15 @@ class AkabakDriver:
             ignored_extras = [row for row in all_extras if _is_noninteractive_tool_window(row)]
             extras = [row for row in all_extras if not _is_noninteractive_tool_window(row)]
             interpreter_extras = [row for row in extras if self._is_interpreter_window_row(row)]
+            startup_extras = [
+                row
+                for row in extras
+                if re.fullmatch(
+                    r"TForm_ExampleFiles",
+                    str(row.get("class_name", "") or ""),
+                    re.IGNORECASE,
+                )
+            ]
 
             for row in interpreter_extras:
                 hwnd = int(row.get("native_handle", 0) or 0)
@@ -2350,6 +2360,19 @@ class AkabakDriver:
                 self._send_message_timeout(hwnd, WM_CLOSE)
                 closed_handles.append(hwnd)
 
+            for row in startup_extras:
+                hwnd = int(row.get("native_handle", 0) or 0)
+                if hwnd <= 0 or hwnd in closed_startup_handles:
+                    continue
+                self._send_message_timeout(hwnd, WM_CLOSE)
+                closed_startup_handles.append(hwnd)
+                self._log(
+                    level="info",
+                    step=step,
+                    event="startup_modal_closed_after_import",
+                    payload={"class_name": "TForm_ExampleFiles", "handle": hwnd},
+                )
+
             if main_visible and not extras:
                 latest_state = {
                     "status": "main_only_open",
@@ -2357,6 +2380,7 @@ class AkabakDriver:
                     "main_handle": main_handle,
                     "ignored_auxiliary_windows": ignored_extras[:6],
                     "closed_interpreter_handles": list(closed_handles),
+                    "closed_startup_handles": list(closed_startup_handles),
                 }
                 return True, latest_state
 
@@ -2367,6 +2391,7 @@ class AkabakDriver:
                 "extras": extras[:6],
                 "ignored_auxiliary_windows": ignored_extras[:6],
                 "closed_interpreter_handles": list(closed_handles),
+                "closed_startup_handles": list(closed_startup_handles),
             }
             return False, latest_state
 

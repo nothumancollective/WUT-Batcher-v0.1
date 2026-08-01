@@ -337,6 +337,47 @@ class AkabakDriverVacsSnapshotTests(unittest.TestCase):
         user32.SendMessageTimeoutW.assert_called_once()
         self.assertEqual(rows, [])
 
+    def test_startup_popup_reappearing_after_import_is_closed_narrowly(self) -> None:
+        driver = AkabakDriver.__new__(AkabakDriver)
+        driver.step_timeout_s = 1.0
+        driver._window_handle = Mock(return_value=101)
+        main_row = {
+            "native_handle": 101,
+            "title": "Akabak-Demo - input",
+            "class_name": "TForm_Main",
+            "is_visible": True,
+        }
+        example_row = {
+            "native_handle": 202,
+            "title": "Example Files",
+            "class_name": "TForm_ExampleFiles",
+            "is_visible": True,
+        }
+        rows = [main_row, example_row]
+        driver._process_top_level_windows = Mock(side_effect=lambda: list(rows))
+        driver._window_signature_row = Mock(side_effect=lambda row: dict(row))
+        driver._is_interpreter_window_row = Mock(return_value=False)
+
+        def _close(hwnd: int, message: int, **_kwargs: object) -> bool:
+            self.assertEqual((hwnd, message), (202, 0x0010))
+            rows.remove(example_row)
+            return True
+
+        driver._send_message_timeout = Mock(side_effect=_close)
+        driver._log = Mock()
+
+        state = driver._ensure_import_window_closed(main_window=object(), step="import_if_needed")
+
+        self.assertEqual(state["status"], "main_only_open")
+        self.assertEqual(state["closed_startup_handles"], [202])
+        driver._send_message_timeout.assert_called_once_with(202, 0x0010)
+        driver._log.assert_called_once_with(
+            level="info",
+            step="import_if_needed",
+            event="startup_modal_closed_after_import",
+            payload={"class_name": "TForm_ExampleFiles", "handle": 202},
+        )
+
     def test_interpreter_button_uses_native_child_handle_without_descendants(self) -> None:
         driver = AkabakDriver.__new__(AkabakDriver)
         driver.session = SimpleNamespace(process_id=77)
