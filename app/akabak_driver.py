@@ -193,7 +193,14 @@ def _native_process_ids_by_image(image_name: str) -> List[int]:
         return []
     kernel32 = ctypes.windll.kernel32
     try:
+        kernel32.CreateToolhelp32Snapshot.argtypes = [ctypes.c_ulong, ctypes.c_ulong]
         kernel32.CreateToolhelp32Snapshot.restype = ctypes.c_void_p
+        kernel32.Process32FirstW.argtypes = [ctypes.c_void_p, ctypes.POINTER(_ProcessEntry32W)]
+        kernel32.Process32FirstW.restype = ctypes.c_int
+        kernel32.Process32NextW.argtypes = [ctypes.c_void_p, ctypes.POINTER(_ProcessEntry32W)]
+        kernel32.Process32NextW.restype = ctypes.c_int
+        kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+        kernel32.CloseHandle.restype = ctypes.c_int
         snapshot = int(kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) or 0)
     except Exception:
         return []
@@ -203,17 +210,18 @@ def _native_process_ids_by_image(image_name: str) -> List[int]:
     rows: List[int] = []
     entry = _ProcessEntry32W()
     entry.dwSize = ctypes.sizeof(_ProcessEntry32W)
+    snapshot_handle = ctypes.c_void_p(snapshot)
     try:
-        ok = bool(kernel32.Process32FirstW(snapshot, ctypes.byref(entry)))
+        ok = bool(kernel32.Process32FirstW(snapshot_handle, ctypes.byref(entry)))
         while ok:
             if str(entry.szExeFile or "").strip().lower() == target:
                 rows.append(int(entry.th32ProcessID))
-            ok = bool(kernel32.Process32NextW(snapshot, ctypes.byref(entry)))
+            ok = bool(kernel32.Process32NextW(snapshot_handle, ctypes.byref(entry)))
     except Exception:
         return []
     finally:
         try:
-            kernel32.CloseHandle(snapshot)
+            kernel32.CloseHandle(snapshot_handle)
         except Exception:
             pass
     return sorted(set(rows))
@@ -269,7 +277,10 @@ def _process_cpu_time_seconds(process_id: int) -> Optional[float]:
     finally:
         if handle:
             try:
-                ctypes.windll.kernel32.CloseHandle(handle)
+                close_handle = ctypes.windll.kernel32.CloseHandle
+                close_handle.argtypes = [ctypes.c_void_p]
+                close_handle.restype = ctypes.c_int
+                close_handle(handle)
             except Exception:
                 pass
 

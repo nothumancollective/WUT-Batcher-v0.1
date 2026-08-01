@@ -1,15 +1,54 @@
 from __future__ import annotations
 
+import ctypes
 import json
 import re
 from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, call, patch
 
-from app.akabak_driver import AkabakDriver, _solve_menu_candidate
+from app.akabak_driver import AkabakDriver, _native_process_ids_by_image, _solve_menu_candidate
 
 
 class AkabakDriverVacsSnapshotTests(unittest.TestCase):
+    def test_native_process_inventory_preserves_64_bit_snapshot_handle(self) -> None:
+        large_handle = 0x12345678ABCDEF01
+
+        class FakeFunction:
+            def __init__(self, callback):
+                self.callback = callback
+                self.argtypes = None
+                self.restype = None
+                self.calls: list[tuple] = []
+
+            def __call__(self, *args):
+                self.calls.append(args)
+                return self.callback(*args)
+
+        def _first(handle, entry_pointer):
+            self.assertIsInstance(handle, ctypes.c_void_p)
+            self.assertEqual(handle.value, large_handle)
+            entry_pointer._obj.szExeFile = "AKABAK.exe"
+            entry_pointer._obj.th32ProcessID = 77
+            return 1
+
+        fake_kernel32 = SimpleNamespace(
+            CreateToolhelp32Snapshot=FakeFunction(lambda *_args: large_handle),
+            Process32FirstW=FakeFunction(_first),
+            Process32NextW=FakeFunction(lambda *_args: 0),
+            CloseHandle=FakeFunction(lambda *_args: 1),
+        )
+
+        with patch("app.akabak_driver.os.name", "nt"), patch.object(
+            ctypes, "windll", SimpleNamespace(kernel32=fake_kernel32)
+        ):
+            result = _native_process_ids_by_image("akabak.exe")
+
+        self.assertEqual(result, [77])
+        closed_handle = fake_kernel32.CloseHandle.calls[0][0]
+        self.assertIsInstance(closed_handle, ctypes.c_void_p)
+        self.assertEqual(closed_handle.value, large_handle)
+
     def test_native_menu_command_enabled_decodes_exact_windows_menu_state(self) -> None:
         class FakeFunction:
             def __init__(self, result: int) -> None:

@@ -50,6 +50,21 @@ def _library_db_path(library_root: Path) -> Path:
 
 
 class RuntimeOrchestratorTests(unittest.TestCase):
+    def setUp(self) -> None:
+        class _NoopNativeToolPipelineLock:
+            def acquire(self) -> None:
+                return None
+
+            def release(self) -> None:
+                return None
+
+        lock_patcher = patch(
+            "app.runtime_orchestrator._NativeToolPipelineLock",
+            _NoopNativeToolPipelineLock,
+        )
+        lock_patcher.start()
+        self.addCleanup(lock_patcher.stop)
+
     def test_native_pipeline_lock_spans_the_wrapped_run(self) -> None:
         events: list[str] = []
 

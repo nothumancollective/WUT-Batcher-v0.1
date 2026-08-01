@@ -60,7 +60,12 @@ class _NativeToolPipelineLock:
         import ctypes
 
         kernel32 = ctypes.windll.kernel32
+        kernel32.CreateMutexW.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_wchar_p]
         kernel32.CreateMutexW.restype = ctypes.c_void_p
+        kernel32.WaitForSingleObject.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
+        kernel32.WaitForSingleObject.restype = ctypes.c_ulong
+        kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+        kernel32.CloseHandle.restype = ctypes.c_int
         handle = int(kernel32.CreateMutexW(None, False, _NATIVE_TOOL_PIPELINE_MUTEX_NAME) or 0)
         if handle <= 0:
             raise RuntimeError("Could not create the AKABAK/VACS pipeline mutex.")
@@ -82,6 +87,10 @@ class _NativeToolPipelineLock:
         import ctypes
 
         kernel32 = ctypes.windll.kernel32
+        kernel32.ReleaseMutex.argtypes = [ctypes.c_void_p]
+        kernel32.ReleaseMutex.restype = ctypes.c_int
+        kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+        kernel32.CloseHandle.restype = ctypes.c_int
         handle = ctypes.c_void_p(int(self._handle))
         try:
             if self._acquired:
