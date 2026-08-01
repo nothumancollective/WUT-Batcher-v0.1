@@ -38,7 +38,11 @@ from app.safe_cleanup import (
     guarded_delete_tree_in_workspace,
 )
 from app.le_driver_registry import load_le_driver_registry
-from app.runtime_orchestrator import _apply_sim_export_settings_to_cfg, _to_windows_short_path
+from app.runtime_orchestrator import (
+    _apply_sim_export_settings_to_cfg,
+    _serialize_native_tool_pipeline,
+    _to_windows_short_path,
+)
 from app.ui_automation.waits import wait_until
 from app.ui_automation.discover import discover_app_ui
 from app.ui_automation.session import UiaSession
@@ -1915,6 +1919,7 @@ class HarnessManualInterferenceError(RuntimeError):
     """Raised when unmanaged manual tool interaction blocks deterministic harness execution."""
 
 
+@_serialize_native_tool_pipeline
 def run_runner_test_harness(
     *,
     case_id: str,
