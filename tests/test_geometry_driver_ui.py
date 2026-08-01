@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -165,6 +166,23 @@ class GeometryDriverUiTests(unittest.TestCase):
             self.assertNotIn("qts", revision["parameters"])
             self.assertEqual(revision["completeness"], "incomplete")
             self.assertIn("cannot simulate", dialog.completeness.text())
+            dialog.close()
+
+    def test_le_picker_uses_responsive_qt_dialog_and_previews_file(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_driver_form_picker_") as tmp:
+            root = Path(tmp)
+            source = root / "picked.le"
+            source.write_text("System 'S1'\nDriver 'D1'\n", encoding="utf-8")
+            dialog = DriverRevisionEditorDialog(
+                service=_service(root), title="Create", kind="compression_driver",
+            )
+            with patch("app.geometry_driver_ui.QFileDialog.getOpenFileName", return_value=(str(source), "")) as picker:
+                dialog._choose_le_file()
+
+            self.assertTrue(picker.call_args.kwargs["options"])
+            self.assertIn("picked.le", dialog.le_preview.text())
+            self.assertIn("SHA-256", dialog.le_preview.text())
+            self.assertIn("Simulation-ready", dialog.completeness.text())
             dialog.close()
 
     def test_builtin_driver_revision_controls_are_read_only(self) -> None:

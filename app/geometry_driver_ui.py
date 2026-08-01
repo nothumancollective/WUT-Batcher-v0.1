@@ -175,7 +175,13 @@ class DriverRevisionEditorDialog(QDialog):
         self._refresh_le_status()
 
     def _choose_le_file(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "Choose AKABAK LE network", "", "LE network text (*.txt *.le *.akabak);;All files (*)")
+        # The Qt dialog stays responsive in the nested revision/library modal stack;
+        # the Windows native picker can deadlock that stack on some machines.
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Choose AKABAK LE network", "",
+            "LE network text (*.txt *.le *.akabak);;All files (*)",
+            options=QFileDialog.Option.DontUseNativeDialog,
+        )
         if path:
             self.set_le_file(path)
 
