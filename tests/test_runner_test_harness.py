@@ -59,6 +59,15 @@ def _write_case(path: Path) -> None:
 
 
 class RunnerTestHarnessTests(unittest.TestCase):
+    def test_repository_smoke_case_pins_stable_le_repair_profile(self) -> None:
+        repo_root = Path(__file__).resolve().parents[1]
+        payload = json.loads((repo_root / "runner_test_cases" / "smoke_fast.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(
+            payload.get("le_repair_profile"),
+            "driver_drvgroup_def_driving_resistor",
+        )
+
     def test_assess_pre_akabak_le_driving_contract_detects_expected_drvgroup(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
