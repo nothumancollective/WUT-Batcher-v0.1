@@ -217,6 +217,8 @@ def _normalize_radimp_observation_profile(profile: Optional[str]) -> str:
         "absolute": "force_absolute",
         "drop_radimptype": "drop_radimptype",
         "remove_radimptype": "drop_radimptype",
+        "le_electrical_impedance": "le_electrical_impedance",
+        "drvimp": "le_electrical_impedance",
     }
     return aliases.get(value, value)
 
@@ -1296,7 +1298,7 @@ def _patch_observation_radimp_profile(
             changed_files=0,
             radimp_entries_seen=0,
         )
-    if canonical not in {"force_absolute", "drop_radimptype"}:
+    if canonical not in {"force_absolute", "drop_radimptype", "le_electrical_impedance"}:
         return ObservationPatchResult(
             status="invalid_profile",
             profile=canonical,
@@ -1325,6 +1327,37 @@ def _patch_observation_radimp_profile(
     try:
         for obs_file in observation_files:
             original_text = obs_file.read_text(encoding="utf-8", errors="replace")
+            if canonical == "le_electrical_impedance":
+                already_present = bool(
+                    re.search(
+                        r"(?im)^\s*LE_Spectrum\s*$(?s:.*?)\bAnalysisType\s*=\s*Impedance\b",
+                        original_text,
+                    )
+                )
+                new_text = original_text
+                if not already_present:
+                    separator = "" if original_text.endswith("\n\n") else ("\n" if original_text.endswith("\n") else "\n\n")
+                    new_text = (
+                        original_text
+                        + separator
+                        + "LE_Spectrum\n"
+                        + "  System='S1'; AnalysisType=Impedance\n"
+                        + "  Range_min=0; Range_max=50\n"
+                        + "  GraphHeader='DrvImp'; BodeType=Ampl_Phase; ID=2002\n"
+                    )
+                    obs_file.write_text(new_text, encoding="utf-8")
+                    changed_files += 1
+                diagnostics_payload["files"].append(
+                    {
+                        "path": str(obs_file),
+                        "changed": not already_present,
+                        "radimp_entries_seen": 0,
+                        "le_electrical_impedance_present": True,
+                        "sha256_before": hashlib.sha256(original_text.encode("utf-8", errors="replace")).hexdigest(),
+                        "sha256_after": hashlib.sha256(new_text.encode("utf-8", errors="replace")).hexdigest(),
+                    }
+                )
+                continue
             lines = original_text.splitlines()
             in_radimp_block = False
             block_has_type = False

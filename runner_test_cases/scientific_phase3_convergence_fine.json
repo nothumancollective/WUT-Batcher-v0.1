@@ -5,6 +5,7 @@
   "template_cfg": "templates/scientific_phase3_convergence.cfg",
   "project_id": "P_SCI_PHASE3", "batch_id": "B_SCI_P3_FINE", "project_name": "Scientific Validation Phase 3",
   "le_repair_profile": "driver_drvgroup_def_driving_resistor",
+  "radimp_observation_profile": "le_electrical_impedance",
   "constraints": {"runner_mode": "AkabakImportFixedSource", "fixed_params": {"Length": 60}, "limits": {}},
   "batch_settings": {
     "selected_params": {"Throat.Profile": 1, "Throat.Diameter": 25.4, "Throat.Angle": 7, "Coverage.Angle": 45, "Term.s": 0.5, "Term.n": 4, "Term.q": 0.996, "OS.k": 1, "Morph.TargetShape": 0, "Mesh.AngularSegments": 72, "Mesh.LengthSegments": 28, "Mesh.MouthResolution": 12, "Mesh.ThroatResolution": 8},

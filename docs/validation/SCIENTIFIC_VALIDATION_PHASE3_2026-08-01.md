@@ -114,3 +114,35 @@ Comparison tolerances must be frozen for the specific accepted data set before
 WUT output is evaluated. Simulation/setup uncertainty and manufacturing/driver
 spread must be separated from software error.
 
+## Amendment A1 - explicit ATH LE observation block after diagnostic run 1
+
+Time: 2026-08-01, after only the first coarse diagnostic result was visible and
+before starting medium or fine. That run (`fc0eaf9b-6b2f-426d-ab3f-f9d9960b584a`)
+succeeded in 45.12 s and produced valid signed H/V maps, but its frozen ATH
+snapshot proved that ATH 4.8.2 still omitted `LE_Spectrum` despite the explicit
+`LE.System=S1` and `LE.Driver=D1` inputs. Only normalized BEM
+`Radiation_Impedance` was present. I1 therefore failed for that run exactly as
+predeclared; no tolerance is changed and the zero BEM curve is not relabelled.
+
+Read-only string inspection of the exact frozen `C:\Tools\ATH\ath.exe` then
+recovered ATH's own embedded output template:
+
+```text
+LE_Spectrum
+  System='%s'; AnalysisType=Impedance
+  Range_min=0; Range_max=50
+  GraphHeader='DrvImp'; BodeType=Ampl_Phase; ID=2002
+```
+
+The new hypothesis is that ATH's conditional emission is broken or bypassed in
+this invocation, while AKABAK can still consume ATH's own documented block once
+it is inserted after ATH generation and after the existing LE repair. The
+harness-only `le_electrical_impedance` observation profile now appends that exact
+block idempotently with `System='S1'`; it does not alter geometry, solver, LE
+parameters, the BEM coupling or any pass tolerance.
+
+The first run is retained as diagnostic evidence. The permitted fourth native
+run is now justified in advance: repeat coarse once with the exact observation
+block, then run medium and fine once each. These three post-amendment runs form
+the convergence matrix. If the coarse repeat does not yield a distinct nonzero
+`DrvImp` graph, I1/I2 fail and medium/fine will not be spent on that hypothesis.

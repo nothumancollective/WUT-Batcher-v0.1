@@ -1155,7 +1155,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help=(
             "Optional observation patch profile for RadImp experiment "
-            "(default, force_absolute, drop_radimptype)."
+            "(default, force_absolute, drop_radimptype, le_electrical_impedance)."
         ),
     )
     p_runner_test_run.add_argument(
@@ -1245,7 +1245,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_runner_test_matrix.add_argument(
         "--radimp-observation-profile",
         default=None,
-        help="Optional RadImp observation patch profile (default, force_absolute, drop_radimptype).",
+        help="Optional observation patch profile (default, force_absolute, drop_radimptype, le_electrical_impedance).",
     )
     p_runner_test_matrix.add_argument(
         "--strict-nonzero-radimp",
@@ -1391,7 +1391,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_runner_test_le_proof.add_argument(
         "--radimp-observation-profile",
         default=None,
-        help="Optional RadImp observation patch profile (default, force_absolute, drop_radimptype).",
+        help="Optional observation patch profile (default, force_absolute, drop_radimptype, le_electrical_impedance).",
     )
     p_runner_test_le_proof.add_argument(
         "--driving-observation-profile",

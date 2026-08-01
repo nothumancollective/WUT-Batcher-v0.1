@@ -193,6 +193,30 @@ class RunnerTestHarnessTests(unittest.TestCase):
             patched = obs.read_text(encoding="utf-8")
             self.assertNotIn("RadImpType=", patched)
 
+    def test_patch_observation_profile_adds_idempotent_le_electrical_impedance(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            abec = root / "Project.abec"
+            obs = root / "observation.txt"
+            abec.write_text("[Observation]\nC0=observation.txt\n", encoding="utf-8")
+            obs.write_text(
+                "Radiation_Impedance\n"
+                "  RadImpType=Normalized\n"
+                "  402 1001 1001 ID=8001\n",
+                encoding="utf-8",
+            )
+
+            first = _patch_observation_radimp_profile(abec_path=abec, profile="le_electrical_impedance")
+            second = _patch_observation_radimp_profile(abec_path=abec, profile="le_electrical_impedance")
+
+            self.assertTrue(first.ok)
+            self.assertEqual(first.status, "patched")
+            self.assertEqual(second.status, "already_conformant")
+            patched = obs.read_text(encoding="utf-8")
+            self.assertEqual(patched.count("LE_Spectrum"), 1)
+            self.assertIn("System='S1'; AnalysisType=Impedance", patched)
+            self.assertIn("GraphHeader='DrvImp'; BodeType=Ampl_Phase; ID=2002", patched)
+
     def test_patch_observation_driving_profile_updates_drvtype_and_value(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
