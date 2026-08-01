@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "baseline_commit": "bb444ec0b32ef6735e19e787074cf3a320678d35",
+  "branch": "codex/geometry-tab-batch-driver-2026-08-02",
+  "gui_smoke": {
+    "isolated_profile": "tmp/geometry_tab_smoke",
+    "geometry_id": "G-56a025a1-f087-405c-95d7-5c25cc7f07ca",
+    "batches": [
+      {"batch_id": "B001", "selection_mode": "geometry_default", "override_revision_id": ""},
+      {"batch_id": "B002", "selection_mode": "explicit_override", "override_revision_id": "DR-OVERRIDE-1"}
+    ],
+    "saved_and_reloaded_visibly": true,
+    "post_smoke_relevant_processes": []
+  },
+  "native_gate": {
+    "run_id": "f23aad8a-bc05-4451-9c92-f775dab27903",
+    "batch_id": "B012",
+    "version_id": "V012",
+    "status": "succeeded",
+    "started_at": "2026-08-01T22:49:19+00:00",
+    "finished_at": "2026-08-01T22:50:13+00:00",
+    "selection_source": "geometry_default",
+    "geometry_id": "G-affb44e5-840f-474f-b051-5747a33becbd",
+    "revision_id": "generic25-r1",
+    "revision_hash": "a28d2fd712afc2abff0990b80b781ef13a1339e0743e6af0129bd84bfbdea161",
+    "snapshot_hash": "90eb72cb70b374d22e29afba5fe3d2d87de4fa0c44a0b9caf75350aa98672d7a",
+    "source_le_hash": "3f8e1bacae6f50a4b02e9609f60d508d9c6552386707272dcf74babe945557be",
+    "staged_le_hash": "053701a2158347cdf3fdd242fc053de4a225bff93607b134efc5c80a6ed3ce9a",
+    "graphs": {"impedance": 1, "polar": 3},
+    "owned_pids": {"python": 14284, "akabak": 2336, "vacs": 7792},
+    "post_run_relevant_processes": [],
+    "global_process_name_kill_used": false
+  }
+}

@@ -3215,6 +3215,32 @@ Validation executed:
   non-native picker for the nested dialog. Full evidence is in
   `docs/validation/DRIVER_FORM_UI_SMOKE_2026-08-01.md`.
 
+### Update 85 (First-class Geometry Navigation and Batch Driver Policy)
+
+#### Ownership and persistence
+
+- Promoted Geometry to the persistent `Project -> Geometry -> Batch -> Analyse`
+  navigation. The old project action now routes to the same service-backed page.
+- Moved concrete Driver choice to Batch as either `geometry_default` or one
+  explicit append-only revision override; the Driver Library remains the only
+  CRUD/provenance/LE source.
+- Added SQLite 2.10 Batch policy columns and Run snapshot `selection_source`.
+  Run start resolves override, Geometry default, legacy Batch revision, then
+  built-in generic25, and never writes the runtime snapshot back into Batch JSON.
+
+#### Validation
+
+- Added automated coverage for policy priority, legacy Batches, immutable older
+  Run snapshots, JSON/SQLite round-trip, persistent navigation, small layouts and
+  the existing Driver form/LE picker.
+- A visible isolated GUI smoke saved and reloaded B001 with the Geometry default
+  and B002 with `DR-OVERRIDE-1`; both showed readiness and full hashes.
+- Exactly one short native service-path gate ran B012/V012. Run
+  `f23aad8a-bc05-4451-9c92-f775dab27903` succeeded through ATH, AKABAK and VACS
+  in 54 seconds, persisted `selection_source=geometry_default` plus immutable
+  Geometry/Driver/LE hashes, exported four graphs, and left no relevant process.
+- Evidence: `docs/validation/GEOMETRY_NAVIGATION_BATCH_DRIVER_2026-08-02.md`.
+
 
 
 

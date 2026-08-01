@@ -12,7 +12,9 @@ driver library therefore cannot change an old run.
 
 ## User workflow
 
-1. Open a project and choose **Manage Geometries & Drivers**.
+1. Open a project and select the persistent **Geometry** tab between
+   **Project** and **Batch**. The older **Geometries Drivers** project action is
+   a compatibility shortcut to this same page, not a second dialog or store.
 2. Create, rename, duplicate, archive or open a geometry. The deterministic
    Legacy Geometry keeps pre-migration content readable and cannot be archived.
 3. Open **Driver Library** and choose **New Compression** or **New Cone** for
@@ -33,8 +35,14 @@ driver library therefore cannot change an old run.
    **No default driver**. Missing optional values remain visible and are never
    synthesized. The selector marks each revision as `ready` or
    `incomplete / no LE`; **Set Default Driver** persists the choice.
-7. Create and run batches inside the selected geometry. The Batch page shows
-   the geometry, revision and abbreviated revision hash before simulation.
+7. Create batches inside the selected geometry. On the **Batch** page choose
+   **Use Geometry default** or **Use explicit Driver revision**. The latter is
+   an append-only revision reference, not copied Driver data. The page shows
+   readiness, revision/LE hashes and a shortcut to the canonical Driver Library.
+8. At Run start WUT resolves `batch override -> Geometry default -> documented
+   legacy fallback`. The resulting immutable snapshot and its selection source
+   are persisted for the Run, so later default or library changes cannot alter
+   historical results.
 
 Old service callers remain supported: batches without an explicit geometry are
 assigned to the deterministic Legacy Geometry, and a resolvable installed
@@ -47,8 +55,8 @@ compatibility boundary, not a second library.
   `driver_revisions` tables.
 - `<library>/drivers/assets/sha256/<hash>`: content-addressed LE assets.
 - `<project>/geometries/<geometry_id>/geometry.json`: geometry metadata.
-- project SQLite schema `2.9`: additive `geometry_id` columns, `geometries`, and
-  `run_driver_snapshots`.
+- project SQLite schema `2.10`: additive `geometry_id`, Batch Driver policy and
+  override columns, `geometries`, and `run_driver_snapshots.selection_source`.
 - existing `batches/`, `versions/`, `runs/` and `exports/` paths are unchanged.
 
 IDs are opaque and stable. Archive operations are soft deletes. Driver revision
@@ -128,3 +136,21 @@ native execution because their isolated settings override was invalid. Fallback
 library discovery rewrote only the standard library's stable `library.json`
 metadata; no production project/database/result file was touched. The accepted
 run used the supported `WUT_BATCHER_SETTINGS_PATH` override.
+
+## Geometry navigation and Batch Driver acceptance
+
+The 2026-08-02 navigation round was exercised visibly with an isolated library.
+The Geometry page set a ready default revision; B001 was saved and reloaded with
+`geometry_default`, while B002 was saved and reloaded with the explicit
+`DR-OVERRIDE-1` revision. Both screens showed the effective revision and complete
+SHA-256 values. JSON and project SQLite agreed and neither Batch contained a
+mutable Driver copy.
+
+Because Run-start resolution changed, exactly one additional short native
+service-path gate was run from an isolated copy of the established B012 case.
+Run `f23aad8a-bc05-4451-9c92-f775dab27903` succeeded through ATH, AKABAK and
+VACS, exported four current graphs, and persisted
+`selection_source = geometry_default`, Geometry/revision IDs and immutable source/effective LE and
+snapshot hashes. Its owned Python, AKABAK and VACS processes were absent at the
+post-run snapshot. Details are in
+`docs/validation/GEOMETRY_NAVIGATION_BATCH_DRIVER_2026-08-02.md`.
