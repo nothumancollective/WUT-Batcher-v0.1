@@ -1684,11 +1684,31 @@ class OrchestratorService:
             })
         return result
 
-    def create_driver(self, *, definition: Dict[str, Any], revision: Dict[str, Any]) -> Dict[str, Any]:
+    def preview_driver_le_asset(self, source: str | Path) -> Dict[str, Any]:
+        return asdict(self.driver_library.preview_le_asset(source))
+
+    def create_driver(self, *, definition: Dict[str, Any], revision: Dict[str, Any], le_source_path: str | Path | None = None, le_expected_sha256: str | None = None) -> Dict[str, Any]:
+        revision = dict(revision)
+        if le_source_path:
+            digest, _, _ = self.driver_library.store_le_asset(
+                le_source_path, expected_sha256=le_expected_sha256,
+            )
+            revision["le_network_hash"] = digest
+            revision["le_network_name"] = Path(le_source_path).name
+        revision["completeness"] = "simulation_ready" if revision.get("le_network_hash") else "incomplete"
         created = self.driver_library.create_definition(DriverDefinition(**definition), DriverRevision(**revision))
         return asdict(created)
 
     def create_driver_revision(self, driver_id: str, **payload: Any) -> Dict[str, Any]:
+        le_source_path = payload.pop("le_source_path", None)
+        le_expected_sha256 = payload.pop("le_expected_sha256", None)
+        if le_source_path:
+            digest, _, _ = self.driver_library.store_le_asset(
+                le_source_path, expected_sha256=le_expected_sha256,
+            )
+            payload["le_network_hash"] = digest
+            payload["le_network_name"] = Path(le_source_path).name
+        payload["completeness"] = "simulation_ready" if payload.get("le_network_hash") else "incomplete"
         return asdict(self.driver_library.create_revision(driver_id, **payload))
 
     def duplicate_driver(self, driver_id: str, *, model: str | None = None) -> Dict[str, Any]:

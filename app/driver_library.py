@@ -22,6 +22,7 @@ TRUST_STATES = {"verified", "user_asserted", "unverified"}
 ALLOWED_UNITS = {
     "1", "Hz", "m", "m2", "m3", "kg", "ohm", "H", "W", "V", "A",
     "N/A", "T*m", "m/N", "N*s/m", "Pa*s/m3", "kg/m4", "deg", "rad",
+    "mm", "cm2", "g", "mH",
 }
 
 
@@ -119,6 +120,14 @@ class ImportReport:
     revision_id: str | None
     errors: tuple[str, ...] = ()
     warnings: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class LeAssetPreview:
+    source_path: str
+    file_name: str
+    size_bytes: int
+    sha256: str
 
 
 class DriverLibrary:
@@ -307,10 +316,38 @@ class DriverLibrary:
             conn.execute("UPDATE driver_definitions SET archived_at=? WHERE driver_id=?", (archived.archived_at, driver_id))
         return archived
 
-    def store_le_asset(self, source: str | Path) -> tuple[str, Path, str]:
+    @staticmethod
+    def preview_le_asset(source: str | Path) -> LeAssetPreview:
         source_path = Path(source)
-        raw = source_path.read_bytes()
+        if not source_path.exists():
+            raise ValueError(f"LE network file does not exist: {source_path}")
+        if not source_path.is_file():
+            raise ValueError(f"LE network path is not a file: {source_path}")
+        try:
+            raw = source_path.read_bytes()
+        except OSError as exc:
+            raise ValueError(f"LE network file cannot be read: {source_path}") from exc
+        if not raw:
+            raise ValueError("LE network file is empty")
+        try:
+            text = raw.decode("utf-8-sig")
+        except UnicodeDecodeError as exc:
+            raise ValueError("LE network file must be readable UTF-8 text") from exc
+        if not text.strip():
+            raise ValueError("LE network file contains no network definition")
         digest = hashlib.sha256(raw).hexdigest()
+        return LeAssetPreview(
+            source_path=str(source_path.resolve()), file_name=source_path.name,
+            size_bytes=len(raw), sha256=digest,
+        )
+
+    def store_le_asset(self, source: str | Path, *, expected_sha256: str | None = None) -> tuple[str, Path, str]:
+        source_path = Path(source)
+        preview = self.preview_le_asset(source_path)
+        raw = source_path.read_bytes()
+        digest = preview.sha256
+        if expected_sha256 and digest != expected_sha256:
+            raise ValueError("LE network file changed after preview; select it again")
         destination = self.assets_root / digest
         destination.parent.mkdir(parents=True, exist_ok=True)
         if not destination.exists():

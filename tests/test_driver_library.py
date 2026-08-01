@@ -88,6 +88,43 @@ def test_cone_driver_json_round_trip_preserves_asset_and_unknown_extensions(tmp_
     assert imported.extensions["vendor_field"] == "preserve me"
 
 
+def test_le_asset_preview_and_content_addressed_store_preserve_source(tmp_path: Path) -> None:
+    source = _network(tmp_path, "custom.le")
+    original = source.read_bytes()
+    library = DriverLibrary(tmp_path / "library")
+
+    preview = library.preview_le_asset(source)
+    digest, destination, text = library.store_le_asset(source, expected_sha256=preview.sha256)
+
+    assert preview.file_name == "custom.le"
+    assert preview.size_bytes == len(original)
+    assert digest == preview.sha256
+    assert destination.read_bytes() == original
+    assert source.read_bytes() == original
+    assert "Driver" in text
+
+
+@pytest.mark.parametrize("content, message", [
+    (b"", "empty"),
+    (b"\xff\xfe\x00", "UTF-8"),
+    (b"  \r\n", "no network definition"),
+])
+def test_le_asset_rejects_invalid_files(tmp_path: Path, content: bytes, message: str) -> None:
+    source = tmp_path / "invalid.le"
+    source.write_bytes(content)
+    with pytest.raises(ValueError, match=message):
+        DriverLibrary(tmp_path / "library").preview_le_asset(source)
+
+
+def test_le_asset_rejects_change_after_preview(tmp_path: Path) -> None:
+    source = _network(tmp_path, "changed.le")
+    library = DriverLibrary(tmp_path / "library")
+    preview = library.preview_le_asset(source)
+    source.write_text("changed", encoding="utf-8")
+    with pytest.raises(ValueError, match="changed after preview"):
+        library.store_le_asset(source, expected_sha256=preview.sha256)
+
+
 @pytest.mark.parametrize("payload, message", [
     ({"schema": "wrong", "schema_version": 1}, "schema"),
     ({
