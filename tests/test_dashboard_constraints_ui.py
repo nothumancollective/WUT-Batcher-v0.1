@@ -2,18 +2,30 @@ from __future__ import annotations
 
 import os
 import unittest
+from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from app.gui import ConstraintSummaryGrid, DashboardPage
+from app.gui import BatchLineageNodeItem, ConstraintSummaryGrid, DashboardPage
 
 try:
-    from PySide6.QtCore import Qt
-    from PySide6.QtWidgets import QApplication, QFrame, QListWidgetItem, QPushButton, QSplitter, QToolButton
+    from PySide6.QtCore import QEvent, QPoint, Qt
+    from PySide6.QtWidgets import (
+        QApplication,
+        QFrame,
+        QGraphicsSceneHoverEvent,
+        QListWidgetItem,
+        QPushButton,
+        QSplitter,
+        QToolButton,
+    )
 except ImportError:  # pragma: no cover
     Qt = None  # type: ignore[assignment]
+    QEvent = None  # type: ignore[assignment]
+    QPoint = None  # type: ignore[assignment]
     QApplication = None  # type: ignore[assignment]
     QFrame = None  # type: ignore[assignment]
+    QGraphicsSceneHoverEvent = None  # type: ignore[assignment]
     QListWidgetItem = None  # type: ignore[assignment]
     QPushButton = None  # type: ignore[assignment]
     QSplitter = None  # type: ignore[assignment]
@@ -131,6 +143,20 @@ class DashboardConstraintUiTests(unittest.TestCase):
         self.assertGreaterEqual(len(page.lineage_pane.scene.items()), 3)
         self.assertIn("B001", page.lineage_pane._node_items)
         self.assertIn("B002", page.lineage_pane._node_items)
+
+    def test_lineage_hover_accepts_qpoint_screen_position(self) -> None:
+        node = BatchLineageNodeItem(
+            batch_id="B001",
+            label="B001",
+            tooltip_text="Lineage details",
+        )
+        event = QGraphicsSceneHoverEvent(QEvent.GraphicsSceneHoverEnter)
+        event.setScreenPos(QPoint(120, 80))
+
+        with patch("app.gui.QToolTip.showText") as show_tooltip:
+            node.hoverEnterEvent(event)
+
+        show_tooltip.assert_called_once_with(QPoint(120, 80), "Lineage details")
 
     def test_lineage_node_activation_selects_batch_and_emits_edit_request(self) -> None:
         page = DashboardPage()

@@ -5765,7 +5765,13 @@ class BatchLineageNodeItem(QGraphicsObject):
     def hoverEnterEvent(self, event) -> None:  # type: ignore[override]
         self._hovered = True
         if self._tooltip_text:
-            QToolTip.showText(event.screenPos().toPoint(), self._tooltip_text)
+            screen_pos = event.screenPos()
+            # QGraphicsSceneHoverEvent returns QPoint in current PySide6, while
+            # some Qt event APIs return QPointF. Accept both without assuming
+            # the floating-point-only ``toPoint`` method exists.
+            if isinstance(screen_pos, QPointF):
+                screen_pos = screen_pos.toPoint()
+            QToolTip.showText(screen_pos, self._tooltip_text)
         self.update()
         super().hoverEnterEvent(event)
 
