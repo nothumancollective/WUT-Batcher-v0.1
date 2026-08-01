@@ -1672,6 +1672,37 @@ def _resolve_norm_angle_deg(
             if from_batch is not None:
                 return from_batch, {"source": "batch.export_specs.options.norm_angle", "spec_id": spec_id}
 
+    details = contract_row.get("details") if isinstance(contract_row.get("details"), dict) else {}
+    source_orientation = str(details.get("source_orientation_token", "") or "").strip().upper()
+    if source_orientation:
+        orientation_matches: List[Tuple[str, float]] = []
+        for spec in batch_specs:
+            if str(spec.get("graph_kind", "") or "").strip().lower() != "polar":
+                continue
+            spec_options = spec.get("options") if isinstance(spec.get("options"), dict) else {}
+            spec_orientation = ""
+            inclination = _parse_decimal(spec_options.get("inclination"))
+            if inclination is not None:
+                spec_orientation = normalize_orientation_marker(inclination).upper()
+            if not spec_orientation:
+                polar_name = str(spec_options.get("polar_name", "") or "").strip().upper()
+                name_tokens = [token for token in re.split(r"[^A-Z0-9]+", polar_name) if token]
+                if name_tokens and name_tokens[-1] in {"H", "V", "D"}:
+                    spec_orientation = name_tokens[-1]
+            if spec_orientation != source_orientation:
+                continue
+            from_batch = _parse_decimal(spec_options.get("norm_angle"))
+            if from_batch is not None:
+                orientation_matches.append((str(spec.get("id", "") or "").strip(), from_batch))
+        if orientation_matches:
+            first_value = orientation_matches[0][1]
+            if all(abs(value - first_value) <= 1e-9 for _, value in orientation_matches[1:]):
+                return first_value, {
+                    "source": "batch.orientation_norm_angle",
+                    "orientation": source_orientation,
+                    "spec_ids": [token for token, _ in orientation_matches if token],
+                }
+
     polar_with_norm: List[Tuple[str, float]] = []
     for spec in batch_specs:
         graph_kind = str(spec.get("graph_kind", "") or "").strip().lower()
@@ -1685,6 +1716,13 @@ def _resolve_norm_angle_deg(
     if len(polar_with_norm) == 1:
         spec_token, value = polar_with_norm[0]
         return value, {"source": "batch.single_polar_norm_angle", "spec_id": spec_token}
+    if polar_with_norm:
+        first_value = polar_with_norm[0][1]
+        if all(abs(value - first_value) <= 1e-9 for _, value in polar_with_norm[1:]):
+            return first_value, {
+                "source": "batch.common_polar_norm_angle",
+                "spec_ids": [token for token, _ in polar_with_norm if token],
+            }
 
     for key, raw in metadata.items():
         key_token = str(key or "").strip().lower()

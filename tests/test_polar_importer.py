@@ -6,7 +6,7 @@ import unittest
 
 from app.models import Batch, Project, ProjectConstraints, SimExportSettings, VersionSpec
 from app.polar_txt_parser import PolarTxtParseError
-from app.runtime_orchestrator import _ingest_vacs_exports
+from app.runtime_orchestrator import _ingest_vacs_exports, _resolve_norm_angle_deg
 from app.tidy_dataset import TidyDatasetWriter
 
 
@@ -14,6 +14,63 @@ FIXTURES = Path(__file__).resolve().parent / "fixtures" / "vacs"
 
 
 class PolarImporterTests(unittest.TestCase):
+    @staticmethod
+    def _batch_with_plane_norms(*, h: float, v: float, d: float) -> Batch:
+        return Batch(
+            batch_id="B001",
+            project_id="P001",
+            sim_export_settings=SimExportSettings(
+                export_specs=[
+                    {
+                        "id": "polar_h",
+                        "tool": "vacs",
+                        "graph_kind": "polar",
+                        "options": {"polar_name": "SPL_H", "inclination": 0, "norm_angle": h},
+                    },
+                    {
+                        "id": "polar_v",
+                        "tool": "vacs",
+                        "graph_kind": "polar",
+                        "options": {"polar_name": "SPL_V", "inclination": 90, "norm_angle": v},
+                    },
+                    {
+                        "id": "polar_d",
+                        "tool": "vacs",
+                        "graph_kind": "polar",
+                        "options": {"polar_name": "SPL_D", "inclination": 45, "norm_angle": d},
+                    },
+                ]
+            ),
+        )
+
+    def test_external_export_norm_angle_matches_source_orientation(self) -> None:
+        value, policy = _resolve_norm_angle_deg(
+            batch=self._batch_with_plane_norms(h=10, v=20, d=30),
+            contract={"spec": {"id": "external_any_01"}, "details": {"source_orientation_token": "V"}},
+            metadata={},
+        )
+        self.assertEqual(value, 20.0)
+        self.assertEqual(policy.get("source"), "batch.orientation_norm_angle")
+        self.assertEqual(policy.get("orientation"), "V")
+
+    def test_external_export_norm_angle_uses_unambiguous_common_value(self) -> None:
+        value, policy = _resolve_norm_angle_deg(
+            batch=self._batch_with_plane_norms(h=20, v=20, d=20),
+            contract={"spec": {"id": "external_any_01"}, "details": {}},
+            metadata={},
+        )
+        self.assertEqual(value, 20.0)
+        self.assertEqual(policy.get("source"), "batch.common_polar_norm_angle")
+
+    def test_external_export_norm_angle_rejects_ambiguous_plane_values(self) -> None:
+        value, policy = _resolve_norm_angle_deg(
+            batch=self._batch_with_plane_norms(h=10, v=20, d=30),
+            contract={"spec": {"id": "external_any_01"}, "details": {}},
+            metadata={},
+        )
+        self.assertIsNone(value)
+        self.assertEqual(policy.get("source"), "none")
+
     def _prepare_project(self) -> tuple[Path, TidyDatasetWriter, Project, Batch]:
         tmp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(tmp_dir.cleanup)
@@ -188,6 +245,45 @@ class PolarImporterTests(unittest.TestCase):
             global_points = conn.execute("SELECT COUNT(*) FROM polar_points").fetchone()[0]
         self.assertEqual(int(global_meas), 1)
         self.assertEqual(int(global_points), 6)
+
+    def test_external_export_persists_plane_specific_norm_angle(self) -> None:
+        project_root, writer, project, _batch = self._prepare_project()
+        batch = self._batch_with_plane_norms(h=10, v=20, d=30)
+        exports_dir = project_root / "versions" / "V001" / "exports" / "RUN001"
+        exports_dir.mkdir(parents=True, exist_ok=True)
+        source_file = FIXTURES / "result_v001polar_matrix_small.txt"
+        target_file = exports_dir / "V001_anygraph_01_Mic_Polar_D.txt"
+        target_file.write_text(source_file.read_text(encoding="utf-8-sig"), encoding="utf-8")
+        vacs_summary = {
+            "exports": [
+                {
+                    "spec": {"id": "external_any_01", "graph_kind": "polar", "variant": "external_01"},
+                    "entry": {"graph_kind": "polar", "graph_variant": "external_01", "format": "txt"},
+                    "plugin_id": "external_vacs_export_save_all",
+                    "output_path": str(target_file),
+                    "details": {"source_orientation_token": "D"},
+                }
+            ]
+        }
+
+        ingest = _ingest_vacs_exports(
+            writer=writer,
+            project=project,
+            batch=batch,
+            run_id="RUN001",
+            version_id="V001",
+            exports_dir=exports_dir,
+            vacs_export_summary=vacs_summary,
+        )
+
+        self.assertEqual(ingest.get("parse_errors"), [])
+        with closing(sqlite3.connect(str(writer.project_db_path))) as conn:
+            row = conn.execute(
+                "SELECT orientation, norm_angle_deg, export_meta_json FROM polar_measurements LIMIT 1"
+            ).fetchone()
+        self.assertEqual(str(row[0]), "D")
+        self.assertEqual(float(row[1]), 30.0)
+        self.assertIn('"source": "batch.orientation_norm_angle"', str(row[2]))
 
     def test_import_deduplicates_same_file_identity(self) -> None:
         project_root, writer, project, batch = self._prepare_project()
