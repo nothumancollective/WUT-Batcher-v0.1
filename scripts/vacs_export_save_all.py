@@ -1298,29 +1298,96 @@ def _find_save_as_dialog_fast(target_pid: int, timeout_s: float) -> Optional[Any
     return _find_save_as_dialog(int(target_pid), main_handle, timeout_s=0.35)
 
 
+def _save_filename_edit_priority(control: Any) -> tuple[int, str]:
+    signature = _sig(control)
+    automation_id = str(signature.get("automation_id", "") or "").strip().lower()
+    name = str(signature.get("title", "") or "").strip().lower()
+    if automation_id in {"1001", "1148", "filenamecontrolhost"}:
+        return (0, name)
+    if re.search(r"(?:file\s*name|dateiname)", name, re.IGNORECASE):
+        return (1, name)
+    if re.search(r"(?:search|suchen)", name, re.IGNORECASE):
+        return (100, name)
+    return (10, name)
+
+
+def _discover_save_filename_target(dialog: Any, *, timeout_s: float) -> Dict[str, Any]:
+    """Wait briefly for the modern shell dialog's filename control to materialize."""
+
+    dialog_handle = int(_sig(dialog).get("handle", 0) or 0)
+    deadline = time.perf_counter() + max(0.0, float(timeout_s))
+    attempts = 0
+    last_rows: List[Dict[str, Any]] = []
+    last_uia_error = ""
+    while True:
+        attempts += 1
+        last_rows = _win32_children(dialog_handle)
+        filename_row = next(
+            (row for row in last_rows if int(row.get("ctrl_id", -1)) == 1148),
+            None,
+        )
+        if filename_row is None:
+            filename_row = next(
+                (row for row in last_rows if str(row.get("class_name", "")) == "Edit"),
+                None,
+            )
+        if filename_row is not None:
+            return {
+                "attempts": attempts,
+                "rows": last_rows,
+                "filename_row": filename_row,
+                "uia_dialog": None,
+                "uia_edit": None,
+            }
+
+        uia_dialog = None
+        try:
+            uia_dialog = Desktop(backend="uia").window(handle=dialog_handle)
+            edits = [
+                control
+                for control in uia_dialog.descendants()
+                if str(_sig(control).get("control_type", "")) == "Edit"
+            ]
+            last_uia_error = ""
+        except Exception as exc:
+            edits = []
+            last_uia_error = repr(exc)
+        if edits:
+            return {
+                "attempts": attempts,
+                "rows": last_rows,
+                "filename_row": None,
+                "uia_dialog": uia_dialog,
+                "uia_edit": sorted(edits, key=_save_filename_edit_priority)[0],
+            }
+        if time.perf_counter() >= deadline:
+            return {
+                "attempts": attempts,
+                "rows": last_rows,
+                "filename_row": None,
+                "uia_dialog": uia_dialog,
+                "uia_edit": None,
+                "uia_error": last_uia_error,
+            }
+        time.sleep(0.05)
+
+
 def _set_save_path(dialog: Any, full_target_path: Path, *, quick: bool = False) -> Dict[str, Any]:
     target = str(full_target_path)
     user32 = ctypes.windll.user32
     result: Dict[str, Any] = {"target": target}
 
-    # Prefer file-name edit by id 1148 in common file dialog.
-    rows = _win32_children(int(_sig(dialog).get("handle", 0) or 0))
-    filename_row = None
-    for r in rows:
-        if int(r.get("ctrl_id", -1)) == 1148:
-            filename_row = r
-            break
-    if filename_row is None:
-        # fallback: first Edit control
-        for r in rows:
-            if str(r.get("class_name", "")) == "Edit":
-                filename_row = r
-                break
-
-    uia_dialog = None
+    discovery = _discover_save_filename_target(dialog, timeout_s=0.55 if quick else 1.5)
+    rows = list(discovery.get("rows", []) or [])
+    filename_row = discovery.get("filename_row")
+    uia_dialog = discovery.get("uia_dialog")
+    uia_edit = discovery.get("uia_edit")
+    result["filename_discovery_attempts"] = int(discovery.get("attempts", 0) or 0)
+    path_entry_attempted = False
     if filename_row is not None:
         h = int(filename_row.get("handle", 0) or 0)
         user32.SendMessageW(h, WM_SETTEXT, 0, target)
+        path_entry_attempted = True
         buf = ctypes.create_unicode_buffer(1024)
         user32.GetWindowTextW(h, buf, 1023)
         readback = str(buf.value or "")
@@ -1330,35 +1397,19 @@ def _set_save_path(dialog: Any, full_target_path: Path, *, quick: bool = False) 
     else:
         # Modern Windows shell dialogs expose the filename field through UIA
         # even when EnumChildWindows has no classic Edit/control-id 1148.
-        try:
-            dialog_handle = int(_sig(dialog).get("handle", 0) or 0)
-            uia_dialog = Desktop(backend="uia").window(handle=dialog_handle)
-            edits = [c for c in uia_dialog.descendants() if str(_sig(c).get("control_type", "")) == "Edit"]
-        except Exception:
-            edits = []
-        if edits:
-            def _edit_priority(control: Any) -> tuple[int, str]:
-                signature = _sig(control)
-                automation_id = str(signature.get("automation_id", "") or "").strip().lower()
-                name = str(signature.get("title", "") or "").strip().lower()
-                if automation_id in {"1001", "1148", "filenamecontrolhost"}:
-                    return (0, name)
-                if re.search(r"(?:file\s*name|dateiname)", name, re.IGNORECASE):
-                    return (1, name)
-                if re.search(r"(?:search|suchen)", name, re.IGNORECASE):
-                    return (100, name)
-                return (10, name)
-
-            edit = sorted(edits, key=_edit_priority)[0]
+        if uia_edit is not None:
+            edit = uia_edit
             try:
                 edit.set_focus()
                 try:
                     edit.set_edit_text(target)
                     result["filename_uia"] = "set_edit_text"
+                    path_entry_attempted = True
                 except Exception:
                     edit.type_keys("^a{BACKSPACE}", set_foreground=True)
                     edit.type_keys(target, with_spaces=True, set_foreground=True)
                     result["filename_uia"] = "typed"
+                    path_entry_attempted = True
                 result["filename_uia_signature"] = _sig(edit)
                 try:
                     rb = str(edit.window_text() or "")
@@ -1370,6 +1421,17 @@ def _set_save_path(dialog: Any, full_target_path: Path, *, quick: bool = False) 
                 result["filename_uia"] = f"error:{exc!r}"
         else:
             result["filename_uia"] = "missing_edit"
+            if discovery.get("uia_error"):
+                result["filename_uia_error"] = str(discovery.get("uia_error"))
+            # Never accept the dialog's existing/default filename when the
+            # requested path was not set. Clicking Save here can create an
+            # unrelated file and makes a partial export look successful.
+            result["save_action"] = {"method": "skipped_filename_control_missing"}
+            return result
+
+    if not path_entry_attempted:
+        result["save_action"] = {"method": "skipped_filename_entry_failed"}
+        return result
 
     # click Save button (primary: common dialog command id 1, locale-agnostic)
     save_clicked = False
