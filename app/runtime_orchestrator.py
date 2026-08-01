@@ -1321,20 +1321,28 @@ def _run_akabak_ui_driver_stage(
         "blocked_by_preexisting": bool(akabak_before_stage),
     }
     vacs_before_stage = _list_vacs_process_ids()
-    vacs_pre_cleanup = _terminate_process_ids(vacs_before_stage) if vacs_before_stage else {
-        "requested": [],
-        "terminated": [],
-        "failed": [],
-    }
     payload["vacs_cleanup"] = {
         "before_stage_pids": vacs_before_stage,
-        "pre_stage": vacs_pre_cleanup,
+        "blocked_by_preexisting": bool(vacs_before_stage),
+        "pre_stage": {
+            "requested": [],
+            "terminated": [],
+            "failed": [],
+            "skipped": True,
+            "reason": "preexisting_processes_are_not_test_owned" if vacs_before_stage else "clean_baseline",
+        },
     }
     try:
         if akabak_before_stage:
             joined_pids = ", ".join(str(pid) for pid in akabak_before_stage)
             raise RuntimeError(
                 "AKABAK is already running outside this simulation stage "
+                f"(PID(s): {joined_pids}). Close it before starting the batch to avoid cross-run UI interference."
+            )
+        if vacs_before_stage:
+            joined_pids = ", ".join(str(pid) for pid in vacs_before_stage)
+            raise RuntimeError(
+                "VACS is already running outside this simulation stage "
                 f"(PID(s): {joined_pids}). Close it before starting the batch to avoid cross-run UI interference."
             )
         driver_kwargs: Dict[str, Any] = {"executable": str(executable), "log_dir": driver_log_dir}
@@ -1396,6 +1404,7 @@ def _run_akabak_ui_driver_stage(
         payload["akabak_processes"]["owned_post_stage_pids"] = owned_akabak_pids
         payload["akabak_processes"]["post_stage_cleanup"] = akabak_post_cleanup
         vacs_after_stage = _list_vacs_process_ids()
+        owned_vacs_pids = sorted(set(vacs_after_stage) - set(vacs_before_stage))
         if preserve_vacs_for_export and stage_ok:
             vacs_post_cleanup = {
                 "requested": [],
@@ -1405,12 +1414,13 @@ def _run_akabak_ui_driver_stage(
                 "reason": "preserve_for_vacs_export",
             }
         else:
-            vacs_post_cleanup = _terminate_process_ids(vacs_after_stage) if vacs_after_stage else {
+            vacs_post_cleanup = _terminate_process_ids(owned_vacs_pids) if owned_vacs_pids else {
                 "requested": [],
                 "terminated": [],
                 "failed": [],
             }
         payload["vacs_cleanup"]["after_stage_pids"] = vacs_after_stage
+        payload["vacs_cleanup"]["owned_post_stage_pids"] = owned_vacs_pids
         payload["vacs_cleanup"]["post_stage"] = vacs_post_cleanup
         payload["ok"] = bool(stage_ok)
         payload["timed_out"] = bool(timed_out)

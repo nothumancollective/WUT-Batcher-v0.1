@@ -376,13 +376,13 @@ class RuntimeOrchestratorTests(unittest.TestCase):
             with patch("app.runtime_orchestrator.AkabakDriver", _FakeAkabakDriver):
                 with patch(
                     "app.runtime_orchestrator._list_vacs_process_ids",
-                    side_effect=[[111], [222]],
+                    side_effect=[[], [222]],
                 ):
                     with (
                         patch("app.runtime_orchestrator._list_akabak_process_ids", side_effect=[[], []]),
                         patch(
                             "app.runtime_orchestrator._terminate_process_ids",
-                            return_value={"requested": [111], "terminated": [111], "failed": []},
+                            return_value={"requested": [], "terminated": [], "failed": []},
                         ) as terminate_mock,
                     ):
                         stage, payload, ok = _run_akabak_ui_driver_stage(
@@ -399,12 +399,13 @@ class RuntimeOrchestratorTests(unittest.TestCase):
             self.assertEqual(stage.status, "ok")
             self.assertEqual(close_calls, [True])
             self.assertEqual(init_vacs_paths, ["C:\\Tools\\VACS\\VacsViewer.exe"])
-            self.assertEqual(terminate_mock.call_count, 1)
+            terminate_mock.assert_not_called()
             self.assertEqual(str(payload.get("summary_log")), str(stage.summary_log))
             summary_payload = json.loads(Path(stage.summary_log).read_text(encoding="utf-8-sig"))
             cleanup = dict(summary_payload.get("vacs_cleanup", {}) or {})
-            self.assertEqual(cleanup.get("before_stage_pids"), [111])
+            self.assertEqual(cleanup.get("before_stage_pids"), [])
             self.assertEqual(cleanup.get("after_stage_pids"), [222])
+            self.assertEqual(cleanup.get("owned_post_stage_pids"), [222])
             post = dict(cleanup.get("post_stage", {}) or {})
             self.assertTrue(bool(post.get("skipped")))
             self.assertEqual(str(post.get("reason")), "preserve_for_vacs_export")
@@ -437,14 +438,11 @@ class RuntimeOrchestratorTests(unittest.TestCase):
                 def close(self):
                     return SimpleNamespace(ok=True, status="closed")
 
-            cleanup_results = [
-                {"requested": [111], "terminated": [111], "failed": []},
-                {"requested": [222], "terminated": [222], "failed": []},
-            ]
+            cleanup_results = [{"requested": [222], "terminated": [222], "failed": []}]
             with (
                 patch("app.runtime_orchestrator.AkabakDriver", _TimeoutAkabakDriver),
                 patch("app.runtime_orchestrator._list_akabak_process_ids", side_effect=[[], []]),
-                patch("app.runtime_orchestrator._list_vacs_process_ids", side_effect=[[111], [222]]),
+                patch("app.runtime_orchestrator._list_vacs_process_ids", side_effect=[[], [222]]),
                 patch("app.runtime_orchestrator._terminate_process_ids", side_effect=cleanup_results) as terminate_mock,
             ):
                 stage, _, ok = _run_akabak_ui_driver_stage(
@@ -458,12 +456,44 @@ class RuntimeOrchestratorTests(unittest.TestCase):
 
             self.assertFalse(ok)
             self.assertTrue(stage.timed_out)
-            self.assertEqual(terminate_mock.call_count, 2)
+            self.assertEqual(terminate_mock.call_count, 1)
             summary_payload = json.loads(Path(stage.summary_log).read_text(encoding="utf-8-sig"))
             post = dict(dict(summary_payload.get("vacs_cleanup", {}) or {}).get("post_stage", {}) or {})
             self.assertEqual(post.get("requested"), [222])
             self.assertEqual(post.get("terminated"), [222])
             self.assertFalse(bool(post.get("skipped")))
+
+    def test_akabak_stage_blocks_preexisting_vacs_without_terminating_it(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            logs_dir = Path(tmp_dir) / "logs"
+            abec_path = Path(tmp_dir) / "Project.abec"
+            abec_path.write_text("stub", encoding="utf-8")
+
+            with (
+                patch("app.runtime_orchestrator.AkabakDriver") as driver_mock,
+                patch("app.runtime_orchestrator._list_akabak_process_ids", side_effect=[[], []]),
+                patch("app.runtime_orchestrator._list_vacs_process_ids", side_effect=[[444], [444]]),
+                patch("app.runtime_orchestrator._terminate_process_ids") as terminate_mock,
+            ):
+                stage, result, ok = _run_akabak_ui_driver_stage(
+                    version_id="V001",
+                    executable="C:\\Tools\\AKABAK\\AKABAK.exe",
+                    abec_project_path=abec_path,
+                    version_logs_dir=logs_dir,
+                    require_vacs_graph_import=True,
+                    preserve_vacs_for_export=True,
+                )
+
+            self.assertFalse(ok)
+            self.assertEqual(stage.status, "failed")
+            driver_mock.assert_not_called()
+            terminate_mock.assert_not_called()
+            self.assertIn("already running", str(result.get("error", "")))
+            summary_payload = json.loads(Path(stage.summary_log).read_text(encoding="utf-8-sig"))
+            cleanup = dict(summary_payload.get("vacs_cleanup", {}) or {})
+            self.assertEqual(cleanup.get("before_stage_pids"), [444])
+            self.assertEqual(cleanup.get("after_stage_pids"), [444])
+            self.assertEqual(cleanup.get("owned_post_stage_pids"), [])
 
     def test_akabak_stage_blocks_preexisting_akabak_without_terminating_it(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

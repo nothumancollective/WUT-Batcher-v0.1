@@ -468,9 +468,55 @@ def _dialog_candidates(pid: int, main_handle: int) -> List[Any]:
     return list(uniq.values())
 
 
-def _kill_vacs() -> None:
-    for image in ("VACSVIEWER_32.exe", "vacsviewer.exe"):
-        subprocess.run(["taskkill", "/IM", image, "/T", "/F"], capture_output=True, text=True, check=False)
+def _register_owned_vacs_pid(args: argparse.Namespace, pid: int) -> None:
+    value = int(pid or 0)
+    if value <= 0:
+        return
+    owned = getattr(args, "_owned_vacs_pids", None)
+    if not isinstance(owned, set):
+        owned = set()
+        setattr(args, "_owned_vacs_pids", owned)
+    owned.add(value)
+
+
+def _terminate_vacs_pids(process_ids: List[int]) -> Dict[str, Any]:
+    """Terminate only explicitly adopted or started VACS process IDs."""
+
+    requested = sorted({int(pid) for pid in process_ids if int(pid) > 0})
+    terminated: List[int] = []
+    already_exited: List[int] = []
+    failed: List[Dict[str, Any]] = []
+    live_before = set(_running_vacs_pids())
+    for pid in requested:
+        if pid not in live_before:
+            already_exited.append(pid)
+            continue
+        proc = subprocess.run(
+            ["taskkill", "/PID", str(pid), "/T", "/F"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+        live_after = set(_running_vacs_pids())
+        if pid not in live_after:
+            terminated.append(pid)
+            continue
+        failed.append(
+            {
+                "pid": pid,
+                "returncode": int(proc.returncode),
+                "stdout": str(proc.stdout or "").strip(),
+                "stderr": str(proc.stderr or "").strip(),
+            }
+        )
+    return {
+        "requested": requested,
+        "terminated": terminated,
+        "already_exited": already_exited,
+        "failed": failed,
+    }
 
 
 def _list_pids_by_image(image_name: str) -> List[int]:
@@ -1729,9 +1775,17 @@ def run_once_safe(args: argparse.Namespace) -> Dict[str, Any]:
             log["ok"] = False
             log["error"] = "vacs_not_ready_after_f4"
             return log
+        _register_owned_vacs_pid(args, vacs_pid)
     else:
-        _kill_vacs()
+        preexisting_vacs_pids = _running_vacs_pids()
+        if preexisting_vacs_pids:
+            step("contaminated_vacs_baseline", pids=preexisting_vacs_pids)
+            log["ok"] = False
+            log["error"] = "preexisting_vacs_processes_not_owned"
+            log["preexisting_vacs_pids"] = preexisting_vacs_pids
+            return log
         proc = subprocess.Popen([str(args.vacs_exe)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _register_owned_vacs_pid(args, int(proc.pid))
         step("start_vacs_mode", mode="prestart_vacs_primary", prestart=True, pid=int(proc.pid), vacs_exe=str(args.vacs_exe))
         time.sleep(0.6)
 
@@ -1748,6 +1802,7 @@ def run_once_safe(args: argparse.Namespace) -> Dict[str, Any]:
                 return log
 
         vacs_pid = int(parsed.get("vacs_pid", 0) or 0)
+        _register_owned_vacs_pid(args, vacs_pid)
     main = _find_main(vacs_pid)
     if main is None:
         log["ok"] = False
@@ -2035,9 +2090,6 @@ def run_once_safe(args: argparse.Namespace) -> Dict[str, Any]:
         required_graph_title_regex=str(getattr(args, "required_graph_title_regex", "") or ""),
     )
 
-    # close vacs
-    _kill_vacs()
-    step("kill_vacs_final")
     log["finished_at"] = _now_iso()
 
     out_file = out_dir / "summary.json"
@@ -2123,10 +2175,20 @@ def run_once_fast(args: argparse.Namespace) -> Dict[str, Any]:
             out_file.write_text(json.dumps(log, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
             log["summary_file"] = str(out_file)
             return log
+        _register_owned_vacs_pid(args, vacs_pid)
     else:
-        _kill_vacs()
-        step("kill_vacs_prestart")
+        preexisting_vacs_pids = _running_vacs_pids()
+        if preexisting_vacs_pids:
+            step("contaminated_vacs_baseline", pids=preexisting_vacs_pids)
+            log["ok"] = False
+            log["error"] = "preexisting_vacs_processes_not_owned"
+            log["preexisting_vacs_pids"] = preexisting_vacs_pids
+            out_file = out_dir / "summary.json"
+            out_file.write_text(json.dumps(log, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+            log["summary_file"] = str(out_file)
+            return log
         proc = subprocess.Popen([str(args.vacs_exe)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _register_owned_vacs_pid(args, int(proc.pid))
         step("start_vacs_mode", mode="fast_prestart_vacs_primary", prestart=True, pid=int(proc.pid), vacs_exe=str(args.vacs_exe))
         time.sleep(0.08)
 
@@ -2216,6 +2278,7 @@ def run_once_fast(args: argparse.Namespace) -> Dict[str, Any]:
             return log
 
         vacs_pid = int(parsed.get("vacs_pid", 0) or 0)
+        _register_owned_vacs_pid(args, vacs_pid)
     main = _find_main_fast(vacs_pid)
     if main is None:
         log["ok"] = False
@@ -2525,8 +2588,6 @@ def run_once_fast(args: argparse.Namespace) -> Dict[str, Any]:
         required_graph_title_regex=str(getattr(args, "required_graph_title_regex", "") or ""),
     )
 
-    _kill_vacs()
-    step("kill_vacs_final")
     log["finished_at"] = _now_iso()
     out_file = out_dir / "summary.json"
     out_file.write_text(json.dumps(log, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -2650,7 +2711,16 @@ def main() -> int:
 
     enable_audit_mode(entrypoint="scripts.vacs_export_save_all.main")
     args = build_parser().parse_args()
-    result = run_once(args)
+    args._owned_vacs_pids = set()
+    result: Dict[str, Any] | None = None
+    try:
+        result = run_once(args)
+    finally:
+        cleanup = _terminate_vacs_pids(sorted(args._owned_vacs_pids))
+        if result is not None:
+            result["vacs_process_cleanup"] = cleanup
+    if result is None:
+        raise RuntimeError("VACS exporter returned no result")
     _apply_exit_status(
         result,
         min_successful_exports=int(getattr(args, "min_successful_exports", 1) or 1),
