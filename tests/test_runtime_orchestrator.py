@@ -563,7 +563,10 @@ class RuntimeOrchestratorTests(unittest.TestCase):
 
             self.assertEqual(summary.run_status, "succeeded")
             self.assertEqual(len(repair_calls), 1)
-            self.assertNotIn("le_patch_profile", repair_calls[0])
+            self.assertEqual(
+                repair_calls[0].get("le_patch_profile"),
+                "driver_drvgroup_def_driving_resistor",
+            )
             self.assertTrue(str(repair_calls[0].get("diagnostics_dir", "")).endswith("\\logs"))
 
     def test_pipeline_uses_akabak_ui_driver_when_available(self) -> None:

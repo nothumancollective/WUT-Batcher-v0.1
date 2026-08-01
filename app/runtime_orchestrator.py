@@ -19,7 +19,10 @@ import uuid
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from app.batch_orchestrator import materialize_batch_plan
-from app.ath_driver_assets import repair_post_ath_le_binding
+from app.ath_driver_assets import (
+    LE_PATCH_PROFILE_DRIVER_DRVGROUP_DEF_DRIVING_RESISTOR,
+    repair_post_ath_le_binding,
+)
 from app.cfg_renderer import render_cfg_text
 from app.constants import ATH_PREVIEW_EXPORT_ROOT
 from app.export_specs import ExportSpec, parse_export_specs
@@ -2514,6 +2517,7 @@ def run_batch_pipeline(
                     driver_sync = repair_post_ath_le_binding(
                         abec_path=target_abec_path,
                         ath_executable=ath_executable,
+                        le_patch_profile=LE_PATCH_PROFILE_DRIVER_DRVGROUP_DEF_DRIVING_RESISTOR,
                         diagnostics_dir=version_logs_dir,
                     )
                     _append_stage_debug_log(
