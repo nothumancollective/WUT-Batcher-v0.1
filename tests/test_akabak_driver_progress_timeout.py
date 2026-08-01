@@ -13,7 +13,10 @@ class AkabakDriverProgressTimeoutTests(unittest.TestCase):
         self.assertIsNone(_vacs_reimport_retry_due_s(attempt_count=1, graphless_s=14.99))
         self.assertEqual(_vacs_reimport_retry_due_s(attempt_count=1, graphless_s=15.0), 15.0)
         self.assertEqual(_vacs_reimport_retry_due_s(attempt_count=2, graphless_s=45.0), 45.0)
-        self.assertIsNone(_vacs_reimport_retry_due_s(attempt_count=3, graphless_s=600.0))
+        self.assertEqual(_vacs_reimport_retry_due_s(attempt_count=3, graphless_s=90.0), 90.0)
+        self.assertEqual(_vacs_reimport_retry_due_s(attempt_count=4, graphless_s=180.0), 180.0)
+        self.assertEqual(_vacs_reimport_retry_due_s(attempt_count=5, graphless_s=300.0), 300.0)
+        self.assertIsNone(_vacs_reimport_retry_due_s(attempt_count=6, graphless_s=600.0))
 
     def test_completion_poll_uses_single_watchdog_pass(self) -> None:
         driver = AkabakDriver.__new__(AkabakDriver)
