@@ -121,8 +121,10 @@ class AkabakDriverProgressTimeoutTests(unittest.TestCase):
                 (0.0, {"vacs_pids": [200], "solve_command_enabled": True, "vacs_ui": {}}),
                 (4.0, {"vacs_pids": [200], "solve_command_enabled": True, "vacs_ui": {}}),
                 (16.0, {"vacs_pids": [200], "solve_command_enabled": True, "vacs_ui": {}}),
+                (30.0, {"vacs_pids": [200], "solve_command_enabled": False, "vacs_ui": {}}),
+                (46.0, {"vacs_pids": [200], "solve_command_enabled": True, "vacs_ui": {}}),
                 (
-                    16.0,
+                    46.0,
                     {
                         "vacs_pids": [200],
                         "solve_command_enabled": True,
@@ -150,14 +152,14 @@ class AkabakDriverProgressTimeoutTests(unittest.TestCase):
             result = driver.wait_for_completion(timeout_s=300, require_vacs_graph_import=True)
 
         self.assertTrue(result.ok)
-        self.assertEqual(driver._trigger_vacs_reimport_native.call_count, 2)
+        self.assertEqual(driver._trigger_vacs_reimport_native.call_count, 3)
         driver._trigger_vacs_reimport_native.assert_called_with(101)
         reimport_logs = [
             call_row.kwargs["payload"]
             for call_row in driver._log.call_args_list
             if call_row.kwargs.get("event") == "vacs_reimport_triggered"
         ]
-        self.assertEqual([row["attempt_count"] for row in reimport_logs], [1, 2])
+        self.assertEqual([row["attempt_count"] for row in reimport_logs], [1, 2, 3])
 
     def test_completed_solve_starts_vacs_through_akabak_f7_handoff(self) -> None:
         driver = AkabakDriver.__new__(AkabakDriver)

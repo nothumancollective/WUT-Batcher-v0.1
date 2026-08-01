@@ -4231,21 +4231,25 @@ class AkabakDriver:
             current_solve_enabled = snapshot.get("solve_command_enabled")
             if current_solve_enabled is False:
                 solve_command_was_disabled = True
-                # The native Calculate command is the authoritative busy
-                # signal.  AKABAK can stay CPU-quiet for a few seconds after
-                # F4 before disabling the command, so discard any premature
-                # CPU-quiescence completion and allow a later, real F7
-                # handoff after the command becomes enabled again.
-                solver_numerically_complete = False
-                solver_activity_snapshot = dict(snapshot)
-                solver_quiet_since = None
-                vacs_graphless_since = None
-                vacs_reimport = {"triggered": False, "attempt_count": 0}
-                vacs_reimport_attempts = []
-                vacs_launch = {"attempted": False}
-                snapshot["status"] = "running_solve_command_disabled"
-                _record_heartbeat(snapshot)
-                return False, snapshot
+                if not solver_numerically_complete:
+                    # The native Calculate command is the authoritative busy
+                    # signal.  AKABAK can stay CPU-quiet for a few seconds
+                    # after F4 before disabling the command, so discard any
+                    # premature CPU-quiescence completion and allow a later,
+                    # real F7 handoff after the command becomes enabled again.
+                    solver_activity_snapshot = dict(snapshot)
+                    solver_quiet_since = None
+                    vacs_graphless_since = None
+                    vacs_reimport = {"triggered": False, "attempt_count": 0}
+                    vacs_reimport_attempts = []
+                    vacs_launch = {"attempted": False}
+                    snapshot["status"] = "running_solve_command_disabled"
+                    _record_heartbeat(snapshot)
+                    return False, snapshot
+                # F7 can temporarily disable Calculate again while handing
+                # spectra to an already-started VACS process.  Preserve the
+                # completed-solve state and the global bounded retry budget.
+                snapshot["post_solve_command_disabled"] = True
 
             if not solver_numerically_complete and (snapshot.get("progress_window_present") or new_akabak):
                 solver_activity_snapshot = dict(snapshot)
