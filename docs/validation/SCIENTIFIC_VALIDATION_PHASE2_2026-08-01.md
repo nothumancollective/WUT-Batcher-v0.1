@@ -1,8 +1,8 @@
 # Scientific Validation Phase 2 — frozen acceptance matrix
 
-Date: 2026-08-01  
-Branch: `codex/scientific-validation-phase2-2026-08-01`  
-Baseline: `ac28b3e7c573a8c1ed314f3e3638bfde23586cf3`  
+Date: 2026-08-01
+Branch: `codex/scientific-validation-phase2-2026-08-01`
+Baseline: `ac28b3e7c573a8c1ed314f3e3638bfde23586cf3`
 Status at creation: criteria frozen before the phase-2 result runs
 
 ## Scope and evidence vocabulary
