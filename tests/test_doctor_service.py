@@ -4,13 +4,27 @@ from pathlib import Path
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 
-from app.doctor_service import _check_runner_dir, run_doctor_checks, run_settings_doctor_checks
+from app.doctor_service import _check_runner_dir, _check_zombies, run_doctor_checks, run_settings_doctor_checks
 from app.models import AppConfig
 from app.settings_store import UserSettings
 
 
 class DoctorServiceTests(unittest.TestCase):
+    def test_kill_zombies_refuses_name_wide_cleanup_without_ownership(self) -> None:
+        with (
+            patch("app.doctor_service.os.name", "nt"),
+            patch("app.doctor_service._list_windows_processes", return_value={"akabak.exe"}),
+            patch("app.doctor_service.subprocess.run") as run_mock,
+        ):
+            check = _check_zombies(kill_zombies=True)
+
+        run_mock.assert_not_called()
+        self.assertEqual(check.status, "warn")
+        self.assertIn("Refused to terminate", check.detail)
+        self.assertIn("exact PID ownership ledger", check.detail)
+
     def test_doctor_without_fix_does_not_touch_library_probe_sentinel(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)

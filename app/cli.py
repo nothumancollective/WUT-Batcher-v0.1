@@ -986,7 +986,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_doctor = sub.add_parser("doctor", help="Run environment checks.")
     p_doctor.add_argument("--fix", action="store_true", help="Attempt non-destructive fixes (mkdir/write tests).")
-    p_doctor.add_argument("--kill-zombies", action="store_true", help="Attempt to kill stuck tool processes.")
+    p_doctor.add_argument(
+        "--kill-zombies",
+        action="store_true",
+        help="Deprecated safety no-op; reports unowned native tools but never kills by image name.",
+    )
     p_doctor.add_argument("--report-path", help="Write doctor_report.json to this path.")
     p_doctor.set_defaults(func=cmd_doctor)
 

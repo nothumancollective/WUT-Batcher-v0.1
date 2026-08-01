@@ -377,34 +377,22 @@ def _check_zombies(kill_zombies: bool) -> DoctorCheck:
             key="zombies",
             label="Zombie processes",
             status=STATUS_WARN,
-            detail="Found running processes: " + ", ".join(targets) + " (use --kill-zombies to terminate).",
+            detail=(
+                "Found running processes with unknown ownership: "
+                + ", ".join(targets)
+                + ". Close them manually or through the exact test/run ownership ledger."
+            ),
         )
 
-    failures: List[str] = []
-    for name in targets:
-        result = subprocess.run(
-            ["taskkill", "/F", "/IM", name],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            check=False,
-            creationflags=_no_window_creationflags(),
-        )
-        if result.returncode != 0:
-            failures.append(name)
-
-    if failures:
-        return DoctorCheck(
-            key="zombies",
-            label="Zombie processes",
-            status=STATUS_WARN,
-            detail="Failed to terminate: " + ", ".join(failures),
-        )
     return DoctorCheck(
         key="zombies",
         label="Zombie processes",
-        status=STATUS_OK,
-        detail="Terminated processes: " + ", ".join(targets),
+        status=STATUS_WARN,
+        detail=(
+            "Refused to terminate processes with unknown ownership: "
+            + ", ".join(targets)
+            + ". Name-wide cleanup is unsafe; use an exact PID ownership ledger."
+        ),
     )
 
 
