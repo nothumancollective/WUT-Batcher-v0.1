@@ -1,7 +1,7 @@
 # Stability and integration audit — 2026-07-31
 
-Status: implementation complete; final full-suite validation and local `main`
-integration are recorded at the end of this document.
+Status: implementation complete; final full-suite validation and synchronized
+`main` integration are recorded at the end of this document.
 
 ## Scope and guardrails
 
@@ -20,7 +20,8 @@ Safety rules used throughout:
   create/delete writeability sentinel;
 - each real run started with no known tool process and ended with no ATH,
   Gmsh, AKABAK or VacsViewer process;
-- auto-push was disabled for every commit; this audit does not push.
+- accepted changes were kept in small commits; final `main`/`origin/main`
+  synchronization is recorded below.
 
 ## Branch archaeology and integration decision
 
@@ -183,12 +184,14 @@ Official references:
 The active root is `C:\Users\maximilianheinze\Desktop\WUT Project Library`.
 The final read-only structural audit found:
 
-- seven projects in the canonical `library.json` + `library.sqlite` +
+- eight projects in the canonical `library.json` + `library.sqlite` +
   `projects/` layout;
 - no root `global.sqlite` and no project with competing preferred/legacy DBs;
-- 20 batch folders, 91 version folders and 23 normal run folders across the
-  non-empty projects, plus four auxiliary ATH run folders;
-- eight copied databases with `PRAGMA quick_check=ok`;
+- 22 batch folders, 93 version folders and 25 normal run folders across the
+  non-empty projects, plus five auxiliary ATH run folders;
+- the original seven-project snapshot's eight copied databases passed
+  `PRAGMA quick_check=ok`; the final structural audit found all nine expected
+  database paths and zero errors;
 - 37 historical duplicate immutable-plan groups: 28 in P0003 and three each in
   P0005, P0006 and P0007;
 - no queued replication records in the inspected database snapshot.
@@ -196,10 +199,11 @@ The final read-only structural audit found:
 Duplicate history was deliberately retained because versions can own different
 runs and exports. The new reuse behavior prevents another equivalent cohort.
 
-The desktop also contains seven February QA/UX/E2E library roots, a detached
-`Desktop\projects` container with one old project, and a detached
-`Desktop\library.sqlite`. They are inactive candidates, not automatically
-classified as disposable. No cleanup or migration was performed.
+The sibling scan returns nine marker candidates: the active root, seven
+February QA/UX/E2E roots, and the detached `Desktop\projects` container. It
+also reports detached `Desktop\library.sqlite` as one index candidate. Inactive
+candidates are not automatically classified as disposable. No cleanup or
+migration was performed.
 
 ## Automated validation
 
@@ -263,14 +267,16 @@ The former local `main` is recoverable as tag
 and this documentation-only integration record was then committed on `main`.
 The project-manager (`c5e6860`), batch-lineage (`0850f67`) and archived-main
 heads are all ancestors of the resulting branch. Historical branches were
-retained, the working tree was clean, and no remote ref was pushed.
+retained and the working tree was clean. That first integration step was local;
+the accepted follow-up commits were subsequently synchronized to
+`origin/main`.
 
 ## 2026-08-01 follow-up hardening
 
-This addendum records the post-reboot application-cold/warm repeats and the
-additional faults found while making those repeats deterministic. A real
-Windows/VM reboot test is not an acceptance gate in this pass; the user
-explicitly deferred the truly fresh VACS-profile case to another VM.
+This addendum records the application-cold/warm repeats, the actual VM-reboot
+repeat, and the additional faults found while making those repeats
+deterministic. A reboot does not erase the persisted VACS user profile; a truly
+fresh Windows/VACS profile remains a separate external validation point.
 
 ### Additional root causes and commits
 
@@ -289,6 +295,12 @@ explicitly deferred the truly fresh VACS-profile case to another VM.
 | Harness resource timeout | The heavier V002 case reached the old 1,200 s hard limit while CPU time and heartbeats still advanced. | Keep product/UI defaults unchanged, but set the `resource` harness profile to 20 minutes inactivity / 40 minutes hard limit and verify forwarding in fast tests (`9bc68f2`). |
 | UI stress fixture | The fake LE fixture contained literal `\\n` tokens and was correctly rejected by the hardened driver guard. | Emit real line breaks in the fixture without weakening production validation (`4d2dbe4`). |
 | Analyzer database handle | The SQLite context manager completed transactions but did not guarantee immediate native-handle closure on Windows; two full suites exposed temporary project cleanup locks. | Explicitly close the plot-loader connection and enforce that contract in a regression test (`d9e4563`). |
+| Post-solve VACS budget | A completed AKABAK solve could still be reported as a solve timeout while the separately bounded VACS handoff was slow. | Isolate the post-solve VACS timeout from solve progress (`674a8a7`). |
+| Analyzer curve semantics | One-sided beamwidth arrays could be paired with the wrong frequency axis, while impedance traces could enter pressure-polar selection and a delayed clear reset the chosen target color. | Align one-sided axes, isolate pressure from impedance, and preserve the target-color preference (`334515a`, `9402802`, `315005d`). |
+| Generated CFG robustness | UTF-8 BOMs could leak into rendered ATH input, and long project-scoped CFG names consumed the remaining Windows/VACS path budget. | Strip BOMs before rendering and shorten project-scoped CFG names (`af3170c`, `009ff04`). |
+| Qt UI/test lifecycle | A lineage hover passed the wrong Qt point type; fixed-duration animation waits and unclosed top-level Analyzer pages made combined suites load-sensitive and could end in `0xC0000409`. | Convert the hover point explicitly, poll animation completion, and close pages during teardown (`8fba634`, `43aa4aa`, `cc3e631`). |
+| Settings-test isolation | A GUI regression fixture could replace the real user settings profile while trying to isolate it. | Redirect settings through the supported isolated override without touching the profile (`f2a72b8`). |
+| Legacy VACS path budgets | The old Save As dialog needs a conservative 240-character interaction path, but applying that same cap to the final Windows destination rejected valid paths. | Keep the dialog-stage cap at 240 and allow final paths up to the Windows 259-character boundary (`0426a87`). |
 
 ### Final runner-harness evidence
 
@@ -334,6 +346,22 @@ eight requested frequency rows, active percentage progress, and final AKABAK
 `Ready / 100%` with all solve phases green. Long runs were classified by
 heartbeats, CPU-time growth and visible progress rather than wall time alone.
 
+After the VM reboot, two additional isolated native runs on `6f720f3` repeated
+the complete ATH -> Gmsh/ABEC -> AKABAK -> VACS path:
+
+- `tmp/real_e2e_post_reboot_20260801_6f720f3`: V001 succeeded in 73.25 s,
+  both requested exports were verified, exact VACS PID 9552 was terminated,
+  and no native process remained;
+- `tmp/real_e2e_post_reboot_20260801_6f720f3_vacs_visible`: V001 succeeded in
+  366.09 s, both requested exports were verified, exact VACS PID 4484 was
+  terminated, and no native process remained. AKABAK heartbeats and CPU time
+  advanced for roughly 275 s before the visible VACS handoff, confirming a slow
+  healthy solve rather than a hang;
+- the visible evidence is retained as
+  `tmp/screen_6f720f3_post_reboot_e2e.png` and
+  `tmp/screen_6f720f3_post_reboot_vacs_foreground.png`; the latter shows the
+  expected Mic Polar and Radiation Impedance graph windows.
+
 An additional heavier service scenario is preserved under
 `tmp/real_service_heavy2_e0a1897_20260801_r3`. It used a 72-by-28 mesh,
 32 frequencies from 400 Hz to 16 kHz, two 90/120 mm versions, H/V/D plus
@@ -349,13 +377,15 @@ impedance, and the then-current ten-minute setting (600 s inactivity,
 - the owned VACS/AKABAK processes were cleaned and the recorded final native
   count was zero.
 
-Per explicit user decision, no second long Heavy-2 gate was required after
-raising the profile budget. Several already-launched V002-only helper attempts
-were stopped by exact PID/parent/path/start-time ownership when they were found
-running. The 282.84 s `674a8a7` artifact and later `85e1671`/`0a587e2`
-setups are aborted non-gates; they do not prove success or failure of the
-heavy scenario. Timeout forwarding and hard-limit arithmetic instead passed
-the focused automated tests.
+No completed post-budget Heavy-2 retest is claimed. Several V002-only attempts
+after the budget increase were terminated outside the product pipeline by the
+execution backend (including a wrapper/shell reap near 896 s and a scheduled
+task status `0xffffffff`). The 282.84 s `674a8a7` artifact and later
+`85e1671`/`0a587e2` attempts are therefore aborted non-gates: they prove
+neither product success nor product failure. Repeating the same long helper
+again risked another uncontrolled orphan, so the evidence remains the V001
+success, the controlled old-budget V002 timeout, progressing heartbeats/CPU,
+and passing focused tests for timeout forwarding and hard-limit arithmetic.
 
 ### Process-hygiene invariant
 
@@ -375,10 +405,18 @@ repeatable cause rather than a one-off; `d9e4563` closes it explicitly.
 
 The definitive clean suite on `d9e4563`, with no native process or Heavy
 wrapper in the pre-state, completed with 725 passed, 10 skipped and zero
-failures in 693.89 s. The 9,235 warnings are the existing Qt
-`QTableWidgetItem.setTextAlignment(int)` deprecations. The post-suite native
-state was empty before an external V002 helper tried to restart; that exact
-owned helper tree was identified and stopped and is not part of the gate.
+failures in 693.89 s. A later same-product-tree repeat completed with the same
+725/10 result in 597.50 s.
+
+The final Stable-HEAD gate on `5f4c6cf` completed with **735 passed, 10 skipped
+and zero failures in 851.10 s**. Pytest returned 0; HEAD and the clean worktree
+were identical before and after; the final WUT-GUI/ATH/Gmsh/AKABAK/VACS counts
+were all zero. A narrowly scoped watcher stopped one independently launched
+`pythonw -m app gui` (PID 12700, parent 12508) 72 s after test start; it matched
+no other process and prevented the recurring external debug launcher from
+contaminating this repeat. The wrapper wall time was 959.21 s. The 9,235
+warnings are the existing Qt `QTableWidgetItem.setTextAlignment(int)`
+deprecations.
 
 ### Setup, Doctor and library follow-up
 
@@ -387,11 +425,13 @@ tools. ATH, AKABAK and VACS remain manual-link installations with license
 summaries; Gmsh remains explicit opt-in Winget only. Nothing was installed or
 reconfigured.
 
-The 2026-08-01 structural audit again found seven canonical projects, zero
-errors and 37 historical duplicate-plan warnings. It listed the inactive
-February QA/UX/E2E library roots, detached `Desktop/projects`, and detached
-`Desktop/library.sqlite` without inferring authority or changing them. No
-migration, deletion or deduplication was performed.
+The final 2026-08-01 structural audit found eight canonical projects, zero
+errors and 37 historical `duplicate_version_plan` warnings. P0008 contains one
+batch, one version and one run with no duplicate warning; the next project
+counter is 9. The audit listed nine sibling candidates and one detached index
+without inferring authority or changing them. SHA-256, length and timestamps of
+`library.json` and `library.sqlite`, plus the library-root timestamp, were exact
+before and after. No migration, deletion or deduplication was performed.
 
 The pre-fix Doctor invocation created and deleted its fixed probe in the active
 library, changing only the root directory timestamp to
@@ -411,3 +451,26 @@ dialogs. The application-cold and warm repeats in the current Windows session
 showed no such editors and reached four graphs directly. A truly fresh
 VM/profile first VACS session remains a documented external validation point,
 not a blocker for this release.
+
+### Scientific validation boundary
+
+The reproducible ATH contract probe and evidence are recorded in
+`docs/validation/SCIENTIFIC_VALIDATION_2026-08-01.md` and
+`docs/validation/evidence/ath_contracts_2026-08-01.json` (`5f4c6cf`). Six
+standalone ATH cases exited 0 without timeout. They verify length and throat
+transfer, required physical groups, quarter-model coordinate signs and normal
+orientation, and ordered mesh-density controls. They do not yet prove mouth or
+profile transfer, mesh convergence, standalone-vs-WUT solver-result equality,
+observation numerics, VACS complex round-trip/DB losslessness, or Analyzer
+golden-value correctness; those items remain explicitly unvalidated or
+plausibilized rather than being inferred from stability alone.
+
+### Final branch state
+
+At the final code gate, `main` and `origin/main` both pointed to `5f4c6cf` and
+the worktree was clean. Of 51 inspected non-main refs, every product, UI,
+analyzer, storage, cleanup, integration and scientific-validation ref was an
+ancestor of `main`. Only the intentionally historical `audit/2026-02-20` and
+`audit/2026-02-21-legacy-census` refs (local and remote) were not ancestors.
+The former main remains recoverable as
+`archive/main-pre-20260731 -> 532a351`.

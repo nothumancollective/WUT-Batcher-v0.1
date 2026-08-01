@@ -1,9 +1,10 @@
 # Scientific Validation 2026-08-01
 
-Status: active  
-Baseline date: 2026-08-01  
-Baseline commit: `e0ac543a1e8e7d048bc7764c4ca75f5778e0aeef`  
-Working branch: `codex/scientific-validation-2026-08-01`
+- Status: active
+- Baseline date: 2026-08-01
+- Baseline commit: `e0ac543a1e8e7d048bc7764c4ca75f5778e0aeef`
+- Evidence integration commit: `5f4c6cfff6e608718d77fb696e5a946fbe6c7f65`
+- Source branch: `codex/scientific-validation-2026-08-01` (integrated into `main`)
 
 ## Scope and evidence labels
 
