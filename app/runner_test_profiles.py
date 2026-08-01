@@ -109,10 +109,31 @@ BASELINE_PROFILE = RunnerTestProfile(
 )
 
 
+SCIENTIFIC_PROFILE = RunnerTestProfile(
+    profile_id="scientific",
+    parameter_overrides={},
+    sim_export_overrides={},
+    simulation_timeout_minutes=20,
+    rationale=(
+        "Preserve declared scientific case inputs exactly while allowing the validated "
+        "20-minute inactivity budget for real convergence and reference runs."
+    ),
+    verification_plan={
+        "hypothesis": "scientific cases retain every declared input and receive only the larger timeout budget",
+        "tests": [
+            "Compare caller and effective parameter dictionaries exactly.",
+            "Compare caller and effective simulation/export dictionaries exactly.",
+            "Verify the harness reports a 20-minute solver timeout budget.",
+        ],
+    },
+)
+
+
 _PROFILES: Dict[str, RunnerTestProfile] = {
     "baseline": BASELINE_PROFILE,
     "fast": FAST_PROFILE,
     "resource": RESOURCE_PROFILE,
+    "scientific": SCIENTIFIC_PROFILE,
 }
 
 

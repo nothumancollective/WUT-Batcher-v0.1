@@ -1,0 +1,18 @@
+{
+  "case_id": "scientific_phase2_mesh_fine",
+  "name": "Scientific Phase 2 Mesh Fine",
+  "description": "Fine level of the frozen three-level real convergence matrix.",
+  "template_cfg": "templates/scientific_phase2_min.cfg",
+  "project_id": "P_SCI_PHASE2", "batch_id": "B_SCI_MESH_FINE", "project_name": "Scientific Validation Phase 2",
+  "constraints": {"runner_mode": "AkabakImportFixedSource", "fixed_params": {"Length": 60}, "limits": {}},
+  "batch_settings": {
+    "selected_params": {"Throat.Profile": 1, "Throat.Diameter": 25.4, "Throat.Angle": 7, "Coverage.Angle": 45, "Term.s": 0.5, "Term.n": 4, "Term.q": 0.996, "OS.k": 1, "Morph.TargetShape": 0, "Mesh.AngularSegments": 72, "Mesh.LengthSegments": 28, "Mesh.MouthResolution": 12, "Mesh.ThroatResolution": 8},
+    "sweeps": {}, "sweep_mode": "single",
+    "sim_export_settings": {"simulation_mode": "free_standing", "freq_start_hz": 800, "freq_end_hz": 1600, "num_points": 4, "mesh_frequency": 1600, "simulation_timeout_minutes": 20, "export_specs": [
+      {"id": "h", "tool": "vacs", "graph_kind": "polar", "format": "txt", "options": {"polar_name": "P2_H", "map_angle_range": [0, 90, 19], "distance_m": 3, "offset": 65, "inclination": 0}, "output_name_template": "{version_id}_H.txt"},
+      {"id": "v", "tool": "vacs", "graph_kind": "polar", "format": "txt", "options": {"polar_name": "P2_V", "map_angle_range": [0, 90, 19], "distance_m": 3, "offset": 65, "inclination": 90}, "output_name_template": "{version_id}_V.txt"},
+      {"id": "d", "tool": "vacs", "graph_kind": "polar", "format": "txt", "options": {"polar_name": "P2_D", "map_angle_range": [0, 90, 19], "distance_m": 3, "offset": 65, "inclination": 45}, "output_name_template": "{version_id}_D.txt"},
+      {"id": "radimp", "tool": "vacs", "graph_kind": "impedance", "format": "txt", "output_name_template": "{version_id}_radimp.txt"}
+    ]}
+  }
+}

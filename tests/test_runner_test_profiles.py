@@ -54,6 +54,21 @@ class RunnerTestProfilesTests(unittest.TestCase):
         self.assertEqual(resource.simulation_timeout_minutes, 20)
         self.assertEqual(resource.to_dict()["simulation_timeout_minutes"], 20)
 
+    def test_scientific_profile_preserves_inputs_with_twenty_minute_budget(self) -> None:
+        parameters = {"Length": 60, "Mesh.AngularSegments": 72}
+        sim_settings = {"freq_start_hz": 800.0, "freq_end_hz": 1600.0, "num_points": 4}
+        merged_params, merged_sim, metadata = apply_runner_test_profile(
+            profile_id="scientific",
+            parameters=parameters,
+            sim_export_settings=sim_settings,
+        )
+        profile = get_runner_test_profile("scientific")
+        self.assertEqual(merged_params, parameters)
+        self.assertEqual(merged_sim, sim_settings)
+        self.assertEqual(metadata["applied_parameter_overrides"], {})
+        self.assertEqual(metadata["applied_sim_export_overrides"], {})
+        self.assertEqual(profile.simulation_timeout_minutes, 20)
+
 
 if __name__ == "__main__":
     unittest.main()
