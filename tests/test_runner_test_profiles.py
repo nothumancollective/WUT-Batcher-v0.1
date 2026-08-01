@@ -26,6 +26,31 @@ class RunnerTestProfilesTests(unittest.TestCase):
         self.assertEqual(metadata["profile"]["profile_id"], "fast")
         self.assertIn("Mesh.AngularSegments", metadata["applied_parameter_overrides"])
 
+    def test_baseline_profile_preserves_inputs(self) -> None:
+        parameters = {"Length": 120, "Mesh.AngularSegments": 80}
+        sim_settings = {"freq_start_hz": 500.0, "freq_end_hz": 15000.0, "num_points": 16}
+        merged_params, merged_sim, metadata = apply_runner_test_profile(
+            profile_id="baseline",
+            parameters=parameters,
+            sim_export_settings=sim_settings,
+        )
+        self.assertEqual(merged_params, parameters)
+        self.assertEqual(merged_sim, sim_settings)
+        self.assertEqual(metadata["applied_parameter_overrides"], {})
+        self.assertEqual(metadata["applied_sim_export_overrides"], {})
+
+    def test_resource_profile_is_heavier_than_fast_profile(self) -> None:
+        fast = get_runner_test_profile("fast")
+        resource = get_runner_test_profile("resource")
+        self.assertGreater(
+            resource.parameter_overrides["Mesh.AngularSegments"]
+            * resource.parameter_overrides["Mesh.LengthSegments"],
+            fast.parameter_overrides["Mesh.AngularSegments"]
+            * fast.parameter_overrides["Mesh.LengthSegments"],
+        )
+        self.assertGreater(resource.sim_export_overrides["num_points"], fast.sim_export_overrides["num_points"])
+        self.assertGreater(resource.sim_export_overrides["freq_end_hz"], fast.sim_export_overrides["freq_end_hz"])
+
 
 if __name__ == "__main__":
     unittest.main()

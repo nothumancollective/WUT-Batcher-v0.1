@@ -1,4 +1,4 @@
-"""Runner test profiles for fast/low-resolution harness execution."""
+"""Runner test profiles for bounded and reproducible harness execution."""
 
 from __future__ import annotations
 
@@ -57,8 +57,57 @@ FAST_PROFILE = RunnerTestProfile(
 )
 
 
+RESOURCE_PROFILE = RunnerTestProfile(
+    profile_id="resource",
+    parameter_overrides={
+        "Mesh.AngularSegments": 28,
+        "Mesh.LengthSegments": 18,
+        "Mesh.CornerSegments": 4,
+        "Mesh.ThroatSegments": 2,
+        "Mesh.ThroatResolution": 14.0,
+        "Mesh.MouthResolution": 26.0,
+        "Mesh.RearResolution": 32.0,
+    },
+    sim_export_overrides={
+        "freq_start_hz": 600.0,
+        "freq_end_hz": 6000.0,
+        "num_points": 8,
+        "simulation_mode": "free_standing",
+    },
+    rationale=(
+        "Exercise a larger mesh and wider frequency grid than the fast smoke profile while keeping "
+        "one native solve inside the harness hard timeout on the validation VM."
+    ),
+    verification_plan={
+        "hypothesis": "the bounded higher-workload profile remains stable across two sequential native runs",
+        "tests": [
+            "Run two sequential ATH->AKABAK->VACS cycles with profile=resource.",
+            "Verify every run produces non-empty parsed exports and leaves no owned native process behind.",
+            "Compare wall time and peak resource use with the five-run fast batch.",
+        ],
+    },
+)
+
+
+BASELINE_PROFILE = RunnerTestProfile(
+    profile_id="baseline",
+    parameter_overrides={},
+    sim_export_overrides={},
+    rationale="Preserve all case and template inputs for explicit reference and convergence runs.",
+    verification_plan={
+        "hypothesis": "the baseline profile does not mutate caller-provided settings",
+        "tests": [
+            "Compare input and effective parameter dictionaries exactly.",
+            "Use only when the native runtime budget is known to accommodate the selected template.",
+        ],
+    },
+)
+
+
 _PROFILES: Dict[str, RunnerTestProfile] = {
+    "baseline": BASELINE_PROFILE,
     "fast": FAST_PROFILE,
+    "resource": RESOURCE_PROFILE,
 }
 
 
