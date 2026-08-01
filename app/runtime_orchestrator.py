@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import csv
+from functools import wraps
 import hashlib
 import io
 import json
@@ -43,6 +44,69 @@ except Exception:
     AkabakDriver = None  # type: ignore[assignment]
 
 _ABEC_SYNC_MTIME_SLOP_NS = 5_000_000_000
+_NATIVE_TOOL_PIPELINE_MUTEX_NAME = r"Local\WUT_Batcher_AKABAK_VACS_Pipeline"
+
+
+class _NativeToolPipelineLock:
+    """Non-blocking Windows session mutex for the single-instance UI tools."""
+
+    def __init__(self) -> None:
+        self._handle: int = 0
+        self._acquired = False
+
+    def acquire(self) -> None:
+        if os.name != "nt":
+            return
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32
+        kernel32.CreateMutexW.restype = ctypes.c_void_p
+        handle = int(kernel32.CreateMutexW(None, False, _NATIVE_TOOL_PIPELINE_MUTEX_NAME) or 0)
+        if handle <= 0:
+            raise RuntimeError("Could not create the AKABAK/VACS pipeline mutex.")
+        wait_result = int(kernel32.WaitForSingleObject(ctypes.c_void_p(handle), 0))
+        if wait_result not in {0x00000000, 0x00000080}:
+            kernel32.CloseHandle(ctypes.c_void_p(handle))
+            if wait_result == 0x00000102:
+                raise RuntimeError(
+                    "Another WUT run already owns the AKABAK/VACS UI pipeline lock. "
+                    "Wait for that run to finish; concurrent native tool runs are not supported."
+                )
+            raise RuntimeError(f"Could not acquire the AKABAK/VACS pipeline mutex (wait={wait_result}).")
+        self._handle = handle
+        self._acquired = True
+
+    def release(self) -> None:
+        if os.name != "nt" or self._handle <= 0:
+            return
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32
+        handle = ctypes.c_void_p(int(self._handle))
+        try:
+            if self._acquired:
+                kernel32.ReleaseMutex(handle)
+        finally:
+            kernel32.CloseHandle(handle)
+            self._handle = 0
+            self._acquired = False
+
+
+def _serialize_native_tool_pipeline(function):
+    @wraps(function)
+    def _wrapped(*args, **kwargs):
+        akabak_executable = kwargs.get("akabak_executable")
+        dry_run = bool(kwargs.get("dry_run", False))
+        if dry_run or not _supports_uia_executable(akabak_executable):
+            return function(*args, **kwargs)
+        pipeline_lock = _NativeToolPipelineLock()
+        pipeline_lock.acquire()
+        try:
+            return function(*args, **kwargs)
+        finally:
+            pipeline_lock.release()
+
+    return _wrapped
 
 
 def _now_iso() -> str:
@@ -1949,6 +2013,7 @@ def _ingest_vacs_exports(
     }
 
 
+@_serialize_native_tool_pipeline
 def run_batch_pipeline(
     project: Project,
     batch: Batch,

@@ -22,6 +22,7 @@ from app.runtime_orchestrator import (
     _apply_sim_export_settings_to_cfg,
     _resolve_export_specs,
     _run_akabak_ui_driver_stage,
+    _serialize_native_tool_pipeline,
     _terminate_process_ids,
     _supports_uia_executable,
     _sync_generated_abec,
@@ -49,6 +50,48 @@ def _library_db_path(library_root: Path) -> Path:
 
 
 class RuntimeOrchestratorTests(unittest.TestCase):
+    def test_native_pipeline_lock_spans_the_wrapped_run(self) -> None:
+        events: list[str] = []
+
+        class _FakeLock:
+            def acquire(self) -> None:
+                events.append("acquire")
+
+            def release(self) -> None:
+                events.append("release")
+
+        @_serialize_native_tool_pipeline
+        def _fake_pipeline(**_kwargs):
+            events.append("run")
+            return "ok"
+
+        with patch("app.runtime_orchestrator._NativeToolPipelineLock", _FakeLock):
+            result = _fake_pipeline(akabak_executable=r"C:\Tools\AKABAK\AKABAK.exe", dry_run=False)
+
+        self.assertEqual(result, "ok")
+        self.assertEqual(events, ["acquire", "run", "release"])
+
+    def test_native_pipeline_lock_is_released_after_failure(self) -> None:
+        events: list[str] = []
+
+        class _FakeLock:
+            def acquire(self) -> None:
+                events.append("acquire")
+
+            def release(self) -> None:
+                events.append("release")
+
+        @_serialize_native_tool_pipeline
+        def _fake_pipeline(**_kwargs):
+            events.append("run")
+            raise RuntimeError("boom")
+
+        with patch("app.runtime_orchestrator._NativeToolPipelineLock", _FakeLock):
+            with self.assertRaisesRegex(RuntimeError, "boom"):
+                _fake_pipeline(akabak_executable=r"C:\Tools\AKABAK\AKABAK.exe", dry_run=False)
+
+        self.assertEqual(events, ["acquire", "run", "release"])
+
     def test_le_contract_requires_drvgroup_on_le_driver_not_only_radimp(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
