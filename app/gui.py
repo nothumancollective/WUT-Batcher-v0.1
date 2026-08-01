@@ -1095,7 +1095,6 @@ class HeatmapCanvas(QLabel):
         self._show_mirrored_minus6 = False
         self._target_shade_alpha = 24
         self._target_boundary_alpha = 140
-        self._target_axis_color = QColor("#8EC4FF")
         self._contour_color = QColor("#FFE38A")
         self._contour_width = 2.0
         self._rerender()

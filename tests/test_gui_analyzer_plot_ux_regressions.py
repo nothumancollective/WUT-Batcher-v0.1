@@ -610,6 +610,8 @@ class AnalyzerPlotUxRegressionTests(unittest.TestCase):
             self.assertEqual(str(explorer_heatmap._target_axis_color.name()).upper(), "#FF7A4D")
             self.assertEqual(str(explorer_curve._target_axis_color.name()).upper(), "#FF7A4D")
             self.assertEqual(str(explorer_summary._target_axis_color.name()).upper(), "#FF7A4D")
+            explorer_heatmap.clear_heatmap("Delayed empty plot result.")
+            self.assertEqual(str(explorer_heatmap._target_axis_color.name()).upper(), "#FF7A4D")
 
     @unittest.skipIf(QTest is None or Qt is None, "Qt test utilities are required")
     def test_plot_tile_double_click_toggles_maximize_restore(self) -> None:
