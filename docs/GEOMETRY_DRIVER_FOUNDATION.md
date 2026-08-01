@@ -94,3 +94,25 @@ from a role/kind pairing alone.
   selected Geometry filters the project dashboard and batch creation context.
 - A true first-Windows-session VACS startup remains a separate external
   validation condition and is not changed by this feature.
+
+## Real GUI acceptance
+
+The final feature commit was exercised through the normal visible
+Project -> Geometry -> Batch -> Run -> Analyse flow against an isolated project
+copy. Batch B012/V012 used Geometry `G-affb44e5-840f-474f-b051-5747a33becbd`
+and immutable revision `generic25-r1`; the GUI showed both before launch.
+
+The one-version real run completed ATH, AKABAK and VACS in 132.97 seconds,
+exported current H/V/D polars plus radiation impedance, persisted four graphs,
+24 generic graph points, three polar measurements and 342 polar points, and
+rendered B012/V012 in the Analyzer. KPI refresh produced Score 22.75 and retained
+the scientifically appropriate limited-angle warning. Normal application close
+left no WUT, ATH, Gmsh, AKABAK, VACS or owned Python helper process. Compact
+hashes, IDs and the PID ledger are recorded in
+`docs/validation/evidence/geometry_driver_gui_gate_2026-08-01.json`.
+
+Two preflight launches were deliberately abandoned before project opening or
+native execution because their isolated settings override was invalid. Fallback
+library discovery rewrote only the standard library's stable `library.json`
+metadata; no production project/database/result file was touched. The accepted
+run used the supported `WUT_BATCHER_SETTINGS_PATH` override.

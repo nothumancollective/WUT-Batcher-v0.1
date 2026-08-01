@@ -3153,6 +3153,42 @@ Validation executed:
 - Geometry migration CLI plus domain tests: 4 passed.
 - Runtime Geometry/Driver snapshot persistence: 1 passed.
 
+### Update 83 (Final Geometry/Driver GUI Production Gate)
+
+#### Final regression
+
+- Fixed the Geometry Manager refresh path so a newly created or duplicated
+  Geometry remains selected instead of snapping back to the previous row.
+- Added a focused UI regression; `tests/test_geometry_driver_ui.py`: 7 passed.
+- Final clean full suite on `53fc8a7`: 764 passed, 10 skipped, zero failed in
+  426.46 s (9,325 existing Qt deprecation warnings).
+
+#### Real production gate
+
+- Created and selected `GUI Snapshot Geometry` in the visible UI, assigned the
+  built-in immutable `generic25-r1` revision and verified its revision hash in
+  the Batch execution context.
+- Ran exactly one fast native GUI/service/worker batch: B012/V012, run
+  `516f64c3-a197-45f4-8401-04f69c6f5cb5`, 1/1 succeeded in real mode in
+  132.97 s.
+- Verified ATH, mesh/LE guards, AKABAK graph handoff, four current VACS TXT
+  exports, succeeded run/version rows, Geometry ID and source/effective LE
+  hashes in project SQLite.
+- Verified four graphs/24 graph points, three H/V/D measurements/342 polar
+  points, then selected B012/V012 in the visible Analyzer and refreshed one KPI
+  row (Score 22.75 with the expected limited-angle warning).
+- Process ledger began with no relevant process, tracked GUI PID 11864, AKABAK
+  PID 6808 and VACS PID 12976, and ended empty after normal GUI close. No global
+  process-name cleanup was used.
+- Two non-simulation preflight launches were closed before project opening
+  because their isolated settings override was invalid. Fallback discovery
+  rewrote only stable standard-library `library.json` metadata; no production
+  project, DB, batch, version or result file changed.
+
+#### Evidence
+
+- `docs/validation/evidence/geometry_driver_gui_gate_2026-08-01.json`
+
 
 
 

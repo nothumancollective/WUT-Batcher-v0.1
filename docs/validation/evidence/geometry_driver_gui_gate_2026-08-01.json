@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-08-01T20:43:00Z",
+  "git_commit": "53fc8a7db84d476da70901cd2f3a0e5a782eadb7",
+  "branch": "codex/geometry-driver-foundation-2026-08-01",
+  "scope": "single fast real GUI/service/worker production gate",
+  "isolated_library_root": "C:\\wut_geometry_driver_gate_20260801_r1\\library",
+  "project_id": "P0001__40a6f067-5940-4146-b04f-04f0246b6472",
+  "geometry": {
+    "geometry_id": "G-affb44e5-840f-474f-b051-5747a33becbd",
+    "name": "GUI Snapshot Geometry",
+    "role": "hf_horn",
+    "created_and_selected_in_gui": true
+  },
+  "driver": {
+    "driver_id": "generic25",
+    "revision_id": "generic25-r1",
+    "revision_hash": "a28d2fd712afc2abff0990b80b781ef13a1339e0743e6af0129bd84bfbdea161",
+    "snapshot_hash": "50a35bcbb7ab17ae3eb3732d0e4ccd0dc5ee311d29576d95947917590d9a2415",
+    "source_le_hash": "3f8e1bacae6f50a4b02e9609f60d508d9c6552386707272dcf74babe945557be",
+    "effective_staged_le_hash": "053701a2158347cdf3fdd242fc053de4a225bff93607b134efc5c80a6ed3ce9a",
+    "effective_staged_le_path": "versions\\V012\\abec\\generic25.txt"
+  },
+  "run": {
+    "batch_id": "B012",
+    "version_id": "V012",
+    "run_id": "516f64c3-a197-45f4-8401-04f69c6f5cb5",
+    "started_at": "2026-08-01T20:38:47Z",
+    "finished_at": "2026-08-01T20:41:00Z",
+    "duration_seconds": 132.97341379200225,
+    "visible_gui_status": "Version 1/1; Mode real; ETA done; Run finished for B012",
+    "run_status": "succeeded",
+    "version_status": "success",
+    "ath_status": "success",
+    "akabak_status": "completed_vacs_graphs_imported",
+    "vacs_export_status": "success"
+  },
+  "settings": {
+    "background_automation_mode": false,
+    "simulation_timeout_minutes": 20,
+    "frequency_start_hz": 1000.0,
+    "frequency_end_hz": 4000.0,
+    "frequency_points": 6,
+    "mesh_frequency_hz": 800.0,
+    "polar_angles_deg": [0.0, 90.0, 19],
+    "distance_m": 3.0,
+    "exports_requested": 4
+  },
+  "tools": {
+    "ath": {"path": "C:\\Tools\\ATH\\ath.exe", "version": "4.8.2"},
+    "akabak": {"path": "C:\\Program Files (x86)\\RDTeam\\AKABAK\\AKABAK.exe", "version": "3.2.4"},
+    "vacs": {"path": "C:\\Program Files (x86)\\RDTeam\\VACSVIEWER_32\\VACSVIEWER_32.exe", "export_metadata_version": "2.1.3 b33"}
+  },
+  "storage": {
+    "project_database_sha256_after_kpi": "ede8a16aaee7d70e94adb916c788d89c0d06f66800b50a55898b6e973a89dc93",
+    "version_json_sha256": "2532ce1701899edc8fe4dd1b5ae1590d8cb78faacf0a65e7e6b0346852cd628c",
+    "graphs": 4,
+    "graph_points": 24,
+    "polar_measurements": 3,
+    "polar_points": 342,
+    "analyzer_kpi_rows": 1,
+    "analyzer_score": 22.75,
+    "analyzer_warning": "INSUFFICIENT_ANGLE_COVERAGE"
+  },
+  "exports": [
+    {"kind": "polar_D", "bytes": 4296, "sha256": "c53c0596e083132eaa650893de8d268646bc2c2fb4b8f0382c4120c6510b0091"},
+    {"kind": "polar_H", "bytes": 4295, "sha256": "ddc4bc4967d47f0994c845b847f11d02188b5966b249f8d1a0fbab2130994ae4"},
+    {"kind": "polar_V", "bytes": 4296, "sha256": "1860f5d2dbe85e820e3d9a9905eb00faa19ff45a60fadecec7cb9ab05b58c804"},
+    {"kind": "radiation_impedance", "bytes": 830, "sha256": "b7bf8869594c521d9cfc5b1f1fd2f5b02b54c41371529b34d847e52bbe80e3db"}
+  ],
+  "process_ledger": {
+    "pre_run_relevant_processes": [],
+    "owned": [
+      {"pid": 11864, "parent_pid": 5284, "name": "pythonw.exe", "role": "WUT GUI"},
+      {"pid": 6808, "parent_pid": 11864, "name": "AKABAK.exe", "role": "solver", "cpu_seconds_observed": 47.34375},
+      {"pid": 12976, "parent_pid": 476, "name": "VACSVIEWER_32.exe", "role": "VACS instance first observed during this run", "cpu_seconds_observed": 15.140625}
+    ],
+    "post_run_before_gui_close_relevant_processes": [11864],
+    "post_gui_close_relevant_processes": [],
+    "global_process_name_kill_used": false
+  },
+  "preflight_notes": {
+    "aborted_non_simulation_launches": 2,
+    "reason": "one BOM-invalid isolated settings file and one unsupported WUT_PROFILE_DIR override; both were closed before opening a project or starting native tools",
+    "default_library_effect": "library.json metadata was rewritten during fallback discovery; no project, database, batch, version or result file was changed",
+    "default_library_json_sha256_after": "eed9f7052677f5e9e0b19828a3b6c94171bc0a874485679df4883043de692a44"
+  },
+  "acceptance": {
+    "project_geometry_batch_gui_path": true,
+    "immutable_driver_snapshot_visible_before_run": true,
+    "ath_akabak_vacs_success": true,
+    "txt_exports_complete": true,
+    "database_persistence_complete": true,
+    "analyzer_rendered_selected_version": true,
+    "zero_relevant_rest_processes": true,
+    "passed": true
+  }
+}
