@@ -281,7 +281,7 @@ class AnalyzerPlotService:
                   AND pm.orientation IN ({placeholders})
                   AND (
                     TRIM(COALESCE(pm.data_level_type, '')) = ''
-                    OR LOWER(REPLACE(TRIM(pm.data_level_type), ' ', '')) IN ('soundpressure', 'spl')
+                    OR LOWER(REPLACE(TRIM(pm.data_level_type), ' ', '')) IN ('soundpressure', 'spl', 'peak')
                   )
                 ORDER BY pp.freq_hz ASC, pp.angle_deg ASC
                 """,

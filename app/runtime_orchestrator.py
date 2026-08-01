@@ -1747,7 +1747,14 @@ def _is_polar_export_candidate(
     data_level_type = str(metadata.get("Data_LevelType", "") or "").strip()
     data_level_token = data_level_type.lower().replace(" ", "").replace("_", "")
     sound_pressure_level = data_level_token in {"soundpressure", "spl"}
-    explicit_non_polar_level = bool(data_level_token) and not sound_pressure_level
+    # VACS may export a normalized Mic Polar graph as ``Peak`` with empty base
+    # unit even though the payload still contains the full complex angular
+    # pressure matrix.  Accept that documented real-output shape only when the
+    # angular headers and the explicit polar export contract agree.  Other
+    # explicit level types (notably Impedance10) remain excluded.
+    normalized_peak_level = data_level_token == "peak"
+    pressure_compatible_level = sound_pressure_level or normalized_peak_level
+    explicit_non_polar_level = bool(data_level_token) and not pressure_compatible_level
     header_signal = format_complex and has_angle_list and has_orientation and sound_pressure_level
 
     contract_kind = ""
@@ -1767,6 +1774,7 @@ def _is_polar_export_candidate(
             "contract_kind": contract_kind,
             "data_level_type": data_level_type,
             "sound_pressure_level": bool(sound_pressure_level),
+            "normalized_peak_level": bool(normalized_peak_level),
             "explicit_non_polar_level": bool(explicit_non_polar_level),
         },
     )

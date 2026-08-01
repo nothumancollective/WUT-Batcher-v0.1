@@ -285,6 +285,49 @@ class PolarImporterTests(unittest.TestCase):
         self.assertEqual(float(row[1]), 30.0)
         self.assertIn('"source": "batch.orientation_norm_angle"', str(row[2]))
 
+    def test_contract_backed_normalized_peak_polar_is_written(self) -> None:
+        project_root, writer, project, batch = self._prepare_project()
+        exports_dir = project_root / "versions" / "V001" / "exports" / "RUN001"
+        exports_dir.mkdir(parents=True, exist_ok=True)
+        source_text = (FIXTURES / "result_v001polar_matrix_small.txt").read_text(encoding="utf-8-sig")
+        target_file = exports_dir / "V001_anygraph_01_Mic_Polar_-_BE_Spectrum_2_D.txt"
+        target_file.write_text(
+            source_text.replace("Data_LevelType=SoundPressure", "Data_LevelType=Peak").replace(
+                "Data_BaseUnit=Pa", "Data_BaseUnit=''"
+            ),
+            encoding="utf-8",
+        )
+        vacs_summary = {
+            "exports": [
+                {
+                    "spec": {"id": "external_any_01", "graph_kind": "polar", "variant": "external_01"},
+                    "entry": {"graph_kind": "polar", "graph_variant": "external_01", "format": "txt"},
+                    "plugin_id": "external_vacs_export_save_all",
+                    "output_path": str(target_file),
+                    "details": {"source_orientation_token": "D", "source_title": "Mic Polar - BE_Spectrum #2"},
+                }
+            ]
+        }
+
+        ingest = _ingest_vacs_exports(
+            writer=writer,
+            project=project,
+            batch=batch,
+            run_id="RUN001",
+            version_id="V001",
+            exports_dir=exports_dir,
+            vacs_export_summary=vacs_summary,
+        )
+
+        self.assertEqual(ingest.get("parse_errors"), [])
+        self.assertEqual(int(ingest.get("polar_measurements_written", 0)), 1)
+        self.assertEqual(int(ingest.get("polar_points_written", 0)), 6)
+        with closing(sqlite3.connect(str(writer.project_db_path))) as conn:
+            row = conn.execute(
+                "SELECT orientation, data_level_type, data_base_unit FROM polar_measurements LIMIT 1"
+            ).fetchone()
+        self.assertEqual(tuple(row), ("D", "Peak", ""))
+
     def test_import_deduplicates_same_file_identity(self) -> None:
         project_root, writer, project, batch = self._prepare_project()
         exports_dir = project_root / "versions" / "V001" / "exports" / "RUN001"

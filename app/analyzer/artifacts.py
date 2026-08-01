@@ -75,7 +75,7 @@ class PolarArtifact:
               AND COALESCE(run_id, '') = ?
               AND (
                 TRIM(COALESCE(data_level_type, '')) = ''
-                OR LOWER(REPLACE(TRIM(data_level_type), ' ', '')) IN ('soundpressure', 'spl')
+                OR LOWER(REPLACE(TRIM(data_level_type), ' ', '')) IN ('soundpressure', 'spl', 'peak')
               )
             """,
             (str(project_id), str(batch_id), str(version_id), run_token),

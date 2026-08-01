@@ -110,7 +110,7 @@ class AnalyzerPlotServiceMathTests(unittest.TestCase):
         self.assertAlmostEqual(float(curve[0]["beamwidth_deg"]), 32.0)
         self.assertTrue(bool(curve[0].get("saturated")))
 
-    def test_plot_payload_ignores_non_sound_pressure_polar_rows(self) -> None:
+    def test_plot_payload_accepts_peak_polar_and_ignores_impedance_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "project.sqlite"
             with closing(sqlite3.connect(str(db_path))) as conn:
@@ -137,7 +137,7 @@ class AnalyzerPlotServiceMathTests(unittest.TestCase):
                 )
                 conn.execute(
                     "INSERT INTO polar_measurements VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    ("pressure", "P001", "B001", "V001", "R001", "H", None, "SoundPressure"),
+                    ("pressure", "P001", "B001", "V001", "R001", "H", None, "Peak"),
                 )
                 conn.execute(
                     "INSERT INTO polar_measurements VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
