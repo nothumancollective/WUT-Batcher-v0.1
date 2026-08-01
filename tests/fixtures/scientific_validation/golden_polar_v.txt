@@ -1,0 +1,19 @@
+SourceDesc=WUT_Phase2_Golden
+Version='1'
+Author='WUT test fixture'
+StartString_Data=Data
+EndString_Data=Data_End
+Data_Format=Complex
+Data_Domain=Frequency
+Data_LevelType=SoundPressure
+Data_AbscUnit=Hz
+Data_BaseUnit=Pa
+Data_Legend='Golden V pressure'
+Param_Coord_x1=3
+Param_Coord_x2='-30,-20,-10,0,10,20,30'
+Param_Coord_x3=90
+Param_Coord_Type=Spherical
+Data
+1000 0.72 0.96 2.16 2.88 4.32 5.76 7.2 9.6 4.32 5.76 2.16 2.88 0.72 0.96
+2000 1.08 1.44 3.24 4.32 6.48 8.64 10.8 14.4 6.48 8.64 3.24 4.32 1.08 1.44
+Data_End

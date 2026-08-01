@@ -1,0 +1,48 @@
+{
+  "created_at": "2026-08-01",
+  "status": "verified",
+  "scope": "repo-authored synthetic golden data; raw TXT -> parser -> SQLite -> analyzer plot/KPIs -> persisted KPI -> GUI formatting",
+  "reference_implementation": "tests/test_scientific_kpi_golden_chain.py",
+  "fixtures": {
+    "golden_impedance.txt": "77e156e6bbfb495e5e6838b21df3cf46ed8c4625ec7f534b5fb4e7691b69cf75",
+    "golden_polar_d.txt": "866cf281587dc77c2f855a0915fa915c3de254dc4f24e920e8327ebce5b276e8",
+    "golden_polar_h.txt": "3c48c8abf7d71ac18254259c6fa12f83b8cbaee1f65b658ff86e792c641a8a99",
+    "golden_polar_v.txt": "f1610ac5c17c11846c7e1e785d3c7afc660a7aebb6312fee3bb260aadb83dcf6"
+  },
+  "input_contract": {
+    "frequencies_hz": [1000.0, 2000.0],
+    "angles_deg": [-30.0, -20.0, -10.0, 0.0, 10.0, 20.0, 30.0],
+    "planes": {"H": 0.0, "V": 90.0, "D": 45.0},
+    "polar_level": "complex SoundPressure in Pa",
+    "impedance_level": "complex impedance in Ohm",
+    "normalization_angle_deg": 10.0,
+    "target_h_deg": 34.0,
+    "target_v_deg": 26.0,
+    "tolerance_deg": 5.0
+  },
+  "independent_expected": {
+    "H": {"widths_deg": [33.49300667157693, 33.49300667157692], "e_bw_deg": 0.506993328423075, "b_pc_oct": 1.0, "e_cov_db": 0.9136763648383096, "r_spill": 0.11184210526315788},
+    "V": {"widths_deg": [25.19225668600005, 25.192256686000043], "e_bw_deg": 0.8077433139999535, "b_pc_oct": 1.0, "e_cov_db": 2.0916100700197613, "r_spill": 0.08720930232558138},
+    "D": {"widths_deg": [28.232318554901045, 28.232318554901056], "e_bw_deg": 1.7676814450989493, "b_pc_oct": 1.0, "e_cov_db": 1.6602043118126568, "r_spill": 0.09617647058823528},
+    "aggregate": {
+      "e_bw_deg": 0.7683996336002578,
+      "b_pc_oct": 1.0,
+      "e_cov_db": 1.5183993268673976,
+      "r_spill": 0.09919078047375621,
+      "di_proxy_db": 7.127694129343601,
+      "s_theta_db_per_deg": 0.3221011381731078,
+      "e_sym_shape_db": 0.09830635436726279,
+      "r_off_db": 0.0
+    },
+    "concept_score": 70.82
+  },
+  "database_expectations": {"polar_measurements": 3, "polar_points": 42, "impedance_graphs": 1, "analyzer_run_kpis": 1},
+  "tolerances": {"raw_complex_and_db": 1e-10, "kpis_and_width_deg": 1e-9, "gui_rounding_half_display_unit": 0.005},
+  "test_command": "$env:QT_QPA_PLATFORM='offscreen'; python -m pytest tests/test_scientific_kpi_golden_chain.py -q",
+  "test_result": "1 passed",
+  "classification_notes": {
+    "di_proxy": "Verified as the software metric implemented by the analyzer; it is not asserted to be a physical directivity index.",
+    "impedance": "Parsed and persisted through the generic graph path and deliberately excluded from H/V/D polar KPI calculations.",
+    "gui": "Verified at the presentation contract boundary (metric label and numeric formatting), not by pixel comparison."
+  }
+}
