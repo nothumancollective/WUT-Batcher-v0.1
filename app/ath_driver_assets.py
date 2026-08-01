@@ -568,6 +568,7 @@ def ensure_driver_script_in_abec_dir(
     abec_path: str | Path,
     ath_executable: str | Path | None,
     driver_basename: str = DEFAULT_LE_DRIVER_BASENAME,
+    source_override: str | Path | None = None,
 ) -> DriverScriptEnsureResult:
     abec_file = Path(str(abec_path)).expanduser()
     try:
@@ -578,9 +579,8 @@ def ensure_driver_script_in_abec_dir(
     if not abec_file.exists() or not abec_file.is_file():
         return DriverScriptEnsureResult(status="abec_missing", target_path=str(abec_file))
 
-    source_path = resolve_ath_driver_source_path(
-        ath_executable,
-        driver_basename=driver_basename,
+    source_path = Path(source_override).expanduser().resolve() if source_override else resolve_ath_driver_source_path(
+        ath_executable, driver_basename=driver_basename,
     )
     if source_path is None:
         return DriverScriptEnsureResult(
@@ -803,6 +803,7 @@ def repair_post_ath_le_binding(
     le_drvgroup_value: str = "1001",
     le_voltage_vrms: float = 1.0,
     diagnostics_dir: str | Path | None = None,
+    driver_source_override: str | Path | None = None,
 ) -> PostAthLeRepairResult:
     abec_file = Path(str(abec_path)).expanduser()
     try:
@@ -818,6 +819,7 @@ def repair_post_ath_le_binding(
         abec_path=abec_file,
         ath_executable=ath_executable,
         driver_basename=driver_basename,
+        source_override=driver_source_override,
     )
     driver_patch_result = LeDriverScriptPatchResult(
         status="target_missing",

@@ -39,7 +39,7 @@ from app.analyzer.reason_codes import reason_items_for_codes
 from app.analyzer.stage_plot_engine import compute_di_proxy_curve, compute_stage_plot_payload
 from app.batch_orchestrator import PlanningSummary, match_materialized_versions, materialize_batch_plan
 from app.ath_knowledge import load_ath_knowledge
-from app.ath_driver_assets import repair_post_ath_le_binding
+from app.ath_driver_assets import repair_post_ath_le_binding, resolve_ath_driver_source_path
 from app.compatibility_service import CompatibilityService
 from app.constants import (
     ATH_PREVIEW_CFG_DIR,
@@ -52,6 +52,9 @@ from app.constants import (
 )
 from app.cfg_renderer import render_cfg_text
 from app.feature_flags import use_project_library_storage
+from app.driver_library import DriverDefinition, DriverLibrary, DriverRevision
+from app.geometry_domain import GeometryRepository, legacy_geometry_id
+from app.geometry_driver_compat import validate_geometry_driver
 from app.models import Batch, ParamSelection, Project, ProjectConstraints, SweepSpec
 from app.project_storage import ProjectRepository
 from app.runtime_orchestrator import RuntimeSummary, run_batch_pipeline
@@ -1587,6 +1590,10 @@ class OrchestratorService:
         self.storage = manager
         repo_root = self.storage.paths.projects_dir if use_project_library_storage() else self.storage.paths.root
         self.repo = ProjectRepository(repo_root)
+        self.driver_library = DriverLibrary(self.storage.paths.root)
+        generic_source = resolve_ath_driver_source_path(self.settings.ath_exe, driver_basename="generic25")
+        if generic_source is not None:
+            self.driver_library.seed_generic25(generic_source)
         self.library_state = {
             "library_uid": state.library_uid,
             "schema_version": state.schema_version,
@@ -1610,6 +1617,91 @@ class OrchestratorService:
 
     def list_projects(self) -> List[Project]:
         return self.repo.list_projects()
+
+    def _geometry_repo(self, project_id: str) -> GeometryRepository:
+        paths = self.repo.project_paths(project_id, ensure=False)
+        return GeometryRepository(paths.project_dir, project_id)
+
+    def ensure_legacy_geometry(self, project_id: str) -> Dict[str, Any]:
+        project = self.repo.load_project(project_id)
+        repo = self._geometry_repo(project_id)
+        geometry_id = legacy_geometry_id(project_id)
+        try:
+            geometry = repo.get(geometry_id)
+        except KeyError:
+            geometry = repo.create(
+                geometry_id=geometry_id,
+                name="Legacy Geometry",
+                description="Compatibility geometry for project data created before geometry support.",
+                role="hf_horn",
+                ath_parameters=dict(project.constraints.fixed_params),
+                legacy=True,
+            )
+        return geometry.to_dict()
+
+    def list_geometries(self, project_id: str, *, include_archived: bool = False) -> List[Dict[str, Any]]:
+        repo = self._geometry_repo(project_id)
+        items = repo.list(include_archived=include_archived)
+        if not items:
+            return [self.ensure_legacy_geometry(project_id)]
+        return [item.to_dict() for item in items]
+
+    def create_geometry(self, project_id: str, **payload: Any) -> Dict[str, Any]:
+        self.repo.load_project(project_id)
+        return self._geometry_repo(project_id).create(**payload).to_dict()
+
+    def update_geometry(self, project_id: str, geometry_id: str, **changes: Any) -> Dict[str, Any]:
+        return self._geometry_repo(project_id).update(geometry_id, **changes).to_dict()
+
+    def duplicate_geometry(self, project_id: str, geometry_id: str, *, name: str | None = None) -> Dict[str, Any]:
+        return self._geometry_repo(project_id).duplicate(geometry_id, name=name).to_dict()
+
+    def archive_geometry(self, project_id: str, geometry_id: str) -> Dict[str, Any]:
+        return self._geometry_repo(project_id).archive(geometry_id).to_dict()
+
+    def set_geometry_default_driver(self, project_id: str, geometry_id: str, revision_id: str | None) -> Dict[str, Any]:
+        repo = self._geometry_repo(project_id)
+        geometry = repo.get(geometry_id)
+        token = str(revision_id or "").strip()
+        findings = []
+        if token:
+            snapshot = self.driver_library.snapshot(token)
+            findings = validate_geometry_driver(geometry, snapshot, requires_le_network=False)
+            if any(item.severity == "fatal" for item in findings):
+                raise ValueError("; ".join(f"{item.rule_id}: {item.message}" for item in findings))
+        updated = repo.update(geometry_id, default_driver_revision_id=(token or None))
+        return {**updated.to_dict(), "compatibility_findings": [item.to_dict() for item in findings]}
+
+    def list_drivers(self, *, query: str = "", kind: str | None = None, include_archived: bool = False) -> List[Dict[str, Any]]:
+        result: List[Dict[str, Any]] = []
+        for definition in self.driver_library.list_definitions(query=query, kind=kind, include_archived=include_archived):
+            revisions = self.driver_library.revisions(definition.driver_id)
+            result.append({
+                **asdict(definition),
+                "revision_count": len(revisions),
+                "latest_revision": asdict(revisions[-1]) if revisions else None,
+            })
+        return result
+
+    def create_driver(self, *, definition: Dict[str, Any], revision: Dict[str, Any]) -> Dict[str, Any]:
+        created = self.driver_library.create_definition(DriverDefinition(**definition), DriverRevision(**revision))
+        return asdict(created)
+
+    def create_driver_revision(self, driver_id: str, **payload: Any) -> Dict[str, Any]:
+        return asdict(self.driver_library.create_revision(driver_id, **payload))
+
+    def duplicate_driver(self, driver_id: str, *, model: str | None = None) -> Dict[str, Any]:
+        definition, revision = self.driver_library.duplicate(driver_id, model=model)
+        return {"definition": asdict(definition), "revision": asdict(revision)}
+
+    def archive_driver(self, driver_id: str) -> Dict[str, Any]:
+        return asdict(self.driver_library.archive(driver_id))
+
+    def export_driver_json(self, driver_id: str) -> Dict[str, Any]:
+        return self.driver_library.export_json(driver_id)
+
+    def import_driver_json(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        return asdict(self.driver_library.import_json(payload))
 
     def project_preview_image_path(self, project_id: str) -> Path:
         paths = self.repo.project_paths(str(project_id), ensure=True)
@@ -3652,6 +3744,12 @@ class OrchestratorService:
         )
         self.repo.init_project(project)
         TidyDatasetWriter(project_root, library_root=self.settings.library_root).register_project(project)
+        geometry_repo = self._geometry_repo(project_id)
+        geometry_repo.create(
+            name="Primary Geometry",
+            role="hf_horn",
+            ath_parameters=dict(project.constraints.fixed_params),
+        )
         return project
 
     def create_batch(
@@ -3666,8 +3764,24 @@ class OrchestratorService:
         parent_batch_id: Optional[str] = None,
         created_via: str = "manual",
         created_from_version_id: Optional[str] = None,
+        geometry_id: Optional[str] = None,
+        driver_revision_id: Optional[str] = None,
     ) -> PlanningSummary:
         project = self.repo.load_project(project_id)
+        geometry_repo = self._geometry_repo(project_id)
+        geometry_token = str(geometry_id or "").strip()
+        if not geometry_token:
+            geometry_token = str(self.ensure_legacy_geometry(project_id)["geometry_id"])
+        geometry = geometry_repo.get(geometry_token)
+        revision_token = str(driver_revision_id or geometry.default_driver_revision_id or "").strip()
+        if not revision_token:
+            generic = self.driver_library.revisions("generic25")
+            revision_token = generic[-1].revision_id if generic else ""
+        driver_snapshot = self.driver_library.snapshot(revision_token) if revision_token else None
+        findings = validate_geometry_driver(geometry, driver_snapshot, requires_le_network=bool(revision_token))
+        fatal = [item for item in findings if item.severity == "fatal"]
+        if fatal:
+            raise ValueError("; ".join(f"{item.rule_id}: {item.message}" for item in fatal))
         batches = self.repo.list_batches(project_id)
         batch_id = _next_prefixed_id([batch.batch_id for batch in batches], "B")
         locked_keys = set(self.compatibility.runner_locked_keys(project.constraints.runner_mode))
@@ -3701,11 +3815,15 @@ class OrchestratorService:
             sweeps=normalized_sweeps,
             sweep_mode=sweep_mode if sweep_mode in {"single", "combined"} else "single",
             runner_mode=project.constraints.runner_mode,
+            geometry_id=geometry_token,
+            driver_revision_id=revision_token,
+            driver_snapshot=asdict(driver_snapshot) if driver_snapshot else {},
             extra={
                 "batch_name": batch_name.strip() or batch_id,
                 "parent_batch_id": parent_batch_token,
                 "created_via": created_via_token,
                 "created_from_version_id": created_from_version_token,
+                "geometry_driver_findings": [item.to_dict() for item in findings],
             },
         )
 

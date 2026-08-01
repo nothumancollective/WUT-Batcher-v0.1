@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import base64
 import csv
 from functools import wraps
 import hashlib
@@ -23,7 +24,10 @@ from app.batch_orchestrator import materialize_batch_plan
 from app.ath_driver_assets import (
     LE_PATCH_PROFILE_DRIVER_DRVGROUP_DEF_DRIVING_RESISTOR,
     repair_post_ath_le_binding,
+    resolve_ath_driver_source_path,
 )
+from app.driver_library import DriverLibrary, DriverSnapshot
+from app.geometry_domain import legacy_geometry_id
 from app.cfg_renderer import render_cfg_text
 from app.constants import ATH_PREVIEW_EXPORT_ROOT
 from app.export_specs import ExportSpec, parse_export_specs
@@ -2145,6 +2149,18 @@ def run_batch_pipeline(
     )
     writer = TidyDatasetWriter(project_root, library_root=effective_library_root)
     effective_run_id = run_id or str(uuid.uuid4())
+    effective_geometry_id = str(batch.geometry_id or legacy_geometry_id(project.project_id))
+    driver_snapshot: DriverSnapshot | None = None
+    if batch.driver_snapshot:
+        driver_snapshot = DriverSnapshot(**dict(batch.driver_snapshot))
+        if not driver_snapshot.verify():
+            raise RuntimeError("driver_snapshot_integrity: selected driver snapshot failed SHA-256 verification")
+    elif not dry_run and effective_library_root is not None:
+        legacy_source = resolve_ath_driver_source_path(ath_executable, driver_basename="generic25")
+        if legacy_source is not None:
+            driver_library = DriverLibrary(effective_library_root)
+            legacy_revision = driver_library.seed_generic25(legacy_source)
+            driver_snapshot = driver_library.snapshot(legacy_revision.revision_id)
     ath_export_root_path: Optional[Path] = None
     if ath_export_root is not None:
         ath_export_root_path = Path(str(ath_export_root)).expanduser().resolve()
@@ -2165,6 +2181,8 @@ def run_batch_pipeline(
             "run_id": effective_run_id,
             "project_id": project.project_id,
             "batch_id": batch.batch_id,
+            "geometry_id": effective_geometry_id,
+            "driver_snapshot_hash": driver_snapshot.snapshot_hash if driver_snapshot else None,
             "dry_run": bool(dry_run),
             "app_root": str(run_paths.app_root),
             "ath_executable": str(run_paths.tools.ath_executable or ""),
@@ -2193,6 +2211,7 @@ def run_batch_pipeline(
         settings_hash=settings_hash,
         run_root=str(run_paths.run_root),
         run_debug_log_path=str(run_debug_log_path),
+        geometry_id=effective_geometry_id,
     )
     if not _is_global_synced(create_run_result):
         bootstrap_sync_errors.append("create_run")
@@ -2203,6 +2222,7 @@ def run_batch_pipeline(
                 "version_id": version_id,
                 "project_id": project.project_id,
                 "batch_id": batch.batch_id,
+                "geometry_id": effective_geometry_id,
                 "status": "planned",
             }
             for version_id in planned_version_ids
@@ -2210,6 +2230,37 @@ def run_batch_pipeline(
     )
     if not _is_global_synced(write_run_versions_result):
         bootstrap_sync_errors.append("write_run_versions")
+
+    staged_snapshot_sources: Dict[str, Path] = {}
+    if driver_snapshot is not None:
+        if not driver_snapshot.le_network_base64 or not driver_snapshot.le_network_hash:
+            raise RuntimeError("driver_le_network_required: selected driver snapshot has no LE network bytes")
+        raw_le = base64.b64decode(driver_snapshot.le_network_base64)
+        if hashlib.sha256(raw_le).hexdigest() != driver_snapshot.le_network_hash:
+            raise RuntimeError("driver_snapshot_integrity: LE network bytes do not match their hash")
+        network_name = str(driver_snapshot.revision.get("le_network_name") or "driver.txt")
+        basename = Path(network_name).stem or "driver"
+        for version_id in planned_version_ids:
+            source_path = run_paths.run_root / str(version_id) / "driver" / f"{basename}.txt"
+            source_path.parent.mkdir(parents=True, exist_ok=True)
+            source_path.write_bytes(raw_le)
+            staged_snapshot_sources[version_id] = source_path
+            snapshot_payload = driver_snapshot.payload_without_hash() | {"snapshot_hash": driver_snapshot.snapshot_hash}
+            snapshot_write = writer.write_run_driver_snapshot({
+                "run_id": effective_run_id,
+                "version_id": version_id,
+                "project_id": project.project_id,
+                "geometry_id": effective_geometry_id,
+                "driver_id": str(driver_snapshot.driver.get("driver_id") or ""),
+                "revision_id": str(driver_snapshot.revision.get("revision_id") or ""),
+                "snapshot_hash": driver_snapshot.snapshot_hash,
+                "le_network_hash": driver_snapshot.le_network_hash,
+                "staged_le_hash": driver_snapshot.le_network_hash,
+                "snapshot_json": json.dumps(snapshot_payload, ensure_ascii=False, sort_keys=True),
+                "staged_le_path": str(source_path),
+            })
+            if not _is_global_synced(snapshot_write):
+                bootstrap_sync_errors.append(f"write_run_driver_snapshot:{version_id}")
 
     sim_export_payload = batch.sim_export_settings.to_dict()
     export_specs = _resolve_export_specs(sim_export_payload)
@@ -2754,7 +2805,33 @@ def run_batch_pipeline(
                         ath_executable=ath_executable,
                         le_patch_profile=LE_PATCH_PROFILE_DRIVER_DRVGROUP_DEF_DRIVING_RESISTOR,
                         diagnostics_dir=version_logs_dir,
+                        driver_basename=(staged_snapshot_sources[version_id].stem if version_id in staged_snapshot_sources else "generic25"),
+                        driver_source_override=staged_snapshot_sources.get(version_id),
                     )
+                    effective_script_path = str(getattr(driver_sync, "script_path", "") or "")
+                    if driver_snapshot is not None and effective_script_path:
+                        effective_le_path = Path(effective_script_path)
+                        if effective_le_path.exists():
+                            effective_bytes = effective_le_path.read_bytes()
+                            effective_hash = hashlib.sha256(effective_bytes).hexdigest()
+                            effective_payload = driver_snapshot.payload_without_hash() | {
+                                "snapshot_hash": driver_snapshot.snapshot_hash,
+                                "effective_le_network_hash": effective_hash,
+                                "effective_le_network_base64": base64.b64encode(effective_bytes).decode("ascii"),
+                            }
+                            writer.write_run_driver_snapshot({
+                                "run_id": effective_run_id,
+                                "version_id": version_id,
+                                "project_id": project.project_id,
+                                "geometry_id": effective_geometry_id,
+                                "driver_id": str(driver_snapshot.driver.get("driver_id") or ""),
+                                "revision_id": str(driver_snapshot.revision.get("revision_id") or ""),
+                                "snapshot_hash": driver_snapshot.snapshot_hash,
+                                "le_network_hash": driver_snapshot.le_network_hash,
+                                "staged_le_hash": effective_hash,
+                                "snapshot_json": json.dumps(effective_payload, ensure_ascii=False, sort_keys=True),
+                                "staged_le_path": str(effective_le_path),
+                            })
                     _append_stage_debug_log(
                         version_logs_dir,
                         event="stage_end",
