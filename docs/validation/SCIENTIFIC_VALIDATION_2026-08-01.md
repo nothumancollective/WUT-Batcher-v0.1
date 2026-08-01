@@ -107,8 +107,8 @@ standalone and WUT cases are proven to use identical meshes and settings.
 | S-01 | Are frequency grid and solver settings exact? | Generated-file inspection and standalone/WUT equality | unvalidated |
 | S-02 | Is the mesh sufficiently converged? | Three predeclared resolution levels; runtime/error table | unvalidated |
 | O-01 | Are origin, axis, planes, distance and reference correct? | Observation-file inspection, axis tests and distance doubling | unvalidated |
-| V-01 | Does VACS export only current graphs and full complex values? | Exact graph signatures and raw-TXT checks | plausibilized by stability gates; numerical path unvalidated |
-| D-01 | Is raw TXT to DB lossless? | Pointwise raw/parser/SQLite comparison | unvalidated |
+| V-01 | Does VACS export only current graphs and full complex values? | Exact graph signatures and raw-TXT checks | verified for production-GUI case B008; acoustic correctness remains separate |
+| D-01 | Is raw TXT to DB lossless? | Pointwise raw/parser/SQLite comparison | verified for B008 in both databases, max absolute delta 0 |
 | A-01 | Are Analyzer plots/KPIs numerically correct? | Synthetic golden data and independent small calculations | unvalidated |
 
 ## Completed ATH geometry and mesh contract probe
@@ -148,6 +148,41 @@ change mesh density as intended, but they do **not** establish S-02 convergence;
 that still requires a predeclared result-error comparison across the three
 meshes.
 
+## Normal production-GUI and VACS round-trip baseline
+
+The committed machine-readable evidence is
+[`evidence/gui_vacs_roundtrip_b008_2026-08-01.json`](evidence/gui_vacs_roundtrip_b008_2026-08-01.json).
+It records a complete one-version batch through the actual GUI-created
+service/worker, not the runner-test CLI. The GUI was launched as
+`pythonw -m app gui` with only the supported settings-path override directed
+to the isolated profile. Neither the production nor isolated settings file
+changed during the run.
+
+B008/V008 (`914edb8e-78a1-4c33-bdc5-9df3bdc72ad2`) completed in 360.13 s.
+The visible run page reached `Version 1/1`, `Mode: real`, `ETA: done` and
+`Run finished for B008`; `version.json` reported `success`, while the run rows
+in the global and project databases reported `succeeded`. The exact owned
+AKABAK, VACS and export-helper processes ended, the GUI was then closed
+normally, and the independent post-state contained zero relevant processes.
+
+VACS exposed three current `Mic Polar` graph windows and one current
+`Radiation Impedance` window. All four exports succeeded and passed the
+pipeline's file verification without fallback. Each raw file was byte-equal
+to its semantic `x_*.txt` copy. An independent line parser then compared the
+TXT numbers to both SQLite databases without calling WUT's parser/importer:
+
+- all 342 complex polar samples (3 planes x 6 frequencies x 19 angles) were
+  identical, including H/V/D orientation, frequency and angle metadata;
+- all 24 graph samples (four graphs x six frequencies) were identical;
+- the maximum absolute difference was exactly 0;
+- the relevant global and project database tables were row-for-row identical.
+
+This verifies V-01 for current graph identity and full complex export in this
+production case, and verifies D-01 for the complete exported data set. It does
+not infer that the simulated acoustic values, observation placement,
+normalization or Analyzer-derived metrics are correct; those remain separate
+contracts below.
+
 ## External references
 
 Primary sources are preferred: installed ATH documentation, official
@@ -157,9 +192,10 @@ is committed unless redistribution is explicitly permitted.
 
 ## Current conclusion
 
-The environment and isolation contract, length/throat geometry transfer, and
-the declared quarter-model mesh topology/orientation are **verified**. The
-historical native stability gates prove reproducible execution and current
-graph export, but they do not by themselves prove solver-result or Analyzer
-numerical correctness. The remaining matrix items stay explicitly
-**unvalidated** or **plausibilized** as labelled above.
+The environment and isolation contract, length/throat geometry transfer, the
+declared quarter-model mesh topology/orientation, the production GUI/worker
+lifecycle, current VACS graph identity, complex TXT preservation and dual-DB
+persistence are **verified** for the recorded cases. They do not by themselves
+prove solver-result, observation or Analyzer numerical correctness. The
+remaining matrix items stay explicitly **unvalidated** or **plausibilized** as
+labelled above.

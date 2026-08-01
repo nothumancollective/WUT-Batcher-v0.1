@@ -2989,6 +2989,26 @@ Validation executed:
 - Definitive clean full suite on `d9e4563`: 725 passed, 10 skipped, 0 failed
   in 693.89 s (9,235 existing Qt deprecation warnings).
 
+### Update 78 (Production GUI Acceptance + VACS/DB Round Trip)
+#### Done
+- Completed a representative fast real-tool batch through the normal Batcher
+  GUI and its production service/worker start path.
+- Verified the final visible GUI state, successful version/run records, four
+  current VACS graph exports and exact owned-process cleanup.
+- Proved each raw VACS TXT is byte-identical to its semantic export copy.
+- Independently compared every exported numeric value with both SQLite
+  stores: 342/342 complex polar samples and 24/24 graph samples matched
+  exactly (`max_abs_delta = 0`), and the relevant global/project rows were
+  identical.
+- Classified two earlier disappearing GUI attempts as externally terminated
+  by the parallel full-suite watcher, not as application crashes; definitive
+  GUI acceptance was serialized after the suite.
+
+#### Evidence
+- `docs/validation/evidence/gui_vacs_roundtrip_b008_2026-08-01.json`
+- Run `914edb8e-78a1-4c33-bdc5-9df3bdc72ad2`, B008/V008: 360.13 s,
+  GUI `done`, DB `succeeded`, 4/4 exports, zero relevant post-state processes.
+
 
 
 

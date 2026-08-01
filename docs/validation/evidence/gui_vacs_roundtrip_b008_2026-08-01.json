@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "evidence_date": "2026-08-01",
+  "classification": "verified",
+  "scope": "normal GUI/service-worker path through ATH, AKABAK, VACS export and dual-database persistence",
+  "baseline": {
+    "scientific_validation_commit": "e0ac543a1e8e7d048bc7764c4ca75f5778e0aeef",
+    "run_recorded_git_commit": "5f4c6cf",
+    "product_settings_sha256_before_and_after": "7707EA0A2D287DD15824A69A7DC7FDC01408F6B8D98EAE3EA209D3A358708579",
+    "isolated_settings_sha256_before_and_after": "810126A8D18AF7EA2B980351D1135B15C92A5F5194F101C7B837A4A0615E73E7"
+  },
+  "run": {
+    "project_id": "P0001__40a6f067-5940-4146-b04f-04f0246b6472",
+    "batch_id": "B008",
+    "version_id": "V008",
+    "run_id": "914edb8e-78a1-4c33-bdc5-9df3bdc72ad2",
+    "started_at_utc": "2026-08-01T12:46:50Z",
+    "finished_at_utc": "2026-08-01T12:52:50Z",
+    "duration_seconds": 360.1317102499961,
+    "launch_contract": "pythonw -m app gui with only WUT_BATCHER_SETTINGS_PATH redirected to an isolated profile",
+    "version_json_status": "success",
+    "global_and_project_run_status": "succeeded",
+    "visible_gui_state": {
+      "version_progress": "Version 1/1",
+      "mode": "real",
+      "eta": "done",
+      "status_bar": "Run finished for B008",
+      "run_id": "914edb8e-78a1-4c33-bdc5-9df3bdc72ad2"
+    }
+  },
+  "effective_case": {
+    "length_mm": 60.0,
+    "throat_diameter_mm": 25.4,
+    "coverage_angle_deg": 45.0,
+    "mesh_angular_segments": 24,
+    "mesh_length_segments": 10,
+    "frequency_start_hz": 1000.0,
+    "frequency_end_hz": 4000.0,
+    "frequency_points": 6,
+    "mesh_frequency_hz": 800.0,
+    "simulation_mode": "free_standing",
+    "polar_distance_m": 3.0,
+    "polar_angles_deg": [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90],
+    "polar_inclinations_deg": [0, 90, 45],
+    "requested_outputs": ["impedance", "polar_H", "polar_V", "polar_D"]
+  },
+  "owned_process_ledger": {
+    "wut_gui_pid": 6792,
+    "akabak_pid": 2496,
+    "vacs_pid": 3080,
+    "export_helper_pid": 2088,
+    "vacs_cleanup": {
+      "requested": [3080],
+      "terminated": [3080],
+      "failed": []
+    },
+    "post_gui_close_relevant_process_count": 0,
+    "post_state_scope": "WUT GUI and validation-related Python, ATH, Gmsh, AKABAK and VACS"
+  },
+  "vacs_export": {
+    "graph_windows": [
+      "Mic Polar - BE_Spectrum #2",
+      "Mic Polar - BE_Spectrum #3",
+      "Mic Polar - BE_Spectrum #4",
+      "Radiation Impedance - Radiation_Impedance #5"
+    ],
+    "exported_ok_count": 4,
+    "exported_failed_count": 0,
+    "verification_ok_count": 4,
+    "verification_failed_count": 0,
+    "fallback_used": false,
+    "raw_semantic_byte_identity": {
+      "external_raw_01.txt": {"bytes": 4319, "semantic": "x_e6f13f6e.txt", "sha256": "6ed0d358fed8480164418ea19da6fa5b2dc575059df0c22e386b470c1c47095b"},
+      "external_raw_02.txt": {"bytes": 4318, "semantic": "x_06bacf18.txt", "sha256": "010a0a875b3958a3551ee2a641275750ad5dcdb93d26898aa84eede1c37a0d18"},
+      "external_raw_03.txt": {"bytes": 4319, "semantic": "x_d289e1b0.txt", "sha256": "75978d87cc78ec234696960f736166739e8d83789fb0bf168e22cf689f9d3c08"},
+      "external_raw_04.txt": {"bytes": 830, "semantic": "x_0e7865ec.txt", "sha256": "b7bf8869594c521d9cfc5b1f1fd2f5b02b54c41371529b34d847e52bbe80e3db"}
+    }
+  },
+  "independent_txt_to_sqlite_comparison": {
+    "method": "independent UTF-8-SIG line parser; no WUT parser/importer called during comparison",
+    "global_database_all_exact": true,
+    "project_database_all_exact": true,
+    "global_and_project_rows_identical": true,
+    "graph_points": {
+      "spl_graphs": 3,
+      "impedance_graphs": 1,
+      "points_per_graph": 6,
+      "total_points": 24,
+      "max_abs_delta": 0
+    },
+    "polar_points": {
+      "measurements": 3,
+      "orientations": ["D", "H", "V"],
+      "frequencies_per_measurement": 6,
+      "angles_per_measurement": 19,
+      "points_per_measurement": 114,
+      "total_points": 342,
+      "max_abs_delta": 0,
+      "frequency_metadata_exact": true,
+      "angle_metadata_exact": true
+    }
+  },
+  "limits": [
+    "This verifies current graph identity, complex TXT preservation, database persistence and GUI/worker lifecycle for this case.",
+    "It does not by itself validate acoustic correctness, observation geometry, normalization, mesh convergence or Analyzer-derived KPIs.",
+    "A true fresh-Windows-profile VACS first session remains externally deferred."
+  ]
+}

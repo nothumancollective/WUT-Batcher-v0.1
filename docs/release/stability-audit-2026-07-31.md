@@ -418,6 +418,30 @@ contaminating this repeat. The wrapper wall time was 959.21 s. The 9,235
 warnings are the existing Qt `QTableWidgetItem.setTextAlignment(int)`
 deprecations.
 
+The required normal-user-path acceptance was then run through the real GUI
+and its production service/worker start path, not the runner-test CLI. In the
+isolated `gui_production_path_r1` library, B008/V008 (run
+`914edb8e-78a1-4c33-bdc5-9df3bdc72ad2`) completed in 360.13 s. The visible GUI
+reached `Version 1/1`, `ETA: done` and `Run finished for B008`; `version.json`
+was `success`, both database run rows were `succeeded`, all four current VACS
+graphs/TXT exports were verified, and the exact owned native/helper processes
+ended. After a normal GUI close, the independent relevant-process count was
+zero. The production settings SHA-256 was unchanged.
+
+Two preceding GUI attempts that vanished were not product crashes: the
+simultaneous full-suite wrapper contained an exact watcher which deliberately
+stopped any `pythonw -m app gui` process. Both disappearances coincided with
+that external action while AKABAK heartbeats and CPU time were advancing, and
+no Windows crash report was present. Serializing the definitive suite and GUI
+acceptance removed this test-orchestration contamination; no product change
+was inferred from those aborted attempts.
+
+The compact production-path and pointwise round-trip evidence is committed as
+`docs/validation/evidence/gui_vacs_roundtrip_b008_2026-08-01.json`. An
+independent parser found exact equality for all 342 complex polar samples and
+all 24 graph samples in both databases, with global/project rows identical and
+maximum absolute delta 0.
+
 ### Setup, Doctor and library follow-up
 
 `setup status` reports ready with no missing key and reuses all four installed
