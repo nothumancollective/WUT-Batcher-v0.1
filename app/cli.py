@@ -204,6 +204,23 @@ def cmd_library_audit(args: argparse.Namespace) -> int:
     return 3 if str(report.get("status") or "") == "error" else 0
 
 
+def cmd_library_migrate_geometries(args: argparse.Namespace) -> int:
+    from app.geometry_domain import migrate_legacy_project
+
+    report = migrate_legacy_project(
+        Path(args.project_root).expanduser(),
+        dry_run=not bool(args.apply),
+        backup_root=(Path(args.backup_root).expanduser() if args.backup_root else None),
+    )
+    rendered = json.dumps(dataclasses.asdict(report), indent=2, ensure_ascii=False, default=_json_default)
+    if args.report_path:
+        target = Path(args.report_path).expanduser()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(rendered + "\n", encoding="utf-8")
+    print(rendered)
+    return 0
+
+
 def cmd_batch_job_count(args: argparse.Namespace) -> int:
     import app.batch_planner as batch_planner
 
@@ -1023,6 +1040,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_library_audit.add_argument("--report-path", help="Optionally write the JSON report outside the library.")
     p_library_audit.set_defaults(func=cmd_library_audit)
+    p_library_geometry = sub_library.add_parser(
+        "migrate-geometries",
+        help="Preview or apply one project's additive legacy-geometry migration.",
+    )
+    p_library_geometry.add_argument("--project-root", required=True, help="Exact project folder; never a library root.")
+    p_library_geometry.add_argument("--apply", action="store_true", help="Apply after writing a backup; default is dry-run.")
+    p_library_geometry.add_argument("--backup-root", help="Explicit backup destination for apply mode.")
+    p_library_geometry.add_argument("--report-path", help="Write the migration JSON report outside the project.")
+    p_library_geometry.set_defaults(func=cmd_library_migrate_geometries)
 
     p_batch = sub.add_parser("batch", help="Batch utilities.")
     sub_batch = p_batch.add_subparsers(dest="batch_cmd", required=True)
