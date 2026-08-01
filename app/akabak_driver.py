@@ -77,6 +77,13 @@ MAX_PATH = 260
 VACS_REIMPORT_RETRY_DELAYS_S = (3.0, 15.0, 45.0, 90.0, 180.0, 300.0)
 VACS_HANDOFF_RETRY_DELAYS_S = (0.0, 3.0, 15.0, 45.0)
 VACS_HANDOFF_FAILURE_GRACE_S = 15.0
+VACS_REIMPORT_FAILURE_GRACE_S = 30.0
+VACS_POST_SOLVE_HARD_TIMEOUT_S = (
+    float(VACS_HANDOFF_RETRY_DELAYS_S[-1])
+    + float(VACS_HANDOFF_FAILURE_GRACE_S)
+    + float(VACS_REIMPORT_RETRY_DELAYS_S[-1])
+    + float(VACS_REIMPORT_FAILURE_GRACE_S)
+)
 SOLVE_COMMAND_REENABLE_STABLE_S = 3.0
 
 
@@ -4398,6 +4405,18 @@ class AkabakDriver:
                         }
                         vacs_reimport_attempts.append(dict(vacs_reimport))
                         self._log(level="info", step=step, event="vacs_reimport_triggered", payload=vacs_reimport)
+                    failure_after_s = (
+                        float(VACS_REIMPORT_RETRY_DELAYS_S[-1])
+                        + float(VACS_REIMPORT_FAILURE_GRACE_S)
+                    )
+                    if (
+                        len(vacs_reimport_attempts) >= len(VACS_REIMPORT_RETRY_DELAYS_S)
+                        and graphless_s >= failure_after_s
+                    ):
+                        raise RuntimeError(
+                            "VACS remained graphless after the bounded AKABAK F7 re-import attempts. "
+                            f"attempts={len(vacs_reimport_attempts)} waited_s={graphless_s:.1f}"
+                        )
                 snapshot["vacs_reimport"] = dict(vacs_reimport)
                 snapshot["vacs_reimport_attempts"] = [dict(row) for row in vacs_reimport_attempts]
                 snapshot["status"] = "waiting_vacs_graph_import"
@@ -4466,6 +4485,7 @@ class AkabakDriver:
         previous_snapshot = dict(start_snapshot)
         interval_s = 0.08
         extension_logged = False
+        post_solve_started_at: Optional[float] = None
         timeout_kind = ""
         last_snapshot: Dict[str, Any] = dict(start_snapshot)
         while True:
@@ -4493,12 +4513,29 @@ class AkabakDriver:
                         "idle_s": idle_s,
                     },
                 )
-            if idle_s >= inactivity_timeout_s:
-                timeout_kind = "solver_inactive"
-                break
-            if elapsed_s >= hard_timeout_s:
-                timeout_kind = "hard_limit"
-                break
+            if solver_numerically_complete and bool(require_vacs_graph_import):
+                if post_solve_started_at is None:
+                    post_solve_started_at = now
+                    self._log(
+                        level="info",
+                        step=step,
+                        event="post_solve_vacs_budget_started",
+                        payload={
+                            "solver_elapsed_s": elapsed_s,
+                            "post_solve_hard_timeout_s": VACS_POST_SOLVE_HARD_TIMEOUT_S,
+                        },
+                    )
+                post_solve_elapsed_s = max(0.0, now - post_solve_started_at)
+                if post_solve_elapsed_s >= VACS_POST_SOLVE_HARD_TIMEOUT_S:
+                    timeout_kind = "vacs_handoff_hard_limit"
+                    break
+            else:
+                if idle_s >= inactivity_timeout_s:
+                    timeout_kind = "solver_inactive"
+                    break
+                if elapsed_s >= hard_timeout_s:
+                    timeout_kind = "hard_limit"
+                    break
             time.sleep(interval_s)
             interval_s = min(0.5, interval_s * 1.7)
 
@@ -4511,6 +4548,12 @@ class AkabakDriver:
                     "timeout_s": timeout_s,
                     "timeout_kind": timeout_kind,
                     "hard_timeout_s": hard_timeout_s,
+                    "post_solve_hard_timeout_s": VACS_POST_SOLVE_HARD_TIMEOUT_S,
+                    "post_solve_elapsed_s": (
+                        max(0.0, now - post_solve_started_at)
+                        if post_solve_started_at is not None
+                        else None
+                    ),
                     "elapsed_s": max(0.0, now - started_at),
                     "idle_s": max(0.0, now - last_progress_at),
                     "start_snapshot": start_snapshot,
@@ -4526,12 +4569,22 @@ class AkabakDriver:
                     "timeout_s": timeout_s,
                     "timeout_kind": timeout_kind,
                     "hard_timeout_s": hard_timeout_s,
+                    "post_solve_hard_timeout_s": VACS_POST_SOLVE_HARD_TIMEOUT_S,
                     "diagnostics_path": self.last_solve_diagnostics_path,
                 },
             )
+            if timeout_kind == "vacs_handoff_hard_limit":
+                message = (
+                    "VACS handoff did not complete within the bounded post-solve "
+                    f"{int(VACS_POST_SOLVE_HARD_TIMEOUT_S)}s hard limit."
+                )
+            else:
+                message = (
+                    f"AKABAK solve did not complete ({timeout_kind}) within the "
+                    f"{int(inactivity_timeout_s)}s inactivity / {int(hard_timeout_s)}s hard limit."
+                )
             raise TimeoutError(
-                f"AKABAK solve did not complete ({timeout_kind}) within the "
-                f"{int(inactivity_timeout_s)}s inactivity / {int(hard_timeout_s)}s hard limit."
+                message
                 + (f" diagnostics={self.last_solve_diagnostics_path}" if self.last_solve_diagnostics_path else "")
             )
         self.state = "completed"

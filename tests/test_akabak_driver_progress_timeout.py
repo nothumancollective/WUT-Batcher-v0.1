@@ -522,6 +522,149 @@ class AkabakDriverProgressTimeoutTests(unittest.TestCase):
             )
         )
 
+    def test_long_solve_gets_fresh_bounded_vacs_handoff_budget(self) -> None:
+        driver = AkabakDriver.__new__(AkabakDriver)
+        driver.state = "running"
+        driver.watchdog = None
+        driver.solve_context = {
+            "baseline": {"main_handle": 101, "akabak_pids": [100], "vacs_pids": []},
+            "started": {"solve_command_enabled": False, "vacs_ui": {}},
+        }
+        driver.watchdog_events = []
+        driver.solve_heartbeats = []
+        driver.last_solve_diagnostics_path = None
+        driver._connect = Mock()
+        driver._log = Mock()
+        driver._start_vacs_for_handoff = Mock(
+            return_value={
+                "trigger": "hwnd_postmessage_f7",
+                "status": "sent",
+                "main_handle": 101,
+                "method": "akabak_f7",
+            }
+        )
+        driver._dismiss_vacs_startup_editors = Mock(return_value=[])
+        driver._trigger_vacs_reimport_native = Mock()
+        clock = [0.0]
+        snapshots = iter(
+            [
+                (
+                    19.0,
+                    {
+                        "akabak_pids": [100],
+                        "vacs_pids": [],
+                        "progress_window_present": False,
+                        "solve_command_enabled": True,
+                        "vacs_ui": {},
+                    },
+                ),
+                (
+                    21.0,
+                    {
+                        "akabak_pids": [100],
+                        "vacs_pids": [200],
+                        "progress_window_present": False,
+                        "solve_command_enabled": True,
+                        "vacs_ui": {"max_controls_count": 21, "max_graph_keyword_hits": 1},
+                    },
+                ),
+                (
+                    25.0,
+                    {
+                        "akabak_pids": [100],
+                        "vacs_pids": [200],
+                        "progress_window_present": False,
+                        "solve_command_enabled": True,
+                        "vacs_ui": {"max_controls_count": 80, "max_graph_keyword_hits": 5},
+                    },
+                ),
+            ]
+        )
+
+        def _next_snapshot() -> dict:
+            at_s, row = next(snapshots)
+            clock[0] = at_s
+            return row
+
+        driver._solve_signal_snapshot = _next_snapshot
+
+        with patch("app.akabak_driver.SOLVE_COMMAND_REENABLE_STABLE_S", 0.0), patch(
+            "app.akabak_driver.time.perf_counter", side_effect=lambda: clock[0]
+        ), patch("app.akabak_driver.time.sleep"):
+            result = driver.wait_for_completion(timeout_s=10, require_vacs_graph_import=True)
+
+        self.assertTrue(result.ok)
+        self.assertEqual(result.status, "completed")
+        driver._start_vacs_for_handoff.assert_called_once_with(101)
+        self.assertTrue(
+            any(
+                call_row.kwargs.get("event") == "post_solve_vacs_budget_started"
+                for call_row in driver._log.call_args_list
+            )
+        )
+
+    def test_post_solve_vacs_reimport_budget_remains_bounded(self) -> None:
+        driver = AkabakDriver.__new__(AkabakDriver)
+        driver.state = "running"
+        driver.watchdog = None
+        driver.solve_context = {
+            "baseline": {"main_handle": 101, "akabak_pids": [100], "vacs_pids": []},
+            "started": {"solve_command_enabled": False, "vacs_ui": {}},
+        }
+        driver.watchdog_events = []
+        driver.solve_heartbeats = []
+        driver.last_solve_diagnostics_path = None
+        driver._connect = Mock()
+        driver._log = Mock()
+        driver._start_vacs_for_handoff = Mock(
+            return_value={
+                "trigger": "hwnd_postmessage_f7",
+                "status": "sent",
+                "main_handle": 101,
+                "method": "akabak_f7",
+            }
+        )
+        driver._dismiss_vacs_startup_editors = Mock(return_value=[])
+        driver._trigger_vacs_reimport_native = Mock(
+            return_value={"trigger": "hwnd_postmessage_f7", "status": "sent", "main_handle": 101}
+        )
+        clock = [0.0]
+        graphless = {
+            "akabak_pids": [100],
+            "vacs_pids": [200],
+            "progress_window_present": False,
+            "solve_command_enabled": True,
+            "vacs_ui": {"max_controls_count": 21, "max_graph_keyword_hits": 1},
+        }
+        rows = iter(
+            [
+                (0.0, {**graphless, "vacs_pids": [], "vacs_ui": {}}),
+                (0.0, graphless),
+                (4.0, graphless),
+                (16.0, graphless),
+                (46.0, graphless),
+                (91.0, graphless),
+                (181.0, graphless),
+                (301.0, graphless),
+                (331.0, graphless),
+            ]
+        )
+
+        def _next_snapshot() -> dict:
+            at_s, row = next(rows)
+            clock[0] = at_s
+            return dict(row)
+
+        driver._solve_signal_snapshot = _next_snapshot
+
+        with patch("app.akabak_driver.SOLVE_COMMAND_REENABLE_STABLE_S", 0.0), patch(
+            "app.akabak_driver.time.perf_counter", side_effect=lambda: clock[0]
+        ), patch("app.akabak_driver.time.sleep"):
+            with self.assertRaisesRegex(RuntimeError, "remained graphless"):
+                driver.wait_for_completion(timeout_s=10, require_vacs_graph_import=True)
+
+        self.assertEqual(driver._trigger_vacs_reimport_native.call_count, 6)
+
 
 if __name__ == "__main__":
     unittest.main()
