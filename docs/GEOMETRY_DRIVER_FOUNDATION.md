@@ -94,4 +94,3 @@ from a role/kind pairing alone.
   selected Geometry filters the project dashboard and batch creation context.
 - A true first-Windows-session VACS startup remains a separate external
   validation condition and is not changed by this feature.
-

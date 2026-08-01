@@ -23,4 +23,3 @@ def test_compatibility_rules_are_evidence_labelled_and_narrow(tmp_path: Path) ->
     tampered = replace(snapshot, snapshot_hash="bad")
     findings = validate_geometry_driver(geometry, tampered)
     assert any(item.rule_id == "driver_snapshot_integrity" and item.severity == "fatal" for item in findings)
-

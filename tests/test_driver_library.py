@@ -103,4 +103,3 @@ def test_import_rejects_bad_schema_or_units(tmp_path: Path, payload: dict, messa
     report = DriverLibrary(tmp_path / "library").import_json(payload)
     assert not report.ok
     assert message in " ".join(report.errors)
-

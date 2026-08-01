@@ -57,4 +57,3 @@ def validate_geometry_driver(geometry: Geometry, snapshot: DriverSnapshot | None
             "Execution must use exactly the revision and LE bytes selected at planning time.", "sha256",
         ))
     return findings
-

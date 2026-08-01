@@ -88,4 +88,3 @@ def test_partial_migration_repairs_only_missing_assignment(tmp_path: Path) -> No
     report = migrate_legacy_project(root, dry_run=False, backup_root=tmp_path / "repair")
     assert report.changed_files == (str(batch_path),)
     assert json.loads(batch_path.read_text(encoding="utf-8"))["geometry_id"] == report.geometry_id
-

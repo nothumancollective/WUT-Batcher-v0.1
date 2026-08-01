@@ -32,4 +32,3 @@ existing ID, export and analyzer reference.
 - A version cannot silently change geometry after materialization.
 - No DSP, enclosure, speaker-assembly or CAD assumptions belong to Geometry.
 - The selected geometry is visible whenever batch or analyzer data is shown.
-

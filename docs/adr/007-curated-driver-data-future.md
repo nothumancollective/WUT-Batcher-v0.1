@@ -17,4 +17,3 @@ generic T/S-to-AKABAK-LE conversion is authorized by this ADR.
 
 The current JSON import/export contract is the manual, provenance-preserving
 boundary until those requirements are satisfied.
-

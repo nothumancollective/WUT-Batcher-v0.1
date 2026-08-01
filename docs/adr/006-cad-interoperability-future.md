@@ -18,4 +18,3 @@ licensed local integration; neutral STEP is the portable interchange target.
 Required pre-implementation work: supported CAD dialects, unit/axis contract,
 topology diagnostics, internal-volume selection UX, meshing convergence gates,
 licensing review and round-trip test corpus. None is implemented here.
-

@@ -38,4 +38,3 @@ the active user library is not bulk-migrated in this development round.
 Foreign keys are enabled for new normalized tables. Historical denormalized
 tables retain additive nullable geometry columns to avoid destructive table
 rebuilds. Archive state is a timestamp/flag, never physical deletion.
-

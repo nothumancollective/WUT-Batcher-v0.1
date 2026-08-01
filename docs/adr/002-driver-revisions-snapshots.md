@@ -33,4 +33,3 @@ import/export is versioned and returns structured validation findings.
 - Every numeric parameter declares its SI unit (or an explicit source unit plus
   normalized SI value).
 - Unknown fields survive import/export in an extensions object.
-

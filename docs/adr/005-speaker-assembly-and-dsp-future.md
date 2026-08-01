@@ -19,4 +19,3 @@ Required pre-implementation work: coordinate/phase conventions, multi-source
 solver evidence, electrical/acoustic power normalization, latency conventions,
 validation fixtures, schema migration and UI workflow. No placeholder controls
 or synthetic DSP results are exposed by the current release.
-

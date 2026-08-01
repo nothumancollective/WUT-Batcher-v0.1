@@ -24,4 +24,3 @@ Legacy service calls without geometry/driver arguments use the deterministic
 legacy geometry and built-in `generic25` through explicitly marked adapters.
 Adapters emit provenance in persisted snapshots; they do not create hidden UI
 state or a second execution path.
-
