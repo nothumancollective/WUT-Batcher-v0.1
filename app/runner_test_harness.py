@@ -30,7 +30,7 @@ from app.cfg_renderer import render_cfg_text
 from app.export_specs import ExportSpec, parse_export_specs
 from app.models import Batch, ParamSelection, Project, ProjectConstraints, SweepSpec
 from app.runner_test_db import RunnerTestDb
-from app.runner_test_profiles import apply_runner_test_profile
+from app.runner_test_profiles import apply_runner_test_profile, get_runner_test_profile
 from app.runner_test_workspace import RunnerTestWorkspace, resolve_runner_test_workspace
 from app.runners import AthRunner, parse_ath_dimensions
 from app.safe_cleanup import (
@@ -1939,6 +1939,9 @@ def run_runner_test_harness(
     strict_nonzero_radimp: bool = False,
     dry_run: bool = False,
 ) -> Dict[str, Any]:
+    selected_profile = get_runner_test_profile(test_profile)
+    simulation_timeout_minutes = max(1, int(selected_profile.simulation_timeout_minutes))
+    akabak_solve_timeout_s = simulation_timeout_minutes * 60
     workspace = resolve_runner_test_workspace(workspace_root)
     db = RunnerTestDb(workspace.db_path)
     tracker = HarnessProcessTracker(workspace.logs_dir / "process_ledger.json")
@@ -1998,6 +2001,7 @@ def run_runner_test_harness(
                 "akabak_executable": str(akabak_executable) if akabak_executable else None,
                 "vacs_executable": str(vacs_executable) if vacs_executable else None,
                 "test_profile": test_profile,
+                "simulation_timeout_minutes": simulation_timeout_minutes,
                 "template_cfg": str(resolved_template_cfg) if resolved_template_cfg else None,
                 "ath_export_root_hint": ath_export_root_hint,
                 "le_repair_profile": effective_le_repair_profile,
@@ -2626,9 +2630,12 @@ def run_runner_test_harness(
                     akabak_driver.import_if_needed()
                     akabak_driver.run_solve()
                     try:
-                        akabak_driver.wait_for_completion(timeout_s=600, require_vacs_graph_import=True)
+                        akabak_driver.wait_for_completion(
+                            timeout_s=akabak_solve_timeout_s,
+                            require_vacs_graph_import=True,
+                        )
                     except TypeError:
-                        akabak_driver.wait_for_completion(timeout_s=600)
+                        akabak_driver.wait_for_completion(timeout_s=akabak_solve_timeout_s)
                     akabak_watchdog_events = list(getattr(akabak_driver, "watchdog_events", []) or [])
                     windows = [item.to_dict() for item in akabak_driver.session.list_top_windows()]
                     db.add_ui_observation(
@@ -3196,6 +3203,8 @@ def run_runner_test_harness(
         "repeats": effective_repeats,
         "keep_exports": bool(keep_exports),
         "test_profile": test_profile,
+        "simulation_timeout_minutes": simulation_timeout_minutes,
+        "akabak_solve_timeout_s": akabak_solve_timeout_s,
         "le_repair_profile": effective_le_repair_profile,
         "cfg_le_profile": effective_cfg_le_profile,
         "radimp_observation_profile": effective_radimp_profile,

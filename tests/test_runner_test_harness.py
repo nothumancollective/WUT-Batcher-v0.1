@@ -399,6 +399,27 @@ class RunnerTestHarnessTests(unittest.TestCase):
             self.assertEqual(db.count_rows("versions"), 1)
             self.assertEqual(db.count_rows("run_versions"), 1)
 
+    def test_resource_harness_exposes_20_minute_solve_timeout(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            cases_root = root / "cases"
+            workspace_root = root / "workspace"
+            _write_case(cases_root / "smoke_fast.json")
+
+            summary = run_runner_test_harness(
+                case_id="smoke_fast",
+                repeats=1,
+                keep_exports=True,
+                test_profile="resource",
+                workspace_root=workspace_root,
+                cases_root=cases_root,
+                dry_run=True,
+            )
+
+            self.assertTrue(summary["ok"])
+            self.assertEqual(summary["simulation_timeout_minutes"], 20)
+            self.assertEqual(summary["akabak_solve_timeout_s"], 20 * 60)
+
     def test_radimp_driving_matrix_dry_run_executes_profiles(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)

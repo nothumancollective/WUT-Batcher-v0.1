@@ -13,6 +13,7 @@ class RunnerTestProfile:
     profile_id: str
     parameter_overrides: Dict[str, Any]
     sim_export_overrides: Dict[str, Any]
+    simulation_timeout_minutes: int
     rationale: str
     verification_plan: Dict[str, Any]
 
@@ -21,6 +22,7 @@ class RunnerTestProfile:
             "profile_id": self.profile_id,
             "parameter_overrides": dict(self.parameter_overrides),
             "sim_export_overrides": dict(self.sim_export_overrides),
+            "simulation_timeout_minutes": int(self.simulation_timeout_minutes),
             "rationale": self.rationale,
             "verification_plan": dict(self.verification_plan),
         }
@@ -43,6 +45,7 @@ FAST_PROFILE = RunnerTestProfile(
         "num_points": 6,
         "simulation_mode": "free_standing",
     },
+    simulation_timeout_minutes=10,
     rationale=(
         "Reduce mesh density and frequency sampling for harness runs so the ATH->AKABAK->VACS cycle "
         "completes faster while preserving valid toolchain semantics."
@@ -74,6 +77,7 @@ RESOURCE_PROFILE = RunnerTestProfile(
         "num_points": 8,
         "simulation_mode": "free_standing",
     },
+    simulation_timeout_minutes=20,
     rationale=(
         "Exercise a larger mesh and wider frequency grid than the fast smoke profile while keeping "
         "one native solve inside the harness hard timeout on the validation VM."
@@ -93,6 +97,7 @@ BASELINE_PROFILE = RunnerTestProfile(
     profile_id="baseline",
     parameter_overrides={},
     sim_export_overrides={},
+    simulation_timeout_minutes=10,
     rationale="Preserve all case and template inputs for explicit reference and convergence runs.",
     verification_plan={
         "hypothesis": "the baseline profile does not mutate caller-provided settings",

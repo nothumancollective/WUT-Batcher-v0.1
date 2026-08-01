@@ -50,6 +50,9 @@ class RunnerTestProfilesTests(unittest.TestCase):
         )
         self.assertGreater(resource.sim_export_overrides["num_points"], fast.sim_export_overrides["num_points"])
         self.assertGreater(resource.sim_export_overrides["freq_end_hz"], fast.sim_export_overrides["freq_end_hz"])
+        self.assertEqual(fast.simulation_timeout_minutes, 10)
+        self.assertEqual(resource.simulation_timeout_minutes, 20)
+        self.assertEqual(resource.to_dict()["simulation_timeout_minutes"], 20)
 
 
 if __name__ == "__main__":
