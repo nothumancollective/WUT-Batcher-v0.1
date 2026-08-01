@@ -13,10 +13,11 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 import uuid
 
 from app.feature_flags import use_project_library_storage
+from app.geometry_domain import ensure_project_geometry_schema
 from app.models import Batch, Project, VersionSpec
 
 
-SCHEMA_VERSION = "2.8"
+SCHEMA_VERSION = "2.9"
 
 
 def _now_iso() -> str:
@@ -867,6 +868,7 @@ class SqlDatasetStore:
         self._migrate_ath_dimensions_schema(conn)
         self._ensure_graphs_columns(conn)
         self._migrate_graph_points_schema(conn)
+        ensure_project_geometry_schema(conn)
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS polar_measurements (
@@ -1066,12 +1068,14 @@ class SqlDatasetStore:
             "global_db": str(self.global_db_path),
             "tables": [
                 "projects",
+                "geometries",
                 "batches",
                 "versions",
                 "version_params",
                 "ath_dimensions",
                 "runs",
                 "run_versions",
+                "run_driver_snapshots",
                 "graphs",
                 "graph_series",
                 "graph_points",
@@ -1128,6 +1132,8 @@ class SqlDatasetStore:
             self._op_set_run_pin(conn, payload)
         elif operation == "upsert_run_versions":
             self._op_upsert_run_versions(conn, payload)
+        elif operation == "upsert_run_driver_snapshot":
+            self._op_upsert_run_driver_snapshot(conn, payload)
         elif operation == "delete_runs":
             self._op_delete_runs(conn, payload)
         elif operation == "insert_compat_verification":
@@ -1211,8 +1217,8 @@ class SqlDatasetStore:
             """
             INSERT INTO batches (
                 project_id, batch_id, batch_name, sweep_definitions, sweep_mode, sim_export_params,
-                parent_batch_id, created_via, created_from_version_id, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                parent_batch_id, created_via, created_from_version_id, created_at, geometry_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(project_id, batch_id) DO UPDATE SET
                 batch_name=excluded.batch_name,
                 sweep_definitions=excluded.sweep_definitions,
@@ -1220,7 +1226,8 @@ class SqlDatasetStore:
                 sim_export_params=excluded.sim_export_params,
                 parent_batch_id=excluded.parent_batch_id,
                 created_via=excluded.created_via,
-                created_from_version_id=excluded.created_from_version_id
+                created_from_version_id=excluded.created_from_version_id,
+                geometry_id=excluded.geometry_id
             """,
             (
                 str(payload["project_id"]),
@@ -1233,6 +1240,7 @@ class SqlDatasetStore:
                 created_via,
                 created_from_version_id,
                 str(payload.get("created_at") or _now_iso()),
+                str(payload.get("geometry_id") or "") or None,
             ),
         )
 
@@ -1248,8 +1256,8 @@ class SqlDatasetStore:
                 """
                 INSERT INTO versions (
                     version_id, project_id, project_name, batch_id, batch_name,
-                    resolved_parameters_snapshot, version_config_hash, status, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    resolved_parameters_snapshot, version_config_hash, status, created_at, geometry_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(version_id) DO UPDATE SET
                     project_id=excluded.project_id,
                     project_name=excluded.project_name,
@@ -1258,7 +1266,8 @@ class SqlDatasetStore:
                     resolved_parameters_snapshot=excluded.resolved_parameters_snapshot,
                     version_config_hash=excluded.version_config_hash,
                     status=excluded.status,
-                    created_at=excluded.created_at
+                    created_at=excluded.created_at,
+                    geometry_id=excluded.geometry_id
                 """,
                 (
                     version_id,
@@ -1270,6 +1279,7 @@ class SqlDatasetStore:
                     version.get("version_config_hash"),
                     str(version.get("status", "planned")),
                     created_at,
+                    str(version.get("geometry_id") or payload.get("geometry_id") or "") or None,
                 ),
             )
             conn.execute("DELETE FROM version_params WHERE version_id = ?", (version_id,))
@@ -1679,8 +1689,8 @@ class SqlDatasetStore:
             INSERT INTO runs (
                 run_id, project_id, batch_id, started_at, finished_at, status,
                 git_commit, app_version, settings_hash, run_root, run_debug_log_path,
-                error_summary, pinned, tag
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                error_summary, pinned, tag, geometry_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(run_id) DO UPDATE SET
                 project_id=excluded.project_id,
                 batch_id=excluded.batch_id,
@@ -1694,7 +1704,8 @@ class SqlDatasetStore:
                 run_debug_log_path=excluded.run_debug_log_path,
                 error_summary=excluded.error_summary,
                 pinned=excluded.pinned,
-                tag=excluded.tag
+                tag=excluded.tag,
+                geometry_id=excluded.geometry_id
             """,
             (
                 str(payload["run_id"]),
@@ -1711,6 +1722,7 @@ class SqlDatasetStore:
                 payload.get("error_summary"),
                 int(payload.get("pinned", 0)),
                 payload.get("tag"),
+                str(payload.get("geometry_id") or "") or None,
             ),
         )
 
@@ -1751,13 +1763,14 @@ class SqlDatasetStore:
                 """
                 INSERT INTO run_versions (
                     run_id, version_id, project_id, batch_id, status, duration_seconds,
-                    created_at, finished_at, error_summary
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    created_at, finished_at, error_summary, geometry_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(run_id, version_id) DO UPDATE SET
                     status=excluded.status,
                     duration_seconds=excluded.duration_seconds,
                     finished_at=excluded.finished_at,
-                    error_summary=excluded.error_summary
+                    error_summary=excluded.error_summary,
+                    geometry_id=excluded.geometry_id
                 """,
                 (
                     str(row["run_id"]),
@@ -1769,8 +1782,34 @@ class SqlDatasetStore:
                     str(row.get("created_at") or _now_iso()),
                     row.get("finished_at"),
                     row.get("error_summary"),
+                    str(row.get("geometry_id") or "") or None,
                 ),
             )
+
+    def _op_upsert_run_driver_snapshot(self, conn: sqlite3.Connection, payload: Dict[str, Any]) -> None:
+        conn.execute(
+            """INSERT INTO run_driver_snapshots
+            (run_id, version_id, project_id, geometry_id, driver_id, revision_id,
+             snapshot_hash, le_network_hash, staged_le_hash, snapshot_json, staged_le_path, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(run_id, version_id) DO UPDATE SET
+                geometry_id=excluded.geometry_id,
+                driver_id=excluded.driver_id,
+                revision_id=excluded.revision_id,
+                snapshot_hash=excluded.snapshot_hash,
+                le_network_hash=excluded.le_network_hash,
+                staged_le_hash=excluded.staged_le_hash,
+                snapshot_json=excluded.snapshot_json,
+                staged_le_path=excluded.staged_le_path""",
+            (
+                str(payload["run_id"]), str(payload["version_id"]), str(payload["project_id"]),
+                str(payload["geometry_id"]), str(payload["driver_id"]), str(payload["revision_id"]),
+                str(payload["snapshot_hash"]), payload.get("le_network_hash"),
+                payload.get("staged_le_hash"),
+                str(payload["snapshot_json"]), payload.get("staged_le_path"),
+                str(payload.get("created_at") or _now_iso()),
+            ),
+        )
 
     def _op_delete_runs(self, conn: sqlite3.Connection, payload: Dict[str, Any]) -> None:
         run_ids = [str(item) for item in list(payload.get("run_ids", []))]
@@ -2185,6 +2224,7 @@ class SqlDatasetStore:
             "project_name": project.name,
             "constraints_snapshot": _to_json(project.constraints.to_dict()),
             "created_at": now,
+            "geometry_id": batch.geometry_id,
         }
         batch_payload = {
             "project_id": project.project_id,
@@ -2220,6 +2260,7 @@ class SqlDatasetStore:
                     "created_at": version.created_at or now,
                     "resolved_parameters_snapshot": _to_json(version.to_dict()),
                     "version_config_hash": _version_config_hash(version.parameters, version.unset_parameters),
+                    "geometry_id": version.geometry_id,
                     "params": params,
                 }
             )
@@ -2228,6 +2269,7 @@ class SqlDatasetStore:
             "project_name": project.name,
             "batch_id": batch.batch_id,
             "batch_name": batch_name or str(batch.extra.get("batch_name") or batch.batch_id),
+            "geometry_id": batch.geometry_id,
             "versions": version_rows,
         }
 
@@ -2970,6 +3012,7 @@ class SqlDatasetStore:
         run_root: Optional[str] = None,
         run_debug_log_path: Optional[str] = None,
         error_summary: Optional[str] = None,
+        geometry_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         payload = {
             "run_id": run_id,
@@ -2985,6 +3028,7 @@ class SqlDatasetStore:
             "error_summary": error_summary,
             "pinned": 0,
             "tag": None,
+            "geometry_id": geometry_id,
         }
         return self._dual_write("upsert_run", payload)
 
@@ -3019,10 +3063,14 @@ class SqlDatasetStore:
                     "created_at": str(row.get("created_at") or _now_iso()),
                     "finished_at": row.get("finished_at"),
                     "error_summary": row.get("error_summary"),
+                    "geometry_id": str(row.get("geometry_id") or "") or None,
                 }
             )
         result = self._dual_write("upsert_run_versions", {"rows": payload_rows})
         return {**result, "rows_written": len(payload_rows)}
+
+    def write_run_driver_snapshot(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        return self._dual_write("upsert_run_driver_snapshot", dict(payload))
 
     def set_run_pin(self, run_id: str, *, pinned: bool, tag: Optional[str] = None) -> Dict[str, Any]:
         return self._dual_write(

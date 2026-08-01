@@ -59,6 +59,8 @@ def _version_plan_signature(version: VersionSpec) -> Dict[str, Any]:
         "unset_parameters": sorted(str(item) for item in version.unset_parameters),
         "sweep_parameters": _canonical_plan_value(dict(version.sweep_parameters)),
         "sim_export_settings": _canonical_plan_value(dict(version.sim_export_settings)),
+        "geometry_id": str(version.geometry_id),
+        "driver_snapshot_hash": str(version.driver_snapshot.get("snapshot_hash") or ""),
     }
 
 

@@ -331,6 +331,9 @@ class Batch:
     sweep_mode: str = "single"
     sim_export_settings: SimExportSettings = field(default_factory=SimExportSettings)
     runner_mode: str = DEFAULT_RUNNER_MODE
+    geometry_id: str = ""
+    driver_revision_id: str = ""
+    driver_snapshot: Dict[str, Any] = field(default_factory=dict)
     extra: Dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -382,6 +385,9 @@ class Batch:
             "mode",
             "sim_export_settings",
             "runner_mode",
+            "geometry_id",
+            "driver_revision_id",
+            "driver_snapshot",
         }
         extra = {k: v for k, v in data.items() if k not in known}
 
@@ -394,6 +400,9 @@ class Batch:
             sweep_mode=sweep_mode,
             sim_export_settings=sim_export_settings,
             runner_mode=str(data.get("runner_mode", DEFAULT_RUNNER_MODE)),
+            geometry_id=str(data.get("geometry_id", "") or ""),
+            driver_revision_id=str(data.get("driver_revision_id", "") or ""),
+            driver_snapshot=dict(data.get("driver_snapshot", {}) or {}),
             extra=extra,
         )
 
@@ -408,6 +417,9 @@ class Batch:
             "mode": self.mode,
             "sim_export_settings": self.sim_export_settings.to_dict(),
             "runner_mode": self.runner_mode,
+            "geometry_id": self.geometry_id,
+            "driver_revision_id": self.driver_revision_id,
+            "driver_snapshot": dict(self.driver_snapshot),
         }
         payload.update(self.extra)
         return payload
@@ -495,6 +507,8 @@ class VersionSpec:
     paths: Dict[str, str] = field(default_factory=dict)
     status: str = "planned"
     created_at: str = field(default_factory=_now_iso)
+    geometry_id: str = ""
+    driver_snapshot: Dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "VersionSpec":
@@ -512,6 +526,8 @@ class VersionSpec:
             paths={str(key): str(value) for key, value in dict(data.get("paths", {}) or {}).items()},
             status=str(data.get("status", "planned") or "planned"),
             created_at=str(data.get("created_at", "") or _now_iso()),
+            geometry_id=str(data.get("geometry_id", "") or ""),
+            driver_snapshot=dict(data.get("driver_snapshot", {}) or {}),
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -529,6 +545,8 @@ class VersionSpec:
             "paths": dict(self.paths),
             "status": self.status,
             "created_at": self.created_at,
+            "geometry_id": self.geometry_id,
+            "driver_snapshot": dict(self.driver_snapshot),
         }
 
 

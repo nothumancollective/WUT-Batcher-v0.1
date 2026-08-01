@@ -494,6 +494,8 @@ def resolve_versions(
                 unset_parameters=unset_keys,
                 sweep_parameters=sweep_values,
                 sim_export_settings=batch.sim_export_settings.to_dict(),
+                geometry_id=batch.geometry_id,
+                driver_snapshot=dict(batch.driver_snapshot),
             )
         )
 
