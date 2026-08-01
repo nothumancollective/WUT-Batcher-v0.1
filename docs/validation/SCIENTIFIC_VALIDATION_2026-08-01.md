@@ -110,6 +110,43 @@ standalone and WUT cases are proven to use identical meshes and settings.
 | D-01 | Is raw TXT to DB lossless? | Pointwise raw/parser/SQLite comparison | unvalidated |
 | A-01 | Are Analyzer plots/KPIs numerically correct? | Synthetic golden data and independent small calculations | unvalidated |
 
+## Completed ATH geometry and mesh contract probe
+
+The isolated baseline probe is reproducible with
+`tools/scientific_validation/ath_contract_probe.py`. Its compact committed
+result is
+[`evidence/ath_contracts_2026-08-01.json`](evidence/ath_contracts_2026-08-01.json).
+The evidence records the SHA-256 of the original full manifest as
+`CC516C40D50318AE1B030E21B6D903917FE5C7B0433F291C7648AFED410F05B2`;
+the large generated meshes remain below the ignored validation root.
+
+Six standalone ATH cases completed with exit code 0 and no timeout. No native
+tool process remained after the suite. The verified contracts are:
+
+- changing `Length` from 120 mm to 160 mm changed ATH's reported length from
+  exactly 120.0 mm to 160.0 mm and scaled the reported width from 419.58 mm to
+  558.57 mm;
+- changing `Throat.Diameter` from 32 mm to 40 mm changed the driver-group mesh
+  area by a factor of 1.562516, matching the expected squared-diameter ratio
+  1.5625 within 0.0011%;
+- every parsed mesh retained the four required physical groups `SD1G0`,
+  `SD1D1001`, `SD2G0` and `I1-2`;
+- all mesh coordinates were non-negative in x/y, consistent with the declared
+  `Sym=xy` quarter model;
+- the driver-group oriented normal sum points in +z into the horn domain, while
+  the interface normal points in -z toward Subdomain1, consistent with the
+  documented AKABAK element-domain convention;
+- the three resolution cases produced distinct, ordered mesh densities: 1,186
+  nodes / 2,252 triangles (fine), 846 / 1,576 (medium), and 669 / 1,224
+  (coarse).
+
+This verifies G-01 for length and throat transfer, and verifies G-02 for the
+declared quarter-model topology and orientation. Mouth/profile transfer is not
+yet independently parameterized. The resolution cases verify that the controls
+change mesh density as intended, but they do **not** establish S-02 convergence;
+that still requires a predeclared result-error comparison across the three
+meshes.
+
 ## External references
 
 Primary sources are preferred: installed ATH documentation, official
@@ -119,6 +156,9 @@ is committed unless redistribution is explicitly permitted.
 
 ## Current conclusion
 
-Only the environment and isolation contract are **verified** at this point.
-The historical native stability gates prove reproducible execution and current
-graph export, but they do not by themselves prove scientific correctness.
+The environment and isolation contract, length/throat geometry transfer, and
+the declared quarter-model mesh topology/orientation are **verified**. The
+historical native stability gates prove reproducible execution and current
+graph export, but they do not by themselves prove solver-result or Analyzer
+numerical correctness. The remaining matrix items stay explicitly
+**unvalidated** or **plausibilized** as labelled above.

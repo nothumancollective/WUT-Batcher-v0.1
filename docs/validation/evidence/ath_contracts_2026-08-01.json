@@ -1,0 +1,75 @@
+{
+  "status": "verified",
+  "source_manifest": "tmp/scientific_validation_e0ac543/standalone/ath_contracts_r1/manifest.json",
+  "source_manifest_sha256": "cc516c40d50318ae1b030e21b6d903917fe5c7b0433f291c7648afed410f05b2",
+  "baseline_commit": "e0ac543a1e8e7d048bc7764c4ca75f5778e0aeef",
+  "ath_version": "V2025-06",
+  "ath_sha256": "639cb0184cf5dae233f3d2624cf279057a217da26948bde6d1d6510314b9a1e1",
+  "template_sha256": "9d4fbf3f6a0b39d749aa83945d3d674575af2e8033b3a97bb77e107df88e71",
+  "all_exit_codes": 0,
+  "all_timed_out": false,
+  "no_remaining_native_processes_after_suite": true,
+  "cases": {
+    "length_120": {
+      "elapsed_s": 4.521904500001256,
+      "length_mm": 120.0,
+      "width_mm": 419.58,
+      "nodes": 846,
+      "triangles": 1576,
+      "mesh_sha256": "69ff0bed0256e9f52cd0c0c422073a81c4d1716f81766774cc395407e89a0245"
+    },
+    "length_160": {
+      "elapsed_s": 10.585503958998743,
+      "length_mm": 160.0,
+      "width_mm": 558.57,
+      "nodes": 1287,
+      "triangles": 2438,
+      "mesh_sha256": "2f244531cd5d8d1d7677fe3b17774bc1666ab77a2a59e70c74a42005fe3cd475"
+    },
+    "throat_32": {
+      "driver_group_area_mm2": 195.93592616378396,
+      "ideal_quarter_circle_mm2": 201.06192982974676,
+      "relative_area_error": -0.0254931144536943,
+      "driver_normal_sum_z": 391.8718523275679
+    },
+    "throat_40": {
+      "elapsed_s": 10.44105966600182,
+      "driver_group_area_mm2": 306.15300787875333,
+      "ideal_quarter_circle_mm2": 314.1592653589793,
+      "relative_area_error": -0.0254847007473938,
+      "area_ratio_vs_throat_32": 1.562516241433298,
+      "expected_area_ratio": 1.5625,
+      "driver_normal_sum_z": 612.3060157575067
+    },
+    "mesh_fine": {
+      "source_case_name": "mesh_low",
+      "elapsed_s": 10.364348250001058,
+      "nodes": 1186,
+      "triangles": 2252,
+      "mesh_sha256": "b362c38b717c35bbea99e92d8b5eeba9f9abe7ea953d7223991d0d5f7adcff19"
+    },
+    "mesh_medium": {
+      "elapsed_s": 5.671935917001974,
+      "nodes": 846,
+      "triangles": 1576,
+      "mesh_sha256": "69ff0bed0256e9f52cd0c0c422073a81c4d1716f81766774cc395407e89a0245",
+      "interface_normal_sum_z": -69039.48005045734
+    },
+    "mesh_coarse": {
+      "source_case_name": "mesh_high",
+      "elapsed_s": 8.536257042000216,
+      "nodes": 669,
+      "triangles": 1224,
+      "mesh_sha256": "3d6e706f650e3fd18701324a9cfde8c30db64c7f2fb68280a14dacd476fa762c"
+    }
+  },
+  "topology": {
+    "quarter_model": true,
+    "coordinate_evidence": "all x and y coordinates are non-negative",
+    "symmetry_contract": "Project.abec uses Sym=xy",
+    "physical_groups": ["SD1G0", "SD1D1001", "SD2G0", "I1-2"],
+    "driver_normal_interpretation": "+z points from the throat into the interior horn domain",
+    "interface_normal_interpretation": "-z points toward Subdomain1",
+    "official_rule": "AKABAK Normals and Volumes: normals point into their element domain; interface normals point toward Subdomain1"
+  }
+}
