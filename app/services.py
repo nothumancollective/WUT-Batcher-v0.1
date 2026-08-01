@@ -2107,7 +2107,7 @@ class OrchestratorService:
                         FROM polar_measurements pm
                         WHERE (
                             TRIM(COALESCE(pm.data_level_type, '')) = ''
-                            OR LOWER(REPLACE(TRIM(pm.data_level_type), ' ', '')) IN ('soundpressure', 'spl')
+                            OR LOWER(REPLACE(TRIM(pm.data_level_type), ' ', '')) IN ('soundpressure', 'spl', 'peak')
                         )
                         GROUP BY pm.project_id
                         ORDER BY pm.project_id
@@ -2146,7 +2146,7 @@ class OrchestratorService:
                         WHERE project_id = ?
                           AND (
                             TRIM(COALESCE(data_level_type, '')) = ''
-                            OR LOWER(REPLACE(TRIM(data_level_type), ' ', '')) IN ('soundpressure', 'spl')
+                            OR LOWER(REPLACE(TRIM(data_level_type), ' ', '')) IN ('soundpressure', 'spl', 'peak')
                           )
                         """,
                         (target_id,),
@@ -2208,7 +2208,7 @@ class OrchestratorService:
                         WHERE pm.project_id = ?
                           AND (
                             TRIM(COALESCE(pm.data_level_type, '')) = ''
-                            OR LOWER(REPLACE(TRIM(pm.data_level_type), ' ', '')) IN ('soundpressure', 'spl')
+                            OR LOWER(REPLACE(TRIM(pm.data_level_type), ' ', '')) IN ('soundpressure', 'spl', 'peak')
                           )
                         GROUP BY pm.project_id, pm.batch_id, COALESCE(NULLIF(TRIM(b.batch_name), ''), pm.batch_id)
                         ORDER BY pm.batch_id
@@ -2229,7 +2229,7 @@ class OrchestratorService:
                         WHERE pm.project_id = ?
                           AND (
                             TRIM(COALESCE(pm.data_level_type, '')) = ''
-                            OR LOWER(REPLACE(TRIM(pm.data_level_type), ' ', '')) IN ('soundpressure', 'spl')
+                            OR LOWER(REPLACE(TRIM(pm.data_level_type), ' ', '')) IN ('soundpressure', 'spl', 'peak')
                           )
                         GROUP BY pm.project_id, pm.batch_id
                         ORDER BY pm.batch_id
@@ -2328,7 +2328,7 @@ class OrchestratorService:
                     WHERE project_id = ? AND batch_id = ?
                       AND (
                         TRIM(COALESCE(data_level_type, '')) = ''
-                        OR LOWER(REPLACE(TRIM(data_level_type), ' ', '')) IN ('soundpressure', 'spl')
+                        OR LOWER(REPLACE(TRIM(data_level_type), ' ', '')) IN ('soundpressure', 'spl', 'peak')
                       )
                     """,
                     (project_token, batch_token),
@@ -2564,7 +2564,7 @@ class OrchestratorService:
                     WHERE pm.project_id = ? AND pm.batch_id = ?
                       AND (
                         TRIM(COALESCE(pm.data_level_type, '')) = ''
-                        OR LOWER(REPLACE(TRIM(pm.data_level_type), ' ', '')) IN ('soundpressure', 'spl')
+                        OR LOWER(REPLACE(TRIM(pm.data_level_type), ' ', '')) IN ('soundpressure', 'spl', 'peak')
                       )
                     GROUP BY pm.project_id, pm.batch_id, COALESCE(pm.run_id, ''), pm.version_id
                     ORDER BY imported_at DESC, pm.version_id DESC
@@ -3484,7 +3484,7 @@ class OrchestratorService:
                           AND COALESCE(pm.run_id, '') = ?
                           AND (
                             TRIM(COALESCE(pm.data_level_type, '')) = ''
-                            OR LOWER(REPLACE(TRIM(pm.data_level_type), ' ', '')) IN ('soundpressure', 'spl')
+                            OR LOWER(REPLACE(TRIM(pm.data_level_type), ' ', '')) IN ('soundpressure', 'spl', 'peak')
                           )
                         ORDER BY pm.orientation, pp.freq_hz, pp.angle_deg
                         """,

@@ -44,6 +44,7 @@ def _write_run_with_cached_kpi(
     file_hash: str,
     created_at: str,
     aggregate: dict,
+    data_level_type: str = "SPL",
 ) -> None:
     measurement = {
         "project_id": project_id,
@@ -54,7 +55,7 @@ def _write_run_with_cached_kpi(
         "orientation": "H",
         "orientation_raw": 0.0,
         "norm_angle_deg": 0.0,
-        "data_level_type": "SPL",
+        "data_level_type": data_level_type,
         "data_base_unit": "dB",
         "data_absc_unit": "Hz",
         "freq_min_hz": 200.0,
@@ -108,6 +109,44 @@ def _write_run_with_cached_kpi(
 
 
 class AnalyzerServicesAnalysesTests(unittest.TestCase):
+    def test_normalized_peak_polars_are_visible_through_analyzer_service_contract(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_analyzer_peak_") as tmp:
+            service = _build_service(Path(tmp))
+            project = service.create_project("Analyzer Peak", {})
+            paths = service.repo.project_paths(project.project_id, ensure=True)
+            dataset = TidyDatasetWriter(paths.project_dir, library_root=service.settings.library_root)
+            _write_run_with_cached_kpi(
+                dataset=dataset,
+                project_id=project.project_id,
+                batch_id="B001",
+                run_id="R001",
+                version_id="V001",
+                file_hash="hash_peak",
+                created_at=_iso_at(5),
+                aggregate={"flags_count": 0, "score_hint": 75.0},
+                data_level_type="Peak",
+            )
+
+            projects = service.analyzer_list_polar_projects(
+                source="project",
+                project_id=project.project_id,
+            )
+            batches = service.analyzer_list_polar_batches(
+                project_id=project.project_id,
+                source="project",
+            )
+            runs = service.analyzer_list_polar_runs(
+                project_id=project.project_id,
+                batch_id="B001",
+                source="project",
+            )
+
+            self.assertEqual(projects[0]["measurement_count"], 1)
+            self.assertEqual(batches[0]["batch_id"], "B001")
+            self.assertEqual(batches[0]["measurement_count"], 1)
+            self.assertEqual(runs[0]["run_id"], "R001")
+            self.assertEqual(runs[0]["planes"], ["H"])
+
     def test_analyzer_ui_pref_roundtrip(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_analyzer_ui_pref_") as tmp:
             service = _build_service(Path(tmp))
