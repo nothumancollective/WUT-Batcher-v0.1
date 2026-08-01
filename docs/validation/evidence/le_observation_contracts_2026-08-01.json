@@ -1,0 +1,136 @@
+{
+  "status": "verified_for_recorded_baselines",
+  "labels": {
+    "le_network_loaded_and_active": "verified",
+    "solver_frequency_contract": "verified",
+    "observation_text_contract": "verified",
+    "absolute_acoustic_accuracy": "unvalidated",
+    "mesh_convergence": "unvalidated",
+    "distance_doubling": "unvalidated"
+  },
+  "le_matrix": {
+    "application_commit": "ea9a81112b054da1f4dcb906f58948335301ff61",
+    "matrix_id": "3c7331c2-188e-44e0-bd58-fececa668066",
+    "random_seed": 20260801,
+    "profiles_in_execution_order": [
+      "control",
+      "mut_electrical",
+      "mut_motor"
+    ],
+    "repeats_per_profile": 1,
+    "runs": {
+      "control": {
+        "run_id": "02a1600e-5b7c-4573-889f-dbcf02cc4bba",
+        "status": "succeeded",
+        "duration_s": 1283.42,
+        "generic25_sha256": "053701a2158347cdf3fdd242fc053de4a225bff93607b134efc5c80a6ed3ce9a"
+      },
+      "mut_electrical": {
+        "run_id": "8e6d3b84-1f9a-49d7-afab-62ed80864301",
+        "status": "succeeded",
+        "duration_s": 835.96,
+        "generic25_sha256": "22de1760aeef8eb39a61ed46a032309efaabd91ec03168132827c6ae08db15e8",
+        "changed_values": {
+          "Re": "12.0ohm",
+          "Le": "0.10mH",
+          "ExpoLe": 0.1
+        },
+        "independent_axis_pressure_rms_delta_pa": 0.22525974522739614,
+        "compared_planes": 3,
+        "compared_points": 18
+      },
+      "mut_motor": {
+        "run_id": "f11eb366-6d42-4f61-bcf5-3ae8f1bd6e71",
+        "status": "succeeded",
+        "duration_s": 613.86,
+        "generic25_sha256": "36d183e0626162e0f57386de5895f07384871c8c3b9ddf9f4803fc6555292761",
+        "changed_values": {
+          "Mms": "120.0g",
+          "Cms": "0.050e-3m/N",
+          "Rms": "7.0Ns/m",
+          "Bl": "8.0N/A"
+        },
+        "independent_axis_pressure_rms_delta_pa": 0.5071645982321151,
+        "compared_planes": 3,
+        "compared_points": 18,
+        "absolute_minimum_effect_threshold_pa": 0.25,
+        "threshold_passed": true
+      }
+    },
+    "unchanged_input_hashes_for_all_profiles": {
+      "Project.abec": "3dbb64eb88080cecd138fce42ddf3e221d62afd1304d5de20ac2590a4ccffc17",
+      "solving.txt": "d7e1a31ead47c4693bf1bcda0a80ddb5e987a64ea759b72ec2c269326cfadfc9",
+      "observation.txt": "19abf15664e20bd24e6c2f14e1d2e166696415423abb7a38cffb22cfc0e9764b"
+    },
+    "coupling_contract": {
+      "project_le_script": "generic25.txt",
+      "voltage": "1V RMS",
+      "series_resistor": "1ohm",
+      "driver_tag": "D1",
+      "driver_group": 1001,
+      "solving_driver_group": 1001,
+      "observation_driver_group": 1001,
+      "radiation_impedance_group_pair": [1001, 1001]
+    },
+    "independent_recalculation": {
+      "method": "Parse each raw H/V/D TXT data row, compute hypot(first_re, first_im), then RMS(candidate-control) across 3 planes x 6 frequencies",
+      "matches_harness_exactly": true,
+      "raw_to_semantic_pairs_byte_equal": "12/12"
+    },
+    "artifacts": {
+      "comparison_report": "tmp/scientific_validation_e0ac543/le_proof_current_r1/logs/le_proof_matrix/3c7331c2-188e-44e0-bd58-fececa668066/le_proof_comparison_report.json",
+      "comparison_report_sha256": "8b30466f6fe8f60ab4f2ede7d9656c8b822d2c7ad97eb5067c9fb9fa06afa016",
+      "curve_diff_sha256": "c36918a7de9ee225740eb0a4c159ff7abdbd3ee44a66f640b815813bca3d5b44",
+      "runner_database_sha256": "0efdfc135102898f9e69f6ad2fd26ab6d8fe1d303a3792fc42fbfb994574e1d9"
+    },
+    "process_hygiene": {
+      "relevant_processes_before": 0,
+      "relevant_processes_after": 0,
+      "owned_native_processes_closed_per_run": true
+    },
+    "limitations": [
+      "Only one current repeat per profile was run; the absolute 0.25 Pa floor is a policy threshold, not an empirically estimated current noise floor.",
+      "The normalized radiation-impedance export is zero in all profiles and is not used as LE-effect evidence.",
+      "The retained snapshots contain Project.abec, solving.txt, observation.txt and generic25.txt, but not the deleted per-run mesh; identical mesh use is supported by identical geometry/profile inputs and the post-ATH-only mutation design, not by three retained mesh hashes."
+    ]
+  },
+  "solver_contract": {
+    "f1_hz": 800.0,
+    "f2_hz": 4000.0,
+    "num_frequencies": 6,
+    "abscissa": "log",
+    "dimension": "3D",
+    "mesh_frequency_hz": 200.0,
+    "symmetry": "xy",
+    "mesh_scale": "1mm",
+    "subdomain_1": "Exterior",
+    "exported_frequency_grid_hz": [800.0, 1103.784, 1522.923, 2101.222, 2899.119, 4000.0],
+    "maximum_absolute_grid_delta_from_geometric_formula_hz": 0.000345289217875688
+  },
+  "normalization_fix": {
+    "cfg_render_fix_commit": "cca2d538189299e045cdafee229ee4377e1eb1e1",
+    "database_metadata_fix_commit": "7c2b7d7a676783096e590f2d94f9d1b4be6f75f2",
+    "pre_fix_gui_run": "914edb8e-78a1-4c33-bdc5-9df3bdc72ad2",
+    "pre_fix_requested_norm_angle_deg": 20.0,
+    "pre_fix_cfg_and_observation_missing_normalization": true,
+    "pre_fix_database_norm_angle_was_null_for_all_three_planes": true,
+    "post_fix_real_ath": {
+      "root": "tmp/scientific_validation_7c2b7d7/norm_angle_ath_r1",
+      "ath_exit_code": 0,
+      "timed_out": false,
+      "cfg_polar_norm_angle_lines": 3,
+      "generated_observation_normalizing_angle_lines": 3,
+      "generated_values_deg": [20.0, 20.0, 20.0],
+      "cfg_sha256": "db4455e4d0a57391e007f87cb9a7f81a5e32bc8fe2e460c7497310deaac74422",
+      "observation_sha256": "95c2b016ee082f1a1afe783f66ea05cab6b4cc6e2291e8997bc795c085de7e65",
+      "ath_processes_before": 0,
+      "ath_processes_after": 0
+    },
+    "database_regression": {
+      "external_save_all_orientation_mapping": "H/V/D token to matching batch polar specification",
+      "equal_multi_plane_fallback": "accepted only when all configured values are equal",
+      "ambiguous_multi_plane_fallback": "remains null",
+      "end_to_end_fixture": "D export persisted 30 degrees from H=10, V=20, D=30"
+    }
+  }
+}

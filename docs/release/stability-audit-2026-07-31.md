@@ -483,11 +483,32 @@ The reproducible ATH contract probe and evidence are recorded in
 `docs/validation/evidence/ath_contracts_2026-08-01.json` (`5f4c6cf`). Six
 standalone ATH cases exited 0 without timeout. They verify length and throat
 transfer, required physical groups, quarter-model coordinate signs and normal
-orientation, and ordered mesh-density controls. They do not yet prove mouth or
-profile transfer, mesh convergence, standalone-vs-WUT solver-result equality,
-observation numerics, VACS complex round-trip/DB losslessness, or Analyzer
-golden-value correctness; those items remain explicitly unvalidated or
-plausibilized rather than being inferred from stability alone.
+orientation, and ordered mesh-density controls.
+
+The follow-up real LE matrix on `ea9a811` completed control, electrical and
+motor profiles successfully with exact owned-process cleanup. Project, solver
+and observation snapshots were bit-identical; only `generic25.txt` changed.
+An independent raw-TXT calculation exactly reproduced 0.225259745 Pa and
+0.507164598 Pa RMS axis-pressure effects across 18 samples, verifying that the
+LE network is loaded, coupled through driver group 1001 and active in the
+recorded result. The six exported frequencies match the independent geometric
+grid formula within 0.000346 Hz.
+
+This round also found a concrete observation data-flow defect in the otherwise
+successful B008 evidence: requested H/V/D `norm_angle=20` was absent from ATH
+CFG/observation output and null in all three SQLite polar rows. `cca2d53`
+renders `NormAngle` (including zero), and an isolated real ATH run translated
+all three values to `NormalizingAngle=20`. `7c2b7d7` preserves the matching
+plane metadata through external VACS Save-All imports, rejecting ambiguous
+fallbacks. Focused tests passed, including an end-to-end D-plane database
+case. No additional long AKABAK/VACS run was started.
+
+Machine-readable evidence is
+`docs/validation/evidence/le_observation_contracts_2026-08-01.json`. Mouth and
+profile isolation, three-level result convergence, independent solver-result
+equivalence, physical distance doubling, full Analyzer KPI aggregation and a
+measurement benchmark remain unvalidated; no absolute acoustic-correctness
+claim is made.
 
 ### Final branch state
 

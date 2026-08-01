@@ -3009,6 +3009,36 @@ Validation executed:
 - Run `914edb8e-78a1-4c33-bdc5-9df3bdc72ad2`, B008/V008: 360.13 s,
   GUI `done`, DB `succeeded`, 4/4 exports, zero relevant post-state processes.
 
+### Update 79 (LE Activation + Polar Normalization Contract)
+#### Done
+- Completed a real three-profile ATH -> AKABAK -> VACS LE matrix on the frozen
+  production baseline: control, electrical mutation and motor mutation all
+  succeeded with zero relevant post-state processes.
+- Independently recalculated the raw H/V/D axis-pressure differences over 18
+  points: 0.225259745 Pa RMS (electrical) and 0.507164598 Pa RMS (motor),
+  exactly matching the harness. Project/solver/observation snapshots were
+  bit-identical; only the LE script changed.
+- Verified the six-point logarithmic result grid against the geometric formula
+  to a maximum 0.000346 Hz absolute difference.
+- Found and fixed a real observation contract defect:
+  - `cca2d53` renders each configured ATH `NormAngle`, preserving valid 0°;
+  - a real isolated ATH run converted three 20° values into three
+    `NormalizingAngle=20` observation entries;
+  - `7c2b7d7` maps external VACS Save-All H/V/D exports back to the matching
+    batch norm angle and persists it in SQLite, while ambiguous cases stay
+    null.
+- Recorded official ATH/R&D Team documentation and licence links without
+  copying third-party assets or modifying installed tools.
+
+#### Validation
+- `python -m pytest tests/test_runtime_orchestrator.py -q`: 39 passed.
+- `python -m pytest tests/test_polar_importer.py tests/test_runtime_orchestrator.py tests/test_analyzer_plot_service.py -q`: 55 passed.
+- `python -m pytest tests/test_polar_importer.py -q`: 10 passed.
+- Analyzer plot/stage/KPI regression group: 29 passed.
+- Real ATH-only normalization contract: exit 0, no timeout, three H/V/D
+  `NormalizingAngle=20` entries, zero ATH processes before and after.
+- Evidence: `docs/validation/evidence/le_observation_contracts_2026-08-01.json`.
+
 
 
 
