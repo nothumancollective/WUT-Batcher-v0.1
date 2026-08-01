@@ -59,6 +59,56 @@ class PolarImporterTests(unittest.TestCase):
         writer.create_run(run_id="RUN001", project_id="P001", batch_id="B001", status="running")
         return project_root, writer, project, batch
 
+    def test_zero_valued_spl_export_is_rejected_before_ingest(self) -> None:
+        project_root, writer, project, batch = self._prepare_project()
+        exports_dir = project_root / "versions" / "V001" / "exports" / "RUN001"
+        exports_dir.mkdir(parents=True, exist_ok=True)
+        output_file = exports_dir / "zero_spl.txt"
+        output_file.write_text(
+            "\n".join(
+                [
+                    "GraphType=SoundPressure",
+                    "Data_LevelType=SoundPressure",
+                    "Data_Legend='Sound pressure'",
+                    "StartString_Data=Data",
+                    "EndString_Data=Data_End",
+                    "Data",
+                    "1000 0.0 0.0",
+                    "2000 0.0 0.0",
+                    "Data_End",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        vacs_summary = {
+            "exports": [
+                {
+                    "spec": {"id": "spl", "graph_kind": "spl", "variant": "main", "format": "txt"},
+                    "entry": {"graph_kind": "spl", "graph_variant": "main", "format": "txt"},
+                    "plugin_id": "test",
+                    "output_path": str(output_file),
+                    "details": {},
+                }
+            ]
+        }
+
+        ingest = _ingest_vacs_exports(
+            writer=writer,
+            project=project,
+            batch=batch,
+            run_id="RUN001",
+            version_id="V001",
+            exports_dir=exports_dir,
+            vacs_export_summary=vacs_summary,
+        )
+
+        self.assertEqual(ingest.get("parse_errors"), [])
+        self.assertTrue(ingest.get("quality_errors"))
+        self.assertEqual(int(ingest.get("rows_prepared", 0)), 0)
+        with closing(sqlite3.connect(str(writer.project_db_path))) as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM graphs").fetchone()[0], 0)
+
     def test_import_writes_polar_tables_and_keeps_legacy_graphs(self) -> None:
         project_root, writer, project, batch = self._prepare_project()
         exports_dir = project_root / "versions" / "V001" / "exports" / "RUN001"

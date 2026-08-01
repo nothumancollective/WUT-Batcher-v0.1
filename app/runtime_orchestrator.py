@@ -1484,6 +1484,35 @@ def _graph_kind_mismatch(*, expected_kind: str, parsed_graph_type: str, parsed_e
     return any(token in hint for token in negative if token)
 
 
+def _graph_requires_nonzero_data(*, expected_kind: str, parsed_graph_type: str, parsed_export_meta: Dict[str, Any]) -> bool:
+    metadata = parsed_export_meta.get("metadata")
+    metadata_map = metadata if isinstance(metadata, dict) else {}
+    hint = " ".join(
+        [
+            str(expected_kind or ""),
+            str(parsed_graph_type or ""),
+            str(metadata_map.get("Data_LevelType", "") or ""),
+            str(metadata_map.get("Data_Legend", "") or ""),
+        ]
+    ).lower()
+    if any(token in hint for token in ("impedance", "radiation_impedance", "radiation impedance")):
+        return False
+    return any(token in hint for token in ("spl", "soundpressure", "sound pressure", "polar", "directivity"))
+
+
+def _graph_all_series_zero(parsed: Any, *, tolerance: float = 1e-12) -> bool:
+    saw_point = False
+    limit = abs(float(tolerance))
+    for series in list(getattr(parsed, "series", []) or []):
+        for point in list(getattr(series, "points", []) or []):
+            saw_point = True
+            real_value = float(getattr(point, "y_value", 0.0) or 0.0)
+            imag_value = float(getattr(point, "y_imag", 0.0) or 0.0)
+            if abs(real_value) > limit or abs(imag_value) > limit:
+                return False
+    return saw_point
+
+
 def _parse_decimal(value: Any) -> Optional[float]:
     text = str(value or "").strip().replace(" ", "")
     if not text:
@@ -1637,6 +1666,7 @@ def _ingest_vacs_exports(
 
     parse_errors: List[str] = []
     mapping_errors: List[str] = []
+    quality_errors: List[str] = []
     rows: List[Dict[str, Any]] = []
     polar_measurements_written = 0
     polar_points_written = 0
@@ -1667,6 +1697,16 @@ def _ingest_vacs_exports(
         ):
             mapping_errors.append(
                 f"{path}: expected graph_kind '{expected_kind}', parsed hint '{parsed.graph_type}'"
+            )
+            continue
+
+        if _graph_requires_nonzero_data(
+            expected_kind=expected_kind,
+            parsed_graph_type=parsed.graph_type,
+            parsed_export_meta=parsed.export_meta,
+        ) and _graph_all_series_zero(parsed):
+            quality_errors.append(
+                f"{path}: non-impedance export contains only zero-valued series"
             )
             continue
 
@@ -1904,6 +1944,7 @@ def _ingest_vacs_exports(
         "polar_warnings": polar_warnings,
         "parse_errors": parse_errors,
         "mapping_errors": mapping_errors,
+        "quality_errors": quality_errors,
         "write_result": write_result,
     }
 
@@ -3085,6 +3126,7 @@ def run_batch_pipeline(
                         bool(vacs_export_summary.get("executed"))
                         and not bool(vacs_ingest.get("parse_errors"))
                         and not bool(vacs_ingest.get("mapping_errors"))
+                        and not bool(vacs_ingest.get("quality_errors"))
                         and not bool(vacs_ingest.get("missing_contract_files"))
                     )
                     if int(vacs_ingest.get("files_found", 0)) <= 0 or int(vacs_ingest.get("rows_prepared", 0)) <= 0:
@@ -3103,6 +3145,7 @@ def run_batch_pipeline(
                             "rows_prepared": int(vacs_ingest.get("rows_prepared", 0) or 0),
                             "parse_errors": int(len(list(vacs_ingest.get("parse_errors", []) or []))),
                             "mapping_errors": int(len(list(vacs_ingest.get("mapping_errors", []) or []))),
+                            "quality_errors": int(len(list(vacs_ingest.get("quality_errors", []) or []))),
                             "missing_contract_files": int(
                                 len(list(vacs_ingest.get("missing_contract_files", []) or []))
                             ),
@@ -3280,6 +3323,7 @@ def run_batch_pipeline(
                         or int(vacs_ingest.get("rows_prepared", 0)) <= 0
                         or vacs_ingest.get("parse_errors")
                         or vacs_ingest.get("mapping_errors")
+                        or vacs_ingest.get("quality_errors")
                     ):
                         vacs_stage_ok = False
                 _append_stage_debug_log(
@@ -3294,6 +3338,7 @@ def run_batch_pipeline(
                         "runner_timed_out": bool(vacs_result.timed_out),
                         "files_found": int(vacs_ingest.get("files_found", 0) or 0),
                         "rows_prepared": int(vacs_ingest.get("rows_prepared", 0) or 0),
+                        "quality_errors": int(len(list(vacs_ingest.get("quality_errors", []) or []))),
                         "summary_log": str(vacs_result.summary_log),
                     },
                 )
@@ -3322,6 +3367,7 @@ def run_batch_pipeline(
                         "summary_log": str(vacs_result.summary_log),
                         "files_found": int(vacs_ingest.get("files_found", 0) or 0),
                         "rows_prepared": int(vacs_ingest.get("rows_prepared", 0) or 0),
+                        "quality_errors": int(len(list(vacs_ingest.get("quality_errors", []) or []))),
                     },
                 )
                 vacs_status = "vacs_ok" if vacs_stage_ok else "vacs_failed"
