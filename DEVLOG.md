@@ -3233,12 +3233,18 @@ Validation executed:
 - Added automated coverage for policy priority, legacy Batches, immutable older
   Run snapshots, JSON/SQLite round-trip, persistent navigation, small layouts and
   the existing Driver form/LE picker.
+- The first full-suite pass exposed that Driver readiness was evaluated before
+  automatic Dry-run detection. The service now permits an explicitly unresolved
+  Driver only for non-native Dry-runs while retaining the fatal LE guard for real
+  runs; the five affected CLI/service regressions plus the new guard test passed
+  21/21.
 - A visible isolated GUI smoke saved and reloaded B001 with the Geometry default
   and B002 with `DR-OVERRIDE-1`; both showed readiness and full hashes.
 - Exactly one short native service-path gate ran B012/V012. Run
   `f23aad8a-bc05-4451-9c92-f775dab27903` succeeded through ATH, AKABAK and VACS
   in 54 seconds, persisted `selection_source=geometry_default` plus immutable
   Geometry/Driver/LE hashes, exported four graphs, and left no relevant process.
+- Final clean full suite: 779 passed, 10 skipped, zero failed in 268.67 seconds.
 - Evidence: `docs/validation/GEOMETRY_NAVIGATION_BATCH_DRIVER_2026-08-02.md`.
 
 

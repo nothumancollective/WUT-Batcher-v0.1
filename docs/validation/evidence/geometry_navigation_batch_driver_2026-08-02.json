@@ -30,5 +30,10 @@
     "owned_pids": {"python": 14284, "akabak": 2336, "vacs": 7792},
     "post_run_relevant_processes": [],
     "global_process_name_kill_used": false
+  },
+  "tests": {
+    "focused_geometry_driver_ui_storage_runtime": {"passed": 72, "failed": 0},
+    "focused_dry_run_readiness_fix": {"passed": 21, "failed": 0},
+    "full_suite": {"passed": 779, "skipped": 10, "failed": 0, "duration_seconds": 268.67}
   }
 }

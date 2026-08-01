@@ -76,3 +76,16 @@ kill was used.
 Compact machine-readable evidence is retained in
 `docs/validation/evidence/geometry_navigation_batch_driver_2026-08-02.json`;
 large native artifacts remain outside Git.
+
+## Automated regression
+
+- Geometry/Driver/UI/storage/runtime focus: 72 passed.
+- Dry-run/real-readiness fix focus: 21 passed.
+- Final full suite: 779 passed, 10 skipped, zero failed in 268.67 seconds.
+
+The first full-suite pass found five tests where Driver readiness preceded
+automatic Dry-run detection. The corrected service determines execution mode
+first: unresolved Driver state is permitted only for a non-native Dry-run, while
+an equivalent real run remains fatal with `driver_le_network_required`. No second
+native gate was run because the successful real path and its strict guard were
+unchanged.
