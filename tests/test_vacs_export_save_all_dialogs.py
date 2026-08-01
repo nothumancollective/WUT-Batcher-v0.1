@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from scripts.vacs_export_save_all import _is_save_as_dialog_candidate
+from scripts.vacs_export_save_all import _find_save_as_dialog_fast, _is_save_as_dialog_candidate
 
 
 class VacsExportSaveAllDialogTests(unittest.TestCase):
@@ -53,6 +53,25 @@ class VacsExportSaveAllDialogTests(unittest.TestCase):
             ),
         ):
             self.assertTrue(_is_save_as_dialog_candidate(dialog))
+
+    def test_fast_finder_falls_back_to_uia_for_modern_save_dialog(self) -> None:
+        dialog = object()
+        main = object()
+        with (
+            patch("scripts.vacs_export_save_all.time.perf_counter", side_effect=[0.0, 0.0, 1.0]),
+            patch("scripts.vacs_export_save_all.time.sleep"),
+            patch("scripts.vacs_export_save_all._top_windows_for_pid_fast", return_value=[]),
+            patch("scripts.vacs_export_save_all._find_main_fast", return_value=main),
+            patch(
+                "scripts.vacs_export_save_all._sig",
+                return_value={"handle": 501, "class_name": "TForm_DatMain", "title": "VacsViewer"},
+            ),
+            patch("scripts.vacs_export_save_all._find_save_as_dialog", return_value=dialog) as fallback,
+        ):
+            result = _find_save_as_dialog_fast(13632, timeout_s=0.5)
+
+        self.assertIs(result, dialog)
+        fallback.assert_called_once_with(13632, 501, timeout_s=0.35)
 
 
 if __name__ == "__main__":

@@ -1242,7 +1242,14 @@ def _find_save_as_dialog_fast(target_pid: int, timeout_s: float) -> Optional[Any
             if _is_save_as_dialog_candidate(w):
                 return w
         time.sleep(0.01)
-    return None
+
+    # The Windows 11 shell-backed Save As window is not guaranteed to appear in
+    # pywinauto's win32 top-window list even though its UIA window is already
+    # visible and process-bound. Keep the hot polling path above, then perform
+    # one bounded UIA fallback before declaring the dialog missing.
+    main = _find_main_fast(int(target_pid))
+    main_handle = int(_sig(main).get("handle", 0) or 0) if main is not None else 0
+    return _find_save_as_dialog(int(target_pid), main_handle, timeout_s=0.35)
 
 
 def _set_save_path(dialog: Any, full_target_path: Path, *, quick: bool = False) -> Dict[str, Any]:
