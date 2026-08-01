@@ -46,6 +46,8 @@ from app.doctor_service import run_settings_doctor_checks
 from app.constants import DEFAULT_RUNNER_MODE
 import app.resources_rc  # noqa: F401  # Registers Qt resource paths used by icons/QSS.
 from app.models import AppConfig, Batch, Project, ProjectConstraints
+from app.geometry_domain import legacy_geometry_id
+from app.geometry_driver_ui import GeometryManagerDialog
 from app.project_issue_model import UiProjectIssue, classify_ui_severity, issue_counts, normalize_project_issues
 from app.services import OrchestratorService, PreviewGenerationCancelled
 from app.settings_store import (
@@ -6650,6 +6652,7 @@ class ProjectPage(QWidget):
     submit_project = Signal(str, dict)
     draft_changed = Signal(dict)
     blocked_interaction = Signal(str, str, str)
+    manage_geometries = Signal()
 
     def __init__(self) -> None:
         super().__init__()
@@ -6683,6 +6686,21 @@ class ProjectPage(QWidget):
         name_row.addStretch(1)
         root.addWidget(name_wrap)
         root.addSpacing(2)
+
+        self.geometry_context = QFrame()
+        self.geometry_context.setObjectName("GeometryContextBar")
+        geometry_row = QHBoxLayout(self.geometry_context)
+        geometry_row.setContentsMargins(10, 6, 10, 6)
+        self.geometry_label = QLabel("Geometry: not selected")
+        self.geometry_label.setObjectName("GeometryContextLabel")
+        self.geometry_label.setWordWrap(False)
+        self.manage_geometries_button = QPushButton("Manage Geometries & Drivers")
+        self.manage_geometries_button.setObjectName("BatchSecondaryButton")
+        self.manage_geometries_button.clicked.connect(self.manage_geometries.emit)
+        geometry_row.addWidget(self.geometry_label, 1)
+        geometry_row.addWidget(self.manage_geometries_button, 0)
+        self.geometry_context.setVisible(False)
+        root.addWidget(self.geometry_context)
 
         self.summary_panel = QFrame()
         self.summary_panel.setObjectName("ProjectSummaryPanel")
@@ -6779,6 +6797,19 @@ class ProjectPage(QWidget):
         self._update_action_state()
         self._update_summary_panel()
         self._update_issues_panel()
+
+    def set_geometry_context(self, geometry: Dict[str, Any] | None) -> None:
+        if not geometry:
+            self.geometry_context.setVisible(False)
+            self.geometry_label.setText("Geometry: not selected")
+            return
+        role = str(geometry.get("role") or "unknown")
+        driver = str(geometry.get("default_driver_revision_id") or "no default driver")
+        legacy = " · legacy compatibility" if geometry.get("legacy") else ""
+        text = f"Geometry: {geometry.get('name') or geometry.get('geometry_id')} [{role}] · Driver: {driver}{legacy}"
+        self.geometry_label.setText(text)
+        self.geometry_label.setToolTip(text + (f"\n{geometry.get('description')}" if geometry.get("description") else ""))
+        self.geometry_context.setVisible(True)
 
     def _emit_draft_changed(self, payload: Dict[str, Any] | None = None) -> None:
         self.draft_changed.emit(payload or self._raw_constraints_payload())
@@ -7038,6 +7069,10 @@ class BatchPage(QWidget):
         self.run_btn = self.command_header.run_button
         self.summary_issue_hint = self.command_header.issues_chip
         root.addWidget(self.command_header)
+        self.execution_context_label = QLabel("Simulation context: no geometry / driver snapshot selected")
+        self.execution_context_label.setObjectName("GeometryExecutionContext")
+        self.execution_context_label.setWordWrap(True)
+        root.addWidget(self.execution_context_label)
 
         self.parameter_form = BatchParameterForm(build_project_form_schema())
         self.export_panel = BatchExportPanel()
@@ -14135,6 +14170,7 @@ class MainWindow(QMainWindow):
         self.service = service
         self.compat_ui_adapter = CompatUiAdapter(build_project_form_schema())
         self.current_project: Optional[Project] = None
+        self.current_geometry_id: Optional[str] = None
         self.last_status_detail = ""
         self.ui_validation = UiValidationEngine()
         self._project_validation_debounce_ms = 100
@@ -14338,6 +14374,7 @@ class MainWindow(QMainWindow):
         self.project_page.submit_project.connect(self._create_project)
         self.project_page.draft_changed.connect(self._queue_project_draft_changed)
         self.project_page.blocked_interaction.connect(self._on_project_blocked_interaction)
+        self.project_page.manage_geometries.connect(self._open_geometry_manager)
 
         self.batch_page.save_batch.connect(self._save_batch)
         self.batch_page.run_batch.connect(self._run_batch)
@@ -14798,6 +14835,8 @@ class MainWindow(QMainWindow):
 
     def enter_new_project_flow(self) -> None:
         self.current_project = None
+        self.current_geometry_id = None
+        self.project_page.set_geometry_context(None)
         self.project_page.set_constraints_locked(False)
         self.batch_page.set_project_fixed_keys([])
         self.analyse_page.set_project_context(None)
@@ -14814,6 +14853,9 @@ class MainWindow(QMainWindow):
 
     def load_project(self, project: Project) -> None:
         self.current_project = project
+        geometries = self.service.list_geometries(project.project_id)
+        self.current_geometry_id = str(geometries[0]["geometry_id"]) if geometries else legacy_geometry_id(project.project_id)
+        self._sync_geometry_context()
         self.project_page.set_constraints_locked(True)
         fixed_keys = self._project_fixed_keys_from_constraints(project.constraints)
         self.batch_page.set_project_fixed_keys(fixed_keys)
@@ -14829,20 +14871,75 @@ class MainWindow(QMainWindow):
             self.dashboard_page.set_batch_lineage_rows([])
             self.dashboard_page.batch_list.clear()
             self.analyse_page.set_project_context(None)
+            self.project_page.set_geometry_context(None)
             return
 
         self.dashboard_page.set_constraints_payload(self.current_project.constraints.to_dict())
         self.dashboard_page.batch_list.clear()
+        visible_batch_ids: Set[str] = set()
         for batch in self.service.repo.list_batches(self.current_project.project_id):
+            batch_geometry_id = str(batch.geometry_id or legacy_geometry_id(self.current_project.project_id))
+            if self.current_geometry_id and batch_geometry_id != self.current_geometry_id:
+                continue
             label = f"{batch.batch_id} | {batch.extra.get('batch_name', batch.batch_id)}"
             item = QListWidgetItem(label)
             item.setData(Qt.UserRole, batch.batch_id)
             self.dashboard_page.batch_list.addItem(item)
+            visible_batch_ids.add(str(batch.batch_id))
         try:
             lineage_rows = self.service.list_batch_lineage(project_id=self.current_project.project_id)
         except Exception:
             lineage_rows = []
+        lineage_rows = [row for row in lineage_rows if str(row.get("batch_id") or "") in visible_batch_ids]
         self.dashboard_page.set_batch_lineage_rows(lineage_rows)
+
+    def _sync_geometry_context(self) -> None:
+        if self.current_project is None:
+            self.project_page.set_geometry_context(None)
+            return
+        rows = self.service.list_geometries(self.current_project.project_id)
+        selected = next((row for row in rows if row["geometry_id"] == self.current_geometry_id), None)
+        if selected is None and rows:
+            selected = rows[0]
+            self.current_geometry_id = str(selected["geometry_id"])
+        self.project_page.set_geometry_context(selected)
+        if selected is not None:
+            self.batch_page.command_header.name_label.setText(f"Batch · {selected.get('name')}")
+            self.batch_page.command_header.name_label.setToolTip(
+                f"Geometry {selected.get('geometry_id')} · Default driver {selected.get('default_driver_revision_id') or 'none'}"
+            )
+            revision_id = str(selected.get("default_driver_revision_id") or "")
+            driver_row = None
+            if revision_id:
+                driver_row = next(
+                    (row for row in self.service.list_drivers(include_archived=True)
+                     if str((row.get("latest_revision") or {}).get("revision_id") or "") == revision_id),
+                    None,
+                )
+            revision_hash = str(((driver_row or {}).get("latest_revision") or {}).get("revision_hash") or "")
+            driver_text = (
+                f"{(driver_row or {}).get('manufacturer')} {(driver_row or {}).get('model')} · {revision_id} · SHA-256 {revision_hash[:12]}…"
+                if driver_row else "no default driver — current AKABAK coupling may be incomplete"
+            )
+            context_text = f"Simulation context · Geometry {selected.get('geometry_id')} · Driver snapshot: {driver_text}"
+            self.batch_page.execution_context_label.setText(context_text)
+            self.batch_page.execution_context_label.setToolTip(context_text)
+
+    def _open_geometry_manager(self) -> None:
+        if self.current_project is None:
+            self.set_status("Create or open a project before managing geometries.")
+            return
+        dialog = GeometryManagerDialog(
+            self.service,
+            self.current_project.project_id,
+            active_geometry_id=self.current_geometry_id,
+            parent=self,
+        )
+        if dialog.exec() == QDialog.Accepted and dialog.selected_geometry_id:
+            self.current_geometry_id = str(dialog.selected_geometry_id)
+            self._sync_geometry_context()
+            self.refresh_dashboard()
+            self.set_status(f"Active geometry: {self.current_geometry_id}")
 
     def _open_project_constraint_editor(self, key: str) -> None:
         if self.current_project is None:
@@ -15049,6 +15146,7 @@ class MainWindow(QMainWindow):
             created_via=created_via_token,
             parent_batch_id=parent_batch_token,
             created_from_version_id=created_from_version_token,
+            geometry_id=self.current_geometry_id,
         )
         self.set_status(
             f"Batch saved: {summary.batch_id}, versions={summary.version_count}",
@@ -15211,6 +15309,8 @@ class MainWindow(QMainWindow):
             self.set_status(f"Edit Batch failed for {batch_id}", detail=str(exc))
             return
         self._set_draft_lineage_context(created_via="manual")
+        self.current_geometry_id = str(batch.geometry_id or legacy_geometry_id(self.current_project.project_id))
+        self._sync_geometry_context()
         self.batch_page.load_from_batch(batch)
         self._on_batch_draft_changed(self.batch_page._payload(include_name=False))
         self.stack.setCurrentWidget(self.batch_page)
@@ -15250,6 +15350,8 @@ class MainWindow(QMainWindow):
                 f"Could not load parent batch '{batch_id}'.",
             )
             return
+        self.current_geometry_id = str(parent_batch.geometry_id or legacy_geometry_id(self.current_project.project_id))
+        self._sync_geometry_context()
         param_rows = self.service.analyzer_list_version_param_rows(
             project_id=self.current_project.project_id,
             batch_id=batch_id,
@@ -15307,6 +15409,8 @@ class MainWindow(QMainWindow):
         source_name = str(batch.extra.get("batch_name", batch.batch_id)).strip() or batch.batch_id
         clone_name = f"{source_name} Clone"
         self._set_draft_lineage_context(created_via="clone", parent_batch_id=batch.batch_id)
+        self.current_geometry_id = str(batch.geometry_id or legacy_geometry_id(self.current_project.project_id))
+        self._sync_geometry_context()
         self.batch_page.load_from_batch(batch, batch_name=clone_name)
         self._on_batch_draft_changed(self.batch_page._payload(include_name=False))
         self.stack.setCurrentWidget(self.batch_page)
