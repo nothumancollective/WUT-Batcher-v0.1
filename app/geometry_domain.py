@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timezone
+from contextlib import closing
 import hashlib
 import json
 from pathlib import Path
@@ -104,9 +105,10 @@ class GeometryRepository:
         db_path = next((path for path in (self.project_root / "db" / "project.sqlite", self.project_root / "dataset" / "project.sqlite") if path.exists()), None)
         if db_path is None:
             return
-        with sqlite3.connect(db_path) as conn:
-            ensure_project_geometry_schema(conn)
-            conn.execute(
+        with closing(sqlite3.connect(db_path)) as conn:
+            with conn:
+                ensure_project_geometry_schema(conn)
+                conn.execute(
                 """INSERT INTO geometries
                 (geometry_id, project_id, name, description, role, ath_template,
                  ath_parameters_json, default_driver_revision_id, schema_version,
@@ -118,13 +120,13 @@ class GeometryRepository:
                     ath_parameters_json=excluded.ath_parameters_json,
                     default_driver_revision_id=excluded.default_driver_revision_id,
                     updated_at=excluded.updated_at, archived_at=excluded.archived_at""",
-                (
+                    (
                     item.geometry_id, item.project_id, item.name, item.description,
                     item.role, item.ath_template, json.dumps(item.ath_parameters, sort_keys=True),
                     item.default_driver_revision_id, item.schema_version, int(item.legacy),
                     item.created_at, item.updated_at, item.archived_at,
-                ),
-            )
+                    ),
+                )
 
     def list(self, *, include_archived: bool = False) -> list[Geometry]:
         if not self.geometries_dir.exists():
@@ -330,27 +332,28 @@ def migrate_legacy_project(
         for path, payload in targets:
             _write_object(path, payload)
         if db_path:
-            with sqlite3.connect(db_path) as conn:
-                ensure_project_geometry_schema(conn)
-                geometry = Geometry.from_dict(_read_object(repo._path(geometry_id)))
-                conn.execute(
+            with closing(sqlite3.connect(db_path)) as conn:
+                with conn:
+                    ensure_project_geometry_schema(conn)
+                    geometry = Geometry.from_dict(_read_object(repo._path(geometry_id)))
+                    conn.execute(
                     """INSERT OR IGNORE INTO geometries
                     (geometry_id, project_id, name, description, role, ath_template,
                      ath_parameters_json, default_driver_revision_id, schema_version,
                      legacy, created_at, updated_at, archived_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (
+                        (
                         geometry.geometry_id, geometry.project_id, geometry.name,
                         geometry.description, geometry.role, geometry.ath_template,
                         json.dumps(geometry.ath_parameters, sort_keys=True),
                         geometry.default_driver_revision_id, geometry.schema_version,
                         1, geometry.created_at, geometry.updated_at, geometry.archived_at,
-                    ),
-                )
-                for table in ("batches", "versions", "runs", "run_versions", "graphs", "polar_measurements"):
-                    columns = {str(row[1]) for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
-                    if "geometry_id" in columns:
-                        conn.execute(f"UPDATE {table} SET geometry_id=? WHERE geometry_id IS NULL OR geometry_id=''", (geometry_id,))
+                        ),
+                    )
+                    for table in ("batches", "versions", "runs", "run_versions", "graphs", "polar_measurements"):
+                        columns = {str(row[1]) for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+                        if "geometry_id" in columns:
+                            conn.execute(f"UPDATE {table} SET geometry_id=? WHERE geometry_id IS NULL OR geometry_id=''", (geometry_id,))
 
     return GeometryMigrationReport(
         project_id=project_id,
