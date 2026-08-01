@@ -294,8 +294,8 @@ class GeometryManagerDialog(QDialog):
         item = self.list.currentItem()
         return str(item.data(Qt.UserRole)) if item is not None else None
 
-    def refresh(self) -> None:
-        selected = self.current_geometry_id() or self.selected_geometry_id
+    def refresh(self, *, preferred_geometry_id: str | None = None) -> None:
+        selected = preferred_geometry_id or self.current_geometry_id() or self.selected_geometry_id
         self.list.clear()
         for row in self.service.list_geometries(self.project_id):
             legacy = " · legacy" if row.get("legacy") else ""
@@ -338,7 +338,7 @@ class GeometryManagerDialog(QDialog):
         if ok:
             row = self.service.create_geometry(self.project_id, name=name.strip(), role=str(role))
             self.selected_geometry_id = row["geometry_id"]
-            self.refresh()
+            self.refresh(preferred_geometry_id=row["geometry_id"])
 
     def _rename(self) -> None:
         geometry_id = self.current_geometry_id()
@@ -354,7 +354,7 @@ class GeometryManagerDialog(QDialog):
         if geometry_id:
             row = self.service.duplicate_geometry(self.project_id, geometry_id)
             self.selected_geometry_id = row["geometry_id"]
-            self.refresh()
+            self.refresh(preferred_geometry_id=row["geometry_id"])
 
     def _archive(self) -> None:
         geometry_id = self.current_geometry_id()

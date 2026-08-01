@@ -53,6 +53,20 @@ class GeometryDriverUiTests(unittest.TestCase):
             self.assertEqual(dialog.default_driver.itemData(0), "")
             dialog.close()
 
+    def test_geometry_manager_refresh_can_prefer_new_geometry(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_geometry_ui_select_") as tmp:
+            service = _service(Path(tmp))
+            project = service.create_project("Geometry UI selection", {"fixed_params": {}, "limits": {}})
+            dialog = GeometryManagerDialog(service, project.project_id)
+            original_id = dialog.current_geometry_id()
+            created = service.create_geometry(project.project_id, name="Created", role="hf_horn")
+
+            dialog.refresh(preferred_geometry_id=created["geometry_id"])
+
+            self.assertNotEqual(dialog.current_geometry_id(), original_id)
+            self.assertEqual(dialog.current_geometry_id(), created["geometry_id"])
+            dialog.close()
+
     def test_main_window_filters_batches_to_active_geometry_and_labels_snapshot_context(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_geometry_main_ui_") as tmp:
             service = _service(Path(tmp))
