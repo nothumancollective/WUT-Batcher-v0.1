@@ -121,6 +121,9 @@ def _beamwidth_minus6db(angles: Sequence[float], column_db: Sequence[Optional[fl
     if values_clean[pivot] < -6.0:
         return (None, False)
     threshold = -6.0
+    pivot_angle = float(angles_clean[pivot])
+    has_left_side = any(float(angle) < pivot_angle for angle in angles_clean)
+    has_right_side = any(float(angle) > pivot_angle for angle in angles_clean)
     left = angles_clean[0]
     right = angles_clean[-1]
     left_crossed = False
@@ -149,12 +152,29 @@ def _beamwidth_minus6db(angles: Sequence[float], column_db: Sequence[Optional[fl
             break
         left = angles_clean[idx]
         break
-    width = float(right - left)
-    if width <= 0.0:
-        return (None, False)
     if left_crossed and right_crossed:
+        width = float(right - left)
+        if width <= 0.0:
+            return (None, False)
         return (width, False)
-    return (width, True)
+
+    if has_left_side and has_right_side:
+        width = float(right - left)
+        if width > 0.0:
+            return (width, True)
+
+    # AKABAK commonly exports a symmetry-reduced 0..90 degree polar. Mirror the
+    # measured half-angle so plot payloads use the same full-width convention as
+    # the KPI engine; keep the result flagged because one side was inferred.
+    if (not has_left_side) and right_crossed:
+        half_width = float(right - pivot_angle)
+        if half_width > 0.0:
+            return (2.0 * half_width, True)
+    if (not has_right_side) and left_crossed:
+        half_width = float(pivot_angle - left)
+        if half_width > 0.0:
+            return (2.0 * half_width, True)
+    return (None, False)
 
 
 def compute_beamwidth_curve(

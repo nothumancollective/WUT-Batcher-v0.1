@@ -94,6 +94,18 @@ class AnalyzerPlotServiceMathTests(unittest.TestCase):
         self.assertAlmostEqual(float(curve[0]["beamwidth_deg"]), 180.0)
         self.assertTrue(bool(curve[0].get("saturated")))
 
+    def test_beamwidth_curve_mirrors_one_sided_minus6_crossing(self) -> None:
+        freqs = [1000.0]
+        angles = [0.0, 10.0, 20.0, 30.0]
+        matrix = [[0.0], [-3.0], [-8.0], [-15.0]]
+
+        curve = compute_beamwidth_curve(freqs_hz=freqs, angles_deg=angles, matrix_db=matrix)
+
+        self.assertEqual(len(curve), 1)
+        # The interpolated half-angle is 16 degrees; beamwidth is full width.
+        self.assertAlmostEqual(float(curve[0]["beamwidth_deg"]), 32.0)
+        self.assertTrue(bool(curve[0].get("saturated")))
+
     def test_normalize_prefers_provided_norm_angle_when_present(self) -> None:
         freqs = [1000.0]
         angles = [-10.0, 0.0, 10.0]
