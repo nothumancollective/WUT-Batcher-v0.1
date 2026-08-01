@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -17,6 +18,9 @@ def _default_library_root() -> str:
 
 
 def _default_settings_path() -> Path:
+    override = str(os.environ.get("WUT_BATCHER_SETTINGS_PATH", "") or "").strip()
+    if override:
+        return Path(override).expanduser()
     return Path.home() / ".wut_batcher" / "config.json"
 
 
