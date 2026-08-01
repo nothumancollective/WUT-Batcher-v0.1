@@ -65,6 +65,13 @@ class AnalyzerPageUiTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.app = QApplication.instance() or QApplication([])
 
+    def tearDown(self) -> None:
+        for widget in list(self.app.topLevelWidgets()):
+            if isinstance(widget, (AnalysePage, MainWindow)):
+                widget.close()
+                widget.deleteLater()
+        self.app.processEvents()
+
     def test_analyse_modebar_opens_analyzer_page(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_ui1c_nav_") as tmp:
             service = _build_service(Path(tmp))

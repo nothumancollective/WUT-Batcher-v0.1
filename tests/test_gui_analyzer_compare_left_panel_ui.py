@@ -42,6 +42,13 @@ class AnalyzerCompareLeftPanelUiTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.app = QApplication.instance() or QApplication([])
 
+    def tearDown(self) -> None:
+        for widget in list(self.app.topLevelWidgets()):
+            if isinstance(widget, AnalysePage):
+                widget.close()
+                widget.deleteLater()
+        self.app.processEvents()
+
     def _sample_candidates(self) -> list[dict]:
         return [
             {

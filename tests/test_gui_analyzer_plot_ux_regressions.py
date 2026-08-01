@@ -133,6 +133,13 @@ class AnalyzerPlotUxRegressionTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.app = QApplication.instance() or QApplication([])
 
+    def tearDown(self) -> None:
+        for widget in list(self.app.topLevelWidgets()):
+            if isinstance(widget, AnalysePage):
+                widget.close()
+                widget.deleteLater()
+        self.app.processEvents()
+
     def test_stage_tab_always_exposes_four_plot_tiles_in_explorer_and_compare(self) -> None:
         with tempfile.TemporaryDirectory(prefix="wut_plot_ux_tiles_") as tmp:
             service = _build_service(Path(tmp))

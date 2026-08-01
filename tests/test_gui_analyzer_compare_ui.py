@@ -56,6 +56,13 @@ class AnalyzerCompareUiTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.app = QApplication.instance() or QApplication([])
 
+    def tearDown(self) -> None:
+        for widget in list(self.app.topLevelWidgets()):
+            if isinstance(widget, AnalysePage):
+                widget.close()
+                widget.deleteLater()
+        self.app.processEvents()
+
     def _sample_runs_payload(self, project_id: str) -> dict:
         return {
             "mode": "runs",
