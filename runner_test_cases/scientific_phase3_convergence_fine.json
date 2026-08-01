@@ -1,0 +1,17 @@
+{
+  "case_id": "scientific_phase3_convergence_fine",
+  "name": "Scientific Phase 3 Convergence Fine",
+  "description": "Frozen fine mesh for shared electrical-impedance and signed H/V beamwidth convergence.",
+  "template_cfg": "templates/scientific_phase3_convergence.cfg",
+  "project_id": "P_SCI_PHASE3", "batch_id": "B_SCI_P3_FINE", "project_name": "Scientific Validation Phase 3",
+  "le_repair_profile": "driver_drvgroup_def_driving_resistor",
+  "constraints": {"runner_mode": "AkabakImportFixedSource", "fixed_params": {"Length": 60}, "limits": {}},
+  "batch_settings": {
+    "selected_params": {"Throat.Profile": 1, "Throat.Diameter": 25.4, "Throat.Angle": 7, "Coverage.Angle": 45, "Term.s": 0.5, "Term.n": 4, "Term.q": 0.996, "OS.k": 1, "Morph.TargetShape": 0, "Mesh.AngularSegments": 72, "Mesh.LengthSegments": 28, "Mesh.MouthResolution": 12, "Mesh.ThroatResolution": 8},
+    "sweeps": {}, "sweep_mode": "single",
+    "sim_export_settings": {"simulation_mode": "free_standing", "freq_start_hz": 1000, "freq_end_hz": 4000, "num_points": 7, "mesh_frequency": 4000, "simulation_timeout_minutes": 20, "export_specs": [
+      {"id": "h", "tool": "vacs", "graph_kind": "polar", "format": "txt", "options": {"polar_name": "P3_H", "map_angle_range": [-90, 90, 37], "distance_m": 3, "offset": 65, "inclination": 0}, "output_name_template": "{version_id}_H.txt"},
+      {"id": "v", "tool": "vacs", "graph_kind": "polar", "format": "txt", "options": {"polar_name": "P3_V", "map_angle_range": [-90, 90, 37], "distance_m": 3, "offset": 65, "inclination": 90}, "output_name_template": "{version_id}_V.txt"}
+    ]}
+  }
+}
