@@ -312,6 +312,7 @@ class RuntimeOrchestratorTests(unittest.TestCase):
                 "distance_m": 2.0,
                 "offset": 145,
                 "inclination": 90,
+                "norm_angle": 20,
             },
         )
         text = _apply_sim_export_settings_to_cfg(
@@ -334,6 +335,19 @@ class RuntimeOrchestratorTests(unittest.TestCase):
         self.assertIn("Distance = 2", text)
         self.assertIn("Offset = 145", text)
         self.assertIn("Inclination = 90", text)
+        self.assertIn("NormAngle = 20", text)
+
+    def test_apply_sim_export_settings_keeps_zero_norm_angle(self) -> None:
+        spec = SimpleNamespace(
+            graph_kind="polar",
+            options={"polar_name": "SPL_H", "norm_angle": 0},
+        )
+        text = _apply_sim_export_settings_to_cfg(
+            "Output.ABECProject = 1\n",
+            sim_export_settings={"simulation_mode": "free_standing"},
+            export_specs=[spec],
+        )
+        self.assertIn("NormAngle = 0", text)
 
     def test_apply_sim_export_settings_keeps_h_v_d_specs(self) -> None:
         base = "Output.ABECProject = 1\nOutput.STL = 0\n"

@@ -418,6 +418,9 @@ def _apply_sim_export_settings_to_cfg(
         if inclination_raw is not None:
             inclination = int(round(float(inclination_raw)))
             block_lines.insert(4, f"  Inclination = {inclination}")
+        norm_angle = _to_float(options.get("norm_angle"))
+        if norm_angle is not None:
+            block_lines.insert(-1, f"  NormAngle = {norm_angle:g}")
         blocks.append("\n".join(block_lines))
 
     text = _remove_named_cfg_blocks(text, headers=headers)
