@@ -149,7 +149,9 @@ def render_cfg_text(
     mandatory_keys = {key for key, _ in MANDATORY_SOURCE_BLOCK}
     suppressed = locked | mandatory_keys | {str(key) for key in omit_keys}
 
-    lines = template_text.splitlines()
+    # ATH interprets a UTF-8 BOM as visible cp1252 characters in the first key
+    # (``ï»¿Output...``). Strip it before matching or rendering assignments.
+    lines = str(template_text).lstrip("\ufeff").splitlines()
     rendered: List[str] = []
     consumed_updates: set[str] = set()
 
@@ -197,7 +199,7 @@ def render_cfg_file(
     omit_keys: Iterable[str] = (),
     bundle: AthKnowledgeBundle | None = None,
 ) -> str:
-    template_text = template_path.read_text(encoding="utf-8")
+    template_text = template_path.read_text(encoding="utf-8-sig")
     cfg_text = render_cfg_text(
         template_text=template_text,
         parameters=parameters,

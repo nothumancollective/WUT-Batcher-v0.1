@@ -120,6 +120,18 @@ class PlannerRendererTests(unittest.TestCase):
 
         self.assertNotIn("Source.Shape", cfg)
 
+    def test_cfg_renderer_strips_utf8_bom_from_first_assignment(self) -> None:
+        cfg = render_cfg_text(
+            template_text="\ufeffOutput.ABECProject = 0\nLength = 70\n",
+            parameters={"Output.ABECProject": 1, "Length": 90},
+            version_id="V001",
+        )
+
+        self.assertNotIn("\ufeff", cfg)
+        self.assertNotIn("ï»¿", cfg)
+        self.assertTrue(cfg.startswith("Output.ABECProject = 0\n"))
+        self.assertIn("Length           = 90", cfg)
+
     def test_cfg_renderer_ignores_runner_locked_overrides(self) -> None:
 
         template = (
