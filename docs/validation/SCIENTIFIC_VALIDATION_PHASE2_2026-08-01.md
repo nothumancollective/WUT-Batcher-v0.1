@@ -200,3 +200,35 @@ ownership ledger. No heavy E2E repetition is part of this phase.
 
 These references establish terminology and test applicability. They do not by
 themselves verify WUT's numerical output.
+
+## Amendment A1 — profile endpoint semantics (after first result visibility)
+
+Time: 2026-08-01, after the first three ATH-only geometry runs. This amendment is
+deliberately recorded instead of silently rewriting G1/G2. At amendment time the
+following results were already visible: ATH reported 164.52 mm mouth width for
+`Term.n=4`, 153.61 mm for `Term.n=6`, and 250.02 mm for
+`Coverage.Angle=60`; all three nominal lengths were 60.00 mm.
+
+The original G2 criterion incorrectly required the mouth endpoint to remain within
+0.05 mm when `Term.n` changes. The official ATH guide identifies `Term.n` as a
+parameter of the OS-SE profile formula and states in its tutorial that outer
+dimensions result from length and the defined profile(s). Therefore a changed
+mouth size is an expected possible consequence of changing `Term.n`, not evidence
+of non-local parameter leakage.
+
+G2 is superseded only as follows:
+
+- nominal length (ATH's reported device length) must remain within 0.02 mm;
+- throat driver-group area must remain within 0.1%;
+- the mouth endpoint is allowed to change and must agree between ATH's reported
+  width and the leading inner-profile mesh/`.geo` envelope within 0.05 mm;
+- the inner profile must change with maximum paired normalized-slice radius
+  difference ≥ 0.50 mm and at least 20% of comparable interior samples differing
+  by ≥ 0.10 mm;
+- physical groups remain identical, observation and solving scripts remain
+  byte-identical, and `Project.abec` may differ only by the geometry mesh filename.
+
+G1's “axial length” is clarified as ATH's nominal device length. A free-standing
+BEM mesh includes rear-wall/interface geometry outside `0…Length`, so total mesh
+z-extent is retained as evidence but is not a measurement of the horn's nominal
+axial length. All other frozen G1/G2 criteria remain unchanged.

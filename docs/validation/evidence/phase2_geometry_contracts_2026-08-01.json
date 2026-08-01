@@ -1,0 +1,71 @@
+{
+  "created_at": "2026-08-01T15:13:23.972290+00:00",
+  "status": "verified",
+  "baseline_commit": "ac28b3e7c573a8c1ed314f3e3638bfde23586cf3",
+  "source_manifest": "tmp/scientific_validation_phase2/geometry_20260801_r2/manifest.json",
+  "source_manifest_sha256": "77491c009c16321f49dd5bf8fe45d303a77f911c6453047c548b46a9f7d6285e",
+  "ath_sha256": "639cb0184cf5dae233f3d2624cf279057a217da26948bde6d1d6510314b9a1e1",
+  "template_sha256": "982b3389a4df0047940b9d7e8552a610f4fb1daef8406286c705154c4551027c",
+  "mouth_contract": {
+    "changed_config_keys": [
+      "Coverage.Angle"
+    ],
+    "baseline_width_mm": 164.52,
+    "variant_width_mm": 250.02,
+    "baseline_geo_width_mm": 164.52,
+    "variant_geo_width_mm": 250.02,
+    "mouth_area_increase_fraction": 1.3094688028192616,
+    "throat_area_relative_delta": 0.0,
+    "checks": {
+      "ath_exit_zero": true,
+      "only_coverage_angle_changed": true,
+      "throat_driver_area_relative_delta_le_0_001": true,
+      "nominal_length_delta_mm_le_0_02": true,
+      "physical_groups_identical": true,
+      "mouth_area_increase_ge_0_15": true,
+      "stdout_geo_width_error_mm_le_0_05": true,
+      "observation_byte_identical": true,
+      "solving_byte_identical": true,
+      "project_diff_geometry_reference_only": true
+    },
+    "status": "verified"
+  },
+  "profile_contract": {
+    "changed_config_keys": [
+      "Term.n"
+    ],
+    "baseline_width_mm": 164.52,
+    "variant_width_mm": 153.61,
+    "variant_geo_width_mm": 153.614,
+    "interior_slice_count": 19,
+    "interior_max_radius_delta_mm": 5.3019999999999925,
+    "interior_fraction_delta_ge_0_10_mm": 0.5789473684210527,
+    "throat_area_relative_delta": 0.0,
+    "checks": {
+      "ath_exit_zero": true,
+      "only_term_n_changed": true,
+      "throat_driver_area_relative_delta_le_0_001": true,
+      "nominal_length_delta_mm_le_0_02": true,
+      "physical_groups_identical": true,
+      "stdout_geo_width_error_mm_le_0_05": true,
+      "interior_max_delta_mm_ge_0_50": true,
+      "interior_fraction_delta_ge_0_10_mm_ge_0_20": true,
+      "observation_byte_identical": true,
+      "solving_byte_identical": true,
+      "project_diff_geometry_reference_only": true
+    },
+    "status": "verified"
+  },
+  "physical_groups": [
+    "I1-2",
+    "SD1D1001",
+    "SD1G0",
+    "SD2G0"
+  ],
+  "native_process_snapshot_after_analysis": [],
+  "no_relevant_native_processes_after_analysis": true,
+  "notes": [
+    "Total free-standing mesh z extent includes rear/interface geometry and is not nominal horn length.",
+    "Term.n mouth endpoint semantics follow amendment A1 in the frozen matrix document."
+  ]
+}
