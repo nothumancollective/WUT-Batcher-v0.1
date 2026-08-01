@@ -526,3 +526,19 @@ ancestor of `main`. Only the intentionally historical `audit/2026-02-20` and
 `audit/2026-02-21-legacy-census` refs (local and remote) were not ancestors.
 The former main remains recoverable as
 `archive/main-pre-20260731 -> 532a351`.
+
+### Post-closure dirty-state audit
+
+A separate follow-up audit checked the worktree reported by the desktop UI.
+Git found no staged, tracked-modified, deleted or ordinary untracked files,
+including with fsmonitor disabled and index refresh forced. There is one
+registered worktree, no submodule, no nested repository and no special
+`assume-unchanged` or `skip-worktree` entry.
+
+The sole filesystem write newer than the preceding closure commit was
+`reports/git_auto_push.log`. This file is an ignored local operational log of
+push timestamps, not source or validation evidence; it remains intentionally
+unversioned. Raw `tmp/` simulations likewise remain ignored, while their
+compact hashes, results and conclusions are committed under
+`docs/validation/evidence/`. This preserves reproducibility without adding
+transient, very large or licence-sensitive native-tool artifacts.

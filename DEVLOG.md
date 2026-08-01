@@ -3041,6 +3041,28 @@ Validation executed:
   949.03 s; exit 0 and zero relevant GUI/native processes before and after.
 - Evidence: `docs/validation/evidence/le_observation_contracts_2026-08-01.json`.
 
+### Update 80 (Post-Closure Working-Tree Audit)
+#### Done
+- Rechecked the primary worktree, index, untracked files, alternate worktrees,
+  submodules, nested repositories, fsmonitor-independent status and special
+  `assume-unchanged`/`skip-worktree` flags after the final validation commit.
+- Confirmed that no tracked, staged, deleted or ordinary untracked product file
+  was left uncommitted.
+- Identified the only file newer than the preceding commit as
+  `reports/git_auto_push.log`. It is a local operational log containing push
+  timestamps, is covered by the repository's `*.log` rule as well as the local
+  Git exclude, and is intentionally not versioned.
+- Kept raw simulation/test workspaces below ignored `tmp/` paths. Their compact
+  reproducible evidence is already tracked under `docs/validation/evidence/`;
+  no transient binaries, licensed tool files or large native outputs were
+  force-added.
+
+#### Validation
+- `git status --short --untracked-files=all`: empty before this documentation update.
+- `git diff --cached`, `git ls-files --modified --deleted` and
+  `git diff-index HEAD`: empty.
+- One registered worktree, no submodules and no nested repositories.
+
 
 
 
