@@ -74,6 +74,37 @@ class AkabakDriverVacsSnapshotTests(unittest.TestCase):
             fake_user32.GetMenuState.result = 0xFFFFFFFF
             self.assertIsNone(driver._native_menu_command_enabled(101, 94))
 
+    def test_stale_solve_main_handle_is_refreshed_from_owned_native_windows(self) -> None:
+        driver = AkabakDriver.__new__(AkabakDriver)
+        driver.session = SimpleNamespace(process_id=77)
+        driver._solve_main_handle = 101
+        driver.solve_context = {"baseline": {"main_handle": 101}}
+        driver._native_menu_command_enabled = Mock(side_effect=lambda hwnd, _command: False if hwnd == 202 else None)
+        driver._native_process_window_rows = Mock(
+            return_value=[
+                {
+                    "native_handle": 202,
+                    "class_name": "TForm_Main",
+                    "title": "Akabak-Demo",
+                    "is_visible": True,
+                },
+                {
+                    "native_handle": 303,
+                    "class_name": "TApplication",
+                    "title": "",
+                    "is_visible": True,
+                },
+            ]
+        )
+
+        with patch("app.akabak_driver.os.name", "nt"):
+            handle, refreshed, previous = driver._resolve_solve_main_handle()
+
+        self.assertEqual((handle, refreshed, previous), (202, True, 101))
+        self.assertEqual(driver._solve_main_handle, 202)
+        self.assertEqual(driver.solve_context["baseline"]["main_handle"], 202)
+        driver._native_process_window_rows.assert_called_once_with(process_id=77)
+
     def test_vacs_startup_editors_close_only_on_exact_class_title_and_content(self) -> None:
         driver = AkabakDriver.__new__(AkabakDriver)
         driver._native_process_window_rows = Mock(

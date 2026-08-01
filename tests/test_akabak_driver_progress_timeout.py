@@ -242,12 +242,15 @@ class AkabakDriverProgressTimeoutTests(unittest.TestCase):
         driver._connect = Mock()
         driver._log = Mock()
         driver._start_vacs_for_handoff = Mock(
-            return_value={
-                "trigger": "hwnd_postmessage_f7",
-                "status": "sent",
-                "main_handle": 101,
-                "method": "akabak_f7",
-            }
+            side_effect=[
+                {
+                    "trigger": "hwnd_postmessage_f7",
+                    "status": status,
+                    "main_handle": 101,
+                    "method": "akabak_f7",
+                }
+                for status in ("rejected", "sent", "sent", "sent")
+            ]
         )
         driver._dismiss_vacs_startup_editors = Mock(return_value=[])
         driver._trigger_vacs_reimport_native = Mock()
@@ -289,13 +292,88 @@ class AkabakDriverProgressTimeoutTests(unittest.TestCase):
 
         self.assertTrue(result.ok)
         self.assertEqual(driver._start_vacs_for_handoff.call_count, 4)
+        rejected_logs = [
+            call_row.kwargs["payload"]
+            for call_row in driver._log.call_args_list
+            if call_row.kwargs.get("event") == "vacs_handoff_rejected"
+        ]
+        self.assertEqual([row["attempt_count"] for row in rejected_logs], [1])
         launch_logs = [
             call_row.kwargs["payload"]
             for call_row in driver._log.call_args_list
             if call_row.kwargs.get("event") in {"vacs_handoff_launch", "vacs_handoff_retry"}
         ]
-        self.assertEqual([row["attempt_count"] for row in launch_logs], [1, 2, 3, 4])
+        self.assertEqual([row["attempt_count"] for row in launch_logs], [2, 3, 4])
         driver._trigger_vacs_reimport_native.assert_not_called()
+
+    def test_unknown_menu_state_after_busy_signal_does_not_complete_early(self) -> None:
+        driver = AkabakDriver.__new__(AkabakDriver)
+        driver.state = "running"
+        driver.watchdog = None
+        driver.solve_context = {
+            "baseline": {"main_handle": 101, "akabak_pids": [100], "vacs_pids": []},
+            "started": {
+                "solve_command_enabled": False,
+                "main_pid": 100,
+                "akabak_cpu_times_s": {"100": 10.0},
+                "vacs_ui": {},
+            },
+        }
+        driver.watchdog_events = []
+        driver.solve_heartbeats = []
+        driver.last_solve_diagnostics_path = None
+        driver._connect = Mock()
+        driver._log = Mock()
+        snapshot_count = [0]
+
+        def _launch_only_after_authoritative_reenable(main_handle: int) -> dict:
+            self.assertEqual(main_handle, 202)
+            self.assertGreaterEqual(snapshot_count[0], 4)
+            return {
+                "trigger": "hwnd_postmessage_f7",
+                "status": "sent",
+                "main_handle": main_handle,
+                "method": "akabak_f7",
+            }
+
+        driver._start_vacs_for_handoff = Mock(side_effect=_launch_only_after_authoritative_reenable)
+        driver._dismiss_vacs_startup_editors = Mock(return_value=[])
+        driver._trigger_vacs_reimport_native = Mock()
+        clock = [0.0]
+        rows = iter(
+            [
+                (0.0, None, [], {}),
+                (1.0, False, [], {}),
+                (2.0, True, [], {}),
+                (6.0, True, [], {}),
+                (7.0, True, [200], {"max_controls_count": 80, "max_graph_keyword_hits": 5}),
+            ]
+        )
+
+        def _next_snapshot() -> dict:
+            at_s, menu_state, vacs_pids, vacs_ui = next(rows)
+            clock[0] = at_s
+            snapshot_count[0] += 1
+            return {
+                "main_pid": 100,
+                "akabak_pids": [100],
+                "akabak_cpu_times_s": {"100": 10.0},
+                "vacs_pids": vacs_pids,
+                "progress_window_present": False,
+                "solve_command_enabled": menu_state,
+                "solve_main_handle": 202,
+                "vacs_ui": vacs_ui,
+            }
+
+        driver._solve_signal_snapshot = _next_snapshot
+
+        with patch("app.akabak_driver.time.perf_counter", side_effect=lambda: clock[0]), patch(
+            "app.akabak_driver.time.sleep"
+        ):
+            result = driver.wait_for_completion(timeout_s=300, require_vacs_graph_import=True)
+
+        self.assertTrue(result.ok)
+        driver._start_vacs_for_handoff.assert_called_once_with(202)
 
     def test_delayed_solve_activation_defers_vacs_until_command_reenables(self) -> None:
         driver = AkabakDriver.__new__(AkabakDriver)

@@ -369,6 +369,9 @@ def _solve_heartbeat_payload(snapshot: Dict[str, Any], *, elapsed_s: float) -> D
         "new_vacs_pids": [int(pid) for pid in list(snapshot.get("new_vacs_pids", []) or [])],
         "progress_window_present": bool(snapshot.get("progress_window_present", False)),
         "solve_command_enabled": snapshot.get("solve_command_enabled"),
+        "solve_main_handle": int(snapshot.get("solve_main_handle", 0) or 0),
+        "solve_main_handle_refreshed": bool(snapshot.get("solve_main_handle_refreshed", False)),
+        "previous_solve_main_handle": int(snapshot.get("previous_solve_main_handle", 0) or 0),
         "vacs_max_controls_count": int(vacs_ui.get("max_controls_count", 0) or 0),
         "vacs_max_graph_keyword_hits": int(vacs_ui.get("max_graph_keyword_hits", 0) or 0),
     }
@@ -1122,6 +1125,56 @@ class AkabakDriver:
         )
         return bool(class_match and title_match)
 
+    def _resolve_solve_main_handle(self) -> Tuple[int, bool, int]:
+        """Return the current AKABAK main HWND, refreshing a stale handle natively.
+
+        AKABAK can recreate its Delphi main form during a long calculation.  A
+        cached HWND then has neither a menu nor a valid F7 target even though the
+        owning process is still healthy.  Keep the high-frequency path native and
+        only enumerate process windows when the cached handle no longer exposes
+        the Calculate command.
+        """
+
+        previous_handle = int(getattr(self, "_solve_main_handle", 0) or 0)
+        if os.name != "nt":
+            return previous_handle, False, previous_handle
+
+        if self._native_menu_command_enabled(previous_handle, CALCULATE_ALL_COMMAND_ID) is not None:
+            return previous_handle, False, previous_handle
+
+        process_id = int(getattr(getattr(self, "session", None), "process_id", 0) or 0)
+        if process_id <= 0:
+            return previous_handle, False, previous_handle
+
+        candidates = [
+            row
+            for row in self._native_process_window_rows(process_id=process_id)
+            if self._is_main_window_row(row)
+        ]
+        candidates.sort(
+            key=lambda row: (
+                self._native_menu_command_enabled(
+                    int(row.get("native_handle", 0) or 0),
+                    CALCULATE_ALL_COMMAND_ID,
+                )
+                is not None,
+                bool(row.get("is_visible", False)),
+            ),
+            reverse=True,
+        )
+        if not candidates:
+            return previous_handle, False, previous_handle
+
+        resolved_handle = int(candidates[0].get("native_handle", 0) or 0)
+        if resolved_handle <= 0 or resolved_handle == previous_handle:
+            return previous_handle, False, previous_handle
+
+        self._solve_main_handle = resolved_handle
+        baseline = getattr(self, "solve_context", {}).get("baseline", {})
+        if isinstance(baseline, dict):
+            baseline["main_handle"] = resolved_handle
+        return resolved_handle, True, previous_handle
+
     def _solve_signal_snapshot(self, *, include_vacs_ui: bool = True) -> Dict[str, Any]:
         main_pid = int(self.session.process_id or 0)
         akabak_pids = self._list_akabak_process_ids()
@@ -1143,6 +1196,7 @@ class AkabakDriver:
         worker_cpu_times_s = {
             str(pid): akabak_cpu_times_s[str(pid)] for pid in worker_pids if str(pid) in akabak_cpu_times_s
         }
+        solve_main_handle, main_handle_refreshed, previous_main_handle = self._resolve_solve_main_handle()
         return {
             "main_pid": main_pid,
             "akabak_pids": akabak_pids,
@@ -1152,9 +1206,12 @@ class AkabakDriver:
             "worker_cpu_times_s": worker_cpu_times_s,
             "progress_window_present": bool(progress is not None),
             "solve_command_enabled": self._native_menu_command_enabled(
-                int(getattr(self, "_solve_main_handle", 0) or 0),
+                solve_main_handle,
                 CALCULATE_ALL_COMMAND_ID,
             ),
+            "solve_main_handle": solve_main_handle,
+            "solve_main_handle_refreshed": main_handle_refreshed,
+            "previous_solve_main_handle": previous_main_handle,
             "vacs_ui": vacs_ui,
         }
 
@@ -4306,6 +4363,23 @@ class AkabakDriver:
                 snapshot["numerical_completion_signal"] = "calculate_command_reenabled"
 
             if not solver_numerically_complete:
+                if (
+                    solve_command_was_disabled
+                    and current_solve_enabled is None
+                    and not (new_vacs or snapshot.get("vacs_pids"))
+                ):
+                    # Once AKABAK has positively reported a busy Calculate
+                    # command, losing the menu state is not evidence of
+                    # completion.  This commonly means the Delphi main HWND was
+                    # recreated.  Keep waiting for an authoritative enabled
+                    # state instead of falling through to CPU quiescence and
+                    # firing F7 at a stale window.
+                    solver_activity_snapshot = dict(snapshot)
+                    solver_quiet_since = None
+                    solve_command_reenabled_since = None
+                    snapshot["status"] = "waiting_solve_command_state"
+                    _record_heartbeat(snapshot)
+                    return False, snapshot
                 if current_solve_enabled is True and not solve_command_was_disabled:
                     activation_elapsed_s = max(0.0, float(time.perf_counter() - heartbeat_started))
                     snapshot["solver_activation_elapsed_s"] = round(activation_elapsed_s, 3)
@@ -4387,7 +4461,12 @@ class AkabakDriver:
                         graphless_s=graphless_s,
                     )
                     if retry_due_s is not None and graphless_s >= retry_due_s:
-                        main_handle = int(self.solve_context.get("baseline", {}).get("main_handle", 0) or 0)
+                        main_handle = int(
+                            snapshot.get("solve_main_handle", 0)
+                            or getattr(self, "_solve_main_handle", 0)
+                            or self.solve_context.get("baseline", {}).get("main_handle", 0)
+                            or 0
+                        )
                         trigger = self._trigger_vacs_reimport_native(main_handle)
                         self._require(
                             trigger.get("status") == "sent",
@@ -4440,7 +4519,12 @@ class AkabakDriver:
                 and retry_due_s is not None
                 and handoff_wait_s >= float(retry_due_s)
             ):
-                main_handle = int(self.solve_context.get("baseline", {}).get("main_handle", 0) or 0)
+                main_handle = int(
+                    snapshot.get("solve_main_handle", 0)
+                    or getattr(self, "_solve_main_handle", 0)
+                    or self.solve_context.get("baseline", {}).get("main_handle", 0)
+                    or 0
+                )
                 launch = self._start_vacs_for_handoff(main_handle)
                 vacs_launch = {
                     "attempted": True,
@@ -4453,15 +4537,14 @@ class AkabakDriver:
                 vacs_launch_attempts.append(dict(vacs_launch))
                 snapshot["vacs_launch"] = dict(vacs_launch)
                 snapshot["vacs_launch_attempts"] = [dict(row) for row in vacs_launch_attempts]
-                self._require(
-                    launch.get("status") in {"sent", "already_running"},
-                    "AKABAK did not accept the VACS handoff trigger. "
-                    f"status={launch.get('status')} main_handle={main_handle}",
-                    step,
-                )
-                event = "vacs_handoff_launch" if attempt_index == 0 else "vacs_handoff_retry"
+                accepted = launch.get("status") in {"sent", "already_running"}
+                event = (
+                    "vacs_handoff_launch" if attempt_index == 0 else "vacs_handoff_retry"
+                ) if accepted else "vacs_handoff_rejected"
                 self._log(level="info", step=step, event=event, payload=vacs_launch)
-                snapshot["status"] = "launching_vacs_for_handoff"
+                snapshot["status"] = (
+                    "launching_vacs_for_handoff" if accepted else "waiting_vacs_handoff_retry"
+                )
                 _record_heartbeat(snapshot)
                 return False, snapshot
 
