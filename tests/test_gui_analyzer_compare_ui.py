@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import re
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -36,6 +37,17 @@ def _build_service(tmp_root: Path) -> OrchestratorService:
 def _col_index(table: QTableWidget, header_name: str) -> int:
     headers = [str(table.horizontalHeaderItem(i).text() or "") for i in range(table.columnCount())]
     return int(headers.index(str(header_name)))
+
+
+def _wait_until(predicate, *, timeout_ms: int = 1_000) -> bool:
+    deadline = time.monotonic() + (max(int(timeout_ms), 1) / 1_000.0)
+    while time.monotonic() < deadline:
+        QApplication.processEvents()
+        if bool(predicate()):
+            return True
+        QTest.qWait(20)
+    QApplication.processEvents()
+    return bool(predicate())
 
 
 @unittest.skipIf(QApplication is None, "PySide6 is required")
@@ -624,13 +636,15 @@ class AnalyzerCompareUiTests(unittest.TestCase):
             self.assertLessEqual(int(page.compare_drawer.width()), 96)
             self.assertEqual(int(page.compare_drawer_stack.currentIndex()), 1)
             page.compare_drawer_toggle_btn.click()
-            QTest.qWait(230)
-            self.app.processEvents()
+            self.assertTrue(
+                _wait_until(
+                    lambda: int(page.compare_drawer.width()) >= int(page.compare_workspace.width() * 0.50)
+                )
+            )
             self.assertGreaterEqual(int(page.compare_drawer.width()), int(page.compare_workspace.width() * 0.50))
             self.assertEqual(int(page.compare_drawer_stack.currentIndex()), 0)
             page.compare_drawer_toggle_btn.click()
-            QTest.qWait(230)
-            self.app.processEvents()
+            self.assertTrue(_wait_until(lambda: int(page.compare_drawer.width()) <= 96))
             self.assertLessEqual(int(page.compare_drawer.width()), 96)
             self.assertEqual(int(page.compare_drawer_stack.currentIndex()), 1)
 
@@ -679,8 +693,7 @@ class AnalyzerCompareUiTests(unittest.TestCase):
             self.assertTrue(page.compare_drawer_scrim.isVisible())
             center = page.compare_drawer_scrim.rect().center()
             QTest.mouseClick(page.compare_drawer_scrim, Qt.LeftButton, pos=center)
-            QTest.qWait(230)
-            self.app.processEvents()
+            self.assertTrue(_wait_until(lambda: int(page.compare_drawer.width()) <= 96))
             self.assertFalse(page.compare_drawer_scrim.isVisible())
             self.assertLessEqual(int(page.compare_drawer.width()), 96)
 
@@ -714,8 +727,7 @@ class AnalyzerCompareUiTests(unittest.TestCase):
 
             center = page.compare_drawer_scrim.rect().center()
             QTest.mouseClick(page.compare_drawer_scrim, Qt.LeftButton, pos=center)
-            QTest.qWait(230)
-            self.app.processEvents()
+            self.assertTrue(_wait_until(lambda: int(page.compare_drawer.width()) <= 96))
             self.assertFalse(page.compare_drawer_scrim.isVisible())
             self.assertLessEqual(int(page.compare_drawer.width()), 96)
 
