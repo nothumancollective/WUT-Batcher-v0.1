@@ -1,0 +1,73 @@
+{
+  "created_at": "2026-08-01T15:44:46.878401+00:00",
+  "status": "verified",
+  "classification": "WUT-to-official-ATH-geometry-reference verified; acoustic simulation-to-measurement not validated",
+  "reproduction": "python tools/scientific_validation/phase2_official_tutorial_reference.py --output-root tmp/scientific_validation_phase2/official_tutorial_reference_<new-run-id>",
+  "source": {
+    "title": "ATH 4.8.2 User Guide",
+    "url": "https://at-horns.eu/release/Ath-4.8.2-UserGuide.pdf",
+    "local_path": "C:\\Tools\\ATH\\doc\\Ath-4.8.2-UserGuide.pdf",
+    "sha256": "4970c1a035e09ef4d46d01243a69c32a84884d7ae2797f1087f6519a4039d116",
+    "sections": ["6.1 pages 27-28", "6.2 page 29"],
+    "reported_dimensions_mm": {"width": 269.4, "height": 269.4, "length": 100.0},
+    "redistribution": "No source document or third-party model copied into the repository; the documented scalar inputs are transcribed in the reproducibility script."
+  },
+  "tool": {
+    "path": "C:\\Tools\\ATH\\ath.exe",
+    "version": "4.8.2",
+    "sha256": "639cb0184cf5dae233f3d2624cf279057a217da26948bde6d1d6510314b9a1e1"
+  },
+  "run": {
+    "workspace": "tmp/scientific_validation_phase2/official_tutorial_reference_r2",
+    "standalone": {
+      "exit_code": 0,
+      "timed_out": false,
+      "cfg_sha256": "27646347a7f45f30ae23f74b8f11b5a0c02220b6a9ba84be787625bacae2b645",
+      "mesh_sha256": "9ddbba5e71d75c82aa842ddaeb83aff3280703d4bde7949bcb848b4b4b1404e0",
+      "dimensions_mm": {"width": 269.42, "height": 269.42, "length": 100.0}
+    },
+    "wut_rendered": {
+      "exit_code": 0,
+      "timed_out": false,
+      "cfg_sha256": "79edb53533959b2172849e468c35e8c742aa67c5f260956fdf04080cdc79b941",
+      "mesh_sha256": "9ddbba5e71d75c82aa842ddaeb83aff3280703d4bde7949bcb848b4b4b1404e0",
+      "dimensions_mm": {"width": 269.42, "height": 269.42, "length": 100.0}
+    },
+    "mesh": {
+      "format": "binary Gmsh 2.2 payload emitted with .stl suffix",
+      "triangle_count": 4224,
+      "node_count": 2176,
+      "bounds_mm": {"x": [-134.712, 134.712], "y": [-134.712, 134.712], "z": [0.0, 100.0]},
+      "max_sorted_coordinate_abs_error_mm": 0.0
+    },
+    "render_contract": {
+      "semantic_assignment_mismatches": {},
+      "additional_active_assignments": ["ABEC.AkabakMode", "LE", "LE.Voltage"],
+      "additional_assignments_are_expected": true
+    },
+    "process_end_state": "No ATH, Gmsh, AKABAK, or VacsViewer process remained."
+  },
+  "criteria": {
+    "guide_dimension_tolerance_mm": 0.05,
+    "coordinate_equivalence_tolerance_mm": 1e-9,
+    "guide_dimension_pass": true,
+    "geometry_equivalence_pass": true,
+    "assignment_contract_pass": true
+  },
+  "measurement_search": {
+    "retrieved_on": "2026-08-01",
+    "sources": [
+      "https://at-horns.eu/gen2m.html",
+      "https://www.at-horns.eu/ST260.html",
+      "https://randteam.de/AKABAK3/AKABAK-Studies.html",
+      "https://randteam.de/AKABAK3/AKABAK-Examples.html"
+    ],
+    "assessment": "not validated",
+    "reason": "The official ATH measurement page explicitly describes uncalibrated levels, non-constant drive, approximate angles, indoor 4.5-5 ms gating, and supplies plots rather than reusable numeric raw data. The official AKABAK studies point to downloadable example projects and illustrated comparisons, but the inspected public pages do not expose a compact raw measurement set with all geometry, excitation, calibration, angle, distance, gating/smoothing and reuse terms needed for the frozen pointwise numerical comparison. No plot digitization was substituted for raw data."
+  },
+  "limits": [
+    "The comparison verifies ATH geometry generation and WUT CFG rendering, not AKABAK pressure accuracy.",
+    "No physical measurement benchmark is claimed.",
+    "The WUT-added LE/AKABAK assignments do not alter this geometry-only output; their acoustic semantics are covered by separate contracts, not this reference."
+  ]
+}
