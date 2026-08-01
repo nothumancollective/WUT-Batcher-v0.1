@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import tempfile
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 from app.models import AppConfig
@@ -120,7 +121,7 @@ def _ensure_dir(path: Path, label: str, fix: bool, required: bool) -> DoctorChec
     )
 
 
-def _write_test(path: Path, label: str) -> DoctorCheck:
+def _write_test(path: Path, label: str, *, enabled: bool) -> DoctorCheck:
     if not path.exists() or not path.is_dir():
         return DoctorCheck(
             key=f"{label}_write",
@@ -128,10 +129,32 @@ def _write_test(path: Path, label: str) -> DoctorCheck:
             status=STATUS_WARN,
             detail="Write test skipped (directory missing).",
         )
-    test_file = path / ".doctor_write_test"
+    if not enabled:
+        writable = os.access(path, os.W_OK)
+        return DoctorCheck(
+            key=f"{label}_write",
+            label=f"{label} writable",
+            status=STATUS_OK if writable else STATUS_FAIL,
+            detail=(
+                "Read-only permission check passed; active write test skipped "
+                "(run with --fix to verify)."
+                if writable
+                else "Read-only permission check reports the directory as not writable."
+            ),
+        )
+
+    test_file: Optional[Path] = None
     try:
-        test_file.write_text("ok", encoding="utf-8")
-        test_file.unlink(missing_ok=True)
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            prefix=".doctor_write_test_",
+            dir=path,
+            delete=False,
+        ) as handle:
+            handle.write("ok")
+            test_file = Path(handle.name)
+        test_file.unlink()
         return DoctorCheck(
             key=f"{label}_write",
             label=f"{label} writable",
@@ -139,6 +162,11 @@ def _write_test(path: Path, label: str) -> DoctorCheck:
             detail="Write test passed.",
         )
     except OSError as exc:
+        if test_file is not None:
+            try:
+                test_file.unlink(missing_ok=True)
+            except OSError:
+                pass
         return DoctorCheck(
             key=f"{label}_write",
             label=f"{label} writable",
@@ -437,7 +465,7 @@ def run_doctor_checks(
 
     projects_root = Path(app_config.projects_root).expanduser()
     checks.append(_ensure_dir(projects_root, "Projects root", fix=fix, required=True))
-    checks.append(_write_test(projects_root, "Projects root"))
+    checks.append(_write_test(projects_root, "Projects root", enabled=fix))
 
     if include_batch_results_root_check:
         batch_results_root_value = config_payload.get("batch_results_root")
@@ -446,7 +474,7 @@ def run_doctor_checks(
             checks.append(
                 _ensure_dir(batch_results_root, "Batch results root", fix=fix, required=False)
             )
-            checks.append(_write_test(batch_results_root, "Batch results root"))
+            checks.append(_write_test(batch_results_root, "Batch results root", enabled=fix))
         else:
             checks.append(
                 DoctorCheck(
@@ -473,7 +501,7 @@ def run_doctor_checks(
             checks.append(
                 _ensure_dir(ath_export_root, "ATH export root", fix=fix, required=False)
             )
-            checks.append(_write_test(ath_export_root, "ATH export root"))
+            checks.append(_write_test(ath_export_root, "ATH export root", enabled=fix))
         else:
             checks.append(
                 DoctorCheck(

@@ -11,6 +11,53 @@ from app.settings_store import UserSettings
 
 
 class DoctorServiceTests(unittest.TestCase):
+    def test_doctor_without_fix_does_not_touch_library_probe_sentinel(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            projects_root = root / "projects"
+            projects_root.mkdir()
+            sentinel = projects_root / ".doctor_write_test"
+            sentinel.write_text("owned by user", encoding="utf-8")
+
+            report = run_doctor_checks(
+                AppConfig(projects_root=str(projects_root)),
+                config_path=None,
+                fix=False,
+                kill_zombies=False,
+                report_path=root / "doctor.json",
+                include_batch_results_root_check=False,
+                include_ath_export_root_check=False,
+            )
+
+            self.assertEqual(sentinel.read_text(encoding="utf-8"), "owned by user")
+            write_check = next(item for item in report.checks if item.key == "Projects root_write")
+            self.assertEqual(write_check.status, "ok")
+            self.assertIn("active write test skipped", write_check.detail)
+
+    def test_doctor_fix_uses_unique_probe_and_preserves_sentinel(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            projects_root = root / "projects"
+            projects_root.mkdir()
+            sentinel = projects_root / ".doctor_write_test"
+            sentinel.write_text("owned by user", encoding="utf-8")
+
+            report = run_doctor_checks(
+                AppConfig(projects_root=str(projects_root)),
+                config_path=None,
+                fix=True,
+                kill_zombies=False,
+                report_path=root / "doctor.json",
+                include_batch_results_root_check=False,
+                include_ath_export_root_check=False,
+            )
+
+            self.assertEqual(sentinel.read_text(encoding="utf-8"), "owned by user")
+            self.assertFalse(list(projects_root.glob(".doctor_write_test_*")))
+            write_check = next(item for item in report.checks if item.key == "Projects root_write")
+            self.assertEqual(write_check.status, "ok")
+            self.assertEqual(write_check.detail, "Write test passed.")
+
     def test_tool_paths_override_marks_executable_ok(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
