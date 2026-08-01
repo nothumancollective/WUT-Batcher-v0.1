@@ -1,0 +1,800 @@
+{
+  "created_at": "2026-08-01T18:37:55.949853+00:00",
+  "analysis_commit": "7150d755a0160d020127fbdac68dab9a80289515",
+  "status": "verified",
+  "criteria_commit": "cdc022c",
+  "observation_repair_commit": "7150d75",
+  "runs": {
+    "coarse": {
+      "run_id": "ef3d2618-366e-4f0d-a131-30656c484f84",
+      "status": "succeeded",
+      "git_commit": "7150d755a0160d020127fbdac68dab9a80289515",
+      "runtime_s": 43.99,
+      "started_at": "2026-08-01T18:25:20+00:00",
+      "finished_at": "2026-08-01T18:26:05+00:00",
+      "mesh_parameters": {
+        "Mesh.AngularSegments": 24,
+        "Mesh.LengthSegments": 12,
+        "Mesh.MouthResolution": 24,
+        "Mesh.ThroatResolution": 14
+      },
+      "contract_hashes": {
+        "Project.abec": "3dbb64eb88080cecd138fce42ddf3e221d62afd1304d5de20ac2590a4ccffc17",
+        "solving.txt": "5f8916933ea7faabf31a88b357ded118c21453b2055bcfc44590bb0b9ad13eb4",
+        "observation.txt": "6c165370a1b09e2286776a9ba258f4858497b092d9b5e00a59fb1529a5c2acfe",
+        "generic25.txt": "053701a2158347cdf3fdd242fc053de4a225bff93607b134efc5c80a6ed3ce9a"
+      },
+      "exports": [
+        {
+          "path": "V001_anygraph_01_LE_scripts_-_LE_Spectrum_5_H.txt",
+          "sha256": "3cb483eb4cbb3f489b2e7c190237d174ed67b9dbadcc36fb52388f9e55f976b8",
+          "metadata": {
+            "SourceDesc": "VACS_Data_Text",
+            "Version": "2.1.3 b33",
+            "Author": "RDTeam: VacsViewer",
+            "StartString_Data": "Data",
+            "EndString_Data": "Data_End",
+            "Data_Format": "Complex",
+            "Data_Domain": "Frequency",
+            "Data_LevelType": "Impedance10",
+            "Data_AbscUnit": "Hz",
+            "Data_BaseUnit": "ohm",
+            "Data_Legend": "Impedance, System=S1",
+            "Param_Coord_x1": "1",
+            "Param_Coord_x2": "90",
+            "Param_Coord_x3": "0",
+            "Param_Drv": "0",
+            "Param_Param": "0",
+            "Param_Coord_Type": "Spherical",
+            "Param_Coord_Top": "0,0",
+            "Param_Coord_Front": "90,0",
+            "Param_Coord_AngularFormat": "degree",
+            "Param_DrvIsRms": "false"
+          }
+        },
+        {
+          "path": "V001_anygraph_02_Mic_Polar_-_BE_Spectrum_2_H.txt",
+          "sha256": "c6ad50d068190c2b2760031f6c8449698989d2a388542c075aebbe2d30e7c241",
+          "metadata": {
+            "SourceDesc": "VACS_Data_Text",
+            "Version": "2.1.3 b33",
+            "Author": "RDTeam: VacsViewer",
+            "StartString_Data": "Data",
+            "EndString_Data": "Data_End",
+            "Data_Format": "Complex",
+            "Data_Domain": "Frequency",
+            "Data_LevelType": "SoundPressure",
+            "Data_AbscUnit": "Hz",
+            "Data_BaseUnit": "Pa",
+            "Data_Legend": "Sound pressure",
+            "Param_Coord_x1": "3",
+            "Param_Coord_x2": "-90,-85,-80,-75,-70,-65,-60,-55,-50,-45,-40,-35,-30,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90",
+            "Param_Coord_x3": "0",
+            "Param_Drv": "0",
+            "Param_Param": "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37",
+            "Param_Coord_Type": "Spherical",
+            "Param_Coord_AngularFormat": "degree",
+            "Param_DrvIsRms": "false"
+          }
+        },
+        {
+          "path": "V001_anygraph_03_Mic_Polar_-_BE_Spectrum_3_V.txt",
+          "sha256": "d4a27f5c5ce408338517399e6763d8dea3d9dd7be54929617c5c84296541c724",
+          "metadata": {
+            "SourceDesc": "VACS_Data_Text",
+            "Version": "2.1.3 b33",
+            "Author": "RDTeam: VacsViewer",
+            "StartString_Data": "Data",
+            "EndString_Data": "Data_End",
+            "Data_Format": "Complex",
+            "Data_Domain": "Frequency",
+            "Data_LevelType": "SoundPressure",
+            "Data_AbscUnit": "Hz",
+            "Data_BaseUnit": "Pa",
+            "Data_Legend": "Sound pressure",
+            "Param_Coord_x1": "3",
+            "Param_Coord_x2": "-90,-85,-80,-75,-70,-65,-60,-55,-50,-45,-40,-35,-30,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90",
+            "Param_Coord_x3": "90",
+            "Param_Drv": "0",
+            "Param_Param": "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37",
+            "Param_Coord_Type": "Spherical",
+            "Param_Coord_AngularFormat": "degree",
+            "Param_DrvIsRms": "false"
+          }
+        },
+        {
+          "path": "V001_anygraph_04_Radiation_Impedance_-_Radiation_Impedance_4_H.txt",
+          "sha256": "2739633d7bb56b4ee879e2c0e10c21d3cf1b1c86230ac95d9e669e9ee7c371c4",
+          "metadata": {
+            "SourceDesc": "VACS_Data_Text",
+            "Version": "2.1.3 b33",
+            "Author": "RDTeam: VacsViewer",
+            "StartString_Data": "Data",
+            "EndString_Data": "Data_End",
+            "Data_Format": "Complex",
+            "Data_Domain": "Frequency",
+            "Data_LevelType": "Impedance10",
+            "Data_AbscUnit": "Hz",
+            "Data_BaseUnit": "",
+            "Data_Legend": "Radiation_Impedance #4;  ; Normalized",
+            "Param_Coord_x1": "1",
+            "Param_Coord_x2": "90",
+            "Param_Coord_x3": "0",
+            "Param_Drv": "0",
+            "Param_Param": "0",
+            "Param_Coord_Type": "Spherical",
+            "Param_Coord_Top": "0,0",
+            "Param_Coord_Front": "90,0",
+            "Param_Coord_AngularFormat": "degree",
+            "Param_DrvIsRms": "false"
+          }
+        }
+      ],
+      "electrical_input_impedance_ohm": [
+        {
+          "freq_hz": 1000.0,
+          "re_ohm": 24.76375,
+          "im_ohm": 4.808952
+        },
+        {
+          "freq_hz": 1259.921,
+          "re_ohm": 19.32665,
+          "im_ohm": -6.705885
+        },
+        {
+          "freq_hz": 1587.401,
+          "re_ohm": 13.45182,
+          "im_ohm": -5.16642
+        },
+        {
+          "freq_hz": 2000.0,
+          "re_ohm": 11.42769,
+          "im_ohm": -5.440522
+        },
+        {
+          "freq_hz": 2519.842,
+          "re_ohm": 9.407595,
+          "im_ohm": -3.459327
+        },
+        {
+          "freq_hz": 3174.802,
+          "re_ohm": 8.773214,
+          "im_ohm": -1.813189
+        },
+        {
+          "freq_hz": 4000.0,
+          "re_ohm": 8.627941,
+          "im_ohm": -0.4871672
+        }
+      ]
+    },
+    "medium": {
+      "run_id": "cdd27004-1012-4118-9136-273440177e9e",
+      "status": "succeeded",
+      "git_commit": "7150d755a0160d020127fbdac68dab9a80289515",
+      "runtime_s": 60.12,
+      "started_at": "2026-08-01T18:26:36+00:00",
+      "finished_at": "2026-08-01T18:27:37+00:00",
+      "mesh_parameters": {
+        "Mesh.AngularSegments": 48,
+        "Mesh.LengthSegments": 20,
+        "Mesh.MouthResolution": 18,
+        "Mesh.ThroatResolution": 10
+      },
+      "contract_hashes": {
+        "Project.abec": "3dbb64eb88080cecd138fce42ddf3e221d62afd1304d5de20ac2590a4ccffc17",
+        "solving.txt": "5f8916933ea7faabf31a88b357ded118c21453b2055bcfc44590bb0b9ad13eb4",
+        "observation.txt": "6c165370a1b09e2286776a9ba258f4858497b092d9b5e00a59fb1529a5c2acfe",
+        "generic25.txt": "053701a2158347cdf3fdd242fc053de4a225bff93607b134efc5c80a6ed3ce9a"
+      },
+      "exports": [
+        {
+          "path": "V001_anygraph_01_LE_scripts_-_LE_Spectrum_5_H.txt",
+          "sha256": "ec047bfbe8fc19f09bc1c40763fffa0895a5c55cd4fbef7961f70aee9dad681d",
+          "metadata": {
+            "SourceDesc": "VACS_Data_Text",
+            "Version": "2.1.3 b33",
+            "Author": "RDTeam: VacsViewer",
+            "StartString_Data": "Data",
+            "EndString_Data": "Data_End",
+            "Data_Format": "Complex",
+            "Data_Domain": "Frequency",
+            "Data_LevelType": "Impedance10",
+            "Data_AbscUnit": "Hz",
+            "Data_BaseUnit": "ohm",
+            "Data_Legend": "Impedance, System=S1",
+            "Param_Coord_x1": "1",
+            "Param_Coord_x2": "90",
+            "Param_Coord_x3": "0",
+            "Param_Drv": "0",
+            "Param_Param": "0",
+            "Param_Coord_Type": "Spherical",
+            "Param_Coord_Top": "0,0",
+            "Param_Coord_Front": "90,0",
+            "Param_Coord_AngularFormat": "degree",
+            "Param_DrvIsRms": "false"
+          }
+        },
+        {
+          "path": "V001_anygraph_02_Mic_Polar_-_BE_Spectrum_2_H.txt",
+          "sha256": "e333dc7e5526ab2346218ebde5d3d278c0bc64dbb9ef516c601bf56fa7972831",
+          "metadata": {
+            "SourceDesc": "VACS_Data_Text",
+            "Version": "2.1.3 b33",
+            "Author": "RDTeam: VacsViewer",
+            "StartString_Data": "Data",
+            "EndString_Data": "Data_End",
+            "Data_Format": "Complex",
+            "Data_Domain": "Frequency",
+            "Data_LevelType": "SoundPressure",
+            "Data_AbscUnit": "Hz",
+            "Data_BaseUnit": "Pa",
+            "Data_Legend": "Sound pressure",
+            "Param_Coord_x1": "3",
+            "Param_Coord_x2": "-90,-85,-80,-75,-70,-65,-60,-55,-50,-45,-40,-35,-30,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90",
+            "Param_Coord_x3": "0",
+            "Param_Drv": "0",
+            "Param_Param": "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37",
+            "Param_Coord_Type": "Spherical",
+            "Param_Coord_AngularFormat": "degree",
+            "Param_DrvIsRms": "false"
+          }
+        },
+        {
+          "path": "V001_anygraph_03_Mic_Polar_-_BE_Spectrum_3_V.txt",
+          "sha256": "598a45f3d21273d6836a9405ec0fc8a53a23eaf1a0706b778fe29a55f31c18fb",
+          "metadata": {
+            "SourceDesc": "VACS_Data_Text",
+            "Version": "2.1.3 b33",
+            "Author": "RDTeam: VacsViewer",
+            "StartString_Data": "Data",
+            "EndString_Data": "Data_End",
+            "Data_Format": "Complex",
+            "Data_Domain": "Frequency",
+            "Data_LevelType": "SoundPressure",
+            "Data_AbscUnit": "Hz",
+            "Data_BaseUnit": "Pa",
+            "Data_Legend": "Sound pressure",
+            "Param_Coord_x1": "3",
+            "Param_Coord_x2": "-90,-85,-80,-75,-70,-65,-60,-55,-50,-45,-40,-35,-30,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90",
+            "Param_Coord_x3": "90",
+            "Param_Drv": "0",
+            "Param_Param": "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37",
+            "Param_Coord_Type": "Spherical",
+            "Param_Coord_AngularFormat": "degree",
+            "Param_DrvIsRms": "false"
+          }
+        },
+        {
+          "path": "V001_anygraph_04_Radiation_Impedance_-_Radiation_Impedance_4_H.txt",
+          "sha256": "2739633d7bb56b4ee879e2c0e10c21d3cf1b1c86230ac95d9e669e9ee7c371c4",
+          "metadata": {
+            "SourceDesc": "VACS_Data_Text",
+            "Version": "2.1.3 b33",
+            "Author": "RDTeam: VacsViewer",
+            "StartString_Data": "Data",
+            "EndString_Data": "Data_End",
+            "Data_Format": "Complex",
+            "Data_Domain": "Frequency",
+            "Data_LevelType": "Impedance10",
+            "Data_AbscUnit": "Hz",
+            "Data_BaseUnit": "",
+            "Data_Legend": "Radiation_Impedance #4;  ; Normalized",
+            "Param_Coord_x1": "1",
+            "Param_Coord_x2": "90",
+            "Param_Coord_x3": "0",
+            "Param_Drv": "0",
+            "Param_Param": "0",
+            "Param_Coord_Type": "Spherical",
+            "Param_Coord_Top": "0,0",
+            "Param_Coord_Front": "90,0",
+            "Param_Coord_AngularFormat": "degree",
+            "Param_DrvIsRms": "false"
+          }
+        }
+      ],
+      "electrical_input_impedance_ohm": [
+        {
+          "freq_hz": 1000.0,
+          "re_ohm": 24.76925,
+          "im_ohm": 4.803386
+        },
+        {
+          "freq_hz": 1259.921,
+          "re_ohm": 19.31397,
+          "im_ohm": -6.700908
+        },
+        {
+          "freq_hz": 1587.401,
+          "re_ohm": 13.44511,
+          "im_ohm": -5.161777
+        },
+        {
+          "freq_hz": 2000.0,
+          "re_ohm": 11.43013,
+          "im_ohm": -5.4498
+        },
+        {
+          "freq_hz": 2519.842,
+          "re_ohm": 9.403156,
+          "im_ohm": -3.457826
+        },
+        {
+          "freq_hz": 3174.802,
+          "re_ohm": 8.776769,
+          "im_ohm": -1.81115
+        },
+        {
+          "freq_hz": 4000.0,
+          "re_ohm": 8.626925,
+          "im_ohm": -0.4878772
+        }
+      ]
+    },
+    "fine": {
+      "run_id": "70c8e5f1-cdfa-4424-8e51-9fd58153ae08",
+      "status": "succeeded",
+      "git_commit": "7150d755a0160d020127fbdac68dab9a80289515",
+      "runtime_s": 63.04,
+      "started_at": "2026-08-01T18:27:48+00:00",
+      "finished_at": "2026-08-01T18:28:51+00:00",
+      "mesh_parameters": {
+        "Mesh.AngularSegments": 72,
+        "Mesh.LengthSegments": 28,
+        "Mesh.MouthResolution": 12,
+        "Mesh.ThroatResolution": 8
+      },
+      "contract_hashes": {
+        "Project.abec": "3dbb64eb88080cecd138fce42ddf3e221d62afd1304d5de20ac2590a4ccffc17",
+        "solving.txt": "5f8916933ea7faabf31a88b357ded118c21453b2055bcfc44590bb0b9ad13eb4",
+        "observation.txt": "6c165370a1b09e2286776a9ba258f4858497b092d9b5e00a59fb1529a5c2acfe",
+        "generic25.txt": "053701a2158347cdf3fdd242fc053de4a225bff93607b134efc5c80a6ed3ce9a"
+      },
+      "exports": [
+        {
+          "path": "V001_anygraph_01_LE_scripts_-_LE_Spectrum_5_H.txt",
+          "sha256": "97642f5c76fc6fe9aca6cd846d3b50161e7501e08750648b731a9ec50e183403",
+          "metadata": {
+            "SourceDesc": "VACS_Data_Text",
+            "Version": "2.1.3 b33",
+            "Author": "RDTeam: VacsViewer",
+            "StartString_Data": "Data",
+            "EndString_Data": "Data_End",
+            "Data_Format": "Complex",
+            "Data_Domain": "Frequency",
+            "Data_LevelType": "Impedance10",
+            "Data_AbscUnit": "Hz",
+            "Data_BaseUnit": "ohm",
+            "Data_Legend": "Impedance, System=S1",
+            "Param_Coord_x1": "1",
+            "Param_Coord_x2": "90",
+            "Param_Coord_x3": "0",
+            "Param_Drv": "0",
+            "Param_Param": "0",
+            "Param_Coord_Type": "Spherical",
+            "Param_Coord_Top": "0,0",
+            "Param_Coord_Front": "90,0",
+            "Param_Coord_AngularFormat": "degree",
+            "Param_DrvIsRms": "false"
+          }
+        },
+        {
+          "path": "V001_anygraph_02_Mic_Polar_-_BE_Spectrum_2_H.txt",
+          "sha256": "df23059acc16d3fd90683ab5b238c53e1aff0fdcefc6e9b0bb403f3621feb66d",
+          "metadata": {
+            "SourceDesc": "VACS_Data_Text",
+            "Version": "2.1.3 b33",
+            "Author": "RDTeam: VacsViewer",
+            "StartString_Data": "Data",
+            "EndString_Data": "Data_End",
+            "Data_Format": "Complex",
+            "Data_Domain": "Frequency",
+            "Data_LevelType": "SoundPressure",
+            "Data_AbscUnit": "Hz",
+            "Data_BaseUnit": "Pa",
+            "Data_Legend": "Sound pressure",
+            "Param_Coord_x1": "3",
+            "Param_Coord_x2": "-90,-85,-80,-75,-70,-65,-60,-55,-50,-45,-40,-35,-30,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90",
+            "Param_Coord_x3": "0",
+            "Param_Drv": "0",
+            "Param_Param": "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37",
+            "Param_Coord_Type": "Spherical",
+            "Param_Coord_AngularFormat": "degree",
+            "Param_DrvIsRms": "false"
+          }
+        },
+        {
+          "path": "V001_anygraph_03_Mic_Polar_-_BE_Spectrum_3_V.txt",
+          "sha256": "bca80be92acbe8553e97ae1d5e14eb7685dc647aa274026d7fd954754c0021dc",
+          "metadata": {
+            "SourceDesc": "VACS_Data_Text",
+            "Version": "2.1.3 b33",
+            "Author": "RDTeam: VacsViewer",
+            "StartString_Data": "Data",
+            "EndString_Data": "Data_End",
+            "Data_Format": "Complex",
+            "Data_Domain": "Frequency",
+            "Data_LevelType": "SoundPressure",
+            "Data_AbscUnit": "Hz",
+            "Data_BaseUnit": "Pa",
+            "Data_Legend": "Sound pressure",
+            "Param_Coord_x1": "3",
+            "Param_Coord_x2": "-90,-85,-80,-75,-70,-65,-60,-55,-50,-45,-40,-35,-30,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90",
+            "Param_Coord_x3": "90",
+            "Param_Drv": "0",
+            "Param_Param": "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37",
+            "Param_Coord_Type": "Spherical",
+            "Param_Coord_AngularFormat": "degree",
+            "Param_DrvIsRms": "false"
+          }
+        },
+        {
+          "path": "V001_anygraph_04_Radiation_Impedance_-_Radiation_Impedance_4_H.txt",
+          "sha256": "2739633d7bb56b4ee879e2c0e10c21d3cf1b1c86230ac95d9e669e9ee7c371c4",
+          "metadata": {
+            "SourceDesc": "VACS_Data_Text",
+            "Version": "2.1.3 b33",
+            "Author": "RDTeam: VacsViewer",
+            "StartString_Data": "Data",
+            "EndString_Data": "Data_End",
+            "Data_Format": "Complex",
+            "Data_Domain": "Frequency",
+            "Data_LevelType": "Impedance10",
+            "Data_AbscUnit": "Hz",
+            "Data_BaseUnit": "",
+            "Data_Legend": "Radiation_Impedance #4;  ; Normalized",
+            "Param_Coord_x1": "1",
+            "Param_Coord_x2": "90",
+            "Param_Coord_x3": "0",
+            "Param_Drv": "0",
+            "Param_Param": "0",
+            "Param_Coord_Type": "Spherical",
+            "Param_Coord_Top": "0,0",
+            "Param_Coord_Front": "90,0",
+            "Param_Coord_AngularFormat": "degree",
+            "Param_DrvIsRms": "false"
+          }
+        }
+      ],
+      "electrical_input_impedance_ohm": [
+        {
+          "freq_hz": 1000.0,
+          "re_ohm": 24.77105,
+          "im_ohm": 4.805013
+        },
+        {
+          "freq_hz": 1259.921,
+          "re_ohm": 19.31112,
+          "im_ohm": -6.701988
+        },
+        {
+          "freq_hz": 1587.401,
+          "re_ohm": 13.43828,
+          "im_ohm": -5.164331
+        },
+        {
+          "freq_hz": 2000.0,
+          "re_ohm": 11.43596,
+          "im_ohm": -5.451445
+        },
+        {
+          "freq_hz": 2519.842,
+          "re_ohm": 9.402503,
+          "im_ohm": -3.459996
+        },
+        {
+          "freq_hz": 3174.802,
+          "re_ohm": 8.775243,
+          "im_ohm": -1.810694
+        },
+        {
+          "freq_hz": 4000.0,
+          "re_ohm": 8.630071,
+          "im_ohm": -0.4861104
+        }
+      ]
+    }
+  },
+  "mesh_topology_provenance": {
+    "source": "docs/validation/evidence/phase2_mesh_convergence_2026-08-01.json",
+    "reason": "identical frozen geometry and mesh-control tuples; native harness cleanup intentionally removes generated meshes",
+    "levels": {
+      "coarse": {
+        "nodes": 178,
+        "triangles": 302,
+        "mesh_sha256": "6702acbc42499899e47c87844f88636dee9af2427e5168d2a08660fea2763c4a",
+        "physical_groups": [
+          "I1-2",
+          "SD1D1001",
+          "SD1G0",
+          "SD2G0"
+        ],
+        "ath_elapsed_s": 0.39392345899977954
+      },
+      "medium": {
+        "nodes": 251,
+        "triangles": 428,
+        "mesh_sha256": "e14de4063b22da19830c6fcc05c15c31d37de1e6ffba7696c7a23269a01bafab",
+        "physical_groups": [
+          "I1-2",
+          "SD1D1001",
+          "SD1G0",
+          "SD2G0"
+        ],
+        "ath_elapsed_s": 0.595956874996773
+      },
+      "fine": {
+        "nodes": 375,
+        "triangles": 660,
+        "mesh_sha256": "2da2516e4742fb821b148a4681132b4dd1d09f9d8dc15eb73379325005ae3320",
+        "physical_groups": [
+          "I1-2",
+          "SD1D1001",
+          "SD1G0",
+          "SD2G0"
+        ],
+        "ath_elapsed_s": 0.693307540997921
+      }
+    }
+  },
+  "impedance": {
+    "coarse_medium": {
+      "complex_relative_rms": 0.0005154276172835278,
+      "magnitude_relative_max": 0.0006657828795827995,
+      "phase_mae_deg": 0.011471383219470357,
+      "phase_max_deg": 0.033158185054588785
+    },
+    "medium_fine": {
+      "complex_relative_rms": 0.0002737621012627789,
+      "magnitude_relative_max": 0.0004712711303320453,
+      "phase_mae_deg": 0.008411548856802906,
+      "phase_max_deg": 0.019231694159429935
+    },
+    "runner_db_max_abs_delta": 0.0
+  },
+  "beamwidth_deg": {
+    "coarse": {
+      "H": [
+        {
+          "freq_hz": 1000.0,
+          "value": 157.76654488581008
+        },
+        {
+          "freq_hz": 1259.921,
+          "value": 132.678865922945
+        },
+        {
+          "freq_hz": 1587.401,
+          "value": 113.41410911226662
+        },
+        {
+          "freq_hz": 2000.0,
+          "value": 93.84924312450288
+        },
+        {
+          "freq_hz": 2519.842,
+          "value": 77.11361631216462
+        },
+        {
+          "freq_hz": 3174.802,
+          "value": 63.536521911210976
+        },
+        {
+          "freq_hz": 4000.0,
+          "value": 62.074387117096755
+        }
+      ],
+      "V": [
+        {
+          "freq_hz": 1000.0,
+          "value": 157.68863849287783
+        },
+        {
+          "freq_hz": 1259.921,
+          "value": 132.63708716811232
+        },
+        {
+          "freq_hz": 1587.401,
+          "value": 113.38902878306465
+        },
+        {
+          "freq_hz": 2000.0,
+          "value": 93.83112404116092
+        },
+        {
+          "freq_hz": 2519.842,
+          "value": 77.09292278257348
+        },
+        {
+          "freq_hz": 3174.802,
+          "value": 63.539522570754514
+        },
+        {
+          "freq_hz": 4000.0,
+          "value": 62.1103279462087
+        }
+      ]
+    },
+    "medium": {
+      "H": [
+        {
+          "freq_hz": 1000.0,
+          "value": 158.53145957985316
+        },
+        {
+          "freq_hz": 1259.921,
+          "value": 133.18511626418916
+        },
+        {
+          "freq_hz": 1587.401,
+          "value": 113.97411644917288
+        },
+        {
+          "freq_hz": 2000.0,
+          "value": 94.43979316040019
+        },
+        {
+          "freq_hz": 2519.842,
+          "value": 77.67625055852415
+        },
+        {
+          "freq_hz": 3174.802,
+          "value": 64.04934192595441
+        },
+        {
+          "freq_hz": 4000.0,
+          "value": 61.73109004550055
+        }
+      ],
+      "V": [
+        {
+          "freq_hz": 1000.0,
+          "value": 158.4175597939359
+        },
+        {
+          "freq_hz": 1259.921,
+          "value": 133.16964163414167
+        },
+        {
+          "freq_hz": 1587.401,
+          "value": 114.034468633647
+        },
+        {
+          "freq_hz": 2000.0,
+          "value": 94.56668541916247
+        },
+        {
+          "freq_hz": 2519.842,
+          "value": 77.88045452649823
+        },
+        {
+          "freq_hz": 3174.802,
+          "value": 64.20130842209453
+        },
+        {
+          "freq_hz": 4000.0,
+          "value": 61.873248258551854
+        }
+      ]
+    },
+    "fine": {
+      "H": [
+        {
+          "freq_hz": 1000.0,
+          "value": 158.83657431150877
+        },
+        {
+          "freq_hz": 1259.921,
+          "value": 133.46104487417261
+        },
+        {
+          "freq_hz": 1587.401,
+          "value": 114.36105482432329
+        },
+        {
+          "freq_hz": 2000.0,
+          "value": 94.89729803446335
+        },
+        {
+          "freq_hz": 2519.842,
+          "value": 78.15818213706144
+        },
+        {
+          "freq_hz": 3174.802,
+          "value": 64.39073917062396
+        },
+        {
+          "freq_hz": 4000.0,
+          "value": 61.785664667282475
+        }
+      ],
+      "V": [
+        {
+          "freq_hz": 1000.0,
+          "value": 158.89995809292148
+        },
+        {
+          "freq_hz": 1259.921,
+          "value": 133.46897425009283
+        },
+        {
+          "freq_hz": 1587.401,
+          "value": 114.33639804833572
+        },
+        {
+          "freq_hz": 2000.0,
+          "value": 94.86578487997001
+        },
+        {
+          "freq_hz": 2519.842,
+          "value": 78.14981494103552
+        },
+        {
+          "freq_hz": 3174.802,
+          "value": 64.44282511840369
+        },
+        {
+          "freq_hz": 4000.0,
+          "value": 61.811931020780385
+        }
+      ]
+    }
+  },
+  "beamwidth_pairs": {
+    "H": {
+      "coarse_medium": {
+        "count": 7,
+        "mae_deg": 0.5486391058271413,
+        "max_deg": 0.7649146940430853
+      },
+      "medium_fine": {
+        "count": 7,
+        "mae_deg": 0.3290557194059147,
+        "max_deg": 0.4819315785372993
+      }
+    },
+    "V": {
+      "coarse_medium": {
+        "count": 7,
+        "mae_deg": 0.618410611227562,
+        "max_deg": 0.7875317439247453
+      },
+      "medium_fine": {
+        "count": 7,
+        "mae_deg": 0.2792791627215599,
+        "max_deg": 0.4823982989855722
+      }
+    }
+  },
+  "chain": {
+    "analysis_db": "tmp/scientific_validation_phase3/analysis_chain_r3/library/P_SCI_P3_ANALYSIS/db/project.sqlite",
+    "polar_matrix_max_abs_db": 2.842170943040401e-14,
+    "beamwidth_max_abs_deg": 2.5579538487363607e-13
+  },
+  "checks": {
+    "all_runs_succeeded": true,
+    "mesh_parameters_match_frozen_matrix": true,
+    "mesh_topology_reused_phase2_strictly_refined": true,
+    "contracts_byte_identical": true,
+    "I1_nontrivial_electrical_impedance_ohm": true,
+    "I2_medium_fine_complex_rms_le_0p02": true,
+    "I2_medium_fine_magnitude_max_le_0p05": true,
+    "I2_medium_fine_phase_mae_le_2deg": true,
+    "I2_medium_fine_phase_max_le_5deg": true,
+    "I2_convergence_trend": true,
+    "I2_raw_parser_runner_db_le_1e_9": true,
+    "B1_all_seven_two_sided_crossings_H": true,
+    "B1_all_seven_two_sided_crossings_V": true,
+    "B2_medium_fine_H": true,
+    "B2_medium_fine_V": true,
+    "B2_convergence_trend_H": true,
+    "B2_convergence_trend_V": true,
+    "B2_raw_parser_analysis_db_analyzer_matrix_le_1e_9db": true,
+    "B2_independent_vs_analyzer_width_le_1e_9deg": true
+  },
+  "classification": {
+    "electrical_impedance_convergence": "verified",
+    "beamwidth_convergence": "verified",
+    "normalized_bem_radiation_impedance": "separate_all_zero_secondary_output_not_reclassified"
+  }
+}

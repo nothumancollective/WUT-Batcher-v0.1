@@ -146,3 +146,87 @@ run is now justified in advance: repeat coarse once with the exact observation
 block, then run medium and fine once each. These three post-amendment runs form
 the convergence matrix. If the coarse repeat does not yield a distinct nonzero
 `DrvImp` graph, I1/I2 fail and medium/fine will not be spent on that hypothesis.
+
+## Final results
+
+The post-amendment matrix passed every frozen numerical criterion. Compact
+machine-readable results and all raw-file hashes are in
+`evidence/phase3_convergence_2026-08-01.json`; large native workspaces remain
+under ignored `tmp/scientific_validation_phase3/`.
+
+| Level | Run | Wall time | Electrical `|Z|` range | H beamwidth 1/4 kHz | V beamwidth 1/4 kHz |
+|---|---|---:|---:|---:|---:|
+| coarse | `ef3d2618-366e-4f0d-a131-30656c484f84` | 43.99 s | 8.642-25.226 ohm | 157.767 / 62.074 deg | 157.689 / 62.110 deg |
+| medium | `cdd27004-1012-4118-9136-273440177e9e` | 60.12 s | 8.641-25.231 ohm | 158.531 / 61.731 deg | 158.418 / 61.873 deg |
+| fine | `70c8e5f1-cdfa-4424-8e51-9fd58153ae08` | 63.04 s | 8.644-25.233 ohm | 158.837 / 61.786 deg | 158.900 / 61.812 deg |
+
+### A - electrical impedance convergence: verified
+
+- The exported graph is `LE_Spectrum`, legend `Impedance, System=S1`, base unit
+  `ohm`; it is distinct from the all-zero dimensionless BEM
+  `Radiation_Impedance` graph.
+- All seven 1000-4000 Hz complex samples are finite and nontrivial for every
+  mesh. The raw TXT parser and runner SQLite real/imag/frequency values agree
+  exactly (maximum delta 0).
+- Coarse-medium complex relative RMS is 0.0005154; medium-fine improves to
+  0.0002738 (0.0274%). Medium-fine maximum relative magnitude error is
+  0.0004713 (0.0471%). Phase MAE is 0.00841 deg and maximum 0.01923 deg.
+- Thus the 2% complex RMS, 5% magnitude, 2/5 deg phase and convergence-trend
+  gates pass with substantial margin.
+
+This verifies the electrical input impedance of the tested `generic25`/S1
+network from 1-4 kHz. It does not validate a physical compression driver's
+parameter accuracy, and it does not convert the separate BEM normalized-zero
+curve into a meaningful radiation-impedance result.
+
+### B - H/V beamwidth convergence: verified
+
+- All seven frequencies in all six H/V polar maps have explicit negative- and
+  positive-angle -6.000 dB crossings strictly inside -90...+90 deg. No width is
+  saturated, clamped or symmetry-inferred.
+- H medium-fine MAE/max are 0.3291/0.4819 deg, improving from
+  0.5486/0.7649 deg coarse-medium.
+- V medium-fine MAE/max are 0.2793/0.4824 deg, improving from
+  0.6184/0.7875 deg coarse-medium.
+- Raw TXT was parsed into a fresh production-schema SQLite database through
+  `TidyDatasetWriter`; `AnalyzerPlotService` reloaded it. The maximum normalized
+  matrix difference versus independent conversion is `2.84e-14 dB`; independent
+  versus Analyzer beamwidth differs by at most `2.56e-13 deg`.
+
+The native harness intentionally deletes meshes after its owned-process cleanup.
+Mesh topology counts therefore reuse Phase 2's compact evidence for the exactly
+same four mesh-control tuples: 178/302, 251/428 and 375/660 nodes/triangles.
+Current runner DB snapshots prove those tuples, and Project/solving/observation/LE
+snapshots are byte-identical between the three runs. This is explicit provenance,
+not a claim that deleted Phase-3 mesh bytes were re-hashed.
+
+### C - simulation versus measurement: remains open
+
+The primary-source review is recorded in
+`evidence/phase3_measurement_source_review_2026-08-01.json`. Official ATH pages
+for the Extended-Throat work, ST260 and A460D provide useful geometry, simulation
+or measurement figures but not reusable numeric arrays plus every required setup
+field. R&D Team's official studies and already-installed AKABAK example package
+contain relevant model projects/comparison presentations, but no reusable
+CSV/FRD/ZMA measurement data set satisfying M1. The primary AkAbak compression
+driver paper likewise has figures without a machine-readable supplement suitable
+for this WUT case.
+
+Accordingly no graph was digitized and no numeric agreement was invented.
+Simulation-to-measurement is **not validated**. The frozen fallback protocol above
+is the exact acquisition contract for a future comparison.
+
+## Classification and remaining boundaries
+
+- Electrical input-impedance mesh convergence for this coupled `generic25` case:
+  **verified**.
+- Full signed H/V -6 dB beamwidth mesh convergence for this case: **verified**.
+- TXT -> production SQLite -> Analyzer beamwidth chain for these real native
+  polars: **verified**.
+- ATH's omission of its own embedded `LE_Spectrum` observation: **verified
+  reproducible** and narrowly repaired in the harness observation profile. This
+  is test/runtime-contract support, not a new product feature.
+- Dimensionless normalized BEM radiation impedance for this topology:
+  **not validated** (still a separate all-zero secondary graph).
+- Simulation agreement with physical measurements: **not validated** pending a
+  source satisfying M1.
