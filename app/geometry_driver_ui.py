@@ -314,10 +314,13 @@ class GeometryManagerDialog(QDialog):
         self.default_driver.clear()
         self.default_driver.addItem("No default driver", "")
         for row in self.service.list_drivers():
-            latest = row.get("latest_revision") or {}
-            revision_id = latest.get("revision_id")
-            if revision_id:
-                self.default_driver.addItem(f"{row.get('manufacturer')} · {row.get('model')} · r{latest.get('revision_number')}", revision_id)
+            for revision in row.get("revisions", []):
+                revision_id = revision.get("revision_id")
+                if revision_id:
+                    self.default_driver.addItem(
+                        f"{row.get('manufacturer')} · {row.get('model')} · r{revision.get('revision_number')}",
+                        revision_id,
+                    )
         self._sync_driver_selection()
 
     def _sync_driver_selection(self) -> None:

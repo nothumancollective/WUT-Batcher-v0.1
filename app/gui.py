@@ -14910,13 +14910,19 @@ class MainWindow(QMainWindow):
             )
             revision_id = str(selected.get("default_driver_revision_id") or "")
             driver_row = None
+            revision_row = None
             if revision_id:
-                driver_row = next(
-                    (row for row in self.service.list_drivers(include_archived=True)
-                     if str((row.get("latest_revision") or {}).get("revision_id") or "") == revision_id),
-                    None,
-                )
-            revision_hash = str(((driver_row or {}).get("latest_revision") or {}).get("revision_hash") or "")
+                for row in self.service.list_drivers(include_archived=True):
+                    revision = next(
+                        (item for item in row.get("revisions", [])
+                         if str(item.get("revision_id") or "") == revision_id),
+                        None,
+                    )
+                    if revision is not None:
+                        driver_row = row
+                        revision_row = revision
+                        break
+            revision_hash = str((revision_row or {}).get("revision_hash") or "")
             driver_text = (
                 f"{(driver_row or {}).get('manufacturer')} {(driver_row or {}).get('model')} · {revision_id} · SHA-256 {revision_hash[:12]}…"
                 if driver_row else "no default driver — current AKABAK coupling may be incomplete"

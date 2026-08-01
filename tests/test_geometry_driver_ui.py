@@ -9,6 +9,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from app.geometry_driver_ui import DriverLibraryDialog, GeometryManagerDialog
 from app.gui import MainWindow, ProjectPage
+from app.driver_library import DriverDefinition, DriverRevision
 from app.services import OrchestratorService
 from app.settings_store import SettingsStore, UserSettings
 
@@ -82,6 +83,36 @@ class GeometryDriverUiTests(unittest.TestCase):
             dialog.kind.setCurrentIndex(1)
             self.assertNotIn("Â", dialog.details.toPlainText())
             dialog.close()
+
+    def test_geometry_can_select_and_display_non_latest_driver_revision(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wut_driver_revision_ui_") as tmp:
+            service = _service(Path(tmp))
+            project = service.create_project("Revision UI", {"fixed_params": {}, "limits": {}})
+            geometry = service.list_geometries(project.project_id)[0]
+            first = service.create_driver(
+                definition=DriverDefinition(
+                    driver_id="D-UI", manufacturer="Example", model="CD-1", kind="compression_driver",
+                ).__dict__,
+                revision=DriverRevision(
+                    revision_id="DR-UI-1", driver_id="D-UI", revision_number=1,
+                    provenance={"source": "test", "trust": "user_asserted"},
+                ).__dict__,
+            )
+            service.create_driver_revision(
+                "D-UI", parameters={}, provenance={"source": "test", "trust": "user_asserted"},
+            )
+            service.set_geometry_default_driver(project.project_id, geometry["geometry_id"], first["revision_id"])
+
+            dialog = GeometryManagerDialog(service, project.project_id)
+            self.assertGreaterEqual(dialog.default_driver.count(), 3)
+            self.assertGreaterEqual(dialog.default_driver.findData("DR-UI-1"), 1)
+            dialog.close()
+
+            window = MainWindow(service)
+            window.load_project(project)
+            self.assertIn("DR-UI-1", window.batch_page.execution_context_label.text())
+            self.assertIn(first["revision_hash"][:12], window.batch_page.execution_context_label.text())
+            window.close()
 
 
 if __name__ == "__main__":

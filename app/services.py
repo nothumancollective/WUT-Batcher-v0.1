@@ -1680,6 +1680,7 @@ class OrchestratorService:
                 **asdict(definition),
                 "revision_count": len(revisions),
                 "latest_revision": asdict(revisions[-1]) if revisions else None,
+                "revisions": [asdict(item) for item in revisions],
             })
         return result
 
