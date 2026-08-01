@@ -232,3 +232,37 @@ G1's “axial length” is clarified as ATH's nominal device length. A free-stan
 BEM mesh includes rear-wall/interface geometry outside `0…Length`, so total mesh
 z-extent is retained as evidence but is not a measurement of the horn's nominal
 axial length. All other frozen G1/G2 criteria remain unchanged.
+
+## Amendment A2 — selected official ATH tutorial reference (before reference run)
+
+Time: 2026-08-01, before either selected R1 reference output was generated or
+opened. The official ATH 4.8.2 User Guide, section 6.1 (PDF pages 27–28), fully
+specifies `demo1.cfg`: OS-SE profile 1, 25.4 mm throat, 7 deg half throat angle,
+45 deg half coverage angle, 100 mm length, `Term.s=0.5`, `Term.n=4.0`,
+`Term.q=0.996`, 64 angular and 20 length segments, 4 mm throat resolution,
+8 mm interface resolution, 5 mm interface offset, no morphing, STL enabled and
+ABEC project disabled. Section 6.2 (PDF page 29) reports ATH 4.8.0 output of
+269.4 x 269.4 mm and 100.0 mm length. The locally frozen executable is ATH 4.8.2.
+
+R1 will use that text-transcribed definition in two isolated directories:
+
+1. a direct standalone ATH input containing only the documented assignments;
+2. the same template passed through WUT's production `render_cfg_text` with the
+   documented geometry values, which adds only WUT's mandatory AKABAK/LE
+   compatibility assignments outside the geometry contract.
+
+The criteria, fixed before running, are:
+
+- both ATH invocations exit 0 without timeout;
+- each reported length is 100.0 mm and width/height are each within 0.05 mm of
+  the guide's one-decimal 269.4 mm reference;
+- the standalone and WUT-represented STL files have equal facet/vertex counts,
+  equal axis bounds within `1e-9 mm`, and a sorted-coordinate maximum absolute
+  difference no greater than `1e-9 mm`;
+- WUT's rendered geometry assignments equal the documented input semantically;
+  its only additional active assignments are `ABEC.AkabakMode`, `LE`, and
+  `LE.Voltage`.
+
+This verifies WUT rendering against the official ATH geometry tutorial. It does
+not independently verify AKABAK acoustic pressure, VACS, or a physical
+measurement.
