@@ -1,0 +1,270 @@
+{
+  "created_at": "2026-08-01T15:23:47.084863+00:00",
+  "status": "verified",
+  "application_commit": "e30b8cab20cfd9b2c092c1d82c3788d788b70025",
+  "workspace": "tmp/scientific_validation_phase2/distance_real_r1",
+  "run_id": "1b56402e-fd34-4e52-a794-f6b42c57ca6d",
+  "runner_db": {
+    "test_run_id": "1b56402e-fd34-4e52-a794-f6b42c57ca6d",
+    "status": "succeeded",
+    "started_at": "2026-08-01T15:19:17+00:00",
+    "finished_at": "2026-08-01T15:20:25+00:00",
+    "sha256": "2b142d93c4a58f97e8f13c13ba73c0dac5a8ef2de2d43c78cd5d9ac71fd4fa6a"
+  },
+  "observation_contract": {
+    "source_path": "logs/1b56402e-fd34-4e52-a794-f6b42c57ca6d/ath_input_snapshot/observation.txt",
+    "sha256": "b67be497e240bfde25ab056b502d6bee19bbe90dabd30e8c3af09433ef490696",
+    "blocks": [
+      {
+        "graph_header": "PM_P2_D_3M",
+        "distance_m": 3.0,
+        "offset_mm": 65.0,
+        "inclination_deg": 45.0,
+        "base_plane": "zx",
+        "polar_range": "0,90,19"
+      },
+      {
+        "graph_header": "PM_P2_D_6M",
+        "distance_m": 6.0,
+        "offset_mm": 65.0,
+        "inclination_deg": 45.0,
+        "base_plane": "zx",
+        "polar_range": "0,90,19"
+      },
+      {
+        "graph_header": "PM_P2_H_3M",
+        "distance_m": 3.0,
+        "offset_mm": 65.0,
+        "inclination_deg": 0.0,
+        "base_plane": "zx",
+        "polar_range": "0,90,19"
+      },
+      {
+        "graph_header": "PM_P2_H_6M",
+        "distance_m": 6.0,
+        "offset_mm": 65.0,
+        "inclination_deg": 0.0,
+        "base_plane": "zx",
+        "polar_range": "0,90,19"
+      },
+      {
+        "graph_header": "PM_P2_V_3M",
+        "distance_m": 3.0,
+        "offset_mm": 65.0,
+        "inclination_deg": 90.0,
+        "base_plane": "zx",
+        "polar_range": "0,90,19"
+      },
+      {
+        "graph_header": "PM_P2_V_6M",
+        "distance_m": 6.0,
+        "offset_mm": 65.0,
+        "inclination_deg": 90.0,
+        "base_plane": "zx",
+        "polar_range": "0,90,19"
+      }
+    ],
+    "normalization_present": false,
+    "interpreted_origin_mm": [
+      0.0,
+      0.0,
+      65.0
+    ],
+    "interpreted_reference_axis": "+z",
+    "base_plane": "zx",
+    "planes": {
+      "H": "inclination 0 deg",
+      "D": "inclination 45 deg",
+      "V": "inclination 90 deg"
+    },
+    "coordinate_interpretation_status": "plausibilized from generated AKABAK contract and WUT plane mapping; exact Cartesian expansion not independently exposed by TXT"
+  },
+  "aperture_and_far_field": {
+    "ath_stdout_sha256": "8b27b00ac4f78bb4ab71bcf156049a821a3fbb559c53700b14a44a8ef5bdb779",
+    "aperture_diameter_m": 0.16452,
+    "speed_of_sound_m_s": 343.0,
+    "criterion": "r_F = 2 D^2 / lambda; require 3 m >= r_F",
+    "maximum_r_f_m": 0.25251853434402327
+  },
+  "inverse_distance": {
+    "expected_delta_db": -6.020599913279624,
+    "rows": [
+      {
+        "plane": "H",
+        "freq_hz": 800.0,
+        "fraunhofer_m": 0.12625926717201164,
+        "eligible": true,
+        "delta_db_6m_minus_3m": -6.0219639936374065,
+        "absolute_error_from_inverse_distance_db": 0.001364080357782349
+      },
+      {
+        "plane": "H",
+        "freq_hz": 1007.937,
+        "fraunhofer_m": 0.1590767337194449,
+        "eligible": true,
+        "delta_db_6m_minus_3m": -6.021254875234661,
+        "absolute_error_from_inverse_distance_db": 0.0006549619550364483
+      },
+      {
+        "plane": "H",
+        "freq_hz": 1269.921,
+        "fraunhofer_m": 0.20042411853293526,
+        "eligible": true,
+        "delta_db_6m_minus_3m": -6.020666392278622,
+        "absolute_error_from_inverse_distance_db": 6.647899899814291e-05
+      },
+      {
+        "plane": "H",
+        "freq_hz": 1600.0,
+        "fraunhofer_m": 0.25251853434402327,
+        "eligible": true,
+        "delta_db_6m_minus_3m": -6.020176872904029,
+        "absolute_error_from_inverse_distance_db": 0.0004230403755949297
+      },
+      {
+        "plane": "V",
+        "freq_hz": 800.0,
+        "fraunhofer_m": 0.12625926717201164,
+        "eligible": true,
+        "delta_db_6m_minus_3m": -6.0219639936374065,
+        "absolute_error_from_inverse_distance_db": 0.001364080357782349
+      },
+      {
+        "plane": "V",
+        "freq_hz": 1007.937,
+        "fraunhofer_m": 0.1590767337194449,
+        "eligible": true,
+        "delta_db_6m_minus_3m": -6.021254875234661,
+        "absolute_error_from_inverse_distance_db": 0.0006549619550364483
+      },
+      {
+        "plane": "V",
+        "freq_hz": 1269.921,
+        "fraunhofer_m": 0.20042411853293526,
+        "eligible": true,
+        "delta_db_6m_minus_3m": -6.020666392278622,
+        "absolute_error_from_inverse_distance_db": 6.647899899814291e-05
+      },
+      {
+        "plane": "V",
+        "freq_hz": 1600.0,
+        "fraunhofer_m": 0.25251853434402327,
+        "eligible": true,
+        "delta_db_6m_minus_3m": -6.020176872904029,
+        "absolute_error_from_inverse_distance_db": 0.0004230403755949297
+      },
+      {
+        "plane": "D",
+        "freq_hz": 800.0,
+        "fraunhofer_m": 0.12625926717201164,
+        "eligible": true,
+        "delta_db_6m_minus_3m": -6.0219639936374065,
+        "absolute_error_from_inverse_distance_db": 0.001364080357782349
+      },
+      {
+        "plane": "D",
+        "freq_hz": 1007.937,
+        "fraunhofer_m": 0.1590767337194449,
+        "eligible": true,
+        "delta_db_6m_minus_3m": -6.021254875234661,
+        "absolute_error_from_inverse_distance_db": 0.0006549619550364483
+      },
+      {
+        "plane": "D",
+        "freq_hz": 1269.921,
+        "fraunhofer_m": 0.20042411853293526,
+        "eligible": true,
+        "delta_db_6m_minus_3m": -6.020666392278622,
+        "absolute_error_from_inverse_distance_db": 6.647899899814291e-05
+      },
+      {
+        "plane": "D",
+        "freq_hz": 1600.0,
+        "fraunhofer_m": 0.25251853434402327,
+        "eligible": true,
+        "delta_db_6m_minus_3m": -6.020176872904029,
+        "absolute_error_from_inverse_distance_db": 0.0004230403755949297
+      }
+    ],
+    "maximum_absolute_error_db": 0.001364080357782349
+  },
+  "normalized_shape_invariance": {
+    "sample_count": 228,
+    "rms_db": 0.0004761727583383475,
+    "p95_absolute_db": 0.0011265364773560549
+  },
+  "plane_axis_consistency": {
+    "3m_max_complex_delta_pa": 0.0,
+    "6m_max_complex_delta_pa": 0.0
+  },
+  "exports": [
+    {
+      "path": "exports/1b56402e-fd34-4e52-a794-f6b42c57ca6d/V001_anygraph_01_Mic_Polar_-_BE_Spectrum_2_D.txt",
+      "sha256": "6dcada42e1d7018b7ba6fa017d5410c7028be01a6ab214f487f596699a0e8084",
+      "bytes": 3069,
+      "level_type": "SoundPressure",
+      "distance_marker": "3",
+      "inclination_marker": "45"
+    },
+    {
+      "path": "exports/1b56402e-fd34-4e52-a794-f6b42c57ca6d/V001_anygraph_02_Mic_Polar_-_BE_Spectrum_3_D.txt",
+      "sha256": "b78321f0a407b48b0a66697bbcd57c2d0c56dec8be497c29d800fa5257dcf11a",
+      "bytes": 3069,
+      "level_type": "SoundPressure",
+      "distance_marker": "6",
+      "inclination_marker": "45"
+    },
+    {
+      "path": "exports/1b56402e-fd34-4e52-a794-f6b42c57ca6d/V001_anygraph_03_Mic_Polar_-_BE_Spectrum_4_H.txt",
+      "sha256": "9848a2a551c8877f83dba3d458298199f1c1614e20e570ec074d08ba7cea0d3c",
+      "bytes": 3068,
+      "level_type": "SoundPressure",
+      "distance_marker": "3",
+      "inclination_marker": "0"
+    },
+    {
+      "path": "exports/1b56402e-fd34-4e52-a794-f6b42c57ca6d/V001_anygraph_04_Mic_Polar_-_BE_Spectrum_5_H.txt",
+      "sha256": "1fbd84fdc76917ad0d5df24740b888cd3cf6892c65ca6447574c716ddb612caf",
+      "bytes": 3068,
+      "level_type": "SoundPressure",
+      "distance_marker": "6",
+      "inclination_marker": "0"
+    },
+    {
+      "path": "exports/1b56402e-fd34-4e52-a794-f6b42c57ca6d/V001_anygraph_05_Mic_Polar_-_BE_Spectrum_6_V.txt",
+      "sha256": "9e116442a53808d70c4b72b8cdca2a5c0cc9f223828a991d1ae71af2298733bf",
+      "bytes": 3069,
+      "level_type": "SoundPressure",
+      "distance_marker": "3",
+      "inclination_marker": "90"
+    },
+    {
+      "path": "exports/1b56402e-fd34-4e52-a794-f6b42c57ca6d/V001_anygraph_06_Mic_Polar_-_BE_Spectrum_7_V.txt",
+      "sha256": "b65441b2965e505bb7de1bff1f8c4dc7fb4500ff0cbaadfdeaf704333c45dd03",
+      "bytes": 3069,
+      "level_type": "SoundPressure",
+      "distance_marker": "6",
+      "inclination_marker": "90"
+    },
+    {
+      "path": "exports/1b56402e-fd34-4e52-a794-f6b42c57ca6d/V001_anygraph_07_Radiation_Impedance_-_Radiation_Impedance_8_H.txt",
+      "sha256": "0ffedc6e8be0681c563ed091741b6e2e703ffceb03fcc5a9ff3fd7d2f4c2526a",
+      "bytes": 732,
+      "level_type": "Impedance10",
+      "distance_marker": "1",
+      "inclination_marker": "0"
+    }
+  ],
+  "checks": {
+    "runner_status_succeeded": true,
+    "six_pressure_exports_present": true,
+    "observation_contract_exact": true,
+    "all_frequencies_far_field_eligible": true,
+    "inverse_distance_max_error_le_0_50_db": true,
+    "normalized_shape_rms_le_0_25_db": true,
+    "normalized_shape_p95_le_0_50_db": true,
+    "hvd_on_axis_complex_values_identical_le_1e_12_pa": true,
+    "no_relevant_native_processes_after": true
+  },
+  "native_process_snapshot_after": []
+}
