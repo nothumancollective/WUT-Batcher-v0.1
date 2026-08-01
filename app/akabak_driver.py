@@ -74,6 +74,17 @@ ALL_SOURCES_MUTED_RE = re.compile(r"all\s+sources\s+muted", re.IGNORECASE)
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 TH32CS_SNAPPROCESS = 0x00000002
 MAX_PATH = 260
+VACS_REIMPORT_RETRY_DELAYS_S = (3.0, 15.0, 45.0)
+
+
+def _vacs_reimport_retry_due_s(*, attempt_count: int, graphless_s: float) -> Optional[float]:
+    """Return the next bounded F7 retry threshold once it is due."""
+
+    index = max(0, int(attempt_count))
+    if index >= len(VACS_REIMPORT_RETRY_DELAYS_S):
+        return None
+    threshold = float(VACS_REIMPORT_RETRY_DELAYS_S[index])
+    return threshold if float(graphless_s) >= threshold else None
 
 
 @dataclass(frozen=True)
@@ -4185,7 +4196,8 @@ class AkabakDriver:
         heartbeat_started = time.perf_counter()
         last_heartbeat_elapsed = -15.0
         vacs_graphless_since: Optional[float] = None
-        vacs_reimport: Dict[str, Any] = {"triggered": False}
+        vacs_reimport: Dict[str, Any] = {"triggered": False, "attempt_count": 0}
+        vacs_reimport_attempts: List[Dict[str, Any]] = []
         vacs_launch: Dict[str, Any] = {"attempted": False}
         solver_activity_snapshot: Dict[str, Any] = dict(start_snapshot)
         solver_quiet_since: Optional[float] = None
@@ -4203,7 +4215,7 @@ class AkabakDriver:
             self._log(level="info", step=step, event="solve_heartbeat", payload=row)
 
         def _completed() -> Tuple[bool, Dict[str, Any]]:
-            nonlocal vacs_graphless_since, vacs_reimport, vacs_launch
+            nonlocal vacs_graphless_since, vacs_reimport, vacs_reimport_attempts, vacs_launch
             nonlocal solver_activity_snapshot, solver_quiet_since, solver_numerically_complete
             nonlocal solve_command_was_disabled
             if self.watchdog:
@@ -4228,7 +4240,8 @@ class AkabakDriver:
                 solver_activity_snapshot = dict(snapshot)
                 solver_quiet_since = None
                 vacs_graphless_since = None
-                vacs_reimport = {"triggered": False}
+                vacs_reimport = {"triggered": False, "attempt_count": 0}
+                vacs_reimport_attempts = []
                 vacs_launch = {"attempted": False}
                 snapshot["status"] = "running_solve_command_disabled"
                 _record_heartbeat(snapshot)
@@ -4325,7 +4338,12 @@ class AkabakDriver:
                         vacs_graphless_since = now
                     graphless_s = max(0.0, now - vacs_graphless_since)
                     snapshot["vacs_graphless_s"] = round(graphless_s, 3)
-                    if graphless_s >= 3.0 and not bool(vacs_reimport.get("triggered")):
+                    next_attempt_index = len(vacs_reimport_attempts)
+                    retry_due_s = _vacs_reimport_retry_due_s(
+                        attempt_count=next_attempt_index,
+                        graphless_s=graphless_s,
+                    )
+                    if retry_due_s is not None and graphless_s >= retry_due_s:
                         main_handle = int(self.solve_context.get("baseline", {}).get("main_handle", 0) or 0)
                         trigger = self._trigger_vacs_reimport_native(main_handle)
                         self._require(
@@ -4337,10 +4355,15 @@ class AkabakDriver:
                             "triggered": True,
                             "reason": "new_vacs_without_graphs",
                             "graphless_s": round(graphless_s, 3),
+                            "attempt_count": next_attempt_index + 1,
+                            "max_attempts": len(VACS_REIMPORT_RETRY_DELAYS_S),
+                            "retry_due_s": retry_due_s,
                             **trigger,
                         }
+                        vacs_reimport_attempts.append(dict(vacs_reimport))
                         self._log(level="info", step=step, event="vacs_reimport_triggered", payload=vacs_reimport)
                 snapshot["vacs_reimport"] = dict(vacs_reimport)
+                snapshot["vacs_reimport_attempts"] = [dict(row) for row in vacs_reimport_attempts]
                 snapshot["status"] = "waiting_vacs_graph_import"
                 _record_heartbeat(snapshot)
                 return False, snapshot
