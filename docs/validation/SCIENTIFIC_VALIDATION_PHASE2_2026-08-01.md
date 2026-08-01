@@ -266,3 +266,66 @@ The criteria, fixed before running, are:
 This verifies WUT rendering against the official ATH geometry tutorial. It does
 not independently verify AKABAK acoustic pressure, VACS, or a physical
 measurement.
+
+## Final results
+
+The frozen criteria above were applied without retroactively relaxing failed or
+inapplicable gates. Compact machine-readable evidence is stored in
+`docs/validation/evidence/`; native working directories remain outside Git.
+
+| Matrix row | Result | Classification | Evidence and boundary |
+|---|---|---|---|
+| M1 mesh convergence | Pressure submatrix passed; impedance and beamwidth submatrices were inapplicable to this case | **plausibilized**, not fully verified | 178/302, 251/428 and 375/660 nodes/triangles increased monotonically. Coarse-medium normalized polar RMS was 0.03226 dB (P95 0.06525 dB); medium-fine was 0.01698 dB (P95 0.03392 dB), so the trend and pressure tolerances passed. All one-sided beamwidths saturated and the selected impedance graph was identically zero; neither quantity is claimed as converged. See `phase2_mesh_convergence_2026-08-01.json`. |
+| G1 mouth propagation | Passed | **verified** | Coverage 45 to 60 deg changed mouth width 164.52 to 250.02 mm and mouth area by +130.9469%, while nominal length, throat contract, physical groups and non-geometry scripts stayed within the frozen limits. See `phase2_geometry_contracts_2026-08-01.json`. |
+| G2 profile propagation | Passed under recorded Amendment A1 | **verified** | `Term.n` 4 to 6 changed 19 interior slices; maximum radius difference was 5.302 mm and 57.89% differed by at least 0.1 mm. Length, throat and non-geometry contracts remained stable. See `phase2_geometry_contracts_2026-08-01.json`. |
+| O1 observation distance | Passed for the eligible real case | **verified** for inverse-distance magnitude and normalized shape; Cartesian expansion semantics **plausibilized** | 3 to 6 m produced a maximum error of 0.001364 dB against -6.020599913 dB and normalized-shape RMS 0.000476 dB. Generated origin/axis/planes/distance and excitation were recorded. See `phase2_distance_contract_2026-08-01.json`. |
+| K1 KPI golden chain | Passed | **verified** as a software/data contract | 43 original focused chain checks passed. Repository-authored H/V/D and separate impedance fixtures prove TXT to parser to SQLite to Analyzer/KPI to GUI formatting with the frozen tolerances. `di_proxy` remains only the implemented software metric, not physical DI. See `phase2_kpi_golden_chain_2026-08-01.json`. |
+| R1 official ATH tutorial | Passed | **verified** for WUT-to-ATH geometry rendering | Standalone and WUT-rendered ATH 4.8.2 outputs were byte-identical at the mesh level: 4,224 triangles, 2,176 nodes, maximum coordinate delta 0; reported dimensions were 269.42 x 269.42 x 100.00 mm versus the guide's 269.4 x 269.4 x 100.0 mm. See `phase2_official_reference_2026-08-01.json`. |
+| R1 simulation-to-measurement | No suitable reusable numeric primary data set found | **not validated** | ATH Gen2 measurement plots disclose uncalibrated levels, inconsistent drive, approximate angles and short indoor gating, but no reusable numeric values. Inspected AKABAK official studies/examples likewise did not provide a compact raw measurement case with all frozen setup and reuse requirements. Plot digitization was deliberately not substituted. |
+| E1 production GUI gate | Passed after two narrowly scoped fixes | **verified** | B010/V010 completed the normal GUI/service/worker path in 140.833 s, visible as 1/1, real, done. Four VACS TXT files, four generic graphs/24 points, three H/V/D Peak measurements/342 points, one impedance graph, a persisted KPI row and selected B010/V010 GUI plots/scalars were verified. Zero relevant owned processes remained. See `phase2_gui_production_gate_2026-08-01.json`. |
+
+## Defects found and corrected
+
+1. Commit `362c2ab` accepts real VACS `Data_LevelType=Peak` output as a
+   normalized pressure polar only when explicit polar/angle metadata supports
+   that interpretation. `Impedance10` remains excluded. The diagnostic B009 run
+   had four good exports and generic graph rows but zero specialized polar rows;
+   B010 after the fix persisted all 342 H/V/D samples.
+2. Commit `f1530c9` aligns Analyzer project, batch, run, point and KPI queries
+   with the same pressure-compatible `Peak` contract. Before this fix B010 was
+   present in SQLite but absent from the Analyzer selector. After application
+   reload, the GUI selected B010/V010, rendered all four Analyzer panels and
+   persisted/displayed the calculated KPI row.
+
+Both changes are bounded compatibility fixes for actual VACS output. They do not
+relax impedance separation and do not introduce a new product feature.
+
+## Final answers by evidence level
+
+- ATH geometry propagation: **verified** for length, throat, mouth/profile A/B
+  contracts and the official ATH tutorial case. This is not a universal proof
+  for every ATH feature or arbitrary CAD geometry.
+- LE network application: retained from the prior validated baseline and not
+  unnecessarily rerun here; phase 2 confirmed the generated non-geometry
+  scripts stayed invariant in geometry-only A/B tests. No broader driver-library
+  claim is made.
+- Solver and observation settings: frequency/observation contracts and the
+  eligible distance law are **verified** for the tested cases. Pressure mesh
+  convergence is **plausibilized**; non-zero impedance convergence and
+  unsaturated full-angle beamwidth convergence remain **not validated**.
+- VACS export, storage and Analyzer path: **verified** for the real B010 Peak
+  polar run after the two fixes, including H/V/D separation, raw exports,
+  specialized and generic SQLite rows, KPI persistence and visible GUI values.
+- Simulation-to-physical-measurement agreement: **not validated**. Available
+  official plot material did not satisfy the predeclared numeric/setup/licence
+  requirements, so no percentage-accuracy or 100% correctness claim is made.
+
+## Reproduction summary
+
+Use the exact baseline/tool hashes above, run the repository scientific
+validation tests and retain generated data in an isolated short Windows path.
+The production GUI evidence used `C:\wut_p2_gate_r1`, project-local SQLite and
+the recorded settings hash; it did not alter the normal product library. Safe
+cleanup is PID-ledger based. A true fresh-Windows/first-VACS-session test remains
+the separately deferred external validation point from the preceding phase and
+was not part of this phase's gate.

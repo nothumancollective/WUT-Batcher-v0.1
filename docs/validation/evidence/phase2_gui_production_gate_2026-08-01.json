@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-08-01T18:34:29+02:00",
+  "classification": "verified",
+  "scope": "One fast representative batch through the normal Batcher GUI/service/worker path, followed by Analyzer selection and KPI display.",
+  "isolated_root": "C:\\wut_p2_gate_r1",
+  "production_library_modified": false,
+  "settings": {
+    "path": "C:\\wut_p2_gate_r1\\profile\\.wut_batcher\\config.json",
+    "sha256": "3f3dc6d3c12c90ca21c03f403a525e0ab826f72024364a3873b4da8f5afc530a",
+    "library_root": "C:\\wut_p2_gate_r1\\library",
+    "background_automation_mode": false,
+    "simulation_timeout_minutes": 20,
+    "analyzer_data_source": "project"
+  },
+  "diagnostic_run_before_fix": {
+    "run_id": "8148bb11-ac5e-4488-a033-a180cffe197e",
+    "batch_id": "B009",
+    "version_id": "V009",
+    "gui_status": "done",
+    "exports": 4,
+    "generic_graphs": 4,
+    "generic_graph_points": 24,
+    "polar_measurements": 0,
+    "polar_points": 0,
+    "root_cause": "Real VACS Mic Polar files used Data_LevelType=Peak. The pressure-polar classifier rejected every explicit level other than SoundPressure/SPL, even with explicit polar/angle metadata.",
+    "fix_commit": "362c2ab"
+  },
+  "final_run": {
+    "wut_commit_at_simulation": "362c2ab",
+    "run_id": "8b0291aa-2fa2-43eb-b550-73726db028ac",
+    "project_id": "P0001__40a6f067-5940-4146-b04f-04f0246b6472",
+    "batch_id": "B010",
+    "version_id": "V010",
+    "started_at_utc": "2026-08-01T16:21:44+00:00",
+    "finished_at_utc": "2026-08-01T16:24:05+00:00",
+    "duration_seconds": 140.83307016600156,
+    "gui_evidence": {
+      "version_progress": "1/1",
+      "mode": "real",
+      "eta": "done",
+      "status_bar": "Run finished for B010"
+    },
+    "database_evidence": {
+      "path": "C:\\wut_p2_gate_r1\\library\\projects\\P0001__40a6f067-5940-4146-b04f-04f0246b6472\\db\\project.sqlite",
+      "sha256_after_kpi": "0570ac090c7cb3ea9fcf32b1465f0e3dc8b58ecdb00fe1713de96c018ee3faff",
+      "run_status": "succeeded",
+      "run_version_status": "success",
+      "generic_graphs": 4,
+      "generic_graph_points": 24,
+      "polar_measurements": 3,
+      "polar_points": 342,
+      "polar_planes": ["D", "H", "V"],
+      "polar_data_level_type": "Peak",
+      "frequency_count_per_plane": 6,
+      "angle_count_per_plane": 19,
+      "impedance_graphs": 1
+    },
+    "exports": [
+      {"role": "D polar", "sha256": "c53c0596e083132eaa650893de8d268646bc2c2fb4b8f0382c4120c6510b0091", "bytes": 4296},
+      {"role": "H polar", "sha256": "ddc4bc4967d47f0994c845b847f11d02188b5966b249f8d1a0fbab2130994ae4", "bytes": 4295},
+      {"role": "V polar", "sha256": "1860f5d2dbe85e820e3d9a9905eb00faa19ff45a60fadecec7cb9ab05b58c804", "bytes": 4296},
+      {"role": "radiation impedance", "sha256": "b7bf8869594c521d9cfc5b1f1fd2f5b02b54c41371529b34d847e52bbe80e3db", "bytes": 830}
+    ],
+    "version_json_sha256": "1bb9c51741699d1d58d362c6860fb8df47eebb6cdecaf840689fdff2533f009d"
+  },
+  "analyzer_gate": {
+    "wut_commit": "f1530c9",
+    "service_fix": "Analyzer project/batch/run/KPI queries now accept normalized Peak polars under the same pressure-compatible contract as importer and plot services.",
+    "selected_in_gui": "B010/V010",
+    "plots_visible": ["Polar Map", "Coverage Uniformity vs f", "Spill Index vs f", "Target Deviation Summary"],
+    "kpi_row_persisted": true,
+    "displayed": {
+      "score": 22.75,
+      "pattern_control_oct": 0.0,
+      "beamwidth_error_deg": 42.22,
+      "coverage_error_db": 1.22,
+      "spill": 0.227,
+      "flags": "0 (1W)"
+    },
+    "warning": "INSUFFICIENT_ANGLE_COVERAGE",
+    "warning_interpretation": "The 0..90 degree one-sided export supports the product calculation but not full-space physical beamwidth validation."
+  },
+  "process_ledger": {
+    "first_gui_pid": 7996,
+    "reload_gui_pid": 5604,
+    "observed_owned_native_pids": [6484, 696],
+    "observed_owned_helper_pid": 13052,
+    "cleanup_method": "Normal application/tool lifecycle and normal GUI close; no global image-name kill.",
+    "post_state_at": "2026-08-01T18:34:29+02:00",
+    "post_state_relevant_processes": 0,
+    "post_state_total_working_set_bytes": 4577038336,
+    "pre_state_relevant_processes": 0,
+    "pre_state_total_working_set_bytes": null,
+    "resource_note": "The exact system-wide pre-run working-set sum was not captured, so no before/after RAM delta is claimed."
+  },
+  "automated_regression": {
+    "focused": "37 passed in 12.79s",
+    "full_suite": "744 passed, 10 skipped, 0 failed in 826.45s",
+    "full_suite_warnings": "9235 existing Qt deprecation warnings"
+  }
+}

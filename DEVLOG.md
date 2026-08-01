@@ -3063,6 +3063,52 @@ Validation executed:
   `git diff-index HEAD`: empty.
 - One registered worktree, no submodules and no nested repositories.
 
+### Update 81 (Scientific Validation Phase 2)
+#### Done
+- Froze a quantitative acceptance matrix before inspecting phase-2 results and
+  kept verified, plausibilized and not-validated conclusions separate.
+- Verified isolated ATH mouth/profile propagation, an eligible 3 m to 6 m
+  observation-distance contract, the repository-authored KPI golden data chain
+  and WUT geometry rendering against the official ATH 4.8.2 tutorial.
+- Quantified three-level real mesh pressure convergence. The pressure trend
+  passed strongly, while zero impedance and saturated one-sided beamwidth data
+  were honestly retained as not validated instead of being reported green.
+- Searched official ATH and R&D Team reference material without copying external
+  models. No simulation-to-measurement source met the frozen numeric setup and
+  reuse criteria, so physical measurement agreement remains not validated.
+- Found that current VACS exports normalized complex microphone polars as
+  `Data_LevelType=Peak`. Two bounded fixes now carry those contract-backed rows
+  through specialized storage and every Analyzer service query while preserving
+  `Impedance10` isolation (`362c2ab`, `f1530c9`).
+
+#### Real production gate
+- One normal GUI/service/worker run, B010/V010 / run
+  `8b0291aa-2fa2-43eb-b550-73726db028ac`, completed 1/1 in real mode and 140.833 s.
+- Verified four current VACS TXT exports, four generic graphs/24 points, three
+  H/V/D Peak measurements/342 points, one separate impedance graph and succeeded
+  run/version rows.
+- After application reload the GUI selected B010/V010, rendered the Analyzer
+  panels and persisted/displayed Score 22.75, BW Error 42.22 deg, Coverage Error
+  1.22 dB and Spill 0.227. The one-sided-angle coverage warning remains visible
+  and is scientifically appropriate.
+- Both run-owned GUI processes and all observed AKABAK/VACS/helper PIDs ended;
+  the final relevant-process snapshot was empty. No global process-name cleanup
+  and no production-library mutation occurred.
+
+#### Evidence
+- `docs/validation/SCIENTIFIC_VALIDATION_PHASE2_2026-08-01.md`
+- `docs/validation/evidence/phase2_geometry_contracts_2026-08-01.json`
+- `docs/validation/evidence/phase2_distance_contract_2026-08-01.json`
+- `docs/validation/evidence/phase2_mesh_convergence_2026-08-01.json`
+- `docs/validation/evidence/phase2_kpi_golden_chain_2026-08-01.json`
+- `docs/validation/evidence/phase2_official_reference_2026-08-01.json`
+- `docs/validation/evidence/phase2_gui_production_gate_2026-08-01.json`
+
+#### Automated validation
+- Focused Peak importer/storage/Analyzer service regression group: 37 passed.
+- Final clean full suite after both fixes: 744 passed, 10 skipped, zero failed
+  in 826.45 s (9,235 existing Qt deprecation warnings).
+
 
 
 
