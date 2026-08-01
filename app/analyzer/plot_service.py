@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from contextlib import closing
 from pathlib import Path
 import sqlite3
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
@@ -237,7 +238,11 @@ class AnalyzerPlotService:
         if not orientation_tokens:
             orientation_tokens = [str(plane or "").strip().upper()]
         placeholders = ",".join("?" for _ in orientation_tokens)
-        with sqlite3.connect(str(db_path)) as conn:
+        # sqlite3.Connection.__exit__ only commits/rolls back; it does not
+        # close the native handle.  Keep closure explicit so Windows project
+        # databases can be moved or removed immediately after a plot worker
+        # finishes.
+        with closing(sqlite3.connect(str(db_path))) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 f"""

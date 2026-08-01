@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
+from app.analyzer.cache import AnalyzerCachePolicy, AnalyzerPlotCache
 from app.analyzer.plot_service import (
+    AnalyzerPlotService,
     compute_beamwidth_curve,
     normalize_relative_to_nearest_zero,
     normalize_relative_to_reference,
@@ -10,6 +13,41 @@ from app.analyzer.plot_service import (
 
 
 class AnalyzerPlotServiceMathTests(unittest.TestCase):
+    def test_database_connection_is_explicitly_closed_after_load(self) -> None:
+        class _Cursor:
+            def fetchall(self):
+                return []
+
+        class _Connection:
+            def __init__(self) -> None:
+                self.row_factory = None
+                self.closed = False
+
+            def execute(self, *_args, **_kwargs):
+                return _Cursor()
+
+            def close(self) -> None:
+                self.closed = True
+
+        connection = _Connection()
+        cache = AnalyzerPlotCache(AnalyzerCachePolicy(mode="low", size_limit_mb=0, keep_last_n=1))
+        service = AnalyzerPlotService(cache)
+
+        with patch("app.analyzer.plot_service.sqlite3.connect", return_value=connection):
+            payload = service.load_plane_plot_payload(
+                db_path="project.sqlite",  # type: ignore[arg-type]
+                project_id="P001",
+                batch_id="B001",
+                run_id="R001",
+                version_id="V001",
+                plane="H",
+                band_low_hz=200.0,
+                band_high_hz=20_000.0,
+            )
+
+        self.assertEqual(payload["freqs_hz"], [])
+        self.assertTrue(connection.closed)
+
     def test_normalize_uses_nearest_angle_to_zero(self) -> None:
         freqs = [200.0, 400.0]
         angles = [-15.0, 5.0, 25.0]
