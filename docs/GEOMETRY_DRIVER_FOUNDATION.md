@@ -56,7 +56,9 @@ compatibility boundary, not a second library.
 - `<library>/drivers/assets/sha256/<hash>`: content-addressed LE assets.
 - `<project>/geometries/<geometry_id>/geometry.json`: geometry metadata.
 - project SQLite schema `2.10`: additive `geometry_id`, Batch Driver policy and
-  override columns, `geometries`, and `run_driver_snapshots.selection_source`.
+  override columns, `geometries`, and `run_driver_snapshots.selection_source`;
+  schema `2.11` additionally adds the project-local SpeakerAssembly tables
+  without changing Geometry or Driver ownership.
 - existing `batches/`, `versions/`, `runs/` and `exports/` paths are unchanged.
 
 IDs are opaque and stable. Archive operations are soft deletes. Driver revision

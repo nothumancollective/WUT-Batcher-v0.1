@@ -3247,6 +3247,30 @@ Validation executed:
 - Final clean full suite: 779 passed, 10 skipped, zero failed in 268.67 seconds.
 - Evidence: `docs/validation/GEOMETRY_NAVIGATION_BATCH_DRIVER_2026-08-02.md`.
 
+### Update 86 (SpeakerAssembly Foundation)
+
+#### Domain and persistence
+
+- Added project-local SpeakerAssemblies containing ordered normal/coaxial
+  Geometry instances with stable IDs, immutable canonical Geometry snapshots,
+  snapshot hashes and explicit SI transforms.
+- Defined a right-handed +X right, +Y up, +Z forward frame and fixed-axis X/Y/Z
+  degree rotations. Finite values are enforced and angles normalized.
+- Added canonical Assembly manifests and idempotent SQLite 2.11 tables without
+  moving or rewriting legacy project data. Central services own CRUD; no second
+  editable Geometry or Driver library was introduced.
+
+#### UI and validation
+
+- Added the service-backed **Geometry -> Speaker Assemblies** manager with
+  Assembly create/edit/archive and instance add/edit/reorder/remove workflows.
+- Added focused Domain, storage, migration, compatibility and UI coverage. A
+  visible isolated smoke created two instances, edited a non-trivial coaxial
+  transform, reordered and twice reloaded it successfully; the owned GUI exited
+  normally and no solver process was started.
+- Workflow and evidence: `docs/SPEAKER_ASSEMBLY_FOUNDATION.md` and
+  `docs/validation/SPEAKER_ASSEMBLY_UI_SMOKE_2026-08-03.md`.
+
 
 
 
