@@ -2,6 +2,9 @@
 
 Status: proposed; deliberately not implemented
 
+The non-simulation Assembly foundation is now specified by ADR-009. This ADR
+continues to govern the still-unimplemented coupled simulation and DSP layer.
+
 ## Boundary
 
 A future `SpeakerAssembly` may reference multiple immutable Geometry instances,

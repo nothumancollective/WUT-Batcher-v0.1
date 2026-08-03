@@ -12,3 +12,4 @@ Project Library layout unless a later ADR explicitly supersedes them.
 - [ADR-006: Future CAD import, meshing and hierarchical export](006-cad-interoperability-future.md)
 - [ADR-007: Future curated driver data sources](007-curated-driver-data-future.md)
 - [ADR-008: Geometry navigation and batch driver selection](008-geometry-navigation-and-batch-driver-selection.md)
+- [ADR-009: Additive SpeakerAssembly foundation](009-speaker-assembly-foundation.md)
