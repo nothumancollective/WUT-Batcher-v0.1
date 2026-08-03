@@ -57,6 +57,7 @@ from app.geometry_domain import GeometryRepository, legacy_geometry_id
 from app.geometry_driver_compat import validate_geometry_driver
 from app.models import Batch, ParamSelection, Project, ProjectConstraints, SweepSpec
 from app.project_storage import ProjectRepository
+from app.speaker_assembly_domain import SpeakerAssemblyRepository, SpatialTransform
 from app.runtime_orchestrator import RuntimeSummary, run_batch_pipeline
 from app.runners import AthRunner
 from app.storage_manager import LibraryState, StorageManager
@@ -1658,6 +1659,118 @@ class OrchestratorService:
 
     def archive_geometry(self, project_id: str, geometry_id: str) -> Dict[str, Any]:
         return self._geometry_repo(project_id).archive(geometry_id).to_dict()
+
+    def _speaker_assembly_repo(self, project_id: str) -> SpeakerAssemblyRepository:
+        paths = self.repo.project_paths(project_id, ensure=False)
+        return SpeakerAssemblyRepository(paths.project_dir, project_id)
+
+    def _assembly_geometry_snapshot(self, project_id: str, geometry_id: str) -> Dict[str, Any]:
+        geometry = self._geometry_repo(project_id).get(geometry_id)
+        if geometry.archived_at:
+            raise ValueError("Archived Geometry cannot be added to a SpeakerAssembly")
+        return geometry.to_dict()
+
+    def list_speaker_assemblies(
+        self,
+        project_id: str,
+        *,
+        include_archived: bool = False,
+    ) -> List[Dict[str, Any]]:
+        self.repo.load_project(project_id)
+        return [
+            item.to_dict()
+            for item in self._speaker_assembly_repo(project_id).list(include_archived=include_archived)
+        ]
+
+    def get_speaker_assembly(self, project_id: str, assembly_id: str) -> Dict[str, Any]:
+        self.repo.load_project(project_id)
+        return self._speaker_assembly_repo(project_id).get(assembly_id).to_dict()
+
+    def create_speaker_assembly(
+        self,
+        project_id: str,
+        *,
+        name: str,
+        description: str = "",
+    ) -> Dict[str, Any]:
+        self.repo.load_project(project_id)
+        return self._speaker_assembly_repo(project_id).create(
+            name=name,
+            description=description,
+        ).to_dict()
+
+    def update_speaker_assembly(
+        self,
+        project_id: str,
+        assembly_id: str,
+        **changes: Any,
+    ) -> Dict[str, Any]:
+        return self._speaker_assembly_repo(project_id).update(assembly_id, **changes).to_dict()
+
+    def archive_speaker_assembly(self, project_id: str, assembly_id: str) -> Dict[str, Any]:
+        return self._speaker_assembly_repo(project_id).archive(assembly_id).to_dict()
+
+    def add_speaker_assembly_instance(
+        self,
+        project_id: str,
+        assembly_id: str,
+        *,
+        geometry_id: str,
+        name: str,
+        description: str = "",
+        arrangement: str = "normal",
+        transform: SpatialTransform | Dict[str, Any] | None = None,
+    ) -> Dict[str, Any]:
+        geometry = self._assembly_geometry_snapshot(project_id, geometry_id)
+        return self._speaker_assembly_repo(project_id).add_instance(
+            assembly_id,
+            geometry=geometry,
+            name=name,
+            description=description,
+            arrangement=arrangement,
+            transform=transform,
+        ).to_dict()
+
+    def update_speaker_assembly_instance(
+        self,
+        project_id: str,
+        assembly_id: str,
+        instance_id: str,
+        *,
+        geometry_id: str | None = None,
+        **changes: Any,
+    ) -> Dict[str, Any]:
+        geometry = self._assembly_geometry_snapshot(project_id, geometry_id) if geometry_id else None
+        return self._speaker_assembly_repo(project_id).update_instance(
+            assembly_id,
+            instance_id,
+            geometry=geometry,
+            **changes,
+        ).to_dict()
+
+    def move_speaker_assembly_instance(
+        self,
+        project_id: str,
+        assembly_id: str,
+        instance_id: str,
+        new_index: int,
+    ) -> Dict[str, Any]:
+        return self._speaker_assembly_repo(project_id).move_instance(
+            assembly_id,
+            instance_id,
+            new_index,
+        ).to_dict()
+
+    def remove_speaker_assembly_instance(
+        self,
+        project_id: str,
+        assembly_id: str,
+        instance_id: str,
+    ) -> Dict[str, Any]:
+        return self._speaker_assembly_repo(project_id).remove_instance(
+            assembly_id,
+            instance_id,
+        ).to_dict()
 
     def set_geometry_default_driver(self, project_id: str, geometry_id: str, revision_id: str | None) -> Dict[str, Any]:
         repo = self._geometry_repo(project_id)

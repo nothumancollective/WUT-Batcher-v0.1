@@ -15,9 +15,10 @@ import uuid
 from app.feature_flags import use_project_library_storage
 from app.geometry_domain import ensure_project_geometry_schema
 from app.models import Batch, Project, VersionSpec
+from app.speaker_assembly_domain import ensure_project_assembly_schema
 
 
-SCHEMA_VERSION = "2.10"
+SCHEMA_VERSION = "2.11"
 
 
 def _now_iso() -> str:
@@ -875,6 +876,7 @@ class SqlDatasetStore:
         self._ensure_graphs_columns(conn)
         self._migrate_graph_points_schema(conn)
         ensure_project_geometry_schema(conn)
+        ensure_project_assembly_schema(conn)
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS polar_measurements (
