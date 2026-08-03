@@ -1740,7 +1740,17 @@ class OrchestratorService:
         geometry_id: str | None = None,
         **changes: Any,
     ) -> Dict[str, Any]:
-        geometry = self._assembly_geometry_snapshot(project_id, geometry_id) if geometry_id else None
+        geometry = None
+        if geometry_id:
+            current = self._speaker_assembly_repo(project_id).get(assembly_id)
+            instance = next(
+                (item for item in current.instances if item.instance_id == instance_id),
+                None,
+            )
+            if instance is None:
+                raise KeyError(f"Unknown Geometry instance: {instance_id}")
+            if instance.geometry_id != geometry_id:
+                geometry = self._assembly_geometry_snapshot(project_id, geometry_id)
         return self._speaker_assembly_repo(project_id).update_instance(
             assembly_id,
             instance_id,

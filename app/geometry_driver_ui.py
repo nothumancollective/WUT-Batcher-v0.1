@@ -9,6 +9,7 @@ from typing import Any
 import uuid
 
 from app.driver_library import DriverDefinition, DriverRevision, TRUST_STATES
+from app.speaker_assembly_ui import SpeakerAssemblyManagerDialog
 
 try:
     from PySide6.QtCore import Qt, Signal
@@ -521,23 +522,29 @@ class GeometryPage(QWidget):
         driver_row.addRow("Default driver", self.default_driver)
         driver_row.addRow("Simulation status", self.driver_status)
         root.addLayout(driver_row)
-        actions = QHBoxLayout()
+        actions = QGridLayout()
         self.create_button = QPushButton("New Geometry")
         self.rename_button = QPushButton("Rename")
         self.duplicate_button = QPushButton("Duplicate")
         self.archive_button = QPushButton("Archive")
+        self.assemblies_button = QPushButton("Speaker Assemblies")
         self.driver_library_button = QPushButton("Driver Library")
         self.set_driver_button = QPushButton("Set Default Driver")
         self.open_button = QPushButton("Open Geometry")
-        for button in (self.create_button, self.rename_button, self.duplicate_button, self.archive_button, self.driver_library_button, self.set_driver_button):
-            actions.addWidget(button)
-        actions.addStretch(1)
-        actions.addWidget(self.open_button)
+        actions.addWidget(self.create_button, 0, 0)
+        actions.addWidget(self.rename_button, 0, 1)
+        actions.addWidget(self.duplicate_button, 0, 2)
+        actions.addWidget(self.archive_button, 0, 3)
+        actions.addWidget(self.assemblies_button, 1, 0)
+        actions.addWidget(self.driver_library_button, 1, 1)
+        actions.addWidget(self.set_driver_button, 1, 2)
+        actions.addWidget(self.open_button, 1, 3)
         root.addLayout(actions)
         self.create_button.clicked.connect(self._create)
         self.rename_button.clicked.connect(self._rename)
         self.duplicate_button.clicked.connect(self._duplicate)
         self.archive_button.clicked.connect(self._archive)
+        self.assemblies_button.clicked.connect(self._assemblies)
         self.driver_library_button.clicked.connect(self._drivers)
         self.set_driver_button.clicked.connect(self._set_default_driver)
         self.open_button.clicked.connect(self._open)
@@ -561,10 +568,10 @@ class GeometryPage(QWidget):
             self.default_driver.clear()
             self.default_driver.addItem("No default driver", "")
             self.driver_status.setText("Open a project to manage Geometries and their default Drivers.")
-            for button in (self.create_button, self.rename_button, self.duplicate_button, self.archive_button, self.set_driver_button, self.open_button):
+            for button in (self.create_button, self.rename_button, self.duplicate_button, self.archive_button, self.assemblies_button, self.set_driver_button, self.open_button):
                 button.setEnabled(False)
             return
-        for button in (self.create_button, self.rename_button, self.duplicate_button, self.archive_button, self.set_driver_button, self.open_button):
+        for button in (self.create_button, self.rename_button, self.duplicate_button, self.archive_button, self.assemblies_button, self.set_driver_button, self.open_button):
             button.setEnabled(True)
         for row in self.service.list_geometries(self.project_id):
             legacy = " · legacy" if row.get("legacy") else ""
@@ -671,6 +678,13 @@ class GeometryPage(QWidget):
     def open_driver_library(self) -> None:
         self._drivers()
 
+    def _assemblies(self) -> None:
+        if self.project_id:
+            SpeakerAssemblyManagerDialog(self.service, self.project_id, self).exec()
+
+    def open_speaker_assemblies(self) -> None:
+        self._assemblies()
+
     def _set_default_driver(self) -> None:
         geometry_id = self.current_geometry_id()
         if geometry_id:
@@ -699,7 +713,7 @@ class GeometryManagerDialog(QDialog):
         root.addWidget(self.page)
         for name in (
             "list", "default_driver", "driver_status", "create_button", "rename_button",
-            "duplicate_button", "archive_button", "driver_library_button", "set_driver_button", "open_button",
+            "duplicate_button", "archive_button", "assemblies_button", "driver_library_button", "set_driver_button", "open_button",
         ):
             setattr(self, name, getattr(self.page, name))
         self.selected_geometry_id = active_geometry_id
